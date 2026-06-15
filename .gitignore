@@ -1,7 +1,10 @@
 .build/
 .swiftpm/
 .DS_Store
+__pycache__/
 bin/
 coverage.report
+coverage.lcov
+coverage.xml
 coverage.out
 Tools/compose-normalizer/compose-normalizer
