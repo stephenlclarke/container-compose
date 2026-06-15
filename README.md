@@ -1,9 +1,9 @@
 # container-compose
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose&metric=coverage)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=coverage)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
 
 `container-compose` is a standalone SwiftPM plugin that will provide Docker Compose style workflows for Apple's `container` CLI.
 
