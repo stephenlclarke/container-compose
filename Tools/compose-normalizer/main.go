@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -104,31 +105,40 @@ type normalizedVolume struct {
 }
 
 func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	var files stringList
 	var profiles stringList
 	var envFiles stringList
 	var projectName string
 	var projectDirectory string
 
-	flag.Var(&files, "file", "Compose file path. May be repeated.")
-	flag.Var(&profiles, "profile", "Compose profile. May be repeated.")
-	flag.Var(&envFiles, "env-file", "Environment file. May be repeated.")
-	flag.StringVar(&projectName, "project-name", "", "Compose project name.")
-	flag.StringVar(&projectDirectory, "project-directory", "", "Project directory.")
-	flag.Parse()
+	flags := flag.NewFlagSet("compose-normalizer", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Var(&files, "file", "Compose file path. May be repeated.")
+	flags.Var(&profiles, "profile", "Compose profile. May be repeated.")
+	flags.Var(&envFiles, "env-file", "Environment file. May be repeated.")
+	flags.StringVar(&projectName, "project-name", "", "Compose project name.")
+	flags.StringVar(&projectDirectory, "project-directory", "", "Project directory.")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
 
 	project, err := loadProject(files, profiles, envFiles, projectName, projectDirectory)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "compose-normalizer: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "compose-normalizer: %v\n", err)
+		return 1
 	}
 
-	encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(project); err != nil {
-		fmt.Fprintf(os.Stderr, "compose-normalizer: encode: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "compose-normalizer: encode: %v\n", err)
+		return 1
 	}
+	return 0
 }
 
 func loadProject(files, profiles, envFiles []string, projectName, projectDirectory string) (*normalizedProject, error) {

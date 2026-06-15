@@ -52,40 +52,9 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: Resolve Swift dependencies
-        run: swift package resolve
+      - name: Run local CI workflow
+        run: make ci
         working-directory: container-compose
-
-      - name: Build Swift package
-        run: swift build
-        working-directory: container-compose
-
-      - name: Test Swift package
-        run: swift test --enable-code-coverage
-        working-directory: container-compose
-
-      - name: Generate Swift coverage report
-        run: |
-          set -euo pipefail
-          test_binary="$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"
-          profile="$(find .build -path '*/codecov/default.profdata' -type f | head -n 1)"
-          xcrun llvm-cov export \
-            -format=lcov \
-            -instr-profile="$profile" \
-            "$test_binary" \
-            --sources Sources/ComposeCore \
-            --sources Sources/ComposePlugin \
-            > coverage.lcov
-          python3 Tools/coverage/lcov-to-sonarqube-generic.py coverage.lcov coverage.xml
-        working-directory: container-compose
-
-      - name: Test compose normalizer
-        run: go test ./... -coverprofile=coverage.out -covermode=atomic
-        working-directory: container-compose/Tools/compose-normalizer
-
-      - name: Build compose normalizer
-        run: go build -o /tmp/compose-normalizer .
-        working-directory: container-compose/Tools/compose-normalizer
 
       - name: Cache SonarQube packages
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -130,23 +99,8 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: Build release executable
-        run: swift build -c release --product compose
-        working-directory: container-compose
-
-      - name: Build normalizer helper
-        run: go build -o compose-normalizer .
-        working-directory: container-compose/Tools/compose-normalizer
-
-      - name: Assemble plugin artifact
-        run: |
-          set -euo pipefail
-          rm -rf dist
-          mkdir -p dist/compose/bin dist/compose/resources
-          cp .build/release/compose dist/compose/bin/compose
-          cp config.toml dist/compose/config.toml
-          cp Tools/compose-normalizer/compose-normalizer dist/compose/resources/compose-normalizer
-          tar -czf container-compose-plugin.tar.gz -C dist compose
+      - name: Build plugin package
+        run: make package
         working-directory: container-compose
 
       - name: Upload plugin artifact

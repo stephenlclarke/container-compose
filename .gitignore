@@ -3,6 +3,8 @@
 .DS_Store
 __pycache__/
 bin/
+dist/
+container-compose-plugin.tar.gz
 coverage.report
 coverage.lcov
 coverage.xml

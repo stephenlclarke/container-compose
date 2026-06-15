@@ -169,11 +169,389 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.ports == ["8080:80"])
         #expect(project.volumes["data"] != nil)
     }
+
+    @Test("describes compose errors")
+    func describesComposeErrors() {
+        #expect(ComposeError.commandFailed(command: "container ps", status: 7, stderr: "").description == "container ps failed with exit code 7")
+        #expect(ComposeError.commandFailed(command: "container ps", status: 7, stderr: " denied\n").description == "container ps failed with exit code 7: denied")
+        #expect(ComposeError.invalidProject("missing service").description == "invalid compose project: missing service")
+        #expect(ComposeError.unsupported("profiles").description == "unsupported compose feature: profiles")
+        #expect(ComposeError.missingNormalizer("missing helper").description == "compose normalizer unavailable: missing helper")
+    }
+
+    @Test("prints sorted config JSON")
+    func printsSortedConfigJSON() throws {
+        let project = ComposeProject(name: "demo", services: ["web": ComposeService(name: "web", image: "nginx")])
+
+        let json = try ComposeOrchestrator().config(project: project)
+
+        #expect(json.contains(#""name" : "demo""#))
+        #expect(json.contains(#""web" : {"#))
+    }
+
+    @Test("normalizer decodes JSON and forwards compose options")
+    func normalizerDecodesJSONAndForwardsOptions() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+
+        let project = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(
+            files: ["compose.yml"],
+            projectName: "demo",
+            profiles: ["dev"],
+            envFiles: [".env"],
+            projectDirectory: "/tmp/demo"
+        ))
+
+        #expect(project.name == "demo")
+        #expect(project.services["web"]?.image == "nginx")
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.containsSequence(["--file", "compose.yml"]))
+        #expect(command.arguments.containsSequence(["--profile", "dev"]))
+        #expect(command.arguments.containsSequence(["--env-file", ".env"]))
+        #expect(command.arguments.containsSequence(["--project-name", "demo"]))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
+    @Test("normalizer surfaces command and decode failures")
+    func normalizerSurfacesCommandAndDecodeFailures() async throws {
+        do {
+            _ = try await ComposeNormalizer(runner: RecordingRunner(responses: [
+                CommandResult(status: 23, stdout: "", stderr: "bad compose"),
+            ])).normalize(options: ComposeOptions(files: ["compose.yml"]))
+            Issue.record("Expected command failure")
+        } catch let error as ComposeError {
+            #expect(error == .commandFailed(command: "/usr/bin/env go run . --file compose.yml", status: 23, stderr: "bad compose"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            _ = try await ComposeNormalizer(runner: RecordingRunner(responses: [
+                CommandResult(status: 0, stdout: "not json", stderr: ""),
+            ])).normalize(options: ComposeOptions(files: ["compose.yml"]))
+            Issue.record("Expected decode failure")
+        } catch let error as ComposeError {
+            if case .invalidProject(let message) = error {
+                #expect(message.contains("failed to decode normalized compose JSON"))
+            } else {
+                Issue.record("Unexpected compose error: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("build pull and push emit image commands")
+    func buildPullAndPushEmitImageCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(
+                    name: "api",
+                    image: "example/api:latest",
+                    build: ComposeBuild(context: "api", dockerfile: "Containerfile", args: ["VERSION": "1"], target: "runtime")
+                ),
+                "worker": ComposeService(name: "worker", build: ComposeBuild(context: "worker")),
+            ]
+        )
+
+        try await orchestrator.build(project: project, services: [], noCache: true)
+        try await orchestrator.pull(project: project, services: ["api", "worker"])
+        try await orchestrator.push(project: project, services: ["api", "worker"])
+
+        #expect(runner.commands[0].arguments.containsSequence(["container", "build", "--tag", "example/api:latest"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--file", "Containerfile"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
+        #expect(runner.commands[0].arguments.contains("--no-cache"))
+        #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
+        #expect(runner.commands[0].arguments.last == "api")
+        #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
+        #expect(runner.commands[2].arguments == ["container", "image", "pull", "example/api:latest"])
+        #expect(runner.commands[3].arguments == ["container", "image", "push", "example/api:latest"])
+    }
+
+    @Test("down removes project resources in dependency order")
+    func downRemovesProjectResourcesInDependencyOrder() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api", dependsOn: ["db": "service_started"]),
+                "db": ComposeService(name: "db", image: "postgres"),
+            ],
+            networks: ["default": ComposeNetwork(name: "default")],
+            volumes: ["data": ComposeVolume(name: "data")]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions(volumes: true))
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "stop", "demo-api-1"],
+            ["container", "delete", "demo-api-1"],
+            ["container", "stop", "demo-db-1"],
+            ["container", "delete", "demo-db-1"],
+            ["container", "network", "delete", "demo_default"],
+            ["container", "volume", "delete", "demo_data"],
+        ])
+    }
+
+    @Test("lifecycle commands target selected service containers")
+    func lifecycleCommandsTargetSelectedServiceContainers() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api", tty: true, stdinOpen: true),
+                "web": ComposeService(name: "web", image: "nginx"),
+            ]
+        )
+
+        try await orchestrator.logs(project: project, services: ["api"], follow: true, tail: 10)
+        try await orchestrator.exec(project: project, serviceName: "api", command: ["echo", "ok"], interactive: true, tty: true)
+        try await orchestrator.start(project: project, services: ["api"])
+        try await orchestrator.stop(project: project, services: ["api"])
+        try await orchestrator.restart(project: project, services: ["api"])
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: true)
+        try await orchestrator.kill(project: project, services: ["api"], signal: "SIGTERM")
+        try await orchestrator.copy(arguments: ["demo-api-1:/tmp/file", "."])
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "logs", "--follow", "-n", "10", "demo-api-1"])
+        #expect(commands[1] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
+        #expect(commands[2] == ["container", "start", "demo-api-1"])
+        #expect(commands[3] == ["container", "stop", "demo-api-1"])
+        #expect(commands[4] == ["container", "stop", "demo-api-1"])
+        #expect(commands[5] == ["container", "start", "demo-api-1"])
+        #expect(commands[6] == ["container", "stop", "demo-api-1"])
+        #expect(commands[7] == ["container", "delete", "demo-api-1"])
+        #expect(commands[8] == ["container", "kill", "--signal", "SIGTERM", "demo-api-1"])
+        #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
+    }
+
+    @Test("run supports one-off containers and option flags")
+    func runSupportsOneOffContainersAndOptionFlags() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": ComposeService(
+                    name: "job",
+                    image: "alpine",
+                    entrypoint: ["/bin/sh", "-c"],
+                    environment: ["A": "B", "EMPTY": nil],
+                    envFiles: [".env"],
+                    ports: ["8080:80"],
+                    volumes: [
+                        ComposeMount(type: "bind", source: "/host", target: "/container", readOnly: true),
+                        ComposeMount(type: "tmpfs", target: "/tmp"),
+                        ComposeMount(type: "volume", target: "/anon"),
+                    ],
+                    workingDir: "/work",
+                    user: "1000",
+                    tty: true,
+                    stdinOpen: true,
+                    readOnly: true,
+                    init: true,
+                    tmpfs: ["/cache"],
+                    dns: ["1.1.1.1"],
+                    dnsSearch: ["local"],
+                    capAdd: ["NET_ADMIN"],
+                    capDrop: ["MKNOD"],
+                    memLimit: "1024",
+                    cpus: "2"
+                ),
+            ]
+        )
+
+        try await orchestrator.run(project: project, serviceName: "job", command: ["echo", "ok"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "run", "--name"]))
+        #expect(command.contains("--rm"))
+        #expect(command.containsSequence(["--env", "A=B"]))
+        #expect(command.containsSequence(["--env", "EMPTY"]))
+        #expect(command.containsSequence(["--env-file", ".env"]))
+        #expect(command.containsSequence(["--publish", "8080:80"]))
+        #expect(command.containsSequence(["--volume", "/host:/container:ro"]))
+        #expect(command.containsSequence(["--tmpfs", "/tmp"]))
+        #expect(command.containsSequence(["--workdir", "/work"]))
+        #expect(command.containsSequence(["--user", "1000"]))
+        #expect(command.contains("--tty"))
+        #expect(command.contains("--interactive"))
+        #expect(command.containsSequence(["--cap-add", "NET_ADMIN"]))
+        #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
+        #expect(command.containsSequence(["--dns", "1.1.1.1"]))
+        #expect(command.containsSequence(["--dns-search", "local"]))
+        #expect(command.containsSequence(["--memory", "1024"]))
+        #expect(command.containsSequence(["--cpus", "2"]))
+        #expect(command.containsSequence(["--entrypoint", "/bin/sh -c"]))
+        #expect(command.contains("--read-only"))
+        #expect(command.contains("--init"))
+        #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
+    }
+
+    @Test("up reuses existing containers when no recreate is requested")
+    func upReusesExistingContainersWhenNoRecreateIsRequested() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [.success])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions(noRecreate: true))
+
+        #expect(runner.commands.map(\.arguments) == [["container", "inspect", "demo-api-1"]])
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+    }
+
+    @Test("dry run emits quoted commands")
+    func dryRunEmitsQuotedCommands() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, containerBinary: "container bin", emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api:latest")])
+
+        try await orchestrator.pull(project: project, services: ["api"])
+
+        #expect(emitted.messages == ["+ 'container bin' image pull example/api:latest"])
+    }
+
+    @Test("invalid and unsupported projects fail clearly")
+    func invalidAndUnsupportedProjectsFailClearly() async throws {
+        do {
+            try await ComposeOrchestrator().up(project: ComposeProject(name: "", services: [:]), options: ComposeUpOptions())
+            Issue.record("Expected empty project name failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("project name is empty"))
+        }
+
+        do {
+            try await ComposeOrchestrator().exec(project: ComposeProject(name: "demo", services: [:]), serviceName: "missing", command: ["true"], interactive: false, tty: false)
+            Issue.record("Expected unknown service failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unknown service 'missing'"))
+        }
+
+        do {
+            try await ComposeOrchestrator().exec(
+                project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
+                serviceName: "api",
+                command: [],
+                interactive: false,
+                tty: false
+            )
+            Issue.record("Expected empty exec command failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("exec requires a command"))
+        }
+
+        do {
+            try await ComposeOrchestrator().copy(arguments: [])
+            Issue.record("Expected cp argument failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("cp requires source and destination"))
+        }
+
+        let unsupportedProjects = [
+            ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api", networks: ["a", "b"])]),
+            ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api", extraHosts: ["db:127.0.0.1"])]),
+            ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api", privileged: true)]),
+        ]
+
+        for project in unsupportedProjects {
+            do {
+                try await ComposeOrchestrator().up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported runtime feature")
+            } catch let error as ComposeError {
+                if case .unsupported = error {
+                    continue
+                } else {
+                    Issue.record("Unexpected compose error: \(error)")
+                }
+            }
+        }
+    }
+
+    @Test("command failures are surfaced")
+    func commandFailuresAreSurfaced() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 4, stdout: "", stderr: ""),
+        ])
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).pull(project: project, services: ["api"])
+            Issue.record("Expected command failure")
+        } catch let error as ComposeError {
+            #expect(error == .commandFailed(command: "container image pull example/api", status: 4, stderr: ""))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("process runner captures stdout stderr status input env and cwd")
+    func processRunnerCapturesProcessDetails() async throws {
+        let directory = FileManager.default.temporaryDirectory
+        let script = "printf \"%s:%s\" \"$PROCESS_RUNNER_VALUE\" \"$(pwd)\"; cat; printf err >&2"
+        let result = try await ProcessRunner().run(
+            "/bin/sh",
+            ["-c", script],
+            workingDirectory: directory,
+            environment: ["PROCESS_RUNNER_VALUE": "ok"],
+            input: Data(" input".utf8)
+        )
+
+        #expect(result.succeeded)
+        #expect(
+            result.stdout == "ok:\(directory.path) input"
+                || result.stdout == "ok:/private\(directory.path) input"
+        )
+        #expect(result.stderr == "err")
+    }
+
+    @Test("process runner reports nonzero status")
+    func processRunnerReportsNonzeroStatus() async throws {
+        let result = try await ProcessRunner().run("/bin/sh", ["-c", "printf nope >&2; exit 9"])
+
+        #expect(!result.succeeded)
+        #expect(result.status == 9)
+        #expect(result.stderr == "nope")
+    }
 }
 
 private extension CommandResult {
     static let success = CommandResult(status: 0, stdout: "", stderr: "")
     static let failure = CommandResult(status: 1, stdout: "", stderr: "")
+}
+
+private final class MessageRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    var messages: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func append(_ message: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(message)
+    }
 }
 
 private extension Array where Element: Equatable {
