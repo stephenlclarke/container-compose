@@ -57,7 +57,9 @@ jobs:
         working-directory: container-compose
 
       - name: Cache SonarQube packages
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: >
+          (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
@@ -65,7 +67,9 @@ jobs:
           restore-keys: ${{ runner.os }}-sonar
 
       - name: SonarQube scan
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: >
+          (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
