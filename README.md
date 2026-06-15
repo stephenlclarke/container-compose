@@ -17,7 +17,7 @@ The plugin is intended to install as:
 
 The first implementation target is local-development Compose v2 compatibility where `container` has matching runtime primitives. Compose file normalization uses `compose-go`, with Swift handling runtime orchestration.
 
-CI builds and tests the Swift package and Go normalizer helper, then publishes Swift and Go coverage reports to SonarCloud.
+CI builds and tests the Swift package and Go normalizer helper, then publishes Swift generic coverage and Go coverage reports to SonarCloud.
 
 ## License
 

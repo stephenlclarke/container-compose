@@ -69,12 +69,14 @@ jobs:
           set -euo pipefail
           test_binary="$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"
           profile="$(find .build -path '*/codecov/default.profdata' -type f | head -n 1)"
-          xcrun llvm-cov show \
+          xcrun llvm-cov export \
+            -format=lcov \
             -instr-profile="$profile" \
             "$test_binary" \
             --sources Sources/ComposeCore \
             --sources Sources/ComposePlugin \
-            > coverage.report
+            > coverage.lcov
+          python3 Tools/coverage/lcov-to-sonarqube-generic.py coverage.lcov coverage.xml
         working-directory: container-compose
 
       - name: Test compose normalizer
