@@ -26,7 +26,7 @@ concurrency:
 jobs:
   validate:
     name: Validate
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v6
@@ -46,6 +46,11 @@ jobs:
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Print toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
 
       - name: Resolve Swift dependencies
         run: swift package resolve
@@ -93,7 +98,7 @@ jobs:
 
   package:
     name: Package Plugin
-    runs-on: macos-15
+    runs-on: macos-26
     needs: validate
     steps:
       - name: Checkout container-compose
@@ -112,6 +117,11 @@ jobs:
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Print toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
 
       - name: Build release executable
         run: swift build -c release --product compose
