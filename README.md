@@ -15,7 +15,9 @@ The plugin is intended to install as:
 /usr/local/libexec/container-plugins/compose/config.toml
 ```
 
-The first implementation target is local-development Compose v2 compatibility where `container` has matching runtime primitives. Compose file normalization is planned to use `compose-go`, with Swift handling runtime orchestration.
+The first implementation target is local-development Compose v2 compatibility where `container` has matching runtime primitives. Compose file normalization uses `compose-go`, with Swift handling runtime orchestration.
+
+CI builds and tests the Swift package and Go normalizer helper, then publishes Swift and Go coverage reports to SonarCloud.
 
 ## License
 
