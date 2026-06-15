@@ -1,0 +1,2 @@
+abstract = "Manage multi-container applications with Docker Compose syntax"
+author = "container-compose contributors"

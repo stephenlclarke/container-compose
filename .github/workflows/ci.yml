@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: macos-15
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v6
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Checkout apple/container dependency
+        uses: actions/checkout@v6
+        with:
+          repository: apple/container
+          path: container
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Resolve Swift dependencies
+        run: swift package resolve
+        working-directory: container-compose
+
+      - name: Build Swift package
+        run: swift build
+        working-directory: container-compose
+
+      - name: Test Swift package
+        run: swift test --enable-code-coverage
+        working-directory: container-compose
+
+      - name: Generate Swift coverage report
+        run: |
+          set -euo pipefail
+          test_binary="$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"
+          profile="$(find .build -path '*/codecov/default.profdata' -type f | head -n 1)"
+          xcrun llvm-cov show -instr-profile="$profile" "$test_binary" > coverage.report
+        working-directory: container-compose
+
+      - name: Test compose normalizer
+        run: go test ./...
+        working-directory: container-compose/Tools/compose-normalizer
+
+      - name: Build compose normalizer
+        run: go build -o /tmp/compose-normalizer .
+        working-directory: container-compose/Tools/compose-normalizer
+
+      - name: Cache SonarQube packages
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: SonarQube scan
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: container-compose
+
+  package:
+    name: Package Plugin
+    runs-on: macos-15
+    needs: validate
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v6
+        with:
+          path: container-compose
+
+      - name: Checkout apple/container dependency
+        uses: actions/checkout@v6
+        with:
+          repository: apple/container
+          path: container
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Build release executable
+        run: swift build -c release --product compose
+        working-directory: container-compose
+
+      - name: Build normalizer helper
+        run: go build -o compose-normalizer .
+        working-directory: container-compose/Tools/compose-normalizer
+
+      - name: Assemble plugin artifact
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/compose/bin dist/compose/resources
+          cp .build/release/compose dist/compose/bin/compose
+          cp config.toml dist/compose/config.toml
+          cp Tools/compose-normalizer/compose-normalizer dist/compose/resources/compose-normalizer
+          tar -czf container-compose-plugin.tar.gz -C dist compose
+        working-directory: container-compose
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-compose-plugin
+          path: container-compose/container-compose-plugin.tar.gz

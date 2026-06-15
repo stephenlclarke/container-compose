@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+.DS_Store
+bin/
+coverage.report
+Tools/compose-normalizer/compose-normalizer
