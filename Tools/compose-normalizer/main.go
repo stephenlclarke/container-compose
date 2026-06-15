@@ -1,0 +1,428 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/compose-spec/compose-go/v2/cli"
+	"github.com/compose-spec/compose-go/v2/types"
+)
+
+type stringList []string
+
+func (s *stringList) String() string {
+	if s == nil {
+		return ""
+	}
+	return strings.Join(*s, ",")
+}
+
+func (s *stringList) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
+type normalizedProject struct {
+	Name             string                       `json:"name"`
+	WorkingDirectory string                       `json:"workingDirectory"`
+	ComposeFiles     []string                     `json:"composeFiles"`
+	Services         map[string]normalizedService `json:"services"`
+	Networks         map[string]normalizedNetwork `json:"networks"`
+	Volumes          map[string]normalizedVolume  `json:"volumes"`
+	Configs          map[string]any               `json:"configs,omitempty"`
+	Secrets          map[string]any               `json:"secrets,omitempty"`
+	Extensions       map[string]any               `json:"extensions,omitempty"`
+}
+
+type normalizedService struct {
+	Name          string             `json:"name"`
+	Image         string             `json:"image,omitempty"`
+	Build         *normalizedBuild   `json:"build,omitempty"`
+	Command       []string           `json:"command,omitempty"`
+	Entrypoint    []string           `json:"entrypoint,omitempty"`
+	Environment   map[string]*string `json:"environment,omitempty"`
+	EnvFiles      []string           `json:"envFiles,omitempty"`
+	Ports         []string           `json:"ports,omitempty"`
+	Volumes       []normalizedMount  `json:"volumes,omitempty"`
+	Networks      []string           `json:"networks,omitempty"`
+	DependsOn     map[string]string  `json:"dependsOn,omitempty"`
+	Labels        map[string]string  `json:"labels,omitempty"`
+	ContainerName string             `json:"containerName,omitempty"`
+	Hostname      string             `json:"hostname,omitempty"`
+	WorkingDir    string             `json:"workingDir,omitempty"`
+	User          string             `json:"user,omitempty"`
+	TTY           bool               `json:"tty,omitempty"`
+	StdinOpen     bool               `json:"stdinOpen,omitempty"`
+	ReadOnly      bool               `json:"readOnly,omitempty"`
+	Privileged    bool               `json:"privileged,omitempty"`
+	Init          *bool              `json:"init,omitempty"`
+	Tmpfs         []string           `json:"tmpfs,omitempty"`
+	DNS           []string           `json:"dns,omitempty"`
+	DNSSearch     []string           `json:"dnsSearch,omitempty"`
+	ExtraHosts    []string           `json:"extraHosts,omitempty"`
+	CapAdd        []string           `json:"capAdd,omitempty"`
+	CapDrop       []string           `json:"capDrop,omitempty"`
+	MemLimit      string             `json:"memLimit,omitempty"`
+	CPUS          string             `json:"cpus,omitempty"`
+	Healthcheck   any                `json:"healthcheck,omitempty"`
+}
+
+type normalizedBuild struct {
+	Context    string            `json:"context,omitempty"`
+	Dockerfile string            `json:"dockerfile,omitempty"`
+	Args       map[string]string `json:"args,omitempty"`
+	Target     string            `json:"target,omitempty"`
+}
+
+type normalizedMount struct {
+	Type     string `json:"type,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Target   string `json:"target,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
+	Raw      string `json:"raw,omitempty"`
+}
+
+type normalizedNetwork struct {
+	Name     string            `json:"name"`
+	External bool              `json:"external,omitempty"`
+	Driver   string            `json:"driver,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+}
+
+type normalizedVolume struct {
+	Name     string            `json:"name"`
+	External bool              `json:"external,omitempty"`
+	Driver   string            `json:"driver,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+}
+
+func main() {
+	var files stringList
+	var profiles stringList
+	var envFiles stringList
+	var projectName string
+	var projectDirectory string
+
+	flag.Var(&files, "file", "Compose file path. May be repeated.")
+	flag.Var(&profiles, "profile", "Compose profile. May be repeated.")
+	flag.Var(&envFiles, "env-file", "Environment file. May be repeated.")
+	flag.StringVar(&projectName, "project-name", "", "Compose project name.")
+	flag.StringVar(&projectDirectory, "project-directory", "", "Project directory.")
+	flag.Parse()
+
+	project, err := loadProject(files, profiles, envFiles, projectName, projectDirectory)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "compose-normalizer: %v\n", err)
+		os.Exit(1)
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(project); err != nil {
+		fmt.Fprintf(os.Stderr, "compose-normalizer: encode: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func loadProject(files, profiles, envFiles []string, projectName, projectDirectory string) (*normalizedProject, error) {
+	if projectDirectory == "" {
+		var err error
+		projectDirectory, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(files) == 0 {
+		files = discoverComposeFiles(projectDirectory)
+	}
+	if len(files) == 0 {
+		return nil, errors.New("no compose file found")
+	}
+
+	var options []cli.ProjectOptionsFn
+	options = append(options, cli.WithWorkingDirectory(projectDirectory))
+	options = append(options, cli.WithOsEnv)
+	options = append(options, cli.WithDotEnv)
+	if projectName != "" {
+		options = append(options, cli.WithName(projectName))
+	}
+	if len(profiles) > 0 {
+		options = append(options, cli.WithProfiles(profiles))
+	}
+	if len(envFiles) > 0 {
+		options = append(options, cli.WithEnvFiles(envFiles...))
+	}
+
+	projectOptions, err := cli.NewProjectOptions(files, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	project, err := cli.ProjectFromOptions(context.Background(), projectOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return normalize(project, projectDirectory), nil
+}
+
+func discoverComposeFiles(projectDirectory string) []string {
+	candidates := []string{
+		"compose.yaml",
+		"compose.yml",
+		"docker-compose.yaml",
+		"docker-compose.yml",
+	}
+	for _, candidate := range candidates {
+		path := filepath.Join(projectDirectory, candidate)
+		if _, err := os.Stat(path); err == nil {
+			return []string{path}
+		}
+	}
+	return nil
+}
+
+func normalize(project *types.Project, projectDirectory string) *normalizedProject {
+	result := &normalizedProject{
+		Name:             project.Name,
+		WorkingDirectory: projectDirectory,
+		ComposeFiles:     append([]string(nil), project.ComposeFiles...),
+		Services:         map[string]normalizedService{},
+		Networks:         map[string]normalizedNetwork{},
+		Volumes:          map[string]normalizedVolume{},
+	}
+
+	for _, service := range project.Services {
+		result.Services[service.Name] = normalizeService(service)
+	}
+	for name, network := range project.Networks {
+		result.Networks[name] = normalizedNetwork{
+			Name:     firstNonEmpty(network.Name, name),
+			External: bool(network.External),
+			Driver:   network.Driver,
+			Labels:   mapLabels(network.Labels),
+		}
+	}
+	for name, volume := range project.Volumes {
+		result.Volumes[name] = normalizedVolume{
+			Name:     firstNonEmpty(volume.Name, name),
+			External: bool(volume.External),
+			Driver:   volume.Driver,
+			Labels:   mapLabels(volume.Labels),
+		}
+	}
+
+	return result
+}
+
+func normalizeService(service types.ServiceConfig) normalizedService {
+	result := normalizedService{
+		Name:          service.Name,
+		Image:         service.Image,
+		Command:       shellCommandValues(service.Command),
+		Entrypoint:    shellCommandValues(service.Entrypoint),
+		Environment:   mapEnvironment(service.Environment),
+		EnvFiles:      envFileValues(service.EnvFiles),
+		Ports:         portValues(service.Ports),
+		Volumes:       mountValues(service.Volumes),
+		Networks:      networkValues(service.Networks),
+		DependsOn:     dependsOnValues(service.DependsOn),
+		Labels:        mapLabels(service.Labels),
+		ContainerName: service.ContainerName,
+		Hostname:      service.Hostname,
+		WorkingDir:    service.WorkingDir,
+		User:          service.User,
+		TTY:           service.Tty,
+		StdinOpen:     service.StdinOpen,
+		ReadOnly:      service.ReadOnly,
+		Privileged:    service.Privileged,
+		Init:          service.Init,
+		Tmpfs:         append([]string(nil), service.Tmpfs...),
+		DNS:           append([]string(nil), service.DNS...),
+		DNSSearch:     append([]string(nil), service.DNSSearch...),
+		ExtraHosts:    service.ExtraHosts.AsList(":"),
+		CapAdd:        append([]string(nil), service.CapAdd...),
+		CapDrop:       append([]string(nil), service.CapDrop...),
+		MemLimit:      unitBytesValue(service.MemLimit),
+		CPUS:          cpusValue(service.CPUS),
+	}
+	if service.Build != nil {
+		result.Build = &normalizedBuild{
+			Context:    service.Build.Context,
+			Dockerfile: service.Build.Dockerfile,
+			Args:       buildArgs(service.Build.Args),
+			Target:     service.Build.Target,
+		}
+	}
+	if service.HealthCheck != nil {
+		result.Healthcheck = service.HealthCheck
+	}
+	return result
+}
+
+func shellCommandValues(command types.ShellCommand) []string {
+	if command == nil {
+		return nil
+	}
+	return append([]string(nil), command...)
+}
+
+func mapEnvironment(environment types.MappingWithEquals) map[string]*string {
+	if len(environment) == 0 {
+		return nil
+	}
+	result := map[string]*string{}
+	for key, value := range environment {
+		if value == nil {
+			result[key] = nil
+			continue
+		}
+		copied := *value
+		result[key] = &copied
+	}
+	return result
+}
+
+func envFileValues(envFiles []types.EnvFile) []string {
+	if len(envFiles) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(envFiles))
+	for _, envFile := range envFiles {
+		result = append(result, envFile.Path)
+	}
+	return result
+}
+
+func portValues(ports []types.ServicePortConfig) []string {
+	if len(ports) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(ports))
+	for _, port := range ports {
+		result = append(result, formatPort(port))
+	}
+	return result
+}
+
+func formatPort(port types.ServicePortConfig) string {
+	target := fmt.Sprint(port.Target)
+	protocol := port.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+
+	published := port.Published
+	if published == "" {
+		if protocol == "tcp" {
+			return target
+		}
+		return target + "/" + protocol
+	}
+
+	hostPrefix := ""
+	if port.HostIP != "" {
+		hostPrefix = port.HostIP + ":"
+	}
+	value := hostPrefix + published + ":" + target
+	if protocol != "tcp" {
+		value += "/" + protocol
+	}
+	return value
+}
+
+func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
+	if len(volumes) == 0 {
+		return nil
+	}
+	result := make([]normalizedMount, 0, len(volumes))
+	for _, volume := range volumes {
+		result = append(result, normalizedMount{
+			Type:     volume.Type,
+			Source:   volume.Source,
+			Target:   volume.Target,
+			ReadOnly: volume.ReadOnly,
+		})
+	}
+	return result
+}
+
+func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
+	if len(networks) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(networks))
+	for name := range networks {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func dependsOnValues(dependsOn types.DependsOnConfig) map[string]string {
+	if len(dependsOn) == 0 {
+		return nil
+	}
+	result := map[string]string{}
+	for name, dependency := range dependsOn {
+		result[name] = dependency.Condition
+	}
+	return result
+}
+
+func mapLabels(labels types.Labels) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	result := map[string]string{}
+	for key, value := range labels {
+		result[key] = value
+	}
+	return result
+}
+
+func buildArgs(args types.MappingWithEquals) map[string]string {
+	if len(args) == 0 {
+		return nil
+	}
+	result := map[string]string{}
+	for key, value := range args {
+		if value == nil {
+			result[key] = ""
+		} else {
+			result[key] = *value
+		}
+	}
+	return result
+}
+
+func unitBytesValue(value types.UnitBytes) string {
+	if value == 0 {
+		return ""
+	}
+	return fmt.Sprint(int64(value))
+}
+
+func cpusValue(value float32) string {
+	if value == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%g", value)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
