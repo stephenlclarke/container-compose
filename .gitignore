@@ -3,4 +3,5 @@
 .DS_Store
 bin/
 coverage.report
+coverage.out
 Tools/compose-normalizer/compose-normalizer

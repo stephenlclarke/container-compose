@@ -73,7 +73,7 @@ jobs:
         working-directory: container-compose
 
       - name: Test compose normalizer
-        run: go test ./...
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
         working-directory: container-compose/Tools/compose-normalizer
 
       - name: Build compose normalizer
