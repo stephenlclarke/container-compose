@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -11,6 +14,10 @@ import (
 
 func TestStringListRecordsRepeatedFlags(t *testing.T) {
 	var values stringList
+	var nilValues *stringList
+	if got := nilValues.String(); got != "" {
+		t.Fatalf("nil String() = %q, want empty", got)
+	}
 	if err := values.Set("compose.yaml"); err != nil {
 		t.Fatalf("Set returned error: %v", err)
 	}
@@ -20,6 +27,55 @@ func TestStringListRecordsRepeatedFlags(t *testing.T) {
 
 	if got, want := values.String(), "compose.yaml,override.yaml"; got != want {
 		t.Fatalf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestRunWritesNormalizedJSON(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var project normalizedProject
+	if err := json.Unmarshal(stdout.Bytes(), &project); err != nil {
+		t.Fatalf("decode normalized JSON: %v", err)
+	}
+	if project.Name != "sample" {
+		t.Fatalf("project.Name = %q, want sample", project.Name)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunReportsFlagAndLoadErrors(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if status := run([]string{"--not-a-real-flag"}, &stdout, &stderr); status != 2 {
+		t.Fatalf("bad flag status = %d, want 2", status)
+	}
+	if !strings.Contains(stderr.String(), "flag provided but not defined") {
+		t.Fatalf("bad flag stderr = %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if status := run([]string{"--project-directory", t.TempDir()}, &stdout, &stderr); status != 1 {
+		t.Fatalf("missing compose status = %d, want 1", status)
+	}
+	if !strings.Contains(stderr.String(), "no compose file found") {
+		t.Fatalf("missing compose stderr = %q", stderr.String())
 	}
 }
 
@@ -106,6 +162,76 @@ volumes:
 	}
 }
 
+func TestLoadProjectAppliesProfilesEnvFilesAndBuildFields(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	envFile := filepath.Join(dir, "app.env")
+	writeFile(t, envFile, "FROM_ENV=enabled\n")
+	writeFile(t, composeFile, `
+services:
+  api:
+    profiles: ["dev"]
+    build:
+      context: ./api
+      dockerfile: Containerfile
+      target: runtime
+      args:
+        VERSION: "1"
+        EMPTY:
+    environment:
+      FROM_ENV:
+    env_file:
+      - app.env
+    ports:
+      - target: 53
+        protocol: udp
+    cpus: 1.5
+    mem_limit: 128m
+  worker:
+    image: alpine
+`)
+
+	project, err := loadProject(
+		[]string{composeFile},
+		[]string{"dev"},
+		[]string{envFile},
+		"custom",
+		dir,
+	)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if project.Name != "custom" {
+		t.Fatalf("project.Name = %q, want custom", project.Name)
+	}
+	if api.Build == nil {
+		t.Fatal("api.Build is nil")
+	}
+	if api.Build.Context != filepath.Join(dir, "api") || api.Build.Dockerfile != "Containerfile" || api.Build.Target != "runtime" {
+		t.Fatalf("api.Build = %#v", api.Build)
+	}
+	if got, want := api.Build.Args, map[string]string{"VERSION": "1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build args = %#v, want %#v", got, want)
+	}
+	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("env files = %#v, want %#v", got, want)
+	}
+	if value, ok := api.Environment["FROM_ENV"]; !ok || value != nil {
+		t.Fatalf("FROM_ENV = %#v, want nil preserved mapping", value)
+	}
+	if got, want := api.Ports, []string{"53/udp"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ports = %#v, want %#v", got, want)
+	}
+	if api.CPUS != "1.5" {
+		t.Fatalf("cpus = %q, want 1.5", api.CPUS)
+	}
+	if api.MemLimit == "" {
+		t.Fatal("MemLimit is empty")
+	}
+}
+
 func TestLoadProjectWithoutComposeFileReturnsError(t *testing.T) {
 	_, err := loadProject(nil, nil, nil, "", t.TempDir())
 	if err == nil {
@@ -113,6 +239,54 @@ func TestLoadProjectWithoutComposeFileReturnsError(t *testing.T) {
 	}
 	if err.Error() != "no compose file found" {
 		t.Fatalf("loadProject error = %q, want no compose file found", err.Error())
+	}
+}
+
+func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
+	if shellCommandValues(nil) != nil {
+		t.Fatal("shellCommandValues(nil) returned non-nil")
+	}
+	if mapEnvironment(nil) != nil {
+		t.Fatal("mapEnvironment(nil) returned non-nil")
+	}
+	if envFileValues(nil) != nil {
+		t.Fatal("envFileValues(nil) returned non-nil")
+	}
+	if portValues(nil) != nil {
+		t.Fatal("portValues(nil) returned non-nil")
+	}
+	if mountValues(nil) != nil {
+		t.Fatal("mountValues(nil) returned non-nil")
+	}
+	if networkValues(nil) != nil {
+		t.Fatal("networkValues(nil) returned non-nil")
+	}
+	if dependsOnValues(nil) != nil {
+		t.Fatal("dependsOnValues(nil) returned non-nil")
+	}
+	if mapLabels(nil) != nil {
+		t.Fatal("mapLabels(nil) returned non-nil")
+	}
+	if buildArgs(nil) != nil {
+		t.Fatal("buildArgs(nil) returned non-nil")
+	}
+	if got := unitBytesValue(0); got != "" {
+		t.Fatalf("unitBytesValue(0) = %q, want empty", got)
+	}
+	if got := unitBytesValue(types.UnitBytes(1024)); got != "1024" {
+		t.Fatalf("unitBytesValue(1024) = %q, want 1024", got)
+	}
+	if got := cpusValue(0); got != "" {
+		t.Fatalf("cpusValue(0) = %q, want empty", got)
+	}
+	if got := cpusValue(2.5); got != "2.5" {
+		t.Fatalf("cpusValue(2.5) = %q, want 2.5", got)
+	}
+	if got := firstNonEmpty("", "fallback"); got != "fallback" {
+		t.Fatalf("firstNonEmpty fallback = %q, want fallback", got)
+	}
+	if got := firstNonEmpty("", ""); got != "" {
+		t.Fatalf("firstNonEmpty empty = %q, want empty", got)
 	}
 }
 

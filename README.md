@@ -19,6 +19,25 @@ The first implementation target is local-development Compose v2 compatibility wh
 
 CI builds and tests the Swift package and Go normalizer helper, then publishes Swift generic coverage and Go coverage reports to SonarCloud.
 
+## Local CI
+
+Run the same validation and package path used by GitHub Actions before pushing:
+
+```sh
+make workflow
+```
+
+Useful targets:
+
+- `make ci` runs the validation job used by GitHub Actions.
+- `make build` builds the Swift package.
+- `make test` runs Swift and Go tests.
+- `make coverage-check` regenerates coverage reports and requires Swift and Go coverage to meet `COVERAGE_MIN`, which defaults to `85`.
+- `make package` builds the installable plugin archive.
+- `make sonar` runs a local Sonar scan when `SONAR_TOKEN` and `sonar-scanner` are available.
+
+There is no local deploy target yet; release packaging is handled by `make package`, and publishing remains a GitHub Actions concern.
+
 ## License
 
 This project uses the Apache License, Version 2.0, matching the license used by `apple/container`.
