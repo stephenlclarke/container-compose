@@ -97,9 +97,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
 
             let name = containerName(project: project, service: service, oneOff: false)
-            let exists = try await containerExists(name)
-            if exists {
+            let existing = try await inspectContainer(name)
+            if let existing {
                 if up.noRecreate {
+                    options.emit("compose: reusing existing container \(name)")
+                    continue
+                }
+                if !up.forceRecreate, existing.configHash == configHash(service) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
@@ -495,9 +499,12 @@ private extension ComposeOrchestrator {
         args.append(contentsOf: ["--volume", value])
     }
 
-    func containerExists(_ name: String) async throws -> Bool {
+    func inspectContainer(_ name: String) async throws -> ExistingContainer? {
         let result = try await runContainer(["inspect", name], check: false, emitOutput: false)
-        return result.succeeded
+        guard result.succeeded else {
+            return nil
+        }
+        return ExistingContainer(configHash: inspectConfigHash(from: result.stdout))
     }
 
     @discardableResult
@@ -522,6 +529,12 @@ private extension ComposeOrchestrator {
     }
 }
 
+private struct ExistingContainer {
+    var configHash: String?
+}
+
+private let configHashLabel = "com.apple.container.compose.config-hash"
+
 private func resourceName(project: String, name: String) -> String {
     "\(slug(project))_\(slug(name))"
 }
@@ -545,7 +558,7 @@ private func serviceLabels(project: ComposeProject, service: ComposeService, one
     var labels = resourceLabels(project: project.name)
     labels.append("com.apple.container.compose.service=\(service.name)")
     labels.append("com.apple.container.compose.oneoff=\(oneOff)")
-    labels.append("com.apple.container.compose.config-hash=\(configHash(service))")
+    labels.append("\(configHashLabel)=\(configHash(service))")
     if let firstFile = project.composeFiles.first {
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
     }
@@ -559,6 +572,40 @@ private func configHash(_ service: ComposeService) -> String {
         return stableHash(service.name)
     }
     return stableHash(String(decoding: data, as: UTF8.self))
+}
+
+private func inspectConfigHash(from output: String) -> String? {
+    guard let data = output.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data)
+    else {
+        return nil
+    }
+    return inspectLabel(configHashLabel, in: json)
+}
+
+private func inspectLabel(_ key: String, in value: Any) -> String? {
+    if let values = value as? [Any] {
+        return values.lazy.compactMap { inspectLabel(key, in: $0) }.first
+    }
+    guard let object = value as? [String: Any] else {
+        return nil
+    }
+    if let value = labelValue(key, in: object["labels"]) ?? labelValue(key, in: object["Labels"]) {
+        return value
+    }
+    for nestedKey in ["configuration", "Config", "config"] {
+        if let nested = object[nestedKey], let value = inspectLabel(key, in: nested) {
+            return value
+        }
+    }
+    return nil
+}
+
+private func labelValue(_ key: String, in value: Any?) -> String? {
+    guard let labels = value as? [String: Any] else {
+        return nil
+    }
+    return labels[key] as? String
 }
 
 private func stableHash(_ value: String) -> String {
