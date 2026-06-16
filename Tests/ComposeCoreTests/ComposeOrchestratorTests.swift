@@ -202,6 +202,36 @@ struct ComposeOrchestratorTests {
         #expect(buildCommands[1].last == "worker")
     }
 
+    @Test("up pull missing pulls only absent images")
+    func upPullMissingPullsOnlyAbsentImages() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions(pullPolicy: "missing"))
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "inspect", "example/api"])
+        #expect(commands[1] == ["container", "image", "inspect", "postgres"])
+        #expect(commands[2] == ["container", "image", "pull", "postgres"])
+        #expect(commands[3] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[5] == ["container", "inspect", "demo-db-1"])
+    }
+
     @Test("rejects dependency conditions that need runtime gaps")
     func rejectsUnsupportedDependencyConditions() async throws {
         let project = ComposeProject(
@@ -913,6 +943,18 @@ struct ComposeOrchestratorTests {
         } catch let error as ComposeError {
             #expect(error == .invalidProject("exec requires a command"))
         }
+
+        let invalidPullPolicyRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: invalidPullPolicyRunner).up(
+                project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
+                options: ComposeUpOptions(pullPolicy: "sometimes")
+            )
+            Issue.record("Expected unsupported pull policy failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unsupported pull policy 'sometimes'"))
+        }
+        #expect(invalidPullPolicyRunner.commands.isEmpty)
 
         do {
             try await ComposeOrchestrator().copy(arguments: [])
