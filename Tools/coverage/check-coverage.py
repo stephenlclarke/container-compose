@@ -23,6 +23,7 @@ from pathlib import Path
 
 
 def generic_line_coverage(path: Path) -> float:
+    """Return line coverage from SonarQube generic coverage XML."""
     covered = 0
     total = 0
     root = ET.parse(path).getroot()
@@ -34,6 +35,7 @@ def generic_line_coverage(path: Path) -> float:
 
 
 def go_statement_coverage(path: Path) -> float:
+    """Return statement coverage from a Go coverage profile."""
     covered = 0
     total = 0
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -51,12 +53,14 @@ def go_statement_coverage(path: Path) -> float:
 
 
 def percentage(covered: int, total: int) -> float:
+    """Calculate a percentage, treating an empty report as fully covered."""
     if total == 0:
         return 100.0
     return covered * 100.0 / total
 
 
 def check(name: str, actual: float, minimum: float) -> bool:
+    """Print one coverage result and report whether it meets the threshold."""
     print(f"{name} coverage: {actual:.2f}%")
     if actual + 1e-9 < minimum:
         print(f"{name} coverage is below required {minimum:.2f}%", file=sys.stderr)
@@ -65,6 +69,7 @@ def check(name: str, actual: float, minimum: float) -> bool:
 
 
 def main() -> int:
+    """Parse arguments and check all configured coverage reports."""
     parser = argparse.ArgumentParser(description="Check generated coverage reports.")
     parser.add_argument("--minimum", type=float, default=85.0)
     parser.add_argument("--swift", type=Path, required=True)

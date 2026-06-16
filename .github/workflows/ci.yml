@@ -1,3 +1,19 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
 name: CI
 
 on:
@@ -47,10 +63,14 @@ jobs:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
+      - name: Install Markdown lint
+        run: npm install --global markdownlint-cli@0.48.0
+
       - name: Print toolchain versions
         run: |
           swift --version
           xcodebuild -version
+          markdownlint --version
 
       - name: Run local CI workflow
         run: make ci
@@ -127,7 +147,9 @@ jobs:
           (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: sonar-scanner -Dsonar.projectBaseDir=container-compose
+          SONAR_QUALITYGATE_WAIT: "true"
+        run: make sonar-scan
+        working-directory: container-compose
 
   package:
     name: Package Plugin

@@ -73,6 +73,7 @@ public struct ComposeNormalizer: Sendable {
     }
 }
 
+/// Concrete command used to run the compose-go normalizer helper.
 private struct NormalizerInvocation {
     var executable: String
     var prefixArguments: [String]
@@ -80,6 +81,8 @@ private struct NormalizerInvocation {
 }
 
 private extension ComposeNormalizer {
+    /// Finds the normalizer from an explicit environment override, plugin
+    /// resources, or a source checkout fallback.
     static func normalizerInvocation(fallbackLauncher: String) throws -> NormalizerInvocation {
         if let explicit = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_NORMALIZER"], !explicit.isEmpty {
             return NormalizerInvocation(executable: explicit, prefixArguments: [], workingDirectory: nil)
@@ -103,6 +106,7 @@ private extension ComposeNormalizer {
         )
     }
 
+    /// Returns the helper path expected in an installed plugin package.
     static func installedNormalizerURL() -> URL? {
         let executable = URL(fileURLWithPath: CommandLine.arguments[0])
         return executable
@@ -112,6 +116,7 @@ private extension ComposeNormalizer {
             .appendingPathComponent("compose-normalizer")
     }
 
+    /// Returns the Swift package root for local source checkout execution.
     static func packageRootURL() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -119,6 +124,7 @@ private extension ComposeNormalizer {
             .deletingLastPathComponent()
     }
 
+    /// Infers the Compose project directory from the first compose file path.
     static func defaultProjectDirectory(files: [String]) -> String {
         guard let firstFile = files.first, firstFile != "-" else {
             return FileManager.default.currentDirectoryPath

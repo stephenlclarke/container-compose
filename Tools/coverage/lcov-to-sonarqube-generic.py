@@ -22,10 +22,12 @@ from pathlib import Path
 
 
 def usage() -> None:
+    """Print command usage for invalid invocations."""
     print("usage: lcov-to-sonarqube-generic.py <input.lcov> <output.xml> [project-root]", file=sys.stderr)
 
 
 def relative_path(path: str, root: Path) -> str:
+    """Return a Sonar-friendly path relative to the project when possible."""
     source = Path(path)
     if source.is_absolute():
         try:
@@ -36,6 +38,7 @@ def relative_path(path: str, root: Path) -> str:
 
 
 def parse_lcov(path: Path, root: Path) -> dict[str, dict[int, bool]]:
+    """Parse LCOV records into per-file covered line maps."""
     files: dict[str, dict[int, bool]] = {}
     current: str | None = None
 
@@ -56,6 +59,7 @@ def parse_lcov(path: Path, root: Path) -> dict[str, dict[int, bool]]:
 
 
 def write_generic_coverage(files: dict[str, dict[int, bool]], output: Path) -> None:
+    """Write SonarQube generic coverage XML from parsed line coverage."""
     coverage = ET.Element("coverage", version="1")
     for file_path in sorted(files):
         file_element = ET.SubElement(coverage, "file", path=file_path)
@@ -73,6 +77,7 @@ def write_generic_coverage(files: dict[str, dict[int, bool]], output: Path) -> N
 
 
 def main() -> int:
+    """Convert the input LCOV file to SonarQube generic coverage XML."""
     if len(sys.argv) not in (3, 4):
         usage()
         return 2

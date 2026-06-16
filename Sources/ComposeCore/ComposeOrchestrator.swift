@@ -59,7 +59,7 @@ public struct ComposeUpOptions {
     public init(
         services: [String] = [],
         build: Bool = false,
-        detach: Bool = true,
+        detach: Bool = false,
         forceRecreate: Bool = false,
         noRecreate: Bool = false,
         removeOrphans: Bool = false,
@@ -86,6 +86,21 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Options for `compose run` one-off containers.
+public struct ComposeRunOptions {
+    public var command: [String]
+    public var remove: Bool
+    public var servicePorts: Bool
+    public var publish: [String]
+
+    public init(command: [String] = [], remove: Bool = false, servicePorts: Bool = false, publish: [String] = []) {
+        self.command = command
+        self.remove = remove
+        self.servicePorts = servicePorts
+        self.publish = publish
+    }
+}
+
 /// Converts a normalized Compose project into deterministic `container`
 /// commands.
 public final class ComposeOrchestrator: @unchecked Sendable {
@@ -109,13 +124,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
         let services = try orderedServices(project: project, selected: up.services)
+        try validatePullPolicy(up.pullPolicy)
+        try validateRuntimeSupport(services: services)
 
-        for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
-            try await ensureNetwork(project: project, composeName: name, network: network)
-        }
-        for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
-            try await ensureVolume(project: project, composeName: name, volume: volume)
-        }
+        try await ensureResources(project: project)
 
         try await applyPullPolicy(up.pullPolicy, project: project, services: services)
 
@@ -124,7 +136,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         for service in services {
-            try validateRuntimeSupport(service: service)
             if !up.build, service.image == nil, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
             }
@@ -139,11 +150,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                if !up.forceRecreate, existing.configHash == configHash(service) {
+                if !up.forceRecreate, existing.configHash == configHash(project: project, service: service) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                try await runContainer(["stop", name], check: false)
+                try await runContainer(stopArguments(service: service, containerName: name), check: false)
                 try await runContainer(["delete", name], check: false)
             }
 
@@ -162,7 +173,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let declaredContainers = Set(services.map { containerName(project: project, service: $0, oneOff: false) })
         for service in services.reversed() {
             let name = containerName(project: project, service: service, oneOff: false)
-            try await runContainer(["stop", name], check: false)
+            try await runContainer(stopArguments(service: service, containerName: name), check: false)
             try await runContainer(["delete", name], check: false)
         }
         if down.removeOrphans {
@@ -170,12 +181,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
-            try await runContainer(["network", "delete", resourceName(project: project.name, name: name)], check: false)
+            try await runContainer(["network", "delete", networkRuntimeName(project: project, composeName: name, network: network)], check: false)
         }
 
         if down.volumes {
             for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
-                try await runContainer(["volume", "delete", resourceName(project: project.name, name: name)], check: false)
+                try await runContainer(["volume", "delete", volumeRuntimeName(project: project, composeName: name, volume: volume)], check: false)
             }
         }
     }
@@ -221,15 +232,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Streams or prints logs for selected service containers.
-    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: Int?) async throws {
+    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: String?) async throws {
         let services = try selectedServices(project: project, selected: selected)
+        let runtimeTail = try runtimeLogTail(tail)
         for service in services {
             var args = ["logs"]
             if follow {
                 args.append("--follow")
             }
-            if let tail {
-                args.append(contentsOf: ["-n", String(tail)])
+            if let runtimeTail {
+                args.append(contentsOf: ["-n", runtimeTail])
             }
             args.append(containerName(project: project, service: service, oneOff: false))
             try await runContainer(args)
@@ -237,7 +249,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Executes a command in an existing service container.
-    public func exec(project: ComposeProject, serviceName: String, command: [String], interactive: Bool, tty: Bool) async throws {
+    public func exec(
+        project: ComposeProject,
+        serviceName: String,
+        command: [String],
+        interactive: Bool = true,
+        tty: Bool = true
+    ) async throws {
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
@@ -258,15 +276,34 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Runs a one-off container for a service.
     public func run(project: ComposeProject, serviceName: String, command: [String], remove: Bool) async throws {
+        try await run(
+            project: project,
+            serviceName: serviceName,
+            options: ComposeRunOptions(command: command, remove: remove)
+        )
+    }
+
+    /// Runs a one-off container for a service with Docker Compose compatible options.
+    public func run(project: ComposeProject, serviceName: String, options run: ComposeRunOptions) async throws {
         guard var service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
-        if !command.isEmpty {
-            service.command = command
+        if !run.command.isEmpty {
+            service.command = run.command
         }
         try validateRuntimeSupport(service: service)
+        try await applyServicePullPolicies(services: [service])
+        try await ensureResources(project: project)
+        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
-            runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true),
+            runArguments(
+                project: project,
+                service: service,
+                detach: false,
+                remove: run.remove,
+                oneOff: true,
+                publishedPorts: publishedPorts
+            ),
             inheritedIO: service.tty == true || service.stdinOpen == true
         )
     }
@@ -281,7 +318,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Stops selected service containers.
     public func stop(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
-            try await runContainer(["stop", containerName(project: project, service: service, oneOff: false)], check: false)
+            try await runContainer(
+                stopArguments(service: service, containerName: containerName(project: project, service: service, oneOff: false)),
+                check: false
+            )
         }
     }
 
@@ -319,12 +359,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
-    /// Copies files using the underlying container CLI.
-    public func copy(arguments: [String]) async throws {
+    /// Copies files between a Compose service container and the local host.
+    public func copy(project: ComposeProject, arguments: [String]) async throws {
         guard !arguments.isEmpty else {
             throw ComposeError.invalidProject("cp requires source and destination")
         }
-        try await runContainer(["cp"] + arguments)
+        let mappedArguments = try arguments.map { try copyArgument($0, project: project) }
+        try await runContainer(["cp"] + mappedArguments)
     }
 
     /// Throws a consistently formatted unsupported-feature error.
@@ -370,6 +411,7 @@ public extension ComposeOrchestrator {
 }
 
 private extension ComposeOrchestrator {
+    /// Resolves an optional service selection into deterministic services.
     func selectedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
         if selected.isEmpty {
             return project.services.values.sorted { $0.name < $1.name }
@@ -382,6 +424,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Returns the deterministic container name for a service or one-off run.
     func containerName(project: ComposeProject, service: ComposeService, oneOff: Bool) -> String {
         if !oneOff, let containerName = service.containerName, !containerName.isEmpty {
             return slug(containerName)
@@ -390,6 +433,7 @@ private extension ComposeOrchestrator {
         return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
     }
 
+    /// Validates project-level invariants before runtime orchestration starts.
     func validate(project: ComposeProject) throws {
         guard !project.name.isEmpty else {
             throw ComposeError.invalidProject("project name is empty")
@@ -399,24 +443,347 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Rejects Compose features that need runtime support not available yet.
     func validateRuntimeSupport(service: ComposeService) throws {
+        try validateBuildSupport(service: service)
+        try validateDeploySupport(service: service)
+        try validateProviderModelAndHookSupport(service: service)
         let networks = service.networks ?? []
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; Apple container does not expose network connect yet")
         }
+        if let networkAliases = service.networkAliases,
+           networkAliases.contains(where: { !$0.value.isEmpty }) {
+            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network alias support needs an apple/container runtime gap PR")
+        }
+        if let networkOptions = service.networkOptions {
+            for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {
+                let fields = options.unsupportedFieldNames()
+                if !fields.isEmpty {
+                    let fieldList = fields.joined(separator: ", ")
+                    throw ComposeError.unsupported("service '\(service.name)' uses network attachment options \(fieldList) on network '\(network)'; network attachment options need an apple/container runtime gap PR")
+                }
+            }
+        }
+        if let networkMode = service.networkMode, !networkMode.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses network_mode '\(networkMode)'; network mode support needs an apple/container runtime gap PR")
+        }
+        if let gap = unsupportedRuntimeStringFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
+        if let gap = unsupportedCPUResourceFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
+        if let gap = unsupportedMemoryAndProcessResourceFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
+        if service.blkioConfig == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls are not implemented by container-compose yet")
+        }
+        if service.develop == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses develop; develop/watch workflows are not implemented by container-compose yet")
+        }
+        if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
+        if let gap = unsupportedDeviceAccessFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
+        }
+        if let scale = service.scale, scale != 1 {
+            throw ComposeError.unsupported("service '\(service.name)' uses scale \(scale); service replica scaling is not implemented by container-compose yet")
+        }
+        if let gap = unsupportedServiceMetadataAndLoggingFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
+        }
+        if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
+        }
+        if service.useAPISocket == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; API socket mounting is not implemented by container-compose yet")
+        }
+        if let macAddress = service.macAddress, !macAddress.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
+        }
         if let dependsOn = service.dependsOn {
             for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
-                throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'")
+                let reason = unsupportedDependencyConditionReason(condition)
+                throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
             }
+        }
+        if let links = service.links, !links.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses links; legacy link support needs an apple/container runtime gap PR")
+        }
+        if let externalLinks = service.externalLinks, !externalLinks.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses external_links; legacy link support needs an apple/container runtime gap PR")
         }
         if let extraHosts = service.extraHosts, !extraHosts.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses extra_hosts; host-entry support needs an apple/container runtime gap PR")
         }
-        if service.privileged == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses privileged")
+        if let hostname = service.hostname, !hostname.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses hostname; custom hostname support needs an apple/container runtime gap PR")
+        }
+        if let domainName = service.domainName, !domainName.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses domainname; custom domain name support needs an apple/container runtime gap PR")
+        }
+        if let dnsOptions = service.dnsOptions, !dnsOptions.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses dns_opt; DNS option support needs an apple/container runtime gap PR")
+        }
+        if let sysctls = service.sysctls, !sysctls.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
+        }
+        if service.healthcheck != nil {
+            throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
+        }
+        if let configs = service.configs, !configs.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses configs; config mount support needs an apple/container runtime gap PR")
+        }
+        if let secrets = service.secrets, !secrets.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses secrets; secret mount support needs an apple/container runtime gap PR")
+        }
+        if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
+            throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, and never")
+        }
+        if let restart = service.restart, !restart.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
         }
     }
 
+    /// Rejects build fields that are not translated to `container build` yet.
+    func validateBuildSupport(service: ComposeService) throws {
+        guard let fields = service.build?.unsupportedFields, !fields.isEmpty else {
+            return
+        }
+        let fieldList = fields.joined(separator: ", ")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported build fields \(fieldList); advanced build fields are not implemented by container-compose yet")
+    }
+
+    /// Rejects deploy fields beyond replica count that are not orchestrated yet.
+    func validateDeploySupport(service: ComposeService) throws {
+        guard let fields = service.unsupportedDeployFields, !fields.isEmpty else {
+            return
+        }
+        let fieldList = fields.joined(separator: ", ")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond replica count is not implemented by container-compose yet")
+    }
+
+    /// Rejects service extension points that need explicit orchestration design.
+    func validateProviderModelAndHookSupport(service: ComposeService) throws {
+        if service.provider == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses provider; service providers are not implemented by container-compose yet")
+        }
+        if service.models == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses models; service model bindings are not implemented by container-compose yet")
+        }
+        if service.postStart == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses post_start; lifecycle hooks are not implemented by container-compose yet")
+        }
+        if service.preStop == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; lifecycle hooks are not implemented by container-compose yet")
+        }
+    }
+
+    /// Validates all selected services before any runtime side effects occur.
+    func validateRuntimeSupport(services: [ComposeService]) throws {
+        for service in services {
+            try validateRuntimeSupport(service: service)
+        }
+    }
+
+    /// Returns unsupported string-valued fields that need missing runtime primitives.
+    func unsupportedRuntimeStringFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        [
+            ("cgroup", service.cgroup, "cgroup namespace support needs an apple/container runtime gap PR"),
+            ("cgroup_parent", service.cgroupParent, "cgroup parent support needs an apple/container runtime gap PR"),
+            ("ipc", service.ipc, "IPC namespace support needs an apple/container runtime gap PR"),
+            ("isolation", service.isolation, "isolation support needs an apple/container runtime gap PR"),
+            ("pid", service.pid, "PID namespace support needs an apple/container runtime gap PR"),
+            ("userns_mode", service.usernsMode, "user namespace support needs an apple/container runtime gap PR"),
+            ("uts", service.uts, "UTS namespace support needs an apple/container runtime gap PR"),
+        ].compactMap { composeName, value, reason in
+            guard let value, !value.isEmpty else {
+                return nil
+            }
+            return (composeName, value, reason)
+        }
+    }
+
+    /// Returns unsupported CPU scheduler fields beyond the supported `cpus` limit.
+    func unsupportedCPUResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        let reason = "advanced CPU resource support needs an apple/container runtime gap PR"
+        var fields: [(composeName: String, value: String, reason: String)] = []
+        appendUnsupportedIntegerField("cpu_count", value: service.cpuCount, reason: reason, to: &fields)
+        appendUnsupportedFloatingPointField("cpu_percent", value: service.cpuPercent, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_period", value: service.cpuPeriod, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_quota", value: service.cpuQuota, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_rt_period", value: service.cpuRealtimePeriod, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_rt_runtime", value: service.cpuRealtimeRuntime, reason: reason, to: &fields)
+        if let cpuset = service.cpuset, !cpuset.isEmpty {
+            fields.append(("cpuset", cpuset, reason))
+        }
+        appendUnsupportedIntegerField("cpu_shares", value: service.cpuShares, reason: reason, to: &fields)
+        return fields
+    }
+
+    /// Returns unsupported memory, OOM, and process resource controls beyond `mem_limit`.
+    func unsupportedMemoryAndProcessResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        let reason = "memory, OOM, and process resource support needs an apple/container runtime gap PR"
+        var fields: [(composeName: String, value: String, reason: String)] = []
+        appendUnsupportedStringField("mem_reservation", value: service.memReservation, reason: reason, to: &fields)
+        appendUnsupportedStringField("memswap_limit", value: service.memSwapLimit, reason: reason, to: &fields)
+        appendUnsupportedStringField("mem_swappiness", value: service.memSwappiness, reason: reason, to: &fields)
+        if service.oomKillDisable == true {
+            fields.append(("oom_kill_disable", "true", reason))
+        }
+        appendUnsupportedIntegerField("oom_score_adj", value: service.oomScoreAdj, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("pids_limit", value: service.pidsLimit, reason: reason, to: &fields)
+        return fields
+    }
+
+    /// Returns unsupported user and security option fields.
+    func unsupportedUserAndSecurityOptionFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        var fields: [(composeName: String, value: String, reason: String)] = []
+        if let group = service.groupAdd?.first(where: { !$0.isEmpty }) {
+            fields.append(("group_add", group, "supplemental group support needs an apple/container runtime gap PR"))
+        }
+        if let securityOption = service.securityOpt?.first(where: { !$0.isEmpty }) {
+            fields.append(("security_opt", securityOption, "security option support needs an apple/container runtime gap PR"))
+        }
+        return fields
+    }
+
+    /// Returns unsupported host device, GPU, and credential access fields.
+    func unsupportedDeviceAccessFields(service: ComposeService) -> [(composeName: String, reason: String)] {
+        var fields: [(composeName: String, reason: String)] = []
+        if service.credentialSpec != nil {
+            fields.append(("credential_spec", "credential spec support needs an apple/container runtime gap PR"))
+        }
+        if let rules = service.deviceCgroupRules, !rules.isEmpty {
+            fields.append(("device_cgroup_rules", "device cgroup rule support needs an apple/container runtime gap PR"))
+        }
+        if let devices = service.devices, !devices.isEmpty {
+            fields.append(("devices", "host device access support needs an apple/container runtime gap PR"))
+        }
+        if let gpus = service.gpus, !gpus.isEmpty {
+            fields.append(("gpus", "GPU device access support needs an apple/container runtime gap PR"))
+        }
+        if service.privileged == true {
+            fields.append(("privileged", "privileged mode support needs an apple/container runtime gap PR"))
+        }
+        return fields
+    }
+
+    /// Returns the runtime gap that prevents a dependency condition.
+    func unsupportedDependencyConditionReason(_ condition: String) -> String {
+        switch condition {
+        case "service_healthy":
+            "health status support needs an apple/container runtime gap PR"
+        case "service_completed_successfully":
+            "exit code and completion time need an apple/container runtime gap PR"
+        default:
+            "dependency condition support needs an apple/container runtime gap PR"
+        }
+    }
+
+    /// Returns unsupported service metadata, attach, logging, and storage option fields.
+    func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
+        var fields: [(composeName: String, reason: String)] = []
+        if let annotations = service.annotations, !annotations.isEmpty {
+            fields.append(("annotations", "service annotations are not implemented by container-compose yet"))
+        }
+        if service.attach != nil {
+            fields.append(("attach", "service attach behavior is not implemented by container-compose yet"))
+        }
+        if let labelFiles = service.labelFiles, !labelFiles.isEmpty {
+            fields.append(("label_file", "label file support is not implemented by container-compose yet"))
+        }
+        if service.logging != nil {
+            fields.append(("logging", "service logging configuration is not implemented by container-compose yet"))
+        }
+        if let logDriver = service.logDriver, !logDriver.isEmpty {
+            fields.append(("log_driver", "service logging configuration is not implemented by container-compose yet"))
+        }
+        if let logOptions = service.logOptions, !logOptions.isEmpty {
+            fields.append(("log_opt", "service logging configuration is not implemented by container-compose yet"))
+        }
+        if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
+            fields.append(("storage_opt", "service storage options are not implemented by container-compose yet"))
+        }
+        return fields
+    }
+
+    /// Returns unsupported service-level volume inheritance and driver fields.
+    func unsupportedServiceVolumeShortcutFields(service: ComposeService) -> [(composeName: String, reason: String)] {
+        var fields: [(composeName: String, reason: String)] = []
+        if let volumesFrom = service.volumesFrom, !volumesFrom.isEmpty {
+            fields.append(("volumes_from", "volume inheritance is not implemented by container-compose yet"))
+        }
+        if let volumeDriver = service.volumeDriver, !volumeDriver.isEmpty {
+            fields.append(("volume_driver", "service-level volume driver support is not implemented by container-compose yet"))
+        }
+        return fields
+    }
+
+    /// Appends an unsupported string field only when Compose supplied a non-empty value.
+    func appendUnsupportedStringField(
+        _ composeName: String,
+        value: String?,
+        reason: String,
+        to fields: inout [(composeName: String, value: String, reason: String)]
+    ) {
+        guard let value, !value.isEmpty else {
+            return
+        }
+        fields.append((composeName, value, reason))
+    }
+
+    /// Appends an unsupported integer field only when Compose supplied a non-zero value.
+    func appendUnsupportedIntegerField(
+        _ composeName: String,
+        value: Int?,
+        reason: String,
+        to fields: inout [(composeName: String, value: String, reason: String)]
+    ) {
+        guard let value, value != 0 else {
+            return
+        }
+        fields.append((composeName, String(value), reason))
+    }
+
+    /// Appends an unsupported floating-point field only when Compose supplied a non-zero value.
+    func appendUnsupportedFloatingPointField(
+        _ composeName: String,
+        value: Double?,
+        reason: String,
+        to fields: inout [(composeName: String, value: String, reason: String)]
+    ) {
+        guard let value, value != 0 else {
+            return
+        }
+        let displayValue = value.rounded() == value ? String(Int(value)) : String(value)
+        fields.append((composeName, displayValue, reason))
+    }
+
+    /// Validates the global `up --pull` policy before resources are created.
+    func validatePullPolicy(_ policy: String?) throws {
+        guard let policy, !policy.isEmpty else {
+            return
+        }
+        if !["always", "missing", "never"].contains(policy) {
+            throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
+        }
+    }
+
+    /// Creates project networks and volumes required before containers start.
+    func ensureResources(project: ComposeProject) async throws {
+        for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
+            try await ensureNetwork(project: project, composeName: name, network: network)
+        }
+        for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
+            try await ensureVolume(project: project, composeName: name, volume: volume)
+        }
+    }
+
+    /// Creates a project network unless it already exists.
     func ensureNetwork(project: ComposeProject, composeName: String, network: ComposeNetwork) async throws {
         var args = ["network", "create"]
         for label in resourceLabels(project: project) {
@@ -425,10 +792,11 @@ private extension ComposeOrchestrator {
         for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(resourceName(project: project.name, name: composeName))
+        args.append(networkRuntimeName(project: project, composeName: composeName, network: network))
         try await runContainer(args, check: false)
     }
 
+    /// Creates a project volume unless it already exists.
     func ensureVolume(project: ComposeProject, composeName: String, volume: ComposeVolume) async throws {
         var args = ["volume", "create"]
         for label in resourceLabels(project: project) {
@@ -437,14 +805,16 @@ private extension ComposeOrchestrator {
         for label in (volume.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(resourceName(project: project.name, name: composeName))
+        args.append(volumeRuntimeName(project: project, composeName: composeName, volume: volume))
         try await runContainer(args, check: false)
     }
 
+    /// Translates one Compose build section into a `container build` command.
     func buildService(project: ComposeProject, service: ComposeService, noCache: Bool) async throws {
         guard let build = service.build else {
             return
         }
+        try validateBuildSupport(service: service)
         var args = ["build"]
         let image = service.image ?? "\(project.name)_\(service.name):latest"
         args.append(contentsOf: ["--tag", image])
@@ -454,7 +824,7 @@ private extension ComposeOrchestrator {
         if let target = build.target, !target.isEmpty {
             args.append(contentsOf: ["--target", target])
         }
-        if noCache {
+        if noCache || build.noCache == true {
             args.append("--no-cache")
         }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
@@ -464,8 +834,10 @@ private extension ComposeOrchestrator {
         try await runContainer(args)
     }
 
+    /// Applies the Compose `up --pull` policy before starting services.
     func applyPullPolicy(_ policy: String?, project: ComposeProject, services: [ComposeService]) async throws {
         guard let policy, !policy.isEmpty else {
+            try await applyServicePullPolicies(services: services)
             return
         }
 
@@ -481,19 +853,60 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Applies service-level `pull_policy` when no global pull override is set.
+    func applyServicePullPolicies(services: [ComposeService]) async throws {
+        for service in services {
+            guard let policy = service.pullPolicy, !policy.isEmpty else {
+                continue
+            }
+            try await applyServicePullPolicy(policy, service: service)
+        }
+    }
+
+    /// Applies the local-runtime-backed subset of Compose service pull policies.
+    func applyServicePullPolicy(_ policy: String, service: ComposeService) async throws {
+        guard let image = service.image else {
+            return
+        }
+        switch policy {
+        case "always":
+            try await runContainer(["image", "pull", image])
+        case "missing", "if_not_present":
+            try await pullMissingImage(image)
+        case "never":
+            return
+        default:
+            throw ComposeError.invalidProject("unsupported pull policy '\(policy)' for service '\(service.name)'")
+        }
+    }
+
+    /// Pulls only service images not already present in the local image store.
     func pullMissingImages(services: [ComposeService]) async throws {
         for service in services {
             guard let image = service.image else {
                 continue
             }
-            let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
-            if !inspect.succeeded {
-                try await runContainer(["image", "pull", image])
-            }
+            try await pullMissingImage(image)
         }
     }
 
-    func runArguments(project: ComposeProject, service: ComposeService, detach: Bool, remove: Bool, oneOff: Bool) throws -> [String] {
+    /// Pulls one image when it is absent from the local image store.
+    func pullMissingImage(_ image: String) async throws {
+        let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
+        if options.dryRun || !inspect.succeeded {
+            try await runContainer(["image", "pull", image])
+        }
+    }
+
+    /// Builds the `container run` argument vector for a service.
+    func runArguments(
+        project: ComposeProject,
+        service: ComposeService,
+        detach: Bool,
+        remove: Bool,
+        oneOff: Bool,
+        publishedPorts: [String]? = nil
+    ) throws -> [String] {
         var args = ["run"]
         args.append(contentsOf: ["--name", containerName(project: project, service: service, oneOff: oneOff)])
         if detach {
@@ -519,7 +932,7 @@ private extension ComposeOrchestrator {
         for envFile in service.envFiles ?? [] {
             args.append(contentsOf: ["--env-file", envFile])
         }
-        for port in service.ports ?? [] {
+        for port in publishedPorts ?? service.ports ?? [] {
             args.append(contentsOf: ["--publish", port])
         }
         for mount in service.volumes ?? [] {
@@ -529,7 +942,13 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
         if let network = (service.networks ?? []).first {
-            args.append(contentsOf: ["--network", resourceName(project: project.name, name: network)])
+            args.append(contentsOf: ["--network", networkRuntimeName(project: project, composeName: network)])
+        }
+        if let platform = service.platform, !platform.isEmpty {
+            args.append(contentsOf: ["--platform", platform])
+        }
+        if let runtime = service.runtime, !runtime.isEmpty {
+            args.append(contentsOf: ["--runtime", runtime])
         }
         if let workingDir = service.workingDir {
             args.append(contentsOf: ["--workdir", workingDir])
@@ -561,6 +980,12 @@ private extension ComposeOrchestrator {
         if let cpus = service.cpus, !cpus.isEmpty {
             args.append(contentsOf: ["--cpus", cpus])
         }
+        if let shmSize = service.shmSize, !shmSize.isEmpty {
+            args.append(contentsOf: ["--shm-size", shmSize])
+        }
+        for ulimit in service.ulimits ?? [] {
+            args.append(contentsOf: ["--ulimit", ulimit])
+        }
         if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
             args.append(contentsOf: ["--entrypoint", entrypoint.joined(separator: " ")])
         }
@@ -579,6 +1004,41 @@ private extension ComposeOrchestrator {
         return args
     }
 
+    /// Rewrites `SERVICE:path` copy operands to the matching service container.
+    func copyArgument(_ argument: String, project: ComposeProject) throws -> String {
+        guard let delimiter = argument.firstIndex(of: ":") else {
+            return argument
+        }
+        let serviceName = String(argument[..<delimiter])
+        guard isCopyServiceReference(serviceName) else {
+            return argument
+        }
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+        return containerName(project: project, service: service, oneOff: false) + String(argument[delimiter...])
+    }
+
+    /// Returns whether a copy operand prefix has Compose service-reference shape.
+    func isCopyServiceReference(_ value: String) -> Bool {
+        !value.isEmpty && !value.contains("/") && value != "." && value != ".."
+    }
+
+    /// Converts Compose's log tail value to the runtime CLI value.
+    func runtimeLogTail(_ tail: String?) throws -> String? {
+        guard let tail, !tail.isEmpty else {
+            return nil
+        }
+        if tail.lowercased() == "all" {
+            return nil
+        }
+        guard let lines = Int(tail), lines >= 0 else {
+            throw ComposeError.invalidProject("logs --tail must be 'all' or a non-negative integer")
+        }
+        return String(lines)
+    }
+
+    /// Appends a Compose mount in the form accepted by `container run`.
     func appendMount(_ mount: ComposeMount, project: ComposeProject, args: inout [String]) throws {
         if mount.type == "tmpfs" {
             guard let target = mount.target else {
@@ -593,7 +1053,7 @@ private extension ComposeOrchestrator {
         let source = mount.source ?? ""
         let mappedSource: String
         if mount.type == "volume", !source.isEmpty {
-            mappedSource = resourceName(project: project.name, name: source)
+            mappedSource = volumeRuntimeName(project: project, composeName: source)
         } else if source.isEmpty {
             // Anonymous Compose volumes still need stable names so repeated
             // runs reconcile the same project-scoped container arguments.
@@ -609,14 +1069,32 @@ private extension ComposeOrchestrator {
         args.append(contentsOf: ["--volume", value])
     }
 
+    /// Returns the stop command arguments for a service container.
+    func stopArguments(service: ComposeService, containerName: String) -> [String] {
+        var args = ["stop"]
+        if let signal = service.stopSignal, !signal.isEmpty {
+            args.append(contentsOf: ["--signal", signal])
+        }
+        if let seconds = service.stopGracePeriodSeconds {
+            args.append(contentsOf: ["--time", "\(seconds)"])
+        }
+        args.append(containerName)
+        return args
+    }
+
+    /// Returns an existing container's Compose metadata, if the container exists.
     func inspectContainer(_ name: String) async throws -> ExistingContainer? {
         let result = try await runContainer(["inspect", name], check: false, emitOutput: false)
+        if options.dryRun {
+            return nil
+        }
         guard result.succeeded else {
             return nil
         }
         return ExistingContainer(configHash: inspectConfigHash(from: result.stdout))
     }
 
+    /// Removes project-scoped containers that are not in the declared set.
     func removeRemainingProjectContainers(project: ComposeProject, excluding declaredContainers: Set<String>) async throws {
         let args = ["list", "--format", "json", "--all"]
         if options.dryRun {
@@ -634,6 +1112,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Executes one `container` command or prints it in dry-run mode.
     @discardableResult
     func runContainer(
         _ arguments: [String],
@@ -671,15 +1150,106 @@ private struct ExistingContainer {
     var configHash: String?
 }
 
+private extension ComposeNetworkOptions {
+    /// Names the Compose fields that need runtime attachment support.
+    func unsupportedFieldNames() -> [String] {
+        var fields: [String] = []
+        if let driverOpts, !driverOpts.isEmpty {
+            fields.append("driver_opts")
+        }
+        if let gatewayPriority, gatewayPriority != 0 {
+            fields.append("gw_priority")
+        }
+        if let interfaceName, !interfaceName.isEmpty {
+            fields.append("interface_name")
+        }
+        if let ipv4Address, !ipv4Address.isEmpty {
+            fields.append("ipv4_address")
+        }
+        if let ipv6Address, !ipv6Address.isEmpty {
+            fields.append("ipv6_address")
+        }
+        if let linkLocalIPs, !linkLocalIPs.isEmpty {
+            fields.append("link_local_ips")
+        }
+        if let macAddress, !macAddress.isEmpty {
+            fields.append("mac_address")
+        }
+        if let priority, priority != 0 {
+            fields.append("priority")
+        }
+        return fields
+    }
+}
+
+private struct ServiceConfigFingerprint: Encodable {
+    var service: ComposeService
+    var networks: [String: String]
+    var volumes: [String: String]
+}
+
 private let projectLabel = "com.apple.container.compose.project"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
 
+/// Returns whether a service pull policy can be implemented with local runtime primitives.
+private func isSupportedServicePullPolicy(_ policy: String) -> Bool {
+    ["always", "missing", "if_not_present", "never"].contains(policy)
+}
+
+/// Returns the runtime resource name for a project-scoped network or volume.
 private func resourceName(project: String, name: String) -> String {
     "\(slug(project))_\(slug(name))"
 }
 
+/// Resolves a Compose network reference to the name used by `container`.
+private func networkRuntimeName(project: ComposeProject, composeName: String) -> String {
+    guard let network = project.networks[composeName] else {
+        return resourceName(project: project.name, name: composeName)
+    }
+    return networkRuntimeName(project: project, composeName: composeName, network: network)
+}
+
+/// Resolves a normalized Compose network definition to its runtime name.
+private func networkRuntimeName(project: ComposeProject, composeName: String, network: ComposeNetwork) -> String {
+    declaredResourceName(
+        projectName: project.name,
+        composeName: composeName,
+        declaredName: network.name,
+        external: network.external == true
+    )
+}
+
+/// Resolves a Compose volume reference to the name used by `container`.
+private func volumeRuntimeName(project: ComposeProject, composeName: String) -> String {
+    guard let volume = project.volumes[composeName] else {
+        return resourceName(project: project.name, name: composeName)
+    }
+    return volumeRuntimeName(project: project, composeName: composeName, volume: volume)
+}
+
+/// Resolves a normalized Compose volume definition to its runtime name.
+private func volumeRuntimeName(project: ComposeProject, composeName: String, volume: ComposeVolume) -> String {
+    declaredResourceName(
+        projectName: project.name,
+        composeName: composeName,
+        declaredName: volume.name,
+        external: volume.external == true
+    )
+}
+
+/// Uses normalized runtime resource names while falling back to generated
+/// project-scoped names for hand-built test models.
+private func declaredResourceName(projectName: String, composeName: String, declaredName: String, external: Bool) -> String {
+    let normalizedName = declaredName.isEmpty ? composeName : declaredName
+    if external || normalizedName != composeName {
+        return slug(normalizedName)
+    }
+    return resourceName(project: projectName, name: composeName)
+}
+
+/// Returns labels shared by all resources in a Compose project.
 private func resourceLabels(project: ComposeProject) -> [String] {
     [
         "\(projectLabel)=\(project.name)",
@@ -689,30 +1259,60 @@ private func resourceLabels(project: ComposeProject) -> [String] {
     ]
 }
 
+/// Returns labels that identify a service container and its config hash.
 private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("com.apple.container.compose.service=\(service.name)")
     labels.append("com.apple.container.compose.oneoff=\(oneOff)")
-    labels.append("\(configHashLabel)=\(configHash(service))")
+    labels.append("\(configHashLabel)=\(configHash(project: project, service: service))")
     if let firstFile = project.composeFiles.first {
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
     }
     return labels
 }
 
+/// Hashes the compose file list in a stable order.
 private func composeFilesHash(_ composeFiles: [String]) -> String {
     stableHash(composeFiles.sorted().joined(separator: "\n"))
 }
 
-private func configHash(_ service: ComposeService) -> String {
+/// Hashes the effective service configuration for recreate decisions.
+private func configHash(project: ComposeProject, service: ComposeService) -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    guard let data = try? encoder.encode(service) else {
+    let fingerprint = ServiceConfigFingerprint(
+        service: service,
+        networks: serviceNetworkRuntimeNames(project: project, service: service),
+        volumes: serviceVolumeRuntimeNames(project: project, service: service)
+    )
+    guard let data = try? encoder.encode(fingerprint) else {
         return stableHash(service.name)
     }
     return stableHash(String(decoding: data, as: UTF8.self))
 }
 
+/// Returns runtime network names that affect a service's run arguments.
+private func serviceNetworkRuntimeNames(project: ComposeProject, service: ComposeService) -> [String: String] {
+    var names: [String: String] = [:]
+    for name in service.networks ?? [] {
+        names[name] = networkRuntimeName(project: project, composeName: name)
+    }
+    return names
+}
+
+/// Returns runtime volume names that affect a service's run arguments.
+private func serviceVolumeRuntimeNames(project: ComposeProject, service: ComposeService) -> [String: String] {
+    var names: [String: String] = [:]
+    for mount in service.volumes ?? [] where mount.type == "volume" {
+        guard let source = mount.source, !source.isEmpty else {
+            continue
+        }
+        names[source] = volumeRuntimeName(project: project, composeName: source)
+    }
+    return names
+}
+
+/// Extracts the Compose config hash label from `container inspect` JSON.
 private func inspectConfigHash(from output: String) -> String? {
     guard let data = output.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: data)
@@ -722,6 +1322,7 @@ private func inspectConfigHash(from output: String) -> String? {
     return inspectLabel(configHashLabel, in: json)
 }
 
+/// Recursively searches common inspect JSON shapes for one label value.
 private func inspectLabel(_ key: String, in value: Any) -> String? {
     if let values = value as? [Any] {
         return values.lazy.compactMap { inspectLabel(key, in: $0) }.first
@@ -740,6 +1341,7 @@ private func inspectLabel(_ key: String, in value: Any) -> String? {
     return nil
 }
 
+/// Reads a label value from a JSON object when labels are map-shaped.
 private func labelValue(_ key: String, in value: Any?) -> String? {
     guard let labels = value as? [String: Any] else {
         return nil
@@ -747,16 +1349,19 @@ private func labelValue(_ key: String, in value: Any?) -> String? {
     return labels[key] as? String
 }
 
+/// Returns pretty JSON for containers scoped to one Compose project.
 private func projectContainerListJSON(projectName: String, output: String) throws -> String {
     let scopedContainers = try projectContainers(projectName: projectName, output: output)
     let scopedData = try JSONSerialization.data(withJSONObject: scopedContainers, options: [.prettyPrinted, .sortedKeys])
     return String(decoding: scopedData, as: UTF8.self)
 }
 
+/// Returns names or IDs for containers scoped to one Compose project.
 private func projectContainerIdentifiers(projectName: String, output: String) throws -> [String] {
     try projectContainers(projectName: projectName, output: output).compactMap(containerIdentifier)
 }
 
+/// Filters raw `container list --format json` output by Compose project label.
 private func projectContainers(projectName: String, output: String) throws -> [Any] {
     guard let data = output.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: data)
@@ -778,6 +1383,7 @@ private func projectContainers(projectName: String, output: String) throws -> [A
     return containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
 }
 
+/// Extracts the most useful identifier from one container list object.
 private func containerIdentifier(_ value: Any) -> String? {
     guard let object = value as? [String: Any] else {
         return nil
@@ -793,11 +1399,13 @@ private func containerIdentifier(_ value: Any) -> String? {
     return nil
 }
 
+/// Returns a SHA-256 hex digest for stable names and labels.
 private func stableHash(_ value: String) -> String {
     let digest = SHA256.hash(data: Data(value.utf8))
     return digest.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Converts arbitrary Compose names into names accepted by runtime resources.
 private func slug(_ value: String) -> String {
     var result = value.map { char -> Character in
         if char.isLetter || char.isNumber || char == "." || char == "_" || char == "-" {
@@ -814,6 +1422,7 @@ private func slug(_ value: String) -> String {
     return String(result)
 }
 
+/// Quotes a command line for dry-run output and error messages.
 private func shellQuoted(_ parts: [String]) -> String {
     parts.map { part in
         if part.allSatisfy({ $0.isLetter || $0.isNumber || "-_./:=,".contains($0) }) {

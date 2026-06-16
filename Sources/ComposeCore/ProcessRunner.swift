@@ -74,6 +74,7 @@ public struct ProcessRunner: CommandRunning {
         // Stateless runner; public initializer supports dependency injection.
     }
 
+    /// Executes a command with either captured or inherited process streams.
     public func run(
         _ executable: String,
         _ arguments: [String],
@@ -100,6 +101,7 @@ public struct ProcessRunner: CommandRunning {
         }
     }
 
+    /// Runs a child process while collecting stdout and stderr independently.
     private func runCaptured(
         _ executable: String,
         _ arguments: [String],
@@ -150,6 +152,7 @@ public struct ProcessRunner: CommandRunning {
         }
     }
 
+    /// Runs a child process attached to the caller's terminal streams.
     private func runInheritingIO(
         _ executable: String,
         _ arguments: [String],
@@ -188,6 +191,7 @@ public struct ProcessRunner: CommandRunning {
     }
 }
 
+/// Completes inherited-IO process continuations exactly once.
 private final class InheritedProcessRunState: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<CommandResult, Error>?
@@ -196,16 +200,19 @@ private final class InheritedProcessRunState: @unchecked Sendable {
         self.continuation = continuation
     }
 
+    /// Resumes the pending command with the child process exit status.
     func complete(status: Int32) {
         let continuation = takeContinuation()
         continuation?.resume(returning: CommandResult(status: status, stdout: "", stderr: ""))
     }
 
+    /// Resumes the pending command with a process launch error.
     func fail(_ error: Error) {
         let continuation = takeContinuation()
         continuation?.resume(throwing: error)
     }
 
+    /// Removes and returns the continuation while holding the state lock.
     private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
         lock.lock()
         defer { lock.unlock() }
@@ -215,7 +222,9 @@ private final class InheritedProcessRunState: @unchecked Sendable {
     }
 }
 
+/// Coordinates process termination with stdout and stderr pipe drainage.
 private final class ProcessRunState: @unchecked Sendable {
+    /// Captured output stream whose pipe completed.
     enum Stream {
         case stdout
         case stderr
@@ -233,6 +242,7 @@ private final class ProcessRunState: @unchecked Sendable {
         self.continuation = continuation
     }
 
+    /// Starts asynchronous pipe drainage for one captured stream.
     func drain(_ handle: FileHandle, stream: Stream) {
         // Drain pipes while the process is running. Waiting until termination
         // can deadlock when a child writes more than the pipe buffer.
@@ -242,17 +252,20 @@ private final class ProcessRunState: @unchecked Sendable {
         }
     }
 
+    /// Records the child process exit status and completes if streams finished.
     func completeProcess(status: Int32) {
         finish { state in
             state.status = status
         }
     }
 
+    /// Fails the pending command immediately after a process launch error.
     func fail(_ error: Error) {
         let continuation = takeContinuation()
         continuation?.resume(throwing: error)
     }
 
+    /// Records one completed pipe read and completes if the process exited.
     private func complete(stream: Stream, data: Data) {
         finish { state in
             switch stream {
@@ -266,6 +279,7 @@ private final class ProcessRunState: @unchecked Sendable {
         }
     }
 
+    /// Applies a state update under lock and resumes outside the lock if done.
     private func finish(_ update: (ProcessRunState) -> Void) {
         let completion: (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)?
         lock.lock()
@@ -277,6 +291,7 @@ private final class ProcessRunState: @unchecked Sendable {
         }
     }
 
+    /// Returns a command result only after process and both output streams end.
     private func completedResultLocked() -> (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)? {
         guard let status, stdoutFinished, stderrFinished, let continuation else {
             return nil
@@ -292,6 +307,7 @@ private final class ProcessRunState: @unchecked Sendable {
         )
     }
 
+    /// Removes and returns the continuation while holding the state lock.
     private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
         lock.lock()
         defer { lock.unlock() }
@@ -326,6 +342,7 @@ public final class RecordingRunner: CommandRunning, @unchecked Sendable {
         self.responses = responses
     }
 
+    /// Records a command and returns the next queued response, or success.
     public func run(
         _ executable: String,
         _ arguments: [String],

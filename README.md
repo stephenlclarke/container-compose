@@ -13,31 +13,24 @@
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
 ![Repo Visitors](https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.container-compose)
 
-`container-compose` is a standalone SwiftPM plugin that will provide Docker
-Compose style workflows for Apple's `container` CLI.
-
-The plugin is intended to install as:
-
-```text
-/usr/local/libexec/container-plugins/compose/bin/compose
-/usr/local/libexec/container-plugins/compose/config.toml
-/usr/local/libexec/container-plugins/compose/resources/compose-normalizer
-```
+`container-compose` is a standalone plugin that provides Docker Compose style
+workflows for Apple's [`container`](https://github.com/apple/container) CLI
+where the supported Compose surface maps to available runtime primitives.
 
 The first implementation target is local-development Compose v2 compatibility
-where `container` has matching runtime primitives. Compose file normalization
-uses `compose-go`, with Swift handling runtime orchestration.
+where [`container`](https://github.com/apple/container) has matching runtime
+primitives. Compose file normalization uses `compose-go`, with Swift handling
+runtime orchestration.
 
 ## Documentation
 
-- [INSTALL.md](INSTALL.md) explains local plugin installation and removal.
-- [BUILD.md](BUILD.md) explains dependencies, developer validation, packaging,
-  and SonarQube scanning.
-- [DESIGN.md](DESIGN.md) explains the architecture and why Go is used for
-  Compose normalization.
-- [CONTRIBUTING.md](CONTRIBUTING.md) explains pull request, commit, and branch
-  protection expectations.
+- [INSTALL.md](INSTALL.md)
+- [COMPATIBILITY.md](COMPATIBILITY.md)
+- [BUILD.md](BUILD.md)
+- [DESIGN.md](DESIGN.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
-This project uses the Apache License, Version 2.0, matching the license used by `apple/container`.
+This project uses the Apache License, Version 2.0, matching the license used by
+[`apple/container`](https://github.com/apple/container).

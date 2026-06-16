@@ -1,9 +1,10 @@
 # container-compose Design
 
-`container-compose` is a standalone plugin for Apple's `container` CLI. It is
-designed to provide Docker Compose v2 style local-development workflows while
-keeping the orchestration layer close to the Swift code and runtime primitives
-used by `apple/container`.
+`container-compose` is a standalone plugin for Apple's
+[`container`](https://github.com/apple/container) CLI. It is designed to provide
+Docker Compose v2 style local-development workflows while keeping the
+orchestration layer close to the Swift code and runtime primitives used by
+[`apple/container`](https://github.com/apple/container).
 
 ## Goals
 
@@ -11,7 +12,8 @@ used by `apple/container`.
   interpolation, profiles, and project normalization to the Compose reference
   implementation.
 - Keep runtime orchestration in Swift so the plugin can use the same language,
-  package manager, and container-related products as `apple/container`.
+  package manager, and container-related products as
+  [`apple/container`](https://github.com/apple/container).
 - Make generated container, volume, and network names deterministic.
 - Label every project resource with Compose metadata so lifecycle commands are
   project scoped and repeatable.
@@ -62,6 +64,7 @@ flowchart TD
     Orchestrator --> Planner["Dependency order, labels, config hashes"]
     Planner --> Runner["ProcessRunner"]
     Runner --> AppleContainer["apple/container CLI and runtime"]
+    click AppleContainer "https://github.com/apple/container"
 
     Orchestrator --> Output["Compose-compatible command output"]
     AppleContainer --> Output
@@ -104,7 +107,8 @@ service is converted into deterministic runtime operations:
   only when requested.
 
 Unsupported runtime behavior must be reported as an explicit error. This keeps
-the plugin honest while gaps in `apple/container` are closed upstream.
+the plugin honest while gaps in
+[`apple/container`](https://github.com/apple/container) are closed upstream.
 
 ## Design Principles
 
@@ -116,5 +120,6 @@ the plugin honest while gaps in `apple/container` are closed upstream.
   predictable.
 - Keep the public behavior close to Docker Compose where `container` has the
   required primitive, and fail with precise feature names where it does not.
-- Preserve `apple/container` conventions so the plugin can be reviewed for
-  future in-tree adoption with minimal conceptual translation.
+- Preserve [`apple/container`](https://github.com/apple/container) conventions
+  so the plugin can be reviewed for future in-tree adoption with minimal
+  conceptual translation.

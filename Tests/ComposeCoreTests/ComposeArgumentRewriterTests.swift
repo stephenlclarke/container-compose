@@ -61,6 +61,124 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes logs follow shorthand after subcommand")
+    func normalizesLogsFollowShorthandAfterSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--file",
+            "compose.yml",
+            "logs",
+            "-f",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "logs",
+            "--file",
+            "compose.yml",
+            "--follow",
+            "api",
+        ])
+    }
+
+    @Test("does not rewrite logs follow shorthand after terminator")
+    func doesNotRewriteLogsFollowShorthandAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "logs",
+            "--",
+            "-f",
+        ])
+
+        #expect(rewritten == [
+            "logs",
+            "--",
+            "-f",
+        ])
+    }
+
+    @Test("normalizes exec boolean value forms before parsing")
+    func normalizesExecBooleanValueFormsBeforeParsing() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "--interactive=false",
+            "--tty=false",
+            "api",
+            "echo",
+            "ok",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "--no-interactive",
+            "--no-tty",
+            "api",
+            "echo",
+            "ok",
+        ])
+    }
+
+    @Test("does not rewrite exec boolean value forms after terminator")
+    func doesNotRewriteExecBooleanValueFormsAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "api",
+            "--",
+            "--interactive=false",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "api",
+            "--",
+            "--interactive=false",
+        ])
+    }
+
+    @Test("normalizes run publish shorthand before service name")
+    func normalizesRunPublishShorthandBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--project-name",
+            "demo",
+            "run",
+            "--publish",
+            "8080:80",
+            "-p",
+            "9090:90",
+            "api",
+            "echo",
+            "ok",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--project-name",
+            "demo",
+            "--publish",
+            "8080:80",
+            "--publish",
+            "9090:90",
+            "api",
+            "echo",
+            "ok",
+        ])
+    }
+
+    @Test("does not rewrite run publish shorthand after service name")
+    func doesNotRewriteRunPublishShorthandAfterServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "api",
+            "echo",
+            "-p",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "api",
+            "echo",
+            "-p",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -92,6 +210,44 @@ struct ComposeArgumentRewriterTests {
             "down",
             "--verbose",
             "-v",
+        ])
+    }
+
+    @Test("skips global option values when locating the subcommand")
+    func skipsGlobalOptionValuesWhenLocatingSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-f",
+            "up",
+            "--project-name",
+            "logs",
+            "--env-file",
+            "down",
+            "config",
+        ])
+
+        #expect(rewritten == [
+            "config",
+            "-f",
+            "up",
+            "--project-name",
+            "logs",
+            "--env-file",
+            "down",
+        ])
+    }
+
+    @Test("skips equals-form global option values when locating the subcommand")
+    func skipsEqualsFormGlobalOptionValuesWhenLocatingSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--file=up",
+            "--project-name=logs",
+            "ps",
+        ])
+
+        #expect(rewritten == [
+            "ps",
+            "--file=up",
+            "--project-name=logs",
         ])
     }
 
