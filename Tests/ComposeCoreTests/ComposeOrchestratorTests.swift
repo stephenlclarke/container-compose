@@ -421,6 +421,33 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported links before creating resources")
+    func upRejectsUnsupportedLinksBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:cache"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported links error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses links; legacy link support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported hostnames before creating resources")
     func upRejectsUnsupportedHostnamesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -846,6 +873,12 @@ struct ComposeOrchestratorTests {
               LOG_LEVEL: debug
             dns_opt:
               - use-vc
+            links:
+              - redis:cache
+            external_links:
+              - legacy_db:db
+          redis:
+            image: redis:7
         volumes:
           data: {}
         """.write(to: composeFile, atomically: true, encoding: .utf8)
@@ -867,6 +900,8 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(ipv4Address: "10.10.0.5")])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
+        #expect(project.services["api"]?.links == ["redis:cache"])
+        #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.ports == ["8080:80"])
         #expect(project.volumes["data"] != nil)
     }
@@ -1471,6 +1506,33 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported service pull policy error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses pull_policy 'daily'; supported values are always, missing, if_not_present, and never"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported external links before creating resources")
+    func runRejectsUnsupportedExternalLinksBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.externalLinks = ["legacy_db:db"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported external links error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses external_links; legacy link support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

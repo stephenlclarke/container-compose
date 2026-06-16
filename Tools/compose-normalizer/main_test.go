@@ -144,6 +144,10 @@ services:
     depends_on:
       redis:
         condition: service_started
+    links:
+      - redis:cache
+    external_links:
+      - legacy_db:db
   redis:
     image: redis:7
 networks:
@@ -215,6 +219,12 @@ volumes:
 	}
 	if got, want := api.DependsOn, map[string]string{"redis": "service_started"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DependsOn = %#v, want %#v", got, want)
+	}
+	if got, want := api.Links, []string{"redis:cache"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Links = %#v, want %#v", got, want)
+	}
+	if got, want := api.ExternalLinks, []string{"legacy_db:db"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.ExternalLinks = %#v, want %#v", got, want)
 	}
 	if got, want := project.Networks["backend"].Labels, map[string]string{"role": "test"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("backend labels = %#v, want %#v", got, want)

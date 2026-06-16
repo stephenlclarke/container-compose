@@ -82,6 +82,8 @@ type normalizedService struct {
 	NetworkOptions map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
 	NetworkMode    string                              `json:"networkMode,omitempty"`
 	DependsOn      map[string]string                   `json:"dependsOn,omitempty"`
+	Links          []string                            `json:"links,omitempty"`
+	ExternalLinks  []string                            `json:"externalLinks,omitempty"`
 	Labels         map[string]string                   `json:"labels,omitempty"`
 	ContainerName  string                              `json:"containerName,omitempty"`
 	Hostname       string                              `json:"hostname,omitempty"`
@@ -318,6 +320,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		NetworkOptions: networkOptionValues(service.Networks),
 		NetworkMode:    service.NetworkMode,
 		DependsOn:      dependsOnValues(service.DependsOn),
+		Links:          append([]string(nil), service.Links...),
+		ExternalLinks:  append([]string(nil), service.ExternalLinks...),
 		Labels:         mapLabels(service.Labels),
 		ContainerName:  service.ContainerName,
 		Hostname:       service.Hostname,

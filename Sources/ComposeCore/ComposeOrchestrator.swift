@@ -433,6 +433,12 @@ private extension ComposeOrchestrator {
                 throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'")
             }
         }
+        if let links = service.links, !links.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses links; legacy link support needs an apple/container runtime gap PR")
+        }
+        if let externalLinks = service.externalLinks, !externalLinks.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses external_links; legacy link support needs an apple/container runtime gap PR")
+        }
         if let extraHosts = service.extraHosts, !extraHosts.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses extra_hosts; host-entry support needs an apple/container runtime gap PR")
         }
