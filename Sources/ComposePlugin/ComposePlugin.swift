@@ -99,11 +99,7 @@ struct GlobalOptions: ParsableArguments {
             projectName: projectName,
             profiles: profile,
             envFiles: envFile,
-            projectDirectory: projectDirectory,
-            ansi: ansi,
-            progress: progress,
-            dryRun: dryRun,
-            verbose: verbose
+            projectDirectory: projectDirectory
         )
     }
 
