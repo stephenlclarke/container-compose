@@ -39,7 +39,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar package lint format
+.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package lint format
 
 all: workflow
 
@@ -107,7 +107,17 @@ coverage-check: coverage
 		--swift coverage.xml \
 		--go Tools/compose-normalizer/coverage.out
 
-sonar: coverage
+sonar: coverage sonar-scan
+
+sonar-scan:
+	@test -f coverage.xml || { \
+		printf 'coverage.xml is missing; run make coverage or make ci before make sonar-scan\n' >&2; \
+		exit 2; \
+	}
+	@test -f Tools/compose-normalizer/coverage.out || { \
+		printf 'Tools/compose-normalizer/coverage.out is missing; run make coverage or make ci before make sonar-scan\n' >&2; \
+		exit 2; \
+	}
 	@sonar_token="$${SONAR_TOKEN:-$${SONAR_TOKEN_PERSONAL:-}}"; \
 	if [[ -z "$$sonar_token" ]]; then \
 		printf 'SONAR_TOKEN or SONAR_TOKEN_PERSONAL is required for make sonar\n' >&2; \
