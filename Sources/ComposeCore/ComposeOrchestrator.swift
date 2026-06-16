@@ -234,7 +234,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Executes a command in an existing service container.
-    public func exec(project: ComposeProject, serviceName: String, command: [String], interactive: Bool, tty: Bool) async throws {
+    public func exec(
+        project: ComposeProject,
+        serviceName: String,
+        command: [String],
+        interactive: Bool = true,
+        tty: Bool = true
+    ) async throws {
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }

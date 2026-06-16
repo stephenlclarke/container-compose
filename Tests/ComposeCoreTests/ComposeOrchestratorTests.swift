@@ -1890,7 +1890,7 @@ struct ComposeOrchestratorTests {
         )
 
         try await orchestrator.logs(project: project, services: ["api"], follow: true, tail: "10")
-        try await orchestrator.exec(project: project, serviceName: "api", command: ["echo", "ok"], interactive: true, tty: true)
+        try await orchestrator.exec(project: project, serviceName: "api", command: ["echo", "ok"])
         try await orchestrator.start(project: project, services: ["api"])
         try await orchestrator.stop(project: project, services: ["api"])
         try await orchestrator.restart(project: project, services: ["api"])
@@ -1910,6 +1910,30 @@ struct ComposeOrchestratorTests {
         #expect(commands[7] == ["container", "delete", "demo-api-1"])
         #expect(commands[8] == ["container", "kill", "--signal", "SIGTERM", "demo-api-1"])
         #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
+    }
+
+    @Test("exec disables TTY while keeping stdin inherited")
+    func execDisablesTTYWhileKeepingStdinInherited() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            command: ["echo", "ok"],
+            interactive: true,
+            tty: false
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command == ["container", "exec", "--interactive", "demo-api-1", "echo", "ok"])
+        #expect(runner.commands.first?.io == .inherited)
     }
 
     @Test("logs accepts Compose all tail value")

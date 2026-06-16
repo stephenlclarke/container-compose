@@ -95,6 +95,44 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes exec boolean value forms before parsing")
+    func normalizesExecBooleanValueFormsBeforeParsing() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "--interactive=false",
+            "--tty=false",
+            "api",
+            "echo",
+            "ok",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "--no-interactive",
+            "--no-tty",
+            "api",
+            "echo",
+            "ok",
+        ])
+    }
+
+    @Test("does not rewrite exec boolean value forms after terminator")
+    func doesNotRewriteExecBooleanValueFormsAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "api",
+            "--",
+            "--interactive=false",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "api",
+            "--",
+            "--interactive=false",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

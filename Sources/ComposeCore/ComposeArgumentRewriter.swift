@@ -149,10 +149,41 @@ public enum ComposeArgumentRewriter {
 
     /// Normalizes command-specific aliases that conflict with global options.
     private static func rewriteCommandLocalOptions(command: String, arguments: [String]) -> [String] {
-        guard command == "logs" else {
+        switch command {
+        case "exec":
+            return rewriteExecOptions(arguments)
+        case "logs":
+            return rewriteLogsOptions(arguments)
+        default:
             return arguments
         }
+    }
 
+    /// Normalizes Docker Compose `exec` boolean option value forms.
+    private static func rewriteExecOptions(_ arguments: [String]) -> [String] {
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, argument == "--interactive=false" {
+                rewritten.append("--no-interactive")
+            } else if shouldRewriteOptions, argument == "--interactive=true" {
+                rewritten.append("--interactive")
+            } else if shouldRewriteOptions, argument == "--tty=false" {
+                rewritten.append("--no-tty")
+            } else if shouldRewriteOptions, argument == "--tty=true" {
+                rewritten.append("--tty")
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
+    }
+
+    /// Normalizes Docker Compose `logs` shorthand options.
+    private static func rewriteLogsOptions(_ arguments: [String]) -> [String] {
         var rewritten: [String] = []
         var shouldRewriteOptions = true
         for argument in arguments {

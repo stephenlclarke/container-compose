@@ -104,6 +104,18 @@ cli-smoke: build
 	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
 	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
 	[[ "$$logs_all_output" != *" -n "* ]]; \
+	exec_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec api echo ok)"; \
+	[[ "$$exec_output" == *"container exec --interactive --tty demo-api-1 echo ok"* ]]; \
+	exec_no_tty_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -T api echo ok)"; \
+	[[ "$$exec_no_tty_output" == *"container exec --interactive demo-api-1 echo ok"* ]]; \
+	[[ "$$exec_no_tty_output" != *"--tty"* ]]; \
+	exec_long_no_tty_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --no-tty api echo ok)"; \
+	[[ "$$exec_long_no_tty_output" == *"container exec --interactive demo-api-1 echo ok"* ]]; \
+	[[ "$$exec_long_no_tty_output" != *"--tty"* ]]; \
+	exec_non_interactive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --interactive=false -T api echo ok)"; \
+	[[ "$$exec_non_interactive_output" == *"container exec demo-api-1 echo ok"* ]]; \
+	[[ "$$exec_non_interactive_output" != *"--interactive"* ]]; \
+	[[ "$$exec_non_interactive_output" != *"--tty"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \

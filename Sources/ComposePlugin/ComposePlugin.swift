@@ -288,10 +288,20 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "exec", abstract: "Execute a command in a running service container.")
 
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .shortAndLong, help: "Keep stdin open.")
-    var interactive = false
-    @Flag(name: .shortAndLong, help: "Allocate a TTY.")
-    var tty = false
+    @Flag(
+        name: .shortAndLong,
+        inversion: .prefixedNo,
+        help: "Keep stdin open. Enabled by default for Compose compatibility."
+    )
+    var interactive = true
+    @Flag(
+        name: .shortAndLong,
+        inversion: .prefixedNo,
+        help: "Allocate a TTY. Enabled by default for Compose compatibility."
+    )
+    var tty = true
+    @Flag(name: .customShort("T"), help: "Disable pseudo-TTY allocation.")
+    var noTty = false
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Command and arguments.")
@@ -300,7 +310,13 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     /// Executes the requested command in an existing service container.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().exec(project: loadedProject, serviceName: service, command: command, interactive: interactive, tty: tty)
+        try await orchestrator().exec(
+            project: loadedProject,
+            serviceName: service,
+            command: command,
+            interactive: interactive,
+            tty: tty && !noTty
+        )
     }
 }
 

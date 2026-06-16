@@ -38,7 +38,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, Apple `co
 | Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
 | Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, `images`, global `up --pull always/missing/never`, service `pull_policy: always/missing/if_not_present/never` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container image list` | [S1](#s1-supported-local-web-stack) |
 | Container lifecycle | `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans` | `container run`, `container start`, `container stop`, `container delete`, `container kill`, `container inspect`, `container list` | [S1](#s1-supported-local-web-stack) |
-| Container interaction | `ps`, `logs`, `exec`, service-aware `cp`, `version` | `container list`, `container logs`, `container exec`, `container cp`, plugin version output | [S1](#s1-supported-local-web-stack) |
+| Container interaction | `ps`, `logs`, `exec` with Compose-default stdin/TTY, `-T/--no-tty`, and `--interactive=false`, service-aware `cp`, `version` | `container list`, `container logs`, `container exec --interactive --tty`, `container cp`, plugin version output | [S1](#s1-supported-local-web-stack) |
 | Default networking | One service network, default project networks, external networks, service ports | `container network create`, `container network delete`, `container run --network`, `container run --publish` | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, `down --volumes` | `container volume create`, `container volume delete`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, `container_name`, `working_dir`, `user`, `tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container run` and `container stop` flags | [S1](#s1-supported-local-web-stack) |
@@ -219,6 +219,8 @@ container compose up --pull missing
 container compose ps
 container compose logs api
 container compose exec api sh
+container compose exec -T api echo ok
+container compose exec --interactive=false -T api echo ok
 container compose cp api:/app/env.txt ./env.txt
 container compose kill worker
 container compose down --volumes
