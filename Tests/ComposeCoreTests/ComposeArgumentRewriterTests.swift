@@ -95,6 +95,23 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("moves root compose options for version")
+    func movesRootComposeOptionsForVersion() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--ansi",
+            "never",
+            "--dry-run",
+            "version",
+        ])
+
+        #expect(rewritten == [
+            "version",
+            "--ansi",
+            "never",
+            "--dry-run",
+        ])
+    }
+
     @Test("returns arguments unchanged when no subcommand is present")
     func returnsArgumentsUnchangedWhenNoSubcommandIsPresent() {
         let arguments = ["--help", "--verbose"]

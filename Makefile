@@ -26,13 +26,13 @@ DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
 MARKDOWN_FILES := README.md BUILD.md CONTRIBUTING.md DESIGN.md INSTALL.md
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build coverage coverage-check sonar package lint format
+.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar package lint format
 
 all: workflow
 
 workflow: ci package
 
-ci: resolve lint build coverage-check go-build
+ci: resolve lint build coverage-check go-build cli-smoke
 
 resolve:
 	$(SWIFT) package resolve
@@ -67,6 +67,10 @@ go-test:
 
 go-build:
 	cd Tools/compose-normalizer && $(GO) build -o compose-normalizer .
+
+cli-smoke:
+	$(SWIFT) run compose --ansi never version >/dev/null
+	$(SWIFT) run compose version --dry-run >/dev/null
 
 coverage: swift-coverage go-test
 
