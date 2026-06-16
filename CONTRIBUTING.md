@@ -85,8 +85,12 @@ Maintainers should keep these guardrails enabled:
 - Require maintainer review for external contributors.
 - Restrict write access to trusted maintainers.
 - Avoid running untrusted pull request code with write-scoped secrets.
-- Use squash merges for reviewed pull requests so `main` stays linear and each
-  accepted change has a clear Conventional Commit message.
+- Keep one Conventional Commit per accepted issue on `develop`. If a pull
+  request needs several fixup commits during review, squash those fixups before
+  treating the issue as complete on `develop`.
+- When promoting a tested batch from `develop` to `main`, preserve the issue
+  commits rather than squash-merging the batch. This keeps `main` aligned with
+  the reviewed issue history while avoiding one CI/SonarQube run per small fix.
 
 Do not include credentials, tokens, certificates, private keys, or personal data
 in pull requests, tests, examples, logs, or screenshots.
