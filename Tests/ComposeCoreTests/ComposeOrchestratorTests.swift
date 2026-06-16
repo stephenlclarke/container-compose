@@ -67,6 +67,7 @@ struct ComposeOrchestratorTests {
         let orchestrator = ComposeOrchestrator(runner: runner)
         let project = ComposeProject(
             name: "demo",
+            workingDirectory: "/tmp/demo",
             composeFiles: ["/tmp/compose.yml"],
             services: [
                 "api": ComposeService(
@@ -90,13 +91,19 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.allSatisfy { $0.arguments.first == "container" })
         #expect(runner.commands[0].arguments.containsSequence(["network", "create"]))
         #expect(runner.commands[0].arguments.contains("demo_default"))
+        #expect(runner.commands[0].arguments.containsSequence(["--label", "com.apple.container.compose.project.working-directory=/tmp/demo"]))
+        #expect(runner.commands[0].arguments.containsLabel(withPrefix: "com.apple.container.compose.project.config-files-hash="))
         #expect(runner.commands[1].arguments.containsSequence(["volume", "create"]))
         #expect(runner.commands[1].arguments.contains("demo_cache"))
+        #expect(runner.commands[1].arguments.containsSequence(["--label", "com.apple.container.compose.project.working-directory=/tmp/demo"]))
+        #expect(runner.commands[1].arguments.containsLabel(withPrefix: "com.apple.container.compose.project.config-files-hash="))
         #expect(runner.commands[2].arguments == ["container", "inspect", "demo-api-1"])
 
         let run = runner.commands[3].arguments
         #expect(run.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
+        #expect(run.containsSequence(["--label", "com.apple.container.compose.project.working-directory=/tmp/demo"]))
+        #expect(run.containsLabel(withPrefix: "com.apple.container.compose.project.config-files-hash="))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.service=api"]))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.oneoff=false"]))
         #expect(run.containsSequence(["--label", "com.example.role=api"]))
@@ -917,6 +924,16 @@ private extension Array where Element: Equatable {
                 return false
             }
             return Array(self[index..<end]) == sequence
+        }
+    }
+}
+
+private extension Array where Element == String {
+    func containsLabel(withPrefix prefix: String) -> Bool {
+        indices.contains { index in
+            self[index] == "--label"
+                && self.index(after: index) < endIndex
+                && self[self.index(after: index)].hasPrefix(prefix)
         }
     }
 }

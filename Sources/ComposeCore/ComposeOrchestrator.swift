@@ -389,7 +389,7 @@ private extension ComposeOrchestrator {
 
     func ensureNetwork(project: ComposeProject, composeName: String, network: ComposeNetwork) async throws {
         var args = ["network", "create"]
-        for label in resourceLabels(project: project.name) {
+        for label in resourceLabels(project: project) {
             args.append(contentsOf: ["--label", label])
         }
         for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
@@ -401,7 +401,7 @@ private extension ComposeOrchestrator {
 
     func ensureVolume(project: ComposeProject, composeName: String, volume: ComposeVolume) async throws {
         var args = ["volume", "create"]
-        for label in resourceLabels(project: project.name) {
+        for label in resourceLabels(project: project) {
             args.append(contentsOf: ["--label", label])
         }
         for label in (volume.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
@@ -586,6 +586,8 @@ private struct ExistingContainer {
 
 private let projectLabel = "com.apple.container.compose.project"
 private let configHashLabel = "com.apple.container.compose.config-hash"
+private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
+private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
 
 private func resourceName(project: String, name: String) -> String {
     "\(slug(project))_\(slug(name))"
@@ -599,15 +601,17 @@ private func containerName(project: ComposeProject, service: ComposeService, one
     return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
 }
 
-private func resourceLabels(project: String) -> [String] {
+private func resourceLabels(project: ComposeProject) -> [String] {
     [
-        "\(projectLabel)=\(project)",
+        "\(projectLabel)=\(project.name)",
         "com.apple.container.compose.version=1",
+        "\(workingDirectoryLabel)=\(project.workingDirectory)",
+        "\(configFilesHashLabel)=\(composeFilesHash(project.composeFiles))",
     ]
 }
 
 private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) -> [String] {
-    var labels = resourceLabels(project: project.name)
+    var labels = resourceLabels(project: project)
     labels.append("com.apple.container.compose.service=\(service.name)")
     labels.append("com.apple.container.compose.oneoff=\(oneOff)")
     labels.append("\(configHashLabel)=\(configHash(service))")
@@ -615,6 +619,10 @@ private func serviceLabels(project: ComposeProject, service: ComposeService, one
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
     }
     return labels
+}
+
+private func composeFilesHash(_ composeFiles: [String]) -> String {
+    stableHash(composeFiles.sorted().joined(separator: "\n"))
 }
 
 private func configHash(_ service: ComposeService) -> String {
