@@ -119,6 +119,12 @@ type normalizedService struct {
 	CapAdd                 []string                            `json:"capAdd,omitempty"`
 	CapDrop                []string                            `json:"capDrop,omitempty"`
 	MemLimit               string                              `json:"memLimit,omitempty"`
+	MemReservation         string                              `json:"memReservation,omitempty"`
+	MemSwapLimit           string                              `json:"memSwapLimit,omitempty"`
+	MemSwappiness          string                              `json:"memSwappiness,omitempty"`
+	OomKillDisable         bool                                `json:"oomKillDisable,omitempty"`
+	OomScoreAdj            int64                               `json:"oomScoreAdj,omitempty"`
+	PidsLimit              int64                               `json:"pidsLimit,omitempty"`
 	CPUS                   string                              `json:"cpus,omitempty"`
 	ShmSize                string                              `json:"shmSize,omitempty"`
 	Ulimits                []string                            `json:"ulimits,omitempty"`
@@ -379,6 +385,12 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		CapAdd:                 append([]string(nil), service.CapAdd...),
 		CapDrop:                append([]string(nil), service.CapDrop...),
 		MemLimit:               unitBytesValue(service.MemLimit),
+		MemReservation:         unitBytesValue(service.MemReservation),
+		MemSwapLimit:           unitBytesValue(service.MemSwapLimit),
+		MemSwappiness:          unitBytesValue(service.MemSwappiness),
+		OomKillDisable:         service.OomKillDisable,
+		OomScoreAdj:            service.OomScoreAdj,
+		PidsLimit:              service.PidsLimit,
 		CPUS:                   cpusValue(service.CPUS),
 		ShmSize:                unitBytesValue(service.ShmSize),
 		Ulimits:                ulimitValues(service.Ulimits),

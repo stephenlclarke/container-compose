@@ -431,6 +431,9 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedCPUResourceFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
+        if let gap = unsupportedMemoryAndProcessResourceFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
@@ -520,6 +523,34 @@ private extension ComposeOrchestrator {
         }
         appendUnsupportedIntegerField("cpu_shares", value: service.cpuShares, reason: reason, to: &fields)
         return fields
+    }
+
+    /// Returns unsupported memory, OOM, and process resource controls beyond `mem_limit`.
+    func unsupportedMemoryAndProcessResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        let reason = "memory, OOM, and process resource support needs an apple/container runtime gap PR"
+        var fields: [(composeName: String, value: String, reason: String)] = []
+        appendUnsupportedStringField("mem_reservation", value: service.memReservation, reason: reason, to: &fields)
+        appendUnsupportedStringField("memswap_limit", value: service.memSwapLimit, reason: reason, to: &fields)
+        appendUnsupportedStringField("mem_swappiness", value: service.memSwappiness, reason: reason, to: &fields)
+        if service.oomKillDisable == true {
+            fields.append(("oom_kill_disable", "true", reason))
+        }
+        appendUnsupportedIntegerField("oom_score_adj", value: service.oomScoreAdj, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("pids_limit", value: service.pidsLimit, reason: reason, to: &fields)
+        return fields
+    }
+
+    /// Appends an unsupported string field only when Compose supplied a non-empty value.
+    func appendUnsupportedStringField(
+        _ composeName: String,
+        value: String?,
+        reason: String,
+        to fields: inout [(composeName: String, value: String, reason: String)]
+    ) {
+        guard let value, !value.isEmpty else {
+            return
+        }
+        fields.append((composeName, value, reason))
     }
 
     /// Appends an unsupported integer field only when Compose supplied a non-zero value.

@@ -141,6 +141,12 @@ services:
       - use-vc
     expose:
       - "9000"
+    mem_reservation: 128m
+    memswap_limit: 256m
+    mem_swappiness: 60
+    oom_kill_disable: true
+    oom_score_adj: -500
+    pids_limit: 128
     shm_size: 64m
     ulimits:
       nofile:
@@ -270,6 +276,24 @@ volumes:
 	}
 	if got, want := api.Expose, []string{"9000"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Expose = %#v, want %#v", got, want)
+	}
+	if got, want := api.MemReservation, "134217728"; got != want {
+		t.Fatalf("api.MemReservation = %q, want %q", got, want)
+	}
+	if got, want := api.MemSwapLimit, "268435456"; got != want {
+		t.Fatalf("api.MemSwapLimit = %q, want %q", got, want)
+	}
+	if got, want := api.MemSwappiness, "60"; got != want {
+		t.Fatalf("api.MemSwappiness = %q, want %q", got, want)
+	}
+	if !api.OomKillDisable {
+		t.Fatal("api.OomKillDisable = false, want true")
+	}
+	if api.OomScoreAdj != -500 {
+		t.Fatalf("api.OomScoreAdj = %d, want -500", api.OomScoreAdj)
+	}
+	if api.PidsLimit != 128 {
+		t.Fatalf("api.PidsLimit = %d, want 128", api.PidsLimit)
 	}
 	if got, want := api.ShmSize, "67108864"; got != want {
 		t.Fatalf("api.ShmSize = %q, want %q", got, want)

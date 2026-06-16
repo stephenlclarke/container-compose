@@ -711,6 +711,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported memory and process resource fields before creating resources")
+    func upRejectsUnsupportedMemoryAndProcessResourceFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedMemoryAndProcessResourceFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -952,6 +981,12 @@ struct ComposeOrchestratorTests {
               - use-vc
             expose:
               - "9000"
+            mem_reservation: 128m
+            memswap_limit: 256m
+            mem_swappiness: 60
+            oom_kill_disable: true
+            oom_score_adj: -500
+            pids_limit: 128
             shm_size: 64m
             ulimits:
               nofile:
@@ -1005,6 +1040,12 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])
+        #expect(project.services["api"]?.memReservation == "134217728")
+        #expect(project.services["api"]?.memSwapLimit == "268435456")
+        #expect(project.services["api"]?.memSwappiness == "60")
+        #expect(project.services["api"]?.oomKillDisable == true)
+        #expect(project.services["api"]?.oomScoreAdj == -500)
+        #expect(project.services["api"]?.pidsLimit == 128)
         #expect(project.services["api"]?.shmSize == "67108864")
         #expect(project.services["api"]?.ulimits == ["nofile=1024:2048", "nproc=512"])
         #expect(project.services["api"]?.sysctls == ["net.core.somaxconn": "1024"])
@@ -1925,6 +1966,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run rejects unsupported memory and process resource fields before creating resources")
+    func runRejectsUnsupportedMemoryAndProcessResourceFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedMemoryAndProcessResourceFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("run rejects unsupported MAC address before creating resources")
     func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2563,6 +2633,51 @@ private func unsupportedCPUResourceFieldCases() -> [UnsupportedCPUResourceFieldC
             composeName: "cpu_shares",
             value: "512",
             configure: { $0.cpuShares = 512 }
+        ),
+    ]
+}
+
+private struct UnsupportedMemoryAndProcessResourceFieldCase: Sendable {
+    let composeName: String
+    let value: String
+    let configure: @Sendable (inout ComposeService) -> Void
+
+    func expectedMessage(serviceName: String) -> String {
+        "service '\(serviceName)' uses \(composeName) '\(value)'; memory, OOM, and process resource support needs an apple/container runtime gap PR"
+    }
+}
+
+private func unsupportedMemoryAndProcessResourceFieldCases() -> [UnsupportedMemoryAndProcessResourceFieldCase] {
+    [
+        UnsupportedMemoryAndProcessResourceFieldCase(
+            composeName: "mem_reservation",
+            value: "134217728",
+            configure: { $0.memReservation = "134217728" }
+        ),
+        UnsupportedMemoryAndProcessResourceFieldCase(
+            composeName: "memswap_limit",
+            value: "268435456",
+            configure: { $0.memSwapLimit = "268435456" }
+        ),
+        UnsupportedMemoryAndProcessResourceFieldCase(
+            composeName: "mem_swappiness",
+            value: "60",
+            configure: { $0.memSwappiness = "60" }
+        ),
+        UnsupportedMemoryAndProcessResourceFieldCase(
+            composeName: "oom_kill_disable",
+            value: "true",
+            configure: { $0.oomKillDisable = true }
+        ),
+        UnsupportedMemoryAndProcessResourceFieldCase(
+            composeName: "oom_score_adj",
+            value: "-500",
+            configure: { $0.oomScoreAdj = -500 }
+        ),
+        UnsupportedMemoryAndProcessResourceFieldCase(
+            composeName: "pids_limit",
+            value: "128",
+            configure: { $0.pidsLimit = 128 }
         ),
     ]
 }

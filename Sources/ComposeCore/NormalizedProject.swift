@@ -137,6 +137,12 @@ public struct ComposeService: Codable, Equatable {
     public var capAdd: [String]? = nil
     public var capDrop: [String]? = nil
     public var memLimit: String? = nil
+    public var memReservation: String? = nil
+    public var memSwapLimit: String? = nil
+    public var memSwappiness: String? = nil
+    public var oomKillDisable: Bool? = nil
+    public var oomScoreAdj: Int? = nil
+    public var pidsLimit: Int? = nil
     public var cpus: String? = nil
     public var shmSize: String? = nil
     public var ulimits: [String]? = nil
@@ -210,6 +216,12 @@ public struct ComposeService: Codable, Equatable {
         case capAdd
         case capDrop
         case memLimit
+        case memReservation
+        case memSwapLimit
+        case memSwappiness
+        case oomKillDisable
+        case oomScoreAdj
+        case pidsLimit
         case cpus
         case shmSize
         case ulimits
