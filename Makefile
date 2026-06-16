@@ -25,7 +25,19 @@ COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
 SONAR_QUALITYGATE_WAIT ?= false
+SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= /Library/Developer/CommandLineTools/Library/Developer/Frameworks
+SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= /Library/Developer/CommandLineTools/Library/Developer/usr/lib
 MARKDOWN_FILES := README.md BUILD.md CONTRIBUTING.md DESIGN.md INSTALL.md
+
+# Command Line Tools installs can place Swift Testing outside SwiftPM's default rpaths.
+ifneq ($(wildcard $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)/Testing.framework),)
+SWIFT_TEST_FLAGS ?= -Xswiftc -F -Xswiftc $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH) -Xlinker -rpath -Xlinker $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)
+ifneq ($(wildcard $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)/lib_TestingInterop.dylib),)
+SWIFT_TEST_FLAGS += -Xlinker -rpath -Xlinker $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)
+endif
+else
+SWIFT_TEST_FLAGS ?=
+endif
 
 .PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar package lint format
 
@@ -50,7 +62,7 @@ run:
 test: swift-test go-test
 
 swift-test:
-	$(SWIFT) test --enable-code-coverage
+	$(SWIFT) test --enable-code-coverage $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"; \
