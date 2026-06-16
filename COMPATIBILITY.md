@@ -38,7 +38,6 @@ These Compose model fields are normalized and preserved for `compose config`, bu
 
 - Project and service extension fields such as `x-*`.
 - Top-level `configs` and `secrets` definitions.
-- Service `secrets`.
 
 ## Explicit Runtime Gaps
 
@@ -50,6 +49,7 @@ These fields currently fail before runtime side effects because the equivalent l
 - `hostname`.
 - `healthcheck`.
 - Service `configs`.
+- Service `secrets`.
 - `privileged`.
 - `top`, `events`, `port`, `pause`, `unpause`, and `wait` subcommands.
 

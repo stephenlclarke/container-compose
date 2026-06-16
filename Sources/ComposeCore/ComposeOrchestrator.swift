@@ -421,6 +421,9 @@ private extension ComposeOrchestrator {
         if let configs = service.configs, !configs.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses configs; config mount support needs an apple/container runtime gap PR")
         }
+        if let secrets = service.secrets, !secrets.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses secrets; secret mount support needs an apple/container runtime gap PR")
+        }
         if service.privileged == true {
             throw ComposeError.unsupported("service '\(service.name)' uses privileged")
         }
