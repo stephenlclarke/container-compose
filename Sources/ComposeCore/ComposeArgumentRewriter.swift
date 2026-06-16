@@ -234,11 +234,10 @@ public enum ComposeArgumentRewriter {
                 rewritten.append(argument)
                 rewritten.append(arguments[index + 1])
                 index += 2
-            } else if argument.hasPrefix("-") {
-                rewritten.append(argument)
-                index += 1
             } else {
-                shouldRewriteOptions = false
+                if !argument.hasPrefix("-") {
+                    shouldRewriteOptions = false
+                }
                 rewritten.append(argument)
                 index += 1
             }

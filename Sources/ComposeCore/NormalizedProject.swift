@@ -289,6 +289,26 @@ public struct ComposeService: Codable, Equatable {
 
 /// Per-service network attachment options normalized from Compose.
 public struct ComposeNetworkOptions: Codable, Equatable {
+    /// Address-like attachment options grouped to keep construction readable.
+    public struct Addressing: Equatable {
+        public var ipv4Address: String?
+        public var ipv6Address: String?
+        public var linkLocalIPs: [String]?
+        public var macAddress: String?
+
+        public init(
+            ipv4Address: String? = nil,
+            ipv6Address: String? = nil,
+            linkLocalIPs: [String]? = nil,
+            macAddress: String? = nil
+        ) {
+            self.ipv4Address = ipv4Address
+            self.ipv6Address = ipv6Address
+            self.linkLocalIPs = linkLocalIPs
+            self.macAddress = macAddress
+        }
+    }
+
     public var driverOpts: [String: String]?
     public var gatewayPriority: Int?
     public var interfaceName: String?
@@ -302,19 +322,16 @@ public struct ComposeNetworkOptions: Codable, Equatable {
         driverOpts: [String: String]? = nil,
         gatewayPriority: Int? = nil,
         interfaceName: String? = nil,
-        ipv4Address: String? = nil,
-        ipv6Address: String? = nil,
-        linkLocalIPs: [String]? = nil,
-        macAddress: String? = nil,
+        addressing: Addressing = Addressing(),
         priority: Int? = nil
     ) {
         self.driverOpts = driverOpts
         self.gatewayPriority = gatewayPriority
         self.interfaceName = interfaceName
-        self.ipv4Address = ipv4Address
-        self.ipv6Address = ipv6Address
-        self.linkLocalIPs = linkLocalIPs
-        self.macAddress = macAddress
+        self.ipv4Address = addressing.ipv4Address
+        self.ipv6Address = addressing.ipv6Address
+        self.linkLocalIPs = addressing.linkLocalIPs
+        self.macAddress = addressing.macAddress
         self.priority = priority
     }
 }

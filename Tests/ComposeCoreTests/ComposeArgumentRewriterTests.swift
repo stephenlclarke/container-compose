@@ -179,6 +179,27 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps run flags before service name while preserving command arguments")
+    func keepsRunFlagsBeforeServiceNameWhilePreservingCommandArguments() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "--rm",
+            "--service-ports",
+            "api",
+            "echo",
+            "--rm",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--rm",
+            "--service-ports",
+            "api",
+            "echo",
+            "--rm",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([
