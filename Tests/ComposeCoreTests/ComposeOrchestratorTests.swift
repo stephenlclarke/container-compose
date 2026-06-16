@@ -468,6 +468,25 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[3].arguments == ["container", "image", "push", "example/api:latest"])
     }
 
+    @Test("orchestrator uses configured environment launcher")
+    func orchestratorUsesConfiguredEnvironmentLauncher() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(environmentLauncher: "custom-env")
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api:latest")]
+        )
+
+        try await orchestrator.pull(project: project, services: ["api"])
+
+        let command = try #require(runner.commands.first)
+        #expect(command.executable == "custom-env")
+        #expect(command.arguments == ["container", "image", "pull", "example/api:latest"])
+    }
+
     @Test("down removes project resources in dependency order")
     func downRemovesProjectResourcesInDependencyOrder() async throws {
         let runner = RecordingRunner(responses: [

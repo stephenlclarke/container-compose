@@ -19,17 +19,22 @@ import Foundation
 
 /// Runtime settings used while translating Compose operations to `container`.
 public struct ComposeExecutionOptions {
+    public static let defaultEnvironmentLauncher = ["", "usr", "bin", "env"].joined(separator: "/")
+
     public var dryRun: Bool
     public var containerBinary: String
+    public var environmentLauncher: String
     public var emit: @Sendable (String) -> Void
 
     public init(
         dryRun: Bool = false,
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
+        environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         emit: @escaping @Sendable (String) -> Void = { print($0) }
     ) {
         self.dryRun = dryRun
         self.containerBinary = containerBinary
+        self.environmentLauncher = environmentLauncher
         self.emit = emit
     }
 }
@@ -583,7 +588,7 @@ private extension ComposeOrchestrator {
             options.emit("+ " + shellQuoted([options.containerBinary] + arguments))
             return CommandResult(status: 0, stdout: "", stderr: "")
         }
-        let result = try await runner.run("/usr/bin/env", [options.containerBinary] + arguments)
+        let result = try await runner.run(options.environmentLauncher, [options.containerBinary] + arguments)
         if emitOutput {
             print(result.stdout, terminator: result.stdout.hasSuffix("\n") || result.stdout.isEmpty ? "" : "\n")
             fputs(result.stderr, stderr)
