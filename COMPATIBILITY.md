@@ -288,13 +288,17 @@ services:
   api:
     build:
       context: ./api
-    network_mode: service:gateway
     networks:
       app:
         aliases:
           - api.internal
       admin:
         ipv4_address: 10.10.0.20
+
+  sidecar:
+    build:
+      context: ./sidecar
+    network_mode: service:gateway
 
   gateway:
     build:
@@ -311,6 +315,13 @@ networks:
 ```
 
 Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "sleep 3600"]
+```
+
+Dockerfile: `sidecar/Dockerfile`
 
 ```dockerfile
 FROM alpine:3.20
