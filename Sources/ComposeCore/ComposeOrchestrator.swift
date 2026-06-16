@@ -162,7 +162,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if all {
             args.append("--all")
         }
-        try await runContainer(args)
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+        let result = try await runContainer(args, emitOutput: false)
+        options.emit(try projectContainerListJSON(projectName: project.name, output: result.stdout))
     }
 
     public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: Int?) async throws {
@@ -533,6 +538,7 @@ private struct ExistingContainer {
     var configHash: String?
 }
 
+private let projectLabel = "com.apple.container.compose.project"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 
 private func resourceName(project: String, name: String) -> String {
@@ -549,7 +555,7 @@ private func containerName(project: ComposeProject, service: ComposeService, one
 
 private func resourceLabels(project: String) -> [String] {
     [
-        "com.apple.container.compose.project=\(project)",
+        "\(projectLabel)=\(project)",
         "com.apple.container.compose.version=1",
     ]
 }
@@ -606,6 +612,27 @@ private func labelValue(_ key: String, in value: Any?) -> String? {
         return nil
     }
     return labels[key] as? String
+}
+
+private func projectContainerListJSON(projectName: String, output: String) throws -> String {
+    guard let data = output.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data)
+    else {
+        throw ComposeError.invalidProject("container list returned invalid JSON")
+    }
+
+    let containers: [Any]
+    if let values = json as? [Any] {
+        containers = values
+    } else if let value = json as? [String: Any] {
+        containers = [value]
+    } else {
+        throw ComposeError.invalidProject("container list returned invalid JSON")
+    }
+
+    let scopedContainers = containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
+    let scopedData = try JSONSerialization.data(withJSONObject: scopedContainers, options: [.prettyPrinted, .sortedKeys])
+    return String(decoding: scopedData, as: UTF8.self)
 }
 
 private func stableHash(_ value: String) -> String {

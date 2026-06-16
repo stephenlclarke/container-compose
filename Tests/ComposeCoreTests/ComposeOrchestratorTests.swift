@@ -132,6 +132,36 @@ struct ComposeOrchestratorTests {
         #expect(images == ["example/api:latest", "nginx:latest"])
     }
 
+    @Test("ps filters containers by project label")
+    func psFiltersContainersByProjectLabel() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false)
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json"]])
+        #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-api-1", "demo-worker-1"])
+    }
+
+    @Test("ps keeps project scoping when all containers are requested")
+    func psKeepsProjectScopingWhenAllContainersAreRequested() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: true)
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-api-1", "demo-worker-1"])
+    }
+
     @Test("normalizes a compose file through compose-go")
     func normalizesComposeFileThroughComposeGo() async throws {
         let fileManager = FileManager.default
@@ -741,6 +771,7 @@ private extension CommandResult {
 }
 
 private let composeConfigHashLabel = "com.apple.container.compose.config-hash"
+private let composeProjectLabel = "com.apple.container.compose.project"
 
 private func inspectResult(configHash: String) -> CommandResult {
     CommandResult(
@@ -774,6 +805,49 @@ private func composeConfigHash(in arguments: [String]) -> String? {
         }
     }
     return nil
+}
+
+private func containerListResult() -> CommandResult {
+    CommandResult(
+        status: 0,
+        stdout: """
+        [
+          {
+            "id": "demo-api-1",
+            "configuration": {
+              "labels": {
+                "\(composeProjectLabel)": "demo"
+              }
+            }
+          },
+          {
+            "id": "other-api-1",
+            "configuration": {
+              "labels": {
+                "\(composeProjectLabel)": "other"
+              }
+            }
+          },
+          {
+            "id": "demo-worker-1",
+            "Config": {
+              "Labels": {
+                "\(composeProjectLabel)": "demo"
+              }
+            }
+          }
+        ]
+        """,
+        stderr: ""
+    )
+}
+
+private struct ListedContainer: Decodable {
+    var id: String
+}
+
+private func listedContainerIDs(from output: String) throws -> [String] {
+    try JSONDecoder().decode([ListedContainer].self, from: Data(output.utf8)).map(\.id)
 }
 
 private final class MessageRecorder: @unchecked Sendable {
