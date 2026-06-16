@@ -154,7 +154,6 @@ jobs:
   package:
     name: Package Plugin
     runs-on: macos-26
-    needs: validate
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v6
