@@ -57,6 +57,30 @@ jobs:
           path: container
           fetch-depth: 0
 
+      - name: Compute SwiftPM cache fingerprint
+        id: swiftpm-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            swift --version 2>&1
+            shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
+            git -C container rev-parse HEAD
+            shasum -a 256 container/Package.swift container/Package.resolved
+          } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM build artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            container-compose/.build
+            container-compose/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}-${{ github.job }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}-
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v1-
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -154,7 +178,6 @@ jobs:
   package:
     name: Package Plugin
     runs-on: macos-26
-    needs: validate
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v6
@@ -166,6 +189,30 @@ jobs:
         with:
           repository: apple/container
           path: container
+
+      - name: Compute SwiftPM cache fingerprint
+        id: swiftpm-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            swift --version 2>&1
+            shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
+            git -C container rev-parse HEAD
+            shasum -a 256 container/Package.swift container/Package.resolved
+          } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM build artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            container-compose/.build
+            container-compose/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}-${{ github.job }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}-
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v1-
 
       - name: Set up Go
         uses: actions/setup-go@v6
