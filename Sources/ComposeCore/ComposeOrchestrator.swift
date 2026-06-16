@@ -407,6 +407,7 @@ private extension ComposeOrchestrator {
     func validateRuntimeSupport(service: ComposeService) throws {
         try validateBuildSupport(service: service)
         try validateDeploySupport(service: service)
+        try validateProviderModelAndHookSupport(service: service)
         let networks = service.networks ?? []
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; Apple container does not expose network connect yet")
@@ -525,6 +526,22 @@ private extension ComposeOrchestrator {
         }
         let fieldList = fields.joined(separator: ", ")
         throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond replica count is not implemented by container-compose yet")
+    }
+
+    /// Rejects service extension points that need explicit orchestration design.
+    func validateProviderModelAndHookSupport(service: ComposeService) throws {
+        if service.provider == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses provider; service providers are not implemented by container-compose yet")
+        }
+        if service.models == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses models; service model bindings are not implemented by container-compose yet")
+        }
+        if service.postStart == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses post_start; lifecycle hooks are not implemented by container-compose yet")
+        }
+        if service.preStop == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; lifecycle hooks are not implemented by container-compose yet")
+        }
     }
 
     /// Validates all selected services before any runtime side effects occur.

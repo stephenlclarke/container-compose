@@ -848,6 +848,35 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported provider model and hook fields before creating resources")
+    func upRejectsUnsupportedProviderModelAndHookFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedProviderModelAndHookFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported user and security option fields before creating resources")
     func upRejectsUnsupportedUserAndSecurityOptionFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedUserAndSecurityOptionFieldCases() {
@@ -1404,6 +1433,9 @@ struct ComposeOrchestratorTests {
         try """
         x-project:
           enabled: true
+        models:
+          llm:
+            model: example/local-llm
         services:
           api:
             image: alpine
@@ -1430,6 +1462,7 @@ struct ComposeOrchestratorTests {
 
         #expect(project.configs?["app_config"] == .object(["external": .bool(true), "name": .string("app_config")]))
         #expect(project.secrets?["app_secret"] == .object(["external": .bool(true), "name": .string("app_secret")]))
+        #expect(project.models?["llm"] == .object(["model": .string("example/local-llm")]))
         #expect(project.extensions?["x-project"] == .object(["enabled": .bool(true)]))
         #expect(api.restart == "unless-stopped")
         #expect(api.healthcheck == .object(["disable": .bool(true)]))
@@ -1472,6 +1505,7 @@ struct ComposeOrchestratorTests {
         ) {
             $0.configs = ["app_config": .object(["external": .bool(true)])]
             $0.secrets = ["app_secret": .object(["external": .bool(true)])]
+            $0.models = ["llm": .object(["model": .string("example/local-llm")])]
             $0.extensions = ["x-project": .object(["enabled": .bool(true), "retries": .number(3)])]
         }
 
@@ -1480,6 +1514,7 @@ struct ComposeOrchestratorTests {
 
         #expect(decoded.configs?["app_config"] == .object(["external": .bool(true)]))
         #expect(decoded.secrets?["app_secret"] == .object(["external": .bool(true)]))
+        #expect(decoded.models?["llm"] == .object(["model": .string("example/local-llm")]))
         #expect(decoded.extensions?["x-project"] == .object(["enabled": .bool(true), "retries": .number(3)]))
         #expect(decoded.services["web"]?.healthcheck == .object(["disable": .bool(true)]))
         #expect(decoded.services["web"]?.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
@@ -2405,6 +2440,35 @@ struct ComposeOrchestratorTests {
         }
 
         #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported provider model and hook fields before creating resources")
+    func runRejectsUnsupportedProviderModelAndHookFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedProviderModelAndHookFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
     }
 
     @Test("run rejects unsupported user and security option fields before creating resources")
@@ -3340,6 +3404,41 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
                     ]),
                 ]
             }
+        ),
+    ]
+}
+
+private struct UnsupportedProviderModelAndHookFieldCase: Sendable {
+    let composeName: String
+    let reason: String
+    let configure: @Sendable (inout ComposeService) -> Void
+
+    func expectedMessage(serviceName: String) -> String {
+        "service '\(serviceName)' uses \(composeName); \(reason)"
+    }
+}
+
+private func unsupportedProviderModelAndHookFieldCases() -> [UnsupportedProviderModelAndHookFieldCase] {
+    [
+        UnsupportedProviderModelAndHookFieldCase(
+            composeName: "provider",
+            reason: "service providers are not implemented by container-compose yet",
+            configure: { $0.provider = true }
+        ),
+        UnsupportedProviderModelAndHookFieldCase(
+            composeName: "models",
+            reason: "service model bindings are not implemented by container-compose yet",
+            configure: { $0.models = true }
+        ),
+        UnsupportedProviderModelAndHookFieldCase(
+            composeName: "post_start",
+            reason: "lifecycle hooks are not implemented by container-compose yet",
+            configure: { $0.postStart = true }
+        ),
+        UnsupportedProviderModelAndHookFieldCase(
+            composeName: "pre_stop",
+            reason: "lifecycle hooks are not implemented by container-compose yet",
+            configure: { $0.preStop = true }
         ),
     ]
 }

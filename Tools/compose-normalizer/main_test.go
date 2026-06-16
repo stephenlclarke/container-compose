@@ -638,6 +638,54 @@ secrets:
 	}
 }
 
+func TestLoadProjectPreservesModelsAndFlagsProviderModelHooks(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+models:
+  llm:
+    model: example/local-llm
+services:
+  api:
+    image: alpine
+    provider:
+      type: example
+      options:
+        endpoint: local
+    models:
+      llm:
+        endpoint_var: MODEL_ENDPOINT
+        model_var: MODEL_ID
+    post_start:
+      - command: ["sh", "-c", "echo started"]
+    pre_stop:
+      - command: ["sh", "-c", "echo stopping"]
+`)
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "sample", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	if project.Models["llm"] == nil {
+		t.Fatal("project.Models[llm] is nil")
+	}
+
+	api := project.Services["api"]
+	if !api.Provider {
+		t.Fatal("api.Provider = false, want true")
+	}
+	if !api.Models {
+		t.Fatal("api.Models = false, want true")
+	}
+	if !api.PostStart {
+		t.Fatal("api.PostStart = false, want true")
+	}
+	if !api.PreStop {
+		t.Fatal("api.PreStop = false, want true")
+	}
+}
+
 func TestLoadProjectAppliesProfilesEnvFilesAndBuildFields(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")

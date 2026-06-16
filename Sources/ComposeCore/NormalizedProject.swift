@@ -26,6 +26,7 @@ public struct ComposeProject: Codable, Equatable {
     public var volumes: [String: ComposeVolume] = [:]
     public var configs: [String: ComposeValue]? = nil
     public var secrets: [String: ComposeValue]? = nil
+    public var models: [String: ComposeValue]? = nil
     public var extensions: [String: ComposeValue]? = nil
 
     public init(name: String, services: [String: ComposeService]) {
@@ -108,6 +109,7 @@ public struct ComposeService: Codable, Equatable {
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
+    public var provider: Bool? = nil
     public var credentialSpec: ComposeValue? = nil
     public var deviceCgroupRules: [String]? = nil
     public var devices: [ComposeValue]? = nil
@@ -160,6 +162,7 @@ public struct ComposeService: Codable, Equatable {
     public var memReservation: String? = nil
     public var memSwapLimit: String? = nil
     public var memSwappiness: String? = nil
+    public var models: Bool? = nil
     public var oomKillDisable: Bool? = nil
     public var oomScoreAdj: Int? = nil
     public var pidsLimit: Int? = nil
@@ -170,6 +173,8 @@ public struct ComposeService: Codable, Equatable {
     public var sysctls: [String: String]? = nil
     public var stopSignal: String? = nil
     public var stopGracePeriodSeconds: Int? = nil
+    public var postStart: Bool? = nil
+    public var preStop: Bool? = nil
     public var usernsMode: String? = nil
     public var uts: String? = nil
     public var healthcheck: ComposeValue? = nil
@@ -207,6 +212,7 @@ public struct ComposeService: Codable, Equatable {
         case build
         case command
         case entrypoint
+        case provider
         case credentialSpec
         case deviceCgroupRules
         case devices
@@ -259,6 +265,7 @@ public struct ComposeService: Codable, Equatable {
         case memReservation
         case memSwapLimit
         case memSwappiness
+        case models
         case oomKillDisable
         case oomScoreAdj
         case pidsLimit
@@ -269,6 +276,8 @@ public struct ComposeService: Codable, Equatable {
         case sysctls
         case stopSignal
         case stopGracePeriodSeconds
+        case postStart
+        case preStop
         case usernsMode
         case uts
         case healthcheck

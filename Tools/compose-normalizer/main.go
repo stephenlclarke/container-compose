@@ -60,6 +60,7 @@ type normalizedProject struct {
 	Volumes          map[string]normalizedVolume  `json:"volumes"`
 	Configs          map[string]any               `json:"configs,omitempty"`
 	Secrets          map[string]any               `json:"secrets,omitempty"`
+	Models           map[string]any               `json:"models,omitempty"`
 	Extensions       map[string]any               `json:"extensions,omitempty"`
 }
 
@@ -90,6 +91,7 @@ type normalizedService struct {
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
 	Entrypoint              []string                            `json:"entrypoint,omitempty"`
+	Provider                bool                                `json:"provider,omitempty"`
 	CredentialSpec          *types.CredentialSpecConfig         `json:"credentialSpec,omitempty"`
 	DeviceCgroupRules       []string                            `json:"deviceCgroupRules,omitempty"`
 	Devices                 []types.DeviceMapping               `json:"devices,omitempty"`
@@ -142,6 +144,7 @@ type normalizedService struct {
 	MemReservation          string                              `json:"memReservation,omitempty"`
 	MemSwapLimit            string                              `json:"memSwapLimit,omitempty"`
 	MemSwappiness           string                              `json:"memSwappiness,omitempty"`
+	Models                  bool                                `json:"models,omitempty"`
 	OomKillDisable          bool                                `json:"oomKillDisable,omitempty"`
 	OomScoreAdj             int64                               `json:"oomScoreAdj,omitempty"`
 	PidsLimit               int64                               `json:"pidsLimit,omitempty"`
@@ -152,6 +155,8 @@ type normalizedService struct {
 	Sysctls                 map[string]string                   `json:"sysctls,omitempty"`
 	StopSignal              string                              `json:"stopSignal,omitempty"`
 	StopGracePeriodSeconds  *int64                              `json:"stopGracePeriodSeconds,omitempty"`
+	PostStart               bool                                `json:"postStart,omitempty"`
+	PreStop                 bool                                `json:"preStop,omitempty"`
 	UserNSMode              string                              `json:"usernsMode,omitempty"`
 	Uts                     string                              `json:"uts,omitempty"`
 	Healthcheck             any                                 `json:"healthcheck,omitempty"`
@@ -344,6 +349,9 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	if len(project.Secrets) > 0 {
 		result.Secrets = jsonMap(project.Secrets)
 	}
+	if len(project.Models) > 0 {
+		result.Models = jsonMap(project.Models)
+	}
 	if len(project.Extensions) > 0 {
 		result.Extensions = project.Extensions
 	}
@@ -377,6 +385,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
+		Provider:                service.Provider != nil,
 		CredentialSpec:          service.CredentialSpec,
 		DeviceCgroupRules:       append([]string(nil), service.DeviceCgroupRules...),
 		Devices:                 append([]types.DeviceMapping(nil), service.Devices...),
@@ -429,6 +438,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		MemReservation:          unitBytesValue(service.MemReservation),
 		MemSwapLimit:            unitBytesValue(service.MemSwapLimit),
 		MemSwappiness:           unitBytesValue(service.MemSwappiness),
+		Models:                  len(service.Models) > 0,
 		OomKillDisable:          service.OomKillDisable,
 		OomScoreAdj:             service.OomScoreAdj,
 		PidsLimit:               service.PidsLimit,
@@ -439,6 +449,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Sysctls:                 mapMapping(service.Sysctls),
 		StopSignal:              service.StopSignal,
 		StopGracePeriodSeconds:  durationSeconds(service.StopGracePeriod),
+		PostStart:               len(service.PostStart) > 0,
+		PreStop:                 len(service.PreStop) > 0,
 		UserNSMode:              service.UserNSMode,
 		Uts:                     service.Uts,
 	}
