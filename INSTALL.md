@@ -1,8 +1,9 @@
 # Installing container-compose
 
 This guide starts with an existing `container-compose` plugin archive and
-explains how to install it for the local `apple/container` CLI. Source build,
-test, and package steps are covered in [BUILD.md](BUILD.md).
+explains how to install it for the local
+[`apple/container`](https://github.com/apple/container) CLI. Source build, test,
+and package steps are covered in [BUILD.md](BUILD.md).
 
 ## Requirements
 

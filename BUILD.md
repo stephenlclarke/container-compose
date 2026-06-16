@@ -16,9 +16,9 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
   brew install go
   ```
 
-- The `apple/container` source checkout. The Swift package references it as a
-  sibling path dependency at `../container`. Obtain it from
-  <https://github.com/apple/container>.
+- The [`apple/container`](https://github.com/apple/container) source checkout.
+  The Swift package references it as a sibling path dependency at
+  `../container`.
 - Python 3 for coverage conversion and coverage threshold checks. macOS
   developer machines usually already have `python3`; it can also be installed
   from <https://www.python.org/downloads/> or with Homebrew.
@@ -34,7 +34,8 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
 ## Checkout Layout
 
-Clone `apple/container` and `container-compose` as sibling directories:
+Clone [`apple/container`](https://github.com/apple/container) and
+`container-compose` as sibling directories:
 
 ```sh
 mkdir -p ~/github

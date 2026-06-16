@@ -13,20 +13,14 @@
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
 ![Repo Visitors](https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.container-compose)
 
-`container-compose` is a standalone SwiftPM plugin that will provide Docker
-Compose style workflows for Apple's `container` CLI.
-
-The plugin is intended to install as:
-
-```text
-/usr/local/libexec/container-plugins/compose/bin/compose
-/usr/local/libexec/container-plugins/compose/config.toml
-/usr/local/libexec/container-plugins/compose/resources/compose-normalizer
-```
+`container-compose` is a standalone plugin that will provide Docker Compose
+style workflows for Apple's [`container`](https://github.com/apple/container)
+CLI.
 
 The first implementation target is local-development Compose v2 compatibility
-where `container` has matching runtime primitives. Compose file normalization
-uses `compose-go`, with Swift handling runtime orchestration.
+where [`container`](https://github.com/apple/container) has matching runtime
+primitives. Compose file normalization uses `compose-go`, with Swift handling
+runtime orchestration.
 
 ## Documentation
 
@@ -40,4 +34,5 @@ uses `compose-go`, with Swift handling runtime orchestration.
 
 ## License
 
-This project uses the Apache License, Version 2.0, matching the license used by `apple/container`.
+This project uses the Apache License, Version 2.0, matching the license used by
+[`apple/container`](https://github.com/apple/container).
