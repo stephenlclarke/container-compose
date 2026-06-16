@@ -98,6 +98,11 @@ Run Swift and Go tests:
 make test
 ```
 
+Use the Makefile targets for local Swift tests instead of invoking
+`swift test` directly. The Makefile adds the Swift Testing framework search
+paths needed by Command Line Tools installs that do not place `Testing.framework`
+on SwiftPM's default test runtime path.
+
 Run the same validation used by GitHub Actions:
 
 ```sh
