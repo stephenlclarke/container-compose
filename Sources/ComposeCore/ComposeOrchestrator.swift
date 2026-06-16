@@ -419,6 +419,9 @@ private extension ComposeOrchestrator {
                 }
             }
         }
+        if let networkMode = service.networkMode, !networkMode.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses network_mode '\(networkMode)'; network mode support needs an apple/container runtime gap PR")
+        }
         if let dependsOn = service.dependsOn {
             for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
                 throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'")

@@ -207,6 +207,26 @@ volumes:
 	}
 }
 
+func TestLoadProjectNormalizesNetworkMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: nginx:alpine
+    network_mode: service:redis
+  redis:
+    image: redis:7
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+	if project.Services["api"].NetworkMode != "service:redis" {
+		t.Fatalf("api.NetworkMode = %q, want service:redis", project.Services["api"].NetworkMode)
+	}
+}
+
 func TestLoadProjectPreservesConfigsSecretsHealthchecksAndExtensions(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")

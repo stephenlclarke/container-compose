@@ -510,6 +510,33 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported network mode before creating resources")
+    func upRejectsUnsupportedNetworkModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networkMode = "service:redis"
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported network mode error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses network_mode 'service:redis'; network mode support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported healthchecks before creating resources")
     func upRejectsUnsupportedHealthchecksBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -721,6 +748,35 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.ports == ["8080:80"])
         #expect(project.volumes["data"] != nil)
+    }
+
+    @Test("normalizes network mode through compose-go")
+    func normalizesNetworkModeThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            network_mode: service:redis
+          redis:
+            image: redis:7
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.services["api"]?.networkMode == "service:redis")
     }
 
     @Test("normalizer infers project directory from the first compose file")
@@ -1383,6 +1439,33 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported network option error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses network attachment options interface_name on network 'backend'; network attachment options need an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported network mode before creating resources")
+    func runRejectsUnsupportedNetworkModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networkMode = "host"
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported network mode error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses network_mode 'host'; network mode support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

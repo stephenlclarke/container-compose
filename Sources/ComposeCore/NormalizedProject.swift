@@ -97,6 +97,7 @@ public struct ComposeService: Codable, Equatable {
     public var networks: [String]? = nil
     public var networkAliases: [String: [String]]? = nil
     public var networkOptions: [String: ComposeNetworkOptions]? = nil
+    public var networkMode: String? = nil
     public var dependsOn: [String: String]? = nil
     public var labels: [String: String]? = nil
     public var containerName: String? = nil
@@ -141,6 +142,7 @@ public struct ComposeService: Codable, Equatable {
         case networks
         case networkAliases
         case networkOptions
+        case networkMode
         case dependsOn
         case labels
         case containerName
