@@ -33,6 +33,12 @@ public struct CommandResult: Equatable, Sendable {
     }
 }
 
+/// Controls how a command connects to the parent process streams.
+public enum CommandIO: Equatable, Sendable {
+    case captured(input: Data?)
+    case inherited
+}
+
 /// Runs external commands for normalizer and container CLI integration.
 public protocol CommandRunning: Sendable {
     func run(
@@ -40,7 +46,7 @@ public protocol CommandRunning: Sendable {
         _ arguments: [String],
         workingDirectory: URL?,
         environment: [String: String]?,
-        input: Data?
+        io: CommandIO
     ) async throws -> CommandResult
 }
 
@@ -57,7 +63,7 @@ public extension CommandRunning {
             arguments,
             workingDirectory: workingDirectory,
             environment: environment,
-            input: input
+            io: .captured(input: input)
         )
     }
 }
@@ -69,6 +75,32 @@ public struct ProcessRunner: CommandRunning {
     }
 
     public func run(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?,
+        io: CommandIO
+    ) async throws -> CommandResult {
+        switch io {
+        case .captured(let input):
+            try await runCaptured(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment,
+                input: input
+            )
+        case .inherited:
+            try await runInheritingIO(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment
+            )
+        }
+    }
+
+    private func runCaptured(
         _ executable: String,
         _ arguments: [String],
         workingDirectory: URL?,
@@ -116,6 +148,70 @@ public struct ProcessRunner: CommandRunning {
                 state.fail(error)
             }
         }
+    }
+
+    private func runInheritingIO(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?
+    ) async throws -> CommandResult {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = arguments
+            process.standardInput = FileHandle.standardInput
+            process.standardOutput = FileHandle.standardOutput
+            process.standardError = FileHandle.standardError
+            if let workingDirectory {
+                process.currentDirectoryURL = workingDirectory
+            }
+            if let environment {
+                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+            }
+
+            let state = InheritedProcessRunState(continuation: continuation)
+            process.terminationHandler = { process in
+                state.complete(status: process.terminationStatus)
+            }
+
+            do {
+                try process.run()
+            } catch {
+                if process.isRunning {
+                    process.terminate()
+                }
+                state.fail(error)
+            }
+        }
+    }
+}
+
+private final class InheritedProcessRunState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<CommandResult, Error>?
+
+    init(continuation: CheckedContinuation<CommandResult, Error>) {
+        self.continuation = continuation
+    }
+
+    func complete(status: Int32) {
+        let continuation = takeContinuation()
+        continuation?.resume(returning: CommandResult(status: status, stdout: "", stderr: ""))
+    }
+
+    func fail(_ error: Error) {
+        let continuation = takeContinuation()
+        continuation?.resume(throwing: error)
+    }
+
+    private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        let continuation = continuation
+        self.continuation = nil
+        return continuation
     }
 }
 
@@ -211,7 +307,14 @@ public struct RecordedCommand: Equatable, Sendable {
     public var arguments: [String]
     public var workingDirectory: URL?
     public var environment: [String: String]?
-    public var input: Data?
+    public var io: CommandIO
+
+    public var input: Data? {
+        if case .captured(let input) = io {
+            return input
+        }
+        return nil
+    }
 }
 
 /// Test runner that records invocations and returns queued responses.
@@ -228,14 +331,14 @@ public final class RecordingRunner: CommandRunning, @unchecked Sendable {
         _ arguments: [String],
         workingDirectory: URL?,
         environment: [String: String]?,
-        input: Data?
+        io: CommandIO
     ) async throws -> CommandResult {
         commands.append(RecordedCommand(
             executable: executable,
             arguments: arguments,
             workingDirectory: workingDirectory,
             environment: environment,
-            input: input
+            io: io
         ))
         if !responses.isEmpty {
             return responses.removeFirst()

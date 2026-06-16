@@ -665,6 +665,7 @@ struct ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0] == ["container", "logs", "--follow", "-n", "10", "demo-api-1"])
         #expect(commands[1] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
+        #expect(runner.commands[1].io == .inherited)
         #expect(commands[2] == ["container", "start", "demo-api-1"])
         #expect(commands[3] == ["container", "stop", "demo-api-1"])
         #expect(commands[4] == ["container", "stop", "demo-api-1"])
@@ -712,6 +713,7 @@ struct ComposeOrchestratorTests {
         try await orchestrator.run(project: project, serviceName: "job", command: ["echo", "ok"], remove: true)
 
         let command = try #require(runner.commands.first?.arguments)
+        #expect(runner.commands.first?.io == .inherited)
         #expect(command.starts(with: ["container", "run", "--name"]))
         #expect(command.contains("--rm"))
         #expect(command.containsSequence(["--env", "A=B"]))
@@ -948,6 +950,21 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first)
         #expect(command.input == input)
+    }
+
+    @Test("process runner reports status when inheriting terminal IO")
+    func processRunnerReportsStatusWhenInheritingTerminalIO() async throws {
+        let result = try await ProcessRunner().run(
+            "/bin/sh",
+            ["-c", "exit 7"],
+            workingDirectory: nil,
+            environment: nil,
+            io: .inherited
+        )
+
+        #expect(result.status == 7)
+        #expect(result.stdout.isEmpty)
+        #expect(result.stderr.isEmpty)
     }
 
     @Test("process runner drains large stdout and stderr while process runs")
