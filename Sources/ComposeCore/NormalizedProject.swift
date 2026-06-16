@@ -114,6 +114,8 @@ public struct ComposeService: Codable, Equatable {
     public var gpus: [ComposeValue]? = nil
     public var ports: [String]? = nil
     public var volumes: [ComposeMount]? = nil
+    public var volumeDriver: String? = nil
+    public var volumesFrom: [String]? = nil
     public var networks: [String]? = nil
     public var networkAliases: [String: [String]]? = nil
     public var networkOptions: [String: ComposeNetworkOptions]? = nil
@@ -207,6 +209,8 @@ public struct ComposeService: Codable, Equatable {
         case gpus
         case ports
         case volumes
+        case volumeDriver
+        case volumesFrom
         case networks
         case networkAliases
         case networkOptions

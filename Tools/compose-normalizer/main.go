@@ -96,6 +96,8 @@ type normalizedService struct {
 	Gpus                   []types.DeviceRequest               `json:"gpus,omitempty"`
 	Ports                  []string                            `json:"ports,omitempty"`
 	Volumes                []normalizedMount                   `json:"volumes,omitempty"`
+	VolumeDriver           string                              `json:"volumeDriver,omitempty"`
+	VolumesFrom            []string                            `json:"volumesFrom,omitempty"`
 	Networks               []string                            `json:"networks,omitempty"`
 	NetworkAliases         map[string][]string                 `json:"networkAliases,omitempty"`
 	NetworkOptions         map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
@@ -376,6 +378,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Gpus:                   append([]types.DeviceRequest(nil), service.Gpus...),
 		Ports:                  portValues(service.Ports),
 		Volumes:                mountValues(service.Volumes),
+		VolumeDriver:           service.VolumeDriver,
+		VolumesFrom:            append([]string(nil), service.VolumesFrom...),
 		Networks:               networkValues(service.Networks),
 		NetworkAliases:         networkAliasValues(service.Networks),
 		NetworkOptions:         networkOptionValues(service.Networks),

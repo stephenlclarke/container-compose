@@ -856,6 +856,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported volume shortcut fields before creating resources")
+    func upRejectsUnsupportedVolumeShortcutFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedServiceVolumeShortcutFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2227,6 +2256,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run rejects unsupported volume shortcut fields before creating resources")
+    func runRejectsUnsupportedVolumeShortcutFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedServiceVolumeShortcutFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("run rejects unsupported MAC address before creating resources")
     func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -3038,6 +3096,31 @@ private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedSer
             composeName: "storage_opt",
             reason: "service storage options are not implemented by container-compose yet",
             configure: { $0.storageOptions = ["size": "1G"] }
+        ),
+    ]
+}
+
+private struct UnsupportedServiceVolumeShortcutFieldCase: Sendable {
+    let composeName: String
+    let reason: String
+    let configure: @Sendable (inout ComposeService) -> Void
+
+    func expectedMessage(serviceName: String) -> String {
+        "service '\(serviceName)' uses \(composeName); \(reason)"
+    }
+}
+
+private func unsupportedServiceVolumeShortcutFieldCases() -> [UnsupportedServiceVolumeShortcutFieldCase] {
+    [
+        UnsupportedServiceVolumeShortcutFieldCase(
+            composeName: "volumes_from",
+            reason: "volume inheritance is not implemented by container-compose yet",
+            configure: { $0.volumesFrom = ["db:ro"] }
+        ),
+        UnsupportedServiceVolumeShortcutFieldCase(
+            composeName: "volume_driver",
+            reason: "service-level volume driver support is not implemented by container-compose yet",
+            configure: { $0.volumeDriver = "local" }
         ),
     ]
 }

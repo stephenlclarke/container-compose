@@ -192,6 +192,8 @@ services:
     stop_grace_period: 90s
     ports:
       - "127.0.0.1:8080:80/tcp"
+    volumes_from:
+      - redis:ro
     volumes:
       - data:/var/lib/app:ro
     networks:
@@ -382,6 +384,9 @@ volumes:
 	if got, want := api.Ports, []string{"127.0.0.1:8080:80"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ports = %#v, want %#v", got, want)
 	}
+	if got, want := api.VolumesFrom, []string{"redis:ro"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.VolumesFrom = %#v, want %#v", got, want)
+	}
 	if got, want := api.Networks, []string{"backend"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Networks = %#v, want %#v", got, want)
 	}
@@ -445,6 +450,18 @@ func TestNormalizeServicePreservesLegacyLoggingFields(t *testing.T) {
 	}
 	if got, want := service.LogOptions, map[string]string{"mode": "non-blocking"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("service.LogOptions = %#v, want %#v", got, want)
+	}
+}
+
+func TestNormalizeServicePreservesLegacyVolumeDriver(t *testing.T) {
+	service := normalizeService(types.ServiceConfig{
+		Name:         "api",
+		Image:        "nginx:alpine",
+		VolumeDriver: "local",
+	})
+
+	if service.VolumeDriver != "local" {
+		t.Fatalf("service.VolumeDriver = %q, want local", service.VolumeDriver)
 	}
 }
 

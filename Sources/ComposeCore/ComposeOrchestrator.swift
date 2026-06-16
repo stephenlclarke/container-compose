@@ -446,6 +446,9 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedServiceMetadataAndLoggingFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
+        if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
+        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
@@ -605,6 +608,18 @@ private extension ComposeOrchestrator {
         }
         if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
             fields.append(("storage_opt", "service storage options are not implemented by container-compose yet"))
+        }
+        return fields
+    }
+
+    /// Returns unsupported service-level volume inheritance and driver fields.
+    func unsupportedServiceVolumeShortcutFields(service: ComposeService) -> [(composeName: String, reason: String)] {
+        var fields: [(composeName: String, reason: String)] = []
+        if let volumesFrom = service.volumesFrom, !volumesFrom.isEmpty {
+            fields.append(("volumes_from", "volume inheritance is not implemented by container-compose yet"))
+        }
+        if let volumeDriver = service.volumeDriver, !volumeDriver.isEmpty {
+            fields.append(("volume_driver", "service-level volume driver support is not implemented by container-compose yet"))
         }
         return fields
     }
