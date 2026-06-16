@@ -20,6 +20,7 @@ The plugin is intended to install as:
 ```text
 /usr/local/libexec/container-plugins/compose/bin/compose
 /usr/local/libexec/container-plugins/compose/config.toml
+/usr/local/libexec/container-plugins/compose/resources/compose-normalizer
 ```
 
 The first implementation target is local-development Compose v2 compatibility where `container` has matching runtime primitives. Compose file normalization uses `compose-go`, with Swift handling runtime orchestration.
