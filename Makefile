@@ -99,6 +99,11 @@ cli-smoke: build
 	[[ "$$detached_output" == *"--detach"* ]]; \
 	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
+	logs_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n 5 api)"; \
+	[[ "$$logs_tail_output" == *"container logs -n 5 demo-api-1"* ]]; \
+	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
+	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
+	[[ "$$logs_all_output" != *" -n "* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \

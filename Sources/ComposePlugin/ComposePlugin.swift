@@ -271,8 +271,8 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("follow"), help: "Follow log output.")
     var follow = false
-    @Option(name: .customLong("tail"), help: "Number of lines to show from the end of logs.")
-    var tail: Int?
+    @Option(name: [.customShort("n"), .customLong("tail")], help: "Number of lines to show from the end of logs, or all.")
+    var tail: String?
     @Argument(help: "Optional services to show.")
     var services: [String] = []
 

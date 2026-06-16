@@ -217,15 +217,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Streams or prints logs for selected service containers.
-    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: Int?) async throws {
+    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: String?) async throws {
         let services = try selectedServices(project: project, selected: selected)
+        let runtimeTail = try runtimeLogTail(tail)
         for service in services {
             var args = ["logs"]
             if follow {
                 args.append("--follow")
             }
-            if let tail {
-                args.append(contentsOf: ["-n", String(tail)])
+            if let runtimeTail {
+                args.append(contentsOf: ["-n", runtimeTail])
             }
             args.append(containerName(project: project, service: service, oneOff: false))
             try await runContainer(args)
@@ -976,6 +977,20 @@ private extension ComposeOrchestrator {
     /// Returns whether a copy operand prefix has Compose service-reference shape.
     func isCopyServiceReference(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("/") && value != "." && value != ".."
+    }
+
+    /// Converts Compose's log tail value to the runtime CLI value.
+    func runtimeLogTail(_ tail: String?) throws -> String? {
+        guard let tail, !tail.isEmpty else {
+            return nil
+        }
+        if tail.lowercased() == "all" {
+            return nil
+        }
+        guard let lines = Int(tail), lines >= 0 else {
+            throw ComposeError.invalidProject("logs --tail must be 'all' or a non-negative integer")
+        }
+        return String(lines)
     }
 
     /// Appends a Compose mount in the form accepted by `container run`.

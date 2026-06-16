@@ -1889,7 +1889,7 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.logs(project: project, services: ["api"], follow: true, tail: 10)
+        try await orchestrator.logs(project: project, services: ["api"], follow: true, tail: "10")
         try await orchestrator.exec(project: project, serviceName: "api", command: ["echo", "ok"], interactive: true, tty: true)
         try await orchestrator.start(project: project, services: ["api"])
         try await orchestrator.stop(project: project, services: ["api"])
@@ -1910,6 +1910,45 @@ struct ComposeOrchestratorTests {
         #expect(commands[7] == ["container", "delete", "demo-api-1"])
         #expect(commands[8] == ["container", "kill", "--signal", "SIGTERM", "demo-api-1"])
         #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
+    }
+
+    @Test("logs accepts Compose all tail value")
+    func logsAcceptsComposeAllTailValue() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).logs(project: project, services: ["api"], follow: false, tail: "all")
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "logs", "demo-api-1"],
+        ])
+    }
+
+    @Test("logs rejects invalid tail values before runtime commands")
+    func logsRejectsInvalidTailValuesBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).logs(project: project, services: ["api"], follow: false, tail: "latest")
+            Issue.record("Expected invalid tail error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("logs --tail must be 'all' or a non-negative integer"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("cp maps service references in both copy directions")
