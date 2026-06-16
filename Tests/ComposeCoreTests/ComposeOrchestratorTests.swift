@@ -28,6 +28,16 @@ private func composeService(
     return service
 }
 
+private func composeProject(
+    name: String,
+    services: [String: ComposeService],
+    configure: (inout ComposeProject) -> Void = { _ in }
+) -> ComposeProject {
+    var project = ComposeProject(name: name, services: services)
+    configure(&project)
+    return project
+}
+
 @Suite("Compose orchestrator")
 struct ComposeOrchestratorTests {
     @Test("orders selected services after dependencies")
@@ -83,10 +93,8 @@ struct ComposeOrchestratorTests {
             .success,
         ])
         let orchestrator = ComposeOrchestrator(runner: runner)
-        let project = ComposeProject(
+        let project = composeProject(
             name: "demo",
-            workingDirectory: "/tmp/demo",
-            composeFiles: ["/tmp/compose.yml"],
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
                     $0.command = ["serve"]
@@ -96,10 +104,13 @@ struct ComposeOrchestratorTests {
                     $0.networks = ["default"]
                     $0.labels = ["com.example.role": "api"]
                 },
-            ],
-            networks: ["default": ComposeNetwork(name: "default")],
-            volumes: ["cache": ComposeVolume(name: "cache")]
-        )
+            ]
+        ) {
+            $0.workingDirectory = "/tmp/demo"
+            $0.composeFiles = ["/tmp/compose.yml"]
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
 
         try await orchestrator.up(project: project, options: ComposeUpOptions())
 
@@ -330,7 +341,7 @@ struct ComposeOrchestratorTests {
 
     @Test("config preserves normalized compose extension fields")
     func configPreservesNormalizedComposeExtensionFields() throws {
-        let project = ComposeProject(
+        let project = composeProject(
             name: "demo",
             services: [
                 "web": composeService(name: "web", image: "nginx") {
@@ -339,11 +350,12 @@ struct ComposeOrchestratorTests {
                     $0.secrets = [.object(["source": .string("app_secret")])]
                     $0.extensions = ["x-service": .object(["owner": .string("platform")])]
                 },
-            ],
-            configs: ["app_config": .object(["external": .bool(true)])],
-            secrets: ["app_secret": .object(["external": .bool(true)])],
-            extensions: ["x-project": .object(["enabled": .bool(true), "retries": .number(3)])]
-        )
+            ]
+        ) {
+            $0.configs = ["app_config": .object(["external": .bool(true)])]
+            $0.secrets = ["app_secret": .object(["external": .bool(true)])]
+            $0.extensions = ["x-project": .object(["enabled": .bool(true), "retries": .number(3)])]
+        }
 
         let json = try ComposeOrchestrator().config(project: project)
         let decoded = try JSONDecoder().decode(ComposeProject.self, from: Data(json.utf8))
@@ -546,17 +558,18 @@ struct ComposeOrchestratorTests {
             emptyContainerListResult(),
         ])
         let orchestrator = ComposeOrchestrator(runner: runner)
-        let project = ComposeProject(
+        let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.dependsOn = ["db": "service_started"]
                 },
                 "db": ComposeService(name: "db", image: "postgres"),
-            ],
-            networks: ["default": ComposeNetwork(name: "default")],
-            volumes: ["data": ComposeVolume(name: "data")]
-        )
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
 
         try await orchestrator.down(project: project, options: ComposeDownOptions(volumes: true))
 

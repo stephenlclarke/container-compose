@@ -19,35 +19,18 @@ import Foundation
 /// Canonical Compose project data emitted by the Go normalizer.
 public struct ComposeProject: Codable, Equatable {
     public var name: String
-    public var workingDirectory: String
-    public var composeFiles: [String]
+    public var workingDirectory: String = FileManager.default.currentDirectoryPath
+    public var composeFiles: [String] = []
     public var services: [String: ComposeService]
-    public var networks: [String: ComposeNetwork]
-    public var volumes: [String: ComposeVolume]
-    public var configs: [String: ComposeValue]?
-    public var secrets: [String: ComposeValue]?
-    public var extensions: [String: ComposeValue]?
+    public var networks: [String: ComposeNetwork] = [:]
+    public var volumes: [String: ComposeVolume] = [:]
+    public var configs: [String: ComposeValue]? = nil
+    public var secrets: [String: ComposeValue]? = nil
+    public var extensions: [String: ComposeValue]? = nil
 
-    public init(
-        name: String,
-        workingDirectory: String = FileManager.default.currentDirectoryPath,
-        composeFiles: [String] = [],
-        services: [String: ComposeService],
-        networks: [String: ComposeNetwork] = [:],
-        volumes: [String: ComposeVolume] = [:],
-        configs: [String: ComposeValue]? = nil,
-        secrets: [String: ComposeValue]? = nil,
-        extensions: [String: ComposeValue]? = nil
-    ) {
+    public init(name: String, services: [String: ComposeService]) {
         self.name = name
-        self.workingDirectory = workingDirectory
-        self.composeFiles = composeFiles
         self.services = services
-        self.networks = networks
-        self.volumes = volumes
-        self.configs = configs
-        self.secrets = secrets
-        self.extensions = extensions
     }
 }
 
