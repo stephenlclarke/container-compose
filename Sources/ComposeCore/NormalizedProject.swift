@@ -64,6 +64,7 @@ public enum ComposeValue: Codable, Equatable, Sendable {
         }
     }
 
+    /// Encodes the preserved JSON value without changing its original shape.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {

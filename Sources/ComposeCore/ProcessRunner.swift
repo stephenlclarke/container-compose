@@ -41,6 +41,7 @@ public enum CommandIO: Equatable, Sendable {
 
 /// Runs external commands for normalizer and container CLI integration.
 public protocol CommandRunning: Sendable {
+    /// Runs a command with explicit control over captured or inherited streams.
     func run(
         _ executable: String,
         _ arguments: [String],
@@ -51,6 +52,7 @@ public protocol CommandRunning: Sendable {
 }
 
 public extension CommandRunning {
+    /// Runs a command with captured output and optional stdin data.
     func run(
         _ executable: String,
         _ arguments: [String],
