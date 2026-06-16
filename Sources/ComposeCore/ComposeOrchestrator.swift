@@ -425,9 +425,6 @@ private extension ComposeOrchestrator {
         if let networkMode = service.networkMode, !networkMode.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses network_mode '\(networkMode)'; network mode support needs an apple/container runtime gap PR")
         }
-        if let platform = service.platform, !platform.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses platform '\(platform)'; platform selection needs an apple/container runtime gap PR")
-        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
@@ -656,6 +653,9 @@ private extension ComposeOrchestrator {
         }
         if let network = (service.networks ?? []).first {
             args.append(contentsOf: ["--network", networkRuntimeName(project: project, composeName: network)])
+        }
+        if let platform = service.platform, !platform.isEmpty {
+            args.append(contentsOf: ["--platform", platform])
         }
         if let runtime = service.runtime, !runtime.isEmpty {
             args.append(contentsOf: ["--runtime", runtime])

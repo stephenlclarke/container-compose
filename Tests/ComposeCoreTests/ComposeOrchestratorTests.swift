@@ -117,6 +117,7 @@ struct ComposeOrchestratorTests {
                     $0.ports = ["8080:80"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                     $0.networks = ["default"]
+                    $0.platform = "linux/amd64"
                     $0.labels = ["com.example.role": "api"]
                 },
             ]
@@ -153,6 +154,7 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--publish", "8080:80"]))
         #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
         #expect(run.containsSequence(["--network", "demo_default"]))
+        #expect(run.containsSequence(["--platform", "linux/amd64"]))
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
     }
 
@@ -644,33 +646,6 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported network mode error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'api' uses network_mode 'service:redis'; network mode support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
-    @Test("up rejects unsupported platform before creating resources")
-    func upRejectsUnsupportedPlatformBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.platform = "linux/amd64"
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                },
-            ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
-
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported platform error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses platform 'linux/amd64'; platform selection needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -1433,6 +1408,7 @@ struct ComposeOrchestratorTests {
                     $0.stdinOpen = true
                     $0.readOnly = true
                     $0.initEnabled = true
+                    $0.platform = "linux/arm64"
                     $0.runtime = "container-runtime-linux"
                     $0.tmpfs = ["/cache"]
                     $0.dns = ["1.1.1.1"]
@@ -1463,6 +1439,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--user", "1000"]))
         #expect(command.contains("--tty"))
         #expect(command.contains("--interactive"))
+        #expect(command.containsSequence(["--platform", "linux/arm64"]))
         #expect(command.containsSequence(["--runtime", "container-runtime-linux"]))
         #expect(command.containsSequence(["--cap-add", "NET_ADMIN"]))
         #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
@@ -1796,33 +1773,6 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported network mode error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses network_mode 'host'; network mode support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
-    @Test("run rejects unsupported platform before creating resources")
-    func runRejectsUnsupportedPlatformBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "job": composeService(name: "job", image: "alpine") {
-                    $0.platform = "linux/arm64"
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                },
-            ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
-
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported platform error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses platform 'linux/arm64'; platform selection needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
