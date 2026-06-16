@@ -26,7 +26,7 @@
 | Volumes | Creates and deletes non-external named volumes, reuses external volume names, and mounts named, bind, tmpfs, read-only, and stable anonymous volume arguments. | `container volume create`, `container volume delete`, `container run --volume`, `container run --tmpfs` |
 | Environment | Passes environment variables and service env files through to the runtime. | `container run --env`, `container run --env-file` |
 | Ports | Publishes normalized Compose port strings. | `container run --publish` |
-| Process options | Maps service command, entrypoint, working directory, user, TTY, stdin, read-only root filesystem, init, DNS, DNS search, Linux capabilities, memory limit, and CPU limit. | `container run` flags |
+| Process options | Maps service command, entrypoint, working directory, user, TTY, stdin, read-only root filesystem, init, DNS, DNS search, Linux capabilities, memory limit, CPU limit, and shared-memory size. | `container run` flags |
 | Labels | Adds deterministic Compose labels for project, service, one-off state, working directory, config-file hash, and config hash, plus service and resource labels. | `container run --label`, `container network create --label`, `container volume create --label` |
 | Dependency order | Starts selected services after dependencies when the dependency condition is `service_started` or omitted. | Orchestrator ordering before `container run` |
 | Reconciliation | Reuses, recreates, or removes containers based on config hash, `--force-recreate`, `--no-recreate`, and `--remove-orphans`. | `container inspect`, `container stop`, `container delete`, `container list` |

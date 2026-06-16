@@ -681,6 +681,9 @@ private extension ComposeOrchestrator {
         if let cpus = service.cpus, !cpus.isEmpty {
             args.append(contentsOf: ["--cpus", cpus])
         }
+        if let shmSize = service.shmSize, !shmSize.isEmpty {
+            args.append(contentsOf: ["--shm-size", shmSize])
+        }
         if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
             args.append(contentsOf: ["--entrypoint", entrypoint.joined(separator: " ")])
         }

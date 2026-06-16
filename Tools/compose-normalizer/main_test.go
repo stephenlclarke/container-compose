@@ -125,6 +125,7 @@ services:
       - use-vc
     expose:
       - "9000"
+    shm_size: 64m
     ports:
       - "127.0.0.1:8080:80/tcp"
     volumes:
@@ -198,6 +199,9 @@ volumes:
 	}
 	if got, want := api.Expose, []string{"9000"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Expose = %#v, want %#v", got, want)
+	}
+	if got, want := api.ShmSize, "67108864"; got != want {
+		t.Fatalf("api.ShmSize = %q, want %q", got, want)
 	}
 	if got, want := api.Ports, []string{"127.0.0.1:8080:80"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ports = %#v, want %#v", got, want)

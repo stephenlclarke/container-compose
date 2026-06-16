@@ -875,6 +875,7 @@ struct ComposeOrchestratorTests {
               - use-vc
             expose:
               - "9000"
+            shm_size: 64m
             links:
               - redis:cache
             external_links:
@@ -903,6 +904,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])
+        #expect(project.services["api"]?.shmSize == "67108864")
         #expect(project.services["api"]?.links == ["redis:cache"])
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.ports == ["8080:80"])
@@ -1390,6 +1392,7 @@ struct ComposeOrchestratorTests {
                     $0.capDrop = ["MKNOD"]
                     $0.memLimit = "1024"
                     $0.cpus = "2"
+                    $0.shmSize = "67108864"
                 },
             ]
         )
@@ -1416,6 +1419,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--dns-search", "local"]))
         #expect(command.containsSequence(["--memory", "1024"]))
         #expect(command.containsSequence(["--cpus", "2"]))
+        #expect(command.containsSequence(["--shm-size", "67108864"]))
         #expect(command.containsSequence(["--entrypoint", "/bin/sh -c"]))
         #expect(command.contains("--read-only"))
         #expect(command.contains("--init"))

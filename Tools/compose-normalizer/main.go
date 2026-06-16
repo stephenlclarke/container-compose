@@ -106,6 +106,7 @@ type normalizedService struct {
 	CapDrop        []string                            `json:"capDrop,omitempty"`
 	MemLimit       string                              `json:"memLimit,omitempty"`
 	CPUS           string                              `json:"cpus,omitempty"`
+	ShmSize        string                              `json:"shmSize,omitempty"`
 	Healthcheck    any                                 `json:"healthcheck,omitempty"`
 	Configs        any                                 `json:"configs,omitempty"`
 	Secrets        any                                 `json:"secrets,omitempty"`
@@ -345,6 +346,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		CapDrop:        append([]string(nil), service.CapDrop...),
 		MemLimit:       unitBytesValue(service.MemLimit),
 		CPUS:           cpusValue(service.CPUS),
+		ShmSize:        unitBytesValue(service.ShmSize),
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{
