@@ -1,7 +1,7 @@
 # Building container-compose
 
-This guide describes how to build, test, package, and install
-`container-compose` from source.
+This guide describes how to build, test, and package `container-compose` from
+source.
 
 ## Requirements
 
@@ -138,22 +138,7 @@ dist/compose/config.toml
 dist/compose/resources/compose-normalizer
 ```
 
-## Install Locally
-
-Install or replace the local plugin:
-
-```sh
-make package
-sudo rm -rf /usr/local/libexec/container-plugins/compose
-sudo mkdir -p /usr/local/libexec/container-plugins
-sudo tar -xzf container-compose-plugin.tar.gz -C /usr/local/libexec/container-plugins
-```
-
-Verify that `container` can find the plugin:
-
-```sh
-container compose version
-```
+For installation, upgrade, and removal steps, see [INSTALL.md](INSTALL.md).
 
 ## SonarQube
 
