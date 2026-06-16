@@ -755,6 +755,29 @@ struct ComposeOrchestratorTests {
         #expect(result.stderr == "err")
     }
 
+    @Test("process runner drains large stdout and stderr while process runs")
+    func processRunnerDrainsLargeOutputWhileProcessRuns() async throws {
+        let result = try await ProcessRunner().run(
+            "/bin/sh",
+            [
+                "-c",
+                """
+                python3 - <<'PY'
+                import sys
+                sys.stdout.write("o" * 262144)
+                sys.stdout.flush()
+                sys.stderr.write("e" * 262144)
+                sys.stderr.flush()
+                PY
+                """,
+            ]
+        )
+
+        #expect(result.succeeded)
+        #expect(result.stdout.count == 262_144)
+        #expect(result.stderr.count == 262_144)
+    }
+
     @Test("process runner reports nonzero status")
     func processRunnerReportsNonzeroStatus() async throws {
         let result = try await ProcessRunner().run("/bin/sh", ["-c", "printf nope >&2; exit 9"])
