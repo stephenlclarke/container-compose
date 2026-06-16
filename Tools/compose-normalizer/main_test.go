@@ -96,15 +96,118 @@ func TestRunReportsFlagAndLoadErrors(t *testing.T) {
 	}
 }
 
-func TestDiscoverComposeFilesUsesDefaultPriority(t *testing.T) {
+func TestLoadProjectDiscoversDefaultComposeFileAndOverride(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "docker-compose.yml"), "services: {}\n")
-	writeFile(t, filepath.Join(dir, "compose.yaml"), "services: {}\n")
+	unsetEnv(t, "COMPOSE_FILE")
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: alpine:3.20
+`)
+	writeFile(t, filepath.Join(dir, "compose.override.yml"), `
+services:
+  api:
+    image: nginx:alpine
+`)
 
-	got := discoverComposeFiles(dir)
-	want := []string{filepath.Join(dir, "compose.yaml")}
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	got := project.ComposeFiles
+	want := []string{
+		filepath.Join(dir, "compose.yaml"),
+		filepath.Join(dir, "compose.override.yml"),
+	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("discoverComposeFiles() = %#v, want %#v", got, want)
+		t.Fatalf("ComposeFiles = %#v, want %#v", got, want)
+	}
+	if image := project.Services["api"].Image; image != "nginx:alpine" {
+		t.Fatalf("api image = %q, want nginx:alpine", image)
+	}
+}
+
+func TestLoadProjectUsesComposeGoDefaultFilePriority(t *testing.T) {
+	dir := t.TempDir()
+	unsetEnv(t, "COMPOSE_FILE")
+	writeFile(t, filepath.Join(dir, "docker-compose.yaml"), `
+services:
+  api:
+    image: from-yaml
+`)
+	writeFile(t, filepath.Join(dir, "docker-compose.yml"), `
+services:
+  api:
+    image: from-yml
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	got := project.ComposeFiles
+	want := []string{filepath.Join(dir, "docker-compose.yml")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ComposeFiles = %#v, want %#v", got, want)
+	}
+	if image := project.Services["api"].Image; image != "from-yml" {
+		t.Fatalf("api image = %q, want from-yml", image)
+	}
+}
+
+func TestLoadProjectUsesComposeFileFromDotEnv(t *testing.T) {
+	dir := t.TempDir()
+	unsetEnv(t, "COMPOSE_FILE")
+	writeFile(t, filepath.Join(dir, ".env"), "COMPOSE_FILE=custom.yml\n")
+	writeFile(t, filepath.Join(dir, "custom.yml"), `
+services:
+  api:
+    image: from-custom
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	got := project.ComposeFiles
+	want := []string{canonicalPath(t, filepath.Join(dir, "custom.yml"))}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ComposeFiles = %#v, want %#v", got, want)
+	}
+	if image := project.Services["api"].Image; image != "from-custom" {
+		t.Fatalf("api image = %q, want from-custom", image)
+	}
+}
+
+func TestLoadProjectDoesNotAutoLoadOverrideForExplicitFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: alpine:3.20
+`)
+	writeFile(t, filepath.Join(dir, "compose.override.yml"), `
+services:
+  api:
+    image: nginx:alpine
+`)
+
+	composeFile := filepath.Join(dir, "compose.yaml")
+	project, err := loadProject([]string{composeFile}, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	got := project.ComposeFiles
+	want := []string{composeFile}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ComposeFiles = %#v, want %#v", got, want)
+	}
+	if image := project.Services["api"].Image; image != "alpine:3.20" {
+		t.Fatalf("api image = %q, want alpine:3.20", image)
 	}
 }
 
@@ -761,8 +864,8 @@ services:
 	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("env files = %#v, want %#v", got, want)
 	}
-	if value, ok := api.Environment["FROM_ENV"]; !ok || value != nil {
-		t.Fatalf("FROM_ENV = %#v, want nil preserved mapping", value)
+	if value, ok := api.Environment["FROM_ENV"]; !ok || value == nil || *value != "enabled" {
+		t.Fatalf("FROM_ENV = %#v, want enabled from env file", value)
 	}
 	if got, want := api.Ports, []string{"53/udp"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("ports = %#v, want %#v", got, want)
@@ -1009,4 +1112,28 @@ func writeFile(t *testing.T, path, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func canonicalPath(t *testing.T, path string) string {
+	t.Helper()
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("canonical path for %s: %v", path, err)
+	}
+	return canonical
+}
+
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+	value, wasSet := os.LookupEnv(name)
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatalf("unset %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		if wasSet {
+			_ = os.Setenv(name, value)
+		} else {
+			_ = os.Unsetenv(name)
+		}
+	})
 }

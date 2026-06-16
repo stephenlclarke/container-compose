@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -262,30 +261,33 @@ func loadProject(files, profiles, envFiles []string, projectName, projectDirecto
 		}
 	}
 
-	if len(files) == 0 {
-		files = discoverComposeFiles(projectDirectory)
-	}
-	if len(files) == 0 {
-		return nil, errors.New("no compose file found")
-	}
-
+	usesDefaultFiles := len(files) == 0
 	var options []cli.ProjectOptionsFn
 	options = append(options, cli.WithWorkingDirectory(projectDirectory))
 	options = append(options, cli.WithOsEnv)
+	if len(envFiles) > 0 {
+		options = append(options, cli.WithEnvFiles(envFiles...))
+	} else {
+		options = append(options, cli.WithEnvFiles())
+	}
 	options = append(options, cli.WithDotEnv)
+	if usesDefaultFiles {
+		options = append(options, cli.WithConfigFileEnv)
+		options = append(options, cli.WithDefaultConfigPath)
+	}
 	if projectName != "" {
 		options = append(options, cli.WithName(projectName))
 	}
 	if len(profiles) > 0 {
 		options = append(options, cli.WithProfiles(profiles))
 	}
-	if len(envFiles) > 0 {
-		options = append(options, cli.WithEnvFiles(envFiles...))
-	}
 
-	projectOptions, err := cli.NewProjectOptions(files, options...)
+	projectOptions, err := newProjectOptions(files, projectDirectory, usesDefaultFiles, options...)
 	if err != nil {
 		return nil, err
+	}
+	if len(projectOptions.ConfigPaths) == 0 {
+		return nil, errors.New("no compose file found")
 	}
 
 	project, err := cli.ProjectFromOptions(context.Background(), projectOptions)
@@ -296,21 +298,26 @@ func loadProject(files, profiles, envFiles []string, projectName, projectDirecto
 	return normalize(project, projectDirectory), nil
 }
 
-// discoverComposeFiles follows Docker Compose's default file discovery order.
-func discoverComposeFiles(projectDirectory string) []string {
-	candidates := []string{
-		"compose.yaml",
-		"compose.yml",
-		"docker-compose.yaml",
-		"docker-compose.yml",
+// newProjectOptions applies compose-go options from the Compose project
+// directory when default file discovery is active. That keeps COMPOSE_FILE
+// paths from .env aligned between installed helpers and source-checkout go run.
+func newProjectOptions(files []string, projectDirectory string, usesDefaultFiles bool, options ...cli.ProjectOptionsFn) (*cli.ProjectOptions, error) {
+	if !usesDefaultFiles {
+		return cli.NewProjectOptions(files, options...)
 	}
-	for _, candidate := range candidates {
-		path := filepath.Join(projectDirectory, candidate)
-		if _, err := os.Stat(path); err == nil {
-			return []string{path}
-		}
+
+	previousDirectory, err := os.Getwd()
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if err := os.Chdir(projectDirectory); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = os.Chdir(previousDirectory)
+	}()
+
+	return cli.NewProjectOptions(files, options...)
 }
 
 // normalize copies the compose-go project into the stable JSON shape consumed
