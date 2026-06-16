@@ -403,12 +403,13 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
 
 /// Implements `compose cp`.
 struct Cp: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "cp", abstract: "Copy files using the underlying container cp command.")
+    static let configuration = CommandConfiguration(commandName: "cp", abstract: "Copy files between service containers and local paths.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String]
-    /// Delegates copy arguments to the underlying container CLI.
+    /// Resolves Compose service references before delegating to the runtime.
     func run() async throws {
-        try await orchestrator().copy(arguments: arguments)
+        let loadedProject = try await project()
+        try await orchestrator().copy(project: loadedProject, arguments: arguments)
     }
 }
 

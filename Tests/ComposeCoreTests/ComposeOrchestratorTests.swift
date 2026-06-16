@@ -1875,7 +1875,7 @@ struct ComposeOrchestratorTests {
         try await orchestrator.restart(project: project, services: ["api"])
         try await orchestrator.rm(project: project, services: ["api"], stopFirst: true)
         try await orchestrator.kill(project: project, services: ["api"], signal: "SIGTERM")
-        try await orchestrator.copy(arguments: ["demo-api-1:/tmp/file", "."])
+        try await orchestrator.copy(project: project, arguments: ["api:/tmp/file", "."])
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0] == ["container", "logs", "--follow", "-n", "10", "demo-api-1"])
@@ -1889,6 +1889,31 @@ struct ComposeOrchestratorTests {
         #expect(commands[7] == ["container", "delete", "demo-api-1"])
         #expect(commands[8] == ["container", "kill", "--signal", "SIGTERM", "demo-api-1"])
         #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
+    }
+
+    @Test("cp maps service references in both copy directions")
+    func cpMapsServiceReferencesInBothCopyDirections() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.containerName = "custom-db"
+                },
+            ]
+        )
+
+        try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "./report.txt"])
+        try await orchestrator.copy(project: project, arguments: ["./seed.sql", "db:/docker-entrypoint-initdb.d/seed.sql"])
+        try await orchestrator.copy(project: project, arguments: ["./local:file.txt", "./out:file.txt"])
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "cp", "demo-api-1:/tmp/report.txt", "./report.txt"],
+            ["container", "cp", "./seed.sql", "custom-db:/docker-entrypoint-initdb.d/seed.sql"],
+            ["container", "cp", "./local:file.txt", "./out:file.txt"],
+        ])
     }
 
     @Test("run supports one-off containers and option flags")
@@ -3065,10 +3090,20 @@ struct ComposeOrchestratorTests {
         #expect(invalidPullPolicyRunner.commands.isEmpty)
 
         do {
-            try await ComposeOrchestrator().copy(arguments: [])
+            try await ComposeOrchestrator().copy(project: ComposeProject(name: "demo", services: [:]), arguments: [])
             Issue.record("Expected cp argument failure")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("cp requires source and destination"))
+        }
+
+        do {
+            try await ComposeOrchestrator().copy(
+                project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
+                arguments: ["missing:/tmp/file", "."]
+            )
+            Issue.record("Expected cp unknown service failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unknown service 'missing'"))
         }
 
         let unsupportedProjects = [

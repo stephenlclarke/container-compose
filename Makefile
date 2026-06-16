@@ -98,7 +98,9 @@ cli-smoke: build
 	[[ "$$attached_output" == *"container run"* ]]; \
 	[[ "$$attached_output" != *"--detach"* ]]; \
 	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
-	[[ "$$logs_output" == *"container logs --follow"* ]]
+	[[ "$$logs_output" == *"container logs --follow"* ]]; \
+	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
+	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]
 
 coverage: swift-coverage go-test
 

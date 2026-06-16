@@ -69,7 +69,7 @@ These Compose v2 surfaces are implemented by `container-compose` and backed by c
 | Container listing | `ps` lists project containers by Compose project labels. | `container list --format json`. | S1 |
 | Logs | `logs` supports selected services, follow, and tail options. | `container logs`. | S1 |
 | Exec | `exec` runs commands in existing service containers with interactive and TTY flags. | `container exec`. | S1 |
-| File copy | `cp` delegates copy arguments to the runtime. | `container cp`. | S1 |
+| File copy | `cp` maps `SERVICE:path` operands to deterministic service container names, then delegates the copy to the runtime. | `container cp`. | S1 |
 | Networks | Non-external project networks are created/deleted, external names are reused, and each service can attach to one network. | `container network create`, `container network delete`, `container run --network`. | S1 |
 | Volumes | Non-external named volumes are created/deleted; external volume names are reused; named, bind, tmpfs, read-only, and stable anonymous mounts are passed through. | `container volume create`, `container volume delete`, `container run --volume`, `container run --tmpfs`. | S1 |
 | Environment | Environment variables and service env files are passed through. | `container run --env`, `container run --env-file`. | S1 |

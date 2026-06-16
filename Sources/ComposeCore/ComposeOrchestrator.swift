@@ -320,12 +320,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
-    /// Copies files using the underlying container CLI.
-    public func copy(arguments: [String]) async throws {
+    /// Copies files between a Compose service container and the local host.
+    public func copy(project: ComposeProject, arguments: [String]) async throws {
         guard !arguments.isEmpty else {
             throw ComposeError.invalidProject("cp requires source and destination")
         }
-        try await runContainer(["cp"] + arguments)
+        let mappedArguments = try arguments.map { try copyArgument($0, project: project) }
+        try await runContainer(["cp"] + mappedArguments)
     }
 
     /// Throws a consistently formatted unsupported-feature error.
@@ -955,6 +956,26 @@ private extension ComposeOrchestrator {
         args.append(image)
         args.append(contentsOf: service.command ?? [])
         return args
+    }
+
+    /// Rewrites `SERVICE:path` copy operands to the matching service container.
+    func copyArgument(_ argument: String, project: ComposeProject) throws -> String {
+        guard let delimiter = argument.firstIndex(of: ":") else {
+            return argument
+        }
+        let serviceName = String(argument[..<delimiter])
+        guard isCopyServiceReference(serviceName) else {
+            return argument
+        }
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+        return containerName(project: project, service: service, oneOff: false) + String(argument[delimiter...])
+    }
+
+    /// Returns whether a copy operand prefix has Compose service-reference shape.
+    func isCopyServiceReference(_ value: String) -> Bool {
+        !value.isEmpty && !value.contains("/") && value != "." && value != ".."
     }
 
     /// Appends a Compose mount in the form accepted by `container run`.
