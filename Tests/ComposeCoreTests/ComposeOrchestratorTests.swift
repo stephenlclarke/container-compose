@@ -921,6 +921,40 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
     }
 
+    @Test("run creates project resources before one-off containers")
+    func runCreatesProjectResourcesBeforeOneOffContainers() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .success,
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await orchestrator.run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "network", "create"]))
+        #expect(commands[0].last == "demo_backend")
+        #expect(commands[1].containsSequence(["container", "volume", "create"]))
+        #expect(commands[1].last == "demo_cache")
+        #expect(commands[2].starts(with: ["container", "run", "--name"]))
+        #expect(commands[2].containsSequence(["--network", "demo_backend"]))
+        #expect(commands[2].containsSequence(["--volume", "demo_cache:/cache"]))
+        #expect(Array(commands[2].suffix(2)) == ["alpine", "true"])
+    }
+
     @Test("run assigns unique names to one-off containers")
     func runAssignsUniqueNamesToOneOffContainers() async throws {
         let identifiers = OneOffIdentifierSource(["first", "second"])

@@ -110,12 +110,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validate(project: project)
         let services = try orderedServices(project: project, selected: up.services)
 
-        for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
-            try await ensureNetwork(project: project, composeName: name, network: network)
-        }
-        for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
-            try await ensureVolume(project: project, composeName: name, volume: volume)
-        }
+        try await ensureResources(project: project)
 
         try await applyPullPolicy(up.pullPolicy, project: project, services: services)
 
@@ -265,6 +260,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             service.command = command
         }
         try validateRuntimeSupport(service: service)
+        try await ensureResources(project: project)
         try await runContainer(
             runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true),
             inheritedIO: service.tty == true || service.stdinOpen == true
@@ -418,6 +414,16 @@ private extension ComposeOrchestrator {
         }
         if service.privileged == true {
             throw ComposeError.unsupported("service '\(service.name)' uses privileged")
+        }
+    }
+
+    /// Creates project networks and volumes required before containers start.
+    func ensureResources(project: ComposeProject) async throws {
+        for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
+            try await ensureNetwork(project: project, composeName: name, network: network)
+        }
+        for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
+            try await ensureVolume(project: project, composeName: name, volume: volume)
         }
     }
 
