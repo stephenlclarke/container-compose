@@ -1,6 +1,10 @@
 # Compatibility
 
-`container-compose` targets local-development Docker Compose v2 workflows where Apple's [`container`](https://github.com/apple/container) CLI exposes matching runtime primitives. This file explains what works today, what is blocked by Apple `container`, what is still missing in [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose), and what is preserved only for `compose config`.
+`container-compose` targets local-development Docker Compose v2 workflows where Apple's [`container`](https://github.com/apple/container) CLI exposes matching runtime primitives. This page separates three things that are easy to mix up:
+
+- What `container-compose` supports today.
+- What Docker Compose v2 supports, but Apple `container` does not expose yet as a local runtime primitive.
+- What Apple `container` can plausibly support, but [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose) has not implemented yet.
 
 ## References
 
@@ -12,14 +16,27 @@
 
 ## Status Labels
 
-| Status | Meaning | Expected behavior |
-| --- | --- | --- |
-| Supported | `container-compose` maps the Compose surface to an available Apple `container` primitive. | Commands run, and focused tests cover the mapping. |
-| Apple `container` gap | `container-compose` recognizes the Compose surface, but Apple `container` does not expose the required local runtime primitive yet. | Commands fail before runtime side effects with a message naming the unsupported feature. |
-| container-compose gap | Apple `container` either has enough low-level primitives or the behavior is local orchestration work, but this plugin has not implemented the Compose semantics yet. | Commands fail when validation exists. Some older gaps are listed as known follow-up work until validators are added. |
-| Config-only | The surface is preserved for normalized config output or is harmless metadata, but it does not affect runtime orchestration. | `compose config` preserves it; runtime commands ignore it intentionally. |
+| Status | Owner | Meaning | Current behavior |
+| --- | --- | --- | --- |
+| Supported | `container-compose` | The plugin maps the Compose surface to an available Apple `container` primitive. | Commands run, and focused tests cover the mapping. |
+| Apple `container` gap | Apple `container` runtime/API | The Compose surface is recognized, but Apple `container` does not expose enough local runtime behavior to implement Docker Compose semantics faithfully. | Runtime commands fail before side effects with a message naming the unsupported feature. |
+| `container-compose` gap | This plugin | The behavior is plugin orchestration work, validation work, or a security/design decision that has not been implemented yet. | Runtime commands fail before side effects where validators exist; known validation gaps are called out below. |
+| Config-only | This plugin | The surface is useful in normalized config output or harmless metadata, but does not affect runtime orchestration yet. | `container compose config` preserves it; runtime commands ignore it intentionally. |
 
-## Supported Surfaces
+## At-A-Glance Matrix
+
+| Area | Supported today | Apple `container` gaps | `container-compose` gaps |
+| --- | --- | --- | --- |
+| Project loading and config | Compose file discovery, repeated `-f`, `-p`, project directory, `.env`, `--env-file`, interpolation, merge, profiles, and canonical `config` output through `compose-go`. | None known for local normalization. | Advanced Compose project features that are not emitted in the normalized model yet. |
+| Core lifecycle CLI | `config`, `up`, `down`, `build`, `pull`, `push`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `cp`, `kill`, and `version`. | `top`, `events`, `port`, `pause`, `unpause`, and `wait` need runtime data or commands Apple `container` does not expose yet. | Additional Docker Compose commands such as `attach`, `commit`, `create`, `convert`, `export`, `ls`, `publish`, `scale`, `stats`, `volumes`, `watch`, and alpha/bridge commands. |
+| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `--no-cache`, generated build-only tags, service images, `pull`, `push`, and `pull_policy` values `always`, `missing`, `if_not_present`, and `never`. | None known for the implemented build subset. | Advanced build fields such as additional contexts, cache exporters/importers, build labels, platforms, secrets, SSH, tags, and provenance are not mapped; unsupported pull policies such as `build` fail before side effects. |
+| Containers and process options | Deterministic names, explicit `container_name`, `command`, `entrypoint`, `working_dir`, `user`, `tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `cap_add`, `cap_drop`, `mem_limit`, `cpus`, `shm_size`, `ulimits`, `stop_signal`, and `stop_grace_period`. | Namespace, isolation, cgroup, advanced CPU, advanced memory/OOM/PID, group/security options, privileged mode, devices, GPU, credential spec, restart policy, `dns_opt`, and `sysctls`. | `blkio_config`, `use_api_socket`, service metadata/logging/storage settings, lifecycle hooks, providers, models, and `develop`/watch workflows. |
+| Networking | Project networks, external networks, one service network attachment, port publishing, `dns`, and `dns_search`. | Multiple service networks, post-create network connect, service aliases, service network attachment options, `network_mode`, `extra_hosts`, `hostname`, `domainname`, and MAC address controls. | Rich service discovery behavior beyond a single runtime network attachment. |
+| Storage | Project volumes, external volumes, named volumes, bind mounts, tmpfs mounts, read-only mounts, stable anonymous volume names, and `down --volumes`. | Service-level `configs` and `secrets` mounts need runtime primitives. | `volumes_from`, legacy service-level `volume_driver`, advanced volume driver semantics, and API socket mounting. |
+| Dependencies and health | `depends_on` with omitted condition or `service_started`. | `healthcheck`, `service_healthy`, and `service_completed_successfully` need health status, exit code, and completion-time inspection. | Higher-level wait orchestration after the runtime data exists. |
+| Metadata | Compose labels plus plugin labels for project, service, one-off state, working directory, compose-file hash, config hash, networks, and volumes. | None known for labels already mapped. | `annotations`, `attach`, `label_file`, `logging`, `storage_opt`, and some deploy metadata. |
+
+## Supported Runtime Primitives
 
 | Compose v2 surface | Supported behavior | Apple `container` primitive |
 | --- | --- | --- |
@@ -48,9 +65,62 @@
 | Project teardown | `down` stops/deletes project containers, deletes non-external networks, and deletes volumes only with `--volumes`. | `container stop`, `container delete`, `container network delete`, `container volume delete` |
 | Version | Prints the plugin version. | Local command |
 
+## Apple `container` Runtime Gaps
+
+These are valid Docker Compose v2 surfaces that need Apple `container` runtime/API support before this plugin can implement them faithfully.
+
+| Compose v2 surface | Examples | Missing Apple `container` primitive |
+| --- | --- | --- |
+| Multiple service networks | Two or more entries under service `networks`. | Post-create network connect and multi-network attachment. |
+| Service network aliases and attachment options | `aliases`, `driver_opts`, `gw_priority`, `interface_name`, `ipv4_address`, `ipv6_address`, `link_local_ips`, service-level network `mac_address`, `priority`. | Network aliasing and rich network attachment configuration. |
+| `network_mode` | `host`, `none`, `service:api`, `container:name`. | Docker-compatible network namespace modes. |
+| Hostname and host table controls | `hostname`, `domainname`, `extra_hosts`, service `mac_address`. | Explicit host entries, custom hostname/domain name, and MAC address support. |
+| Namespace and isolation controls | `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`. | Namespace selection and parent cgroup controls. |
+| Advanced CPU controls | `cpu_count`, `cpu_percent`, `cpu_period`, `cpu_quota`, `cpu_rt_period`, `cpu_rt_runtime`, `cpuset`, `cpu_shares`. | CPU scheduler controls beyond supported `cpus`. |
+| Advanced memory, OOM, and PID controls | `mem_reservation`, `memswap_limit`, `mem_swappiness`, `oom_kill_disable`, `oom_score_adj`, `pids_limit`. | Resource controls beyond supported `mem_limit`. |
+| User, security, and device access | `group_add`, `security_opt`, `privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`. | Supplemental groups, security options, privileged mode, Windows credential specs, host devices, cgroup device rules, and GPU device requests. |
+| DNS and kernel tuning | `dns_opt`, `sysctls`. | DNS resolver options and per-container sysctl support. |
+| Health and completion conditions | `healthcheck`, `depends_on` conditions `service_healthy` and `service_completed_successfully`. | Health status, exit code, and completion-time inspection. |
+| Config and secret mounts | Service-level `configs` and `secrets`. | Compose-style config/secret mount primitives. |
+| Runtime restart policy | Service `restart`. | Docker-compatible restart policies. |
+| Runtime CLI data | `top`, `events`, `port`, `pause`, `unpause`, `wait`. | Process listing, event stream, richer published-port inspect output, pause/unpause, and wait/exit metadata. |
+| Legacy links | `links`, `external_links`. | Legacy alias/link behavior and host-entry semantics. |
+
+## `container-compose` Implementation Gaps
+
+These surfaces need more plugin implementation, more validation, or an explicit security/design decision in this repository. Some may later uncover Apple runtime gaps, but the first known blocker is `container-compose`.
+
+| Compose v2 surface | Current behavior | Why this is a plugin gap |
+| --- | --- | --- |
+| Service replica scaling | Explicit `scale` and `deploy.replicas` values other than `1` fail before side effects. | The plugin currently manages one deterministic container per service. Multi-replica naming, reconciliation, logs, ps, rm, and DNS semantics are not implemented yet. |
+| Advanced build fields | Known validation gap: only `context`, `dockerfile`, `args`, and `target` are mapped today. | Build fields such as additional contexts, cache exporters/importers, build labels, platforms, secrets, SSH, tags, and provenance need normalizer, validator, and runtime mapping work. |
+| Compose Deploy Specification beyond replica count | Known validation gap for most deploy fields. | Swarm-style `deploy` placement, update, rollback, endpoint, labels, and most resource reservation fields are outside the current local workflow mapping. |
+| Develop/watch workflow | Explicitly rejected before side effects when configured. | `develop`, `watch`, sync/rebuild actions, and file-watch semantics need plugin work before they can affect managed containers. |
+| Provider, model, and lifecycle hook surfaces | Not implemented. | `provider`, `models`, `post_start`, and `pre_stop` are not orchestrated. |
+| Service metadata and logging surfaces | Explicitly rejected before side effects when Compose v2 accepts the field. | `annotations`, `attach`, `label_file`, `logging`, and `storage_opt` need runtime mapping before they can affect managed containers. Legacy `log_driver` and `log_opt` are rejected by the Compose v2 schema during normalization, with defensive validation if they appear in canonical JSON. |
+| Volume inheritance and driver shortcuts | Explicitly rejected before side effects when Compose v2 accepts the field. | `volumes_from` needs plugin behavior before it can affect managed containers. Legacy service-level `volume_driver` is rejected by the Compose v2 schema during normalization, with defensive validation if it appears in canonical JSON. |
+| API socket mounting | Explicitly rejected before side effects when enabled. | `use_api_socket` needs a security review and runtime mapping before the plugin can mount an API socket into managed containers. |
+| Block I/O controls | Explicitly rejected before side effects when configured. | `blkio_config` needs a runtime primitive assessment before block I/O weights and throttle-device limits can affect managed containers. |
+| Unsupported service pull policies | Unsupported values fail before side effects. | The plugin currently supports only `always`, `missing`, `if_not_present`, and `never`; values such as `build`, `daily`, `weekly`, and time windows need separate semantics. |
+| Additional Docker Compose CLI commands and flags | Not implemented unless listed in the supported table. | Commands such as `create`, `ls`, `watch`, `stats`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes`, and advanced flags on supported commands need separate command work. |
+
+## Config-Only Surfaces
+
+These surfaces are normalized and preserved because they are useful in `compose config` output or harmless as metadata, but they do not currently change runtime orchestration.
+
+| Compose v2 surface | Current behavior |
+| --- | --- |
+| Service `expose` | Preserved in normalized config; no runtime port publishing is performed. Use `ports` for host publishing. |
+| Extension fields | Project and service `x-*` fields are preserved in normalized config. |
+| Top-level `configs` and `secrets` definitions | Preserved in normalized config. Service-level use is rejected because mounting them needs runtime support. |
+
+## Examples
+
+Each example includes a `compose.yaml` and a matching `Dockerfile`. They are intentionally small and show compatibility surfaces rather than production image design.
+
 ### Supported Example
 
-This Compose file uses supported local-development surfaces: build, image pull policy, ports, environment, one network, one named volume, CPU/memory limits, stop behavior, and simple `service_started` dependency ordering.
+This project uses supported local-development surfaces: build, image pull policy, ports, environment, one network, one named volume, CPU/memory limits, stop behavior, and simple `service_started` dependency ordering.
 
 ```yaml
 # compose.yaml
@@ -98,38 +168,17 @@ volumes:
 # api/Dockerfile
 FROM alpine:3.20
 ARG APP_ENV=dev
-RUN printf '%s\n' "$APP_ENV" > /app-env.txt
+RUN mkdir -p /app && printf '%s\n' "$APP_ENV" > /app/env.txt
 CMD ["sh", "-c", "sleep 3600"]
 ```
 
-## Unsupported Because Apple `container` Lacks a Primitive
+### Apple `container` Gap Example: Network Attachment
 
-These surfaces are recognized or planned by `container-compose`, but the current Apple `container` CLI/API does not expose enough runtime behavior to implement Docker Compose semantics faithfully.
-
-| Compose v2 surface | Examples | Missing Apple `container` primitive |
-| --- | --- | --- |
-| Multiple service networks | Two or more entries under service `networks`. | Post-create network connect and multi-network attachment. |
-| Service network aliases and attachment options | `aliases`, `driver_opts`, `gw_priority`, `interface_name`, `ipv4_address`, `ipv6_address`, `link_local_ips`, service-level network `mac_address`, `priority`. | Network aliasing and rich network attachment configuration. |
-| `network_mode` | `host`, `none`, `service:api`, `container:name`. | Docker-compatible network namespace modes. |
-| Hostname and host table controls | `hostname`, `domainname`, `extra_hosts`, service `mac_address`. | Explicit host entries, custom hostname/domain name, and MAC address support. |
-| Namespace and isolation controls | `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`. | Namespace selection and parent cgroup controls. |
-| Advanced CPU controls | `cpu_count`, `cpu_percent`, `cpu_period`, `cpu_quota`, `cpu_rt_period`, `cpu_rt_runtime`, `cpuset`, `cpu_shares`. | CPU scheduler controls beyond supported `cpus`. |
-| Advanced memory, OOM, and PID controls | `mem_reservation`, `memswap_limit`, `mem_swappiness`, `oom_kill_disable`, `oom_score_adj`, `pids_limit`. | Resource controls beyond supported `mem_limit`. |
-| User, security, and device access | `group_add`, `security_opt`, `privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`. | Supplemental groups, security options, privileged mode, Windows credential specs, host devices, cgroup device rules, and GPU device requests. |
-| DNS and kernel tuning | `dns_opt`, `sysctls`. | DNS resolver options and per-container sysctl support. |
-| Health and completion conditions | `healthcheck`, `depends_on` conditions `service_healthy` and `service_completed_successfully`. | Health status, exit code, and completion-time inspection. |
-| Config and secret mounts | Service-level `configs` and `secrets`. | Compose-style config/secret mount primitives. |
-| Runtime restart policy | Service `restart`. | Docker-compatible restart policies. |
-| Unsupported command surfaces | `top`, `events`, `port`, `pause`, `unpause`, `wait`. | Process listing, event stream, richer published-port inspect output, pause/unpause, and wait/exit metadata. |
-| Legacy links | `links`, `external_links`. | Legacy alias/link behavior and host-entry semantics. |
-
-### Apple `container` Gap Example
-
-This project is valid Docker Compose v2, but `container-compose up` must reject it before creating resources because Apple `container` cannot attach one container to two networks with aliases.
+This project is valid Docker Compose v2, but `container-compose up` rejects it before creating resources because Apple `container` cannot attach one container to multiple networks with aliases and attachment options.
 
 ```yaml
 # compose.yaml
-name: apple-runtime-gap-demo
+name: apple-network-gap-demo
 
 services:
   api:
@@ -139,11 +188,15 @@ services:
       app:
         aliases:
           - api.internal
-      admin: {}
+      admin:
+        ipv4_address: 10.10.0.20
 
 networks:
   app: {}
-  admin: {}
+  admin:
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24
 ```
 
 ```dockerfile
@@ -152,30 +205,58 @@ FROM alpine:3.20
 CMD ["sh", "-c", "sleep 3600"]
 ```
 
-## Unsupported By container-compose Today
+### Apple `container` Gap Example: Health, Secrets, And Restart
 
-These surfaces are Docker Compose v2 features that need more plugin orchestration or validation work in [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose). Some may also need Apple runtime improvements later, but the first blocker is this plugin.
+This project is valid Docker Compose v2, but the service health gate, secret mount, and restart policy need runtime primitives that Apple `container` does not expose yet.
 
-| Compose v2 surface | Current status | Notes |
-| --- | --- | --- |
-| Service replica scaling | Explicit `scale` and `deploy.replicas` values other than `1` fail before side effects. | The plugin currently manages one deterministic container per service. Multi-replica naming, reconciliation, logs, ps, rm, and DNS semantics are not implemented yet. |
-| Advanced build fields | Not fully implemented. | Only `context`, `dockerfile`, `args`, and `target` are mapped today. Build fields such as additional contexts, cache exporters/importers, build labels, platforms, secrets, SSH, tags, and provenance need follow-up work. |
-| Compose Deploy Specification beyond replica count | Not implemented. | Swarm-style `deploy` placement, update, rollback, endpoint, labels, and most resource reservation fields are outside the current local workflow mapping. |
-| Develop/watch workflow | Explicitly rejected before side effects when configured. | `develop`, `watch`, sync/rebuild actions, and file-watch semantics need plugin work before they can affect managed containers. |
-| Provider, model, and lifecycle hook surfaces | Not implemented. | `provider`, `models`, `post_start`, and `pre_stop` are not orchestrated. |
-| Service metadata and logging surfaces | Explicitly rejected before side effects when Compose v2 accepts the field. | `annotations`, `attach`, `label_file`, `logging`, and `storage_opt` need runtime mapping before they can affect managed containers. Legacy `log_driver` and `log_opt` are rejected by the Compose v2 schema during normalization, with defensive validation if they appear in canonical JSON. |
-| Volume inheritance and driver shortcuts | Explicitly rejected before side effects when Compose v2 accepts the field. | `volumes_from` needs plugin behavior before it can affect managed containers. Legacy service-level `volume_driver` is rejected by the Compose v2 schema during normalization, with defensive validation if it appears in canonical JSON. |
-| API socket mounting | Explicitly rejected before side effects when enabled. | `use_api_socket` needs a security review and runtime mapping before the plugin can mount an API socket into managed containers. |
-| Block I/O controls | Explicitly rejected before side effects when configured. | `blkio_config` needs a runtime primitive assessment before block I/O weights and throttle-device limits can affect managed containers. |
-| Additional Docker Compose CLI commands and flags | Not implemented. | Commands outside the current plugin command tree, such as `create`, `ls`, `watch`, and advanced flags on supported commands, need separate work. |
+```yaml
+# compose.yaml
+name: apple-health-gap-demo
 
-### container-compose Gap Example
+services:
+  api:
+    build:
+      context: ./api
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+    restart: unless-stopped
+    secrets:
+      - api_token
+
+  worker:
+    build:
+      context: ./worker
+    depends_on:
+      api:
+        condition: service_healthy
+
+secrets:
+  api_token:
+    file: ./api-token.txt
+```
+
+```dockerfile
+# api/Dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "touch /tmp/ready && sleep 3600"]
+```
+
+```dockerfile
+# worker/Dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "echo worker-ready && sleep 3600"]
+```
+
+### `container-compose` Gap Example: Replica Scaling
 
 This project is valid Docker Compose v2, and Apple `container` can create multiple containers in general, but this plugin does not yet implement Docker Compose replica semantics. It fails before side effects.
 
 ```yaml
 # compose.yaml
-name: plugin-gap-demo
+name: plugin-scale-gap-demo
 
 services:
   worker:
@@ -190,15 +271,31 @@ FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 ```
 
-## Config-Only Surfaces
+### `container-compose` Gap Example: Develop Watch
 
-These surfaces are normalized and preserved because they are useful in `compose config` output or harmless as metadata, but they do not currently change runtime orchestration.
+This project is valid Docker Compose v2, but file watching, sync, and rebuild orchestration are plugin work. It fails before side effects.
 
-| Compose v2 surface | Current behavior |
-| --- | --- |
-| Service `expose` | Preserved in normalized config; no runtime port publishing is performed. Use `ports` for host publishing. |
-| Extension fields | Project and service `x-*` fields are preserved in normalized config. |
-| Top-level `configs` and `secrets` definitions | Preserved in normalized config. Service-level use is rejected because mounting them needs runtime support. |
+```yaml
+# compose.yaml
+name: plugin-develop-gap-demo
+
+services:
+  api:
+    build:
+      context: ./api
+    develop:
+      watch:
+        - path: ./api/src
+          target: /app/src
+          action: sync
+```
+
+```dockerfile
+# api/Dockerfile
+FROM alpine:3.20
+WORKDIR /app
+CMD ["sh", "-c", "sleep 3600"]
+```
 
 ### Config-Only Example
 
