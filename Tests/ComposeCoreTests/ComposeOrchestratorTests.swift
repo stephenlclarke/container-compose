@@ -18,6 +18,16 @@ import ComposeCore
 import Foundation
 import Testing
 
+private func composeService(
+    name: String,
+    image: String? = nil,
+    configure: (inout ComposeService) -> Void = { _ in }
+) -> ComposeService {
+    var service = ComposeService(name: name, image: image)
+    configure(&service)
+    return service
+}
+
 @Suite("Compose orchestrator")
 struct ComposeOrchestratorTests {
     @Test("orders selected services after dependencies")
@@ -25,9 +35,13 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(
             name: "demo",
             services: [
-                "api": ComposeService(name: "api", image: "example/api:latest", dependsOn: ["db": "service_started"]),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": "service_started"]
+                },
                 "db": ComposeService(name: "db", image: "postgres:16"),
-                "web": ComposeService(name: "web", image: "nginx:latest", dependsOn: ["api": "service_started"]),
+                "web": composeService(name: "web", image: "nginx:latest") {
+                    $0.dependsOn = ["api": "service_started"]
+                },
             ]
         )
 
@@ -41,8 +55,12 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(
             name: "demo",
             services: [
-                "api": ComposeService(name: "api", image: "example/api:latest", dependsOn: ["worker": "service_started"]),
-                "worker": ComposeService(name: "worker", image: "example/worker:latest", dependsOn: ["api": "service_started"]),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["worker": "service_started"]
+                },
+                "worker": composeService(name: "worker", image: "example/worker:latest") {
+                    $0.dependsOn = ["api": "service_started"]
+                },
             ]
         )
 
@@ -70,16 +88,14 @@ struct ComposeOrchestratorTests {
             workingDirectory: "/tmp/demo",
             composeFiles: ["/tmp/compose.yml"],
             services: [
-                "api": ComposeService(
-                    name: "api",
-                    image: "example/api:latest",
-                    command: ["serve"],
-                    environment: ["LOG_LEVEL": "debug"],
-                    ports: ["8080:80"],
-                    volumes: [ComposeMount(type: "volume", source: "cache", target: "/cache")],
-                    networks: ["default"],
-                    labels: ["com.example.role": "api"]
-                ),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.command = ["serve"]
+                    $0.environment = ["LOG_LEVEL": "debug"]
+                    $0.ports = ["8080:80"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.networks = ["default"]
+                    $0.labels = ["com.example.role": "api"]
+                },
             ],
             networks: ["default": ComposeNetwork(name: "default")],
             volumes: ["cache": ComposeVolume(name: "cache")]
@@ -120,11 +136,9 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": ComposeService(name: "job", image: "example/job:latest"),
-                "api": ComposeService(
-                    name: "api",
-                    image: "example/api:latest",
-                    dependsOn: ["job": "service_completed_successfully"]
-                ),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["job": "service_completed_successfully"]
+                },
             ]
         )
 
@@ -145,7 +159,9 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": ComposeService(name: "api", image: "example/api:latest"),
-                "builder": ComposeService(name: "builder", build: ComposeBuild(context: ".")),
+                "builder": composeService(name: "builder") {
+                    $0.build = ComposeBuild(context: ".")
+                },
                 "web": ComposeService(name: "web", image: "nginx:latest"),
             ]
         )
@@ -317,14 +333,12 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(
             name: "demo",
             services: [
-                "web": ComposeService(
-                    name: "web",
-                    image: "nginx",
-                    healthcheck: .object(["disable": .bool(true)]),
-                    configs: [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])],
-                    secrets: [.object(["source": .string("app_secret")])],
-                    extensions: ["x-service": .object(["owner": .string("platform")])]
-                ),
+                "web": composeService(name: "web", image: "nginx") {
+                    $0.healthcheck = .object(["disable": .bool(true)])
+                    $0.configs = [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])]
+                    $0.secrets = [.object(["source": .string("app_secret")])]
+                    $0.extensions = ["x-service": .object(["owner": .string("platform")])]
+                },
             ],
             configs: ["app_config": .object(["external": .bool(true)])],
             secrets: ["app_secret": .object(["external": .bool(true)])],
@@ -474,12 +488,17 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(
             name: "demo",
             services: [
-                "api": ComposeService(
-                    name: "api",
-                    image: "example/api:latest",
-                    build: ComposeBuild(context: "api", dockerfile: "Containerfile", args: ["VERSION": "1"], target: "runtime")
-                ),
-                "worker": ComposeService(name: "worker", build: ComposeBuild(context: "worker")),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        dockerfile: "Containerfile",
+                        args: ["VERSION": "1"],
+                        target: "runtime"
+                    )
+                },
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
             ]
         )
 
@@ -530,7 +549,9 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(
             name: "demo",
             services: [
-                "api": ComposeService(name: "api", image: "example/api", dependsOn: ["db": "service_started"]),
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": "service_started"]
+                },
                 "db": ComposeService(name: "db", image: "postgres"),
             ],
             networks: ["default": ComposeNetwork(name: "default")],
@@ -583,7 +604,10 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(
             name: "demo",
             services: [
-                "api": ComposeService(name: "api", image: "example/api", tty: true, stdinOpen: true),
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.tty = true
+                    $0.stdinOpen = true
+                },
                 "web": ComposeService(name: "web", image: "nginx"),
             ]
         )
@@ -617,32 +641,30 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(
             name: "demo",
             services: [
-                "job": ComposeService(
-                    name: "job",
-                    image: "alpine",
-                    entrypoint: ["/bin/sh", "-c"],
-                    environment: ["A": "B", "EMPTY": nil],
-                    envFiles: [".env"],
-                    ports: ["8080:80"],
-                    volumes: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.entrypoint = ["/bin/sh", "-c"]
+                    $0.environment = ["A": "B", "EMPTY": nil]
+                    $0.envFiles = [".env"]
+                    $0.ports = ["8080:80"]
+                    $0.volumes = [
                         ComposeMount(type: "bind", source: "/host", target: "/container", readOnly: true),
                         ComposeMount(type: "tmpfs", target: "/tmp"),
                         ComposeMount(type: "volume", target: "/anon"),
-                    ],
-                    workingDir: "/work",
-                    user: "1000",
-                    tty: true,
-                    stdinOpen: true,
-                    readOnly: true,
-                    initEnabled: true,
-                    tmpfs: ["/cache"],
-                    dns: ["1.1.1.1"],
-                    dnsSearch: ["local"],
-                    capAdd: ["NET_ADMIN"],
-                    capDrop: ["MKNOD"],
-                    memLimit: "1024",
-                    cpus: "2"
-                ),
+                    ]
+                    $0.workingDir = "/work"
+                    $0.user = "1000"
+                    $0.tty = true
+                    $0.stdinOpen = true
+                    $0.readOnly = true
+                    $0.initEnabled = true
+                    $0.tmpfs = ["/cache"]
+                    $0.dns = ["1.1.1.1"]
+                    $0.dnsSearch = ["local"]
+                    $0.capAdd = ["NET_ADMIN"]
+                    $0.capDrop = ["MKNOD"]
+                    $0.memLimit = "1024"
+                    $0.cpus = "2"
+                },
             ]
         )
 
@@ -804,9 +826,15 @@ struct ComposeOrchestratorTests {
         }
 
         let unsupportedProjects = [
-            ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api", networks: ["a", "b"])]),
-            ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api", extraHosts: ["db:127.0.0.1"])]),
-            ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api", privileged: true)]),
+            ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+                $0.networks = ["a", "b"]
+            }]),
+            ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+                $0.extraHosts = ["db:127.0.0.1"]
+            }]),
+            ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+                $0.privileged = true
+            }]),
         ]
 
         for project in unsupportedProjects {
