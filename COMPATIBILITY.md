@@ -52,6 +52,8 @@ These fields currently fail before runtime side effects because the equivalent l
   `mac_address`, and `priority`.
 - `network_mode`.
 - `cgroup` and `cgroup_parent`.
+- Advanced CPU resource fields: `cpu_count`, `cpu_percent`, `cpu_period`,
+  `cpu_quota`, `cpu_rt_period`, `cpu_rt_runtime`, `cpuset`, and `cpu_shares`.
 - `ipc`, `pid`, `userns_mode`, and `uts`.
 - `isolation`.
 - `mac_address`.

@@ -682,6 +682,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported CPU resource fields before creating resources")
+    func upRejectsUnsupportedCPUResourceFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedCPUResourceFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -896,6 +925,13 @@ struct ComposeOrchestratorTests {
             runtime: container-runtime-linux
             cgroup: host
             cgroup_parent: m-executor-abcd
+            cpu_count: 2
+            cpu_period: 100000
+            cpu_quota: 50000
+            cpu_rt_period: 950000
+            cpu_rt_runtime: 900000
+            cpuset: "0-1"
+            cpu_shares: 512
             domainname: example.test
             ipc: host
             isolation: default
@@ -950,6 +986,13 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.runtime == "container-runtime-linux")
         #expect(project.services["api"]?.cgroup == "host")
         #expect(project.services["api"]?.cgroupParent == "m-executor-abcd")
+        #expect(project.services["api"]?.cpuCount == 2)
+        #expect(project.services["api"]?.cpuPeriod == 100000)
+        #expect(project.services["api"]?.cpuQuota == 50000)
+        #expect(project.services["api"]?.cpuRealtimePeriod == 950000)
+        #expect(project.services["api"]?.cpuRealtimeRuntime == 900000)
+        #expect(project.services["api"]?.cpuset == "0-1")
+        #expect(project.services["api"]?.cpuShares == 512)
         #expect(project.services["api"]?.ipc == "host")
         #expect(project.services["api"]?.isolation == "default")
         #expect(project.services["api"]?.pid == "host")
@@ -1139,7 +1182,7 @@ struct ComposeOrchestratorTests {
         let runner = RecordingRunner(responses: [
             CommandResult(
                 status: 0,
-                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx","cpuPercent":12.5}},"networks":{},"volumes":{}}"#,
                 stderr: ""
             ),
         ])
@@ -1154,6 +1197,7 @@ struct ComposeOrchestratorTests {
 
         #expect(project.name == "demo")
         #expect(project.services["web"]?.image == "nginx")
+        #expect(project.services["web"]?.cpuPercent == 12.5)
         let command = try #require(runner.commands.first)
         #expect(command.arguments.containsSequence(["--file", "compose.yml"]))
         #expect(command.arguments.containsSequence(["--profile", "dev"]))
@@ -1852,6 +1896,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run rejects unsupported CPU resource fields before creating resources")
+    func runRejectsUnsupportedCPUResourceFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedCPUResourceFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("run rejects unsupported MAC address before creating resources")
     func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2435,6 +2508,61 @@ private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFi
             value: "host",
             reason: "UTS namespace support needs an apple/container runtime gap PR",
             configure: { $0.uts = "host" }
+        ),
+    ]
+}
+
+private struct UnsupportedCPUResourceFieldCase: Sendable {
+    let composeName: String
+    let value: String
+    let configure: @Sendable (inout ComposeService) -> Void
+
+    func expectedMessage(serviceName: String) -> String {
+        "service '\(serviceName)' uses \(composeName) '\(value)'; advanced CPU resource support needs an apple/container runtime gap PR"
+    }
+}
+
+private func unsupportedCPUResourceFieldCases() -> [UnsupportedCPUResourceFieldCase] {
+    [
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpu_count",
+            value: "2",
+            configure: { $0.cpuCount = 2 }
+        ),
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpu_percent",
+            value: "12.5",
+            configure: { $0.cpuPercent = 12.5 }
+        ),
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpu_period",
+            value: "100000",
+            configure: { $0.cpuPeriod = 100_000 }
+        ),
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpu_quota",
+            value: "50000",
+            configure: { $0.cpuQuota = 50_000 }
+        ),
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpu_rt_period",
+            value: "950000",
+            configure: { $0.cpuRealtimePeriod = 950_000 }
+        ),
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpu_rt_runtime",
+            value: "900000",
+            configure: { $0.cpuRealtimeRuntime = 900_000 }
+        ),
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpuset",
+            value: "0-1",
+            configure: { $0.cpuset = "0-1" }
+        ),
+        UnsupportedCPUResourceFieldCase(
+            composeName: "cpu_shares",
+            value: "512",
+            configure: { $0.cpuShares = 512 }
         ),
     ]
 }

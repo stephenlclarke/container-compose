@@ -121,6 +121,13 @@ services:
     runtime: container-runtime-linux
     cgroup: host
     cgroup_parent: m-executor-abcd
+    cpu_count: 2
+    cpu_period: 100000
+    cpu_quota: 50000
+    cpu_rt_period: 950000
+    cpu_rt_runtime: 900000
+    cpuset: "0-1"
+    cpu_shares: 512
     domainname: example.test
     ipc: host
     isolation: default
@@ -213,6 +220,27 @@ volumes:
 	if api.CgroupParent != "m-executor-abcd" {
 		t.Fatalf("api.CgroupParent = %q, want m-executor-abcd", api.CgroupParent)
 	}
+	if api.CPUCount != 2 {
+		t.Fatalf("api.CPUCount = %d, want 2", api.CPUCount)
+	}
+	if api.CPUPeriod != 100000 {
+		t.Fatalf("api.CPUPeriod = %d, want 100000", api.CPUPeriod)
+	}
+	if api.CPUQuota != 50000 {
+		t.Fatalf("api.CPUQuota = %d, want 50000", api.CPUQuota)
+	}
+	if api.CPURealtimePeriod != 950000 {
+		t.Fatalf("api.CPURealtimePeriod = %d, want 950000", api.CPURealtimePeriod)
+	}
+	if api.CPURealtimeRuntime != 900000 {
+		t.Fatalf("api.CPURealtimeRuntime = %d, want 900000", api.CPURealtimeRuntime)
+	}
+	if api.CPUSet != "0-1" {
+		t.Fatalf("api.CPUSet = %q, want 0-1", api.CPUSet)
+	}
+	if api.CPUShares != 512 {
+		t.Fatalf("api.CPUShares = %d, want 512", api.CPUShares)
+	}
 	if api.Ipc != "host" {
 		t.Fatalf("api.Ipc = %q, want host", api.Ipc)
 	}
@@ -295,6 +323,17 @@ volumes:
 	}
 	if got, want := project.Volumes["data"].Labels, map[string]string{"role": "state"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("data labels = %#v, want %#v", got, want)
+	}
+}
+
+func TestNormalizeServicePreservesCPUPercent(t *testing.T) {
+	service := normalizeService(types.ServiceConfig{
+		Name:       "api",
+		CPUPercent: 12.5,
+	})
+
+	if service.CPUPercent != 12.5 {
+		t.Fatalf("service.CPUPercent = %f, want 12.5", service.CPUPercent)
 	}
 }
 

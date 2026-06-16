@@ -74,6 +74,14 @@ type normalizedService struct {
 	Runtime                string                              `json:"runtime,omitempty"`
 	Cgroup                 string                              `json:"cgroup,omitempty"`
 	CgroupParent           string                              `json:"cgroupParent,omitempty"`
+	CPUCount               int64                               `json:"cpuCount,omitempty"`
+	CPUPercent             float32                             `json:"cpuPercent,omitempty"`
+	CPUPeriod              int64                               `json:"cpuPeriod,omitempty"`
+	CPUQuota               int64                               `json:"cpuQuota,omitempty"`
+	CPURealtimePeriod      int64                               `json:"cpuRealtimePeriod,omitempty"`
+	CPURealtimeRuntime     int64                               `json:"cpuRealtimeRuntime,omitempty"`
+	CPUSet                 string                              `json:"cpuset,omitempty"`
+	CPUShares              int64                               `json:"cpuShares,omitempty"`
 	Build                  *normalizedBuild                    `json:"build,omitempty"`
 	Command                []string                            `json:"command,omitempty"`
 	Entrypoint             []string                            `json:"entrypoint,omitempty"`
@@ -327,6 +335,14 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Runtime:                service.Runtime,
 		Cgroup:                 service.Cgroup,
 		CgroupParent:           service.CgroupParent,
+		CPUCount:               service.CPUCount,
+		CPUPercent:             service.CPUPercent,
+		CPUPeriod:              service.CPUPeriod,
+		CPUQuota:               service.CPUQuota,
+		CPURealtimePeriod:      service.CPURTPeriod,
+		CPURealtimeRuntime:     service.CPURTRuntime,
+		CPUSet:                 service.CPUSet,
+		CPUShares:              service.CPUShares,
 		Command:                shellCommandValues(service.Command),
 		Entrypoint:             shellCommandValues(service.Entrypoint),
 		Environment:            mapEnvironment(service.Environment),

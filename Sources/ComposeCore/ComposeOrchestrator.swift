@@ -428,6 +428,9 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedRuntimeStringFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
+        if let gap = unsupportedCPUResourceFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
@@ -500,6 +503,50 @@ private extension ComposeOrchestrator {
             }
             return (composeName, value, reason)
         }
+    }
+
+    /// Returns unsupported CPU scheduler fields beyond the supported `cpus` limit.
+    func unsupportedCPUResourceFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        let reason = "advanced CPU resource support needs an apple/container runtime gap PR"
+        var fields: [(composeName: String, value: String, reason: String)] = []
+        appendUnsupportedIntegerField("cpu_count", value: service.cpuCount, reason: reason, to: &fields)
+        appendUnsupportedFloatingPointField("cpu_percent", value: service.cpuPercent, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_period", value: service.cpuPeriod, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_quota", value: service.cpuQuota, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_rt_period", value: service.cpuRealtimePeriod, reason: reason, to: &fields)
+        appendUnsupportedIntegerField("cpu_rt_runtime", value: service.cpuRealtimeRuntime, reason: reason, to: &fields)
+        if let cpuset = service.cpuset, !cpuset.isEmpty {
+            fields.append(("cpuset", cpuset, reason))
+        }
+        appendUnsupportedIntegerField("cpu_shares", value: service.cpuShares, reason: reason, to: &fields)
+        return fields
+    }
+
+    /// Appends an unsupported integer field only when Compose supplied a non-zero value.
+    func appendUnsupportedIntegerField(
+        _ composeName: String,
+        value: Int?,
+        reason: String,
+        to fields: inout [(composeName: String, value: String, reason: String)]
+    ) {
+        guard let value, value != 0 else {
+            return
+        }
+        fields.append((composeName, String(value), reason))
+    }
+
+    /// Appends an unsupported floating-point field only when Compose supplied a non-zero value.
+    func appendUnsupportedFloatingPointField(
+        _ composeName: String,
+        value: Double?,
+        reason: String,
+        to fields: inout [(composeName: String, value: String, reason: String)]
+    ) {
+        guard let value, value != 0 else {
+            return
+        }
+        let displayValue = value.rounded() == value ? String(Int(value)) : String(value)
+        fields.append((composeName, displayValue, reason))
     }
 
     /// Validates the global `up --pull` policy before resources are created.

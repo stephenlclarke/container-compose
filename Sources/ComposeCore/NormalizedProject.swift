@@ -92,6 +92,14 @@ public struct ComposeService: Codable, Equatable {
     public var runtime: String? = nil
     public var cgroup: String? = nil
     public var cgroupParent: String? = nil
+    public var cpuCount: Int? = nil
+    public var cpuPercent: Double? = nil
+    public var cpuPeriod: Int? = nil
+    public var cpuQuota: Int? = nil
+    public var cpuRealtimePeriod: Int? = nil
+    public var cpuRealtimeRuntime: Int? = nil
+    public var cpuset: String? = nil
+    public var cpuShares: Int? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -157,6 +165,14 @@ public struct ComposeService: Codable, Equatable {
         case runtime
         case cgroup
         case cgroupParent
+        case cpuCount
+        case cpuPercent
+        case cpuPeriod
+        case cpuQuota
+        case cpuRealtimePeriod
+        case cpuRealtimeRuntime
+        case cpuset
+        case cpuShares
         case build
         case command
         case entrypoint
