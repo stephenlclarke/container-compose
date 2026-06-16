@@ -1,7 +1,8 @@
 # Building container-compose
 
-This guide describes how to build, test, and package `container-compose` from
-source.
+This guide is for contributors who need to build, test, and package
+`container-compose` from source. It stops at producing the plugin archive used
+by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md).
 
 ## Requirements
 
@@ -121,15 +122,15 @@ coverage.xml
 Tools/compose-normalizer/coverage.out
 ```
 
-## Package
+## Package Archive
 
-Build the installable plugin archive:
+Build the plugin archive consumed by the install guide:
 
 ```sh
 make package
 ```
 
-The package target creates:
+The package target writes the archive and staging directory:
 
 ```text
 container-compose-plugin.tar.gz
@@ -138,7 +139,8 @@ dist/compose/config.toml
 dist/compose/resources/compose-normalizer
 ```
 
-For installation, upgrade, and removal steps, see [INSTALL.md](INSTALL.md).
+Use [INSTALL.md](INSTALL.md) to install, upgrade, verify, or remove the packaged
+plugin on a target machine.
 
 ## SonarQube
 

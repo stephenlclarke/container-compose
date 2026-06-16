@@ -1,22 +1,15 @@
 # Installing container-compose
 
-This guide explains how to install `container-compose` as a local
-`apple/container` CLI plugin.
+This guide starts with an existing `container-compose` plugin archive and
+explains how to install it for the local `apple/container` CLI. Source build,
+test, and package steps are covered in [BUILD.md](BUILD.md).
 
 ## Requirements
 
 - macOS.
 - The `container` CLI installed and working on the target machine.
-- A `container-compose-plugin.tar.gz` archive.
-
-If you need to create the archive from source, follow [BUILD.md](BUILD.md).
-The archive must contain:
-
-```text
-compose/bin/compose
-compose/config.toml
-compose/resources/compose-normalizer
-```
+- A `container-compose-plugin.tar.gz` archive from a release or from
+  `make package`.
 
 ## Install Locally
 
