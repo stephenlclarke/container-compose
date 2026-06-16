@@ -515,7 +515,7 @@ private extension ComposeOrchestrator {
         if service.readOnly == true {
             args.append("--read-only")
         }
-        if service.`init` == true {
+        if service.initEnabled == true {
             args.append("--init")
         }
 

@@ -343,6 +343,17 @@ struct ComposeOrchestratorTests {
         #expect(decoded.services["web"]?.extensions?["x-service"] == .object(["owner": .string("platform")]))
     }
 
+    @Test("service init key maps to initEnabled")
+    func serviceInitKeyMapsToInitEnabled() throws {
+        let decoded = try JSONDecoder().decode(ComposeService.self, from: Data(#"{"name":"web","init":true}"#.utf8))
+
+        #expect(decoded.initEnabled == true)
+
+        let encoded = String(decoding: try JSONEncoder().encode(decoded), as: UTF8.self)
+        #expect(encoded.contains(#""init":true"#))
+        #expect(!encoded.contains("initEnabled"))
+    }
+
     @Test("normalizer decodes JSON and forwards compose options")
     func normalizerDecodesJSONAndForwardsOptions() async throws {
         let runner = RecordingRunner(responses: [
@@ -623,7 +634,7 @@ struct ComposeOrchestratorTests {
                     tty: true,
                     stdinOpen: true,
                     readOnly: true,
-                    init: true,
+                    initEnabled: true,
                     tmpfs: ["/cache"],
                     dns: ["1.1.1.1"],
                     dnsSearch: ["local"],
