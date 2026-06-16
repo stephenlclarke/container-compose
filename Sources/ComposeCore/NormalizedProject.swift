@@ -88,6 +88,7 @@ public struct ComposeService: Codable, Equatable {
     public var image: String? = nil
     public var pullPolicy: String? = nil
     public var platform: String? = nil
+    public var macAddress: String? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -134,6 +135,7 @@ public struct ComposeService: Codable, Equatable {
         case image
         case pullPolicy
         case platform
+        case macAddress
         case build
         case command
         case entrypoint

@@ -50,6 +50,7 @@ These fields currently fail before runtime side effects because the equivalent l
   `mac_address`, and `priority`.
 - `network_mode`.
 - `platform`.
+- `mac_address`.
 - `depends_on` conditions other than `service_started`.
 - `extra_hosts`.
 - `hostname`.

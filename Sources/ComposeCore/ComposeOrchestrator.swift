@@ -425,6 +425,9 @@ private extension ComposeOrchestrator {
         if let platform = service.platform, !platform.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses platform '\(platform)'; platform selection needs an apple/container runtime gap PR")
         }
+        if let macAddress = service.macAddress, !macAddress.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
+        }
         if let dependsOn = service.dependsOn {
             for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
                 throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'")
