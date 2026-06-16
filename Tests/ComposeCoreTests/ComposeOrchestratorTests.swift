@@ -1659,7 +1659,8 @@ struct ComposeOrchestratorTests {
                         context: "api",
                         dockerfile: "Containerfile",
                         args: ["VERSION": "1"],
-                        target: "runtime"
+                        target: "runtime",
+                        noCache: true
                     )
                 },
                 "worker": composeService(name: "worker") {
@@ -1681,6 +1682,24 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
         #expect(runner.commands[2].arguments == ["container", "image", "pull", "example/api:latest"])
         #expect(runner.commands[3].arguments == ["container", "image", "push", "example/api:latest"])
+    }
+
+    @Test("build applies Compose file no cache setting")
+    func buildAppliesComposeFileNoCacheSetting() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api", noCache: true)
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).build(project: project, services: ["api"], noCache: false)
+
+        #expect(runner.commands.count == 1)
+        #expect(runner.commands[0].arguments.contains("--no-cache"))
     }
 
     @Test("build rejects unsupported build fields before emitting commands")
@@ -3404,6 +3423,11 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
                     ]),
                 ]
             }
+        ),
+        UnsupportedDeviceAccessFieldCase(
+            composeName: "privileged",
+            reason: "privileged mode support needs an apple/container runtime gap PR",
+            configure: { $0.privileged = true }
         ),
     ]
 }

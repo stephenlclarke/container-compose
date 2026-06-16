@@ -752,7 +752,10 @@ services:
 	if got, want := api.Build.Args, map[string]string{"VERSION": "1"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build args = %#v, want %#v", got, want)
 	}
-	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts", "cache_from", "labels", "no_cache", "platforms"}; !reflect.DeepEqual(got, want) {
+	if !api.Build.NoCache {
+		t.Fatal("api.Build.NoCache = false, want true")
+	}
+	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts", "cache_from", "labels", "platforms"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupported build fields = %#v, want %#v", got, want)
 	}
 	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
@@ -932,7 +935,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		Isolation:          "default",
 		Labels:             types.Labels{"build.label": "true"},
 		Network:            "host",
-		NoCache:            true,
 		Platforms:          types.StringList{"linux/arm64"},
 		Privileged:         true,
 		Provenance:         "mode=max",
@@ -954,7 +956,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		"isolation",
 		"labels",
 		"network",
-		"no_cache",
 		"platforms",
 		"privileged",
 		"provenance",

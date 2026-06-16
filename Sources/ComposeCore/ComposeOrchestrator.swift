@@ -499,9 +499,6 @@ private extension ComposeOrchestrator {
         if let secrets = service.secrets, !secrets.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses secrets; secret mount support needs an apple/container runtime gap PR")
         }
-        if service.privileged == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses privileged")
-        }
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
             throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, and never")
         }
@@ -627,6 +624,9 @@ private extension ComposeOrchestrator {
         }
         if let gpus = service.gpus, !gpus.isEmpty {
             fields.append(("gpus", "GPU device access support needs an apple/container runtime gap PR"))
+        }
+        if service.privileged == true {
+            fields.append(("privileged", "privileged mode support needs an apple/container runtime gap PR"))
         }
         return fields
     }
@@ -771,7 +771,7 @@ private extension ComposeOrchestrator {
         if let target = build.target, !target.isEmpty {
             args.append(contentsOf: ["--target", target])
         }
-        if noCache {
+        if noCache || build.noCache == true {
             args.append("--no-cache")
         }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {

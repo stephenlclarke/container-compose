@@ -325,13 +325,22 @@ public struct ComposeBuild: Codable, Equatable {
     public var dockerfile: String?
     public var args: [String: String]?
     public var target: String?
+    public var noCache: Bool?
     public var unsupportedFields: [String]?
 
-    public init(context: String? = nil, dockerfile: String? = nil, args: [String: String]? = nil, target: String? = nil, unsupportedFields: [String]? = nil) {
+    public init(
+        context: String? = nil,
+        dockerfile: String? = nil,
+        args: [String: String]? = nil,
+        target: String? = nil,
+        noCache: Bool? = nil,
+        unsupportedFields: [String]? = nil
+    ) {
         self.context = context
         self.dockerfile = dockerfile
         self.args = args
         self.target = target
+        self.noCache = noCache
         self.unsupportedFields = unsupportedFields
     }
 }
