@@ -415,6 +415,9 @@ private extension ComposeOrchestrator {
         if let hostname = service.hostname, !hostname.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses hostname; custom hostname support needs an apple/container runtime gap PR")
         }
+        if service.healthcheck != nil {
+            throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
+        }
         if service.privileged == true {
             throw ComposeError.unsupported("service '\(service.name)' uses privileged")
         }
