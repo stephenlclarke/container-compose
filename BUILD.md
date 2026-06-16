@@ -28,7 +28,8 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
   npm install --global markdownlint-cli@0.48.0
   ```
 
-- Optional: `sonar-scanner` and `SONAR_TOKEN` for local SonarQube scans.
+- Optional: `sonar-scanner` and either `SONAR_TOKEN` or `SONAR_TOKEN_PERSONAL`
+  for local SonarQube scans.
 
 If `swift` resolves to the Command Line Tools toolchain instead of Xcode, set:
 
