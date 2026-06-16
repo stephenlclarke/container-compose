@@ -13,9 +13,9 @@
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
 ![Repo Visitors](https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.container-compose)
 
-`container-compose` is a standalone plugin that will provide Docker Compose
-style workflows for Apple's [`container`](https://github.com/apple/container)
-CLI.
+`container-compose` is a standalone plugin that provides Docker Compose style
+workflows for Apple's [`container`](https://github.com/apple/container) CLI
+where the supported Compose surface maps to available runtime primitives.
 
 The first implementation target is local-development Compose v2 compatibility
 where [`container`](https://github.com/apple/container) has matching runtime
@@ -25,8 +25,8 @@ runtime orchestration.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) explains local plugin installation and removal.
-- [COMPATIBILITY.md](COMPATIBILITY.md) lists supported runtime primitives and
-  current runtime gaps.
+- [COMPATIBILITY.md](COMPATIBILITY.md) lists supported runtime primitives,
+  Apple `container` runtime gaps, and `container-compose` implementation gaps.
 - [BUILD.md](BUILD.md) explains dependencies, developer validation, packaging,
   and SonarQube scanning.
 - [DESIGN.md](DESIGN.md) explains the architecture and why Go is used for
