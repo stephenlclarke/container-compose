@@ -74,26 +74,111 @@ public struct ProcessRunner: CommandRunning {
                 process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
             }
 
+            let state = ProcessRunState(continuation: continuation)
             process.terminationHandler = { process in
-                let out = stdout.fileHandleForReading.readDataToEndOfFile()
-                let err = stderr.fileHandleForReading.readDataToEndOfFile()
-                continuation.resume(returning: CommandResult(
-                    status: process.terminationStatus,
-                    stdout: String(decoding: out, as: UTF8.self),
-                    stderr: String(decoding: err, as: UTF8.self)
-                ))
+                state.completeProcess(status: process.terminationStatus)
             }
 
             do {
                 try process.run()
+                state.drain(stdout.fileHandleForReading, stream: .stdout)
+                state.drain(stderr.fileHandleForReading, stream: .stderr)
                 if let input {
                     try stdin.fileHandleForWriting.write(contentsOf: input)
                     try stdin.fileHandleForWriting.close()
                 }
             } catch {
-                continuation.resume(throwing: error)
+                if process.isRunning {
+                    process.terminate()
+                }
+                try? stdin.fileHandleForWriting.close()
+                state.fail(error)
             }
         }
+    }
+}
+
+private final class ProcessRunState: @unchecked Sendable {
+    enum Stream {
+        case stdout
+        case stderr
+    }
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<CommandResult, Error>?
+    private var stdout = Data()
+    private var stderr = Data()
+    private var stdoutFinished = false
+    private var stderrFinished = false
+    private var status: Int32?
+
+    init(continuation: CheckedContinuation<CommandResult, Error>) {
+        self.continuation = continuation
+    }
+
+    func drain(_ handle: FileHandle, stream: Stream) {
+        DispatchQueue.global(qos: .utility).async {
+            let data = handle.readDataToEndOfFile()
+            self.complete(stream: stream, data: data)
+        }
+    }
+
+    func completeProcess(status: Int32) {
+        finish { state in
+            state.status = status
+        }
+    }
+
+    func fail(_ error: Error) {
+        let continuation = takeContinuation()
+        continuation?.resume(throwing: error)
+    }
+
+    private func complete(stream: Stream, data: Data) {
+        finish { state in
+            switch stream {
+            case .stdout:
+                state.stdout = data
+                state.stdoutFinished = true
+            case .stderr:
+                state.stderr = data
+                state.stderrFinished = true
+            }
+        }
+    }
+
+    private func finish(_ update: (ProcessRunState) -> Void) {
+        let completion: (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)?
+        lock.lock()
+        update(self)
+        completion = completedResultLocked()
+        lock.unlock()
+        if let completion {
+            completion.continuation.resume(returning: completion.result)
+        }
+    }
+
+    private func completedResultLocked() -> (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)? {
+        guard let status, stdoutFinished, stderrFinished, let continuation else {
+            return nil
+        }
+        self.continuation = nil
+        return (
+            continuation,
+            CommandResult(
+                status: status,
+                stdout: String(decoding: stdout, as: UTF8.self),
+                stderr: String(decoding: stderr, as: UTF8.self)
+            )
+        )
+    }
+
+    private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        let continuation = continuation
+        self.continuation = nil
+        return continuation
     }
 }
 
