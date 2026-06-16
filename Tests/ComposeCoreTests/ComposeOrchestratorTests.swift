@@ -38,6 +38,21 @@ private func composeProject(
     return project
 }
 
+private func projectWithRuntimeResources(networkName: String, volumeName: String) -> ComposeProject {
+    composeProject(
+        name: "demo",
+        services: [
+            "api": composeService(name: "api", image: "alpine") {
+                $0.networks = ["shared"]
+                $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+            },
+        ]
+    ) {
+        $0.networks = ["shared": ComposeNetwork(name: networkName, external: true)]
+        $0.volumes = ["cache": ComposeVolume(name: volumeName, external: true)]
+    }
+}
+
 @Suite("Compose orchestrator")
 struct ComposeOrchestratorTests {
     @Test("orders selected services after dependencies")
@@ -962,6 +977,35 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.map(\.arguments) == [["container", "inspect", "demo-api-1"]])
         #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+    }
+
+    @Test("up recreates existing containers when resource runtime names change")
+    func upRecreatesExistingContainersWhenResourceRuntimeNamesChange() async throws {
+        let oldProject = projectWithRuntimeResources(networkName: "old-net", volumeName: "old-cache")
+        let createRunner = RecordingRunner(responses: [.failure, .success])
+
+        try await ComposeOrchestrator(runner: createRunner).up(project: oldProject, options: ComposeUpOptions())
+
+        let oldRun = try #require(createRunner.commands.last?.arguments)
+        let oldHash = try #require(composeConfigHash(in: oldRun))
+        let newProject = projectWithRuntimeResources(networkName: "new-net", volumeName: "new-cache")
+        let runner = RecordingRunner(responses: [
+            inspectResult(configHash: oldHash),
+            .success,
+            .success,
+            .success,
+        ])
+
+        try await ComposeOrchestrator(runner: runner).up(project: newProject, options: ComposeUpOptions())
+
+        #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
+        #expect(runner.commands[1].arguments == ["container", "stop", "demo-api-1"])
+        #expect(runner.commands[2].arguments == ["container", "delete", "demo-api-1"])
+        let newRun = runner.commands[3].arguments
+        #expect(newRun.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(newRun.containsSequence(["--network", "new-net"]))
+        #expect(newRun.containsSequence(["--volume", "new-cache:/cache"]))
+        #expect(composeConfigHash(in: newRun) != oldHash)
     }
 
     @Test("up recreates existing containers when config hash changes")

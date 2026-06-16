@@ -139,7 +139,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                if !up.forceRecreate, existing.configHash == configHash(service) {
+                if !up.forceRecreate, existing.configHash == configHash(project: project, service: service) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
@@ -688,6 +688,12 @@ private struct ExistingContainer {
     var configHash: String?
 }
 
+private struct ServiceConfigFingerprint: Encodable {
+    var service: ComposeService
+    var networks: [String: String]
+    var volumes: [String: String]
+}
+
 private let projectLabel = "com.apple.container.compose.project"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
@@ -759,7 +765,7 @@ private func serviceLabels(project: ComposeProject, service: ComposeService, one
     var labels = resourceLabels(project: project)
     labels.append("com.apple.container.compose.service=\(service.name)")
     labels.append("com.apple.container.compose.oneoff=\(oneOff)")
-    labels.append("\(configHashLabel)=\(configHash(service))")
+    labels.append("\(configHashLabel)=\(configHash(project: project, service: service))")
     if let firstFile = project.composeFiles.first {
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
     }
@@ -771,14 +777,40 @@ private func composeFilesHash(_ composeFiles: [String]) -> String {
     stableHash(composeFiles.sorted().joined(separator: "\n"))
 }
 
-/// Hashes a normalized service definition for recreate decisions.
-private func configHash(_ service: ComposeService) -> String {
+/// Hashes the effective service configuration for recreate decisions.
+private func configHash(project: ComposeProject, service: ComposeService) -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    guard let data = try? encoder.encode(service) else {
+    let fingerprint = ServiceConfigFingerprint(
+        service: service,
+        networks: serviceNetworkRuntimeNames(project: project, service: service),
+        volumes: serviceVolumeRuntimeNames(project: project, service: service)
+    )
+    guard let data = try? encoder.encode(fingerprint) else {
         return stableHash(service.name)
     }
     return stableHash(String(decoding: data, as: UTF8.self))
+}
+
+/// Returns runtime network names that affect a service's run arguments.
+private func serviceNetworkRuntimeNames(project: ComposeProject, service: ComposeService) -> [String: String] {
+    var names: [String: String] = [:]
+    for name in service.networks ?? [] {
+        names[name] = networkRuntimeName(project: project, composeName: name)
+    }
+    return names
+}
+
+/// Returns runtime volume names that affect a service's run arguments.
+private func serviceVolumeRuntimeNames(project: ComposeProject, service: ComposeService) -> [String: String] {
+    var names: [String: String] = [:]
+    for mount in service.volumes ?? [] where mount.type == "volume" {
+        guard let source = mount.source, !source.isEmpty else {
+            continue
+        }
+        names[source] = volumeRuntimeName(project: project, composeName: source)
+    }
+    return names
 }
 
 /// Extracts the Compose config hash label from `container inspect` JSON.
