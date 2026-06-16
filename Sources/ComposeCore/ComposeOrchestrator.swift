@@ -114,7 +114,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         for service in services {
-            try validateRuntimeSupport(project: project, service: service)
+            try validateRuntimeSupport(service: service)
             if service.image == nil, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
             }
@@ -247,7 +247,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if !command.isEmpty {
             service.command = command
         }
-        try validateRuntimeSupport(project: project, service: service)
+        try validateRuntimeSupport(service: service)
         try await runContainer(runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true))
     }
 
@@ -371,7 +371,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    func validateRuntimeSupport(project: ComposeProject, service: ComposeService) throws {
+    func validateRuntimeSupport(service: ComposeService) throws {
         let networks = service.networks ?? []
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; Apple container does not expose network connect yet")
