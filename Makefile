@@ -100,7 +100,13 @@ cli-smoke: build
 	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
-	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]
+	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
+	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \
+	[[ "$$top_output" == *"unsupported compose feature: top:"* ]]; \
+	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json 2>&1 || true)"; \
+	[[ "$$events_output" == *"unsupported compose feature: events:"* ]]; \
+	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
+	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]
 
 coverage: swift-coverage go-test
 

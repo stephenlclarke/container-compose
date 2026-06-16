@@ -417,6 +417,7 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
 struct Top: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "top", abstract: "Display running processes.")
     @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for process listing.
     func run() throws {
         try global.orchestrator().unsupported("top", reason: "Apple container does not expose a process-list command yet")
@@ -427,6 +428,7 @@ struct Top: AsyncParsableCommand, ComposeProjectCommand {
 struct Events: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "events", abstract: "Stream project events.")
     @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for event streaming.
     func run() throws {
         try global.orchestrator().unsupported("events", reason: "Apple container does not expose an event stream yet")
@@ -437,6 +439,7 @@ struct Events: AsyncParsableCommand, ComposeProjectCommand {
 struct Port: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "port", abstract: "Print public port bindings.")
     @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for published port lookup.
     func run() throws {
         try global.orchestrator().unsupported("port", reason: "published port lookup needs richer inspect output")
@@ -447,6 +450,7 @@ struct Port: AsyncParsableCommand, ComposeProjectCommand {
 struct Pause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "pause", abstract: "Pause service containers.")
     @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for pausing containers.
     func run() throws {
         try global.orchestrator().unsupported("pause", reason: "Apple container does not expose pause yet")
@@ -457,6 +461,7 @@ struct Pause: AsyncParsableCommand, ComposeProjectCommand {
 struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "unpause", abstract: "Unpause service containers.")
     @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for unpausing containers.
     func run() throws {
         try global.orchestrator().unsupported("unpause", reason: "Apple container does not expose unpause yet")
@@ -467,6 +472,7 @@ struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
 struct Wait: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "wait", abstract: "Wait for service containers to exit.")
     @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for wait semantics.
     func run() throws {
         try global.orchestrator().unsupported("wait", reason: "exit code and completion time need an apple/container runtime gap PR")
