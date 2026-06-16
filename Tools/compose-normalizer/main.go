@@ -85,6 +85,7 @@ type normalizedService struct {
 	CPURealtimeRuntime     int64                               `json:"cpuRealtimeRuntime,omitempty"`
 	CPUSet                 string                              `json:"cpuset,omitempty"`
 	CPUShares              int64                               `json:"cpuShares,omitempty"`
+	Develop                bool                                `json:"develop,omitempty"`
 	Build                  *normalizedBuild                    `json:"build,omitempty"`
 	Command                []string                            `json:"command,omitempty"`
 	Entrypoint             []string                            `json:"entrypoint,omitempty"`
@@ -370,6 +371,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		CPURealtimeRuntime:     service.CPURTRuntime,
 		CPUSet:                 service.CPUSet,
 		CPUShares:              service.CPUShares,
+		Develop:                service.Develop != nil,
 		Command:                shellCommandValues(service.Command),
 		Entrypoint:             shellCommandValues(service.Entrypoint),
 		CredentialSpec:         service.CredentialSpec,

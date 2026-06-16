@@ -437,6 +437,9 @@ private extension ComposeOrchestrator {
         if service.blkioConfig == true {
             throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls are not implemented by container-compose yet")
         }
+        if service.develop == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses develop; develop/watch workflows are not implemented by container-compose yet")
+        }
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }

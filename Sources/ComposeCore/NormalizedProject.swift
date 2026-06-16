@@ -103,6 +103,7 @@ public struct ComposeService: Codable, Equatable {
     public var cpuRealtimeRuntime: Int? = nil
     public var cpuset: String? = nil
     public var cpuShares: Int? = nil
+    public var develop: Bool? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -200,6 +201,7 @@ public struct ComposeService: Codable, Equatable {
         case cpuRealtimeRuntime
         case cpuset
         case cpuShares
+        case develop
         case build
         case command
         case entrypoint

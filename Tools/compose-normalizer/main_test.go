@@ -135,6 +135,10 @@ services:
     cpu_rt_runtime: 900000
     cpuset: "0-1"
     cpu_shares: 512
+    develop:
+      watch:
+        - path: ./src
+          action: rebuild
     domainname: example.test
     credential_spec:
       file: credential-spec.json
@@ -292,6 +296,9 @@ volumes:
 	}
 	if api.CPUShares != 512 {
 		t.Fatalf("api.CPUShares = %d, want 512", api.CPUShares)
+	}
+	if !api.Develop {
+		t.Fatal("api.Develop = false, want true")
 	}
 	if api.Ipc != "host" {
 		t.Fatalf("api.Ipc = %q, want host", api.Ipc)
