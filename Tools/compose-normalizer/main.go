@@ -85,6 +85,7 @@ type normalizedService struct {
 	Labels         map[string]string                   `json:"labels,omitempty"`
 	ContainerName  string                              `json:"containerName,omitempty"`
 	Hostname       string                              `json:"hostname,omitempty"`
+	DomainName     string                              `json:"domainName,omitempty"`
 	WorkingDir     string                              `json:"workingDir,omitempty"`
 	User           string                              `json:"user,omitempty"`
 	TTY            bool                                `json:"tty,omitempty"`
@@ -320,6 +321,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Labels:         mapLabels(service.Labels),
 		ContainerName:  service.ContainerName,
 		Hostname:       service.Hostname,
+		DomainName:     service.DomainName,
 		WorkingDir:     service.WorkingDir,
 		User:           service.User,
 		TTY:            service.Tty,

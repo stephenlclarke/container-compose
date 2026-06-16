@@ -104,6 +104,7 @@ public struct ComposeService: Codable, Equatable {
     public var labels: [String: String]? = nil
     public var containerName: String? = nil
     public var hostname: String? = nil
+    public var domainName: String? = nil
     public var workingDir: String? = nil
     public var user: String? = nil
     public var tty: Bool? = nil
@@ -152,6 +153,7 @@ public struct ComposeService: Codable, Equatable {
         case labels
         case containerName
         case hostname
+        case domainName
         case workingDir
         case user
         case tty

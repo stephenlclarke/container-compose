@@ -117,6 +117,7 @@ services:
     image: nginx:alpine
     platform: linux/amd64
     mac_address: 02:42:ac:11:00:03
+    domainname: example.test
     command: ["nginx", "-g", "daemon off;"]
     environment:
       FOO: bar
@@ -176,6 +177,9 @@ volumes:
 	}
 	if api.MacAddress != "02:42:ac:11:00:03" {
 		t.Fatalf("api.MacAddress = %q, want 02:42:ac:11:00:03", api.MacAddress)
+	}
+	if api.DomainName != "example.test" {
+		t.Fatalf("api.DomainName = %q, want example.test", api.DomainName)
 	}
 	if got, want := api.Command, []string{"nginx", "-g", "daemon off;"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Command = %#v, want %#v", got, want)

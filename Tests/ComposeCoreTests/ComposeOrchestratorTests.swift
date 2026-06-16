@@ -450,6 +450,35 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported domain names before creating resources")
+    func upRejectsUnsupportedDomainNamesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.domainName = "example.test"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported domain name error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses domainname; custom domain name support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported DNS options before creating resources")
     func upRejectsUnsupportedDNSOptionsBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -804,6 +833,7 @@ struct ComposeOrchestratorTests {
             pull_policy: always
             platform: linux/amd64
             mac_address: 02:42:ac:11:00:03
+            domainname: example.test
             command: ["nginx", "-g", "daemon off;"]
             networks:
               default:
@@ -831,6 +861,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.pullPolicy == "always")
         #expect(project.services["api"]?.platform == "linux/amd64")
         #expect(project.services["api"]?.macAddress == "02:42:ac:11:00:03")
+        #expect(project.services["api"]?.domainName == "example.test")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
         #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(ipv4Address: "10.10.0.5")])
@@ -1469,6 +1500,35 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported hostname error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses hostname; custom hostname support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported domain names before creating resources")
+    func runRejectsUnsupportedDomainNamesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.domainName = "example.test"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported domain name error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses domainname; custom domain name support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
