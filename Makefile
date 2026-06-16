@@ -27,7 +27,7 @@ PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
 SONAR_QUALITYGATE_WAIT ?= false
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= /Library/Developer/CommandLineTools/Library/Developer/Frameworks
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= /Library/Developer/CommandLineTools/Library/Developer/usr/lib
-MARKDOWN_FILES := README.md BUILD.md CONTRIBUTING.md DESIGN.md INSTALL.md
+MARKDOWN_FILES := README.md BUILD.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md
 
 # Command Line Tools installs can place Swift Testing outside SwiftPM's default rpaths.
 ifneq ($(wildcard $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)/Testing.framework),)

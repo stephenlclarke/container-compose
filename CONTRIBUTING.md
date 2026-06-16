@@ -15,7 +15,9 @@ Use pull requests for all changes.
 3. Add or update tests for behavior changes.
 4. Update documentation when behavior, commands, installation, or developer
    workflow changes.
-5. Run the validation described in [BUILD.md](BUILD.md) before requesting
+5. Update [COMPATIBILITY.md](COMPATIBILITY.md) when runtime primitive support
+   changes.
+6. Run the validation described in [BUILD.md](BUILD.md) before requesting
    review.
 
 Maintainers review pull requests before merge. Direct pushes to protected
@@ -64,6 +66,8 @@ the stricter threshold documented in [BUILD.md](BUILD.md).
 - Keep orchestration logic in Swift and Compose normalization in the Go helper.
 - Prefer the existing project structure over new abstractions.
 - Keep unsupported Compose features explicit and actionable.
+- Keep [COMPATIBILITY.md](COMPATIBILITY.md) aligned with supported runtime
+  primitives.
 - Use deterministic names, labels, and output ordering where possible.
 - Match [`apple/container`](https://github.com/apple/container) naming,
   formatting, and error-reporting conventions when the equivalent pattern

@@ -25,6 +25,8 @@ runtime orchestration.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) explains local plugin installation and removal.
+- [COMPATIBILITY.md](COMPATIBILITY.md) lists supported runtime primitives and
+  current runtime gaps.
 - [BUILD.md](BUILD.md) explains dependencies, developer validation, packaging,
   and SonarQube scanning.
 - [DESIGN.md](DESIGN.md) explains the architecture and why Go is used for
