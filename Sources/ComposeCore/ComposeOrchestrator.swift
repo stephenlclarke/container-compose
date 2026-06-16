@@ -370,6 +370,7 @@ public extension ComposeOrchestrator {
 }
 
 private extension ComposeOrchestrator {
+    /// Resolves an optional service selection into deterministic services.
     func selectedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
         if selected.isEmpty {
             return project.services.values.sorted { $0.name < $1.name }
@@ -382,6 +383,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Returns the deterministic container name for a service or one-off run.
     func containerName(project: ComposeProject, service: ComposeService, oneOff: Bool) -> String {
         if !oneOff, let containerName = service.containerName, !containerName.isEmpty {
             return slug(containerName)
@@ -390,6 +392,7 @@ private extension ComposeOrchestrator {
         return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
     }
 
+    /// Validates project-level invariants before runtime orchestration starts.
     func validate(project: ComposeProject) throws {
         guard !project.name.isEmpty else {
             throw ComposeError.invalidProject("project name is empty")
@@ -399,6 +402,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Rejects Compose features that need runtime support not available yet.
     func validateRuntimeSupport(service: ComposeService) throws {
         let networks = service.networks ?? []
         if networks.count > 1 {
@@ -417,6 +421,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Creates a project network unless it already exists.
     func ensureNetwork(project: ComposeProject, composeName: String, network: ComposeNetwork) async throws {
         var args = ["network", "create"]
         for label in resourceLabels(project: project) {
@@ -429,6 +434,7 @@ private extension ComposeOrchestrator {
         try await runContainer(args, check: false)
     }
 
+    /// Creates a project volume unless it already exists.
     func ensureVolume(project: ComposeProject, composeName: String, volume: ComposeVolume) async throws {
         var args = ["volume", "create"]
         for label in resourceLabels(project: project) {
@@ -441,6 +447,7 @@ private extension ComposeOrchestrator {
         try await runContainer(args, check: false)
     }
 
+    /// Translates one Compose build section into a `container build` command.
     func buildService(project: ComposeProject, service: ComposeService, noCache: Bool) async throws {
         guard let build = service.build else {
             return
@@ -464,6 +471,7 @@ private extension ComposeOrchestrator {
         try await runContainer(args)
     }
 
+    /// Applies the Compose `up --pull` policy before starting services.
     func applyPullPolicy(_ policy: String?, project: ComposeProject, services: [ComposeService]) async throws {
         guard let policy, !policy.isEmpty else {
             return
@@ -481,6 +489,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Pulls only service images not already present in the local image store.
     func pullMissingImages(services: [ComposeService]) async throws {
         for service in services {
             guard let image = service.image else {
@@ -493,6 +502,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Builds the `container run` argument vector for a service.
     func runArguments(project: ComposeProject, service: ComposeService, detach: Bool, remove: Bool, oneOff: Bool) throws -> [String] {
         var args = ["run"]
         args.append(contentsOf: ["--name", containerName(project: project, service: service, oneOff: oneOff)])
@@ -579,6 +589,7 @@ private extension ComposeOrchestrator {
         return args
     }
 
+    /// Appends a Compose mount in the form accepted by `container run`.
     func appendMount(_ mount: ComposeMount, project: ComposeProject, args: inout [String]) throws {
         if mount.type == "tmpfs" {
             guard let target = mount.target else {
@@ -609,6 +620,7 @@ private extension ComposeOrchestrator {
         args.append(contentsOf: ["--volume", value])
     }
 
+    /// Returns an existing container's Compose metadata, if the container exists.
     func inspectContainer(_ name: String) async throws -> ExistingContainer? {
         let result = try await runContainer(["inspect", name], check: false, emitOutput: false)
         guard result.succeeded else {
@@ -617,6 +629,7 @@ private extension ComposeOrchestrator {
         return ExistingContainer(configHash: inspectConfigHash(from: result.stdout))
     }
 
+    /// Removes project-scoped containers that are not in the declared set.
     func removeRemainingProjectContainers(project: ComposeProject, excluding declaredContainers: Set<String>) async throws {
         let args = ["list", "--format", "json", "--all"]
         if options.dryRun {
@@ -634,6 +647,7 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Executes one `container` command or prints it in dry-run mode.
     @discardableResult
     func runContainer(
         _ arguments: [String],
@@ -676,10 +690,12 @@ private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
 
+/// Returns the runtime resource name for a project-scoped network or volume.
 private func resourceName(project: String, name: String) -> String {
     "\(slug(project))_\(slug(name))"
 }
 
+/// Returns labels shared by all resources in a Compose project.
 private func resourceLabels(project: ComposeProject) -> [String] {
     [
         "\(projectLabel)=\(project.name)",
@@ -689,6 +705,7 @@ private func resourceLabels(project: ComposeProject) -> [String] {
     ]
 }
 
+/// Returns labels that identify a service container and its config hash.
 private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("com.apple.container.compose.service=\(service.name)")
@@ -700,10 +717,12 @@ private func serviceLabels(project: ComposeProject, service: ComposeService, one
     return labels
 }
 
+/// Hashes the compose file list in a stable order.
 private func composeFilesHash(_ composeFiles: [String]) -> String {
     stableHash(composeFiles.sorted().joined(separator: "\n"))
 }
 
+/// Hashes a normalized service definition for recreate decisions.
 private func configHash(_ service: ComposeService) -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -713,6 +732,7 @@ private func configHash(_ service: ComposeService) -> String {
     return stableHash(String(decoding: data, as: UTF8.self))
 }
 
+/// Extracts the Compose config hash label from `container inspect` JSON.
 private func inspectConfigHash(from output: String) -> String? {
     guard let data = output.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: data)
@@ -722,6 +742,7 @@ private func inspectConfigHash(from output: String) -> String? {
     return inspectLabel(configHashLabel, in: json)
 }
 
+/// Recursively searches common inspect JSON shapes for one label value.
 private func inspectLabel(_ key: String, in value: Any) -> String? {
     if let values = value as? [Any] {
         return values.lazy.compactMap { inspectLabel(key, in: $0) }.first
@@ -740,6 +761,7 @@ private func inspectLabel(_ key: String, in value: Any) -> String? {
     return nil
 }
 
+/// Reads a label value from a JSON object when labels are map-shaped.
 private func labelValue(_ key: String, in value: Any?) -> String? {
     guard let labels = value as? [String: Any] else {
         return nil
@@ -747,16 +769,19 @@ private func labelValue(_ key: String, in value: Any?) -> String? {
     return labels[key] as? String
 }
 
+/// Returns pretty JSON for containers scoped to one Compose project.
 private func projectContainerListJSON(projectName: String, output: String) throws -> String {
     let scopedContainers = try projectContainers(projectName: projectName, output: output)
     let scopedData = try JSONSerialization.data(withJSONObject: scopedContainers, options: [.prettyPrinted, .sortedKeys])
     return String(decoding: scopedData, as: UTF8.self)
 }
 
+/// Returns names or IDs for containers scoped to one Compose project.
 private func projectContainerIdentifiers(projectName: String, output: String) throws -> [String] {
     try projectContainers(projectName: projectName, output: output).compactMap(containerIdentifier)
 }
 
+/// Filters raw `container list --format json` output by Compose project label.
 private func projectContainers(projectName: String, output: String) throws -> [Any] {
     guard let data = output.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: data)
@@ -778,6 +803,7 @@ private func projectContainers(projectName: String, output: String) throws -> [A
     return containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
 }
 
+/// Extracts the most useful identifier from one container list object.
 private func containerIdentifier(_ value: Any) -> String? {
     guard let object = value as? [String: Any] else {
         return nil
@@ -793,11 +819,13 @@ private func containerIdentifier(_ value: Any) -> String? {
     return nil
 }
 
+/// Returns a SHA-256 hex digest for stable names and labels.
 private func stableHash(_ value: String) -> String {
     let digest = SHA256.hash(data: Data(value.utf8))
     return digest.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Converts arbitrary Compose names into names accepted by runtime resources.
 private func slug(_ value: String) -> String {
     var result = value.map { char -> Character in
         if char.isLetter || char.isNumber || char == "." || char == "_" || char == "-" {
@@ -814,6 +842,7 @@ private func slug(_ value: String) -> String {
     return String(result)
 }
 
+/// Quotes a command line for dry-run output and error messages.
 private func shellQuoted(_ parts: [String]) -> String {
     parts.map { part in
         if part.allSatisfy({ $0.isLetter || $0.isNumber || "-_./:=,".contains($0) }) {

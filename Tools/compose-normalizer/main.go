@@ -32,6 +32,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 )
 
+// stringList records repeatable flag values while preserving input order.
 type stringList []string
 
 // String returns the flag display value for repeated string options.
@@ -48,6 +49,7 @@ func (s *stringList) Set(value string) error {
 	return nil
 }
 
+// normalizedProject is the stable JSON envelope consumed by Swift.
 type normalizedProject struct {
 	Name             string                       `json:"name"`
 	WorkingDirectory string                       `json:"workingDirectory"`
@@ -60,6 +62,8 @@ type normalizedProject struct {
 	Extensions       map[string]any               `json:"extensions,omitempty"`
 }
 
+// normalizedService contains the Compose service fields Swift can either
+// orchestrate directly or preserve for config output and runtime gap checks.
 type normalizedService struct {
 	Name          string             `json:"name"`
 	Image         string             `json:"image,omitempty"`
@@ -96,6 +100,7 @@ type normalizedService struct {
 	Extensions    map[string]any     `json:"extensions,omitempty"`
 }
 
+// normalizedBuild keeps the build fields needed to call `container build`.
 type normalizedBuild struct {
 	Context    string            `json:"context,omitempty"`
 	Dockerfile string            `json:"dockerfile,omitempty"`
@@ -103,6 +108,7 @@ type normalizedBuild struct {
 	Target     string            `json:"target,omitempty"`
 }
 
+// normalizedMount keeps mount data in a compact runtime-oriented shape.
 type normalizedMount struct {
 	Type     string `json:"type,omitempty"`
 	Source   string `json:"source,omitempty"`
@@ -111,6 +117,7 @@ type normalizedMount struct {
 	Raw      string `json:"raw,omitempty"`
 }
 
+// normalizedNetwork contains project-level network metadata.
 type normalizedNetwork struct {
 	Name     string            `json:"name"`
 	External bool              `json:"external,omitempty"`
@@ -118,6 +125,7 @@ type normalizedNetwork struct {
 	Labels   map[string]string `json:"labels,omitempty"`
 }
 
+// normalizedVolume contains project-level volume metadata.
 type normalizedVolume struct {
 	Name     string            `json:"name"`
 	External bool              `json:"external,omitempty"`
@@ -125,6 +133,7 @@ type normalizedVolume struct {
 	Labels   map[string]string `json:"labels,omitempty"`
 }
 
+// main exits with the helper status code returned by run.
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -269,6 +278,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	return result
 }
 
+// normalizeService copies a compose-go service into the stable Swift model.
 func normalizeService(service types.ServiceConfig) normalizedService {
 	result := normalizedService{
 		Name:          service.Name,
@@ -323,6 +333,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 	return result
 }
 
+// jsonMap widens typed compose-go maps so they can be encoded without losing
+// extension, config, or secret fields Swift does not yet interpret.
 func jsonMap[T any](values map[string]T) map[string]any {
 	if len(values) == 0 {
 		return nil
@@ -334,6 +346,8 @@ func jsonMap[T any](values map[string]T) map[string]any {
 	return result
 }
 
+// shellCommandValues copies compose-go shell command slices into ordinary JSON
+// arrays while preserving nil for omitted fields.
 func shellCommandValues(command types.ShellCommand) []string {
 	if command == nil {
 		return nil
@@ -341,6 +355,7 @@ func shellCommandValues(command types.ShellCommand) []string {
 	return append([]string(nil), command...)
 }
 
+// mapEnvironment preserves the difference between KEY and KEY=value entries.
 func mapEnvironment(environment types.MappingWithEquals) map[string]*string {
 	if len(environment) == 0 {
 		return nil
@@ -357,6 +372,7 @@ func mapEnvironment(environment types.MappingWithEquals) map[string]*string {
 	return result
 }
 
+// envFileValues extracts normalized env-file paths in compose-go order.
 func envFileValues(envFiles []types.EnvFile) []string {
 	if len(envFiles) == 0 {
 		return nil
@@ -368,6 +384,7 @@ func envFileValues(envFiles []types.EnvFile) []string {
 	return result
 }
 
+// portValues converts structured Compose ports to CLI publish strings.
 func portValues(ports []types.ServicePortConfig) []string {
 	if len(ports) == 0 {
 		return nil
@@ -379,6 +396,7 @@ func portValues(ports []types.ServicePortConfig) []string {
 	return result
 }
 
+// formatPort mirrors Docker-style published port text for the runtime CLI.
 func formatPort(port types.ServicePortConfig) string {
 	target := fmt.Sprint(port.Target)
 	protocol := port.Protocol
@@ -405,6 +423,7 @@ func formatPort(port types.ServicePortConfig) string {
 	return value
 }
 
+// mountValues converts compose-go volume configs to normalized mount records.
 func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 	if len(volumes) == 0 {
 		return nil
@@ -421,6 +440,7 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 	return result
 }
 
+// networkValues returns deterministic service network names.
 func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 	if len(networks) == 0 {
 		return nil
@@ -433,6 +453,7 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 	return result
 }
 
+// dependsOnValues records dependency conditions for Swift runtime gap checks.
 func dependsOnValues(dependsOn types.DependsOnConfig) map[string]string {
 	if len(dependsOn) == 0 {
 		return nil
@@ -444,6 +465,7 @@ func dependsOnValues(dependsOn types.DependsOnConfig) map[string]string {
 	return result
 }
 
+// mapLabels copies Compose labels into a regular string map.
 func mapLabels(labels types.Labels) map[string]string {
 	if len(labels) == 0 {
 		return nil
@@ -455,6 +477,7 @@ func mapLabels(labels types.Labels) map[string]string {
 	return result
 }
 
+// buildArgs prepares Compose build arguments for `container build --build-arg`.
 func buildArgs(args types.MappingWithEquals) map[string]string {
 	if len(args) == 0 {
 		return nil
@@ -470,6 +493,7 @@ func buildArgs(args types.MappingWithEquals) map[string]string {
 	return result
 }
 
+// unitBytesValue emits byte counts only when Compose supplied a limit.
 func unitBytesValue(value types.UnitBytes) string {
 	if value == 0 {
 		return ""
@@ -477,6 +501,7 @@ func unitBytesValue(value types.UnitBytes) string {
 	return fmt.Sprint(int64(value))
 }
 
+// cpusValue formats CPU limits without trailing zero noise.
 func cpusValue(value float32) string {
 	if value == 0 {
 		return ""
@@ -484,6 +509,7 @@ func cpusValue(value float32) string {
 	return fmt.Sprintf("%g", value)
 }
 
+// firstNonEmpty selects the first non-empty normalized name candidate.
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {

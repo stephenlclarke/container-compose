@@ -17,6 +17,7 @@
 /// Rewrites Docker Compose style root options into the position expected by
 /// Swift Argument Parser subcommands.
 public enum ComposeArgumentRewriter {
+    /// Whether a known root option consumes a following value.
     private enum OptionKind {
         case flag
         case value
@@ -80,6 +81,7 @@ public enum ComposeArgumentRewriter {
         return split.retained + [command] + split.moved + suffix
     }
 
+    /// Locates the first subcommand while skipping values for root options.
     private static func commandIndex(in arguments: [String]) -> Array<String>.Index? {
         var index = arguments.startIndex
         while index < arguments.endIndex {
@@ -104,6 +106,7 @@ public enum ComposeArgumentRewriter {
         return nil
     }
 
+    /// Splits root options into parser-retained and subcommand-local groups.
     private static func splitGlobalOptions(_ arguments: [String]) -> (retained: [String], moved: [String]) {
         var retained: [String] = []
         var moved: [String] = []
@@ -133,6 +136,7 @@ public enum ComposeArgumentRewriter {
         return (retained, moved)
     }
 
+    /// Looks up a known global option, including `--option=value` forms.
     private static func globalOptionKind(_ argument: String) -> OptionKind? {
         if let kind = globalOptions[argument] {
             return kind
@@ -143,6 +147,7 @@ public enum ComposeArgumentRewriter {
         return globalOptions[String(argument[..<equalsIndex])]
     }
 
+    /// Normalizes command-specific aliases that conflict with global options.
     private static func rewriteCommandLocalOptions(command: String, arguments: [String]) -> [String] {
         guard command == "logs" else {
             return arguments
