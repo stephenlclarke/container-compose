@@ -645,7 +645,7 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api") {
                     $0.networks = ["backend"]
                     $0.networkOptions = [
-                        "backend": ComposeNetworkOptions(ipv4Address: "10.10.0.5", priority: 42),
+                        "backend": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.10.0.5"), priority: 42),
                     ]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -665,6 +665,25 @@ struct ComposeOrchestratorTests {
         }
 
         #expect(runner.commands.isEmpty)
+    }
+
+    @Test("network option addressing maps to normalized fields")
+    func networkOptionAddressingMapsToNormalizedFields() {
+        let options = ComposeNetworkOptions(
+            addressing: .init(
+                ipv4Address: "10.10.0.5",
+                ipv6Address: "fd00::5",
+                linkLocalIPs: ["169.254.1.5"],
+                macAddress: "02:42:ac:11:00:05"
+            ),
+            priority: 42
+        )
+
+        #expect(options.ipv4Address == "10.10.0.5")
+        #expect(options.ipv6Address == "fd00::5")
+        #expect(options.linkLocalIPs == ["169.254.1.5"])
+        #expect(options.macAddress == "02:42:ac:11:00:05")
+        #expect(options.priority == 42)
     }
 
     @Test("up rejects unsupported network mode before creating resources")
@@ -1386,7 +1405,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.domainName == "example.test")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
-        #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(ipv4Address: "10.10.0.5")])
+        #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.10.0.5"))])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])
