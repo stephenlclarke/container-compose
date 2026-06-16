@@ -109,6 +109,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
         let services = try orderedServices(project: project, selected: up.services)
+        try validateRuntimeSupport(services: services)
 
         try await ensureResources(project: project)
 
@@ -119,7 +120,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         for service in services {
-            try validateRuntimeSupport(service: service)
             if !up.build, service.image == nil, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
             }
@@ -412,8 +412,18 @@ private extension ComposeOrchestrator {
         if let extraHosts = service.extraHosts, !extraHosts.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses extra_hosts; host-entry support needs an apple/container runtime gap PR")
         }
+        if let hostname = service.hostname, !hostname.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses hostname; custom hostname support needs an apple/container runtime gap PR")
+        }
         if service.privileged == true {
             throw ComposeError.unsupported("service '\(service.name)' uses privileged")
+        }
+    }
+
+    /// Validates all selected services before any runtime side effects occur.
+    func validateRuntimeSupport(services: [ComposeService]) throws {
+        for service in services {
+            try validateRuntimeSupport(service: service)
         }
     }
 

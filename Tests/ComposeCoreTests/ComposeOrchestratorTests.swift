@@ -353,6 +353,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported hostnames before creating resources")
+    func upRejectsUnsupportedHostnamesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.hostname = "custom-api"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported hostname error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses hostname; custom hostname support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("lists selected service images")
     func listsSelectedServiceImages() throws {
         let project = ComposeProject(
@@ -953,6 +982,35 @@ struct ComposeOrchestratorTests {
         #expect(commands[2].containsSequence(["--network", "demo_backend"]))
         #expect(commands[2].containsSequence(["--volume", "demo_cache:/cache"]))
         #expect(Array(commands[2].suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run rejects unsupported hostnames before creating resources")
+    func runRejectsUnsupportedHostnamesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.hostname = "custom-job"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported hostname error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses hostname; custom hostname support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("run assigns unique names to one-off containers")
