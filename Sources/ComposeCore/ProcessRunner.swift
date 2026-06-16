@@ -1,5 +1,22 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
+/// Captured result from an external command.
 public struct CommandResult: Equatable, Sendable {
     public var status: Int32
     public var stdout: String
@@ -16,6 +33,7 @@ public struct CommandResult: Equatable, Sendable {
     }
 }
 
+/// Runs external commands for normalizer and container CLI integration.
 public protocol CommandRunning: Sendable {
     func run(
         _ executable: String,
@@ -44,6 +62,7 @@ public extension CommandRunning {
     }
 }
 
+/// Production command runner backed by Foundation `Process`.
 public struct ProcessRunner: CommandRunning {
     public init() {}
 
@@ -117,6 +136,8 @@ private final class ProcessRunState: @unchecked Sendable {
     }
 
     func drain(_ handle: FileHandle, stream: Stream) {
+        // Drain pipes while the process is running. Waiting until termination
+        // can deadlock when a child writes more than the pipe buffer.
         DispatchQueue.global(qos: .utility).async {
             let data = handle.readDataToEndOfFile()
             self.complete(stream: stream, data: data)
@@ -182,12 +203,14 @@ private final class ProcessRunState: @unchecked Sendable {
     }
 }
 
+/// Command invocation recorded by `RecordingRunner`.
 public struct RecordedCommand: Equatable, Sendable {
     public var executable: String
     public var arguments: [String]
     public var workingDirectory: URL?
 }
 
+/// Test runner that records invocations and returns queued responses.
 public final class RecordingRunner: CommandRunning, @unchecked Sendable {
     public private(set) var commands: [RecordedCommand] = []
     public var responses: [CommandResult]

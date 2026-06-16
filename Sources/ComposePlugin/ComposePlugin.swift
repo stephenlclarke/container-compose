@@ -1,7 +1,24 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
 import ArgumentParser
 import ComposeCore
 import Foundation
 
+/// Root command for the `container compose` plugin.
 struct ComposePlugin: AsyncParsableCommand {
     @OptionGroup var global: GlobalOptions
 
@@ -41,10 +58,13 @@ struct ComposePlugin: AsyncParsableCommand {
 @main
 struct ComposePluginMain {
     static func main() async {
+        // Docker Compose allows global options before the subcommand. Rewrite
+        // them before handing arguments to Swift Argument Parser.
         await ComposePlugin.main(ComposeArgumentRewriter.rewrite(Array(CommandLine.arguments.dropFirst())))
     }
 }
 
+/// Global Docker Compose compatible options accepted by every subcommand.
 struct GlobalOptions: ParsableArguments {
     @Option(name: .shortAndLong, help: "Compose file path. May be repeated.")
     var file: [String] = []
@@ -101,10 +121,12 @@ protocol ComposeProjectCommand {
 }
 
 extension ComposeProjectCommand {
+    /// Loads and normalizes the Compose project for commands that need it.
     func project() async throws -> ComposeProject {
         try await global.loadProject()
     }
 
+    /// Creates the runtime orchestrator for commands that execute containers.
     func orchestrator() -> ComposeOrchestrator {
         global.orchestrator()
     }

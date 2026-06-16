@@ -1,3 +1,21 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+/// Rewrites Docker Compose style root options into the position expected by
+/// Swift Argument Parser subcommands.
 public enum ComposeArgumentRewriter {
     private enum OptionKind {
         case flag
@@ -46,6 +64,8 @@ public enum ComposeArgumentRewriter {
         "-v": .flag,
     ]
 
+    /// Returns arguments with known Compose global options moved immediately
+    /// after the subcommand while preserving unknown pre-command arguments.
     public static func rewrite(_ arguments: [String]) -> [String] {
         guard let commandIndex = arguments.firstIndex(where: { subcommands.contains($0) }) else {
             return arguments
@@ -63,6 +83,10 @@ public enum ComposeArgumentRewriter {
         var moved: [String] = []
         var index = 0
 
+        // Docker Compose accepts global options before the subcommand. Argument
+        // Parser models them on each subcommand, so known root options move
+        // after the subcommand and unknown options stay where the parser can
+        // report them accurately.
         while index < arguments.count {
             let argument = arguments[index]
             guard let kind = globalOptionKind(argument) else {

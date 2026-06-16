@@ -1,3 +1,19 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
 package main
 
 import (
@@ -18,6 +34,7 @@ import (
 
 type stringList []string
 
+// String returns the flag display value for repeated string options.
 func (s *stringList) String() string {
 	if s == nil {
 		return ""
@@ -25,6 +42,7 @@ func (s *stringList) String() string {
 	return strings.Join(*s, ",")
 }
 
+// Set records one occurrence of a repeatable CLI option.
 func (s *stringList) Set(value string) error {
 	*s = append(*s, value)
 	return nil
@@ -111,6 +129,7 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
+// run parses helper flags and writes canonical Compose project JSON.
 func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	var files stringList
 	var profiles stringList
@@ -144,6 +163,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+// loadProject delegates Compose parsing, merging, interpolation, and profile
+// handling to compose-go.
 func loadProject(files, profiles, envFiles []string, projectName, projectDirectory string) (*normalizedProject, error) {
 	if projectDirectory == "" {
 		var err error
@@ -187,6 +208,7 @@ func loadProject(files, profiles, envFiles []string, projectName, projectDirecto
 	return normalize(project, projectDirectory), nil
 }
 
+// discoverComposeFiles follows Docker Compose's default file discovery order.
 func discoverComposeFiles(projectDirectory string) []string {
 	candidates := []string{
 		"compose.yaml",
@@ -203,6 +225,8 @@ func discoverComposeFiles(projectDirectory string) []string {
 	return nil
 }
 
+// normalize copies the compose-go project into the stable JSON shape consumed
+// by Swift orchestration.
 func normalize(project *types.Project, projectDirectory string) *normalizedProject {
 	result := &normalizedProject{
 		Name:             project.Name,
