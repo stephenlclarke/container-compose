@@ -54,7 +54,6 @@ jobs:
         with:
           repository: apple/container
           path: container
-          fetch-depth: 0
 
       - name: Compute SwiftPM cache fingerprint
         id: swiftpm-cache
