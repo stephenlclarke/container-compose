@@ -450,7 +450,7 @@ private extension ComposeOrchestrator {
         try validateProviderModelAndHookSupport(service: service)
         let networks = service.networks ?? []
         if networks.count > 1 {
-            throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; Apple container does not expose network connect yet")
+            throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; apple/container does not expose network connect yet")
         }
         if let networkAliases = service.networkAliases,
            networkAliases.contains(where: { !$0.value.isEmpty }) {

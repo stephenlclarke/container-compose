@@ -442,25 +442,25 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose top` until container exposes process listing.
+/// Placeholder for `compose top` until apple/container exposes process listing.
 struct Top: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "top", abstract: "Display running processes.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for process listing.
     func run() throws {
-        try global.orchestrator().unsupported("top", reason: "Apple container does not expose a process-list command yet")
+        try global.orchestrator().unsupported("top", reason: "apple/container does not expose a process-list command yet")
     }
 }
 
-/// Placeholder for `compose events` until container exposes event streams.
+/// Placeholder for `compose events` until apple/container exposes event streams.
 struct Events: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "events", abstract: "Stream project events.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for event streaming.
     func run() throws {
-        try global.orchestrator().unsupported("events", reason: "Apple container does not expose an event stream yet")
+        try global.orchestrator().unsupported("events", reason: "apple/container does not expose an event stream yet")
     }
 }
 
@@ -475,25 +475,25 @@ struct Port: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose pause` until container exposes pause.
+/// Placeholder for `compose pause` until apple/container exposes pause.
 struct Pause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "pause", abstract: "Pause service containers.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for pausing containers.
     func run() throws {
-        try global.orchestrator().unsupported("pause", reason: "Apple container does not expose pause yet")
+        try global.orchestrator().unsupported("pause", reason: "apple/container does not expose pause yet")
     }
 }
 
-/// Placeholder for `compose unpause` until container exposes unpause.
+/// Placeholder for `compose unpause` until apple/container exposes unpause.
 struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "unpause", abstract: "Unpause service containers.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for unpausing containers.
     func run() throws {
-        try global.orchestrator().unsupported("unpause", reason: "Apple container does not expose unpause yet")
+        try global.orchestrator().unsupported("unpause", reason: "apple/container does not expose unpause yet")
     }
 }
 
