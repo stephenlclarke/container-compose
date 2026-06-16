@@ -107,6 +107,7 @@ type normalizedService struct {
 	MemLimit       string                              `json:"memLimit,omitempty"`
 	CPUS           string                              `json:"cpus,omitempty"`
 	ShmSize        string                              `json:"shmSize,omitempty"`
+	Ulimits        []string                            `json:"ulimits,omitempty"`
 	Healthcheck    any                                 `json:"healthcheck,omitempty"`
 	Configs        any                                 `json:"configs,omitempty"`
 	Secrets        any                                 `json:"secrets,omitempty"`
@@ -347,6 +348,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		MemLimit:       unitBytesValue(service.MemLimit),
 		CPUS:           cpusValue(service.CPUS),
 		ShmSize:        unitBytesValue(service.ShmSize),
+		Ulimits:        ulimitValues(service.Ulimits),
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{
@@ -617,6 +619,39 @@ func cpusValue(value float32) string {
 		return ""
 	}
 	return fmt.Sprintf("%g", value)
+}
+
+// ulimitValues converts Compose ulimits into container CLI arguments.
+func ulimitValues(ulimits map[string]*types.UlimitsConfig) []string {
+	if len(ulimits) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(ulimits))
+	for name := range ulimits {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		ulimit := ulimits[name]
+		if ulimit == nil {
+			continue
+		}
+		if ulimit.Single != 0 {
+			result = append(result, fmt.Sprintf("%s=%d", name, ulimit.Single))
+			continue
+		}
+		if ulimit.Hard != 0 && ulimit.Hard != ulimit.Soft {
+			result = append(result, fmt.Sprintf("%s=%d:%d", name, ulimit.Soft, ulimit.Hard))
+			continue
+		}
+		result = append(result, fmt.Sprintf("%s=%d", name, ulimit.Soft))
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // firstNonEmpty selects the first non-empty normalized name candidate.

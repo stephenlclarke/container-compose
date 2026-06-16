@@ -126,6 +126,7 @@ public struct ComposeService: Codable, Equatable {
     public var memLimit: String? = nil
     public var cpus: String? = nil
     public var shmSize: String? = nil
+    public var ulimits: [String]? = nil
     public var healthcheck: ComposeValue? = nil
     public var configs: [ComposeValue]? = nil
     public var secrets: [ComposeValue]? = nil
@@ -179,6 +180,7 @@ public struct ComposeService: Codable, Equatable {
         case memLimit
         case cpus
         case shmSize
+        case ulimits
         case healthcheck
         case configs
         case secrets

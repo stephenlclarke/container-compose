@@ -876,6 +876,11 @@ struct ComposeOrchestratorTests {
             expose:
               - "9000"
             shm_size: 64m
+            ulimits:
+              nofile:
+                soft: 1024
+                hard: 2048
+              nproc: 512
             links:
               - redis:cache
             external_links:
@@ -905,6 +910,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])
         #expect(project.services["api"]?.shmSize == "67108864")
+        #expect(project.services["api"]?.ulimits == ["nofile=1024:2048", "nproc=512"])
         #expect(project.services["api"]?.links == ["redis:cache"])
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.ports == ["8080:80"])
@@ -1393,6 +1399,7 @@ struct ComposeOrchestratorTests {
                     $0.memLimit = "1024"
                     $0.cpus = "2"
                     $0.shmSize = "67108864"
+                    $0.ulimits = ["nofile=1024:2048", "nproc=512"]
                 },
             ]
         )
@@ -1420,6 +1427,8 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--memory", "1024"]))
         #expect(command.containsSequence(["--cpus", "2"]))
         #expect(command.containsSequence(["--shm-size", "67108864"]))
+        #expect(command.containsSequence(["--ulimit", "nofile=1024:2048"]))
+        #expect(command.containsSequence(["--ulimit", "nproc=512"]))
         #expect(command.containsSequence(["--entrypoint", "/bin/sh -c"]))
         #expect(command.contains("--read-only"))
         #expect(command.contains("--init"))

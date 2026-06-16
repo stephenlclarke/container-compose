@@ -126,6 +126,11 @@ services:
     expose:
       - "9000"
     shm_size: 64m
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
+      nproc: 512
     ports:
       - "127.0.0.1:8080:80/tcp"
     volumes:
@@ -202,6 +207,9 @@ volumes:
 	}
 	if got, want := api.ShmSize, "67108864"; got != want {
 		t.Fatalf("api.ShmSize = %q, want %q", got, want)
+	}
+	if got, want := api.Ulimits, []string{"nofile=1024:2048", "nproc=512"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Ulimits = %#v, want %#v", got, want)
 	}
 	if got, want := api.Ports, []string{"127.0.0.1:8080:80"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ports = %#v, want %#v", got, want)
@@ -446,6 +454,18 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	}
 	if got := cpusValue(2.5); got != "2.5" {
 		t.Fatalf("cpusValue(2.5) = %q, want 2.5", got)
+	}
+	if got := ulimitValues(nil); got != nil {
+		t.Fatalf("ulimitValues(nil) = %#v, want nil", got)
+	}
+	ulimits := map[string]*types.UlimitsConfig{
+		"empty":  nil,
+		"nofile": {Soft: 1024, Hard: 2048},
+		"nproc":  {Single: 512},
+		"stack":  {Soft: 8192, Hard: 8192},
+	}
+	if got, want := ulimitValues(ulimits), []string{"nofile=1024:2048", "nproc=512", "stack=8192"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ulimitValues() = %#v, want %#v", got, want)
 	}
 	if got := firstNonEmpty("", "fallback"); got != "fallback" {
 		t.Fatalf("firstNonEmpty fallback = %q, want fallback", got)

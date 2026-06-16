@@ -684,6 +684,9 @@ private extension ComposeOrchestrator {
         if let shmSize = service.shmSize, !shmSize.isEmpty {
             args.append(contentsOf: ["--shm-size", shmSize])
         }
+        for ulimit in service.ulimits ?? [] {
+            args.append(contentsOf: ["--ulimit", ulimit])
+        }
         if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
             args.append(contentsOf: ["--entrypoint", entrypoint.joined(separator: " ")])
         }
