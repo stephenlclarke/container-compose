@@ -66,6 +66,29 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
+      - name: Prefer IPv4 for Sonar GPG keyserver
+        if: >
+          (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          # Sonar's action does not expose a keyserver override; avoid macOS runner IPv6 routes with no egress.
+          keyserver_ip="$(
+            python3 - <<'PY'
+          import socket
+
+          addresses = socket.getaddrinfo(
+              "keyserver.ubuntu.com",
+              443,
+              socket.AF_INET,
+              socket.SOCK_STREAM,
+          )
+          if not addresses:
+              raise SystemExit("no IPv4 address found for keyserver.ubuntu.com")
+          print(addresses[0][4][0])
+          PY
+          )"
+          printf '%s %s\n' "$keyserver_ip" keyserver.ubuntu.com | sudo tee -a /etc/hosts >/dev/null
+
       - name: SonarQube scan
         if: >
           (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
