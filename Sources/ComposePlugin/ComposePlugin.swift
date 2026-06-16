@@ -408,6 +408,8 @@ struct Wait: AsyncParsableCommand, ComposeProjectCommand {
 
 struct Version: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "version", abstract: "Print compose plugin version.")
+    @OptionGroup var global: GlobalOptions
+
     func run() {
         print("container-compose 0.1.0")
     }
