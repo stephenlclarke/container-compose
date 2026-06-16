@@ -9,4 +9,5 @@ coverage.report
 coverage.lcov
 coverage.xml
 coverage.out
+*.profraw
 Tools/compose-normalizer/compose-normalizer

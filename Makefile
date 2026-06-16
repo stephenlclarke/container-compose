@@ -125,5 +125,5 @@ format:
 clean:
 	$(SWIFT) package clean
 	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" coverage.lcov coverage.report coverage.xml
-	rm -f Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
+	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
 	find Tools -type d -name __pycache__ -prune -exec rm -rf {} +

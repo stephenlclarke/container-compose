@@ -120,6 +120,7 @@ Generated coverage reports are:
 coverage.lcov
 coverage.xml
 Tools/compose-normalizer/coverage.out
+*.profraw
 ```
 
 ## Package Archive
