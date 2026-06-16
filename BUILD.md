@@ -145,9 +145,9 @@ plugin on a target machine.
 
 ## SonarQube
 
-GitHub Actions publishes coverage to SonarCloud for `main`, `develop`, and
-eligible pull request runs. To run the same scanner locally, install
-`sonar-scanner`, export a SonarCloud token, and run:
+GitHub Actions publishes coverage to SonarCloud for `main` and eligible pull
+request runs. To run the same scanner locally, install `sonar-scanner`, export a
+SonarCloud token, and run:
 
 ```sh
 export SONAR_TOKEN=...
