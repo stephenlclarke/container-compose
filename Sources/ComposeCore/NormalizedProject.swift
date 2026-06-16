@@ -132,6 +132,7 @@ public struct ComposeService: Codable, Equatable {
     public var privileged: Bool? = nil
     public var restart: String? = nil
     public var initEnabled: Bool? = nil
+    public var scale: Int? = nil
     public var ipc: String? = nil
     public var isolation: String? = nil
     public var tmpfs: [String]? = nil
@@ -217,6 +218,7 @@ public struct ComposeService: Codable, Equatable {
         case privileged
         case restart
         case initEnabled = "init"
+        case scale
         case ipc
         case isolation
         case tmpfs

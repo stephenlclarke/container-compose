@@ -165,6 +165,7 @@ services:
     oom_kill_disable: true
     oom_score_adj: -500
     pids_limit: 128
+    scale: 2
     shm_size: 64m
     ulimits:
       nofile:
@@ -331,6 +332,9 @@ volumes:
 	if api.PidsLimit != 128 {
 		t.Fatalf("api.PidsLimit = %d, want 128", api.PidsLimit)
 	}
+	if api.Scale == nil || *api.Scale != 2 {
+		t.Fatalf("api.Scale = %#v, want 2", api.Scale)
+	}
 	if got, want := api.ShmSize, "67108864"; got != want {
 		t.Fatalf("api.ShmSize = %q, want %q", got, want)
 	}
@@ -394,6 +398,28 @@ func TestNormalizeServicePreservesCPUPercent(t *testing.T) {
 
 	if service.CPUPercent != 12.5 {
 		t.Fatalf("service.CPUPercent = %f, want 12.5", service.CPUPercent)
+	}
+}
+
+func TestLoadProjectNormalizesDeployReplicasAsScale(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    deploy:
+      replicas: 3
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if api.Scale == nil || *api.Scale != 3 {
+		t.Fatalf("api.Scale = %#v, want 3", api.Scale)
 	}
 }
 

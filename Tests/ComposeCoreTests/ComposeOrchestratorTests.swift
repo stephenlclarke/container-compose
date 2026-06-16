@@ -798,6 +798,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported service scale before creating resources")
+    func upRejectsUnsupportedServiceScaleBeforeCreatingResources() async throws {
+        for scale in [0, 2] {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        $0.scale = scale
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported scale error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported("service 'api' uses scale \(scale); service replica scaling is not implemented by container-compose yet"))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2103,6 +2132,35 @@ struct ComposeOrchestratorTests {
                 Issue.record("Expected unsupported \(testCase.composeName) error")
             } catch let error as ComposeError {
                 #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
+    @Test("run rejects unsupported service scale before creating resources")
+    func runRejectsUnsupportedServiceScaleBeforeCreatingResources() async throws {
+        for scale in [0, 3] {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.scale = scale
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported scale error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported("service 'job' uses scale \(scale); service replica scaling is not implemented by container-compose yet"))
             } catch {
                 Issue.record("Unexpected error: \(error)")
             }

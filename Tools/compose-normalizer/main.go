@@ -114,6 +114,7 @@ type normalizedService struct {
 	Privileged             bool                                `json:"privileged,omitempty"`
 	Restart                string                              `json:"restart,omitempty"`
 	Init                   *bool                               `json:"init,omitempty"`
+	Scale                  *int                                `json:"scale,omitempty"`
 	Ipc                    string                              `json:"ipc,omitempty"`
 	Isolation              string                              `json:"isolation,omitempty"`
 	Tmpfs                  []string                            `json:"tmpfs,omitempty"`
@@ -386,6 +387,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Privileged:             service.Privileged,
 		Restart:                service.Restart,
 		Init:                   service.Init,
+		Scale:                  serviceScale(service),
 		Ipc:                    service.Ipc,
 		Isolation:              service.Isolation,
 		Tmpfs:                  append([]string(nil), service.Tmpfs...),
@@ -434,6 +436,18 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		result.Extensions = service.Extensions
 	}
 	return result
+}
+
+// serviceScale preserves an explicit Compose scale or deploy replica count.
+func serviceScale(service types.ServiceConfig) *int {
+	if service.Scale != nil {
+		return service.Scale
+	}
+	if service.Deploy != nil && service.Deploy.Replicas != nil {
+		scale := int(*service.Deploy.Replicas)
+		return &scale
+	}
+	return nil
 }
 
 // jsonMap widens typed compose-go maps so they can be encoded without losing
