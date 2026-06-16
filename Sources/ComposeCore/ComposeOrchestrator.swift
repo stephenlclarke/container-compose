@@ -109,6 +109,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
         let services = try orderedServices(project: project, selected: up.services)
+        try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services)
 
         try await ensureResources(project: project)
@@ -260,6 +261,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             service.command = command
         }
         try validateRuntimeSupport(service: service)
+        try await applyServicePullPolicies(services: [service])
         try await ensureResources(project: project)
         try await runContainer(
             runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true),
@@ -427,6 +429,9 @@ private extension ComposeOrchestrator {
         if service.privileged == true {
             throw ComposeError.unsupported("service '\(service.name)' uses privileged")
         }
+        if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
+            throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, and never")
+        }
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
         }
@@ -436,6 +441,16 @@ private extension ComposeOrchestrator {
     func validateRuntimeSupport(services: [ComposeService]) throws {
         for service in services {
             try validateRuntimeSupport(service: service)
+        }
+    }
+
+    /// Validates the global `up --pull` policy before resources are created.
+    func validatePullPolicy(_ policy: String?) throws {
+        guard let policy, !policy.isEmpty else {
+            return
+        }
+        if !["always", "missing", "never"].contains(policy) {
+            throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
         }
     }
 
@@ -502,6 +517,7 @@ private extension ComposeOrchestrator {
     /// Applies the Compose `up --pull` policy before starting services.
     func applyPullPolicy(_ policy: String?, project: ComposeProject, services: [ComposeService]) async throws {
         guard let policy, !policy.isEmpty else {
+            try await applyServicePullPolicies(services: services)
             return
         }
 
@@ -517,16 +533,48 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Applies service-level `pull_policy` when no global pull override is set.
+    func applyServicePullPolicies(services: [ComposeService]) async throws {
+        for service in services {
+            guard let policy = service.pullPolicy, !policy.isEmpty else {
+                continue
+            }
+            try await applyServicePullPolicy(policy, service: service)
+        }
+    }
+
+    /// Applies the local-runtime-backed subset of Compose service pull policies.
+    func applyServicePullPolicy(_ policy: String, service: ComposeService) async throws {
+        guard let image = service.image else {
+            return
+        }
+        switch policy {
+        case "always":
+            try await runContainer(["image", "pull", image])
+        case "missing", "if_not_present":
+            try await pullMissingImage(image)
+        case "never":
+            return
+        default:
+            throw ComposeError.invalidProject("unsupported pull policy '\(policy)' for service '\(service.name)'")
+        }
+    }
+
     /// Pulls only service images not already present in the local image store.
     func pullMissingImages(services: [ComposeService]) async throws {
         for service in services {
             guard let image = service.image else {
                 continue
             }
-            let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
-            if options.dryRun || !inspect.succeeded {
-                try await runContainer(["image", "pull", image])
-            }
+            try await pullMissingImage(image)
+        }
+    }
+
+    /// Pulls one image when it is absent from the local image store.
+    func pullMissingImage(_ image: String) async throws {
+        let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
+        if options.dryRun || !inspect.succeeded {
+            try await runContainer(["image", "pull", image])
         }
     }
 
@@ -726,6 +774,11 @@ private let projectLabel = "com.apple.container.compose.project"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
+
+/// Returns whether a service pull policy can be implemented with local runtime primitives.
+private func isSupportedServicePullPolicy(_ policy: String) -> Bool {
+    ["always", "missing", "if_not_present", "never"].contains(policy)
+}
 
 /// Returns the runtime resource name for a project-scoped network or volume.
 private func resourceName(project: String, name: String) -> String {

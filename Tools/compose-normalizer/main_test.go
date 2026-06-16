@@ -247,6 +247,7 @@ func TestLoadProjectAppliesProfilesEnvFilesAndBuildFields(t *testing.T) {
 services:
   api:
     profiles: ["dev"]
+    pull_policy: always
     build:
       context: ./api
       dockerfile: Containerfile
@@ -284,6 +285,9 @@ services:
 	}
 	if api.Build == nil {
 		t.Fatal("api.Build is nil")
+	}
+	if api.PullPolicy != "always" {
+		t.Fatalf("api.PullPolicy = %q, want always", api.PullPolicy)
 	}
 	if api.Build.Context != filepath.Join(dir, "api") || api.Build.Dockerfile != "Containerfile" || api.Build.Target != "runtime" {
 		t.Fatalf("api.Build = %#v", api.Build)

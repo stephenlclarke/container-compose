@@ -12,7 +12,7 @@
 | Compose area | Supported behavior | `container` primitive |
 | --- | --- | --- |
 | Image build | Builds services with `build`, including context, Dockerfile, target, build args, `--no-cache`, explicit image tags, and generated tags for build-only services. | `container build` |
-| Image pull | Pulls service images directly and supports `up --pull always`, `up --pull missing`, and `up --pull never`. | `container image pull`, `container image inspect` |
+| Image pull | Pulls service images directly and supports `up --pull always`, `up --pull missing`, `up --pull never`, and service `pull_policy` values `always`, `missing`, `if_not_present`, and `never`. | `container image pull`, `container image inspect` |
 | Image push | Pushes selected service images. | `container image push` |
 | Container startup | Creates service containers through deterministic `run` arguments, with detached `up` by default and attached `run` for one-off containers. | `container run` |
 | Container naming | Uses deterministic project-service names, honors explicit service `container_name` for managed service containers, and generates unique one-off names for `run`. | `container run --name` |
@@ -51,6 +51,7 @@ These fields currently fail before runtime side effects because the equivalent l
 - Service `configs`.
 - Service `secrets`.
 - `privileged`.
+- Service `pull_policy` values that require build or refresh semantics.
 - Runtime restart policies through service `restart`.
 - `top`, `events`, `port`, `pause`, `unpause`, and `wait` subcommands.
 

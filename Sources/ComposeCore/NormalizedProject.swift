@@ -86,6 +86,7 @@ public enum ComposeValue: Codable, Equatable, Sendable {
 public struct ComposeService: Codable, Equatable {
     public var name: String
     public var image: String? = nil
+    public var pullPolicy: String? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -127,6 +128,7 @@ public struct ComposeService: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case name
         case image
+        case pullPolicy
         case build
         case command
         case entrypoint

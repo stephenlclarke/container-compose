@@ -330,6 +330,74 @@ struct ComposeOrchestratorTests {
         #expect(commands[5] == ["container", "inspect", "demo-db-1"])
     }
 
+    @Test("up applies service pull policies when no global pull policy is set")
+    func upAppliesServicePullPoliciesWhenNoGlobalPullPolicyIsSet() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pullPolicy = "always"
+                },
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.pullPolicy = "never"
+                },
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.pullPolicy = "missing"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "pull", "example/api"])
+        #expect(commands[1] == ["container", "image", "inspect", "example/worker"])
+        #expect(commands[2] == ["container", "image", "pull", "example/worker"])
+        #expect(commands[3] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[5] == ["container", "inspect", "demo-db-1"])
+        #expect(commands[7] == ["container", "inspect", "demo-worker-1"])
+    }
+
+    @Test("up rejects unsupported service pull policies before creating resources")
+    func upRejectsUnsupportedServicePullPoliciesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pullPolicy = "build"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported service pull policy error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses pull_policy 'build'; supported values are always, missing, if_not_present, and never"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("rejects dependency conditions that need runtime gaps")
     func rejectsUnsupportedDependencyConditions() async throws {
         let project = ComposeProject(
@@ -563,6 +631,7 @@ struct ComposeOrchestratorTests {
         services:
           api:
             image: nginx:latest
+            pull_policy: always
             command: ["nginx", "-g", "daemon off;"]
             ports:
               - "8080:80"
@@ -580,6 +649,7 @@ struct ComposeOrchestratorTests {
 
         #expect(project.name == "sample")
         #expect(project.services["api"]?.image == "nginx:latest")
+        #expect(project.services["api"]?.pullPolicy == "always")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.ports == ["8080:80"])
@@ -1104,6 +1174,66 @@ struct ComposeOrchestratorTests {
         #expect(Array(commands[2].suffix(2)) == ["alpine", "true"])
     }
 
+    @Test("run applies service pull policy before creating resources")
+    func runAppliesServicePullPolicyBeforeCreatingResources() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .success,
+            .success,
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pullPolicy = "always"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "pull", "alpine"])
+        #expect(commands[1].containsSequence(["container", "network", "create"]))
+        #expect(commands[2].containsSequence(["container", "volume", "create"]))
+        #expect(commands[3].starts(with: ["container", "run", "--name"]))
+    }
+
+    @Test("run rejects unsupported service pull policies before creating resources")
+    func runRejectsUnsupportedServicePullPoliciesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pullPolicy = "daily"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported service pull policy error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses pull_policy 'daily'; supported values are always, missing, if_not_present, and never"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported hostnames before creating resources")
     func runRejectsUnsupportedHostnamesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -1457,9 +1587,21 @@ struct ComposeOrchestratorTests {
         }
 
         let invalidPullPolicyRunner = RecordingRunner()
+        let invalidPullPolicyProject = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
         do {
             try await ComposeOrchestrator(runner: invalidPullPolicyRunner).up(
-                project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
+                project: invalidPullPolicyProject,
                 options: ComposeUpOptions(pullPolicy: "sometimes")
             )
             Issue.record("Expected unsupported pull policy failure")
