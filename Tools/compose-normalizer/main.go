@@ -124,6 +124,7 @@ type normalizedService struct {
 	LogDriver              string                              `json:"logDriver,omitempty"`
 	LogOptions             map[string]string                   `json:"logOptions,omitempty"`
 	StorageOptions         map[string]string                   `json:"storageOptions,omitempty"`
+	UseAPISocket           bool                                `json:"useAPISocket,omitempty"`
 	Ipc                    string                              `json:"ipc,omitempty"`
 	Isolation              string                              `json:"isolation,omitempty"`
 	Tmpfs                  []string                            `json:"tmpfs,omitempty"`
@@ -406,6 +407,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		LogDriver:              service.LogDriver,
 		LogOptions:             mapStringMap(service.LogOpt),
 		StorageOptions:         mapStringMap(service.StorageOpt),
+		UseAPISocket:           service.UseAPISocket,
 		Ipc:                    service.Ipc,
 		Isolation:              service.Isolation,
 		Tmpfs:                  append([]string(nil), service.Tmpfs...),

@@ -885,6 +885,33 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported API socket mounting before creating resources")
+    func upRejectsUnsupportedAPISocketBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.useAPISocket = true
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported API socket error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses use_api_socket; API socket mounting is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2283,6 +2310,33 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
+
+    @Test("run rejects unsupported API socket mounting before creating resources")
+    func runRejectsUnsupportedAPISocketBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.useAPISocket = true
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported API socket error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses use_api_socket; API socket mounting is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("run rejects unsupported MAC address before creating resources")

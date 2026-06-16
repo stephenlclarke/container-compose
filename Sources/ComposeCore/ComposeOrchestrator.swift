@@ -449,6 +449,9 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
+        if service.useAPISocket == true {
+            throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; API socket mounting is not implemented by container-compose yet")
+        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }

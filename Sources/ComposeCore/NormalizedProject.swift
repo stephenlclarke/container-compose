@@ -142,6 +142,7 @@ public struct ComposeService: Codable, Equatable {
     public var logDriver: String? = nil
     public var logOptions: [String: String]? = nil
     public var storageOptions: [String: String]? = nil
+    public var useAPISocket: Bool? = nil
     public var ipc: String? = nil
     public var isolation: String? = nil
     public var tmpfs: [String]? = nil
@@ -237,6 +238,7 @@ public struct ComposeService: Codable, Equatable {
         case logDriver
         case logOptions
         case storageOptions
+        case useAPISocket
         case ipc
         case isolation
         case tmpfs

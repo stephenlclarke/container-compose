@@ -179,6 +179,7 @@ services:
     oom_score_adj: -500
     pids_limit: 128
     scale: 2
+    use_api_socket: true
     shm_size: 64m
     ulimits:
       nofile:
@@ -365,6 +366,9 @@ volumes:
 	}
 	if api.Scale == nil || *api.Scale != 2 {
 		t.Fatalf("api.Scale = %#v, want 2", api.Scale)
+	}
+	if !api.UseAPISocket {
+		t.Fatal("api.UseAPISocket = false, want true")
 	}
 	if got, want := api.ShmSize, "67108864"; got != want {
 		t.Fatalf("api.ShmSize = %q, want %q", got, want)
