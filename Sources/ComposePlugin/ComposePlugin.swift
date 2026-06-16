@@ -331,6 +331,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var servicePorts = false
     @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
     var publish: [String] = []
+    @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
+    var name: String?
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -346,7 +348,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 command: command,
                 remove: remove,
                 servicePorts: servicePorts,
-                publish: publish
+                publish: publish,
+                containerName: name
             )
         )
     }

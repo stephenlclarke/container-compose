@@ -97,6 +97,9 @@ cli-smoke: build
 	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
 	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
 	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
+	run_named_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --name custom-api api echo hello)"; \
+	[[ "$$run_named_output" == *"--name custom-api"* ]]; \
+	[[ "$$run_named_output" == *" alpine echo hello"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \

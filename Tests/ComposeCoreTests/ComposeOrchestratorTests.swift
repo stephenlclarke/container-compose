@@ -2719,6 +2719,25 @@ struct ComposeOrchestratorTests {
         #expect(names == ["demo-job-run-first", "demo-job-run-second"])
     }
 
+    @Test("run uses explicit one-off container name when provided")
+    func runUsesExplicitOneOffContainerNameWhenProvided() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["true"], containerName: "custom-job")
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "run", "--name", "custom-job"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
+    }
+
     @Test("up reuses existing containers when no recreate is requested")
     func upReusesExistingContainersWhenNoRecreateIsRequested() async throws {
         let emitted = MessageRecorder()
