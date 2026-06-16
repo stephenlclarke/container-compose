@@ -821,6 +821,17 @@ struct ComposeOrchestratorTests {
         #expect(command.environment == ["SAMPLE": "value"])
     }
 
+    @Test("recording runner captures command input")
+    func recordingRunnerCapturesCommandInput() async throws {
+        let runner = RecordingRunner()
+        let input = Data("payload".utf8)
+
+        _ = try await runner.run("/usr/bin/env", ["true"], input: input)
+
+        let command = try #require(runner.commands.first)
+        #expect(command.input == input)
+    }
+
     @Test("process runner drains large stdout and stderr while process runs")
     func processRunnerDrainsLargeOutputWhileProcessRuns() async throws {
         let result = try await ProcessRunner().run(

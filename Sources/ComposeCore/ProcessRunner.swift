@@ -211,6 +211,7 @@ public struct RecordedCommand: Equatable, Sendable {
     public var arguments: [String]
     public var workingDirectory: URL?
     public var environment: [String: String]?
+    public var input: Data?
 }
 
 /// Test runner that records invocations and returns queued responses.
@@ -233,7 +234,8 @@ public final class RecordingRunner: CommandRunning, @unchecked Sendable {
             executable: executable,
             arguments: arguments,
             workingDirectory: workingDirectory,
-            environment: environment
+            environment: environment,
+            input: input
         ))
         if !responses.isEmpty {
             return responses.removeFirst()
