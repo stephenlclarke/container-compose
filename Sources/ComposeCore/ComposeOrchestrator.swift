@@ -246,7 +246,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         args.append(containerName(project: project, service: service, oneOff: false))
         args.append(contentsOf: command)
-        try await runContainer(args)
+        try await runContainer(args, inheritedIO: interactive || tty)
     }
 
     /// Runs a one-off container for a service.
@@ -258,7 +258,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             service.command = command
         }
         try validateRuntimeSupport(service: service)
-        try await runContainer(runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true))
+        try await runContainer(
+            runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true),
+            inheritedIO: service.tty == true || service.stdinOpen == true
+        )
     }
 
     /// Starts selected service containers.
@@ -588,13 +591,24 @@ private extension ComposeOrchestrator {
     }
 
     @discardableResult
-    func runContainer(_ arguments: [String], check: Bool = true, emitOutput: Bool = true) async throws -> CommandResult {
+    func runContainer(
+        _ arguments: [String],
+        check: Bool = true,
+        emitOutput: Bool = true,
+        inheritedIO: Bool = false
+    ) async throws -> CommandResult {
         if options.dryRun {
             options.emit("+ " + shellQuoted([options.containerBinary] + arguments))
             return CommandResult(status: 0, stdout: "", stderr: "")
         }
-        let result = try await runner.run(options.environmentLauncher, [options.containerBinary] + arguments)
-        if emitOutput {
+        let result = try await runner.run(
+            options.environmentLauncher,
+            [options.containerBinary] + arguments,
+            workingDirectory: nil,
+            environment: nil,
+            io: inheritedIO ? .inherited : .captured(input: nil)
+        )
+        if emitOutput, !inheritedIO {
             print(result.stdout, terminator: result.stdout.hasSuffix("\n") || result.stdout.isEmpty ? "" : "\n")
             fputs(result.stderr, stderr)
         }
