@@ -10,18 +10,28 @@ This file separates three different questions that are easy to blur together:
 
 Unsupported runtime features are rejected before resources are created. Harmless metadata can still appear in `container compose config` without implying that `container compose up` applies runtime behavior.
 
-## Status Legend
+## How To Read This File
 
-| Status in this file | Docker Compose v2 accepts it | Apple `container` primitive exists | `container-compose` maps it | What happens today | Where a fix belongs |
+Read every row as a three-step chain:
+
+1. Docker Compose v2 accepts and normalizes the Compose file.
+2. Apple [`container`](https://github.com/apple/container) has a runtime primitive that can perform the behavior.
+3. `container-compose` maps the normalized Compose model to Apple `container` commands.
+
+The first unsupported step owns the gap.
+
+| Bucket | Docker Compose v2 | Apple `container` | `container-compose` | What happens today | Fix owner |
 | --- | --- | --- | --- | --- | --- |
-| Supported | Yes | Yes | Yes | The workflow runs through Apple `container`. | No compatibility fix needed. |
-| Apple `container` gap | Yes | No, or not rich enough | The plugin detects it and rejects it | The command fails with an unsupported-feature message that names the Apple runtime/API gap. | Upstream [`apple/container`](https://github.com/apple/container), then this repo maps the new primitive. |
-| `container-compose` gap | Yes | Not known to be the first blocker | No | The command fails with an unsupported-feature message that names plugin implementation work. | This repository. |
-| Config-only | Yes | Not required for config output | Preserved for `config`; not applied at runtime | `container compose config` shows it, but runtime commands ignore or reject service-level use. | Depends on the service-level behavior requested later. |
+| Supported | Accepts the surface | Has a matching primitive | Maps it | Runtime commands execute through Apple `container` | No compatibility fix needed |
+| Apple `container` gap | Accepts the surface | Missing, incomplete, or not exposed | Detects the field and rejects it | Fails before resources are created with an `apple/container` runtime gap message | Upstream [`apple/container`](https://github.com/apple/container), then this repo maps the new primitive |
+| `container-compose` gap | Accepts the surface | Not known to be the first blocker | Does not map it yet | Fails before resources are created with a `container-compose` implementation message | This repository |
+| Config-only | Accepts the surface | Not needed for `config` output | Preserves it for `config` | Appears in normalized output; runtime commands ignore harmless metadata or reject service-level use | Depends on the runtime behavior requested later |
 
-## Quick Answer
+## Support Matrix
 
-### Supported Today
+### Supported By Apple `container` And `container-compose`
+
+These surfaces have all three pieces: Docker Compose v2 model support, Apple `container` runtime support, and plugin orchestration.
 
 | Compose v2 surface | Supported subset | Apple `container` primitive used | Example |
 | --- | --- | --- | --- |
@@ -35,9 +45,9 @@ Unsupported runtime features are rejected before resources are created. Harmless
 | Environment and labels | Service `environment`, `env_file`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
 | Simple ordering | `depends_on` with no condition or `condition: service_started` | Plugin dependency ordering before `container run` | [S1](#s1-supported-local-web-stack) |
 
-### Not Supported Because Apple `container` Needs Runtime/API Work
+### Blocked By Apple `container`
 
-These are valid Docker Compose v2 surfaces that the plugin already recognizes. The blocker is that Apple `container` does not expose a Docker Compose compatible runtime primitive yet.
+These are valid Docker Compose v2 surfaces. `container-compose` recognizes them, but Apple `container` does not expose a Docker Compose compatible runtime primitive yet.
 
 | Compose v2 surface | Examples of fields or commands | Missing Apple `container` primitive | Example |
 | --- | --- | --- | --- |
@@ -48,7 +58,7 @@ These are valid Docker Compose v2 surfaces that the plugin already recognizes. T
 | Health, completion, configs, secrets, restart | `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, service `restart` | Health status, exit code/completion-time metadata, config/secret mount primitives, restart policy support | [A4](#a4-apple-gap-health-secrets-and-restart) |
 | Runtime data and state commands | `top`, `events`, `port`, `pause`, `unpause`, `wait` | Process listing, event stream, published-port inspect, pause/unpause, wait/exit metadata | [A5](#a5-apple-gap-runtime-data-commands) |
 
-### Not Supported Because `container-compose` Needs Implementation Work
+### Blocked By `container-compose`
 
 These are valid Docker Compose v2 surfaces where Apple `container` is not known to be the first blocker. The missing design, orchestration, or safety policy belongs in this repository.
 
@@ -90,7 +100,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 ## Example Index
 
-Every example that declares `build:` includes the matching Dockerfile. Command-only examples reuse the supported S1 project because the missing behavior is the command/runtime query, not image content.
+Every example includes a Compose file or commands plus the matching Dockerfile snippets needed to try the surface in an isolated scratch directory.
 
 | Example | Status bucket | What it demonstrates |
 | --- | --- | --- |
@@ -112,6 +122,12 @@ Every example that declares `build:` includes the matching Dockerfile. Command-o
 ### S1: Supported Local Web Stack
 
 Expected result: `container compose config`, `build`, `up`, `ps`, `logs`, `exec`, `cp`, and `down --volumes` run through Apple `container`.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes this project.
+- Apple `container`: has the needed build, image, lifecycle, network, volume, log, exec, and copy primitives.
+- `container-compose`: maps the normalized model to those primitives.
 
 ```yaml
 # compose.yaml
@@ -212,6 +228,12 @@ container compose down --volumes
 
 Expected result: `container compose up` rejects this before creating resources because Apple `container` needs multi-network attach/connect, per-network aliases/options, fixed addresses, and network namespace modes.
 
+Status path:
+
+- Docker Compose v2: accepts and normalizes these network attachments.
+- Apple `container`: missing multi-network attach/connect, per-network aliases/options, fixed addresses, and Docker-compatible namespace modes.
+- `container-compose`: detects those fields and fails before creating resources.
+
 ```yaml
 # compose.yaml
 name: apple-network-gap-demo
@@ -268,6 +290,12 @@ CMD ["sh", "-c", "sleep 3600"]
 
 Expected result: `container compose up` rejects this because Apple `container` needs host identity, explicit host-entry, MAC address, and link semantics.
 
+Status path:
+
+- Docker Compose v2: accepts and normalizes host identity and legacy link fields.
+- Apple `container`: missing hostname/domain controls, explicit host-entry support, MAC address controls, and legacy link semantics.
+- `container-compose`: detects those fields and reports the Apple runtime gap.
+
 ```yaml
 # compose.yaml
 name: apple-host-gap-demo
@@ -307,6 +335,12 @@ CMD ["sh", "-c", "sleep 3600"]
 
 Expected result: `container compose up` rejects this because Apple `container` needs namespace, advanced resource, privileged/device, DNS option, and sysctl primitives.
 
+Status path:
+
+- Docker Compose v2: accepts and normalizes these runtime controls.
+- Apple `container`: missing the required namespace, privileged/device, advanced resource, DNS option, and sysctl primitives.
+- `container-compose`: detects those fields and reports the Apple runtime gap.
+
 ```yaml
 # compose.yaml
 name: apple-runtime-gap-demo
@@ -344,6 +378,12 @@ CMD ["sh", "-c", "sleep 3600"]
 ### A4: Apple Gap, Health, Secrets, And Restart
 
 Expected result: `container compose up` rejects this because Apple `container` needs health status, completion metadata, config/secret mounts, and restart policies.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, and restart policies.
+- Apple `container`: missing health status, exit/completion metadata, config/secret mount primitives, and restart policy support.
+- `container-compose`: detects those fields and reports the Apple runtime gap.
 
 ```yaml
 # compose.yaml
@@ -411,7 +451,31 @@ CMD ["sh", "-c", "echo worker-ready && sleep 3600"]
 
 ### A5: Apple Gap, Runtime Data Commands
 
-Expected result: these commands reject because Apple `container` needs richer runtime data and state controls. Use the [S1](#s1-supported-local-web-stack) Compose file and Dockerfiles, then run:
+Expected result: these commands reject because Apple `container` needs richer runtime data and state controls.
+
+Status path:
+
+- Docker Compose v2: supports these commands.
+- Apple `container`: missing process listing, event streaming, published-port lookup, pause/unpause, and wait/exit metadata primitives.
+- `container-compose`: exposes the command names but reports the Apple runtime gap.
+
+```yaml
+# compose.yaml
+name: apple-command-gap-demo
+
+services:
+  api:
+    build:
+      context: ./api
+    ports:
+      - "8080:8080"
+
+  worker:
+    build:
+      context: ./worker
+```
+
+Run:
 
 ```sh
 container compose top api
@@ -422,11 +486,30 @@ container compose unpause api
 container compose wait api
 ```
 
-Dockerfiles: reuse `api/Dockerfile` and `worker/Dockerfile` from [S1](#s1-supported-local-web-stack).
+Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+EXPOSE 8080
+CMD ["sh", "-c", "sleep 3600"]
+```
+
+Dockerfile: `worker/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
+```
 
 ### C1: Plugin Gap, Replica Scaling And Deploy
 
 Expected result: `container compose up` rejects this because `container-compose` still needs Compose replica naming, reconciliation, DNS, lifecycle, and deploy semantics.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes scaling and deploy metadata.
+- Apple `container`: not known to be the first blocker for this example.
+- `container-compose`: needs multi-replica orchestration, naming, DNS, lifecycle, and deploy semantics.
 
 ```yaml
 # compose.yaml
@@ -452,6 +535,12 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 ### C2: Plugin Gap, Advanced Build Fields
 
 Expected result: `container compose build` rejects this before running `container build` because the advanced build fields need safe plugin mapping first.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes these build fields.
+- Apple `container`: not known to be the first blocker for this example.
+- `container-compose`: needs explicit, tested mappings for advanced build behavior before invoking `container build`.
 
 ```yaml
 # compose.yaml
@@ -489,6 +578,12 @@ CMD ["sh", "-c", "sleep 3600"]
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
 Expected result: `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
+- Apple `container`: not known to be the first blocker for this example.
+- `container-compose`: needs orchestration design for watch/sync/rebuild flows, service providers, model bindings, and hook execution.
 
 ```yaml
 # compose.yaml
@@ -529,6 +624,12 @@ CMD ["sh", "-c", "sleep 3600"]
 ### C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows
 
 Expected result: `container compose up` rejects this because annotations, label files, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes these service fields.
+- Apple `container`: not known to be the first blocker for this grouped example.
+- `container-compose`: needs runtime mapping, inherited mount behavior, label-file loading, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
 
 ```yaml
 # compose.yaml
@@ -578,7 +679,30 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C5: Plugin Gap, Additional CLI Commands
 
-Expected result: these Docker Compose v2 commands need command-level design and runtime mapping inside `container-compose`. Use the [S1](#s1-supported-local-web-stack) Compose file and Dockerfiles, then compare the missing command behavior:
+Expected result: these Docker Compose v2 commands need command-level design and runtime mapping inside `container-compose`.
+
+Status path:
+
+- Docker Compose v2: supports these commands.
+- Apple `container`: command-specific runtime availability still needs to be assessed as each command is implemented.
+- `container-compose`: does not implement these command surfaces yet.
+
+```yaml
+# compose.yaml
+name: plugin-command-gap-demo
+
+services:
+  api:
+    build:
+      context: ./api
+    image: example/api:dev
+
+  worker:
+    build:
+      context: ./worker
+```
+
+Compare the missing command behavior:
 
 ```sh
 docker compose create
@@ -594,11 +718,30 @@ docker compose publish
 docker compose volumes
 ```
 
-Dockerfiles: reuse `api/Dockerfile` and `worker/Dockerfile` from [S1](#s1-supported-local-web-stack).
+Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+RUN mkdir -p /app
+CMD ["sh", "-c", "sleep 3600"]
+```
+
+Dockerfile: `worker/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
+```
 
 ### O1: Config-Only Metadata
 
 Expected result: `container compose config` preserves this metadata. Runtime commands do not publish `expose`, do not act on `x-*`, and reject service-level model/config/secret consumption when it needs runtime behavior.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes this metadata.
+- Apple `container`: no primitive is required for read-only `config` output.
+- `container-compose`: preserves the metadata for `config`; runtime commands only apply fields that have a supported mapping.
 
 ```yaml
 # compose.yaml
