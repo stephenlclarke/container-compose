@@ -34,6 +34,23 @@ Runtime commands reject known unsupported surfaces before side effects where the
 | Dependencies and health | `depends_on` with no condition or `service_started`. | `healthcheck`, `service_healthy`, and `service_completed_successfully`. | Higher-level wait orchestration after the runtime data exists. |
 | Metadata | Compose labels plus plugin labels for project, service, one-off state, working directory, compose-file hash, config hash, networks, and volumes. | None known for labels already mapped. | `annotations`, `attach`, `label_file`, `logging`, `storage_opt`, and deploy metadata. |
 
+## Example Index
+
+Use this table as the fastest way to connect a Compose v2 surface to the owner category below. Every example includes the relevant `compose.yaml` plus one Dockerfile for each build service so readers can copy the smallest project that demonstrates the behavior.
+
+| Example | Owner category | Demonstrates | Expected `container-compose` behavior |
+| --- | --- | --- | --- |
+| S1 | Supported today | Build, pull policy, lifecycle, one network, volumes, ports, process options, labels, dependency order, and teardown. | Commands map to Apple `container` primitives and are covered by focused tests. |
+| A1 | Blocked by Apple `container` | Multiple networks, aliases, fixed IP attachment options, and richer service network configuration. | Runtime commands reject the project before side effects until Apple `container` exposes matching network primitives. |
+| A2 | Blocked by Apple `container` | Hostname, domain name, explicit host entries, MAC address, and legacy links. | Runtime commands reject the project before side effects until Apple `container` exposes compatible host identity and host table controls. |
+| A3 | Blocked by Apple `container` | Namespace, privileged/device, advanced CPU and memory, DNS option, and sysctl controls. | Runtime commands reject the project before side effects until Apple `container` exposes compatible resource and security controls. |
+| A4 | Blocked by Apple `container` | Healthchecks, `service_healthy`, `service_completed_successfully`, secrets, restart policy, and wait-style exit data. | Runtime commands reject the project before side effects until Apple `container` exposes health, completion, secret mount, restart, and wait metadata primitives. |
+| C1 | Blocked by `container-compose` | Replica scaling. | Apple `container` can create multiple containers, but this plugin still needs Compose replica naming, reconciliation, logs, ps, rm, and discovery semantics. |
+| C2 | Blocked by `container-compose` | Advanced build fields such as additional contexts, cache wiring, build secrets, and SSH. | The plugin rejects the fields before side effects until they are explicitly mapped to safe build behavior. |
+| C3 | Blocked by `container-compose` | Develop/watch workflows, metadata surfaces, service providers, service models, and lifecycle hooks. | The plugin rejects the fields before side effects until orchestration and safety rules are designed. |
+| C4 | Blocked by `container-compose` | Volume inheritance, API socket mounting, block I/O controls, unsupported pull policies, and additional CLI commands. | The plugin rejects the service fields before side effects; the listed extra commands remain unimplemented command work. |
+| O1 | Config-only | `expose`, extension fields, and top-level metadata for secrets and models. | `config` preserves the data, while runtime startup ignores harmless metadata or rejects service-level uses that need runtime behavior. |
+
 ## Supported Today
 
 These Compose v2 surfaces are implemented by `container-compose` and backed by current Apple `container` primitives.
