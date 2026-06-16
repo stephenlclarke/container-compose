@@ -144,6 +144,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
             try await runContainer(runArguments(project: project, service: service, detach: up.detach, remove: false, oneOff: false))
         }
+
+        if up.removeOrphans {
+            let declaredContainers = Set(project.services.values.map { containerName(project: project, service: $0, oneOff: false) })
+            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+        }
     }
 
     /// Stops and removes project-scoped resources.
