@@ -85,9 +85,13 @@ type normalizedService struct {
 	Build                  *normalizedBuild                    `json:"build,omitempty"`
 	Command                []string                            `json:"command,omitempty"`
 	Entrypoint             []string                            `json:"entrypoint,omitempty"`
+	CredentialSpec         *types.CredentialSpecConfig         `json:"credentialSpec,omitempty"`
+	DeviceCgroupRules      []string                            `json:"deviceCgroupRules,omitempty"`
+	Devices                []types.DeviceMapping               `json:"devices,omitempty"`
 	Environment            map[string]*string                  `json:"environment,omitempty"`
 	EnvFiles               []string                            `json:"envFiles,omitempty"`
 	Expose                 []string                            `json:"expose,omitempty"`
+	Gpus                   []types.DeviceRequest               `json:"gpus,omitempty"`
 	Ports                  []string                            `json:"ports,omitempty"`
 	Volumes                []normalizedMount                   `json:"volumes,omitempty"`
 	Networks               []string                            `json:"networks,omitempty"`
@@ -353,9 +357,13 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		CPUShares:              service.CPUShares,
 		Command:                shellCommandValues(service.Command),
 		Entrypoint:             shellCommandValues(service.Entrypoint),
+		CredentialSpec:         service.CredentialSpec,
+		DeviceCgroupRules:      append([]string(nil), service.DeviceCgroupRules...),
+		Devices:                append([]types.DeviceMapping(nil), service.Devices...),
 		Environment:            mapEnvironment(service.Environment),
 		EnvFiles:               envFileValues(service.EnvFiles),
 		Expose:                 append([]string(nil), service.Expose...),
+		Gpus:                   append([]types.DeviceRequest(nil), service.Gpus...),
 		Ports:                  portValues(service.Ports),
 		Volumes:                mountValues(service.Volumes),
 		Networks:               networkValues(service.Networks),

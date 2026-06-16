@@ -129,9 +129,22 @@ services:
     cpuset: "0-1"
     cpu_shares: 512
     domainname: example.test
+    credential_spec:
+      file: credential-spec.json
+    device_cgroup_rules:
+      - "c 1:3 mr"
+    devices:
+      - source: /dev/fuse
+        target: /dev/fuse
+        permissions: rwm
     group_add:
       - video
       - "1000"
+    gpus:
+      - driver: nvidia
+        count: 1
+        capabilities:
+          - gpu
     ipc: host
     isolation: default
     pid: host
@@ -270,8 +283,20 @@ volumes:
 	if api.DomainName != "example.test" {
 		t.Fatalf("api.DomainName = %q, want example.test", api.DomainName)
 	}
+	if api.CredentialSpec == nil || api.CredentialSpec.File != "credential-spec.json" {
+		t.Fatalf("api.CredentialSpec = %#v, want file credential-spec.json", api.CredentialSpec)
+	}
+	if got, want := api.DeviceCgroupRules, []string{"c 1:3 mr"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.DeviceCgroupRules = %#v, want %#v", got, want)
+	}
+	if len(api.Devices) != 1 || api.Devices[0].Source != "/dev/fuse" || api.Devices[0].Target != "/dev/fuse" || api.Devices[0].Permissions != "rwm" {
+		t.Fatalf("api.Devices = %#v, want /dev/fuse mapping", api.Devices)
+	}
 	if got, want := api.GroupAdd, []string{"video", "1000"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.GroupAdd = %#v, want %#v", got, want)
+	}
+	if len(api.Gpus) != 1 || api.Gpus[0].Driver != "nvidia" || int64(api.Gpus[0].Count) != 1 {
+		t.Fatalf("api.Gpus = %#v, want nvidia device request", api.Gpus)
 	}
 	if got, want := api.Command, []string{"nginx", "-g", "daemon off;"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Command = %#v, want %#v", got, want)

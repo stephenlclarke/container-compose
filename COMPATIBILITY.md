@@ -58,6 +58,8 @@ These fields currently fail before runtime side effects because the equivalent l
   `memswap_limit`, `mem_swappiness`, `oom_kill_disable`, `oom_score_adj`, and
   `pids_limit`.
 - User and security option fields: `group_add` and `security_opt`.
+- Device access fields: `credential_spec`, `device_cgroup_rules`, `devices`,
+  and `gpus`.
 - `ipc`, `pid`, `userns_mode`, and `uts`.
 - `isolation`.
 - `mac_address`.

@@ -103,9 +103,13 @@ public struct ComposeService: Codable, Equatable {
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
+    public var credentialSpec: ComposeValue? = nil
+    public var deviceCgroupRules: [String]? = nil
+    public var devices: [ComposeValue]? = nil
     public var environment: [String: String?]? = nil
     public var envFiles: [String]? = nil
     public var expose: [String]? = nil
+    public var gpus: [ComposeValue]? = nil
     public var ports: [String]? = nil
     public var volumes: [ComposeMount]? = nil
     public var networks: [String]? = nil
@@ -184,9 +188,13 @@ public struct ComposeService: Codable, Equatable {
         case build
         case command
         case entrypoint
+        case credentialSpec
+        case deviceCgroupRules
+        case devices
         case environment
         case envFiles
         case expose
+        case gpus
         case ports
         case volumes
         case networks

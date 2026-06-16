@@ -769,6 +769,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported device access fields before creating resources")
+    func upRejectsUnsupportedDeviceAccessFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedDeviceAccessFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2053,6 +2082,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run rejects unsupported device access fields before creating resources")
+    func runRejectsUnsupportedDeviceAccessFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedDeviceAccessFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("run rejects unsupported MAC address before creating resources")
     func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2764,6 +2822,56 @@ private func unsupportedUserAndSecurityOptionFieldCases() -> [UnsupportedUserAnd
             value: "label:disable",
             reason: "security option support needs an apple/container runtime gap PR",
             configure: { $0.securityOpt = ["label:disable"] }
+        ),
+    ]
+}
+
+private struct UnsupportedDeviceAccessFieldCase: Sendable {
+    let composeName: String
+    let reason: String
+    let configure: @Sendable (inout ComposeService) -> Void
+
+    func expectedMessage(serviceName: String) -> String {
+        "service '\(serviceName)' uses \(composeName); \(reason)"
+    }
+}
+
+private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFieldCase] {
+    [
+        UnsupportedDeviceAccessFieldCase(
+            composeName: "credential_spec",
+            reason: "credential spec support needs an apple/container runtime gap PR",
+            configure: { $0.credentialSpec = .object(["file": .string("credential-spec.json")]) }
+        ),
+        UnsupportedDeviceAccessFieldCase(
+            composeName: "device_cgroup_rules",
+            reason: "device cgroup rule support needs an apple/container runtime gap PR",
+            configure: { $0.deviceCgroupRules = ["c 1:3 mr"] }
+        ),
+        UnsupportedDeviceAccessFieldCase(
+            composeName: "devices",
+            reason: "host device access support needs an apple/container runtime gap PR",
+            configure: {
+                $0.devices = [
+                    .object([
+                        "source": .string("/dev/fuse"),
+                        "target": .string("/dev/fuse"),
+                        "permissions": .string("rwm"),
+                    ]),
+                ]
+            }
+        ),
+        UnsupportedDeviceAccessFieldCase(
+            composeName: "gpus",
+            reason: "GPU device access support needs an apple/container runtime gap PR",
+            configure: {
+                $0.gpus = [
+                    .object([
+                        "driver": .string("nvidia"),
+                        "capabilities": .array([.string("gpu")]),
+                    ]),
+                ]
+            }
         ),
     ]
 }
