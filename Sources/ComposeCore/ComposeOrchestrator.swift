@@ -443,6 +443,9 @@ private extension ComposeOrchestrator {
         if let scale = service.scale, scale != 1 {
             throw ComposeError.unsupported("service '\(service.name)' uses scale \(scale); service replica scaling is not implemented by container-compose yet")
         }
+        if let gap = unsupportedServiceMetadataAndLoggingFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
+        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
@@ -575,6 +578,33 @@ private extension ComposeOrchestrator {
         }
         if let gpus = service.gpus, !gpus.isEmpty {
             fields.append(("gpus", "GPU device access support needs an apple/container runtime gap PR"))
+        }
+        return fields
+    }
+
+    /// Returns unsupported service metadata, attach, logging, and storage option fields.
+    func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
+        var fields: [(composeName: String, reason: String)] = []
+        if let annotations = service.annotations, !annotations.isEmpty {
+            fields.append(("annotations", "service annotations are not implemented by container-compose yet"))
+        }
+        if service.attach != nil {
+            fields.append(("attach", "service attach behavior is not implemented by container-compose yet"))
+        }
+        if let labelFiles = service.labelFiles, !labelFiles.isEmpty {
+            fields.append(("label_file", "label file support is not implemented by container-compose yet"))
+        }
+        if service.logging != nil {
+            fields.append(("logging", "service logging configuration is not implemented by container-compose yet"))
+        }
+        if let logDriver = service.logDriver, !logDriver.isEmpty {
+            fields.append(("log_driver", "service logging configuration is not implemented by container-compose yet"))
+        }
+        if let logOptions = service.logOptions, !logOptions.isEmpty {
+            fields.append(("log_opt", "service logging configuration is not implemented by container-compose yet"))
+        }
+        if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
+            fields.append(("storage_opt", "service storage options are not implemented by container-compose yet"))
         }
         return fields
     }

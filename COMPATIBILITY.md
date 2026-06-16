@@ -163,7 +163,7 @@ These surfaces are Docker Compose v2 features that need more plugin orchestratio
 | Compose Deploy Specification beyond replica count | Not implemented. | Swarm-style `deploy` placement, update, rollback, endpoint, labels, and most resource reservation fields are outside the current local workflow mapping. |
 | Develop/watch workflow | Not implemented. | `develop`, `watch`, sync/rebuild actions, and file-watch semantics need plugin work. |
 | Provider, model, and lifecycle hook surfaces | Not implemented. | `provider`, `models`, `post_start`, and `pre_stop` are not orchestrated. |
-| Service metadata and logging surfaces | Not fully implemented. | `annotations`, `attach`, `label_file`, `logging`, `log_driver`, `log_opt`, and `storage_opt` need validation or runtime mapping. |
+| Service metadata and logging surfaces | Explicitly rejected before side effects when Compose v2 accepts the field. | `annotations`, `attach`, `label_file`, `logging`, and `storage_opt` need runtime mapping before they can affect managed containers. Legacy `log_driver` and `log_opt` are rejected by the Compose v2 schema during normalization, with defensive validation if they appear in canonical JSON. |
 | Volume inheritance and driver shortcuts | Not implemented. | `volumes_from` and service-level `volume_driver` need plugin behavior or explicit rejection. |
 | API socket mounting | Not implemented. | `use_api_socket` needs a security review and runtime mapping. |
 | Block I/O controls | Not implemented. | `blkio_config` needs validation and a runtime primitive assessment. |

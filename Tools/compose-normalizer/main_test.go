@@ -111,12 +111,17 @@ func TestDiscoverComposeFilesUsesDefaultPriority(t *testing.T) {
 func TestLoadProjectNormalizesComposeModel(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")
+	labelFile := filepath.Join(dir, "service.labels")
+	writeFile(t, labelFile, "com.example.file=loaded\n")
 	writeFile(t, composeFile, `
 name: sample
 services:
   api:
     image: nginx:alpine
     platform: linux/amd64
+    annotations:
+      com.example.note: runtime
+    attach: false
     mac_address: 02:42:ac:11:00:03
     runtime: container-runtime-linux
     cgroup: host
@@ -159,6 +164,14 @@ services:
       - label:disable
     expose:
       - "9000"
+    label_file:
+      - ./service.labels
+    logging:
+      driver: syslog
+      options:
+        syslog-address: tcp://192.168.0.42:123
+    storage_opt:
+      size: 10G
     mem_reservation: 128m
     memswap_limit: 256m
     mem_swappiness: 60
@@ -232,6 +245,12 @@ volumes:
 	}
 	if api.Platform != "linux/amd64" {
 		t.Fatalf("api.Platform = %q, want linux/amd64", api.Platform)
+	}
+	if got, want := api.Annotations, map[string]string{"com.example.note": "runtime"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Annotations = %#v, want %#v", got, want)
+	}
+	if api.Attach == nil || *api.Attach {
+		t.Fatalf("api.Attach = %#v, want false", api.Attach)
 	}
 	if api.MacAddress != "02:42:ac:11:00:03" {
 		t.Fatalf("api.MacAddress = %q, want 02:42:ac:11:00:03", api.MacAddress)
@@ -313,6 +332,16 @@ volumes:
 	}
 	if got, want := api.Expose, []string{"9000"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Expose = %#v, want %#v", got, want)
+	}
+	if got, want := api.LabelFiles, []string{labelFile}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.LabelFiles = %#v, want %#v", got, want)
+	}
+	logging, ok := api.Logging.(*types.LoggingConfig)
+	if !ok || logging.Driver != "syslog" || logging.Options["syslog-address"] != "tcp://192.168.0.42:123" {
+		t.Fatalf("api.Logging = %#v, want syslog config", api.Logging)
+	}
+	if got, want := api.StorageOptions, map[string]string{"size": "10G"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.StorageOptions = %#v, want %#v", got, want)
 	}
 	if got, want := api.MemReservation, "134217728"; got != want {
 		t.Fatalf("api.MemReservation = %q, want %q", got, want)
@@ -398,6 +427,24 @@ func TestNormalizeServicePreservesCPUPercent(t *testing.T) {
 
 	if service.CPUPercent != 12.5 {
 		t.Fatalf("service.CPUPercent = %f, want 12.5", service.CPUPercent)
+	}
+}
+
+func TestNormalizeServicePreservesLegacyLoggingFields(t *testing.T) {
+	service := normalizeService(types.ServiceConfig{
+		Name:      "api",
+		Image:     "nginx:alpine",
+		LogDriver: "local",
+		LogOpt: map[string]string{
+			"mode": "non-blocking",
+		},
+	})
+
+	if service.LogDriver != "local" {
+		t.Fatalf("service.LogDriver = %q, want local", service.LogDriver)
+	}
+	if got, want := service.LogOptions, map[string]string{"mode": "non-blocking"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("service.LogOptions = %#v, want %#v", got, want)
 	}
 }
 

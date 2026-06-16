@@ -70,6 +70,8 @@ type normalizedService struct {
 	Image                  string                              `json:"image,omitempty"`
 	PullPolicy             string                              `json:"pullPolicy,omitempty"`
 	Platform               string                              `json:"platform,omitempty"`
+	Annotations            map[string]string                   `json:"annotations,omitempty"`
+	Attach                 *bool                               `json:"attach,omitempty"`
 	MacAddress             string                              `json:"macAddress,omitempty"`
 	Runtime                string                              `json:"runtime,omitempty"`
 	Cgroup                 string                              `json:"cgroup,omitempty"`
@@ -102,6 +104,7 @@ type normalizedService struct {
 	Links                  []string                            `json:"links,omitempty"`
 	ExternalLinks          []string                            `json:"externalLinks,omitempty"`
 	Labels                 map[string]string                   `json:"labels,omitempty"`
+	LabelFiles             []string                            `json:"labelFiles,omitempty"`
 	ContainerName          string                              `json:"containerName,omitempty"`
 	Hostname               string                              `json:"hostname,omitempty"`
 	DomainName             string                              `json:"domainName,omitempty"`
@@ -115,6 +118,10 @@ type normalizedService struct {
 	Restart                string                              `json:"restart,omitempty"`
 	Init                   *bool                               `json:"init,omitempty"`
 	Scale                  *int                                `json:"scale,omitempty"`
+	Logging                any                                 `json:"logging,omitempty"`
+	LogDriver              string                              `json:"logDriver,omitempty"`
+	LogOptions             map[string]string                   `json:"logOptions,omitempty"`
+	StorageOptions         map[string]string                   `json:"storageOptions,omitempty"`
 	Ipc                    string                              `json:"ipc,omitempty"`
 	Isolation              string                              `json:"isolation,omitempty"`
 	Tmpfs                  []string                            `json:"tmpfs,omitempty"`
@@ -344,6 +351,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Image:                  service.Image,
 		PullPolicy:             service.PullPolicy,
 		Platform:               service.Platform,
+		Annotations:            mapMapping(service.Annotations),
+		Attach:                 service.Attach,
 		MacAddress:             service.MacAddress,
 		Runtime:                service.Runtime,
 		Cgroup:                 service.Cgroup,
@@ -375,6 +384,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Links:                  append([]string(nil), service.Links...),
 		ExternalLinks:          append([]string(nil), service.ExternalLinks...),
 		Labels:                 mapLabels(service.Labels),
+		LabelFiles:             append([]string(nil), service.LabelFiles...),
 		ContainerName:          service.ContainerName,
 		Hostname:               service.Hostname,
 		DomainName:             service.DomainName,
@@ -388,6 +398,10 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Restart:                service.Restart,
 		Init:                   service.Init,
 		Scale:                  serviceScale(service),
+		Logging:                service.Logging,
+		LogDriver:              service.LogDriver,
+		LogOptions:             mapStringMap(service.LogOpt),
+		StorageOptions:         mapStringMap(service.StorageOpt),
 		Ipc:                    service.Ipc,
 		Isolation:              service.Isolation,
 		Tmpfs:                  append([]string(nil), service.Tmpfs...),
@@ -673,6 +687,18 @@ func mapMapping(mapping types.Mapping) map[string]string {
 	}
 	result := map[string]string{}
 	for key, value := range mapping {
+		result[key] = value
+	}
+	return result
+}
+
+// mapStringMap copies plain Compose string maps into independent values.
+func mapStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := map[string]string{}
+	for key, value := range values {
 		result[key] = value
 	}
 	return result

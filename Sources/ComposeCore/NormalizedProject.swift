@@ -88,6 +88,8 @@ public struct ComposeService: Codable, Equatable {
     public var image: String? = nil
     public var pullPolicy: String? = nil
     public var platform: String? = nil
+    public var annotations: [String: String]? = nil
+    public var attach: Bool? = nil
     public var macAddress: String? = nil
     public var runtime: String? = nil
     public var cgroup: String? = nil
@@ -120,6 +122,7 @@ public struct ComposeService: Codable, Equatable {
     public var links: [String]? = nil
     public var externalLinks: [String]? = nil
     public var labels: [String: String]? = nil
+    public var labelFiles: [String]? = nil
     public var containerName: String? = nil
     public var hostname: String? = nil
     public var domainName: String? = nil
@@ -133,6 +136,10 @@ public struct ComposeService: Codable, Equatable {
     public var restart: String? = nil
     public var initEnabled: Bool? = nil
     public var scale: Int? = nil
+    public var logging: ComposeValue? = nil
+    public var logDriver: String? = nil
+    public var logOptions: [String: String]? = nil
+    public var storageOptions: [String: String]? = nil
     public var ipc: String? = nil
     public var isolation: String? = nil
     public var tmpfs: [String]? = nil
@@ -174,6 +181,8 @@ public struct ComposeService: Codable, Equatable {
         case image
         case pullPolicy
         case platform
+        case annotations
+        case attach
         case macAddress
         case runtime
         case cgroup
@@ -206,6 +215,7 @@ public struct ComposeService: Codable, Equatable {
         case links
         case externalLinks
         case labels
+        case labelFiles
         case containerName
         case hostname
         case domainName
@@ -219,6 +229,10 @@ public struct ComposeService: Codable, Equatable {
         case restart
         case initEnabled = "init"
         case scale
+        case logging
+        case logDriver
+        case logOptions
+        case storageOptions
         case ipc
         case isolation
         case tmpfs

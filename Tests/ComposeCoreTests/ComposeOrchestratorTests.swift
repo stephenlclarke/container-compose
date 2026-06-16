@@ -827,6 +827,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported metadata and logging fields before creating resources")
+    func upRejectsUnsupportedMetadataAndLoggingFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedServiceMetadataAndLoggingFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2169,6 +2198,35 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run rejects unsupported metadata and logging fields before creating resources")
+    func runRejectsUnsupportedMetadataAndLoggingFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedServiceMetadataAndLoggingFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("run rejects unsupported MAC address before creating resources")
     func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2930,6 +2988,56 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
                     ]),
                 ]
             }
+        ),
+    ]
+}
+
+private struct UnsupportedServiceMetadataAndLoggingFieldCase: Sendable {
+    let composeName: String
+    let reason: String
+    let configure: @Sendable (inout ComposeService) -> Void
+
+    func expectedMessage(serviceName: String) -> String {
+        "service '\(serviceName)' uses \(composeName); \(reason)"
+    }
+}
+
+private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedServiceMetadataAndLoggingFieldCase] {
+    [
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "annotations",
+            reason: "service annotations are not implemented by container-compose yet",
+            configure: { $0.annotations = ["com.example.note": "runtime"] }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "attach",
+            reason: "service attach behavior is not implemented by container-compose yet",
+            configure: { $0.attach = false }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "label_file",
+            reason: "label file support is not implemented by container-compose yet",
+            configure: { $0.labelFiles = ["./service.labels"] }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "logging",
+            reason: "service logging configuration is not implemented by container-compose yet",
+            configure: { $0.logging = .object(["driver": .string("json-file")]) }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "log_driver",
+            reason: "service logging configuration is not implemented by container-compose yet",
+            configure: { $0.logDriver = "json-file" }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "log_opt",
+            reason: "service logging configuration is not implemented by container-compose yet",
+            configure: { $0.logOptions = ["max-size": "10m"] }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "storage_opt",
+            reason: "service storage options are not implemented by container-compose yet",
+            configure: { $0.storageOptions = ["size": "1G"] }
         ),
     ]
 }
