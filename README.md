@@ -24,15 +24,11 @@ runtime orchestration.
 
 ## Documentation
 
-- [INSTALL.md](INSTALL.md) explains local plugin installation and removal.
-- [COMPATIBILITY.md](COMPATIBILITY.md) lists supported runtime primitives,
-  Apple `container` runtime gaps, and `container-compose` implementation gaps.
-- [BUILD.md](BUILD.md) explains dependencies, developer validation, packaging,
-  and SonarQube scanning.
-- [DESIGN.md](DESIGN.md) explains the architecture and why Go is used for
-  Compose normalization.
-- [CONTRIBUTING.md](CONTRIBUTING.md) explains pull request, commit, and branch
-  protection expectations.
+- [INSTALL.md](INSTALL.md)
+- [COMPATIBILITY.md](COMPATIBILITY.md)
+- [BUILD.md](BUILD.md)
+- [DESIGN.md](DESIGN.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
