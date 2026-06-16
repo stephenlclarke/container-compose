@@ -57,6 +57,7 @@ These fields currently fail before runtime side effects because the equivalent l
 - Memory, OOM, and process resource fields: `mem_reservation`,
   `memswap_limit`, `mem_swappiness`, `oom_kill_disable`, `oom_score_adj`, and
   `pids_limit`.
+- User and security option fields: `group_add` and `security_opt`.
 - `ipc`, `pid`, `userns_mode`, and `uts`.
 - `isolation`.
 - `mac_address`.

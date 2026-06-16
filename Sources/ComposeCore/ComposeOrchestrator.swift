@@ -434,6 +434,9 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedMemoryAndProcessResourceFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
+        if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
@@ -537,6 +540,18 @@ private extension ComposeOrchestrator {
         }
         appendUnsupportedIntegerField("oom_score_adj", value: service.oomScoreAdj, reason: reason, to: &fields)
         appendUnsupportedIntegerField("pids_limit", value: service.pidsLimit, reason: reason, to: &fields)
+        return fields
+    }
+
+    /// Returns unsupported user and security option fields.
+    func unsupportedUserAndSecurityOptionFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        var fields: [(composeName: String, value: String, reason: String)] = []
+        if let group = service.groupAdd?.first(where: { !$0.isEmpty }) {
+            fields.append(("group_add", group, "supplemental group support needs an apple/container runtime gap PR"))
+        }
+        if let securityOption = service.securityOpt?.first(where: { !$0.isEmpty }) {
+            fields.append(("security_opt", securityOption, "security option support needs an apple/container runtime gap PR"))
+        }
         return fields
     }
 

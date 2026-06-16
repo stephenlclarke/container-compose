@@ -129,6 +129,9 @@ services:
     cpuset: "0-1"
     cpu_shares: 512
     domainname: example.test
+    group_add:
+      - video
+      - "1000"
     ipc: host
     isolation: default
     pid: host
@@ -139,6 +142,8 @@ services:
       FOO: bar
     dns_opt:
       - use-vc
+    security_opt:
+      - label:disable
     expose:
       - "9000"
     mem_reservation: 128m
@@ -265,6 +270,9 @@ volumes:
 	if api.DomainName != "example.test" {
 		t.Fatalf("api.DomainName = %q, want example.test", api.DomainName)
 	}
+	if got, want := api.GroupAdd, []string{"video", "1000"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.GroupAdd = %#v, want %#v", got, want)
+	}
 	if got, want := api.Command, []string{"nginx", "-g", "daemon off;"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Command = %#v, want %#v", got, want)
 	}
@@ -273,6 +281,9 @@ volumes:
 	}
 	if got, want := api.DNSOptions, []string{"use-vc"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DNSOptions = %#v, want %#v", got, want)
+	}
+	if got, want := api.SecurityOpt, []string{"label:disable"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.SecurityOpt = %#v, want %#v", got, want)
 	}
 	if got, want := api.Expose, []string{"9000"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Expose = %#v, want %#v", got, want)

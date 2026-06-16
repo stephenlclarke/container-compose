@@ -103,6 +103,7 @@ type normalizedService struct {
 	DomainName             string                              `json:"domainName,omitempty"`
 	WorkingDir             string                              `json:"workingDir,omitempty"`
 	User                   string                              `json:"user,omitempty"`
+	GroupAdd               []string                            `json:"groupAdd,omitempty"`
 	TTY                    bool                                `json:"tty,omitempty"`
 	StdinOpen              bool                                `json:"stdinOpen,omitempty"`
 	ReadOnly               bool                                `json:"readOnly,omitempty"`
@@ -118,6 +119,7 @@ type normalizedService struct {
 	ExtraHosts             []string                            `json:"extraHosts,omitempty"`
 	CapAdd                 []string                            `json:"capAdd,omitempty"`
 	CapDrop                []string                            `json:"capDrop,omitempty"`
+	SecurityOpt            []string                            `json:"securityOpt,omitempty"`
 	MemLimit               string                              `json:"memLimit,omitempty"`
 	MemReservation         string                              `json:"memReservation,omitempty"`
 	MemSwapLimit           string                              `json:"memSwapLimit,omitempty"`
@@ -369,6 +371,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		DomainName:             service.DomainName,
 		WorkingDir:             service.WorkingDir,
 		User:                   service.User,
+		GroupAdd:               append([]string(nil), service.GroupAdd...),
 		TTY:                    service.Tty,
 		StdinOpen:              service.StdinOpen,
 		ReadOnly:               service.ReadOnly,
@@ -384,6 +387,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		ExtraHosts:             service.ExtraHosts.AsList(":"),
 		CapAdd:                 append([]string(nil), service.CapAdd...),
 		CapDrop:                append([]string(nil), service.CapDrop...),
+		SecurityOpt:            append([]string(nil), service.SecurityOpt...),
 		MemLimit:               unitBytesValue(service.MemLimit),
 		MemReservation:         unitBytesValue(service.MemReservation),
 		MemSwapLimit:           unitBytesValue(service.MemSwapLimit),

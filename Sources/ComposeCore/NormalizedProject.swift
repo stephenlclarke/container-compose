@@ -121,6 +121,7 @@ public struct ComposeService: Codable, Equatable {
     public var domainName: String? = nil
     public var workingDir: String? = nil
     public var user: String? = nil
+    public var groupAdd: [String]? = nil
     public var tty: Bool? = nil
     public var stdinOpen: Bool? = nil
     public var readOnly: Bool? = nil
@@ -136,6 +137,7 @@ public struct ComposeService: Codable, Equatable {
     public var extraHosts: [String]? = nil
     public var capAdd: [String]? = nil
     public var capDrop: [String]? = nil
+    public var securityOpt: [String]? = nil
     public var memLimit: String? = nil
     public var memReservation: String? = nil
     public var memSwapLimit: String? = nil
@@ -200,6 +202,7 @@ public struct ComposeService: Codable, Equatable {
         case domainName
         case workingDir
         case user
+        case groupAdd
         case tty
         case stdinOpen
         case readOnly
@@ -215,6 +218,7 @@ public struct ComposeService: Codable, Equatable {
         case extraHosts
         case capAdd
         case capDrop
+        case securityOpt
         case memLimit
         case memReservation
         case memSwapLimit
