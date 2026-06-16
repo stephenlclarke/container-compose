@@ -66,97 +66,98 @@ type normalizedProject struct {
 // normalizedService contains the Compose service fields Swift can either
 // orchestrate directly or preserve for config output and runtime gap checks.
 type normalizedService struct {
-	Name                   string                              `json:"name"`
-	Image                  string                              `json:"image,omitempty"`
-	PullPolicy             string                              `json:"pullPolicy,omitempty"`
-	Platform               string                              `json:"platform,omitempty"`
-	Annotations            map[string]string                   `json:"annotations,omitempty"`
-	Attach                 *bool                               `json:"attach,omitempty"`
-	BlkioConfig            bool                                `json:"blkioConfig,omitempty"`
-	MacAddress             string                              `json:"macAddress,omitempty"`
-	Runtime                string                              `json:"runtime,omitempty"`
-	Cgroup                 string                              `json:"cgroup,omitempty"`
-	CgroupParent           string                              `json:"cgroupParent,omitempty"`
-	CPUCount               int64                               `json:"cpuCount,omitempty"`
-	CPUPercent             float32                             `json:"cpuPercent,omitempty"`
-	CPUPeriod              int64                               `json:"cpuPeriod,omitempty"`
-	CPUQuota               int64                               `json:"cpuQuota,omitempty"`
-	CPURealtimePeriod      int64                               `json:"cpuRealtimePeriod,omitempty"`
-	CPURealtimeRuntime     int64                               `json:"cpuRealtimeRuntime,omitempty"`
-	CPUSet                 string                              `json:"cpuset,omitempty"`
-	CPUShares              int64                               `json:"cpuShares,omitempty"`
-	Develop                bool                                `json:"develop,omitempty"`
-	Build                  *normalizedBuild                    `json:"build,omitempty"`
-	Command                []string                            `json:"command,omitempty"`
-	Entrypoint             []string                            `json:"entrypoint,omitempty"`
-	CredentialSpec         *types.CredentialSpecConfig         `json:"credentialSpec,omitempty"`
-	DeviceCgroupRules      []string                            `json:"deviceCgroupRules,omitempty"`
-	Devices                []types.DeviceMapping               `json:"devices,omitempty"`
-	Environment            map[string]*string                  `json:"environment,omitempty"`
-	EnvFiles               []string                            `json:"envFiles,omitempty"`
-	Expose                 []string                            `json:"expose,omitempty"`
-	Gpus                   []types.DeviceRequest               `json:"gpus,omitempty"`
-	Ports                  []string                            `json:"ports,omitempty"`
-	Volumes                []normalizedMount                   `json:"volumes,omitempty"`
-	VolumeDriver           string                              `json:"volumeDriver,omitempty"`
-	VolumesFrom            []string                            `json:"volumesFrom,omitempty"`
-	Networks               []string                            `json:"networks,omitempty"`
-	NetworkAliases         map[string][]string                 `json:"networkAliases,omitempty"`
-	NetworkOptions         map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
-	NetworkMode            string                              `json:"networkMode,omitempty"`
-	DependsOn              map[string]string                   `json:"dependsOn,omitempty"`
-	Links                  []string                            `json:"links,omitempty"`
-	ExternalLinks          []string                            `json:"externalLinks,omitempty"`
-	Labels                 map[string]string                   `json:"labels,omitempty"`
-	LabelFiles             []string                            `json:"labelFiles,omitempty"`
-	ContainerName          string                              `json:"containerName,omitempty"`
-	Hostname               string                              `json:"hostname,omitempty"`
-	DomainName             string                              `json:"domainName,omitempty"`
-	WorkingDir             string                              `json:"workingDir,omitempty"`
-	User                   string                              `json:"user,omitempty"`
-	GroupAdd               []string                            `json:"groupAdd,omitempty"`
-	TTY                    bool                                `json:"tty,omitempty"`
-	StdinOpen              bool                                `json:"stdinOpen,omitempty"`
-	ReadOnly               bool                                `json:"readOnly,omitempty"`
-	Privileged             bool                                `json:"privileged,omitempty"`
-	Restart                string                              `json:"restart,omitempty"`
-	Init                   *bool                               `json:"init,omitempty"`
-	Scale                  *int                                `json:"scale,omitempty"`
-	Logging                any                                 `json:"logging,omitempty"`
-	LogDriver              string                              `json:"logDriver,omitempty"`
-	LogOptions             map[string]string                   `json:"logOptions,omitempty"`
-	StorageOptions         map[string]string                   `json:"storageOptions,omitempty"`
-	UseAPISocket           bool                                `json:"useAPISocket,omitempty"`
-	Ipc                    string                              `json:"ipc,omitempty"`
-	Isolation              string                              `json:"isolation,omitempty"`
-	Tmpfs                  []string                            `json:"tmpfs,omitempty"`
-	DNS                    []string                            `json:"dns,omitempty"`
-	DNSSearch              []string                            `json:"dnsSearch,omitempty"`
-	DNSOptions             []string                            `json:"dnsOptions,omitempty"`
-	ExtraHosts             []string                            `json:"extraHosts,omitempty"`
-	CapAdd                 []string                            `json:"capAdd,omitempty"`
-	CapDrop                []string                            `json:"capDrop,omitempty"`
-	SecurityOpt            []string                            `json:"securityOpt,omitempty"`
-	MemLimit               string                              `json:"memLimit,omitempty"`
-	MemReservation         string                              `json:"memReservation,omitempty"`
-	MemSwapLimit           string                              `json:"memSwapLimit,omitempty"`
-	MemSwappiness          string                              `json:"memSwappiness,omitempty"`
-	OomKillDisable         bool                                `json:"oomKillDisable,omitempty"`
-	OomScoreAdj            int64                               `json:"oomScoreAdj,omitempty"`
-	PidsLimit              int64                               `json:"pidsLimit,omitempty"`
-	CPUS                   string                              `json:"cpus,omitempty"`
-	ShmSize                string                              `json:"shmSize,omitempty"`
-	Ulimits                []string                            `json:"ulimits,omitempty"`
-	Pid                    string                              `json:"pid,omitempty"`
-	Sysctls                map[string]string                   `json:"sysctls,omitempty"`
-	StopSignal             string                              `json:"stopSignal,omitempty"`
-	StopGracePeriodSeconds *int64                              `json:"stopGracePeriodSeconds,omitempty"`
-	UserNSMode             string                              `json:"usernsMode,omitempty"`
-	Uts                    string                              `json:"uts,omitempty"`
-	Healthcheck            any                                 `json:"healthcheck,omitempty"`
-	Configs                any                                 `json:"configs,omitempty"`
-	Secrets                any                                 `json:"secrets,omitempty"`
-	Extensions             map[string]any                      `json:"extensions,omitempty"`
+	Name                    string                              `json:"name"`
+	Image                   string                              `json:"image,omitempty"`
+	PullPolicy              string                              `json:"pullPolicy,omitempty"`
+	Platform                string                              `json:"platform,omitempty"`
+	Annotations             map[string]string                   `json:"annotations,omitempty"`
+	Attach                  *bool                               `json:"attach,omitempty"`
+	BlkioConfig             bool                                `json:"blkioConfig,omitempty"`
+	MacAddress              string                              `json:"macAddress,omitempty"`
+	Runtime                 string                              `json:"runtime,omitempty"`
+	Cgroup                  string                              `json:"cgroup,omitempty"`
+	CgroupParent            string                              `json:"cgroupParent,omitempty"`
+	CPUCount                int64                               `json:"cpuCount,omitempty"`
+	CPUPercent              float32                             `json:"cpuPercent,omitempty"`
+	CPUPeriod               int64                               `json:"cpuPeriod,omitempty"`
+	CPUQuota                int64                               `json:"cpuQuota,omitempty"`
+	CPURealtimePeriod       int64                               `json:"cpuRealtimePeriod,omitempty"`
+	CPURealtimeRuntime      int64                               `json:"cpuRealtimeRuntime,omitempty"`
+	CPUSet                  string                              `json:"cpuset,omitempty"`
+	CPUShares               int64                               `json:"cpuShares,omitempty"`
+	Develop                 bool                                `json:"develop,omitempty"`
+	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
+	Build                   *normalizedBuild                    `json:"build,omitempty"`
+	Command                 []string                            `json:"command,omitempty"`
+	Entrypoint              []string                            `json:"entrypoint,omitempty"`
+	CredentialSpec          *types.CredentialSpecConfig         `json:"credentialSpec,omitempty"`
+	DeviceCgroupRules       []string                            `json:"deviceCgroupRules,omitempty"`
+	Devices                 []types.DeviceMapping               `json:"devices,omitempty"`
+	Environment             map[string]*string                  `json:"environment,omitempty"`
+	EnvFiles                []string                            `json:"envFiles,omitempty"`
+	Expose                  []string                            `json:"expose,omitempty"`
+	Gpus                    []types.DeviceRequest               `json:"gpus,omitempty"`
+	Ports                   []string                            `json:"ports,omitempty"`
+	Volumes                 []normalizedMount                   `json:"volumes,omitempty"`
+	VolumeDriver            string                              `json:"volumeDriver,omitempty"`
+	VolumesFrom             []string                            `json:"volumesFrom,omitempty"`
+	Networks                []string                            `json:"networks,omitempty"`
+	NetworkAliases          map[string][]string                 `json:"networkAliases,omitempty"`
+	NetworkOptions          map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
+	NetworkMode             string                              `json:"networkMode,omitempty"`
+	DependsOn               map[string]string                   `json:"dependsOn,omitempty"`
+	Links                   []string                            `json:"links,omitempty"`
+	ExternalLinks           []string                            `json:"externalLinks,omitempty"`
+	Labels                  map[string]string                   `json:"labels,omitempty"`
+	LabelFiles              []string                            `json:"labelFiles,omitempty"`
+	ContainerName           string                              `json:"containerName,omitempty"`
+	Hostname                string                              `json:"hostname,omitempty"`
+	DomainName              string                              `json:"domainName,omitempty"`
+	WorkingDir              string                              `json:"workingDir,omitempty"`
+	User                    string                              `json:"user,omitempty"`
+	GroupAdd                []string                            `json:"groupAdd,omitempty"`
+	TTY                     bool                                `json:"tty,omitempty"`
+	StdinOpen               bool                                `json:"stdinOpen,omitempty"`
+	ReadOnly                bool                                `json:"readOnly,omitempty"`
+	Privileged              bool                                `json:"privileged,omitempty"`
+	Restart                 string                              `json:"restart,omitempty"`
+	Init                    *bool                               `json:"init,omitempty"`
+	Scale                   *int                                `json:"scale,omitempty"`
+	Logging                 any                                 `json:"logging,omitempty"`
+	LogDriver               string                              `json:"logDriver,omitempty"`
+	LogOptions              map[string]string                   `json:"logOptions,omitempty"`
+	StorageOptions          map[string]string                   `json:"storageOptions,omitempty"`
+	UseAPISocket            bool                                `json:"useAPISocket,omitempty"`
+	Ipc                     string                              `json:"ipc,omitempty"`
+	Isolation               string                              `json:"isolation,omitempty"`
+	Tmpfs                   []string                            `json:"tmpfs,omitempty"`
+	DNS                     []string                            `json:"dns,omitempty"`
+	DNSSearch               []string                            `json:"dnsSearch,omitempty"`
+	DNSOptions              []string                            `json:"dnsOptions,omitempty"`
+	ExtraHosts              []string                            `json:"extraHosts,omitempty"`
+	CapAdd                  []string                            `json:"capAdd,omitempty"`
+	CapDrop                 []string                            `json:"capDrop,omitempty"`
+	SecurityOpt             []string                            `json:"securityOpt,omitempty"`
+	MemLimit                string                              `json:"memLimit,omitempty"`
+	MemReservation          string                              `json:"memReservation,omitempty"`
+	MemSwapLimit            string                              `json:"memSwapLimit,omitempty"`
+	MemSwappiness           string                              `json:"memSwappiness,omitempty"`
+	OomKillDisable          bool                                `json:"oomKillDisable,omitempty"`
+	OomScoreAdj             int64                               `json:"oomScoreAdj,omitempty"`
+	PidsLimit               int64                               `json:"pidsLimit,omitempty"`
+	CPUS                    string                              `json:"cpus,omitempty"`
+	ShmSize                 string                              `json:"shmSize,omitempty"`
+	Ulimits                 []string                            `json:"ulimits,omitempty"`
+	Pid                     string                              `json:"pid,omitempty"`
+	Sysctls                 map[string]string                   `json:"sysctls,omitempty"`
+	StopSignal              string                              `json:"stopSignal,omitempty"`
+	StopGracePeriodSeconds  *int64                              `json:"stopGracePeriodSeconds,omitempty"`
+	UserNSMode              string                              `json:"usernsMode,omitempty"`
+	Uts                     string                              `json:"uts,omitempty"`
+	Healthcheck             any                                 `json:"healthcheck,omitempty"`
+	Configs                 any                                 `json:"configs,omitempty"`
+	Secrets                 any                                 `json:"secrets,omitempty"`
+	Extensions              map[string]any                      `json:"extensions,omitempty"`
 }
 
 // normalizedBuild keeps the build fields needed to call `container build`.
@@ -353,92 +354,93 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 // normalizeService copies a compose-go service into the stable Swift model.
 func normalizeService(service types.ServiceConfig) normalizedService {
 	result := normalizedService{
-		Name:                   service.Name,
-		Image:                  service.Image,
-		PullPolicy:             service.PullPolicy,
-		Platform:               service.Platform,
-		Annotations:            mapMapping(service.Annotations),
-		Attach:                 service.Attach,
-		BlkioConfig:            service.BlkioConfig != nil,
-		MacAddress:             service.MacAddress,
-		Runtime:                service.Runtime,
-		Cgroup:                 service.Cgroup,
-		CgroupParent:           service.CgroupParent,
-		CPUCount:               service.CPUCount,
-		CPUPercent:             service.CPUPercent,
-		CPUPeriod:              service.CPUPeriod,
-		CPUQuota:               service.CPUQuota,
-		CPURealtimePeriod:      service.CPURTPeriod,
-		CPURealtimeRuntime:     service.CPURTRuntime,
-		CPUSet:                 service.CPUSet,
-		CPUShares:              service.CPUShares,
-		Develop:                service.Develop != nil,
-		Command:                shellCommandValues(service.Command),
-		Entrypoint:             shellCommandValues(service.Entrypoint),
-		CredentialSpec:         service.CredentialSpec,
-		DeviceCgroupRules:      append([]string(nil), service.DeviceCgroupRules...),
-		Devices:                append([]types.DeviceMapping(nil), service.Devices...),
-		Environment:            mapEnvironment(service.Environment),
-		EnvFiles:               envFileValues(service.EnvFiles),
-		Expose:                 append([]string(nil), service.Expose...),
-		Gpus:                   append([]types.DeviceRequest(nil), service.Gpus...),
-		Ports:                  portValues(service.Ports),
-		Volumes:                mountValues(service.Volumes),
-		VolumeDriver:           service.VolumeDriver,
-		VolumesFrom:            append([]string(nil), service.VolumesFrom...),
-		Networks:               networkValues(service.Networks),
-		NetworkAliases:         networkAliasValues(service.Networks),
-		NetworkOptions:         networkOptionValues(service.Networks),
-		NetworkMode:            service.NetworkMode,
-		DependsOn:              dependsOnValues(service.DependsOn),
-		Links:                  append([]string(nil), service.Links...),
-		ExternalLinks:          append([]string(nil), service.ExternalLinks...),
-		Labels:                 mapLabels(service.Labels),
-		LabelFiles:             append([]string(nil), service.LabelFiles...),
-		ContainerName:          service.ContainerName,
-		Hostname:               service.Hostname,
-		DomainName:             service.DomainName,
-		WorkingDir:             service.WorkingDir,
-		User:                   service.User,
-		GroupAdd:               append([]string(nil), service.GroupAdd...),
-		TTY:                    service.Tty,
-		StdinOpen:              service.StdinOpen,
-		ReadOnly:               service.ReadOnly,
-		Privileged:             service.Privileged,
-		Restart:                service.Restart,
-		Init:                   service.Init,
-		Scale:                  serviceScale(service),
-		Logging:                service.Logging,
-		LogDriver:              service.LogDriver,
-		LogOptions:             mapStringMap(service.LogOpt),
-		StorageOptions:         mapStringMap(service.StorageOpt),
-		UseAPISocket:           service.UseAPISocket,
-		Ipc:                    service.Ipc,
-		Isolation:              service.Isolation,
-		Tmpfs:                  append([]string(nil), service.Tmpfs...),
-		DNS:                    append([]string(nil), service.DNS...),
-		DNSSearch:              append([]string(nil), service.DNSSearch...),
-		DNSOptions:             append([]string(nil), service.DNSOpts...),
-		ExtraHosts:             service.ExtraHosts.AsList(":"),
-		CapAdd:                 append([]string(nil), service.CapAdd...),
-		CapDrop:                append([]string(nil), service.CapDrop...),
-		SecurityOpt:            append([]string(nil), service.SecurityOpt...),
-		MemLimit:               unitBytesValue(service.MemLimit),
-		MemReservation:         unitBytesValue(service.MemReservation),
-		MemSwapLimit:           unitBytesValue(service.MemSwapLimit),
-		MemSwappiness:          unitBytesValue(service.MemSwappiness),
-		OomKillDisable:         service.OomKillDisable,
-		OomScoreAdj:            service.OomScoreAdj,
-		PidsLimit:              service.PidsLimit,
-		CPUS:                   cpusValue(service.CPUS),
-		ShmSize:                unitBytesValue(service.ShmSize),
-		Ulimits:                ulimitValues(service.Ulimits),
-		Pid:                    service.Pid,
-		Sysctls:                mapMapping(service.Sysctls),
-		StopSignal:             service.StopSignal,
-		StopGracePeriodSeconds: durationSeconds(service.StopGracePeriod),
-		UserNSMode:             service.UserNSMode,
-		Uts:                    service.Uts,
+		Name:                    service.Name,
+		Image:                   service.Image,
+		PullPolicy:              service.PullPolicy,
+		Platform:                service.Platform,
+		Annotations:             mapMapping(service.Annotations),
+		Attach:                  service.Attach,
+		BlkioConfig:             service.BlkioConfig != nil,
+		MacAddress:              service.MacAddress,
+		Runtime:                 service.Runtime,
+		Cgroup:                  service.Cgroup,
+		CgroupParent:            service.CgroupParent,
+		CPUCount:                service.CPUCount,
+		CPUPercent:              service.CPUPercent,
+		CPUPeriod:               service.CPUPeriod,
+		CPUQuota:                service.CPUQuota,
+		CPURealtimePeriod:       service.CPURTPeriod,
+		CPURealtimeRuntime:      service.CPURTRuntime,
+		CPUSet:                  service.CPUSet,
+		CPUShares:               service.CPUShares,
+		Develop:                 service.Develop != nil,
+		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
+		Command:                 shellCommandValues(service.Command),
+		Entrypoint:              shellCommandValues(service.Entrypoint),
+		CredentialSpec:          service.CredentialSpec,
+		DeviceCgroupRules:       append([]string(nil), service.DeviceCgroupRules...),
+		Devices:                 append([]types.DeviceMapping(nil), service.Devices...),
+		Environment:             mapEnvironment(service.Environment),
+		EnvFiles:                envFileValues(service.EnvFiles),
+		Expose:                  append([]string(nil), service.Expose...),
+		Gpus:                    append([]types.DeviceRequest(nil), service.Gpus...),
+		Ports:                   portValues(service.Ports),
+		Volumes:                 mountValues(service.Volumes),
+		VolumeDriver:            service.VolumeDriver,
+		VolumesFrom:             append([]string(nil), service.VolumesFrom...),
+		Networks:                networkValues(service.Networks),
+		NetworkAliases:          networkAliasValues(service.Networks),
+		NetworkOptions:          networkOptionValues(service.Networks),
+		NetworkMode:             service.NetworkMode,
+		DependsOn:               dependsOnValues(service.DependsOn),
+		Links:                   append([]string(nil), service.Links...),
+		ExternalLinks:           append([]string(nil), service.ExternalLinks...),
+		Labels:                  mapLabels(service.Labels),
+		LabelFiles:              append([]string(nil), service.LabelFiles...),
+		ContainerName:           service.ContainerName,
+		Hostname:                service.Hostname,
+		DomainName:              service.DomainName,
+		WorkingDir:              service.WorkingDir,
+		User:                    service.User,
+		GroupAdd:                append([]string(nil), service.GroupAdd...),
+		TTY:                     service.Tty,
+		StdinOpen:               service.StdinOpen,
+		ReadOnly:                service.ReadOnly,
+		Privileged:              service.Privileged,
+		Restart:                 service.Restart,
+		Init:                    service.Init,
+		Scale:                   serviceScale(service),
+		Logging:                 service.Logging,
+		LogDriver:               service.LogDriver,
+		LogOptions:              mapStringMap(service.LogOpt),
+		StorageOptions:          mapStringMap(service.StorageOpt),
+		UseAPISocket:            service.UseAPISocket,
+		Ipc:                     service.Ipc,
+		Isolation:               service.Isolation,
+		Tmpfs:                   append([]string(nil), service.Tmpfs...),
+		DNS:                     append([]string(nil), service.DNS...),
+		DNSSearch:               append([]string(nil), service.DNSSearch...),
+		DNSOptions:              append([]string(nil), service.DNSOpts...),
+		ExtraHosts:              service.ExtraHosts.AsList(":"),
+		CapAdd:                  append([]string(nil), service.CapAdd...),
+		CapDrop:                 append([]string(nil), service.CapDrop...),
+		SecurityOpt:             append([]string(nil), service.SecurityOpt...),
+		MemLimit:                unitBytesValue(service.MemLimit),
+		MemReservation:          unitBytesValue(service.MemReservation),
+		MemSwapLimit:            unitBytesValue(service.MemSwapLimit),
+		MemSwappiness:           unitBytesValue(service.MemSwappiness),
+		OomKillDisable:          service.OomKillDisable,
+		OomScoreAdj:             service.OomScoreAdj,
+		PidsLimit:               service.PidsLimit,
+		CPUS:                    cpusValue(service.CPUS),
+		ShmSize:                 unitBytesValue(service.ShmSize),
+		Ulimits:                 ulimitValues(service.Ulimits),
+		Pid:                     service.Pid,
+		Sysctls:                 mapMapping(service.Sysctls),
+		StopSignal:              service.StopSignal,
+		StopGracePeriodSeconds:  durationSeconds(service.StopGracePeriod),
+		UserNSMode:              service.UserNSMode,
+		Uts:                     service.Uts,
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{
@@ -474,6 +476,74 @@ func serviceScale(service types.ServiceConfig) *int {
 		return &scale
 	}
 	return nil
+}
+
+// unsupportedDeployFields reports deploy fields beyond local replica count.
+func unsupportedDeployFields(deploy *types.DeployConfig) []string {
+	if deploy == nil {
+		return nil
+	}
+	fields := []string{}
+	appendUnsupportedDeployField(&fields, "mode", deploy.Mode != "")
+	appendUnsupportedDeployField(&fields, "labels", len(deploy.Labels) > 0)
+	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasFields(deploy.UpdateConfig))
+	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
+	appendUnsupportedDeployField(&fields, "resources.limits", resourceHasFields(deploy.Resources.Limits))
+	appendUnsupportedDeployField(&fields, "resources.reservations", resourceHasFields(deploy.Resources.Reservations))
+	appendUnsupportedDeployField(&fields, "restart_policy", restartPolicyHasFields(deploy.RestartPolicy))
+	appendUnsupportedDeployField(&fields, "placement", placementHasFields(deploy.Placement))
+	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
+	return fields
+}
+
+// appendUnsupportedDeployField records one unsupported deploy field when present.
+func appendUnsupportedDeployField(fields *[]string, name string, present bool) {
+	if present {
+		*fields = append(*fields, name)
+	}
+}
+
+// updateConfigHasFields reports whether update or rollback behavior was configured.
+func updateConfigHasFields(config *types.UpdateConfig) bool {
+	if config == nil {
+		return false
+	}
+	return config.Parallelism != nil ||
+		config.Delay != 0 ||
+		config.FailureAction != "" ||
+		config.Monitor != 0 ||
+		config.MaxFailureRatio != 0 ||
+		config.Order != ""
+}
+
+// resourceHasFields reports whether a deploy resource limit or reservation was configured.
+func resourceHasFields(resource *types.Resource) bool {
+	if resource == nil {
+		return false
+	}
+	return resource.NanoCPUs != 0 ||
+		resource.MemoryBytes != 0 ||
+		resource.Pids != 0 ||
+		len(resource.Devices) > 0 ||
+		len(resource.GenericResources) > 0
+}
+
+// restartPolicyHasFields reports whether a deploy restart policy was configured.
+func restartPolicyHasFields(policy *types.RestartPolicy) bool {
+	if policy == nil {
+		return false
+	}
+	return policy.Condition != "" ||
+		policy.Delay != nil ||
+		policy.MaxAttempts != nil ||
+		policy.Window != nil
+}
+
+// placementHasFields reports whether deploy placement constraints were configured.
+func placementHasFields(placement types.Placement) bool {
+	return len(placement.Constraints) > 0 ||
+		len(placement.Preferences) > 0 ||
+		placement.MaxReplicas != 0
 }
 
 // jsonMap widens typed compose-go maps so they can be encoded without losing
@@ -761,6 +831,7 @@ func unsupportedBuildFields(build *types.BuildConfig) []string {
 	return fields
 }
 
+// appendUnsupportedBuildField records one unsupported build field when present.
 func appendUnsupportedBuildField(fields *[]string, name string, present bool) {
 	if present {
 		*fields = append(*fields, name)

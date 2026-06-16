@@ -104,6 +104,7 @@ public struct ComposeService: Codable, Equatable {
     public var cpuset: String? = nil
     public var cpuShares: Int? = nil
     public var develop: Bool? = nil
+    public var unsupportedDeployFields: [String]? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -202,6 +203,7 @@ public struct ComposeService: Codable, Equatable {
         case cpuset
         case cpuShares
         case develop
+        case unsupportedDeployFields
         case build
         case command
         case entrypoint

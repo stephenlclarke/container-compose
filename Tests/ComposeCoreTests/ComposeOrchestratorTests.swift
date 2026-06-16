@@ -821,6 +821,33 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported deploy fields before creating resources")
+    func upRejectsUnsupportedDeployFieldsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.unsupportedDeployFields = ["mode", "resources.limits", "placement"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported deploy field error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode, resources.limits, placement; Compose Deploy Specification beyond replica count is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported user and security option fields before creating resources")
     func upRejectsUnsupportedUserAndSecurityOptionFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedUserAndSecurityOptionFieldCases() {
@@ -2346,6 +2373,33 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses unsupported build fields cache_from, platforms; advanced build fields are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported deploy fields before creating resources")
+    func runRejectsUnsupportedDeployFieldsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.unsupportedDeployFields = ["labels", "restart_policy", "endpoint_mode"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported deploy field error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses unsupported deploy fields labels, restart_policy, endpoint_mode; Compose Deploy Specification beyond replica count is not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

@@ -406,6 +406,7 @@ private extension ComposeOrchestrator {
     /// Rejects Compose features that need runtime support not available yet.
     func validateRuntimeSupport(service: ComposeService) throws {
         try validateBuildSupport(service: service)
+        try validateDeploySupport(service: service)
         let networks = service.networks ?? []
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; Apple container does not expose network connect yet")
@@ -515,6 +516,15 @@ private extension ComposeOrchestrator {
         }
         let fieldList = fields.joined(separator: ", ")
         throw ComposeError.unsupported("service '\(service.name)' uses unsupported build fields \(fieldList); advanced build fields are not implemented by container-compose yet")
+    }
+
+    /// Rejects deploy fields beyond replica count that are not orchestrated yet.
+    func validateDeploySupport(service: ComposeService) throws {
+        guard let fields = service.unsupportedDeployFields, !fields.isEmpty else {
+            return
+        }
+        let fieldList = fields.joined(separator: ", ")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond replica count is not implemented by container-compose yet")
     }
 
     /// Validates all selected services before any runtime side effects occur.

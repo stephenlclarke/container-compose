@@ -503,6 +503,61 @@ services:
 	}
 }
 
+func TestLoadProjectNormalizesUnsupportedDeployFields(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    deploy:
+      replicas: 1
+      mode: replicated
+      labels:
+        com.example.role: api
+      update_config:
+        parallelism: 2
+      rollback_config:
+        failure_action: pause
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.role == worker
+      endpoint_mode: vip
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if api.Scale == nil || *api.Scale != 1 {
+		t.Fatalf("api.Scale = %#v, want 1", api.Scale)
+	}
+	want := []string{
+		"mode",
+		"labels",
+		"update_config",
+		"rollback_config",
+		"resources.limits",
+		"resources.reservations",
+		"restart_policy",
+		"placement",
+		"endpoint_mode",
+	}
+	if !reflect.DeepEqual(api.UnsupportedDeployFields, want) {
+		t.Fatalf("api.UnsupportedDeployFields = %#v, want %#v", api.UnsupportedDeployFields, want)
+	}
+}
+
 func TestLoadProjectNormalizesNetworkMode(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
@@ -719,6 +774,12 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedBuildFields(&types.BuildConfig{}); len(fields) != 0 {
 		t.Fatalf("unsupportedBuildFields(empty) = %#v, want empty", fields)
 	}
+	if unsupportedDeployFields(nil) != nil {
+		t.Fatal("unsupportedDeployFields(nil) returned non-nil")
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(empty) = %#v, want empty", fields)
+	}
 	if got := unitBytesValue(0); got != "" {
 		t.Fatalf("unitBytesValue(0) = %q, want empty", got)
 	}
@@ -759,6 +820,56 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	}
 	if got := firstNonEmpty("", ""); got != "" {
 		t.Fatalf("firstNonEmpty empty = %q, want empty", got)
+	}
+}
+
+func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
+	parallelism := uint64(2)
+	maxAttempts := uint64(3)
+	delay := types.Duration(5 * time.Second)
+
+	got := unsupportedDeployFields(&types.DeployConfig{
+		Mode:   "replicated",
+		Labels: types.Labels{"com.example.role": "api"},
+		UpdateConfig: &types.UpdateConfig{
+			Parallelism: &parallelism,
+		},
+		RollbackConfig: &types.UpdateConfig{
+			FailureAction: "pause",
+		},
+		Resources: types.Resources{
+			Limits: &types.Resource{
+				MemoryBytes: types.UnitBytes(256),
+			},
+			Reservations: &types.Resource{
+				GenericResources: []types.GenericResource{{
+					DiscreteResourceSpec: &types.DiscreteGenericResource{Kind: "ssd", Value: 1},
+				}},
+			},
+		},
+		RestartPolicy: &types.RestartPolicy{
+			Condition:   "on-failure",
+			Delay:       &delay,
+			MaxAttempts: &maxAttempts,
+		},
+		Placement: types.Placement{
+			Constraints: []string{"node.role == worker"},
+		},
+		EndpointMode: "vip",
+	})
+	want := []string{
+		"mode",
+		"labels",
+		"update_config",
+		"rollback_config",
+		"resources.limits",
+		"resources.reservations",
+		"restart_policy",
+		"placement",
+		"endpoint_mode",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unsupportedDeployFields = %#v, want %#v", got, want)
 	}
 }
 
