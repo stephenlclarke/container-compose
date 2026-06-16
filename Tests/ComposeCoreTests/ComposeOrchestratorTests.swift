@@ -170,6 +170,30 @@ struct ComposeOrchestratorTests {
         #expect(project.volumes["data"] != nil)
     }
 
+    @Test("normalizer infers project directory from the first compose file")
+    func normalizerInfersProjectDirectoryFromFirstComposeFile() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          web:
+            image: nginx:latest
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+
+        #expect(project.workingDirectory == directory.path)
+        #expect(project.name == directory.lastPathComponent.lowercased())
+        #expect(project.services["web"]?.image == "nginx:latest")
+    }
+
     @Test("describes compose errors")
     func describesComposeErrors() {
         #expect(ComposeError.commandFailed(command: "container ps", status: 7, stderr: "").description == "container ps failed with exit code 7")
@@ -217,6 +241,39 @@ struct ComposeOrchestratorTests {
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
+    @Test("normalizer forwards inferred project directory")
+    func normalizerForwardsInferredProjectDirectory() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["/tmp/demo/compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+
+        _ = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(files: ["/tmp/demo/compose.yml"]))
+
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.containsSequence(["--file", "/tmp/demo/compose.yml"]))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
+    @Test("normalizer defaults project directory to current working directory")
+    func normalizerDefaultsProjectDirectoryToCurrentWorkingDirectory() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+
+        _ = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions())
+
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.containsSequence(["--project-directory", FileManager.default.currentDirectoryPath]))
+    }
+
     @Test("normalizer surfaces command and decode failures")
     func normalizerSurfacesCommandAndDecodeFailures() async throws {
         do {
@@ -225,7 +282,11 @@ struct ComposeOrchestratorTests {
             ])).normalize(options: ComposeOptions(files: ["compose.yml"]))
             Issue.record("Expected command failure")
         } catch let error as ComposeError {
-            #expect(error == .commandFailed(command: "/usr/bin/env go run . --file compose.yml", status: 23, stderr: "bad compose"))
+            #expect(error == .commandFailed(
+                command: "/usr/bin/env go run . --file compose.yml --project-directory \(FileManager.default.currentDirectoryPath)",
+                status: 23,
+                stderr: "bad compose"
+            ))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
