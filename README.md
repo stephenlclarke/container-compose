@@ -45,6 +45,8 @@ Useful targets:
 - `make package` builds the installable plugin archive.
 - `make sonar` runs a local Sonar scan when `SONAR_TOKEN` and `sonar-scanner` are available.
 
+For local installation steps, see [INSTALL.md](INSTALL.md).
+
 There is no local deploy target yet; release packaging is handled by `make package`, and publishing remains a GitHub Actions concern.
 
 ## License
