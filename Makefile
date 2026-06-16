@@ -24,6 +24,7 @@ PYTHON ?= python3
 COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
+MARKDOWN_FILES := README.md BUILD.md CONTRIBUTING.md DESIGN.md INSTALL.md
 
 .PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build coverage coverage-check sonar package lint format
 
@@ -94,11 +95,11 @@ package: build-release
 lint:
 	$(PYTHON) -m py_compile Tools/coverage/*.py
 	@if command -v markdownlint >/dev/null 2>&1; then \
-		markdownlint README.md; \
+		markdownlint $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \
-		markdownlint-cli2 README.md; \
+		markdownlint-cli2 $(MARKDOWN_FILES); \
 	else \
-		printf 'markdownlint not installed; skipping README lint\n'; \
+		printf 'markdownlint not installed; skipping Markdown lint\n'; \
 	fi
 	@unformatted="$$(find Tools/compose-normalizer -name '*.go' -type f -print0 | xargs -0 gofmt -l)"; \
 	if [[ -n "$$unformatted" ]]; then \
