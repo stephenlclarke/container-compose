@@ -90,7 +90,7 @@ struct GlobalOptions: ParsableArguments {
     @Flag(name: .customLong("dry-run"), help: "Print container commands instead of running them.")
     var dryRun: Bool = false
 
-    @Flag(name: [.customShort("v"), .customLong("verbose")], help: "Enable verbose compose output.")
+    @Flag(name: .customLong("verbose"), help: "Enable verbose compose output.")
     var verbose: Bool = false
 
     func composeOptions() -> ComposeOptions {
