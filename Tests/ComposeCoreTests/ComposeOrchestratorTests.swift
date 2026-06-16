@@ -636,6 +636,37 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects multiple networks with apple/container runtime gap before creating resources")
+    func upRejectsMultipleNetworksBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["frontend", "backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "frontend": ComposeNetwork(name: "frontend"),
+                "backend": ComposeNetwork(name: "backend"),
+            ]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported multiple network error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' declares multiple networks; apple/container does not expose network connect yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported network options before creating resources")
     func upRejectsUnsupportedNetworkOptionsBeforeCreatingResources() async throws {
         let runner = RecordingRunner()

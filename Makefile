@@ -127,8 +127,16 @@ cli-smoke: build
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \
 	[[ "$$top_output" == *"unsupported compose feature: top:"* ]]; \
+	[[ "$$top_output" == *"apple/container does not expose a process-list command yet"* ]]; \
 	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json 2>&1 || true)"; \
 	[[ "$$events_output" == *"unsupported compose feature: events:"* ]]; \
+	[[ "$$events_output" == *"apple/container does not expose an event stream yet"* ]]; \
+	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api 2>&1 || true)"; \
+	[[ "$$pause_output" == *"unsupported compose feature: pause:"* ]]; \
+	[[ "$$pause_output" == *"apple/container does not expose pause yet"* ]]; \
+	unpause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" unpause api 2>&1 || true)"; \
+	[[ "$$unpause_output" == *"unsupported compose feature: unpause:"* ]]; \
+	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
 	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]
 
