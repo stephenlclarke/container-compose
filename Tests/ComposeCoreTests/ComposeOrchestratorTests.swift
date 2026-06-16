@@ -554,6 +554,71 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
     }
 
+    @Test("up reuses existing containers when config hash matches")
+    func upReusesExistingContainersWhenConfigHashMatches() async throws {
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+        let createRunner = RecordingRunner(responses: [.failure, .success])
+
+        try await ComposeOrchestrator(runner: createRunner).up(project: project, options: ComposeUpOptions())
+
+        let run = try #require(createRunner.commands.last?.arguments)
+        let hash = try #require(composeConfigHash(in: run))
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [inspectResult(configHash: hash)])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands.map(\.arguments) == [["container", "inspect", "demo-api-1"]])
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+    }
+
+    @Test("up recreates existing containers when config hash changes")
+    func upRecreatesExistingContainersWhenConfigHashChanges() async throws {
+        let runner = RecordingRunner(responses: [
+            inspectResult(configHash: "stale"),
+            .success,
+            .success,
+            .success,
+        ])
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
+        #expect(runner.commands[1].arguments == ["container", "stop", "demo-api-1"])
+        #expect(runner.commands[2].arguments == ["container", "delete", "demo-api-1"])
+        #expect(runner.commands[3].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(composeConfigHash(in: runner.commands[3].arguments) != "stale")
+    }
+
+    @Test("up force recreates existing containers even when config hash matches")
+    func upForceRecreatesExistingContainersWhenConfigHashMatches() async throws {
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+        let createRunner = RecordingRunner(responses: [.failure, .success])
+
+        try await ComposeOrchestrator(runner: createRunner).up(project: project, options: ComposeUpOptions())
+
+        let run = try #require(createRunner.commands.last?.arguments)
+        let hash = try #require(composeConfigHash(in: run))
+        let runner = RecordingRunner(responses: [
+            inspectResult(configHash: hash),
+            .success,
+            .success,
+            .success,
+        ])
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions(forceRecreate: true))
+
+        #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
+        #expect(runner.commands[1].arguments == ["container", "stop", "demo-api-1"])
+        #expect(runner.commands[2].arguments == ["container", "delete", "demo-api-1"])
+        #expect(runner.commands[3].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+    }
+
     @Test("dry run emits quoted commands")
     func dryRunEmitsQuotedCommands() async throws {
         let emitted = MessageRecorder()
@@ -673,6 +738,42 @@ struct ComposeOrchestratorTests {
 private extension CommandResult {
     static let success = CommandResult(status: 0, stdout: "", stderr: "")
     static let failure = CommandResult(status: 1, stdout: "", stderr: "")
+}
+
+private let composeConfigHashLabel = "com.apple.container.compose.config-hash"
+
+private func inspectResult(configHash: String) -> CommandResult {
+    CommandResult(
+        status: 0,
+        stdout: """
+        [
+          {
+            "id": "demo-api-1",
+            "configuration": {
+              "labels": {
+                "\(composeConfigHashLabel)": "\(configHash)"
+              }
+            }
+          }
+        ]
+        """,
+        stderr: ""
+    )
+}
+
+private func composeConfigHash(in arguments: [String]) -> String? {
+    for index in arguments.indices where arguments[index] == "--label" {
+        let valueIndex = arguments.index(after: index)
+        guard valueIndex < arguments.endIndex else {
+            continue
+        }
+        let label = arguments[valueIndex]
+        let prefix = "\(composeConfigHashLabel)="
+        if label.hasPrefix(prefix) {
+            return String(label.dropFirst(prefix.count))
+        }
+    }
+    return nil
 }
 
 private final class MessageRecorder: @unchecked Sendable {
