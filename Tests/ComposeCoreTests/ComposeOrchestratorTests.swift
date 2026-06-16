@@ -371,6 +371,25 @@ struct ComposeOrchestratorTests {
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
+    @Test("normalizer uses configured fallback launcher")
+    func normalizerUsesConfiguredFallbackLauncher() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+
+        _ = try await ComposeNormalizer(runner: runner, fallbackLauncher: "custom-env")
+            .normalize(options: ComposeOptions(files: ["compose.yml"], projectDirectory: "/tmp/demo"))
+
+        let command = try #require(runner.commands.first)
+        #expect(command.executable == "custom-env")
+        #expect(command.arguments.starts(with: ["go", "run", "."]))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
     @Test("normalizer forwards inferred project directory")
     func normalizerForwardsInferredProjectDirectory() async throws {
         let runner = RecordingRunner(responses: [
