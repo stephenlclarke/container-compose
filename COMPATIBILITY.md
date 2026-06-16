@@ -45,6 +45,9 @@ These fields currently fail before runtime side effects because the equivalent l
 
 - Multiple service networks.
 - Network aliases.
+- Service network attachment options including `driver_opts`, `gw_priority`,
+  `interface_name`, `ipv4_address`, `ipv6_address`, `link_local_ips`,
+  `mac_address`, and `priority`.
 - `depends_on` conditions other than `service_started`.
 - `extra_hosts`.
 - `hostname`.

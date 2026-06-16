@@ -410,6 +410,15 @@ private extension ComposeOrchestrator {
            networkAliases.contains(where: { !$0.value.isEmpty }) {
             throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network alias support needs an apple/container runtime gap PR")
         }
+        if let networkOptions = service.networkOptions {
+            for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {
+                let fields = options.unsupportedFieldNames()
+                if !fields.isEmpty {
+                    let fieldList = fields.joined(separator: ", ")
+                    throw ComposeError.unsupported("service '\(service.name)' uses network attachment options \(fieldList) on network '\(network)'; network attachment options need an apple/container runtime gap PR")
+                }
+            }
+        }
         if let dependsOn = service.dependsOn {
             for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
                 throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'")
@@ -766,6 +775,38 @@ private extension ComposeOrchestrator {
 
 private struct ExistingContainer {
     var configHash: String?
+}
+
+private extension ComposeNetworkOptions {
+    /// Names the Compose fields that need runtime attachment support.
+    func unsupportedFieldNames() -> [String] {
+        var fields: [String] = []
+        if let driverOpts, !driverOpts.isEmpty {
+            fields.append("driver_opts")
+        }
+        if let gatewayPriority, gatewayPriority != 0 {
+            fields.append("gw_priority")
+        }
+        if let interfaceName, !interfaceName.isEmpty {
+            fields.append("interface_name")
+        }
+        if let ipv4Address, !ipv4Address.isEmpty {
+            fields.append("ipv4_address")
+        }
+        if let ipv6Address, !ipv6Address.isEmpty {
+            fields.append("ipv6_address")
+        }
+        if let linkLocalIPs, !linkLocalIPs.isEmpty {
+            fields.append("link_local_ips")
+        }
+        if let macAddress, !macAddress.isEmpty {
+            fields.append("mac_address")
+        }
+        if let priority, priority != 0 {
+            fields.append("priority")
+        }
+        return fields
+    }
 }
 
 private struct ServiceConfigFingerprint: Encodable {

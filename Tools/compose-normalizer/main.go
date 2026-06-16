@@ -65,42 +65,43 @@ type normalizedProject struct {
 // normalizedService contains the Compose service fields Swift can either
 // orchestrate directly or preserve for config output and runtime gap checks.
 type normalizedService struct {
-	Name           string              `json:"name"`
-	Image          string              `json:"image,omitempty"`
-	PullPolicy     string              `json:"pullPolicy,omitempty"`
-	Build          *normalizedBuild    `json:"build,omitempty"`
-	Command        []string            `json:"command,omitempty"`
-	Entrypoint     []string            `json:"entrypoint,omitempty"`
-	Environment    map[string]*string  `json:"environment,omitempty"`
-	EnvFiles       []string            `json:"envFiles,omitempty"`
-	Ports          []string            `json:"ports,omitempty"`
-	Volumes        []normalizedMount   `json:"volumes,omitempty"`
-	Networks       []string            `json:"networks,omitempty"`
-	NetworkAliases map[string][]string `json:"networkAliases,omitempty"`
-	DependsOn      map[string]string   `json:"dependsOn,omitempty"`
-	Labels         map[string]string   `json:"labels,omitempty"`
-	ContainerName  string              `json:"containerName,omitempty"`
-	Hostname       string              `json:"hostname,omitempty"`
-	WorkingDir     string              `json:"workingDir,omitempty"`
-	User           string              `json:"user,omitempty"`
-	TTY            bool                `json:"tty,omitempty"`
-	StdinOpen      bool                `json:"stdinOpen,omitempty"`
-	ReadOnly       bool                `json:"readOnly,omitempty"`
-	Privileged     bool                `json:"privileged,omitempty"`
-	Restart        string              `json:"restart,omitempty"`
-	Init           *bool               `json:"init,omitempty"`
-	Tmpfs          []string            `json:"tmpfs,omitempty"`
-	DNS            []string            `json:"dns,omitempty"`
-	DNSSearch      []string            `json:"dnsSearch,omitempty"`
-	ExtraHosts     []string            `json:"extraHosts,omitempty"`
-	CapAdd         []string            `json:"capAdd,omitempty"`
-	CapDrop        []string            `json:"capDrop,omitempty"`
-	MemLimit       string              `json:"memLimit,omitempty"`
-	CPUS           string              `json:"cpus,omitempty"`
-	Healthcheck    any                 `json:"healthcheck,omitempty"`
-	Configs        any                 `json:"configs,omitempty"`
-	Secrets        any                 `json:"secrets,omitempty"`
-	Extensions     map[string]any      `json:"extensions,omitempty"`
+	Name           string                              `json:"name"`
+	Image          string                              `json:"image,omitempty"`
+	PullPolicy     string                              `json:"pullPolicy,omitempty"`
+	Build          *normalizedBuild                    `json:"build,omitempty"`
+	Command        []string                            `json:"command,omitempty"`
+	Entrypoint     []string                            `json:"entrypoint,omitempty"`
+	Environment    map[string]*string                  `json:"environment,omitempty"`
+	EnvFiles       []string                            `json:"envFiles,omitempty"`
+	Ports          []string                            `json:"ports,omitempty"`
+	Volumes        []normalizedMount                   `json:"volumes,omitempty"`
+	Networks       []string                            `json:"networks,omitempty"`
+	NetworkAliases map[string][]string                 `json:"networkAliases,omitempty"`
+	NetworkOptions map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
+	DependsOn      map[string]string                   `json:"dependsOn,omitempty"`
+	Labels         map[string]string                   `json:"labels,omitempty"`
+	ContainerName  string                              `json:"containerName,omitempty"`
+	Hostname       string                              `json:"hostname,omitempty"`
+	WorkingDir     string                              `json:"workingDir,omitempty"`
+	User           string                              `json:"user,omitempty"`
+	TTY            bool                                `json:"tty,omitempty"`
+	StdinOpen      bool                                `json:"stdinOpen,omitempty"`
+	ReadOnly       bool                                `json:"readOnly,omitempty"`
+	Privileged     bool                                `json:"privileged,omitempty"`
+	Restart        string                              `json:"restart,omitempty"`
+	Init           *bool                               `json:"init,omitempty"`
+	Tmpfs          []string                            `json:"tmpfs,omitempty"`
+	DNS            []string                            `json:"dns,omitempty"`
+	DNSSearch      []string                            `json:"dnsSearch,omitempty"`
+	ExtraHosts     []string                            `json:"extraHosts,omitempty"`
+	CapAdd         []string                            `json:"capAdd,omitempty"`
+	CapDrop        []string                            `json:"capDrop,omitempty"`
+	MemLimit       string                              `json:"memLimit,omitempty"`
+	CPUS           string                              `json:"cpus,omitempty"`
+	Healthcheck    any                                 `json:"healthcheck,omitempty"`
+	Configs        any                                 `json:"configs,omitempty"`
+	Secrets        any                                 `json:"secrets,omitempty"`
+	Extensions     map[string]any                      `json:"extensions,omitempty"`
 }
 
 // normalizedBuild keeps the build fields needed to call `container build`.
@@ -126,6 +127,18 @@ type normalizedNetwork struct {
 	External bool              `json:"external,omitempty"`
 	Driver   string            `json:"driver,omitempty"`
 	Labels   map[string]string `json:"labels,omitempty"`
+}
+
+// normalizedNetworkOptions preserves per-service network attachment settings.
+type normalizedNetworkOptions struct {
+	DriverOpts      map[string]string `json:"driverOpts,omitempty"`
+	GatewayPriority int               `json:"gatewayPriority,omitempty"`
+	InterfaceName   string            `json:"interfaceName,omitempty"`
+	IPv4Address     string            `json:"ipv4Address,omitempty"`
+	IPv6Address     string            `json:"ipv6Address,omitempty"`
+	LinkLocalIPs    []string          `json:"linkLocalIPs,omitempty"`
+	MacAddress      string            `json:"macAddress,omitempty"`
+	Priority        int               `json:"priority,omitempty"`
 }
 
 // normalizedVolume contains project-level volume metadata.
@@ -295,6 +308,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Volumes:        mountValues(service.Volumes),
 		Networks:       networkValues(service.Networks),
 		NetworkAliases: networkAliasValues(service.Networks),
+		NetworkOptions: networkOptionValues(service.Networks),
 		DependsOn:      dependsOnValues(service.DependsOn),
 		Labels:         mapLabels(service.Labels),
 		ContainerName:  service.ContainerName,
@@ -477,6 +491,48 @@ func networkAliasValues(networks map[string]*types.ServiceNetworkConfig) map[str
 	return result
 }
 
+// networkOptionValues returns unsupported service network options by network.
+func networkOptionValues(networks map[string]*types.ServiceNetworkConfig) map[string]normalizedNetworkOptions {
+	if len(networks) == 0 {
+		return nil
+	}
+	result := map[string]normalizedNetworkOptions{}
+	for name, config := range networks {
+		if config == nil {
+			continue
+		}
+		options := normalizedNetworkOptions{
+			DriverOpts:      mapOptions(config.DriverOpts),
+			GatewayPriority: config.GatewayPriority,
+			InterfaceName:   config.InterfaceName,
+			IPv4Address:     config.Ipv4Address,
+			IPv6Address:     config.Ipv6Address,
+			LinkLocalIPs:    append([]string(nil), config.LinkLocalIPs...),
+			MacAddress:      config.MacAddress,
+			Priority:        config.Priority,
+		}
+		if options.hasValues() {
+			result[name] = options
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// hasValues reports whether any attachment option carries Compose data.
+func (options normalizedNetworkOptions) hasValues() bool {
+	return len(options.DriverOpts) > 0 ||
+		options.GatewayPriority != 0 ||
+		options.InterfaceName != "" ||
+		options.IPv4Address != "" ||
+		options.IPv6Address != "" ||
+		len(options.LinkLocalIPs) > 0 ||
+		options.MacAddress != "" ||
+		options.Priority != 0
+}
+
 // dependsOnValues records dependency conditions for Swift runtime gap checks.
 func dependsOnValues(dependsOn types.DependsOnConfig) map[string]string {
 	if len(dependsOn) == 0 {
@@ -496,6 +552,18 @@ func mapLabels(labels types.Labels) map[string]string {
 	}
 	result := map[string]string{}
 	for key, value := range labels {
+		result[key] = value
+	}
+	return result
+}
+
+// mapOptions copies Compose driver options into a regular string map.
+func mapOptions(options types.Options) map[string]string {
+	if len(options) == 0 {
+		return nil
+	}
+	result := map[string]string{}
+	for key, value := range options {
 		result[key] = value
 	}
 	return result

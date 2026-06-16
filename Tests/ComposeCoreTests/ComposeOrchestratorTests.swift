@@ -479,6 +479,37 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported network options before creating resources")
+    func upRejectsUnsupportedNetworkOptionsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(ipv4Address: "10.10.0.5", priority: 42),
+                    ]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported network option error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses network attachment options ipv4_address, priority on network 'backend'; network attachment options need an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported healthchecks before creating resources")
     func upRejectsUnsupportedHealthchecksBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -666,6 +697,7 @@ struct ComposeOrchestratorTests {
               default:
                 aliases:
                   - api.internal
+                ipv4_address: 10.10.0.5
             ports:
               - "8080:80"
             environment:
@@ -685,6 +717,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.pullPolicy == "always")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
+        #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(ipv4Address: "10.10.0.5")])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.ports == ["8080:80"])
         #expect(project.volumes["data"] != nil)
@@ -1319,6 +1352,37 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported network alias error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses network aliases; network alias support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported network options before creating resources")
+    func runRejectsUnsupportedNetworkOptionsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(interfaceName: "eth0"),
+                    ]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported network option error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses network attachment options interface_name on network 'backend'; network attachment options need an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

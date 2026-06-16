@@ -126,6 +126,16 @@ services:
       backend:
         aliases:
           - api.internal
+        driver_opts:
+          com.example.mode: bridge
+        gw_priority: 1
+        interface_name: eth0
+        ipv4_address: 10.10.0.5
+        ipv6_address: 2001:db8::5
+        link_local_ips:
+          - 169.254.1.5
+        mac_address: 02:42:ac:11:00:02
+        priority: 42
     depends_on:
       redis:
         condition: service_started
@@ -171,6 +181,20 @@ volumes:
 	}
 	if got, want := api.NetworkAliases, map[string][]string{"backend": []string{"api.internal"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.NetworkAliases = %#v, want %#v", got, want)
+	}
+	if got, want := api.NetworkOptions, map[string]normalizedNetworkOptions{
+		"backend": {
+			DriverOpts:      map[string]string{"com.example.mode": "bridge"},
+			GatewayPriority: 1,
+			InterfaceName:   "eth0",
+			IPv4Address:     "10.10.0.5",
+			IPv6Address:     "2001:db8::5",
+			LinkLocalIPs:    []string{"169.254.1.5"},
+			MacAddress:      "02:42:ac:11:00:02",
+			Priority:        42,
+		},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.NetworkOptions = %#v, want %#v", got, want)
 	}
 	if got, want := api.DependsOn, map[string]string{"redis": "service_started"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DependsOn = %#v, want %#v", got, want)

@@ -96,6 +96,7 @@ public struct ComposeService: Codable, Equatable {
     public var volumes: [ComposeMount]? = nil
     public var networks: [String]? = nil
     public var networkAliases: [String: [String]]? = nil
+    public var networkOptions: [String: ComposeNetworkOptions]? = nil
     public var dependsOn: [String: String]? = nil
     public var labels: [String: String]? = nil
     public var containerName: String? = nil
@@ -139,6 +140,7 @@ public struct ComposeService: Codable, Equatable {
         case volumes
         case networks
         case networkAliases
+        case networkOptions
         case dependsOn
         case labels
         case containerName
@@ -163,6 +165,38 @@ public struct ComposeService: Codable, Equatable {
         case configs
         case secrets
         case extensions
+    }
+}
+
+/// Per-service network attachment options normalized from Compose.
+public struct ComposeNetworkOptions: Codable, Equatable {
+    public var driverOpts: [String: String]?
+    public var gatewayPriority: Int?
+    public var interfaceName: String?
+    public var ipv4Address: String?
+    public var ipv6Address: String?
+    public var linkLocalIPs: [String]?
+    public var macAddress: String?
+    public var priority: Int?
+
+    public init(
+        driverOpts: [String: String]? = nil,
+        gatewayPriority: Int? = nil,
+        interfaceName: String? = nil,
+        ipv4Address: String? = nil,
+        ipv6Address: String? = nil,
+        linkLocalIPs: [String]? = nil,
+        macAddress: String? = nil,
+        priority: Int? = nil
+    ) {
+        self.driverOpts = driverOpts
+        self.gatewayPriority = gatewayPriority
+        self.interfaceName = interfaceName
+        self.ipv4Address = ipv4Address
+        self.ipv6Address = ipv6Address
+        self.linkLocalIPs = linkLocalIPs
+        self.macAddress = macAddress
+        self.priority = priority
     }
 }
 
