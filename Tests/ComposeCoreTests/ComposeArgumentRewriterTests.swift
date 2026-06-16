@@ -129,6 +129,44 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("skips global option values when locating the subcommand")
+    func skipsGlobalOptionValuesWhenLocatingSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-f",
+            "up",
+            "--project-name",
+            "logs",
+            "--env-file",
+            "down",
+            "config",
+        ])
+
+        #expect(rewritten == [
+            "config",
+            "-f",
+            "up",
+            "--project-name",
+            "logs",
+            "--env-file",
+            "down",
+        ])
+    }
+
+    @Test("skips equals-form global option values when locating the subcommand")
+    func skipsEqualsFormGlobalOptionValuesWhenLocatingSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--file=up",
+            "--project-name=logs",
+            "ps",
+        ])
+
+        #expect(rewritten == [
+            "ps",
+            "--file=up",
+            "--project-name=logs",
+        ])
+    }
+
     @Test("moves root compose options for version")
     func movesRootComposeOptionsForVersion() {
         let rewritten = ComposeArgumentRewriter.rewrite([

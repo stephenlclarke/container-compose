@@ -66,7 +66,7 @@ public enum ComposeArgumentRewriter {
     /// Returns arguments with known Compose global options moved immediately
     /// after the subcommand while preserving unknown pre-command arguments.
     public static func rewrite(_ arguments: [String]) -> [String] {
-        guard let commandIndex = arguments.firstIndex(where: { subcommands.contains($0) }) else {
+        guard let commandIndex = commandIndex(in: arguments) else {
             return arguments
         }
 
@@ -78,6 +78,30 @@ public enum ComposeArgumentRewriter {
         )
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
+    }
+
+    private static func commandIndex(in arguments: [String]) -> Array<String>.Index? {
+        var index = arguments.startIndex
+        while index < arguments.endIndex {
+            let argument = arguments[index]
+            if argument == "--" {
+                return nil
+            }
+            if subcommands.contains(argument) {
+                return index
+            }
+
+            guard let kind = globalOptionKind(argument) else {
+                index = arguments.index(after: index)
+                continue
+            }
+
+            index = arguments.index(after: index)
+            if kind == .value, !argument.contains("="), index < arguments.endIndex {
+                index = arguments.index(after: index)
+            }
+        }
+        return nil
     }
 
     private static func splitGlobalOptions(_ arguments: [String]) -> (retained: [String], moved: [String]) {
