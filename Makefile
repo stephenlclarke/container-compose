@@ -93,10 +93,10 @@ cli-smoke: build
 	[[ "$$run_output" == *" alpine echo hello"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
-	[[ "$$up_output" == *"--detach"* ]]; \
-	attached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-detach api)"; \
-	[[ "$$attached_output" == *"container run"* ]]; \
-	[[ "$$attached_output" != *"--detach"* ]]; \
+	[[ "$$up_output" != *"--detach"* ]]; \
+	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
+	[[ "$$detached_output" == *"container run"* ]]; \
+	[[ "$$detached_output" == *"--detach"* ]]; \
 	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \

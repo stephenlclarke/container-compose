@@ -59,7 +59,7 @@ public struct ComposeUpOptions {
     public init(
         services: [String] = [],
         build: Bool = false,
-        detach: Bool = true,
+        detach: Bool = false,
         forceRecreate: Bool = false,
         noRecreate: Bool = false,
         removeOrphans: Bool = false,

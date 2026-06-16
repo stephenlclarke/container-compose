@@ -143,7 +143,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[2].arguments == ["container", "inspect", "demo-api-1"])
 
         let run = runner.commands[3].arguments
-        #expect(run.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(run.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!run.contains("--detach"))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.project.working-directory=/tmp/demo"]))
         #expect(run.containsLabel(withPrefix: "com.apple.container.compose.project.config-files-hash="))
@@ -260,13 +261,33 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.count == 5)
         #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
-        #expect(runner.commands[1].arguments.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(runner.commands[1].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!runner.commands[1].arguments.contains("--detach"))
         #expect(runner.commands[1].arguments.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
         #expect(runner.commands[1].arguments.containsSequence(["--label", "com.apple.container.compose.service=api"]))
         #expect(runner.commands[1].arguments.last == "example/api:latest")
         #expect(runner.commands[2].arguments == ["container", "list", "--format", "json", "--all"])
         #expect(runner.commands[3].arguments == ["container", "stop", "demo-worker-1"])
         #expect(runner.commands[4].arguments == ["container", "delete", "demo-worker-1"])
+    }
+
+    @Test("up emits detach flag only when requested")
+    func upEmitsDetachFlagOnlyWhenRequested() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions(detach: true))
+
+        #expect(runner.commands[1].arguments.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(runner.commands[1].arguments.last == "example/api:latest")
     }
 
     @Test("up build does not rebuild build-only services")
@@ -3015,7 +3036,7 @@ struct ComposeOrchestratorTests {
 
         let messages = emitted.messages
         #expect(messages.contains("+ container inspect demo-api-1"))
-        #expect(messages.contains { $0.hasPrefix("+ container run ") && $0.contains("--detach") })
+        #expect(messages.contains { $0.hasPrefix("+ container run ") && !$0.contains("--detach") })
         #expect(!messages.contains("compose: reusing existing container demo-api-1"))
         #expect(!messages.contains { $0.contains("container stop demo-api-1") })
         #expect(!messages.contains { $0.contains("container delete demo-api-1") })

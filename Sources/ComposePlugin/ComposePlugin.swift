@@ -154,8 +154,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .shortAndLong, help: "Build images before starting services.")
     var build = false
-    @Flag(name: .shortAndLong, inversion: .prefixedNo, help: "Run containers in the background.")
-    var detach = true
+    @Flag(name: .shortAndLong, help: "Run containers in the background.")
+    var detach = false
     @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
     var forceRecreate = false
     @Flag(name: .customLong("no-recreate"), help: "Reuse existing containers.")
