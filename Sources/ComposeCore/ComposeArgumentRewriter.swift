@@ -61,7 +61,6 @@ public enum ComposeArgumentRewriter {
         "--verbose": .flag,
         "-f": .value,
         "-p": .value,
-        "-v": .flag,
     ]
 
     /// Returns arguments with known Compose global options moved immediately

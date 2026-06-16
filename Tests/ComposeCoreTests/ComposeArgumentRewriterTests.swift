@@ -78,6 +78,23 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps short v available to subcommands")
+    func keepsShortVAvailableToSubcommands() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-v",
+            "--verbose",
+            "down",
+            "-v",
+        ])
+
+        #expect(rewritten == [
+            "-v",
+            "down",
+            "--verbose",
+            "-v",
+        ])
+    }
+
     @Test("returns arguments unchanged when no subcommand is present")
     func returnsArgumentsUnchangedWhenNoSubcommandIsPresent() {
         let arguments = ["--help", "--verbose"]
