@@ -771,6 +771,26 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
     }
 
+    @Test("run assigns unique names to one-off containers")
+    func runAssignsUniqueNamesToOneOffContainers() async throws {
+        let identifiers = OneOffIdentifierSource(["first", "second"])
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { identifiers.next() })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        try await orchestrator.run(project: project, serviceName: "job", command: ["true"], remove: true)
+        try await orchestrator.run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let names = runner.commands.compactMap { $0.arguments.value(after: "--name") }
+        #expect(names == ["demo-job-run-first", "demo-job-run-second"])
+    }
+
     @Test("up reuses existing containers when no recreate is requested")
     func upReusesExistingContainersWhenNoRecreateIsRequested() async throws {
         let emitted = MessageRecorder()
@@ -1139,6 +1159,21 @@ private final class MessageRecorder: @unchecked Sendable {
     }
 }
 
+private final class OneOffIdentifierSource: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String]
+
+    init(_ values: [String]) {
+        self.values = values
+    }
+
+    func next() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return values.isEmpty ? "fallback" : values.removeFirst()
+    }
+}
+
 private extension Array where Element: Equatable {
     func containsSequence(_ sequence: [Element]) -> Bool {
         guard !sequence.isEmpty, sequence.count <= count else {
@@ -1155,6 +1190,17 @@ private extension Array where Element: Equatable {
 }
 
 private extension Array where Element == String {
+    func value(after option: String) -> String? {
+        guard let index = firstIndex(of: option) else {
+            return nil
+        }
+        let valueIndex = self.index(after: index)
+        guard valueIndex < endIndex else {
+            return nil
+        }
+        return self[valueIndex]
+    }
+
     func containsLabel(withPrefix prefix: String) -> Bool {
         indices.contains { index in
             self[index] == "--label"

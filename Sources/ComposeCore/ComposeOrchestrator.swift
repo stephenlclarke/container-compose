@@ -24,18 +24,25 @@ public struct ComposeExecutionOptions {
     public var dryRun: Bool
     public var containerBinary: String
     public var environmentLauncher: String
+    public var oneOffIdentifier: @Sendable () -> String
     public var emit: @Sendable (String) -> Void
 
     public init(
         dryRun: Bool = false,
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
+        oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
         emit: @escaping @Sendable (String) -> Void = { print($0) }
     ) {
         self.dryRun = dryRun
         self.containerBinary = containerBinary
         self.environmentLauncher = environmentLauncher
+        self.oneOffIdentifier = oneOffIdentifier
         self.emit = emit
+    }
+
+    public static func defaultOneOffIdentifier() -> String {
+        String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
     }
 }
 
@@ -375,6 +382,14 @@ private extension ComposeOrchestrator {
         }
     }
 
+    func containerName(project: ComposeProject, service: ComposeService, oneOff: Bool) -> String {
+        if !oneOff, let containerName = service.containerName, !containerName.isEmpty {
+            return slug(containerName)
+        }
+        let suffix = oneOff ? "run-\(slug(options.oneOffIdentifier()))" : "1"
+        return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
+    }
+
     func validate(project: ComposeProject) throws {
         guard !project.name.isEmpty else {
             throw ComposeError.invalidProject("project name is empty")
@@ -634,14 +649,6 @@ private let configFilesHashLabel = "com.apple.container.compose.project.config-f
 
 private func resourceName(project: String, name: String) -> String {
     "\(slug(project))_\(slug(name))"
-}
-
-private func containerName(project: ComposeProject, service: ComposeService, oneOff: Bool) -> String {
-    if !oneOff, let containerName = service.containerName, !containerName.isEmpty {
-        return slug(containerName)
-    }
-    let suffix = oneOff ? "run-\(Int(Date().timeIntervalSince1970))" : "1"
-    return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
 }
 
 private func resourceLabels(project: ComposeProject) -> [String] {
