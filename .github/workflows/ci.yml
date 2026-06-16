@@ -63,10 +63,14 @@ jobs:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
+      - name: Install Markdown lint
+        run: npm install --global markdownlint-cli@0.48.0
+
       - name: Print toolchain versions
         run: |
           swift --version
           xcodebuild -version
+          markdownlint --version
 
       - name: Run local CI workflow
         run: make ci

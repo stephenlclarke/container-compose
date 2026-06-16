@@ -21,6 +21,7 @@ SHELL := /bin/bash
 SWIFT ?= swift
 GO ?= go
 PYTHON ?= python3
+MARKDOWNLINT ?= markdownlint
 COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
@@ -142,12 +143,13 @@ package: build-release
 
 lint:
 	$(PYTHON) -m py_compile Tools/coverage/*.py
-	@if command -v markdownlint >/dev/null 2>&1; then \
-		markdownlint $(MARKDOWN_FILES); \
+	@if command -v "$(MARKDOWNLINT)" >/dev/null 2>&1; then \
+		"$(MARKDOWNLINT)" $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \
 		markdownlint-cli2 $(MARKDOWN_FILES); \
 	else \
-		printf 'markdownlint not installed; skipping Markdown lint\n'; \
+		printf 'markdownlint is required; install markdownlint-cli or set MARKDOWNLINT=/path/to/markdownlint\n' >&2; \
+		exit 1; \
 	fi
 	@unformatted="$$(find Tools/compose-normalizer -name '*.go' -type f -print0 | xargs -0 gofmt -l)"; \
 	if [[ -n "$$unformatted" ]]; then \

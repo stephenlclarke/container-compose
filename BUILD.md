@@ -22,8 +22,12 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
 - Python 3 for coverage conversion and coverage threshold checks. macOS
   developer machines usually already have `python3`; it can also be installed
   from <https://www.python.org/downloads/> or with Homebrew.
-- Optional: `markdownlint` or `markdownlint-cli2` for Markdown linting. The
-  Makefile skips Markdown linting when neither command is installed.
+- Node.js with npm for the required Markdown lint step. Install Node.js from <https://nodejs.org/> or with Homebrew, then install the pinned linter used by CI:
+
+  ```sh
+  npm install --global markdownlint-cli@0.48.0
+  ```
+
 - Optional: `sonar-scanner` and `SONAR_TOKEN` for local SonarQube scans.
 
 If `swift` resolves to the Command Line Tools toolchain instead of Xcode, set:
@@ -99,9 +103,7 @@ Run the same validation used by GitHub Actions:
 make ci
 ```
 
-`make ci` resolves Swift packages, lints available local sources, builds the
-Swift package, runs Swift and Go coverage, checks the coverage threshold, and
-builds the Go helper.
+`make ci` resolves Swift packages, runs required Markdown linting and Go formatting checks, builds the Swift package, runs Swift and Go coverage, checks the coverage threshold, and builds the Go helper.
 
 The default minimum coverage is 85 percent for both Swift and Go:
 
