@@ -120,7 +120,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         for service in services {
             try validateRuntimeSupport(service: service)
-            if service.image == nil, service.build != nil {
+            if !up.build, service.image == nil, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
             }
 
