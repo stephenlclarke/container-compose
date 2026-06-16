@@ -210,6 +210,7 @@ public struct RecordedCommand: Equatable, Sendable {
     public var executable: String
     public var arguments: [String]
     public var workingDirectory: URL?
+    public var environment: [String: String]?
 }
 
 /// Test runner that records invocations and returns queued responses.
@@ -228,7 +229,12 @@ public final class RecordingRunner: CommandRunning, @unchecked Sendable {
         environment: [String: String]?,
         input: Data?
     ) async throws -> CommandResult {
-        commands.append(RecordedCommand(executable: executable, arguments: arguments, workingDirectory: workingDirectory))
+        commands.append(RecordedCommand(
+            executable: executable,
+            arguments: arguments,
+            workingDirectory: workingDirectory,
+            environment: environment
+        ))
         if !responses.isEmpty {
             return responses.removeFirst()
         }
