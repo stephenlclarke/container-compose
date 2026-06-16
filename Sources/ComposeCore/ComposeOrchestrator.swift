@@ -144,11 +144,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Stops and removes project-scoped resources.
     public func down(project: ComposeProject, options down: ComposeDownOptions) async throws {
         let services = try orderedServices(project: project, selected: [])
+        let declaredContainers = Set(services.map { containerName(project: project, service: $0, oneOff: false) })
         for service in services.reversed() {
             let name = containerName(project: project, service: service, oneOff: false)
             try await runContainer(["stop", name], check: false)
             try await runContainer(["delete", name], check: false)
         }
+        try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
             try await runContainer(["network", "delete", resourceName(project: project.name, name: name)], check: false)
@@ -558,6 +560,23 @@ private extension ComposeOrchestrator {
         return ExistingContainer(configHash: inspectConfigHash(from: result.stdout))
     }
 
+    func removeRemainingProjectContainers(project: ComposeProject, excluding declaredContainers: Set<String>) async throws {
+        let args = ["list", "--format", "json", "--all"]
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+
+        let result = try await runContainer(args, emitOutput: false)
+        let remainingContainers = try projectContainerIdentifiers(projectName: project.name, output: result.stdout)
+            .filter { !declaredContainers.contains($0) }
+            .sorted()
+        for container in remainingContainers {
+            try await runContainer(["stop", container], check: false)
+            try await runContainer(["delete", container], check: false)
+        }
+    }
+
     @discardableResult
     func runContainer(_ arguments: [String], check: Bool = true, emitOutput: Bool = true) async throws -> CommandResult {
         if options.dryRun {
@@ -669,6 +688,16 @@ private func labelValue(_ key: String, in value: Any?) -> String? {
 }
 
 private func projectContainerListJSON(projectName: String, output: String) throws -> String {
+    let scopedContainers = try projectContainers(projectName: projectName, output: output)
+    let scopedData = try JSONSerialization.data(withJSONObject: scopedContainers, options: [.prettyPrinted, .sortedKeys])
+    return String(decoding: scopedData, as: UTF8.self)
+}
+
+private func projectContainerIdentifiers(projectName: String, output: String) throws -> [String] {
+    try projectContainers(projectName: projectName, output: output).compactMap(containerIdentifier)
+}
+
+private func projectContainers(projectName: String, output: String) throws -> [Any] {
     guard let data = output.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: data)
     else {
@@ -686,9 +715,22 @@ private func projectContainerListJSON(projectName: String, output: String) throw
 
     // `container list` does not currently expose a label filter in the CLI, so
     // Compose project scoping is applied client-side after requesting JSON.
-    let scopedContainers = containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
-    let scopedData = try JSONSerialization.data(withJSONObject: scopedContainers, options: [.prettyPrinted, .sortedKeys])
-    return String(decoding: scopedData, as: UTF8.self)
+    return containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
+}
+
+private func containerIdentifier(_ value: Any) -> String? {
+    guard let object = value as? [String: Any] else {
+        return nil
+    }
+    for key in ["id", "ID", "Id", "name", "Name"] {
+        if let value = object[key] as? String, !value.isEmpty {
+            return value
+        }
+    }
+    if let names = object["Names"] as? [String] {
+        return names.first { !$0.isEmpty }
+    }
+    return nil
 }
 
 private func stableHash(_ value: String) -> String {
