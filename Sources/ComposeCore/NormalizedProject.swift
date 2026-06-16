@@ -121,7 +121,7 @@ public struct ComposeService: Codable, Equatable {
     public var stdinOpen: Bool?
     public var readOnly: Bool?
     public var privileged: Bool?
-    public var `init`: Bool?
+    public var initEnabled: Bool?
     public var tmpfs: [String]?
     public var dns: [String]?
     public var dnsSearch: [String]?
@@ -156,7 +156,7 @@ public struct ComposeService: Codable, Equatable {
         stdinOpen: Bool? = nil,
         readOnly: Bool? = nil,
         privileged: Bool? = nil,
-        init: Bool? = nil,
+        initEnabled: Bool? = nil,
         tmpfs: [String]? = nil,
         dns: [String]? = nil,
         dnsSearch: [String]? = nil,
@@ -190,7 +190,7 @@ public struct ComposeService: Codable, Equatable {
         self.stdinOpen = stdinOpen
         self.readOnly = readOnly
         self.privileged = privileged
-        self.`init` = `init`
+        self.initEnabled = initEnabled
         self.tmpfs = tmpfs
         self.dns = dns
         self.dnsSearch = dnsSearch
@@ -203,6 +203,42 @@ public struct ComposeService: Codable, Equatable {
         self.configs = configs
         self.secrets = secrets
         self.extensions = extensions
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case image
+        case build
+        case command
+        case entrypoint
+        case environment
+        case envFiles
+        case ports
+        case volumes
+        case networks
+        case dependsOn
+        case labels
+        case containerName
+        case hostname
+        case workingDir
+        case user
+        case tty
+        case stdinOpen
+        case readOnly
+        case privileged
+        case initEnabled = "init"
+        case tmpfs
+        case dns
+        case dnsSearch
+        case extraHosts
+        case capAdd
+        case capDrop
+        case memLimit
+        case cpus
+        case healthcheck
+        case configs
+        case secrets
+        case extensions
     }
 }
 
