@@ -1,6 +1,23 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
 import CryptoKit
 import Foundation
 
+/// Runtime settings used while translating Compose operations to `container`.
 public struct ComposeExecutionOptions {
     public var dryRun: Bool
     public var containerBinary: String
@@ -17,6 +34,7 @@ public struct ComposeExecutionOptions {
     }
 }
 
+/// Options for `compose up`.
 public struct ComposeUpOptions {
     public var services: [String]
     public var build: Bool
@@ -45,6 +63,7 @@ public struct ComposeUpOptions {
     }
 }
 
+/// Options for `compose down`.
 public struct ComposeDownOptions {
     public var volumes: Bool
     public var removeOrphans: Bool
@@ -55,6 +74,8 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Converts a normalized Compose project into deterministic `container`
+/// commands.
 public final class ComposeOrchestrator: @unchecked Sendable {
     private let runner: CommandRunning
     private let options: ComposeExecutionOptions
@@ -64,6 +85,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.options = options
     }
 
+    /// Returns canonical project JSON for `compose config`.
     public func config(project: ComposeProject) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -71,6 +93,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// Creates project resources and starts selected services in dependency order.
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
         let services = try orderedServices(project: project, selected: up.services)
@@ -99,6 +122,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             let name = containerName(project: project, service: service, oneOff: false)
             let existing = try await inspectContainer(name)
             if let existing {
+                // Reuse containers only when the Compose-derived service hash
+                // still matches, unless the caller chose an explicit recreate
+                // policy.
                 if up.noRecreate {
                     options.emit("compose: reusing existing container \(name)")
                     continue
@@ -115,6 +141,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Stops and removes project-scoped resources.
     public func down(project: ComposeProject, options down: ComposeDownOptions) async throws {
         let services = try orderedServices(project: project, selected: [])
         for service in services.reversed() {
@@ -134,6 +161,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Builds images for services that declare a build section.
     public func build(project: ComposeProject, services selected: [String], noCache: Bool) async throws {
         let services = try selectedServices(project: project, selected: selected)
         for service in services where service.build != nil {
@@ -141,6 +169,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Pulls images for selected services.
     public func pull(project: ComposeProject, services selected: [String]) async throws {
         let services = try selectedServices(project: project, selected: selected)
         for service in services {
@@ -149,6 +178,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Pushes images for selected services.
     public func push(project: ComposeProject, services selected: [String]) async throws {
         let services = try selectedServices(project: project, selected: selected)
         for service in services {
@@ -157,6 +187,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Lists containers belonging to the Compose project.
     public func ps(project: ComposeProject, all: Bool) async throws {
         var args = ["list", "--format", "json"]
         if all {
@@ -170,6 +201,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         options.emit(try projectContainerListJSON(projectName: project.name, output: result.stdout))
     }
 
+    /// Streams or prints logs for selected service containers.
     public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: Int?) async throws {
         let services = try selectedServices(project: project, selected: selected)
         for service in services {
@@ -185,6 +217,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Executes a command in an existing service container.
     public func exec(project: ComposeProject, serviceName: String, command: [String], interactive: Bool, tty: Bool) async throws {
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
@@ -204,6 +237,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await runContainer(args)
     }
 
+    /// Runs a one-off container for a service.
     public func run(project: ComposeProject, serviceName: String, command: [String], remove: Bool) async throws {
         guard var service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
@@ -215,23 +249,27 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await runContainer(runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true))
     }
 
+    /// Starts selected service containers.
     public func start(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
             try await runContainer(["start", containerName(project: project, service: service, oneOff: false)])
         }
     }
 
+    /// Stops selected service containers.
     public func stop(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
             try await runContainer(["stop", containerName(project: project, service: service, oneOff: false)], check: false)
         }
     }
 
+    /// Restarts selected service containers.
     public func restart(project: ComposeProject, services selected: [String]) async throws {
         try await stop(project: project, services: selected)
         try await start(project: project, services: selected)
     }
 
+    /// Removes selected service containers.
     public func rm(project: ComposeProject, services selected: [String], stopFirst: Bool) async throws {
         let services = try selectedServices(project: project, selected: selected)
         if stopFirst {
@@ -242,10 +280,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Returns image names referenced by selected services.
     public func images(project: ComposeProject, services selected: [String]) throws -> [String] {
         try selectedServices(project: project, selected: selected).compactMap(\.image).sorted()
     }
 
+    /// Sends a signal to selected service containers.
     public func kill(project: ComposeProject, services selected: [String], signal: String?) async throws {
         for service in try selectedServices(project: project, selected: selected) {
             var args = ["kill"]
@@ -257,6 +297,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Copies files using the underlying container CLI.
     public func copy(arguments: [String]) async throws {
         guard !arguments.isEmpty else {
             throw ComposeError.invalidProject("cp requires source and destination")
@@ -264,12 +305,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await runContainer(["cp"] + arguments)
     }
 
+    /// Throws a consistently formatted unsupported-feature error.
     public func unsupported(_ feature: String, reason: String) throws -> Never {
         throw ComposeError.unsupported("\(feature): \(reason)")
     }
 }
 
 public extension ComposeOrchestrator {
+    /// Returns selected services after their dependencies using a stable
+    /// depth-first traversal.
     func orderedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
         let selectedSet = Set(selected)
         var visiting = Set<String>()
@@ -492,6 +536,8 @@ private extension ComposeOrchestrator {
         if mount.type == "volume", !source.isEmpty {
             mappedSource = resourceName(project: project.name, name: source)
         } else if source.isEmpty {
+            // Anonymous Compose volumes still need stable names so repeated
+            // runs reconcile the same project-scoped container arguments.
             mappedSource = resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
         } else {
             mappedSource = source
@@ -630,6 +676,8 @@ private func projectContainerListJSON(projectName: String, output: String) throw
         throw ComposeError.invalidProject("container list returned invalid JSON")
     }
 
+    // `container list` does not currently expose a label filter in the CLI, so
+    // Compose project scoping is applied client-side after requesting JSON.
     let scopedContainers = containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
     let scopedData = try JSONSerialization.data(withJSONObject: scopedContainers, options: [.prettyPrinted, .sortedKeys])
     return String(decoding: scopedData, as: UTF8.self)

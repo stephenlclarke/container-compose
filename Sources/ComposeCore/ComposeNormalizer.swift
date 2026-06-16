@@ -1,5 +1,22 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
+/// Loads Compose files through the compose-go helper and decodes canonical JSON.
 public struct ComposeNormalizer: Sendable {
     private let runner: CommandRunning
 
@@ -7,6 +24,7 @@ public struct ComposeNormalizer: Sendable {
         self.runner = runner
     }
 
+    /// Normalizes Compose input options into the Swift orchestration model.
     public func normalize(options: ComposeOptions) async throws -> ComposeProject {
         let invocation = try Self.normalizerInvocation()
         let projectDirectory = options.projectDirectory ?? Self.defaultProjectDirectory(files: options.files)
@@ -68,6 +86,8 @@ private extension ComposeNormalizer {
             .appendingPathComponent("Tools")
             .appendingPathComponent("compose-normalizer")
         if FileManager.default.fileExists(atPath: sourceURL.appendingPathComponent("go.mod").path) {
+            // Source checkouts run the helper through Go so developers do not
+            // need a prebuilt normalizer binary while iterating locally.
             return NormalizerInvocation(executable: "/usr/bin/env", prefixArguments: ["go", "run", "."], workingDirectory: sourceURL)
         }
 
@@ -97,6 +117,9 @@ private extension ComposeNormalizer {
             return FileManager.default.currentDirectoryPath
         }
 
+        // Docker Compose resolves relative paths from the project directory.
+        // When the user passes a compose file, infer that directory from the
+        // first file path to match compose-go and Docker Compose behavior.
         let expandedPath = (firstFile as NSString).expandingTildeInPath
         let fileURL: URL
         if expandedPath.hasPrefix("/") {
