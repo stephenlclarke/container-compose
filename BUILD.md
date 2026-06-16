@@ -6,8 +6,8 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
 
 ## Requirements
 
-- macOS with Xcode installed. The package targets macOS 15 and uses the Swift
-  toolchain supplied by Xcode. Install Xcode from the Mac App Store or
+- macOS with Xcode installed. The package targets macOS 15 and requires the
+  Swift 6.2 toolchain supplied by Xcode. Install Xcode from the Mac App Store or
   <https://developer.apple.com/download/>.
 - Go 1.23 or newer for the Compose normalizer helper. Install Go from
   <https://go.dev/dl/> or with Homebrew:
