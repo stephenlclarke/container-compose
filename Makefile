@@ -24,6 +24,7 @@ PYTHON ?= python3
 COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
+SONAR_QUALITYGATE_WAIT ?= false
 MARKDOWN_FILES := README.md BUILD.md CONTRIBUTING.md DESIGN.md INSTALL.md
 
 .PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar package lint format
@@ -89,11 +90,18 @@ coverage-check: coverage
 		--go Tools/compose-normalizer/coverage.out
 
 sonar: coverage
-	@if [[ -z "$${SONAR_TOKEN:-}" ]]; then \
-		printf 'SONAR_TOKEN is required for make sonar\n' >&2; \
+	@sonar_token="$${SONAR_TOKEN:-$${SONAR_TOKEN_PERSONAL:-}}"; \
+	if [[ -z "$$sonar_token" ]]; then \
+		printf 'SONAR_TOKEN or SONAR_TOKEN_PERSONAL is required for make sonar\n' >&2; \
 		exit 2; \
 	fi
-	sonar-scanner
+	sonar_token="$${SONAR_TOKEN:-$${SONAR_TOKEN_PERSONAL:-}}"; \
+	branch="$${SONAR_BRANCH:-$$(git branch --show-current 2>/dev/null || true)}"; \
+	if [[ -n "$$branch" && "$$branch" != "HEAD" ]]; then \
+		SONAR_TOKEN="$$sonar_token" sonar-scanner -Dsonar.branch.name="$$branch" -Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"; \
+	else \
+		SONAR_TOKEN="$$sonar_token" sonar-scanner -Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"; \
+	fi
 
 package: build-release
 	cd Tools/compose-normalizer && $(GO) build -o compose-normalizer .
@@ -124,6 +132,6 @@ format:
 
 clean:
 	$(SWIFT) package clean
-	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" coverage.lcov coverage.report coverage.xml
+	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" .scannerwork coverage.lcov coverage.report coverage.xml
 	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
 	find Tools -type d -name __pycache__ -prune -exec rm -rf {} +

@@ -145,16 +145,33 @@ plugin on a target machine.
 
 ## SonarQube
 
-GitHub Actions publishes coverage to SonarCloud for `main` and eligible pull
-request runs. To run the same scanner locally, install `sonar-scanner`, export a
-token, and run:
+GitHub Actions publishes coverage to SonarCloud for `main`, `develop`, and
+eligible pull request runs. To run the same scanner locally, install
+`sonar-scanner`, export a SonarCloud token, and run:
 
 ```sh
 export SONAR_TOKEN=...
 make sonar
 ```
 
+`make sonar` also accepts `SONAR_TOKEN_PERSONAL` when `SONAR_TOKEN` is not set.
+
 `make sonar` regenerates coverage before invoking `sonar-scanner`.
+By default it publishes analysis for the current Git branch. Override the
+branch when needed:
+
+```sh
+SONAR_BRANCH=develop make sonar
+```
+
+Local scans default `SONAR_QUALITYGATE_WAIT` to `false` so branch analysis can
+be published even when the local token cannot read Quality Gate status. Set it
+to `true` when testing a token with project administration or Quality Gate read
+access:
+
+```sh
+SONAR_QUALITYGATE_WAIT=true make sonar
+```
 
 ## Cleanup
 
