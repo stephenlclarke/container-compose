@@ -72,6 +72,8 @@ type normalizedService struct {
 	Platform               string                              `json:"platform,omitempty"`
 	MacAddress             string                              `json:"macAddress,omitempty"`
 	Runtime                string                              `json:"runtime,omitempty"`
+	Cgroup                 string                              `json:"cgroup,omitempty"`
+	CgroupParent           string                              `json:"cgroupParent,omitempty"`
 	Build                  *normalizedBuild                    `json:"build,omitempty"`
 	Command                []string                            `json:"command,omitempty"`
 	Entrypoint             []string                            `json:"entrypoint,omitempty"`
@@ -99,6 +101,8 @@ type normalizedService struct {
 	Privileged             bool                                `json:"privileged,omitempty"`
 	Restart                string                              `json:"restart,omitempty"`
 	Init                   *bool                               `json:"init,omitempty"`
+	Ipc                    string                              `json:"ipc,omitempty"`
+	Isolation              string                              `json:"isolation,omitempty"`
 	Tmpfs                  []string                            `json:"tmpfs,omitempty"`
 	DNS                    []string                            `json:"dns,omitempty"`
 	DNSSearch              []string                            `json:"dnsSearch,omitempty"`
@@ -110,9 +114,12 @@ type normalizedService struct {
 	CPUS                   string                              `json:"cpus,omitempty"`
 	ShmSize                string                              `json:"shmSize,omitempty"`
 	Ulimits                []string                            `json:"ulimits,omitempty"`
+	Pid                    string                              `json:"pid,omitempty"`
 	Sysctls                map[string]string                   `json:"sysctls,omitempty"`
 	StopSignal             string                              `json:"stopSignal,omitempty"`
 	StopGracePeriodSeconds *int64                              `json:"stopGracePeriodSeconds,omitempty"`
+	UserNSMode             string                              `json:"usernsMode,omitempty"`
+	Uts                    string                              `json:"uts,omitempty"`
 	Healthcheck            any                                 `json:"healthcheck,omitempty"`
 	Configs                any                                 `json:"configs,omitempty"`
 	Secrets                any                                 `json:"secrets,omitempty"`
@@ -318,6 +325,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Platform:               service.Platform,
 		MacAddress:             service.MacAddress,
 		Runtime:                service.Runtime,
+		Cgroup:                 service.Cgroup,
+		CgroupParent:           service.CgroupParent,
 		Command:                shellCommandValues(service.Command),
 		Entrypoint:             shellCommandValues(service.Entrypoint),
 		Environment:            mapEnvironment(service.Environment),
@@ -344,6 +353,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Privileged:             service.Privileged,
 		Restart:                service.Restart,
 		Init:                   service.Init,
+		Ipc:                    service.Ipc,
+		Isolation:              service.Isolation,
 		Tmpfs:                  append([]string(nil), service.Tmpfs...),
 		DNS:                    append([]string(nil), service.DNS...),
 		DNSSearch:              append([]string(nil), service.DNSSearch...),
@@ -355,9 +366,12 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		CPUS:                   cpusValue(service.CPUS),
 		ShmSize:                unitBytesValue(service.ShmSize),
 		Ulimits:                ulimitValues(service.Ulimits),
+		Pid:                    service.Pid,
 		Sysctls:                mapMapping(service.Sysctls),
 		StopSignal:             service.StopSignal,
 		StopGracePeriodSeconds: durationSeconds(service.StopGracePeriod),
+		UserNSMode:             service.UserNSMode,
+		Uts:                    service.Uts,
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{

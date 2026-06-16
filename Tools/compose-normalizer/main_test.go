@@ -119,7 +119,14 @@ services:
     platform: linux/amd64
     mac_address: 02:42:ac:11:00:03
     runtime: container-runtime-linux
+    cgroup: host
+    cgroup_parent: m-executor-abcd
     domainname: example.test
+    ipc: host
+    isolation: default
+    pid: host
+    userns_mode: host
+    uts: host
     command: ["nginx", "-g", "daemon off;"]
     environment:
       FOO: bar
@@ -199,6 +206,27 @@ volumes:
 	}
 	if api.Runtime != "container-runtime-linux" {
 		t.Fatalf("api.Runtime = %q, want container-runtime-linux", api.Runtime)
+	}
+	if api.Cgroup != "host" {
+		t.Fatalf("api.Cgroup = %q, want host", api.Cgroup)
+	}
+	if api.CgroupParent != "m-executor-abcd" {
+		t.Fatalf("api.CgroupParent = %q, want m-executor-abcd", api.CgroupParent)
+	}
+	if api.Ipc != "host" {
+		t.Fatalf("api.Ipc = %q, want host", api.Ipc)
+	}
+	if api.Isolation != "default" {
+		t.Fatalf("api.Isolation = %q, want default", api.Isolation)
+	}
+	if api.Pid != "host" {
+		t.Fatalf("api.Pid = %q, want host", api.Pid)
+	}
+	if api.UserNSMode != "host" {
+		t.Fatalf("api.UserNSMode = %q, want host", api.UserNSMode)
+	}
+	if api.Uts != "host" {
+		t.Fatalf("api.Uts = %q, want host", api.Uts)
 	}
 	if api.DomainName != "example.test" {
 		t.Fatalf("api.DomainName = %q, want example.test", api.DomainName)

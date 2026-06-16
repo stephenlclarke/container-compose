@@ -51,6 +51,9 @@ These fields currently fail before runtime side effects because the equivalent l
   `interface_name`, `ipv4_address`, `ipv6_address`, `link_local_ips`,
   `mac_address`, and `priority`.
 - `network_mode`.
+- `cgroup` and `cgroup_parent`.
+- `ipc`, `pid`, `userns_mode`, and `uts`.
+- `isolation`.
 - `mac_address`.
 - `dns_opt`.
 - `sysctls`.

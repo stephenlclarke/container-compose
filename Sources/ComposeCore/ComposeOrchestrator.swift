@@ -425,6 +425,9 @@ private extension ComposeOrchestrator {
         if let networkMode = service.networkMode, !networkMode.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses network_mode '\(networkMode)'; network mode support needs an apple/container runtime gap PR")
         }
+        if let gap = unsupportedRuntimeStringFields(service: service).first {
+            throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
+        }
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
@@ -478,6 +481,24 @@ private extension ComposeOrchestrator {
     func validateRuntimeSupport(services: [ComposeService]) throws {
         for service in services {
             try validateRuntimeSupport(service: service)
+        }
+    }
+
+    /// Returns unsupported string-valued fields that need missing runtime primitives.
+    func unsupportedRuntimeStringFields(service: ComposeService) -> [(composeName: String, value: String, reason: String)] {
+        [
+            ("cgroup", service.cgroup, "cgroup namespace support needs an apple/container runtime gap PR"),
+            ("cgroup_parent", service.cgroupParent, "cgroup parent support needs an apple/container runtime gap PR"),
+            ("ipc", service.ipc, "IPC namespace support needs an apple/container runtime gap PR"),
+            ("isolation", service.isolation, "isolation support needs an apple/container runtime gap PR"),
+            ("pid", service.pid, "PID namespace support needs an apple/container runtime gap PR"),
+            ("userns_mode", service.usernsMode, "user namespace support needs an apple/container runtime gap PR"),
+            ("uts", service.uts, "UTS namespace support needs an apple/container runtime gap PR"),
+        ].compactMap { composeName, value, reason in
+            guard let value, !value.isEmpty else {
+                return nil
+            }
+            return (composeName, value, reason)
         }
     }
 

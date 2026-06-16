@@ -90,6 +90,8 @@ public struct ComposeService: Codable, Equatable {
     public var platform: String? = nil
     public var macAddress: String? = nil
     public var runtime: String? = nil
+    public var cgroup: String? = nil
+    public var cgroupParent: String? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -117,6 +119,8 @@ public struct ComposeService: Codable, Equatable {
     public var privileged: Bool? = nil
     public var restart: String? = nil
     public var initEnabled: Bool? = nil
+    public var ipc: String? = nil
+    public var isolation: String? = nil
     public var tmpfs: [String]? = nil
     public var dns: [String]? = nil
     public var dnsSearch: [String]? = nil
@@ -128,9 +132,12 @@ public struct ComposeService: Codable, Equatable {
     public var cpus: String? = nil
     public var shmSize: String? = nil
     public var ulimits: [String]? = nil
+    public var pid: String? = nil
     public var sysctls: [String: String]? = nil
     public var stopSignal: String? = nil
     public var stopGracePeriodSeconds: Int? = nil
+    public var usernsMode: String? = nil
+    public var uts: String? = nil
     public var healthcheck: ComposeValue? = nil
     public var configs: [ComposeValue]? = nil
     public var secrets: [ComposeValue]? = nil
@@ -148,6 +155,8 @@ public struct ComposeService: Codable, Equatable {
         case platform
         case macAddress
         case runtime
+        case cgroup
+        case cgroupParent
         case build
         case command
         case entrypoint
@@ -175,6 +184,8 @@ public struct ComposeService: Codable, Equatable {
         case privileged
         case restart
         case initEnabled = "init"
+        case ipc
+        case isolation
         case tmpfs
         case dns
         case dnsSearch
@@ -186,9 +197,12 @@ public struct ComposeService: Codable, Equatable {
         case cpus
         case shmSize
         case ulimits
+        case pid
         case sysctls
         case stopSignal
         case stopGracePeriodSeconds
+        case usernsMode
+        case uts
         case healthcheck
         case configs
         case secrets

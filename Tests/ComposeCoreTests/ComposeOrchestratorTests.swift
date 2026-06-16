@@ -653,6 +653,35 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported namespace and cgroup fields before creating resources")
+    func upRejectsUnsupportedNamespaceAndCgroupFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedRuntimeStringFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "api")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("up rejects unsupported MAC address before creating resources")
     func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -865,7 +894,14 @@ struct ComposeOrchestratorTests {
             platform: linux/amd64
             mac_address: 02:42:ac:11:00:03
             runtime: container-runtime-linux
+            cgroup: host
+            cgroup_parent: m-executor-abcd
             domainname: example.test
+            ipc: host
+            isolation: default
+            pid: host
+            userns_mode: host
+            uts: host
             command: ["nginx", "-g", "daemon off;"]
             networks:
               default:
@@ -912,6 +948,13 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.platform == "linux/amd64")
         #expect(project.services["api"]?.macAddress == "02:42:ac:11:00:03")
         #expect(project.services["api"]?.runtime == "container-runtime-linux")
+        #expect(project.services["api"]?.cgroup == "host")
+        #expect(project.services["api"]?.cgroupParent == "m-executor-abcd")
+        #expect(project.services["api"]?.ipc == "host")
+        #expect(project.services["api"]?.isolation == "default")
+        #expect(project.services["api"]?.pid == "host")
+        #expect(project.services["api"]?.usernsMode == "host")
+        #expect(project.services["api"]?.uts == "host")
         #expect(project.services["api"]?.domainName == "example.test")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
@@ -1780,6 +1823,35 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("run rejects unsupported namespace and cgroup fields before creating resources")
+    func runRejectsUnsupportedNamespaceAndCgroupFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedRuntimeStringFieldCases() {
+            let runner = RecordingRunner()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    },
+                ]
+            ) {
+                $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            }
+
+            do {
+                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+                Issue.record("Expected unsupported \(testCase.composeName) error")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expectedMessage(serviceName: "job")))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("run rejects unsupported MAC address before creating resources")
     func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2308,6 +2380,64 @@ private extension CommandResult {
 
 private let composeConfigHashLabel = "com.apple.container.compose.config-hash"
 private let composeProjectLabel = "com.apple.container.compose.project"
+
+private struct UnsupportedRuntimeStringFieldCase: Sendable {
+    let composeName: String
+    let value: String
+    let reason: String
+    let configure: @Sendable (inout ComposeService) -> Void
+
+    func expectedMessage(serviceName: String) -> String {
+        "service '\(serviceName)' uses \(composeName) '\(value)'; \(reason)"
+    }
+}
+
+private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFieldCase] {
+    [
+        UnsupportedRuntimeStringFieldCase(
+            composeName: "cgroup",
+            value: "host",
+            reason: "cgroup namespace support needs an apple/container runtime gap PR",
+            configure: { $0.cgroup = "host" }
+        ),
+        UnsupportedRuntimeStringFieldCase(
+            composeName: "cgroup_parent",
+            value: "m-executor-abcd",
+            reason: "cgroup parent support needs an apple/container runtime gap PR",
+            configure: { $0.cgroupParent = "m-executor-abcd" }
+        ),
+        UnsupportedRuntimeStringFieldCase(
+            composeName: "ipc",
+            value: "host",
+            reason: "IPC namespace support needs an apple/container runtime gap PR",
+            configure: { $0.ipc = "host" }
+        ),
+        UnsupportedRuntimeStringFieldCase(
+            composeName: "isolation",
+            value: "default",
+            reason: "isolation support needs an apple/container runtime gap PR",
+            configure: { $0.isolation = "default" }
+        ),
+        UnsupportedRuntimeStringFieldCase(
+            composeName: "pid",
+            value: "host",
+            reason: "PID namespace support needs an apple/container runtime gap PR",
+            configure: { $0.pid = "host" }
+        ),
+        UnsupportedRuntimeStringFieldCase(
+            composeName: "userns_mode",
+            value: "host",
+            reason: "user namespace support needs an apple/container runtime gap PR",
+            configure: { $0.usernsMode = "host" }
+        ),
+        UnsupportedRuntimeStringFieldCase(
+            composeName: "uts",
+            value: "host",
+            reason: "UTS namespace support needs an apple/container runtime gap PR",
+            configure: { $0.uts = "host" }
+        ),
+    ]
+}
 
 private func inspectResult(configHash: String) -> CommandResult {
     CommandResult(
