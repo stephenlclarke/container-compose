@@ -405,6 +405,7 @@ private extension ComposeOrchestrator {
 
     /// Rejects Compose features that need runtime support not available yet.
     func validateRuntimeSupport(service: ComposeService) throws {
+        try validateBuildSupport(service: service)
         let networks = service.networks ?? []
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; Apple container does not expose network connect yet")
@@ -505,6 +506,15 @@ private extension ComposeOrchestrator {
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
         }
+    }
+
+    /// Rejects build fields that are not translated to `container build` yet.
+    func validateBuildSupport(service: ComposeService) throws {
+        guard let fields = service.build?.unsupportedFields, !fields.isEmpty else {
+            return
+        }
+        let fieldList = fields.joined(separator: ", ")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported build fields \(fieldList); advanced build fields are not implemented by container-compose yet")
     }
 
     /// Validates all selected services before any runtime side effects occur.
@@ -724,6 +734,7 @@ private extension ComposeOrchestrator {
         guard let build = service.build else {
             return
         }
+        try validateBuildSupport(service: service)
         var args = ["build"]
         let image = service.image ?? "\(project.name)_\(service.name):latest"
         args.append(contentsOf: ["--tag", image])

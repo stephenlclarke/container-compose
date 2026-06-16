@@ -161,10 +161,11 @@ type normalizedService struct {
 
 // normalizedBuild keeps the build fields needed to call `container build`.
 type normalizedBuild struct {
-	Context    string            `json:"context,omitempty"`
-	Dockerfile string            `json:"dockerfile,omitempty"`
-	Args       map[string]string `json:"args,omitempty"`
-	Target     string            `json:"target,omitempty"`
+	Context           string            `json:"context,omitempty"`
+	Dockerfile        string            `json:"dockerfile,omitempty"`
+	Args              map[string]string `json:"args,omitempty"`
+	Target            string            `json:"target,omitempty"`
+	UnsupportedFields []string          `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
@@ -441,10 +442,11 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{
-			Context:    service.Build.Context,
-			Dockerfile: service.Build.Dockerfile,
-			Args:       buildArgs(service.Build.Args),
-			Target:     service.Build.Target,
+			Context:           service.Build.Context,
+			Dockerfile:        service.Build.Dockerfile,
+			Args:              buildArgs(service.Build.Args),
+			Target:            service.Build.Target,
+			UnsupportedFields: unsupportedBuildFields(service.Build),
 		}
 	}
 	if service.HealthCheck != nil {
@@ -728,6 +730,41 @@ func buildArgs(args types.MappingWithEquals) map[string]string {
 		}
 	}
 	return result
+}
+
+// unsupportedBuildFields reports Compose build fields not mapped to container build yet.
+func unsupportedBuildFields(build *types.BuildConfig) []string {
+	if build == nil {
+		return nil
+	}
+	fields := []string{}
+	appendUnsupportedBuildField(&fields, "additional_contexts", len(build.AdditionalContexts) > 0)
+	appendUnsupportedBuildField(&fields, "cache_from", len(build.CacheFrom) > 0)
+	appendUnsupportedBuildField(&fields, "cache_to", len(build.CacheTo) > 0)
+	appendUnsupportedBuildField(&fields, "dockerfile_inline", build.DockerfileInline != "")
+	appendUnsupportedBuildField(&fields, "entitlements", len(build.Entitlements) > 0)
+	appendUnsupportedBuildField(&fields, "extra_hosts", len(build.ExtraHosts) > 0)
+	appendUnsupportedBuildField(&fields, "isolation", build.Isolation != "")
+	appendUnsupportedBuildField(&fields, "labels", len(build.Labels) > 0)
+	appendUnsupportedBuildField(&fields, "network", build.Network != "")
+	appendUnsupportedBuildField(&fields, "no_cache", build.NoCache)
+	appendUnsupportedBuildField(&fields, "platforms", len(build.Platforms) > 0)
+	appendUnsupportedBuildField(&fields, "privileged", build.Privileged)
+	appendUnsupportedBuildField(&fields, "provenance", build.Provenance != "")
+	appendUnsupportedBuildField(&fields, "pull", build.Pull)
+	appendUnsupportedBuildField(&fields, "sbom", build.SBOM != "")
+	appendUnsupportedBuildField(&fields, "secrets", len(build.Secrets) > 0)
+	appendUnsupportedBuildField(&fields, "shm_size", unitBytesValue(build.ShmSize) != "")
+	appendUnsupportedBuildField(&fields, "ssh", len(build.SSH) > 0)
+	appendUnsupportedBuildField(&fields, "tags", len(build.Tags) > 0)
+	appendUnsupportedBuildField(&fields, "ulimits", len(build.Ulimits) > 0)
+	return fields
+}
+
+func appendUnsupportedBuildField(fields *[]string, name string, present bool) {
+	if present {
+		*fields = append(*fields, name)
+	}
 }
 
 // unitBytesValue emits byte counts only when Compose supplied a limit.

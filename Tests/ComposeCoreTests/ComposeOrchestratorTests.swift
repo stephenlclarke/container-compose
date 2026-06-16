@@ -794,6 +794,33 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported build fields before creating resources")
+    func upRejectsUnsupportedBuildFieldsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api", unsupportedFields: ["additional_contexts", "ssh"])
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported build field error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses unsupported build fields additional_contexts, ssh; advanced build fields are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported user and security option fields before creating resources")
     func upRejectsUnsupportedUserAndSecurityOptionFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedUserAndSecurityOptionFieldCases() {
@@ -1594,6 +1621,30 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[3].arguments == ["container", "image", "push", "example/api:latest"])
     }
 
+    @Test("build rejects unsupported build fields before emitting commands")
+    func buildRejectsUnsupportedBuildFieldsBeforeEmittingCommands() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api", unsupportedFields: ["dockerfile_inline", "secrets"])
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).build(project: project, services: [], noCache: false)
+            Issue.record("Expected unsupported build field error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses unsupported build fields dockerfile_inline, secrets; advanced build fields are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("orchestrator uses configured environment launcher")
     func orchestratorUsesConfiguredEnvironmentLauncher() async throws {
         let runner = RecordingRunner()
@@ -2268,6 +2319,33 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported develop config error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses develop; develop/watch workflows are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported build fields before creating resources")
+    func runRejectsUnsupportedBuildFieldsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.build = ComposeBuild(context: "job", unsupportedFields: ["cache_from", "platforms"])
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported build field error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses unsupported build fields cache_from, platforms; advanced build fields are not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
