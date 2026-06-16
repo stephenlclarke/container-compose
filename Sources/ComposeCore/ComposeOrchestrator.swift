@@ -165,7 +165,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await runContainer(["stop", name], check: false)
             try await runContainer(["delete", name], check: false)
         }
-        try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+        if down.removeOrphans {
+            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+        }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
             try await runContainer(["network", "delete", resourceName(project: project.name, name: name)], check: false)
