@@ -117,9 +117,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await ensureVolume(project: project, composeName: name, volume: volume)
         }
 
-        if up.pullPolicy == "always" {
-            try await pull(project: project, services: services.map(\.name))
-        }
+        try await applyPullPolicy(up.pullPolicy, project: project, services: services)
 
         if up.build {
             try await build(project: project, services: services.map(\.name), noCache: false)
@@ -462,6 +460,35 @@ private extension ComposeOrchestrator {
         }
         args.append(build.context ?? ".")
         try await runContainer(args)
+    }
+
+    func applyPullPolicy(_ policy: String?, project: ComposeProject, services: [ComposeService]) async throws {
+        guard let policy, !policy.isEmpty else {
+            return
+        }
+
+        switch policy {
+        case "always":
+            try await pull(project: project, services: services.map(\.name))
+        case "missing":
+            try await pullMissingImages(services: services)
+        case "never":
+            return
+        default:
+            throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
+        }
+    }
+
+    func pullMissingImages(services: [ComposeService]) async throws {
+        for service in services {
+            guard let image = service.image else {
+                continue
+            }
+            let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
+            if !inspect.succeeded {
+                try await runContainer(["image", "pull", image])
+            }
+        }
     }
 
     func runArguments(project: ComposeProject, service: ComposeService, detach: Bool, remove: Bool, oneOff: Bool) throws -> [String] {
