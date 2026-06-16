@@ -9,6 +9,7 @@ public struct ComposeNormalizer: Sendable {
 
     public func normalize(options: ComposeOptions) async throws -> ComposeProject {
         let invocation = try Self.normalizerInvocation()
+        let projectDirectory = options.projectDirectory ?? Self.defaultProjectDirectory(files: options.files)
         var arguments = invocation.prefixArguments
 
         for file in options.files {
@@ -23,9 +24,7 @@ public struct ComposeNormalizer: Sendable {
         if let projectName = options.projectName {
             arguments.append(contentsOf: ["--project-name", projectName])
         }
-        if let projectDirectory = options.projectDirectory {
-            arguments.append(contentsOf: ["--project-directory", projectDirectory])
-        }
+        arguments.append(contentsOf: ["--project-directory", projectDirectory])
 
         let result = try await runner.run(
             invocation.executable,
@@ -91,5 +90,20 @@ private extension ComposeNormalizer {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+    }
+
+    static func defaultProjectDirectory(files: [String]) -> String {
+        guard let firstFile = files.first, firstFile != "-" else {
+            return FileManager.default.currentDirectoryPath
+        }
+
+        let expandedPath = (firstFile as NSString).expandingTildeInPath
+        let fileURL: URL
+        if expandedPath.hasPrefix("/") {
+            fileURL = URL(fileURLWithPath: expandedPath)
+        } else {
+            fileURL = URL(fileURLWithPath: expandedPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+        }
+        return fileURL.standardizedFileURL.deletingLastPathComponent().path
     }
 }
