@@ -64,7 +64,9 @@ public extension CommandRunning {
 
 /// Production command runner backed by Foundation `Process`.
 public struct ProcessRunner: CommandRunning {
-    public init() {}
+    public init() {
+        // Stateless runner; public initializer supports dependency injection.
+    }
 
     public func run(
         _ executable: String,
