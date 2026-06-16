@@ -937,6 +937,39 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["+ 'container bin' image pull example/api:latest"])
     }
 
+    @Test("dry run up does not treat synthetic inspect success as existing container")
+    func dryRunUpDoesNotTreatSyntheticInspectSuccessAsExistingContainer() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "alpine")])
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions(noRecreate: true))
+
+        let messages = emitted.messages
+        #expect(messages.contains("+ container inspect demo-api-1"))
+        #expect(messages.contains { $0.hasPrefix("+ container run ") && $0.contains("--detach") })
+        #expect(!messages.contains("compose: reusing existing container demo-api-1"))
+        #expect(!messages.contains { $0.contains("container stop demo-api-1") })
+        #expect(!messages.contains { $0.contains("container delete demo-api-1") })
+    }
+
+    @Test("dry run pull missing emits inspect and pull plan")
+    func dryRunPullMissingEmitsInspectAndPullPlan() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "alpine")])
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions(pullPolicy: "missing"))
+
+        let messages = emitted.messages
+        #expect(messages.contains("+ container image inspect alpine"))
+        #expect(messages.contains("+ container image pull alpine"))
+    }
+
     @Test("invalid and unsupported projects fail clearly")
     func invalidAndUnsupportedProjectsFailClearly() async throws {
         do {

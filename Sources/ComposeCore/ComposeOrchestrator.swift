@@ -496,7 +496,7 @@ private extension ComposeOrchestrator {
                 continue
             }
             let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
-            if !inspect.succeeded {
+            if options.dryRun || !inspect.succeeded {
                 try await runContainer(["image", "pull", image])
             }
         }
@@ -623,6 +623,9 @@ private extension ComposeOrchestrator {
     /// Returns an existing container's Compose metadata, if the container exists.
     func inspectContainer(_ name: String) async throws -> ExistingContainer? {
         let result = try await runContainer(["inspect", name], check: false, emitOutput: false)
+        if options.dryRun {
+            return nil
+        }
         guard result.succeeded else {
             return nil
         }
