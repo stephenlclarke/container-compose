@@ -646,7 +646,8 @@ struct ComposeOrchestratorTests {
             .success,
             .success,
             .success,
-            emptyContainerListResult(),
+            .success,
+            .success,
         ])
         let orchestrator = ComposeOrchestrator(runner: runner)
         let project = composeProject(
@@ -669,9 +670,30 @@ struct ComposeOrchestratorTests {
             ["container", "delete", "demo-api-1"],
             ["container", "stop", "demo-db-1"],
             ["container", "delete", "demo-db-1"],
-            ["container", "list", "--format", "json", "--all"],
             ["container", "network", "delete", "demo_default"],
             ["container", "volume", "delete", "demo_data"],
+        ])
+    }
+
+    @Test("down leaves orphan containers unless requested")
+    func downLeavesOrphanContainersUnlessRequested() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions())
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "stop", "demo-api-1"],
+            ["container", "delete", "demo-api-1"],
         ])
     }
 
@@ -690,7 +712,7 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.down(project: project, options: ComposeDownOptions())
+        try await orchestrator.down(project: project, options: ComposeDownOptions(removeOrphans: true))
 
         #expect(runner.commands.map(\.arguments) == [
             ["container", "stop", "demo-api-1"],

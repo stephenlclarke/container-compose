@@ -151,7 +151,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var forceRecreate = false
     @Flag(name: .customLong("no-recreate"), help: "Reuse existing containers.")
     var noRecreate = false
-    @Flag(name: .customLong("remove-orphans"), help: "Accepted for compatibility; orphan cleanup is label scoped.")
+    @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, or never.")
     var pull: String?
@@ -181,7 +181,7 @@ struct Down: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: [.customShort("v"), .customLong("volumes")], help: "Remove named volumes declared by the Compose project.")
     var volumes = false
-    @Flag(name: .customLong("remove-orphans"), help: "Accepted for compatibility; orphan cleanup is label scoped.")
+    @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
 
     func run() async throws {
