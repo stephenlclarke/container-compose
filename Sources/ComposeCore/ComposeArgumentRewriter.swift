@@ -72,7 +72,10 @@ public enum ComposeArgumentRewriter {
 
         let prefix = Array(arguments[..<commandIndex])
         let command = arguments[commandIndex]
-        let suffix = Array(arguments[arguments.index(after: commandIndex)...])
+        let suffix = rewriteCommandLocalOptions(
+            command: command,
+            arguments: Array(arguments[arguments.index(after: commandIndex)...])
+        )
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
     }
@@ -114,5 +117,28 @@ public enum ComposeArgumentRewriter {
             return nil
         }
         return globalOptions[String(argument[..<equalsIndex])]
+    }
+
+    private static func rewriteCommandLocalOptions(command: String, arguments: [String]) -> [String] {
+        guard command == "logs" else {
+            return arguments
+        }
+
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, argument == "-f" {
+                // The parser also accepts global `-f/--file`, so normalize the
+                // Docker Compose `logs -f` alias before validation sees the
+                // command-local option.
+                rewritten.append("--follow")
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
     }
 }

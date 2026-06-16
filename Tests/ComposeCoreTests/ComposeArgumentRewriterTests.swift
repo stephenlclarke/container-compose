@@ -61,6 +61,40 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes logs follow shorthand after subcommand")
+    func normalizesLogsFollowShorthandAfterSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--file",
+            "compose.yml",
+            "logs",
+            "-f",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "logs",
+            "--file",
+            "compose.yml",
+            "--follow",
+            "api",
+        ])
+    }
+
+    @Test("does not rewrite logs follow shorthand after terminator")
+    func doesNotRewriteLogsFollowShorthandAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "logs",
+            "--",
+            "-f",
+        ])
+
+        #expect(rewritten == [
+            "logs",
+            "--",
+            "-f",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

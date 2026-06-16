@@ -248,7 +248,7 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "logs", abstract: "Show service logs.")
 
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .shortAndLong, help: "Follow log output.")
+    @Flag(name: .customLong("follow"), help: "Follow log output.")
     var follow = false
     @Option(name: .customLong("tail"), help: "Number of lines to show from the end of logs.")
     var tail: Int?
@@ -271,7 +271,7 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     var tty = false
     @Argument(help: "Service name.")
     var service: String
-    @Argument(parsing: .captureForPassthrough, help: "Command and arguments.")
+    @Argument(parsing: .allUnrecognized, help: "Command and arguments.")
     var command: [String]
 
     func run() async throws {
@@ -288,7 +288,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var remove = false
     @Argument(help: "Service name.")
     var service: String
-    @Argument(parsing: .captureForPassthrough, help: "Optional replacement command.")
+    @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
     var command: [String] = []
 
     func run() async throws {
@@ -366,7 +366,7 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
 struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "cp", abstract: "Copy files using the underlying container cp command.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .captureForPassthrough) var arguments: [String]
+    @Argument(parsing: .allUnrecognized) var arguments: [String]
     func run() async throws { try await orchestrator().copy(arguments: arguments) }
 }
 

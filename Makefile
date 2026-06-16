@@ -68,9 +68,17 @@ go-test:
 go-build:
 	cd Tools/compose-normalizer && $(GO) build -o compose-normalizer .
 
-cli-smoke:
-	$(SWIFT) run compose --ansi never version >/dev/null
-	$(SWIFT) run compose version --dry-run >/dev/null
+cli-smoke: build
+	.build/debug/compose --ansi never version >/dev/null
+	.build/debug/compose version --dry-run >/dev/null
+	tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	printf 'services:\n  api:\n    image: alpine\n' > "$$tmpdir/compose.yml"; \
+	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
+	[[ "$$run_output" == *"container run"* ]]; \
+	[[ "$$run_output" == *" alpine echo hello"* ]]; \
+	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
+	[[ "$$logs_output" == *"container logs --follow"* ]]
 
 coverage: swift-coverage go-test
 
