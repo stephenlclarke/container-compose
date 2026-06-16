@@ -162,6 +162,62 @@ volumes:
 	}
 }
 
+func TestLoadProjectPreservesConfigsSecretsHealthchecksAndExtensions(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+x-project:
+  enabled: true
+services:
+  api:
+    image: alpine
+    healthcheck:
+      disable: true
+    configs:
+      - source: app_config
+        target: /etc/app.conf
+    secrets:
+      - source: app_secret
+    x-service:
+      owner: platform
+configs:
+  app_config:
+    external: true
+secrets:
+  app_secret:
+    external: true
+`)
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "sample", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	if project.Configs["app_config"] == nil {
+		t.Fatal("project.Configs[app_config] is nil")
+	}
+	if project.Secrets["app_secret"] == nil {
+		t.Fatal("project.Secrets[app_secret] is nil")
+	}
+	if project.Extensions["x-project"] == nil {
+		t.Fatal("project.Extensions[x-project] is nil")
+	}
+
+	api := project.Services["api"]
+	if api.Healthcheck == nil {
+		t.Fatal("api.Healthcheck is nil")
+	}
+	if api.Configs == nil {
+		t.Fatal("api.Configs is nil")
+	}
+	if api.Secrets == nil {
+		t.Fatal("api.Secrets is nil")
+	}
+	if api.Extensions["x-service"] == nil {
+		t.Fatal("api.Extensions[x-service] is nil")
+	}
+}
+
 func TestLoadProjectAppliesProfilesEnvFilesAndBuildFields(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")

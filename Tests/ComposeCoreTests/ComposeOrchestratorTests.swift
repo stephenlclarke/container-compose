@@ -194,6 +194,52 @@ struct ComposeOrchestratorTests {
         #expect(project.services["web"]?.image == "nginx:latest")
     }
 
+    @Test("normalizer preserves healthchecks configs secrets and extensions")
+    func normalizerPreservesHealthchecksConfigsSecretsAndExtensions() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        x-project:
+          enabled: true
+        services:
+          api:
+            image: alpine
+            healthcheck:
+              disable: true
+            configs:
+              - source: app_config
+                target: /etc/app.conf
+            secrets:
+              - source: app_secret
+            x-service:
+              owner: platform
+        configs:
+          app_config:
+            external: true
+        secrets:
+          app_secret:
+            external: true
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+        let api = try #require(project.services["api"])
+
+        #expect(project.configs?["app_config"] == .object(["external": .bool(true), "name": .string("app_config")]))
+        #expect(project.secrets?["app_secret"] == .object(["external": .bool(true), "name": .string("app_secret")]))
+        #expect(project.extensions?["x-project"] == .object(["enabled": .bool(true)]))
+        #expect(api.healthcheck == .object(["disable": .bool(true)]))
+        #expect(api.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
+        #expect(api.secrets == [.object(["source": .string("app_secret"), "target": .string("/run/secrets/app_secret")])])
+        #expect(api.extensions?["x-service"] == .object(["owner": .string("platform")]))
+    }
+
     @Test("describes compose errors")
     func describesComposeErrors() {
         #expect(ComposeError.commandFailed(command: "container ps", status: 7, stderr: "").description == "container ps failed with exit code 7")
@@ -211,6 +257,37 @@ struct ComposeOrchestratorTests {
 
         #expect(json.contains(#""name" : "demo""#))
         #expect(json.contains(#""web" : {"#))
+    }
+
+    @Test("config preserves normalized compose extension fields")
+    func configPreservesNormalizedComposeExtensionFields() throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "web": ComposeService(
+                    name: "web",
+                    image: "nginx",
+                    healthcheck: .object(["disable": .bool(true)]),
+                    configs: [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])],
+                    secrets: [.object(["source": .string("app_secret")])],
+                    extensions: ["x-service": .object(["owner": .string("platform")])]
+                ),
+            ],
+            configs: ["app_config": .object(["external": .bool(true)])],
+            secrets: ["app_secret": .object(["external": .bool(true)])],
+            extensions: ["x-project": .object(["enabled": .bool(true), "retries": .number(3)])]
+        )
+
+        let json = try ComposeOrchestrator().config(project: project)
+        let decoded = try JSONDecoder().decode(ComposeProject.self, from: Data(json.utf8))
+
+        #expect(decoded.configs?["app_config"] == .object(["external": .bool(true)]))
+        #expect(decoded.secrets?["app_secret"] == .object(["external": .bool(true)]))
+        #expect(decoded.extensions?["x-project"] == .object(["enabled": .bool(true), "retries": .number(3)]))
+        #expect(decoded.services["web"]?.healthcheck == .object(["disable": .bool(true)]))
+        #expect(decoded.services["web"]?.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
+        #expect(decoded.services["web"]?.secrets == [.object(["source": .string("app_secret")])])
+        #expect(decoded.services["web"]?.extensions?["x-service"] == .object(["owner": .string("platform")]))
     }
 
     @Test("normalizer decodes JSON and forwards compose options")

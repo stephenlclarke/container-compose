@@ -73,6 +73,9 @@ type normalizedService struct {
 	MemLimit      string             `json:"memLimit,omitempty"`
 	CPUS          string             `json:"cpus,omitempty"`
 	Healthcheck   any                `json:"healthcheck,omitempty"`
+	Configs       any                `json:"configs,omitempty"`
+	Secrets       any                `json:"secrets,omitempty"`
+	Extensions    map[string]any     `json:"extensions,omitempty"`
 }
 
 type normalizedBuild struct {
@@ -229,6 +232,15 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			Labels:   mapLabels(volume.Labels),
 		}
 	}
+	if len(project.Configs) > 0 {
+		result.Configs = jsonMap(project.Configs)
+	}
+	if len(project.Secrets) > 0 {
+		result.Secrets = jsonMap(project.Secrets)
+	}
+	if len(project.Extensions) > 0 {
+		result.Extensions = project.Extensions
+	}
 
 	return result
 }
@@ -274,6 +286,26 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 	}
 	if service.HealthCheck != nil {
 		result.Healthcheck = service.HealthCheck
+	}
+	if len(service.Configs) > 0 {
+		result.Configs = service.Configs
+	}
+	if len(service.Secrets) > 0 {
+		result.Secrets = service.Secrets
+	}
+	if len(service.Extensions) > 0 {
+		result.Extensions = service.Extensions
+	}
+	return result
+}
+
+func jsonMap[T any](values map[string]T) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(values))
+	for key, value := range values {
+		result[key] = value
 	}
 	return result
 }
