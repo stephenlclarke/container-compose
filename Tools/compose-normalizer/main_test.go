@@ -122,6 +122,8 @@ services:
     annotations:
       com.example.note: runtime
     attach: false
+    blkio_config:
+      weight: 300
     mac_address: 02:42:ac:11:00:03
     runtime: container-runtime-linux
     cgroup: host
@@ -254,6 +256,9 @@ volumes:
 	}
 	if api.Attach == nil || *api.Attach {
 		t.Fatalf("api.Attach = %#v, want false", api.Attach)
+	}
+	if !api.BlkioConfig {
+		t.Fatal("api.BlkioConfig = false, want true")
 	}
 	if api.MacAddress != "02:42:ac:11:00:03" {
 		t.Fatalf("api.MacAddress = %q, want 02:42:ac:11:00:03", api.MacAddress)

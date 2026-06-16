@@ -72,6 +72,7 @@ type normalizedService struct {
 	Platform               string                              `json:"platform,omitempty"`
 	Annotations            map[string]string                   `json:"annotations,omitempty"`
 	Attach                 *bool                               `json:"attach,omitempty"`
+	BlkioConfig            bool                                `json:"blkioConfig,omitempty"`
 	MacAddress             string                              `json:"macAddress,omitempty"`
 	Runtime                string                              `json:"runtime,omitempty"`
 	Cgroup                 string                              `json:"cgroup,omitempty"`
@@ -356,6 +357,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Platform:               service.Platform,
 		Annotations:            mapMapping(service.Annotations),
 		Attach:                 service.Attach,
+		BlkioConfig:            service.BlkioConfig != nil,
 		MacAddress:             service.MacAddress,
 		Runtime:                service.Runtime,
 		Cgroup:                 service.Cgroup,

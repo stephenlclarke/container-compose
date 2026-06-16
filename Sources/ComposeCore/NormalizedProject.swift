@@ -90,6 +90,7 @@ public struct ComposeService: Codable, Equatable {
     public var platform: String? = nil
     public var annotations: [String: String]? = nil
     public var attach: Bool? = nil
+    public var blkioConfig: Bool? = nil
     public var macAddress: String? = nil
     public var runtime: String? = nil
     public var cgroup: String? = nil
@@ -186,6 +187,7 @@ public struct ComposeService: Codable, Equatable {
         case platform
         case annotations
         case attach
+        case blkioConfig
         case macAddress
         case runtime
         case cgroup

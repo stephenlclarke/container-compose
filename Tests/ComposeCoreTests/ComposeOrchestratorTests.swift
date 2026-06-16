@@ -740,6 +740,33 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up rejects unsupported block IO config before creating resources")
+    func upRejectsUnsupportedBlockIOConfigBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.blkioConfig = true
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported block IO config error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses blkio_config; block I/O controls are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported user and security option fields before creating resources")
     func upRejectsUnsupportedUserAndSecurityOptionFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedUserAndSecurityOptionFieldCases() {
@@ -2165,6 +2192,33 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
+
+    @Test("run rejects unsupported block IO config before creating resources")
+    func runRejectsUnsupportedBlockIOConfigBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.blkioConfig = true
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported block IO config error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses blkio_config; block I/O controls are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("run rejects unsupported user and security option fields before creating resources")
