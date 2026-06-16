@@ -2,8 +2,9 @@ import ArgumentParser
 import ComposeCore
 import Foundation
 
-@main
 struct ComposePlugin: AsyncParsableCommand {
+    @OptionGroup var global: GlobalOptions
+
     static let configuration = CommandConfiguration(
         commandName: "compose",
         abstract: "Manage multi-container applications with Docker Compose syntax",
@@ -35,6 +36,13 @@ struct ComposePlugin: AsyncParsableCommand {
             Version.self,
         ]
     )
+}
+
+@main
+struct ComposePluginMain {
+    static func main() async {
+        await ComposePlugin.main(ComposeArgumentRewriter.rewrite(Array(CommandLine.arguments.dropFirst())))
+    }
 }
 
 struct GlobalOptions: ParsableArguments {
