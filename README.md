@@ -1,6 +1,5 @@
 # container-compose
 
-[![CI](https://github.com/stephenlclarke/container-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/stephenlclarke/container-compose/actions/workflows/ci.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=bugs)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
 [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
@@ -14,7 +13,8 @@
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_container-compose2&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_container-compose2)
 ![Repo Visitors](https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.container-compose)
 
-`container-compose` is a standalone SwiftPM plugin that will provide Docker Compose style workflows for Apple's `container` CLI.
+`container-compose` is a standalone SwiftPM plugin that will provide Docker
+Compose style workflows for Apple's `container` CLI.
 
 The plugin is intended to install as:
 
@@ -24,30 +24,17 @@ The plugin is intended to install as:
 /usr/local/libexec/container-plugins/compose/resources/compose-normalizer
 ```
 
-The first implementation target is local-development Compose v2 compatibility where `container` has matching runtime primitives. Compose file normalization uses `compose-go`, with Swift handling runtime orchestration.
+The first implementation target is local-development Compose v2 compatibility
+where `container` has matching runtime primitives. Compose file normalization
+uses `compose-go`, with Swift handling runtime orchestration.
 
-CI builds and tests the Swift package and Go normalizer helper. Main-branch and same-repository pull request runs also publish Swift generic coverage and Go coverage reports to SonarCloud.
+## Documentation
 
-## Local CI
-
-Run the same validation and package path used by GitHub Actions before pushing:
-
-```sh
-make workflow
-```
-
-Useful targets:
-
-- `make ci` runs the validation job used by GitHub Actions.
-- `make build` builds the Swift package.
-- `make test` runs Swift and Go tests.
-- `make coverage-check` regenerates coverage reports and requires Swift and Go coverage to meet `COVERAGE_MIN`, which defaults to `85`.
-- `make package` builds the installable plugin archive.
-- `make sonar` runs a local Sonar scan when `SONAR_TOKEN` and `sonar-scanner` are available.
-
-For local installation steps, see [INSTALL.md](INSTALL.md).
-
-There is no local deploy target yet; release packaging is handled by `make package`, and publishing remains a GitHub Actions concern.
+- [INSTALL.md](INSTALL.md) explains local plugin installation and removal.
+- [BUILD.md](BUILD.md) explains dependencies, developer validation, packaging,
+  and SonarQube scanning.
+- [DESIGN.md](DESIGN.md) explains the architecture and why Go is used for
+  Compose normalization.
 
 ## License
 
