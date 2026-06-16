@@ -102,107 +102,42 @@ public enum ComposeValue: Codable, Equatable, Sendable {
 /// Canonical service definition used by the Swift orchestrator.
 public struct ComposeService: Codable, Equatable {
     public var name: String
-    public var image: String?
-    public var build: ComposeBuild?
-    public var command: [String]?
-    public var entrypoint: [String]?
-    public var environment: [String: String?]?
-    public var envFiles: [String]?
-    public var ports: [String]?
-    public var volumes: [ComposeMount]?
-    public var networks: [String]?
-    public var dependsOn: [String: String]?
-    public var labels: [String: String]?
-    public var containerName: String?
-    public var hostname: String?
-    public var workingDir: String?
-    public var user: String?
-    public var tty: Bool?
-    public var stdinOpen: Bool?
-    public var readOnly: Bool?
-    public var privileged: Bool?
-    public var initEnabled: Bool?
-    public var tmpfs: [String]?
-    public var dns: [String]?
-    public var dnsSearch: [String]?
-    public var extraHosts: [String]?
-    public var capAdd: [String]?
-    public var capDrop: [String]?
-    public var memLimit: String?
-    public var cpus: String?
-    public var healthcheck: ComposeValue?
-    public var configs: [ComposeValue]?
-    public var secrets: [ComposeValue]?
-    public var extensions: [String: ComposeValue]?
+    public var image: String? = nil
+    public var build: ComposeBuild? = nil
+    public var command: [String]? = nil
+    public var entrypoint: [String]? = nil
+    public var environment: [String: String?]? = nil
+    public var envFiles: [String]? = nil
+    public var ports: [String]? = nil
+    public var volumes: [ComposeMount]? = nil
+    public var networks: [String]? = nil
+    public var dependsOn: [String: String]? = nil
+    public var labels: [String: String]? = nil
+    public var containerName: String? = nil
+    public var hostname: String? = nil
+    public var workingDir: String? = nil
+    public var user: String? = nil
+    public var tty: Bool? = nil
+    public var stdinOpen: Bool? = nil
+    public var readOnly: Bool? = nil
+    public var privileged: Bool? = nil
+    public var initEnabled: Bool? = nil
+    public var tmpfs: [String]? = nil
+    public var dns: [String]? = nil
+    public var dnsSearch: [String]? = nil
+    public var extraHosts: [String]? = nil
+    public var capAdd: [String]? = nil
+    public var capDrop: [String]? = nil
+    public var memLimit: String? = nil
+    public var cpus: String? = nil
+    public var healthcheck: ComposeValue? = nil
+    public var configs: [ComposeValue]? = nil
+    public var secrets: [ComposeValue]? = nil
+    public var extensions: [String: ComposeValue]? = nil
 
-    public init(
-        name: String,
-        image: String? = nil,
-        build: ComposeBuild? = nil,
-        command: [String]? = nil,
-        entrypoint: [String]? = nil,
-        environment: [String: String?]? = nil,
-        envFiles: [String]? = nil,
-        ports: [String]? = nil,
-        volumes: [ComposeMount]? = nil,
-        networks: [String]? = nil,
-        dependsOn: [String: String]? = nil,
-        labels: [String: String]? = nil,
-        containerName: String? = nil,
-        hostname: String? = nil,
-        workingDir: String? = nil,
-        user: String? = nil,
-        tty: Bool? = nil,
-        stdinOpen: Bool? = nil,
-        readOnly: Bool? = nil,
-        privileged: Bool? = nil,
-        initEnabled: Bool? = nil,
-        tmpfs: [String]? = nil,
-        dns: [String]? = nil,
-        dnsSearch: [String]? = nil,
-        extraHosts: [String]? = nil,
-        capAdd: [String]? = nil,
-        capDrop: [String]? = nil,
-        memLimit: String? = nil,
-        cpus: String? = nil,
-        healthcheck: ComposeValue? = nil,
-        configs: [ComposeValue]? = nil,
-        secrets: [ComposeValue]? = nil,
-        extensions: [String: ComposeValue]? = nil
-    ) {
+    public init(name: String, image: String? = nil) {
         self.name = name
         self.image = image
-        self.build = build
-        self.command = command
-        self.entrypoint = entrypoint
-        self.environment = environment
-        self.envFiles = envFiles
-        self.ports = ports
-        self.volumes = volumes
-        self.networks = networks
-        self.dependsOn = dependsOn
-        self.labels = labels
-        self.containerName = containerName
-        self.hostname = hostname
-        self.workingDir = workingDir
-        self.user = user
-        self.tty = tty
-        self.stdinOpen = stdinOpen
-        self.readOnly = readOnly
-        self.privileged = privileged
-        self.initEnabled = initEnabled
-        self.tmpfs = tmpfs
-        self.dns = dns
-        self.dnsSearch = dnsSearch
-        self.extraHosts = extraHosts
-        self.capAdd = capAdd
-        self.capDrop = capDrop
-        self.memLimit = memLimit
-        self.cpus = cpus
-        self.healthcheck = healthcheck
-        self.configs = configs
-        self.secrets = secrets
-        self.extensions = extensions
     }
 
     enum CodingKeys: String, CodingKey {
