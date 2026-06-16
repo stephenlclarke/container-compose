@@ -35,6 +35,8 @@ uses `compose-go`, with Swift handling runtime orchestration.
   and SonarQube scanning.
 - [DESIGN.md](DESIGN.md) explains the architecture and why Go is used for
   Compose normalization.
+- [CONTRIBUTING.md](CONTRIBUTING.md) explains pull request, commit, and branch
+  protection expectations.
 
 ## License
 
