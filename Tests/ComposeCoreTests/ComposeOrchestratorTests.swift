@@ -411,6 +411,36 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported configs before creating resources")
+    func upRejectsUnsupportedConfigsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])]
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            $0.configs = ["app_config": .object(["external": .bool(true)])]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported configs error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses configs; config mount support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("lists selected service images")
     func listsSelectedServiceImages() throws {
         let project = ComposeProject(
@@ -1064,6 +1094,36 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported healthcheck error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses healthcheck; health status support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported configs before creating resources")
+    func runRejectsUnsupportedConfigsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.configs = [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])]
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            $0.configs = ["app_config": .object(["external": .bool(true)])]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported configs error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses configs; config mount support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

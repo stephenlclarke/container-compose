@@ -418,6 +418,9 @@ private extension ComposeOrchestrator {
         if service.healthcheck != nil {
             throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
         }
+        if let configs = service.configs, !configs.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses configs; config mount support needs an apple/container runtime gap PR")
+        }
         if service.privileged == true {
             throw ComposeError.unsupported("service '\(service.name)' uses privileged")
         }
