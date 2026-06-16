@@ -87,12 +87,19 @@ cli-smoke: build
 	.build/debug/compose version --dry-run >/dev/null
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080:80"\n' > "$$tmpdir/compose.yml"; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *" alpine echo hello"* ]]; \
+	[[ "$$run_output" != *"--publish 8080:80"* ]]; \
+	run_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --service-ports api echo hello)"; \
+	[[ "$$run_service_ports_output" == *"--publish 8080:80"* ]]; \
+	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
+	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
+	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
+	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$up_output" != *"--detach"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
 	[[ "$$detached_output" == *"container run"* ]]; \

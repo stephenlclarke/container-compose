@@ -154,6 +154,8 @@ public enum ComposeArgumentRewriter {
             return rewriteExecOptions(arguments)
         case "logs":
             return rewriteLogsOptions(arguments)
+        case "run":
+            return rewriteRunOptions(arguments)
         default:
             return arguments
         }
@@ -200,5 +202,74 @@ public enum ComposeArgumentRewriter {
             }
         }
         return rewritten
+    }
+
+    /// Normalizes Docker Compose `run -p` before the service name.
+    private static func rewriteRunOptions(_ arguments: [String]) -> [String] {
+        var rewritten: [String] = []
+        var index = 0
+        var shouldRewriteOptions = true
+        while index < arguments.count {
+            let argument = arguments[index]
+            if !shouldRewriteOptions {
+                rewritten.append(argument)
+                index += 1
+            } else if argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+                index += 1
+            } else if argument == "-p" {
+                rewritten.append("--publish")
+                if arguments.indices.contains(index + 1) {
+                    rewritten.append(arguments[index + 1])
+                    index += 2
+                } else {
+                    index += 1
+                }
+            } else if argument.hasPrefix("-p"), argument.count > 2 {
+                rewritten.append("--publish")
+                rewritten.append(String(argument.dropFirst(2)))
+                index += 1
+            } else if optionConsumesFollowingValue(argument), arguments.indices.contains(index + 1) {
+                rewritten.append(argument)
+                rewritten.append(arguments[index + 1])
+                index += 2
+            } else if argument.hasPrefix("-") {
+                rewritten.append(argument)
+                index += 1
+            } else {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+                index += 1
+            }
+        }
+        return rewritten
+    }
+
+    /// Returns whether a `run` option consumes the following argument.
+    private static func runOptionConsumesValue(_ argument: String) -> Bool {
+        [
+            "--entrypoint",
+            "--env",
+            "--env-from-file",
+            "--label",
+            "--name",
+            "--publish",
+            "--pull",
+            "--user",
+            "--volume",
+            "--workdir",
+        ].contains(argument)
+    }
+
+    /// Returns whether any known command-local or global option consumes a value.
+    private static func optionConsumesFollowingValue(_ argument: String) -> Bool {
+        if runOptionConsumesValue(argument) {
+            return true
+        }
+        guard let kind = globalOptionKind(argument) else {
+            return false
+        }
+        return kind == .value && !argument.contains("=")
     }
 }

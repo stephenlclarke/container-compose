@@ -327,6 +327,10 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("rm"), help: "Remove the one-off container after exit.")
     var remove = false
+    @Flag(name: [.customShort("P"), .customLong("service-ports")], help: "Publish all ports declared by the service.")
+    var servicePorts = false
+    @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
+    var publish: [String] = []
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -335,7 +339,16 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     /// Runs a one-off service container with an optional command override.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().run(project: loadedProject, serviceName: service, command: command, remove: remove)
+        try await orchestrator().run(
+            project: loadedProject,
+            serviceName: service,
+            options: ComposeRunOptions(
+                command: command,
+                remove: remove,
+                servicePorts: servicePorts,
+                publish: publish
+            )
+        )
     }
 }
 

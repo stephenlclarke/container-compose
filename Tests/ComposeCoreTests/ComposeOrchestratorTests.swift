@@ -2047,7 +2047,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--env", "A=B"]))
         #expect(command.containsSequence(["--env", "EMPTY"]))
         #expect(command.containsSequence(["--env-file", ".env"]))
-        #expect(command.containsSequence(["--publish", "8080:80"]))
+        #expect(!command.containsSequence(["--publish", "8080:80"]))
         #expect(command.containsSequence(["--volume", "/host:/container:ro"]))
         #expect(command.containsSequence(["--tmpfs", "/tmp"]))
         #expect(command.containsSequence(["--workdir", "/work"]))
@@ -2069,6 +2069,62 @@ struct ComposeOrchestratorTests {
         #expect(command.contains("--read-only"))
         #expect(command.contains("--init"))
         #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
+    }
+
+    @Test("run publishes service ports only when requested")
+    func runPublishesServicePortsOnlyWhenRequested() async throws {
+        let defaultRunner = RecordingRunner()
+        let servicePortsRunner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.ports = ["8080:80"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: defaultRunner).run(
+            project: project,
+            serviceName: "api",
+            options: ComposeRunOptions(command: ["true"])
+        )
+        try await ComposeOrchestrator(runner: servicePortsRunner).run(
+            project: project,
+            serviceName: "api",
+            options: ComposeRunOptions(command: ["true"], servicePorts: true)
+        )
+
+        let defaultCommand = try #require(defaultRunner.commands.first?.arguments)
+        let servicePortsCommand = try #require(servicePortsRunner.commands.first?.arguments)
+        #expect(!defaultCommand.containsSequence(["--publish", "8080:80"]))
+        #expect(servicePortsCommand.containsSequence(["--publish", "8080:80"]))
+    }
+
+    @Test("run publishes manual ports without service ports")
+    func runPublishesManualPortsWithoutServicePorts() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.ports = ["8080:80"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "api",
+            options: ComposeRunOptions(
+                command: ["true"],
+                publish: ["127.0.0.1:9090:90"]
+            )
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--publish", "127.0.0.1:9090:90"]))
+        #expect(!command.containsSequence(["--publish", "8080:80"]))
     }
 
     @Test("run creates project resources before one-off containers")

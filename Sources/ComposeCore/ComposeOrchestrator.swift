@@ -86,6 +86,21 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Options for `compose run` one-off containers.
+public struct ComposeRunOptions {
+    public var command: [String]
+    public var remove: Bool
+    public var servicePorts: Bool
+    public var publish: [String]
+
+    public init(command: [String] = [], remove: Bool = false, servicePorts: Bool = false, publish: [String] = []) {
+        self.command = command
+        self.remove = remove
+        self.servicePorts = servicePorts
+        self.publish = publish
+    }
+}
+
 /// Converts a normalized Compose project into deterministic `container`
 /// commands.
 public final class ComposeOrchestrator: @unchecked Sendable {
@@ -261,17 +276,34 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Runs a one-off container for a service.
     public func run(project: ComposeProject, serviceName: String, command: [String], remove: Bool) async throws {
+        try await run(
+            project: project,
+            serviceName: serviceName,
+            options: ComposeRunOptions(command: command, remove: remove)
+        )
+    }
+
+    /// Runs a one-off container for a service with Docker Compose compatible options.
+    public func run(project: ComposeProject, serviceName: String, options run: ComposeRunOptions) async throws {
         guard var service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
-        if !command.isEmpty {
-            service.command = command
+        if !run.command.isEmpty {
+            service.command = run.command
         }
         try validateRuntimeSupport(service: service)
         try await applyServicePullPolicies(services: [service])
         try await ensureResources(project: project)
+        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
-            runArguments(project: project, service: service, detach: false, remove: remove, oneOff: true),
+            runArguments(
+                project: project,
+                service: service,
+                detach: false,
+                remove: run.remove,
+                oneOff: true,
+                publishedPorts: publishedPorts
+            ),
             inheritedIO: service.tty == true || service.stdinOpen == true
         )
     }
@@ -867,7 +899,14 @@ private extension ComposeOrchestrator {
     }
 
     /// Builds the `container run` argument vector for a service.
-    func runArguments(project: ComposeProject, service: ComposeService, detach: Bool, remove: Bool, oneOff: Bool) throws -> [String] {
+    func runArguments(
+        project: ComposeProject,
+        service: ComposeService,
+        detach: Bool,
+        remove: Bool,
+        oneOff: Bool,
+        publishedPorts: [String]? = nil
+    ) throws -> [String] {
         var args = ["run"]
         args.append(contentsOf: ["--name", containerName(project: project, service: service, oneOff: oneOff)])
         if detach {
@@ -893,7 +932,7 @@ private extension ComposeOrchestrator {
         for envFile in service.envFiles ?? [] {
             args.append(contentsOf: ["--env-file", envFile])
         }
-        for port in service.ports ?? [] {
+        for port in publishedPorts ?? service.ports ?? [] {
             args.append(contentsOf: ["--publish", port])
         }
         for mount in service.volumes ?? [] {
