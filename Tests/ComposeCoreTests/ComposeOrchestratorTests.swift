@@ -141,6 +141,34 @@ struct ComposeOrchestratorTests {
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
     }
 
+    @Test("up removes orphan containers when requested")
+    func upRemovesOrphanContainersWhenRequested() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+            containerListResult(),
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions(removeOrphans: true))
+
+        #expect(runner.commands.count == 5)
+        #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
+        #expect(runner.commands[1].arguments.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(runner.commands[1].arguments.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
+        #expect(runner.commands[1].arguments.containsSequence(["--label", "com.apple.container.compose.service=api"]))
+        #expect(runner.commands[1].arguments.last == "example/api:latest")
+        #expect(runner.commands[2].arguments == ["container", "list", "--format", "json", "--all"])
+        #expect(runner.commands[3].arguments == ["container", "stop", "demo-worker-1"])
+        #expect(runner.commands[4].arguments == ["container", "delete", "demo-worker-1"])
+    }
+
     @Test("rejects dependency conditions that need runtime gaps")
     func rejectsUnsupportedDependencyConditions() async throws {
         let project = ComposeProject(
