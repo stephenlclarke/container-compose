@@ -187,6 +187,7 @@ x-project:
 services:
   api:
     image: alpine
+    restart: unless-stopped
     healthcheck:
       disable: true
     configs:
@@ -222,6 +223,9 @@ secrets:
 	api := project.Services["api"]
 	if api.Healthcheck == nil {
 		t.Fatal("api.Healthcheck is nil")
+	}
+	if api.Restart != "unless-stopped" {
+		t.Fatalf("api.Restart = %q, want unless-stopped", api.Restart)
 	}
 	if api.Configs == nil {
 		t.Fatal("api.Configs is nil")

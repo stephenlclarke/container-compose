@@ -427,6 +427,9 @@ private extension ComposeOrchestrator {
         if service.privileged == true {
             throw ComposeError.unsupported("service '\(service.name)' uses privileged")
         }
+        if let restart = service.restart, !restart.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
+        }
     }
 
     /// Validates all selected services before any runtime side effects occur.

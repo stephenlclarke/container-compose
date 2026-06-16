@@ -104,6 +104,7 @@ public struct ComposeService: Codable, Equatable {
     public var stdinOpen: Bool? = nil
     public var readOnly: Bool? = nil
     public var privileged: Bool? = nil
+    public var restart: String? = nil
     public var initEnabled: Bool? = nil
     public var tmpfs: [String]? = nil
     public var dns: [String]? = nil
@@ -144,6 +145,7 @@ public struct ComposeService: Codable, Equatable {
         case stdinOpen
         case readOnly
         case privileged
+        case restart
         case initEnabled = "init"
         case tmpfs
         case dns

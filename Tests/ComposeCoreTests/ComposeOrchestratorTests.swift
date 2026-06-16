@@ -471,6 +471,35 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported restart policies before creating resources")
+    func upRejectsUnsupportedRestartPoliciesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.restart = "unless-stopped"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported restart policy error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses restart policy 'unless-stopped'; restart policy support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("lists selected service images")
     func listsSelectedServiceImages() throws {
         let project = ComposeProject(
@@ -598,6 +627,7 @@ struct ComposeOrchestratorTests {
         services:
           api:
             image: alpine
+            restart: unless-stopped
             healthcheck:
               disable: true
             configs:
@@ -621,6 +651,7 @@ struct ComposeOrchestratorTests {
         #expect(project.configs?["app_config"] == .object(["external": .bool(true), "name": .string("app_config")]))
         #expect(project.secrets?["app_secret"] == .object(["external": .bool(true), "name": .string("app_secret")]))
         #expect(project.extensions?["x-project"] == .object(["enabled": .bool(true)]))
+        #expect(api.restart == "unless-stopped")
         #expect(api.healthcheck == .object(["disable": .bool(true)]))
         #expect(api.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
         #expect(api.secrets == [.object(["source": .string("app_secret"), "target": .string("/run/secrets/app_secret")])])
@@ -1184,6 +1215,35 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported secrets error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses secrets; secret mount support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported restart policies before creating resources")
+    func runRejectsUnsupportedRestartPoliciesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.restart = "on-failure"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported restart policy error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses restart policy 'on-failure'; restart policy support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

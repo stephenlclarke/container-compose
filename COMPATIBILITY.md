@@ -51,6 +51,7 @@ These fields currently fail before runtime side effects because the equivalent l
 - Service `configs`.
 - Service `secrets`.
 - `privileged`.
+- Runtime restart policies through service `restart`.
 - `top`, `events`, `port`, `pause`, `unpause`, and `wait` subcommands.
 
 ## Maintenance Rule

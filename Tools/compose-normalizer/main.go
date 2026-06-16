@@ -85,6 +85,7 @@ type normalizedService struct {
 	StdinOpen     bool               `json:"stdinOpen,omitempty"`
 	ReadOnly      bool               `json:"readOnly,omitempty"`
 	Privileged    bool               `json:"privileged,omitempty"`
+	Restart       string             `json:"restart,omitempty"`
 	Init          *bool              `json:"init,omitempty"`
 	Tmpfs         []string           `json:"tmpfs,omitempty"`
 	DNS           []string           `json:"dns,omitempty"`
@@ -300,6 +301,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		StdinOpen:     service.StdinOpen,
 		ReadOnly:      service.ReadOnly,
 		Privileged:    service.Privileged,
+		Restart:       service.Restart,
 		Init:          service.Init,
 		Tmpfs:         append([]string(nil), service.Tmpfs...),
 		DNS:           append([]string(nil), service.DNS...),
