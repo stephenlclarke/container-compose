@@ -68,6 +68,7 @@ type normalizedService struct {
 	Name           string                              `json:"name"`
 	Image          string                              `json:"image,omitempty"`
 	PullPolicy     string                              `json:"pullPolicy,omitempty"`
+	Platform       string                              `json:"platform,omitempty"`
 	Build          *normalizedBuild                    `json:"build,omitempty"`
 	Command        []string                            `json:"command,omitempty"`
 	Entrypoint     []string                            `json:"entrypoint,omitempty"`
@@ -301,6 +302,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Name:           service.Name,
 		Image:          service.Image,
 		PullPolicy:     service.PullPolicy,
+		Platform:       service.Platform,
 		Command:        shellCommandValues(service.Command),
 		Entrypoint:     shellCommandValues(service.Entrypoint),
 		Environment:    mapEnvironment(service.Environment),

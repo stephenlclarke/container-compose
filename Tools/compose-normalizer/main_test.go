@@ -115,6 +115,7 @@ name: sample
 services:
   api:
     image: nginx:alpine
+    platform: linux/amd64
     command: ["nginx", "-g", "daemon off;"]
     environment:
       FOO: bar
@@ -166,6 +167,9 @@ volumes:
 	api := project.Services["api"]
 	if api.Image != "nginx:alpine" {
 		t.Fatalf("api.Image = %q, want nginx:alpine", api.Image)
+	}
+	if api.Platform != "linux/amd64" {
+		t.Fatalf("api.Platform = %q, want linux/amd64", api.Platform)
 	}
 	if got, want := api.Command, []string{"nginx", "-g", "daemon off;"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Command = %#v, want %#v", got, want)
