@@ -92,12 +92,20 @@ public struct ComposeRunOptions {
     public var remove: Bool
     public var servicePorts: Bool
     public var publish: [String]
+    public var containerName: String?
 
-    public init(command: [String] = [], remove: Bool = false, servicePorts: Bool = false, publish: [String] = []) {
+    public init(
+        command: [String] = [],
+        remove: Bool = false,
+        servicePorts: Bool = false,
+        publish: [String] = [],
+        containerName: String? = nil
+    ) {
         self.command = command
         self.remove = remove
         self.servicePorts = servicePorts
         self.publish = publish
+        self.containerName = containerName
     }
 }
 
@@ -302,7 +310,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 detach: false,
                 remove: run.remove,
                 oneOff: true,
-                publishedPorts: publishedPorts
+                publishedPorts: publishedPorts,
+                containerNameOverride: run.containerName
             ),
             inheritedIO: service.tty == true || service.stdinOpen == true
         )
@@ -905,10 +914,12 @@ private extension ComposeOrchestrator {
         detach: Bool,
         remove: Bool,
         oneOff: Bool,
-        publishedPorts: [String]? = nil
+        publishedPorts: [String]? = nil,
+        containerNameOverride: String? = nil
     ) throws -> [String] {
         var args = ["run"]
-        args.append(contentsOf: ["--name", containerName(project: project, service: service, oneOff: oneOff)])
+        let runtimeName = containerNameOverride.map(slug) ?? containerName(project: project, service: service, oneOff: oneOff)
+        args.append(contentsOf: ["--name", runtimeName])
         if detach {
             args.append("--detach")
         }
