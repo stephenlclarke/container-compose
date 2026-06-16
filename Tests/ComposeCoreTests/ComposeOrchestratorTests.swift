@@ -873,6 +873,8 @@ struct ComposeOrchestratorTests {
               LOG_LEVEL: debug
             dns_opt:
               - use-vc
+            expose:
+              - "9000"
             links:
               - redis:cache
             external_links:
@@ -900,6 +902,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(ipv4Address: "10.10.0.5")])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
+        #expect(project.services["api"]?.expose == ["9000"])
         #expect(project.services["api"]?.links == ["redis:cache"])
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.ports == ["8080:80"])

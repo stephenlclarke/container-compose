@@ -94,6 +94,7 @@ public struct ComposeService: Codable, Equatable {
     public var entrypoint: [String]? = nil
     public var environment: [String: String?]? = nil
     public var envFiles: [String]? = nil
+    public var expose: [String]? = nil
     public var ports: [String]? = nil
     public var volumes: [ComposeMount]? = nil
     public var networks: [String]? = nil
@@ -145,6 +146,7 @@ public struct ComposeService: Codable, Equatable {
         case entrypoint
         case environment
         case envFiles
+        case expose
         case ports
         case volumes
         case networks

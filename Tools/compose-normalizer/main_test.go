@@ -123,6 +123,8 @@ services:
       FOO: bar
     dns_opt:
       - use-vc
+    expose:
+      - "9000"
     ports:
       - "127.0.0.1:8080:80/tcp"
     volumes:
@@ -193,6 +195,9 @@ volumes:
 	}
 	if got, want := api.DNSOptions, []string{"use-vc"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DNSOptions = %#v, want %#v", got, want)
+	}
+	if got, want := api.Expose, []string{"9000"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Expose = %#v, want %#v", got, want)
 	}
 	if got, want := api.Ports, []string{"127.0.0.1:8080:80"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ports = %#v, want %#v", got, want)

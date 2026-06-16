@@ -36,6 +36,7 @@
 
 These Compose model fields are normalized and preserved for `compose config`, but do not currently have matching runtime orchestration:
 
+- Service `expose` entries.
 - Project and service extension fields such as `x-*`.
 - Top-level `configs` and `secrets` definitions.
 

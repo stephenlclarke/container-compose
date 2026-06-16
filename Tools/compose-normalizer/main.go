@@ -75,6 +75,7 @@ type normalizedService struct {
 	Entrypoint     []string                            `json:"entrypoint,omitempty"`
 	Environment    map[string]*string                  `json:"environment,omitempty"`
 	EnvFiles       []string                            `json:"envFiles,omitempty"`
+	Expose         []string                            `json:"expose,omitempty"`
 	Ports          []string                            `json:"ports,omitempty"`
 	Volumes        []normalizedMount                   `json:"volumes,omitempty"`
 	Networks       []string                            `json:"networks,omitempty"`
@@ -313,6 +314,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Entrypoint:     shellCommandValues(service.Entrypoint),
 		Environment:    mapEnvironment(service.Environment),
 		EnvFiles:       envFileValues(service.EnvFiles),
+		Expose:         append([]string(nil), service.Expose...),
 		Ports:          portValues(service.Ports),
 		Volumes:        mountValues(service.Volumes),
 		Networks:       networkValues(service.Networks),
