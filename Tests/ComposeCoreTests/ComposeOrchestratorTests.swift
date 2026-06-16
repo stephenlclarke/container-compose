@@ -169,6 +169,39 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[4].arguments == ["container", "delete", "demo-worker-1"])
     }
 
+    @Test("up build does not rebuild build-only services")
+    func upBuildDoesNotRebuildBuildOnlyServices() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions(build: true))
+
+        let buildCommands = runner.commands.map(\.arguments).filter { $0.starts(with: ["container", "build"]) }
+        #expect(buildCommands.count == 2)
+        #expect(buildCommands[0].containsSequence(["--tag", "example/api"]))
+        #expect(buildCommands[0].last == "api")
+        #expect(buildCommands[1].containsSequence(["--tag", "demo_worker:latest"]))
+        #expect(buildCommands[1].last == "worker")
+    }
+
     @Test("rejects dependency conditions that need runtime gaps")
     func rejectsUnsupportedDependencyConditions() async throws {
         let project = ComposeProject(
