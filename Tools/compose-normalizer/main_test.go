@@ -132,6 +132,9 @@ services:
         soft: 1024
         hard: 2048
       nproc: 512
+    sysctls:
+      net.core.somaxconn: "1024"
+      net.ipv4.ip_local_port_range: "1024 65535"
     ports:
       - "127.0.0.1:8080:80/tcp"
     volumes:
@@ -214,6 +217,9 @@ volumes:
 	}
 	if got, want := api.Ulimits, []string{"nofile=1024:2048", "nproc=512"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ulimits = %#v, want %#v", got, want)
+	}
+	if got, want := api.Sysctls, map[string]string{"net.core.somaxconn": "1024", "net.ipv4.ip_local_port_range": "1024 65535"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Sysctls = %#v, want %#v", got, want)
 	}
 	if got, want := api.Ports, []string{"127.0.0.1:8080:80"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ports = %#v, want %#v", got, want)
@@ -443,6 +449,12 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	}
 	if mapLabels(nil) != nil {
 		t.Fatal("mapLabels(nil) returned non-nil")
+	}
+	if mapMapping(nil) != nil {
+		t.Fatal("mapMapping(nil) returned non-nil")
+	}
+	if got, want := mapMapping(types.Mapping{"net.core.somaxconn": "1024"}), map[string]string{"net.core.somaxconn": "1024"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("mapMapping() = %#v, want %#v", got, want)
 	}
 	if buildArgs(nil) != nil {
 		t.Fatal("buildArgs(nil) returned non-nil")

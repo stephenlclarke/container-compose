@@ -535,6 +535,35 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported sysctls before creating resources")
+    func upRejectsUnsupportedSysctlsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.sysctls = ["net.core.somaxconn": "1024"]
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported sysctls error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses sysctls; sysctl support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported network aliases before creating resources")
     func upRejectsUnsupportedNetworkAliasesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -882,6 +911,8 @@ struct ComposeOrchestratorTests {
                 soft: 1024
                 hard: 2048
               nproc: 512
+            sysctls:
+              net.core.somaxconn: "1024"
             links:
               - redis:cache
             external_links:
@@ -913,6 +944,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.expose == ["9000"])
         #expect(project.services["api"]?.shmSize == "67108864")
         #expect(project.services["api"]?.ulimits == ["nofile=1024:2048", "nproc=512"])
+        #expect(project.services["api"]?.sysctls == ["net.core.somaxconn": "1024"])
         #expect(project.services["api"]?.links == ["redis:cache"])
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.ports == ["8080:80"])
@@ -1640,6 +1672,35 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported DNS option error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses dns_opt; DNS option support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported sysctls before creating resources")
+    func runRejectsUnsupportedSysctlsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.sysctls = ["net.core.somaxconn": "1024"]
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported sysctls error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses sysctls; sysctl support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

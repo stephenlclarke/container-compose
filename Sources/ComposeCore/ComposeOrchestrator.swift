@@ -451,6 +451,9 @@ private extension ComposeOrchestrator {
         if let dnsOptions = service.dnsOptions, !dnsOptions.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses dns_opt; DNS option support needs an apple/container runtime gap PR")
         }
+        if let sysctls = service.sysctls, !sysctls.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
+        }
         if service.healthcheck != nil {
             throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
         }

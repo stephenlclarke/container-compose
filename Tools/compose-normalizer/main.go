@@ -109,6 +109,7 @@ type normalizedService struct {
 	CPUS           string                              `json:"cpus,omitempty"`
 	ShmSize        string                              `json:"shmSize,omitempty"`
 	Ulimits        []string                            `json:"ulimits,omitempty"`
+	Sysctls        map[string]string                   `json:"sysctls,omitempty"`
 	Healthcheck    any                                 `json:"healthcheck,omitempty"`
 	Configs        any                                 `json:"configs,omitempty"`
 	Secrets        any                                 `json:"secrets,omitempty"`
@@ -351,6 +352,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		CPUS:           cpusValue(service.CPUS),
 		ShmSize:        unitBytesValue(service.ShmSize),
 		Ulimits:        ulimitValues(service.Ulimits),
+		Sysctls:        mapMapping(service.Sysctls),
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{
@@ -586,6 +588,18 @@ func mapOptions(options types.Options) map[string]string {
 	}
 	result := map[string]string{}
 	for key, value := range options {
+		result[key] = value
+	}
+	return result
+}
+
+// mapMapping copies Compose key/value mappings into regular string maps.
+func mapMapping(mapping types.Mapping) map[string]string {
+	if len(mapping) == 0 {
+		return nil
+	}
+	result := map[string]string{}
+	for key, value := range mapping {
 		result[key] = value
 	}
 	return result
