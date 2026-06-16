@@ -18,15 +18,22 @@ import Foundation
 
 /// Loads Compose files through the compose-go helper and decodes canonical JSON.
 public struct ComposeNormalizer: Sendable {
-    private let runner: CommandRunning
+    public static let defaultFallbackLauncher = ["", "usr", "bin", "env"].joined(separator: "/")
 
-    public init(runner: CommandRunning = ProcessRunner()) {
+    private let runner: CommandRunning
+    private let fallbackLauncher: String
+
+    public init(
+        runner: CommandRunning = ProcessRunner(),
+        fallbackLauncher: String = ComposeNormalizer.defaultFallbackLauncher
+    ) {
         self.runner = runner
+        self.fallbackLauncher = fallbackLauncher
     }
 
     /// Normalizes Compose input options into the Swift orchestration model.
     public func normalize(options: ComposeOptions) async throws -> ComposeProject {
-        let invocation = try Self.normalizerInvocation()
+        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
         let projectDirectory = options.projectDirectory ?? Self.defaultProjectDirectory(files: options.files)
         var arguments = invocation.prefixArguments
 
@@ -73,7 +80,7 @@ private struct NormalizerInvocation {
 }
 
 private extension ComposeNormalizer {
-    static func normalizerInvocation() throws -> NormalizerInvocation {
+    static func normalizerInvocation(fallbackLauncher: String) throws -> NormalizerInvocation {
         if let explicit = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_NORMALIZER"], !explicit.isEmpty {
             return NormalizerInvocation(executable: explicit, prefixArguments: [], workingDirectory: nil)
         }
@@ -88,7 +95,7 @@ private extension ComposeNormalizer {
         if FileManager.default.fileExists(atPath: sourceURL.appendingPathComponent("go.mod").path) {
             // Source checkouts run the helper through Go so developers do not
             // need a prebuilt normalizer binary while iterating locally.
-            return NormalizerInvocation(executable: "/usr/bin/env", prefixArguments: ["go", "run", "."], workingDirectory: sourceURL)
+            return NormalizerInvocation(executable: fallbackLauncher, prefixArguments: ["go", "run", "."], workingDirectory: sourceURL)
         }
 
         throw ComposeError.missingNormalizer(
