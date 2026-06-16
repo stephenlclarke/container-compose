@@ -44,6 +44,7 @@ These Compose model fields are normalized and preserved for `compose config`, bu
 These fields currently fail before runtime side effects because the equivalent local runtime primitive is not available or not wired yet:
 
 - Multiple service networks.
+- Network aliases.
 - `depends_on` conditions other than `service_started`.
 - `extra_hosts`.
 - `hostname`.

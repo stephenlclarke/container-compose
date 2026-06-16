@@ -450,6 +450,35 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported network aliases before creating resources")
+    func upRejectsUnsupportedNetworkAliasesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkAliases = ["backend": ["api.internal"]]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported network alias error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses network aliases; network alias support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects unsupported healthchecks before creating resources")
     func upRejectsUnsupportedHealthchecksBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -633,6 +662,10 @@ struct ComposeOrchestratorTests {
             image: nginx:latest
             pull_policy: always
             command: ["nginx", "-g", "daemon off;"]
+            networks:
+              default:
+                aliases:
+                  - api.internal
             ports:
               - "8080:80"
             environment:
@@ -651,6 +684,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.image == "nginx:latest")
         #expect(project.services["api"]?.pullPolicy == "always")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
+        #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.ports == ["8080:80"])
         #expect(project.volumes["data"] != nil)
@@ -1256,6 +1290,35 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported hostname error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses hostname; custom hostname support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects unsupported network aliases before creating resources")
+    func runRejectsUnsupportedNetworkAliasesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networks = ["backend"]
+                    $0.networkAliases = ["backend": ["job.internal"]]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported network alias error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses network aliases; network alias support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

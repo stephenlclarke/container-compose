@@ -65,41 +65,42 @@ type normalizedProject struct {
 // normalizedService contains the Compose service fields Swift can either
 // orchestrate directly or preserve for config output and runtime gap checks.
 type normalizedService struct {
-	Name          string             `json:"name"`
-	Image         string             `json:"image,omitempty"`
-	PullPolicy    string             `json:"pullPolicy,omitempty"`
-	Build         *normalizedBuild   `json:"build,omitempty"`
-	Command       []string           `json:"command,omitempty"`
-	Entrypoint    []string           `json:"entrypoint,omitempty"`
-	Environment   map[string]*string `json:"environment,omitempty"`
-	EnvFiles      []string           `json:"envFiles,omitempty"`
-	Ports         []string           `json:"ports,omitempty"`
-	Volumes       []normalizedMount  `json:"volumes,omitempty"`
-	Networks      []string           `json:"networks,omitempty"`
-	DependsOn     map[string]string  `json:"dependsOn,omitempty"`
-	Labels        map[string]string  `json:"labels,omitempty"`
-	ContainerName string             `json:"containerName,omitempty"`
-	Hostname      string             `json:"hostname,omitempty"`
-	WorkingDir    string             `json:"workingDir,omitempty"`
-	User          string             `json:"user,omitempty"`
-	TTY           bool               `json:"tty,omitempty"`
-	StdinOpen     bool               `json:"stdinOpen,omitempty"`
-	ReadOnly      bool               `json:"readOnly,omitempty"`
-	Privileged    bool               `json:"privileged,omitempty"`
-	Restart       string             `json:"restart,omitempty"`
-	Init          *bool              `json:"init,omitempty"`
-	Tmpfs         []string           `json:"tmpfs,omitempty"`
-	DNS           []string           `json:"dns,omitempty"`
-	DNSSearch     []string           `json:"dnsSearch,omitempty"`
-	ExtraHosts    []string           `json:"extraHosts,omitempty"`
-	CapAdd        []string           `json:"capAdd,omitempty"`
-	CapDrop       []string           `json:"capDrop,omitempty"`
-	MemLimit      string             `json:"memLimit,omitempty"`
-	CPUS          string             `json:"cpus,omitempty"`
-	Healthcheck   any                `json:"healthcheck,omitempty"`
-	Configs       any                `json:"configs,omitempty"`
-	Secrets       any                `json:"secrets,omitempty"`
-	Extensions    map[string]any     `json:"extensions,omitempty"`
+	Name           string              `json:"name"`
+	Image          string              `json:"image,omitempty"`
+	PullPolicy     string              `json:"pullPolicy,omitempty"`
+	Build          *normalizedBuild    `json:"build,omitempty"`
+	Command        []string            `json:"command,omitempty"`
+	Entrypoint     []string            `json:"entrypoint,omitempty"`
+	Environment    map[string]*string  `json:"environment,omitempty"`
+	EnvFiles       []string            `json:"envFiles,omitempty"`
+	Ports          []string            `json:"ports,omitempty"`
+	Volumes        []normalizedMount   `json:"volumes,omitempty"`
+	Networks       []string            `json:"networks,omitempty"`
+	NetworkAliases map[string][]string `json:"networkAliases,omitempty"`
+	DependsOn      map[string]string   `json:"dependsOn,omitempty"`
+	Labels         map[string]string   `json:"labels,omitempty"`
+	ContainerName  string              `json:"containerName,omitempty"`
+	Hostname       string              `json:"hostname,omitempty"`
+	WorkingDir     string              `json:"workingDir,omitempty"`
+	User           string              `json:"user,omitempty"`
+	TTY            bool                `json:"tty,omitempty"`
+	StdinOpen      bool                `json:"stdinOpen,omitempty"`
+	ReadOnly       bool                `json:"readOnly,omitempty"`
+	Privileged     bool                `json:"privileged,omitempty"`
+	Restart        string              `json:"restart,omitempty"`
+	Init           *bool               `json:"init,omitempty"`
+	Tmpfs          []string            `json:"tmpfs,omitempty"`
+	DNS            []string            `json:"dns,omitempty"`
+	DNSSearch      []string            `json:"dnsSearch,omitempty"`
+	ExtraHosts     []string            `json:"extraHosts,omitempty"`
+	CapAdd         []string            `json:"capAdd,omitempty"`
+	CapDrop        []string            `json:"capDrop,omitempty"`
+	MemLimit       string              `json:"memLimit,omitempty"`
+	CPUS           string              `json:"cpus,omitempty"`
+	Healthcheck    any                 `json:"healthcheck,omitempty"`
+	Configs        any                 `json:"configs,omitempty"`
+	Secrets        any                 `json:"secrets,omitempty"`
+	Extensions     map[string]any      `json:"extensions,omitempty"`
 }
 
 // normalizedBuild keeps the build fields needed to call `container build`.
@@ -283,36 +284,37 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 // normalizeService copies a compose-go service into the stable Swift model.
 func normalizeService(service types.ServiceConfig) normalizedService {
 	result := normalizedService{
-		Name:          service.Name,
-		Image:         service.Image,
-		PullPolicy:    service.PullPolicy,
-		Command:       shellCommandValues(service.Command),
-		Entrypoint:    shellCommandValues(service.Entrypoint),
-		Environment:   mapEnvironment(service.Environment),
-		EnvFiles:      envFileValues(service.EnvFiles),
-		Ports:         portValues(service.Ports),
-		Volumes:       mountValues(service.Volumes),
-		Networks:      networkValues(service.Networks),
-		DependsOn:     dependsOnValues(service.DependsOn),
-		Labels:        mapLabels(service.Labels),
-		ContainerName: service.ContainerName,
-		Hostname:      service.Hostname,
-		WorkingDir:    service.WorkingDir,
-		User:          service.User,
-		TTY:           service.Tty,
-		StdinOpen:     service.StdinOpen,
-		ReadOnly:      service.ReadOnly,
-		Privileged:    service.Privileged,
-		Restart:       service.Restart,
-		Init:          service.Init,
-		Tmpfs:         append([]string(nil), service.Tmpfs...),
-		DNS:           append([]string(nil), service.DNS...),
-		DNSSearch:     append([]string(nil), service.DNSSearch...),
-		ExtraHosts:    service.ExtraHosts.AsList(":"),
-		CapAdd:        append([]string(nil), service.CapAdd...),
-		CapDrop:       append([]string(nil), service.CapDrop...),
-		MemLimit:      unitBytesValue(service.MemLimit),
-		CPUS:          cpusValue(service.CPUS),
+		Name:           service.Name,
+		Image:          service.Image,
+		PullPolicy:     service.PullPolicy,
+		Command:        shellCommandValues(service.Command),
+		Entrypoint:     shellCommandValues(service.Entrypoint),
+		Environment:    mapEnvironment(service.Environment),
+		EnvFiles:       envFileValues(service.EnvFiles),
+		Ports:          portValues(service.Ports),
+		Volumes:        mountValues(service.Volumes),
+		Networks:       networkValues(service.Networks),
+		NetworkAliases: networkAliasValues(service.Networks),
+		DependsOn:      dependsOnValues(service.DependsOn),
+		Labels:         mapLabels(service.Labels),
+		ContainerName:  service.ContainerName,
+		Hostname:       service.Hostname,
+		WorkingDir:     service.WorkingDir,
+		User:           service.User,
+		TTY:            service.Tty,
+		StdinOpen:      service.StdinOpen,
+		ReadOnly:       service.ReadOnly,
+		Privileged:     service.Privileged,
+		Restart:        service.Restart,
+		Init:           service.Init,
+		Tmpfs:          append([]string(nil), service.Tmpfs...),
+		DNS:            append([]string(nil), service.DNS...),
+		DNSSearch:      append([]string(nil), service.DNSSearch...),
+		ExtraHosts:     service.ExtraHosts.AsList(":"),
+		CapAdd:         append([]string(nil), service.CapAdd...),
+		CapDrop:        append([]string(nil), service.CapDrop...),
+		MemLimit:       unitBytesValue(service.MemLimit),
+		CPUS:           cpusValue(service.CPUS),
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{
@@ -454,6 +456,24 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 		result = append(result, name)
 	}
 	sort.Strings(result)
+	return result
+}
+
+// networkAliasValues returns declared aliases keyed by Compose network name.
+func networkAliasValues(networks map[string]*types.ServiceNetworkConfig) map[string][]string {
+	if len(networks) == 0 {
+		return nil
+	}
+	result := map[string][]string{}
+	for name, config := range networks {
+		if config == nil || len(config.Aliases) == 0 {
+			continue
+		}
+		result[name] = append([]string(nil), config.Aliases...)
+	}
+	if len(result) == 0 {
+		return nil
+	}
 	return result
 }
 

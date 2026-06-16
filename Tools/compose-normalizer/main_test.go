@@ -123,7 +123,9 @@ services:
     volumes:
       - data:/var/lib/app:ro
     networks:
-      - backend
+      backend:
+        aliases:
+          - api.internal
     depends_on:
       redis:
         condition: service_started
@@ -166,6 +168,9 @@ volumes:
 	}
 	if got, want := api.Networks, []string{"backend"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Networks = %#v, want %#v", got, want)
+	}
+	if got, want := api.NetworkAliases, map[string][]string{"backend": []string{"api.internal"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.NetworkAliases = %#v, want %#v", got, want)
 	}
 	if got, want := api.DependsOn, map[string]string{"redis": "service_started"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DependsOn = %#v, want %#v", got, want)

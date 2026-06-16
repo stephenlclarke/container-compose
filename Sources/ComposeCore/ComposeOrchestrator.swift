@@ -406,6 +406,10 @@ private extension ComposeOrchestrator {
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; Apple container does not expose network connect yet")
         }
+        if let networkAliases = service.networkAliases,
+           networkAliases.contains(where: { !$0.value.isEmpty }) {
+            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network alias support needs an apple/container runtime gap PR")
+        }
         if let dependsOn = service.dependsOn {
             for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
                 throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'")

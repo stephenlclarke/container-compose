@@ -95,6 +95,7 @@ public struct ComposeService: Codable, Equatable {
     public var ports: [String]? = nil
     public var volumes: [ComposeMount]? = nil
     public var networks: [String]? = nil
+    public var networkAliases: [String: [String]]? = nil
     public var dependsOn: [String: String]? = nil
     public var labels: [String: String]? = nil
     public var containerName: String? = nil
@@ -137,6 +138,7 @@ public struct ComposeService: Codable, Equatable {
         case ports
         case volumes
         case networks
+        case networkAliases
         case dependsOn
         case labels
         case containerName
