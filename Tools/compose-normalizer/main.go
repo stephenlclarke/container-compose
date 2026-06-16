@@ -96,6 +96,7 @@ type normalizedService struct {
 	Tmpfs          []string                            `json:"tmpfs,omitempty"`
 	DNS            []string                            `json:"dns,omitempty"`
 	DNSSearch      []string                            `json:"dnsSearch,omitempty"`
+	DNSOptions     []string                            `json:"dnsOptions,omitempty"`
 	ExtraHosts     []string                            `json:"extraHosts,omitempty"`
 	CapAdd         []string                            `json:"capAdd,omitempty"`
 	CapDrop        []string                            `json:"capDrop,omitempty"`
@@ -330,6 +331,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Tmpfs:          append([]string(nil), service.Tmpfs...),
 		DNS:            append([]string(nil), service.DNS...),
 		DNSSearch:      append([]string(nil), service.DNSSearch...),
+		DNSOptions:     append([]string(nil), service.DNSOpts...),
 		ExtraHosts:     service.ExtraHosts.AsList(":"),
 		CapAdd:         append([]string(nil), service.CapAdd...),
 		CapDrop:        append([]string(nil), service.CapDrop...),

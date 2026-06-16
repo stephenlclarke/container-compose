@@ -439,6 +439,9 @@ private extension ComposeOrchestrator {
         if let hostname = service.hostname, !hostname.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses hostname; custom hostname support needs an apple/container runtime gap PR")
         }
+        if let dnsOptions = service.dnsOptions, !dnsOptions.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses dns_opt; DNS option support needs an apple/container runtime gap PR")
+        }
         if service.healthcheck != nil {
             throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
         }

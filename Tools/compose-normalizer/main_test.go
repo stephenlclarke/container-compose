@@ -120,6 +120,8 @@ services:
     command: ["nginx", "-g", "daemon off;"]
     environment:
       FOO: bar
+    dns_opt:
+      - use-vc
     ports:
       - "127.0.0.1:8080:80/tcp"
     volumes:
@@ -180,6 +182,9 @@ volumes:
 	}
 	if api.Environment["FOO"] == nil || *api.Environment["FOO"] != "bar" {
 		t.Fatalf("api.Environment[FOO] = %#v, want bar", api.Environment["FOO"])
+	}
+	if got, want := api.DNSOptions, []string{"use-vc"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.DNSOptions = %#v, want %#v", got, want)
 	}
 	if got, want := api.Ports, []string{"127.0.0.1:8080:80"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ports = %#v, want %#v", got, want)

@@ -115,6 +115,7 @@ public struct ComposeService: Codable, Equatable {
     public var tmpfs: [String]? = nil
     public var dns: [String]? = nil
     public var dnsSearch: [String]? = nil
+    public var dnsOptions: [String]? = nil
     public var extraHosts: [String]? = nil
     public var capAdd: [String]? = nil
     public var capDrop: [String]? = nil
@@ -162,6 +163,7 @@ public struct ComposeService: Codable, Equatable {
         case tmpfs
         case dns
         case dnsSearch
+        case dnsOptions
         case extraHosts
         case capAdd
         case capDrop

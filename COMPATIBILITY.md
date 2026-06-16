@@ -51,6 +51,7 @@ These fields currently fail before runtime side effects because the equivalent l
 - `network_mode`.
 - `platform`.
 - `mac_address`.
+- `dns_opt`.
 - `depends_on` conditions other than `service_started`.
 - `extra_hosts`.
 - `hostname`.
