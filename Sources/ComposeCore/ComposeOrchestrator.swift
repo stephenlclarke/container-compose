@@ -651,6 +651,9 @@ private extension ComposeOrchestrator {
         if let network = (service.networks ?? []).first {
             args.append(contentsOf: ["--network", networkRuntimeName(project: project, composeName: network)])
         }
+        if let runtime = service.runtime, !runtime.isEmpty {
+            args.append(contentsOf: ["--runtime", runtime])
+        }
         if let workingDir = service.workingDir {
             args.append(contentsOf: ["--workdir", workingDir])
         }

@@ -117,6 +117,7 @@ services:
     image: nginx:alpine
     platform: linux/amd64
     mac_address: 02:42:ac:11:00:03
+    runtime: container-runtime-linux
     domainname: example.test
     command: ["nginx", "-g", "daemon off;"]
     environment:
@@ -189,6 +190,9 @@ volumes:
 	}
 	if api.MacAddress != "02:42:ac:11:00:03" {
 		t.Fatalf("api.MacAddress = %q, want 02:42:ac:11:00:03", api.MacAddress)
+	}
+	if api.Runtime != "container-runtime-linux" {
+		t.Fatalf("api.Runtime = %q, want container-runtime-linux", api.Runtime)
 	}
 	if api.DomainName != "example.test" {
 		t.Fatalf("api.DomainName = %q, want example.test", api.DomainName)

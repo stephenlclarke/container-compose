@@ -860,6 +860,7 @@ struct ComposeOrchestratorTests {
             pull_policy: always
             platform: linux/amd64
             mac_address: 02:42:ac:11:00:03
+            runtime: container-runtime-linux
             domainname: example.test
             command: ["nginx", "-g", "daemon off;"]
             networks:
@@ -902,6 +903,7 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.pullPolicy == "always")
         #expect(project.services["api"]?.platform == "linux/amd64")
         #expect(project.services["api"]?.macAddress == "02:42:ac:11:00:03")
+        #expect(project.services["api"]?.runtime == "container-runtime-linux")
         #expect(project.services["api"]?.domainName == "example.test")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
@@ -1391,6 +1393,7 @@ struct ComposeOrchestratorTests {
                     $0.stdinOpen = true
                     $0.readOnly = true
                     $0.initEnabled = true
+                    $0.runtime = "container-runtime-linux"
                     $0.tmpfs = ["/cache"]
                     $0.dns = ["1.1.1.1"]
                     $0.dnsSearch = ["local"]
@@ -1420,6 +1423,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--user", "1000"]))
         #expect(command.contains("--tty"))
         #expect(command.contains("--interactive"))
+        #expect(command.containsSequence(["--runtime", "container-runtime-linux"]))
         #expect(command.containsSequence(["--cap-add", "NET_ADMIN"]))
         #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
         #expect(command.containsSequence(["--dns", "1.1.1.1"]))
