@@ -7,6 +7,9 @@ public struct ComposeProject: Codable, Equatable {
     public var services: [String: ComposeService]
     public var networks: [String: ComposeNetwork]
     public var volumes: [String: ComposeVolume]
+    public var configs: [String: ComposeValue]?
+    public var secrets: [String: ComposeValue]?
+    public var extensions: [String: ComposeValue]?
 
     public init(
         name: String,
@@ -14,7 +17,10 @@ public struct ComposeProject: Codable, Equatable {
         composeFiles: [String] = [],
         services: [String: ComposeService],
         networks: [String: ComposeNetwork] = [:],
-        volumes: [String: ComposeVolume] = [:]
+        volumes: [String: ComposeVolume] = [:],
+        configs: [String: ComposeValue]? = nil,
+        secrets: [String: ComposeValue]? = nil,
+        extensions: [String: ComposeValue]? = nil
     ) {
         self.name = name
         self.workingDirectory = workingDirectory
@@ -22,6 +28,55 @@ public struct ComposeProject: Codable, Equatable {
         self.services = services
         self.networks = networks
         self.volumes = volumes
+        self.configs = configs
+        self.secrets = secrets
+        self.extensions = extensions
+    }
+}
+
+public enum ComposeValue: Codable, Equatable, Sendable {
+    case null
+    case bool(Bool)
+    case number(Decimal)
+    case string(String)
+    case array([ComposeValue])
+    case object([String: ComposeValue])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Decimal.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([ComposeValue].self) {
+            self = .array(value)
+        } else if let value = try? container.decode([String: ComposeValue].self) {
+            self = .object(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "unsupported JSON value")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .null:
+            try container.encodeNil()
+        case .bool(let value):
+            try container.encode(value)
+        case .number(let value):
+            try container.encode(value)
+        case .string(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        }
     }
 }
 
@@ -55,6 +110,10 @@ public struct ComposeService: Codable, Equatable {
     public var capDrop: [String]?
     public var memLimit: String?
     public var cpus: String?
+    public var healthcheck: ComposeValue?
+    public var configs: [ComposeValue]?
+    public var secrets: [ComposeValue]?
+    public var extensions: [String: ComposeValue]?
 
     public init(
         name: String,
@@ -85,7 +144,11 @@ public struct ComposeService: Codable, Equatable {
         capAdd: [String]? = nil,
         capDrop: [String]? = nil,
         memLimit: String? = nil,
-        cpus: String? = nil
+        cpus: String? = nil,
+        healthcheck: ComposeValue? = nil,
+        configs: [ComposeValue]? = nil,
+        secrets: [ComposeValue]? = nil,
+        extensions: [String: ComposeValue]? = nil
     ) {
         self.name = name
         self.image = image
@@ -116,6 +179,10 @@ public struct ComposeService: Codable, Equatable {
         self.capDrop = capDrop
         self.memLimit = memLimit
         self.cpus = cpus
+        self.healthcheck = healthcheck
+        self.configs = configs
+        self.secrets = secrets
+        self.extensions = extensions
     }
 }
 
