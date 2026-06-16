@@ -466,7 +466,8 @@ private extension ComposeOrchestrator {
         }
         if let dependsOn = service.dependsOn {
             for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
-                throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'")
+                let reason = unsupportedDependencyConditionReason(condition)
+                throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
             }
         }
         if let links = service.links, !links.isEmpty {
@@ -629,6 +630,18 @@ private extension ComposeOrchestrator {
             fields.append(("privileged", "privileged mode support needs an apple/container runtime gap PR"))
         }
         return fields
+    }
+
+    /// Returns the runtime gap that prevents a dependency condition.
+    func unsupportedDependencyConditionReason(_ condition: String) -> String {
+        switch condition {
+        case "service_healthy":
+            "health status support needs an apple/container runtime gap PR"
+        case "service_completed_successfully":
+            "exit code and completion time need an apple/container runtime gap PR"
+        default:
+            "dependency condition support needs an apple/container runtime gap PR"
+        }
     }
 
     /// Returns unsupported service metadata, attach, logging, and storage option fields.

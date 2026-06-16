@@ -400,26 +400,46 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("rejects dependency conditions that need runtime gaps")
+    @Test("rejects dependency conditions with runtime gap reasons")
     func rejectsUnsupportedDependencyConditions() async throws {
-        let project = ComposeProject(
-            name: "demo",
-            services: [
-                "job": ComposeService(name: "job", image: "example/job:latest"),
-                "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["job": "service_completed_successfully"]
-                },
-            ]
-        )
+        let cases = [
+            (
+                condition: "service_healthy",
+                reason: "health status support needs an apple/container runtime gap PR"
+            ),
+            (
+                condition: "service_completed_successfully",
+                reason: "exit code and completion time need an apple/container runtime gap PR"
+            ),
+            (
+                condition: "custom_condition",
+                reason: "dependency condition support needs an apple/container runtime gap PR"
+            ),
+        ]
 
-        do {
-            try await ComposeOrchestrator(runner: RecordingRunner(responses: [.failure]))
-                .up(project: project, options: ComposeUpOptions(services: ["api"]))
-            Issue.record("Expected unsupported dependency condition")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' depends on 'job' with condition 'service_completed_successfully'"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let project = ComposeProject(
+                name: "demo",
+                services: [
+                    "job": ComposeService(name: "job", image: "example/job:latest"),
+                    "api": composeService(name: "api", image: "example/api:latest") {
+                        $0.dependsOn = ["job": testCase.condition]
+                    },
+                ]
+            )
+
+            do {
+                try await ComposeOrchestrator(runner: runner)
+                    .up(project: project, options: ComposeUpOptions(services: ["api"]))
+                Issue.record("Expected unsupported dependency condition")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported("service 'api' depends on 'job' with condition '\(testCase.condition)'; \(testCase.reason)"))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
         }
     }
 
