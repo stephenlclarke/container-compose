@@ -170,12 +170,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
-            try await runContainer(["network", "delete", resourceName(project: project.name, name: name)], check: false)
+            try await runContainer(["network", "delete", networkRuntimeName(project: project, composeName: name, network: network)], check: false)
         }
 
         if down.volumes {
             for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
-                try await runContainer(["volume", "delete", resourceName(project: project.name, name: name)], check: false)
+                try await runContainer(["volume", "delete", volumeRuntimeName(project: project, composeName: name, volume: volume)], check: false)
             }
         }
     }
@@ -430,7 +430,7 @@ private extension ComposeOrchestrator {
         for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(resourceName(project: project.name, name: composeName))
+        args.append(networkRuntimeName(project: project, composeName: composeName, network: network))
         try await runContainer(args, check: false)
     }
 
@@ -443,7 +443,7 @@ private extension ComposeOrchestrator {
         for label in (volume.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(resourceName(project: project.name, name: composeName))
+        args.append(volumeRuntimeName(project: project, composeName: composeName, volume: volume))
         try await runContainer(args, check: false)
     }
 
@@ -539,7 +539,7 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
         if let network = (service.networks ?? []).first {
-            args.append(contentsOf: ["--network", resourceName(project: project.name, name: network)])
+            args.append(contentsOf: ["--network", networkRuntimeName(project: project, composeName: network)])
         }
         if let workingDir = service.workingDir {
             args.append(contentsOf: ["--workdir", workingDir])
@@ -604,7 +604,7 @@ private extension ComposeOrchestrator {
         let source = mount.source ?? ""
         let mappedSource: String
         if mount.type == "volume", !source.isEmpty {
-            mappedSource = resourceName(project: project.name, name: source)
+            mappedSource = volumeRuntimeName(project: project, composeName: source)
         } else if source.isEmpty {
             // Anonymous Compose volumes still need stable names so repeated
             // runs reconcile the same project-scoped container arguments.
@@ -696,6 +696,52 @@ private let configFilesHashLabel = "com.apple.container.compose.project.config-f
 /// Returns the runtime resource name for a project-scoped network or volume.
 private func resourceName(project: String, name: String) -> String {
     "\(slug(project))_\(slug(name))"
+}
+
+/// Resolves a Compose network reference to the name used by `container`.
+private func networkRuntimeName(project: ComposeProject, composeName: String) -> String {
+    guard let network = project.networks[composeName] else {
+        return resourceName(project: project.name, name: composeName)
+    }
+    return networkRuntimeName(project: project, composeName: composeName, network: network)
+}
+
+/// Resolves a normalized Compose network definition to its runtime name.
+private func networkRuntimeName(project: ComposeProject, composeName: String, network: ComposeNetwork) -> String {
+    declaredResourceName(
+        projectName: project.name,
+        composeName: composeName,
+        declaredName: network.name,
+        external: network.external == true
+    )
+}
+
+/// Resolves a Compose volume reference to the name used by `container`.
+private func volumeRuntimeName(project: ComposeProject, composeName: String) -> String {
+    guard let volume = project.volumes[composeName] else {
+        return resourceName(project: project.name, name: composeName)
+    }
+    return volumeRuntimeName(project: project, composeName: composeName, volume: volume)
+}
+
+/// Resolves a normalized Compose volume definition to its runtime name.
+private func volumeRuntimeName(project: ComposeProject, composeName: String, volume: ComposeVolume) -> String {
+    declaredResourceName(
+        projectName: project.name,
+        composeName: composeName,
+        declaredName: volume.name,
+        external: volume.external == true
+    )
+}
+
+/// Uses normalized runtime resource names while falling back to generated
+/// project-scoped names for hand-built test models.
+private func declaredResourceName(projectName: String, composeName: String, declaredName: String, external: Bool) -> String {
+    let normalizedName = declaredName.isEmpty ? composeName : declaredName
+    if external || normalizedName != composeName {
+        return slug(normalizedName)
+    }
+    return resourceName(project: projectName, name: composeName)
 }
 
 /// Returns labels shared by all resources in a Compose project.

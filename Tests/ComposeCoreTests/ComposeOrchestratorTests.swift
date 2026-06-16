@@ -141,6 +141,89 @@ struct ComposeOrchestratorTests {
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
     }
 
+    @Test("up uses external resource names without creating project resources")
+    func upUsesExternalResourceNamesWithoutCreatingProjectResources() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networks = ["shared"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "data", target: "/data")]
+                },
+            ]
+        ) {
+            $0.networks = ["shared": ComposeNetwork(name: "corp-net", external: true)]
+            $0.volumes = ["data": ComposeVolume(name: "corp-data", external: true)]
+        }
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0] == ["container", "inspect", "demo-api-1"])
+        #expect(!commands.contains { $0.containsSequence(["network", "create"]) })
+        #expect(!commands.contains { $0.containsSequence(["volume", "create"]) })
+
+        let run = commands[1]
+        #expect(run.containsSequence(["--network", "corp-net"]))
+        #expect(run.containsSequence(["--volume", "corp-data:/data"]))
+        #expect(!run.contains("demo_shared"))
+        #expect(!run.contains("demo_data"))
+    }
+
+    @Test("orchestrator honors explicit non external resource names")
+    func orchestratorHonorsExplicitNonExternalResourceNames() async throws {
+        let upRunner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "team-net")]
+            $0.volumes = ["cache": ComposeVolume(name: "team-cache")]
+        }
+
+        try await ComposeOrchestrator(runner: upRunner).up(project: project, options: ComposeUpOptions())
+
+        let upCommands = upRunner.commands.map(\.arguments)
+        #expect(upCommands[0].containsSequence(["network", "create"]))
+        #expect(upCommands[0].last == "team-net")
+        #expect(upCommands[1].containsSequence(["volume", "create"]))
+        #expect(upCommands[1].last == "team-cache")
+        #expect(upCommands[3].containsSequence(["--network", "team-net"]))
+        #expect(upCommands[3].containsSequence(["--volume", "team-cache:/cache"]))
+
+        let downRunner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .success,
+            .success,
+        ])
+
+        try await ComposeOrchestrator(runner: downRunner).down(project: project, options: ComposeDownOptions(volumes: true))
+
+        #expect(downRunner.commands.map(\.arguments) == [
+            ["container", "stop", "demo-api-1"],
+            ["container", "delete", "demo-api-1"],
+            ["container", "network", "delete", "team-net"],
+            ["container", "volume", "delete", "team-cache"],
+        ])
+    }
+
     @Test("up removes orphan containers when requested")
     func upRemovesOrphanContainersWhenRequested() async throws {
         let runner = RecordingRunner(responses: [
