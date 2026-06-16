@@ -139,7 +139,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                try await runContainer(["stop", name], check: false)
+                try await runContainer(stopArguments(service: service, containerName: name), check: false)
                 try await runContainer(["delete", name], check: false)
             }
 
@@ -158,7 +158,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let declaredContainers = Set(services.map { containerName(project: project, service: $0, oneOff: false) })
         for service in services.reversed() {
             let name = containerName(project: project, service: service, oneOff: false)
-            try await runContainer(["stop", name], check: false)
+            try await runContainer(stopArguments(service: service, containerName: name), check: false)
             try await runContainer(["delete", name], check: false)
         }
         if down.removeOrphans {
@@ -279,7 +279,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Stops selected service containers.
     public func stop(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
-            try await runContainer(["stop", containerName(project: project, service: service, oneOff: false)], check: false)
+            try await runContainer(
+                stopArguments(service: service, containerName: containerName(project: project, service: service, oneOff: false)),
+                check: false
+            )
         }
     }
 
@@ -740,6 +743,19 @@ private extension ComposeOrchestrator {
             value += ":ro"
         }
         args.append(contentsOf: ["--volume", value])
+    }
+
+    /// Returns the stop command arguments for a service container.
+    func stopArguments(service: ComposeService, containerName: String) -> [String] {
+        var args = ["stop"]
+        if let signal = service.stopSignal, !signal.isEmpty {
+            args.append(contentsOf: ["--signal", signal])
+        }
+        if let seconds = service.stopGracePeriodSeconds {
+            args.append(contentsOf: ["--time", "\(seconds)"])
+        }
+        args.append(containerName)
+        return args
     }
 
     /// Returns an existing container's Compose metadata, if the container exists.

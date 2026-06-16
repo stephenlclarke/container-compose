@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -65,55 +66,57 @@ type normalizedProject struct {
 // normalizedService contains the Compose service fields Swift can either
 // orchestrate directly or preserve for config output and runtime gap checks.
 type normalizedService struct {
-	Name           string                              `json:"name"`
-	Image          string                              `json:"image,omitempty"`
-	PullPolicy     string                              `json:"pullPolicy,omitempty"`
-	Platform       string                              `json:"platform,omitempty"`
-	MacAddress     string                              `json:"macAddress,omitempty"`
-	Runtime        string                              `json:"runtime,omitempty"`
-	Build          *normalizedBuild                    `json:"build,omitempty"`
-	Command        []string                            `json:"command,omitempty"`
-	Entrypoint     []string                            `json:"entrypoint,omitempty"`
-	Environment    map[string]*string                  `json:"environment,omitempty"`
-	EnvFiles       []string                            `json:"envFiles,omitempty"`
-	Expose         []string                            `json:"expose,omitempty"`
-	Ports          []string                            `json:"ports,omitempty"`
-	Volumes        []normalizedMount                   `json:"volumes,omitempty"`
-	Networks       []string                            `json:"networks,omitempty"`
-	NetworkAliases map[string][]string                 `json:"networkAliases,omitempty"`
-	NetworkOptions map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
-	NetworkMode    string                              `json:"networkMode,omitempty"`
-	DependsOn      map[string]string                   `json:"dependsOn,omitempty"`
-	Links          []string                            `json:"links,omitempty"`
-	ExternalLinks  []string                            `json:"externalLinks,omitempty"`
-	Labels         map[string]string                   `json:"labels,omitempty"`
-	ContainerName  string                              `json:"containerName,omitempty"`
-	Hostname       string                              `json:"hostname,omitempty"`
-	DomainName     string                              `json:"domainName,omitempty"`
-	WorkingDir     string                              `json:"workingDir,omitempty"`
-	User           string                              `json:"user,omitempty"`
-	TTY            bool                                `json:"tty,omitempty"`
-	StdinOpen      bool                                `json:"stdinOpen,omitempty"`
-	ReadOnly       bool                                `json:"readOnly,omitempty"`
-	Privileged     bool                                `json:"privileged,omitempty"`
-	Restart        string                              `json:"restart,omitempty"`
-	Init           *bool                               `json:"init,omitempty"`
-	Tmpfs          []string                            `json:"tmpfs,omitempty"`
-	DNS            []string                            `json:"dns,omitempty"`
-	DNSSearch      []string                            `json:"dnsSearch,omitempty"`
-	DNSOptions     []string                            `json:"dnsOptions,omitempty"`
-	ExtraHosts     []string                            `json:"extraHosts,omitempty"`
-	CapAdd         []string                            `json:"capAdd,omitempty"`
-	CapDrop        []string                            `json:"capDrop,omitempty"`
-	MemLimit       string                              `json:"memLimit,omitempty"`
-	CPUS           string                              `json:"cpus,omitempty"`
-	ShmSize        string                              `json:"shmSize,omitempty"`
-	Ulimits        []string                            `json:"ulimits,omitempty"`
-	Sysctls        map[string]string                   `json:"sysctls,omitempty"`
-	Healthcheck    any                                 `json:"healthcheck,omitempty"`
-	Configs        any                                 `json:"configs,omitempty"`
-	Secrets        any                                 `json:"secrets,omitempty"`
-	Extensions     map[string]any                      `json:"extensions,omitempty"`
+	Name                   string                              `json:"name"`
+	Image                  string                              `json:"image,omitempty"`
+	PullPolicy             string                              `json:"pullPolicy,omitempty"`
+	Platform               string                              `json:"platform,omitempty"`
+	MacAddress             string                              `json:"macAddress,omitempty"`
+	Runtime                string                              `json:"runtime,omitempty"`
+	Build                  *normalizedBuild                    `json:"build,omitempty"`
+	Command                []string                            `json:"command,omitempty"`
+	Entrypoint             []string                            `json:"entrypoint,omitempty"`
+	Environment            map[string]*string                  `json:"environment,omitempty"`
+	EnvFiles               []string                            `json:"envFiles,omitempty"`
+	Expose                 []string                            `json:"expose,omitempty"`
+	Ports                  []string                            `json:"ports,omitempty"`
+	Volumes                []normalizedMount                   `json:"volumes,omitempty"`
+	Networks               []string                            `json:"networks,omitempty"`
+	NetworkAliases         map[string][]string                 `json:"networkAliases,omitempty"`
+	NetworkOptions         map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
+	NetworkMode            string                              `json:"networkMode,omitempty"`
+	DependsOn              map[string]string                   `json:"dependsOn,omitempty"`
+	Links                  []string                            `json:"links,omitempty"`
+	ExternalLinks          []string                            `json:"externalLinks,omitempty"`
+	Labels                 map[string]string                   `json:"labels,omitempty"`
+	ContainerName          string                              `json:"containerName,omitempty"`
+	Hostname               string                              `json:"hostname,omitempty"`
+	DomainName             string                              `json:"domainName,omitempty"`
+	WorkingDir             string                              `json:"workingDir,omitempty"`
+	User                   string                              `json:"user,omitempty"`
+	TTY                    bool                                `json:"tty,omitempty"`
+	StdinOpen              bool                                `json:"stdinOpen,omitempty"`
+	ReadOnly               bool                                `json:"readOnly,omitempty"`
+	Privileged             bool                                `json:"privileged,omitempty"`
+	Restart                string                              `json:"restart,omitempty"`
+	Init                   *bool                               `json:"init,omitempty"`
+	Tmpfs                  []string                            `json:"tmpfs,omitempty"`
+	DNS                    []string                            `json:"dns,omitempty"`
+	DNSSearch              []string                            `json:"dnsSearch,omitempty"`
+	DNSOptions             []string                            `json:"dnsOptions,omitempty"`
+	ExtraHosts             []string                            `json:"extraHosts,omitempty"`
+	CapAdd                 []string                            `json:"capAdd,omitempty"`
+	CapDrop                []string                            `json:"capDrop,omitempty"`
+	MemLimit               string                              `json:"memLimit,omitempty"`
+	CPUS                   string                              `json:"cpus,omitempty"`
+	ShmSize                string                              `json:"shmSize,omitempty"`
+	Ulimits                []string                            `json:"ulimits,omitempty"`
+	Sysctls                map[string]string                   `json:"sysctls,omitempty"`
+	StopSignal             string                              `json:"stopSignal,omitempty"`
+	StopGracePeriodSeconds *int64                              `json:"stopGracePeriodSeconds,omitempty"`
+	Healthcheck            any                                 `json:"healthcheck,omitempty"`
+	Configs                any                                 `json:"configs,omitempty"`
+	Secrets                any                                 `json:"secrets,omitempty"`
+	Extensions             map[string]any                      `json:"extensions,omitempty"`
 }
 
 // normalizedBuild keeps the build fields needed to call `container build`.
@@ -309,50 +312,52 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 // normalizeService copies a compose-go service into the stable Swift model.
 func normalizeService(service types.ServiceConfig) normalizedService {
 	result := normalizedService{
-		Name:           service.Name,
-		Image:          service.Image,
-		PullPolicy:     service.PullPolicy,
-		Platform:       service.Platform,
-		MacAddress:     service.MacAddress,
-		Runtime:        service.Runtime,
-		Command:        shellCommandValues(service.Command),
-		Entrypoint:     shellCommandValues(service.Entrypoint),
-		Environment:    mapEnvironment(service.Environment),
-		EnvFiles:       envFileValues(service.EnvFiles),
-		Expose:         append([]string(nil), service.Expose...),
-		Ports:          portValues(service.Ports),
-		Volumes:        mountValues(service.Volumes),
-		Networks:       networkValues(service.Networks),
-		NetworkAliases: networkAliasValues(service.Networks),
-		NetworkOptions: networkOptionValues(service.Networks),
-		NetworkMode:    service.NetworkMode,
-		DependsOn:      dependsOnValues(service.DependsOn),
-		Links:          append([]string(nil), service.Links...),
-		ExternalLinks:  append([]string(nil), service.ExternalLinks...),
-		Labels:         mapLabels(service.Labels),
-		ContainerName:  service.ContainerName,
-		Hostname:       service.Hostname,
-		DomainName:     service.DomainName,
-		WorkingDir:     service.WorkingDir,
-		User:           service.User,
-		TTY:            service.Tty,
-		StdinOpen:      service.StdinOpen,
-		ReadOnly:       service.ReadOnly,
-		Privileged:     service.Privileged,
-		Restart:        service.Restart,
-		Init:           service.Init,
-		Tmpfs:          append([]string(nil), service.Tmpfs...),
-		DNS:            append([]string(nil), service.DNS...),
-		DNSSearch:      append([]string(nil), service.DNSSearch...),
-		DNSOptions:     append([]string(nil), service.DNSOpts...),
-		ExtraHosts:     service.ExtraHosts.AsList(":"),
-		CapAdd:         append([]string(nil), service.CapAdd...),
-		CapDrop:        append([]string(nil), service.CapDrop...),
-		MemLimit:       unitBytesValue(service.MemLimit),
-		CPUS:           cpusValue(service.CPUS),
-		ShmSize:        unitBytesValue(service.ShmSize),
-		Ulimits:        ulimitValues(service.Ulimits),
-		Sysctls:        mapMapping(service.Sysctls),
+		Name:                   service.Name,
+		Image:                  service.Image,
+		PullPolicy:             service.PullPolicy,
+		Platform:               service.Platform,
+		MacAddress:             service.MacAddress,
+		Runtime:                service.Runtime,
+		Command:                shellCommandValues(service.Command),
+		Entrypoint:             shellCommandValues(service.Entrypoint),
+		Environment:            mapEnvironment(service.Environment),
+		EnvFiles:               envFileValues(service.EnvFiles),
+		Expose:                 append([]string(nil), service.Expose...),
+		Ports:                  portValues(service.Ports),
+		Volumes:                mountValues(service.Volumes),
+		Networks:               networkValues(service.Networks),
+		NetworkAliases:         networkAliasValues(service.Networks),
+		NetworkOptions:         networkOptionValues(service.Networks),
+		NetworkMode:            service.NetworkMode,
+		DependsOn:              dependsOnValues(service.DependsOn),
+		Links:                  append([]string(nil), service.Links...),
+		ExternalLinks:          append([]string(nil), service.ExternalLinks...),
+		Labels:                 mapLabels(service.Labels),
+		ContainerName:          service.ContainerName,
+		Hostname:               service.Hostname,
+		DomainName:             service.DomainName,
+		WorkingDir:             service.WorkingDir,
+		User:                   service.User,
+		TTY:                    service.Tty,
+		StdinOpen:              service.StdinOpen,
+		ReadOnly:               service.ReadOnly,
+		Privileged:             service.Privileged,
+		Restart:                service.Restart,
+		Init:                   service.Init,
+		Tmpfs:                  append([]string(nil), service.Tmpfs...),
+		DNS:                    append([]string(nil), service.DNS...),
+		DNSSearch:              append([]string(nil), service.DNSSearch...),
+		DNSOptions:             append([]string(nil), service.DNSOpts...),
+		ExtraHosts:             service.ExtraHosts.AsList(":"),
+		CapAdd:                 append([]string(nil), service.CapAdd...),
+		CapDrop:                append([]string(nil), service.CapDrop...),
+		MemLimit:               unitBytesValue(service.MemLimit),
+		CPUS:                   cpusValue(service.CPUS),
+		ShmSize:                unitBytesValue(service.ShmSize),
+		Ulimits:                ulimitValues(service.Ulimits),
+		Sysctls:                mapMapping(service.Sysctls),
+		StopSignal:             service.StopSignal,
+		StopGracePeriodSeconds: durationSeconds(service.StopGracePeriod),
 	}
 	if service.Build != nil {
 		result.Build = &normalizedBuild{
@@ -635,6 +640,19 @@ func cpusValue(value float32) string {
 		return ""
 	}
 	return fmt.Sprintf("%g", value)
+}
+
+// durationSeconds converts Compose durations to whole seconds for container stop.
+func durationSeconds(duration *types.Duration) *int64 {
+	if duration == nil {
+		return nil
+	}
+	value := time.Duration(*duration)
+	var seconds int64
+	if value > 0 {
+		seconds = int64((value + time.Second - 1) / time.Second)
+	}
+	return &seconds
 }
 
 // ulimitValues converts Compose ulimits into container CLI arguments.

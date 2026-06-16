@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
 )
@@ -135,6 +136,8 @@ services:
     sysctls:
       net.core.somaxconn: "1024"
       net.ipv4.ip_local_port_range: "1024 65535"
+    stop_signal: SIGUSR1
+    stop_grace_period: 90s
     ports:
       - "127.0.0.1:8080:80/tcp"
     volumes:
@@ -220,6 +223,12 @@ volumes:
 	}
 	if got, want := api.Sysctls, map[string]string{"net.core.somaxconn": "1024", "net.ipv4.ip_local_port_range": "1024 65535"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Sysctls = %#v, want %#v", got, want)
+	}
+	if api.StopSignal != "SIGUSR1" {
+		t.Fatalf("api.StopSignal = %q, want SIGUSR1", api.StopSignal)
+	}
+	if api.StopGracePeriodSeconds == nil || *api.StopGracePeriodSeconds != 90 {
+		t.Fatalf("api.StopGracePeriodSeconds = %#v, want 90", api.StopGracePeriodSeconds)
 	}
 	if got, want := api.Ports, []string{"127.0.0.1:8080:80"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Ports = %#v, want %#v", got, want)
@@ -470,6 +479,17 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	}
 	if got := cpusValue(2.5); got != "2.5" {
 		t.Fatalf("cpusValue(2.5) = %q, want 2.5", got)
+	}
+	if got := durationSeconds(nil); got != nil {
+		t.Fatalf("durationSeconds(nil) = %#v, want nil", got)
+	}
+	duration := types.Duration(1500 * time.Millisecond)
+	if got := durationSeconds(&duration); got == nil || *got != 2 {
+		t.Fatalf("durationSeconds(1500ms) = %#v, want 2", got)
+	}
+	zeroDuration := types.Duration(0)
+	if got := durationSeconds(&zeroDuration); got == nil || *got != 0 {
+		t.Fatalf("durationSeconds(0) = %#v, want 0", got)
 	}
 	if got := ulimitValues(nil); got != nil {
 		t.Fatalf("ulimitValues(nil) = %#v, want nil", got)

@@ -913,6 +913,8 @@ struct ComposeOrchestratorTests {
               nproc: 512
             sysctls:
               net.core.somaxconn: "1024"
+            stop_signal: SIGUSR1
+            stop_grace_period: 90s
             links:
               - redis:cache
             external_links:
@@ -945,6 +947,8 @@ struct ComposeOrchestratorTests {
         #expect(project.services["api"]?.shmSize == "67108864")
         #expect(project.services["api"]?.ulimits == ["nofile=1024:2048", "nproc=512"])
         #expect(project.services["api"]?.sysctls == ["net.core.somaxconn": "1024"])
+        #expect(project.services["api"]?.stopSignal == "SIGUSR1")
+        #expect(project.services["api"]?.stopGracePeriodSeconds == 90)
         #expect(project.services["api"]?.links == ["redis:cache"])
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.ports == ["8080:80"])
@@ -1296,6 +1300,8 @@ struct ComposeOrchestratorTests {
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.dependsOn = ["db": "service_started"]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
                 },
                 "db": ComposeService(name: "db", image: "postgres"),
             ]
@@ -1307,7 +1313,7 @@ struct ComposeOrchestratorTests {
         try await orchestrator.down(project: project, options: ComposeDownOptions(volumes: true))
 
         #expect(runner.commands.map(\.arguments) == [
-            ["container", "stop", "demo-api-1"],
+            ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"],
             ["container", "delete", "demo-api-1"],
             ["container", "stop", "demo-db-1"],
             ["container", "delete", "demo-db-1"],
@@ -1374,6 +1380,8 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api") {
                     $0.tty = true
                     $0.stdinOpen = true
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
                 },
                 "web": ComposeService(name: "web", image: "nginx"),
             ]
@@ -1393,10 +1401,10 @@ struct ComposeOrchestratorTests {
         #expect(commands[1] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
         #expect(runner.commands[1].io == .inherited)
         #expect(commands[2] == ["container", "start", "demo-api-1"])
-        #expect(commands[3] == ["container", "stop", "demo-api-1"])
-        #expect(commands[4] == ["container", "stop", "demo-api-1"])
+        #expect(commands[3] == ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"])
+        #expect(commands[4] == ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"])
         #expect(commands[5] == ["container", "start", "demo-api-1"])
-        #expect(commands[6] == ["container", "stop", "demo-api-1"])
+        #expect(commands[6] == ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"])
         #expect(commands[7] == ["container", "delete", "demo-api-1"])
         #expect(commands[8] == ["container", "kill", "--signal", "SIGTERM", "demo-api-1"])
         #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
@@ -2062,12 +2070,20 @@ struct ComposeOrchestratorTests {
             .success,
             .success,
         ])
-        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+            ]
+        )
 
         try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
 
         #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
-        #expect(runner.commands[1].arguments == ["container", "stop", "demo-api-1"])
+        #expect(runner.commands[1].arguments == ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"])
         #expect(runner.commands[2].arguments == ["container", "delete", "demo-api-1"])
         #expect(runner.commands[3].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
         #expect(composeConfigHash(in: runner.commands[3].arguments) != "stale")

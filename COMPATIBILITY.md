@@ -30,6 +30,7 @@
 | Labels | Adds deterministic Compose labels for project, service, one-off state, working directory, config-file hash, and config hash, plus service and resource labels. | `container run --label`, `container network create --label`, `container volume create --label` |
 | Dependency order | Starts selected services after dependencies when the dependency condition is `service_started` or omitted. | Orchestrator ordering before `container run` |
 | Reconciliation | Reuses, recreates, or removes containers based on config hash, `--force-recreate`, `--no-recreate`, and `--remove-orphans`. | `container inspect`, `container stop`, `container delete`, `container list` |
+| Stop behavior | Applies service stop signal and grace-period seconds when Compose-managed service containers are stopped, restarted, removed with `--stop`, recreated, or torn down. | `container stop --signal`, `container stop --time` |
 | Project teardown | Stops and deletes project service containers, deletes non-external networks, and deletes volumes only when `down --volumes` is used. | `container stop`, `container delete`, `container network delete`, `container volume delete` |
 
 ## Config-Only Semantics

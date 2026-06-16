@@ -129,6 +129,8 @@ public struct ComposeService: Codable, Equatable {
     public var shmSize: String? = nil
     public var ulimits: [String]? = nil
     public var sysctls: [String: String]? = nil
+    public var stopSignal: String? = nil
+    public var stopGracePeriodSeconds: Int? = nil
     public var healthcheck: ComposeValue? = nil
     public var configs: [ComposeValue]? = nil
     public var secrets: [ComposeValue]? = nil
@@ -185,6 +187,8 @@ public struct ComposeService: Codable, Equatable {
         case shmSize
         case ulimits
         case sysctls
+        case stopSignal
+        case stopGracePeriodSeconds
         case healthcheck
         case configs
         case secrets
