@@ -2611,6 +2611,7 @@ struct ComposeOrchestratorTests {
                         context: "api",
                         dockerfile: "Containerfile",
                         args: ["VERSION": "1"],
+                        labels: ["org.opencontainers.image.title": "api", "build.label": "true"],
                         target: "runtime",
                         noCache: true,
                         pull: true,
@@ -2635,6 +2636,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
         #expect(runner.commands[0].arguments.contains("--no-cache"))
         #expect(runner.commands[0].arguments.contains("--pull"))
+        #expect(runner.commands[0].arguments.containsSequence(["--label", "build.label=true"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--label", "org.opencontainers.image.title=api"]))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
         #expect(runner.commands[0].arguments.last == "api")
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))

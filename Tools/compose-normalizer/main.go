@@ -169,6 +169,7 @@ type normalizedBuild struct {
 	Context           string            `json:"context,omitempty"`
 	Dockerfile        string            `json:"dockerfile,omitempty"`
 	Args              map[string]string `json:"args,omitempty"`
+	Labels            map[string]string `json:"labels,omitempty"`
 	Target            string            `json:"target,omitempty"`
 	NoCache           bool              `json:"noCache,omitempty"`
 	Pull              bool              `json:"pull,omitempty"`
@@ -477,6 +478,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 			Context:           service.Build.Context,
 			Dockerfile:        service.Build.Dockerfile,
 			Args:              buildArgs(service.Build.Args),
+			Labels:            mapLabels(service.Build.Labels),
 			Target:            service.Build.Target,
 			NoCache:           service.Build.NoCache,
 			Pull:              service.Build.Pull,
@@ -867,7 +869,6 @@ func unsupportedBuildFields(build *types.BuildConfig) []string {
 	appendUnsupportedBuildField(&fields, "entitlements", len(build.Entitlements) > 0)
 	appendUnsupportedBuildField(&fields, "extra_hosts", len(build.ExtraHosts) > 0)
 	appendUnsupportedBuildField(&fields, "isolation", build.Isolation != "")
-	appendUnsupportedBuildField(&fields, "labels", len(build.Labels) > 0)
 	appendUnsupportedBuildField(&fields, "network", build.Network != "")
 	appendUnsupportedBuildField(&fields, "platforms", len(build.Platforms) > 0)
 	appendUnsupportedBuildField(&fields, "privileged", build.Privileged)
