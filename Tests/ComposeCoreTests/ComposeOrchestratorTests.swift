@@ -3150,6 +3150,34 @@ struct ComposeOrchestratorTests {
         #expect(!command.containsSequence(["--publish", "8080:80"]))
     }
 
+    @Test("run no-deps skips dependency metadata validation")
+    func runNoDepsSkipsDependencyMetadataValidation() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_healthy", restart: true)]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"]) {
+                $0.noDeps = true
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(runner.commands.count == 1)
+        #expect(command.starts(with: ["container", "run", "--name"]))
+        #expect(command[3].hasPrefix("demo-job-run-"))
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
+    }
+
     @Test("run creates project resources before one-off containers")
     func runCreatesProjectResourcesBeforeOneOffContainers() async throws {
         let runner = RecordingRunner(responses: [

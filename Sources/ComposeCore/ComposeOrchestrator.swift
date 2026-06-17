@@ -151,6 +151,7 @@ public struct ComposeRunOptions {
     public var remove = false
     public var detach = false
     public var noTty = false
+    public var noDeps = false
     public var servicePorts = false
     public var publish: [String] = []
     public var pullPolicy: String?
@@ -534,7 +535,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validatePullPolicy(run.pullPolicy)
-        try validateRuntimeSupport(service: service, project: runProject)
+        try validateRuntimeSupport(service: service, project: runProject, validateDependencies: !run.noDeps)
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
