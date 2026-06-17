@@ -1849,6 +1849,35 @@ struct ComposeOrchestratorTests {
         #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
     }
 
+    @Test("rm supports force and anonymous volume removal")
+    func rmSupportsForceAndAnonymousVolumeRemoval() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.volumes = [
+                        ComposeMount(type: "volume", target: "/scratch"),
+                        ComposeMount(type: "volume", source: "cache", target: "/cache"),
+                        ComposeMount(type: "bind", source: "/host", target: "/host"),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: false, force: true, volumes: true)
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0] == ["container", "delete", "--force", "demo-api-1"])
+        #expect(commands[1].starts(with: ["container", "volume", "delete"]))
+        #expect(commands[1].last?.hasPrefix("demo_anon-") == true)
+        #expect(!commands.contains { $0.contains("demo_cache") })
+    }
+
     @Test("lifecycle timeout overrides service stop grace period")
     func lifecycleTimeoutOverridesServiceStopGracePeriod() async throws {
         let runner = RecordingRunner()

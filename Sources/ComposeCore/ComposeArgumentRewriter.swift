@@ -154,6 +154,8 @@ public enum ComposeArgumentRewriter {
             return rewriteExecOptions(arguments)
         case "logs":
             return rewriteLogsOptions(arguments)
+        case "rm":
+            return rewriteRemoveOptions(arguments)
         case "run":
             return rewriteRunOptions(arguments)
         default:
@@ -202,6 +204,36 @@ public enum ComposeArgumentRewriter {
             }
         }
         return rewritten
+    }
+
+    /// Normalizes Docker Compose `rm` shorthand options.
+    private static func rewriteRemoveOptions(_ arguments: [String]) -> [String] {
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, argument == "-f" {
+                rewritten.append("--force")
+            } else if shouldRewriteOptions, argument.hasPrefix("-"), !argument.hasPrefix("--"), argument.contains("f") {
+                rewritten.append(contentsOf: rewriteGroupedRemoveShortOptions(argument))
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
+    }
+
+    /// Splits grouped `rm` short flags while rewriting `f` to `--force`.
+    private static func rewriteGroupedRemoveShortOptions(_ argument: String) -> [String] {
+        let flags = argument.dropFirst()
+        guard flags.count > 1 else {
+            return [argument]
+        }
+        return flags.map { flag in
+            flag == "f" ? "--force" : "-\(flag)"
+        }
     }
 
     /// Normalizes Docker Compose `run -p` before the service name.

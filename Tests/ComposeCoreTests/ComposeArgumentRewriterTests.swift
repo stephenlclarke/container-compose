@@ -95,6 +95,57 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes rm force shorthand after subcommand")
+    func normalizesRmForceShorthandAfterSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--file",
+            "compose.yml",
+            "rm",
+            "-f",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "rm",
+            "--file",
+            "compose.yml",
+            "--force",
+            "api",
+        ])
+    }
+
+    @Test("normalizes grouped rm shorthand flags")
+    func normalizesGroupedRmShorthandFlags() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "rm",
+            "-sfv",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "rm",
+            "-s",
+            "--force",
+            "-v",
+            "api",
+        ])
+    }
+
+    @Test("does not rewrite rm force shorthand after terminator")
+    func doesNotRewriteRmForceShorthandAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "rm",
+            "--",
+            "-f",
+        ])
+
+        #expect(rewritten == [
+            "rm",
+            "--",
+            "-f",
+        ])
+    }
+
     @Test("normalizes exec boolean value forms before parsing")
     func normalizesExecBooleanValueFormsBeforeParsing() {
         let rewritten = ComposeArgumentRewriter.rewrite([

@@ -451,13 +451,17 @@ struct Restart: AsyncParsableCommand, ComposeProjectCommand {
 struct Rm: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "rm", abstract: "Remove service containers.")
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("force"), help: "Don't ask to confirm removal and force container deletion.")
+    var force = false
     @Flag(name: [.customShort("s"), .customLong("stop")], help: "Stop containers before removing them.")
     var stop = false
+    @Flag(name: [.customShort("v"), .customLong("volumes")], help: "Remove anonymous volumes attached to selected containers.")
+    var volumes = false
     @Argument var services: [String] = []
     /// Removes selected service containers, optionally stopping them first.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().rm(project: loadedProject, services: services, stopFirst: stop)
+        try await orchestrator().rm(project: loadedProject, services: services, stopFirst: stop, force: force, volumes: volumes)
     }
 }
 
