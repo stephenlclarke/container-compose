@@ -44,6 +44,33 @@ The Go boundary is intentionally small. The helper accepts Compose CLI-shaped
 normalization options and emits canonical JSON. Swift treats that JSON as an
 input model and performs all runtime decisions.
 
+## Generated Swift Compose Types
+
+Apple reviewers have discussed generating Swift Compose model types from the
+Compose Specification JSON schema with
+[`quicktype`](https://quicktype.io/), as shown in
+[`apple/container` pull request 239](https://github.com/apple/container/pull/239#issuecomment-3138230001).
+That approach is a good fit for a Swift-native schema package, and it may be
+useful here as an additional typed boundary or as a golden-test aid.
+
+Generated schema types are not a replacement for `compose-go` normalization in
+the current architecture. The Compose JSON schema describes the accepted model
+shape, while `compose-go` also performs the behavioral loading steps Docker
+Compose users rely on: file discovery, multiple file merges, interpolation,
+profiles, includes, extension handling, path resolution, validation, and
+canonical defaults. Rebuilding those semantics in Swift would add a second
+Compose implementation to maintain.
+
+The current decision is therefore:
+
+- Keep the `compose-go` helper as the source of canonical Compose semantics.
+- Keep orchestration, runtime gap checks, and direct
+  [`apple/container`](https://github.com/apple/container) API integration in
+  Swift.
+- Consider generated Swift Compose schema types only when they reduce
+  boilerplate at the Swift model boundary without weakening compatibility with
+  Docker Compose v2 behavior.
+
 ## Architecture
 
 ```mermaid
