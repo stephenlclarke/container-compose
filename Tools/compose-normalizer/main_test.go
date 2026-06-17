@@ -855,6 +855,9 @@ services:
       no_cache: true
       platforms:
         - linux/arm64
+      tags:
+        - example/api:dev
+        - example/api:test
     environment:
       FROM_ENV:
     env_file:
@@ -897,6 +900,9 @@ services:
 	}
 	if !api.Build.NoCache {
 		t.Fatal("api.Build.NoCache = false, want true")
+	}
+	if got, want := api.Build.Tags, []string{"example/api:dev", "example/api:test"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build tags = %#v, want %#v", got, want)
 	}
 	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts", "cache_from", "labels", "platforms"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupported build fields = %#v, want %#v", got, want)
@@ -1136,7 +1142,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		"secrets",
 		"shm_size",
 		"ssh",
-		"tags",
 		"ulimits",
 	}
 	if !reflect.DeepEqual(got, want) {

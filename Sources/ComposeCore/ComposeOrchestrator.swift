@@ -1540,6 +1540,9 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
         args.append(contentsOf: ["--tag", image])
+        for tag in build.tags ?? [] where !tag.isEmpty && tag != image {
+            args.append(contentsOf: ["--tag", tag])
+        }
         if let dockerfile = build.dockerfile, !dockerfile.isEmpty {
             args.append(contentsOf: ["--file", dockerfile])
         }

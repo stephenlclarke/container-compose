@@ -2612,7 +2612,8 @@ struct ComposeOrchestratorTests {
                         dockerfile: "Containerfile",
                         args: ["VERSION": "1"],
                         target: "runtime",
-                        noCache: true
+                        noCache: true,
+                        tags: ["example/api:latest", "example/api:dev", "example/api:test"]
                     )
                 },
                 "worker": composeService(name: "worker") {
@@ -2626,6 +2627,9 @@ struct ComposeOrchestratorTests {
         try await orchestrator.push(project: project, services: ["api", "worker"])
 
         #expect(runner.commands[0].arguments.containsSequence(["container", "build", "--tag", "example/api:latest"]))
+        #expect(runner.commands[0].arguments.filter { $0 == "example/api:latest" }.count == 1)
+        #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:dev"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:test"]))
         #expect(runner.commands[0].arguments.containsSequence(["--file", "Containerfile"]))
         #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
         #expect(runner.commands[0].arguments.contains("--no-cache"))

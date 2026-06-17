@@ -389,6 +389,7 @@ public struct ComposeBuild: Codable, Equatable {
     public var args: [String: String]?
     public var target: String?
     public var noCache: Bool?
+    public var tags: [String]?
     public var unsupportedFields: [String]?
 
     public init(
@@ -397,6 +398,7 @@ public struct ComposeBuild: Codable, Equatable {
         args: [String: String]? = nil,
         target: String? = nil,
         noCache: Bool? = nil,
+        tags: [String]? = nil,
         unsupportedFields: [String]? = nil
     ) {
         self.context = context
@@ -404,6 +406,7 @@ public struct ComposeBuild: Codable, Equatable {
         self.args = args
         self.target = target
         self.noCache = noCache
+        self.tags = tags
         self.unsupportedFields = unsupportedFields
     }
 }
