@@ -71,11 +71,11 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["db": "service_started"]
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
                 },
                 "db": ComposeService(name: "db", image: "postgres:16"),
                 "web": composeService(name: "web", image: "nginx:latest") {
-                    $0.dependsOn = ["api": "service_started"]
+                    $0.dependsOn = ["api": ComposeDependency(condition: "service_started")]
                 },
             ]
         )
@@ -91,10 +91,10 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["worker": "service_started"]
+                    $0.dependsOn = ["worker": ComposeDependency(condition: "service_started")]
                 },
                 "worker": composeService(name: "worker", image: "example/worker:latest") {
-                    $0.dependsOn = ["api": "service_started"]
+                    $0.dependsOn = ["api": ComposeDependency(condition: "service_started")]
                 },
             ]
         )
@@ -487,7 +487,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.dependsOn = ["db": "service_started"]
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
                 },
                 "db": ComposeService(name: "db", image: "postgres"),
             ]
@@ -816,7 +816,7 @@ struct ComposeOrchestratorTests {
                 services: [
                     "job": ComposeService(name: "job", image: "example/job:latest"),
                     "api": composeService(name: "api", image: "example/api:latest") {
-                        $0.dependsOn = ["job": testCase.condition]
+                        $0.dependsOn = ["job": ComposeDependency(condition: testCase.condition)]
                     },
                 ]
             )
@@ -827,6 +827,67 @@ struct ComposeOrchestratorTests {
                 Issue.record("Expected unsupported dependency condition")
             } catch let error as ComposeError {
                 #expect(error == .unsupported("service 'api' depends on 'job' with condition '\(testCase.condition)'; \(testCase.reason)"))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+
+        let missingDependencyRunner = RecordingRunner()
+        let missingDependencyProject = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_started", required: false)]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: missingDependencyRunner)
+                .up(project: missingDependencyProject, options: ComposeUpOptions(services: ["api"]))
+            Issue.record("Expected unsupported optional dependency metadata")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' depends on 'optional' with required false; optional dependency startup is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(missingDependencyRunner.commands.isEmpty)
+    }
+
+    @Test("rejects unsupported dependency metadata before side effects")
+    func rejectsUnsupportedDependencyMetadataBeforeSideEffects() async throws {
+        let cases = [
+            (
+                dependency: ComposeDependency(condition: "service_started", restart: true),
+                expected: "service 'api' depends on 'job' with restart true; dependency restart propagation is not implemented by container-compose yet"
+            ),
+            (
+                dependency: ComposeDependency(condition: "service_started", required: false),
+                expected: "service 'api' depends on 'job' with required false; optional dependency startup is not implemented by container-compose yet"
+            ),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let project = ComposeProject(
+                name: "demo",
+                services: [
+                    "job": ComposeService(name: "job", image: "example/job:latest"),
+                    "api": composeService(name: "api", image: "example/api:latest") {
+                        $0.dependsOn = ["job": testCase.dependency]
+                    },
+                ]
+            )
+
+            do {
+                try await ComposeOrchestrator(runner: runner)
+                    .up(project: project, options: ComposeUpOptions(services: ["api"]))
+                Issue.record("Expected unsupported dependency metadata")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expected))
             } catch {
                 Issue.record("Unexpected error: \(error)")
             }
@@ -2291,7 +2352,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.dependsOn = ["db": "service_started"]
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
                     $0.stopSignal = "SIGUSR1"
                     $0.stopGracePeriodSeconds = 9
                 },

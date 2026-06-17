@@ -106,7 +106,7 @@ type normalizedService struct {
 	NetworkAliases          map[string][]string                 `json:"networkAliases,omitempty"`
 	NetworkOptions          map[string]normalizedNetworkOptions `json:"networkOptions,omitempty"`
 	NetworkMode             string                              `json:"networkMode,omitempty"`
-	DependsOn               map[string]string                   `json:"dependsOn,omitempty"`
+	DependsOn               map[string]normalizedDependency     `json:"dependsOn,omitempty"`
 	Links                   []string                            `json:"links,omitempty"`
 	ExternalLinks           []string                            `json:"externalLinks,omitempty"`
 	Labels                  map[string]string                   `json:"labels,omitempty"`
@@ -201,6 +201,14 @@ type normalizedNetworkOptions struct {
 	LinkLocalIPs    []string          `json:"linkLocalIPs,omitempty"`
 	MacAddress      string            `json:"macAddress,omitempty"`
 	Priority        int               `json:"priority,omitempty"`
+}
+
+// normalizedDependency preserves Compose dependency behavior that affects
+// startup ordering or requires explicit unsupported-feature checks.
+type normalizedDependency struct {
+	Condition string `json:"condition,omitempty"`
+	Restart   bool   `json:"restart,omitempty"`
+	Required  *bool  `json:"required,omitempty"`
 }
 
 // normalizedVolume contains project-level volume metadata.
@@ -747,14 +755,22 @@ func (options normalizedNetworkOptions) hasValues() bool {
 		options.Priority != 0
 }
 
-// dependsOnValues records dependency conditions for Swift runtime gap checks.
-func dependsOnValues(dependsOn types.DependsOnConfig) map[string]string {
+// dependsOnValues records dependency metadata for Swift runtime gap checks.
+func dependsOnValues(dependsOn types.DependsOnConfig) map[string]normalizedDependency {
 	if len(dependsOn) == 0 {
 		return nil
 	}
-	result := map[string]string{}
+	result := map[string]normalizedDependency{}
 	for name, dependency := range dependsOn {
-		result[name] = dependency.Condition
+		value := normalizedDependency{
+			Condition: dependency.Condition,
+			Restart:   dependency.Restart,
+		}
+		if !dependency.Required {
+			required := dependency.Required
+			value.Required = &required
+		}
+		result[name] = value
 	}
 	return result
 }

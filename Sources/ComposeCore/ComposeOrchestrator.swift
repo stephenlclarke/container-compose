@@ -743,7 +743,10 @@ public extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("unknown service '\(name)'")
             }
             visiting.insert(name)
-            for dependency in (service.dependsOn ?? [:]).keys.sorted() {
+            for (dependency, metadata) in (service.dependsOn ?? [:]).sorted(by: { $0.key < $1.key }) {
+                if metadata.required == false {
+                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                }
                 try visit(dependency)
             }
             visiting.remove(name)
@@ -854,9 +857,18 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
         if let dependsOn = service.dependsOn {
-            for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
-                let reason = unsupportedDependencyConditionReason(condition)
-                throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
+            for (dependency, metadata) in dependsOn.sorted(by: { $0.key < $1.key }) {
+                if metadata.restart {
+                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with restart true; dependency restart propagation is not implemented by container-compose yet")
+                }
+                if metadata.required == false {
+                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                }
+                let condition = metadata.condition
+                if condition != "service_started" && condition != "" {
+                    let reason = unsupportedDependencyConditionReason(condition)
+                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
+                }
             }
         }
         if let links = service.links, !links.isEmpty {

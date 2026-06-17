@@ -44,7 +44,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `container volume create`, `container volume delete`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `container stop` flags | [S1](#s1-supported-local-web-stack) |
 | Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
-| Simple ordering | `depends_on` with no condition or `condition: service_started`; `up --no-deps` for selected services | Plugin dependency ordering before `container run`, with dependency traversal skipped when requested | [S1](#s1-supported-local-web-stack) |
+| Simple ordering | `depends_on` with no condition or `condition: service_started`, with default `required: true` behavior; `up --no-deps` for selected services | Plugin dependency ordering before `container run`, with dependency traversal skipped when requested | [S1](#s1-supported-local-web-stack) |
 
 ### Blocked By apple/container
 
@@ -56,7 +56,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 | Host identity and legacy links | `hostname`, `domainname`, `extra_hosts`, service `mac_address`, `links`, `external_links` | Hostname/domain controls, explicit host entries, MAC controls, legacy link/alias semantics | [A2](#a2-apple-gap-host-identity-and-links) |
 | Namespace and resource controls | `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`, advanced CPU controls, advanced memory/OOM/PID controls | Namespace selection, parent cgroups, CPU scheduler controls beyond `cpus`, memory controls beyond `mem_limit`, swap/OOM/PID controls | [A3](#a3-apple-gap-runtime-controls) |
 | User, security, devices, DNS, kernel tuning | `group_add`, `security_opt`, `privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`, `dns_opt`, `sysctls` | Supplemental groups, security profiles, privileged mode, host devices, GPUs, DNS resolver options, per-container sysctls | [A3](#a3-apple-gap-runtime-controls) |
-| Health, completion, configs, secrets, restart | `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, service `restart` | Health status, exit code/completion-time metadata, config/secret mount primitives, restart policy support | [A4](#a4-apple-gap-health-secrets-and-restart) |
+| Health, completion, configs, secrets, service restart | `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, service `restart` | Health status, exit code/completion-time metadata, config/secret mount primitives, restart policy support | [A4](#a4-apple-gap-health-secrets-and-restart) |
 | Runtime data and state commands | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc` | Process listing, event stream, runtime-discovered published-port inspect, pause/unpause, wait/exit metadata, stats all-container/truncation controls | [A5](#a5-apple-gap-runtime-data-commands) |
 
 ### Blocked By `container-compose`
@@ -68,6 +68,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | Replica scaling and local deploy handling | `scale`, `up --scale`, `deploy.replicas` values other than `1`, `deploy` fields beyond local replica count | Multi-replica naming, reconciliation, DNS behavior, logs, `ps`, removal, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources | [C1](#c1-plugin-gap-replica-scaling-and-deploy) |
 | Advanced build configuration | `additional_contexts`, `cache_from`, `cache_to`, `dockerfile_inline`, `entitlements`, build `extra_hosts`, build `isolation`, build `labels`, build `network`, `platforms`, build `privileged`, `provenance`, build `pull`, `sbom`, build `secrets`, build `shm_size`, `ssh`, `tags`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
+| Dependency lifecycle metadata | `depends_on.restart: true`, `depends_on.required: false` | Dependency restart propagation and optional dependency ordering policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | Metadata, logging, storage shortcuts | `annotations`, `attach`, `label_file`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, label-file loading, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
@@ -89,7 +90,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 | --- | --- |
 | Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, static `port`, `kill`, `version` |
 | Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc` |
-| Present but blocked by `container-compose` design gaps | `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
+| Present but blocked by `container-compose` design gaps | `depends_on.restart`, `depends_on.required: false`, `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
 
 ## References
 
@@ -668,13 +669,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows
 
-Expected result: `container compose up` rejects this because annotations, label files, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
+Expected result: `container compose up` rejects this because dependency restart/optional-required behavior, annotations, label files, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this grouped example.
-- `container-compose`: needs runtime mapping, inherited mount behavior, label-file loading, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
+- `container-compose`: needs dependency restart propagation, optional dependency ordering policy, runtime mapping, inherited mount behavior, label-file loading, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
 
 ```yaml
 # compose.yaml
@@ -690,6 +691,11 @@ services:
   worker:
     build:
       context: ./worker
+    depends_on:
+      base:
+        condition: service_started
+        restart: true
+        required: false
     annotations:
       example.com/owner: platform
     label_file:
