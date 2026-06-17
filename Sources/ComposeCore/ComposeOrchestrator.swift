@@ -119,7 +119,9 @@ private struct RunArgumentOptions {
     var containerNameOverride: String?
     var labelOverrides: [ComposeLabelOverride] = []
 
-    init(_ configure: (inout RunArgumentOptions) -> Void = { _ in }) {
+    init() {}
+
+    init(_ configure: (inout RunArgumentOptions) -> Void) {
         configure(&self)
     }
 }
