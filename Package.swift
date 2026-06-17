@@ -46,6 +46,7 @@ let package = Package(
             name: "ComposeCore",
             dependencies: [
                 .product(name: "ContainerAPIClient", package: "container"),
+                .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
             ],
             path: "Sources/ComposeCore"

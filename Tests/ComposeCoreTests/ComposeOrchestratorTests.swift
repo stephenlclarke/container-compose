@@ -390,12 +390,10 @@ struct ComposeOrchestratorTests {
     func createPullIfNotPresentPullsOnlyAbsentImages() async throws {
         let runner = RecordingRunner(responses: [
             .success,
-            .failure,
-            .success,
-            .success,
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -404,7 +402,7 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).create(
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager).create(
             project: project,
             options: ComposeCreateOptions {
                 $0.pullPolicy = "if_not_present"
@@ -412,11 +410,12 @@ struct ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "image", "inspect", "example/api"])
-        #expect(commands[1] == ["container", "image", "inspect", "postgres"])
-        #expect(commands[2] == ["container", "image", "pull", "postgres"])
-        #expect(commands[3].starts(with: ["container", "create", "--name", "demo-api-1"]))
-        #expect(commands[4].starts(with: ["container", "create", "--name", "demo-db-1"]))
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-db-1"]))
+        #expect(await imageManager.requests == [
+            .pullMissing("example/api"),
+            .pullMissing("postgres"),
+        ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
     }
 
@@ -880,13 +879,11 @@ struct ComposeOrchestratorTests {
     func upPullMissingPullsOnlyAbsentImages() async throws {
         let runner = RecordingRunner(responses: [
             .success,
-            .failure,
-            .success,
-            .success,
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
-        let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+        let imageManager = RecordingContainerImageManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -900,28 +897,28 @@ struct ComposeOrchestratorTests {
         })
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "image", "inspect", "example/api"])
-        #expect(commands[1] == ["container", "image", "inspect", "postgres"])
-        #expect(commands[2] == ["container", "image", "pull", "postgres"])
-        #expect(commands[3].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[4].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(await imageManager.requests == [
+            .pullMissing("example/api"),
+            .pullMissing("postgres"),
+        ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
     }
 
     @Test("up pull if not present uses the missing-image flow")
     func upPullIfNotPresentUsesMissingImageFlow() async throws {
         let runner = RecordingRunner(responses: [
-            .failure,
-            .success,
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
         let project = ComposeProject(
             name: "demo",
             services: ["api": ComposeService(name: "api", image: "example/api")]
         )
 
-        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager).up(
             project: project,
             options: ComposeUpOptions {
                 $0.pullPolicy = "if_not_present"
@@ -929,9 +926,8 @@ struct ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "image", "inspect", "example/api"])
-        #expect(commands[1] == ["container", "image", "pull", "example/api"])
-        #expect(commands[2].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await imageManager.requests == [.pullMissing("example/api")])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
@@ -939,13 +935,11 @@ struct ComposeOrchestratorTests {
     func upAppliesServicePullPoliciesWhenNoGlobalPullPolicyIsSet() async throws {
         let runner = RecordingRunner(responses: [
             .success,
-            .failure,
-            .success,
-            .success,
             .success,
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -961,15 +955,16 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager).up(project: project, options: ComposeUpOptions())
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "image", "pull", "example/api"])
-        #expect(commands[1] == ["container", "image", "inspect", "example/worker"])
-        #expect(commands[2] == ["container", "image", "pull", "example/worker"])
-        #expect(commands[3].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(commands[4].starts(with: ["container", "run", "--name", "demo-db-1"]))
-        #expect(commands[5].starts(with: ["container", "run", "--name", "demo-worker-1"]))
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(commands[2].starts(with: ["container", "run", "--name", "demo-worker-1"]))
+        #expect(await imageManager.requests == [
+            .pull("example/api"),
+            .pullMissing("example/worker"),
+        ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1", "demo-worker-1"])
     }
 
@@ -2519,10 +2514,16 @@ struct ComposeOrchestratorTests {
         #expect(!encoded.contains("initEnabled"))
     }
 
-    @Test("build pull and push emit image commands")
-    func buildPullAndPushEmitImageCommands() async throws {
+    @Test("build uses CLI while pull and push use direct image API")
+    func buildUsesCLIWhilePullAndPushUseDirectImageAPI() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let emitted = MessageRecorder()
+        let imageManager = RecordingContainerImageManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            imageManager: imageManager
+        )
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2552,8 +2553,12 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
         #expect(runner.commands[0].arguments.last == "api")
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
-        #expect(runner.commands[2].arguments == ["container", "image", "pull", "example/api:latest"])
-        #expect(runner.commands[3].arguments == ["container", "image", "push", "example/api:latest"])
+        #expect(runner.commands.count == 2)
+        #expect(await imageManager.requests == [
+            .pull("example/api:latest"),
+            .push("example/api:latest"),
+        ])
+        #expect(emitted.messages == ["example/api:latest"])
     }
 
     @Test("build applies Compose file no cache setting")
@@ -2607,14 +2612,19 @@ struct ComposeOrchestratorTests {
         )
         let project = ComposeProject(
             name: "demo",
-            services: ["api": ComposeService(name: "api", image: "example/api:latest")]
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
         )
 
-        try await orchestrator.pull(project: project, services: ["api"])
+        try await orchestrator.build(project: project, services: ["api"], noCache: false)
 
         let command = try #require(runner.commands.first)
         #expect(command.executable == "custom-env")
-        #expect(command.arguments == ["container", "image", "pull", "example/api:latest"])
+        #expect(command.arguments.containsSequence(["container", "build", "--tag", "example/api:latest"]))
+        #expect(command.arguments.last == "api")
     }
 
     @Test("down removes project resources in dependency order")
@@ -2740,8 +2750,15 @@ struct ComposeOrchestratorTests {
     @Test("down removes all service images when requested")
     func downRemovesAllServiceImagesWhenRequested() async throws {
         let runner = RecordingRunner()
+        let emitted = MessageRecorder()
+        let imageManager = RecordingContainerImageManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
-        let orchestrator = ComposeOrchestrator(runner: runner, lifecycleManager: lifecycleManager)
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            imageManager: imageManager,
+            lifecycleManager: lifecycleManager
+        )
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2757,11 +2774,13 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.down(project: project, options: ComposeDownOptions(rmi: "all"))
 
-        #expect(runner.commands.map(\.arguments) == [
-            ["container", "image", "delete", "--force", "demo_worker:latest"],
-            ["container", "image", "delete", "--force", "example/api:dev"],
-            ["container", "image", "delete", "--force", "example/web:dev"],
+        #expect(runner.commands.isEmpty)
+        #expect(await imageManager.requests == [
+            .delete(reference: "demo_worker:latest", force: true),
+            .delete(reference: "example/api:dev", force: true),
+            .delete(reference: "example/web:dev", force: true),
         ])
+        #expect(emitted.messages == ["demo_worker:latest", "example/api:dev", "example/web:dev"])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-worker-1", force: false),
@@ -2775,8 +2794,9 @@ struct ComposeOrchestratorTests {
     @Test("down removes only local build images when requested")
     func downRemovesOnlyLocalBuildImagesWhenRequested() async throws {
         let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
-        let orchestrator = ComposeOrchestrator(runner: runner, lifecycleManager: lifecycleManager)
+        let orchestrator = ComposeOrchestrator(runner: runner, imageManager: imageManager, lifecycleManager: lifecycleManager)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2792,8 +2812,9 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.down(project: project, options: ComposeDownOptions(rmi: "local"))
 
-        #expect(runner.commands.map(\.arguments).suffix(1) == [
-            ["container", "image", "delete", "--force", "demo_worker:latest"],
+        #expect(runner.commands.isEmpty)
+        #expect(await imageManager.requests == [
+            .delete(reference: "demo_worker:latest", force: true),
         ])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
@@ -3362,6 +3383,103 @@ struct ComposeOrchestratorTests {
         #expect(stats.cpuUsageUsec == 42)
         #expect(await recorder.listRequests == [["demo-api-1"]])
         #expect(await recorder.statsRequests == ["demo-api-1"])
+    }
+
+    @Test("image manager pulls only missing images through direct API")
+    func imageManagerPullsOnlyMissingImagesThroughDirectAPI() async throws {
+        let client = RecordingContainerImageAPIClient(existingReferences: ["example/api"])
+        let manager = ContainerClientImageManager(client: client)
+
+        try await manager.pullMissingImage("example/api")
+        try await manager.pullMissingImage("postgres")
+
+        #expect(await client.requests == [
+            .exists("example/api"),
+            .exists("postgres"),
+            .pull("postgres"),
+        ])
+    }
+
+    @Test("image manager emits pushed and deleted direct API references")
+    func imageManagerEmitsPushedAndDeletedDirectAPIReferences() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerImageAPIClient(
+            existingReferences: ["example/api:latest"],
+            pushOutputs: ["example/api:latest": "registry.example.com/example/api:latest"],
+            deleteOutputs: ["example/api:latest": "example/api:latest", "missing:latest": nil]
+        )
+        let manager = ContainerClientImageManager(client: client)
+
+        try await manager.pullImage("example/api:latest")
+        try await manager.pushImage("example/api:latest", emit: { emitted.append($0) })
+        try await manager.deleteImage("example/api:latest", force: true, emit: { emitted.append($0) })
+        try await manager.deleteImage("missing:latest", force: true, emit: { emitted.append($0) })
+
+        #expect(await client.requests == [
+            .pull("example/api:latest"),
+            .push("example/api:latest"),
+            .delete(reference: "example/api:latest", force: true),
+            .delete(reference: "missing:latest", force: true),
+        ])
+        #expect(emitted.messages == [
+            "registry.example.com/example/api:latest",
+            "example/api:latest",
+        ])
+    }
+
+    @Test("image API client forwards configured operations")
+    func imageAPIClientForwardsConfiguredOperations() async throws {
+        let recorder = RecordingContainerImageAPIClient(
+            existingReferences: ["example/api:latest"],
+            pushOutputs: ["example/api:latest": "registry.example.com/example/api:latest"],
+            deleteOutputs: ["example/api:latest": "example/api:latest"]
+        )
+        let client = ContainerImageAPIClient(
+            exists: { try await recorder.imageExists(reference: $0) },
+            pull: { try await recorder.pullImage(reference: $0) },
+            push: { try await recorder.pushImage(reference: $0) },
+            delete: { try await recorder.deleteImage(reference: $0, force: $1) }
+        )
+
+        let exists = try await client.imageExists(reference: "example/api:latest")
+        try await client.pullImage(reference: "example/api:latest")
+        let pushed = try await client.pushImage(reference: "example/api:latest")
+        let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
+
+        #expect(exists == true)
+        #expect(pushed == "registry.example.com/example/api:latest")
+        #expect(deleted == "example/api:latest")
+        #expect(await recorder.requests == [
+            .exists("example/api:latest"),
+            .pull("example/api:latest"),
+            .push("example/api:latest"),
+            .delete(reference: "example/api:latest", force: true),
+        ])
+    }
+
+    @Test("image API client wraps an injected lower level client")
+    func imageAPIClientWrapsInjectedLowerLevelClient() async throws {
+        let recorder = RecordingContainerImageAPIClient(
+            existingReferences: ["example/api:latest"],
+            pushOutputs: ["example/api:latest": "registry.example.com/example/api:latest"],
+            deleteOutputs: ["example/api:latest": "example/api:latest"]
+        )
+        let client = ContainerImageAPIClient(client: recorder)
+
+        let exists = try await client.imageExists(reference: "example/api:latest")
+        try await client.pullImage(reference: "example/api:latest")
+        let pushed = try await client.pushImage(reference: "example/api:latest")
+        let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
+
+        #expect(exists == true)
+        #expect(pushed == "registry.example.com/example/api:latest")
+        #expect(deleted == "example/api:latest")
+        #expect(await recorder.requests == [
+            .exists("example/api:latest"),
+            .pull("example/api:latest"),
+            .push("example/api:latest"),
+            .delete(reference: "example/api:latest", force: true),
+        ])
     }
 
     @Test("resource manager maps compose resources to direct API client")
@@ -4327,9 +4445,9 @@ struct ComposeOrchestratorTests {
     func runAppliesServicePullPolicyBeforeCreatingResources() async throws {
         let runner = RecordingRunner(responses: [
             .success,
-            .success,
         ])
         let resourceManager = RecordingContainerResourceManager()
+        let imageManager = RecordingContainerImageManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -4344,12 +4462,12 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).run(project: project, serviceName: "job", command: ["true"], remove: true)
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager, resourceManager: resourceManager).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "image", "pull", "alpine"])
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
-        #expect(commands[1].starts(with: ["container", "run", "--name"]))
+        #expect(await imageManager.requests == [.pull("alpine")])
+        #expect(commands[0].starts(with: ["container", "run", "--name"]))
     }
 
     @Test("run rejects unsupported service pull policies before creating resources")
@@ -5115,6 +5233,7 @@ struct ComposeOrchestratorTests {
     @Test("run applies explicit pull policy before one-off container")
     func runAppliesExplicitPullPolicyBeforeOneOffContainer() async throws {
         let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -5124,7 +5243,7 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).run(
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).run(
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["true"]) {
@@ -5133,28 +5252,30 @@ struct ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "image", "pull", "alpine"])
-        #expect(commands[1].starts(with: ["container", "run"]))
-        #expect(Array(commands[1].suffix(2)) == ["alpine", "true"])
+        #expect(await imageManager.requests == [.pull("alpine")])
+        #expect(commands[0].starts(with: ["container", "run"]))
+        #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
 
     @Test("run pull missing only pulls absent images")
     func runPullMissingOnlyPullsAbsentImages() async throws {
-        let presentRunner = RecordingRunner(responses: [.success])
-        let absentRunner = RecordingRunner(responses: [.failure, .success])
+        let presentRunner = RecordingRunner()
+        let absentRunner = RecordingRunner()
+        let presentImages = RecordingContainerImageManager()
+        let absentImages = RecordingContainerImageManager()
         let project = ComposeProject(
             name: "demo",
             services: ["job": ComposeService(name: "job", image: "alpine")]
         )
 
-        try await ComposeOrchestrator(runner: presentRunner).run(
+        try await ComposeOrchestrator(runner: presentRunner, imageManager: presentImages).run(
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["true"]) {
                 $0.pullPolicy = "missing"
             }
         )
-        try await ComposeOrchestrator(runner: absentRunner).run(
+        try await ComposeOrchestrator(runner: absentRunner, imageManager: absentImages).run(
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["true"]) {
@@ -5163,23 +5284,23 @@ struct ComposeOrchestratorTests {
         )
 
         let presentCommands = presentRunner.commands.map(\.arguments)
-        #expect(presentCommands[0] == ["container", "image", "inspect", "alpine"])
-        #expect(presentCommands[1].starts(with: ["container", "run"]))
+        #expect(await presentImages.requests == [.pullMissing("alpine")])
+        #expect(presentCommands[0].starts(with: ["container", "run"]))
         let absentCommands = absentRunner.commands.map(\.arguments)
-        #expect(absentCommands[0] == ["container", "image", "inspect", "alpine"])
-        #expect(absentCommands[1] == ["container", "image", "pull", "alpine"])
-        #expect(absentCommands[2].starts(with: ["container", "run"]))
+        #expect(await absentImages.requests == [.pullMissing("alpine")])
+        #expect(absentCommands[0].starts(with: ["container", "run"]))
     }
 
     @Test("run pull if not present uses the missing-image flow")
     func runPullIfNotPresentUsesMissingImageFlow() async throws {
-        let runner = RecordingRunner(responses: [.failure, .success])
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
         let project = ComposeProject(
             name: "demo",
             services: ["job": ComposeService(name: "job", image: "alpine")]
         )
 
-        try await ComposeOrchestrator(runner: runner).run(
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).run(
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["true"]) {
@@ -5188,10 +5309,9 @@ struct ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "image", "inspect", "alpine"])
-        #expect(commands[1] == ["container", "image", "pull", "alpine"])
-        #expect(commands[2].starts(with: ["container", "run"]))
-        #expect(Array(commands[2].suffix(2)) == ["alpine", "true"])
+        #expect(await imageManager.requests == [.pullMissing("alpine")])
+        #expect(commands[0].starts(with: ["container", "run"]))
+        #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
 
     @Test("run rejects unsupported explicit pull policy")
@@ -5930,16 +6050,15 @@ struct ComposeOrchestratorTests {
 
     @Test("command failures are surfaced")
     func commandFailuresAreSurfaced() async throws {
-        let runner = RecordingRunner(responses: [
-            CommandResult(status: 4, stdout: "", stderr: ""),
-        ])
+        let expected = ComposeError.commandFailed(command: "container image pull example/api", status: 4, stderr: "")
+        let imageManager = RecordingContainerImageManager(failure: expected)
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
         do {
-            try await ComposeOrchestrator(runner: runner).pull(project: project, services: ["api"])
+            try await ComposeOrchestrator(imageManager: imageManager).pull(project: project, services: ["api"])
             Issue.record("Expected command failure")
         } catch let error as ComposeError {
-            #expect(error == .commandFailed(command: "container image pull example/api", status: 4, stderr: ""))
+            #expect(error == expected)
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -6475,6 +6594,14 @@ private struct ContainerStatsRequest: Equatable {
     var noStream: Bool
 }
 
+private enum ContainerImageRequest: Equatable {
+    case exists(String)
+    case pull(String)
+    case pullMissing(String)
+    case push(String)
+    case delete(reference: String, force: Bool)
+}
+
 private enum ContainerResourceRequest: Equatable {
     case createNetwork(name: String, labels: [String: String])
     case deleteNetwork(id: String)
@@ -6704,6 +6831,112 @@ private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
         responses.removeFirst()
         statsResponses[id] = responses.isEmpty ? [response] : responses
         return response
+    }
+}
+
+private actor RecordingContainerImageManager: ContainerImageManaging {
+    private var storage: [ContainerImageRequest] = []
+    private var pushOutputs: [String: String]
+    private var deleteOutputs: [String: String?]
+    private let failure: ComposeError?
+
+    init(pushOutputs: [String: String] = [:], deleteOutputs: [String: String?] = [:], failure: ComposeError? = nil) {
+        self.pushOutputs = pushOutputs
+        self.deleteOutputs = deleteOutputs
+        self.failure = failure
+    }
+
+    var requests: [ContainerImageRequest] {
+        storage
+    }
+
+    func pullImage(_ reference: String) async throws {
+        if let failure {
+            throw failure
+        }
+        storage.append(.pull(reference))
+    }
+
+    func pullMissingImage(_ reference: String) async throws {
+        if let failure {
+            throw failure
+        }
+        storage.append(.pullMissing(reference))
+    }
+
+    func pushImage(_ reference: String, emit: @escaping @Sendable (String) -> Void) async throws {
+        if let failure {
+            throw failure
+        }
+        storage.append(.push(reference))
+        emit(pushOutputs[reference] ?? reference)
+    }
+
+    func deleteImage(_ reference: String, force: Bool, emit: @escaping @Sendable (String) -> Void) async throws {
+        if let failure {
+            throw failure
+        }
+        storage.append(.delete(reference: reference, force: force))
+        let output: String?
+        if deleteOutputs.keys.contains(reference) {
+            output = deleteOutputs[reference] ?? nil
+        } else {
+            output = reference
+        }
+        if let output {
+            emit(output)
+        }
+    }
+}
+
+private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
+    private var existingReferences: Set<String>
+    private var pushOutputs: [String: String]
+    private var deleteOutputs: [String: String?]
+    private var storage: [ContainerImageRequest] = []
+
+    init(
+        existingReferences: Set<String> = [],
+        pushOutputs: [String: String] = [:],
+        deleteOutputs: [String: String?] = [:]
+    ) {
+        self.existingReferences = existingReferences
+        self.pushOutputs = pushOutputs
+        self.deleteOutputs = deleteOutputs
+    }
+
+    var requests: [ContainerImageRequest] {
+        storage
+    }
+
+    func imageExists(reference: String) async throws -> Bool {
+        storage.append(.exists(reference))
+        return existingReferences.contains(reference)
+    }
+
+    func pullImage(reference: String) async throws {
+        storage.append(.pull(reference))
+        existingReferences.insert(reference)
+    }
+
+    func pushImage(reference: String) async throws -> String {
+        storage.append(.push(reference))
+        return pushOutputs[reference] ?? reference
+    }
+
+    func deleteImage(reference: String, force: Bool) async throws -> String? {
+        storage.append(.delete(reference: reference, force: force))
+        let output: String?
+        if deleteOutputs.keys.contains(reference) {
+            output = deleteOutputs[reference] ?? nil
+        } else {
+            output = reference
+        }
+        if let output {
+            existingReferences.remove(reference)
+            return output
+        }
+        return nil
     }
 }
 

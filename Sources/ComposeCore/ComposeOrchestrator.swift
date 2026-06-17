@@ -273,6 +273,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let copier: ContainerCopying
     private let discoveryManager: ContainerDiscoveryManaging
     private let exporter: ContainerExporting
+    private let imageManager: ContainerImageManaging
     private let lifecycleManager: ContainerLifecycleManaging
     private let logManager: ContainerLogManaging
     private let resourceManager: ContainerResourceManaging
@@ -284,6 +285,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         copier: ContainerCopying = ContainerClientCopier(),
         discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
         exporter: ContainerExporting = ContainerClientExporter(),
+        imageManager: ContainerImageManaging = ContainerClientImageManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         logManager: ContainerLogManaging = ContainerClientLogManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
@@ -294,6 +296,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.copier = copier
         self.discoveryManager = discoveryManager
         self.exporter = exporter
+        self.imageManager = imageManager
         self.lifecycleManager = lifecycleManager
         self.logManager = logManager
         self.resourceManager = resourceManager
@@ -469,7 +472,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try selectedServices(project: project, selected: selected)
         for service in services {
             guard let image = service.image else { continue }
-            try await runContainer(["image", "pull", image])
+            let args = ["image", "pull", image]
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await imageManager.pullImage(image)
+            }
         }
     }
 
@@ -478,7 +486,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try selectedServices(project: project, selected: selected)
         for service in services {
             guard let image = service.image else { continue }
-            try await runContainer(["image", "push", image])
+            let args = ["image", "push", image]
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await imageManager.pushImage(image, emit: options.emit)
+            }
         }
     }
 
@@ -1555,7 +1568,11 @@ private extension ComposeOrchestrator {
         }
         switch policy {
         case "always":
-            try await runContainer(["image", "pull", image])
+            if options.dryRun {
+                try await runContainer(["image", "pull", image])
+            } else {
+                try await imageManager.pullImage(image)
+            }
         case "missing", "if_not_present":
             try await pullMissingImage(image)
         case "never":
@@ -1698,9 +1715,12 @@ private extension ComposeOrchestrator {
 
     /// Pulls one image when it is absent from the local image store.
     func pullMissingImage(_ image: String) async throws {
-        let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
-        if options.dryRun || !inspect.succeeded {
+        let inspectArgs = ["image", "inspect", image]
+        if options.dryRun {
+            try await runContainer(inspectArgs, check: false, emitOutput: false)
             try await runContainer(["image", "pull", image])
+        } else {
+            try await imageManager.pullMissingImage(image)
         }
     }
 
@@ -1873,7 +1893,12 @@ private extension ComposeOrchestrator {
     /// Removes images referenced by services according to `down --rmi`.
     func removeImages(project: ComposeProject, policy: DownImageRemovalPolicy) async throws {
         for image in removableDownImages(project: project, policy: policy) {
-            try await runContainer(["image", "delete", "--force", image], check: false)
+            let args = ["image", "delete", "--force", image]
+            if options.dryRun {
+                try await runContainer(args, check: false)
+            } else {
+                try? await imageManager.deleteImage(image, force: true, emit: options.emit)
+            }
         }
     }
 
