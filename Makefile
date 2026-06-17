@@ -97,6 +97,10 @@ cli-smoke: build
 	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
 	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
 	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
+	run_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --pull missing api true)"; \
+	[[ "$$run_pull_output" == *"container image inspect alpine"* ]]; \
+	[[ "$$run_pull_output" == *"container image pull alpine"* ]]; \
+	[[ "$$run_pull_output" == *" alpine true"* ]]; \
 	run_named_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --name custom-api api echo hello)"; \
 	[[ "$$run_named_output" == *"--name custom-api"* ]]; \
 	[[ "$$run_named_output" == *" alpine echo hello"* ]]; \
@@ -113,6 +117,9 @@ cli-smoke: build
 	[[ "$$run_env_output" == *"--env LOG_LEVEL=debug"* ]]; \
 	[[ "$$run_env_output" == *"--env-file .env.local"* ]]; \
 	[[ "$$run_env_output" == *" alpine env"* ]]; \
+	run_label_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -l com.example.role=job api true)"; \
+	[[ "$$run_label_output" == *"--label com.example.role=job"* ]]; \
+	[[ "$$run_label_output" == *" alpine true"* ]]; \
 	run_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v /host:/container:ro api ls)"; \
 	[[ "$$run_volume_output" == *"--volume /host:/container:ro"* ]]; \
 	[[ "$$run_volume_output" == *" alpine ls"* ]]; \

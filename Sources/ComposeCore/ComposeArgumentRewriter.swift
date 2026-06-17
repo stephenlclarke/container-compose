@@ -259,6 +259,7 @@ public enum ComposeArgumentRewriter {
             "--volume",
             "--workdir",
             "-e",
+            "-l",
             "-u",
             "-v",
             "-w",

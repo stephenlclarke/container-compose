@@ -307,6 +307,44 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps run label shorthand value before service name")
+    func keepsRunLabelShorthandValueBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-l",
+            "com.example.role=job",
+            "api",
+            "true",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "-l",
+            "com.example.role=job",
+            "api",
+            "true",
+        ])
+    }
+
+    @Test("keeps run pull policy before service name")
+    func keepsRunPullPolicyBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "--pull",
+            "missing",
+            "api",
+            "true",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--pull",
+            "missing",
+            "api",
+            "true",
+        ])
+    }
+
     @Test("keeps run volume shorthand value before service name")
     func keepsRunVolumeShorthandValueBeforeServiceName() {
         let rewritten = ComposeArgumentRewriter.rewrite([

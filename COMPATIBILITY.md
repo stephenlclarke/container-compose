@@ -36,13 +36,13 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Compose v2 surface | Supported subset | [`apple/container`][apple-container] primitive used | Example |
 | --- | --- | --- | --- |
 | Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
-| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, `images`, global `up --pull always/missing/never`, service `pull_policy: always/missing/if_not_present/never` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container image list` | [S1](#s1-supported-local-web-stack) |
+| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, `images`, global `up --pull always/missing/never`, one-off `run --pull always/missing/never`, service `pull_policy: always/missing/if_not_present/never` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container image list` | [S1](#s1-supported-local-web-stack) |
 | Container lifecycle | `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, one-off `run --rm`, one-off `run --name` | `container run`, `container start`, `container stop`, `container delete`, `container kill`, `container inspect`, `container list` | [S1](#s1-supported-local-web-stack) |
 | Container interaction | `ps`, `logs`, `exec` with Compose-default stdin/TTY, `-T/--no-tty`, and `--interactive=false`, service-aware `cp`, `version` | `container list`, `container logs`, `container exec --interactive --tty`, `container cp`, plugin version output | [S1](#s1-supported-local-web-stack) |
 | Default networking | One service network, default project networks, external networks, service ports for `up`, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container run --network`, `container run --publish` | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `down --volumes` | `container volume create`, `container volume delete`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container run` and `container stop` flags | [S1](#s1-supported-local-web-stack) |
-| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
+| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
 | Simple ordering | `depends_on` with no condition or `condition: service_started` | Plugin dependency ordering before `container run` | [S1](#s1-supported-local-web-stack) |
 
 ### Blocked By apple/container
@@ -216,6 +216,7 @@ Useful supported commands against this project:
 container compose config
 container compose build
 container compose up --pull missing
+container compose run --pull missing api true
 container compose run --rm api printf ok
 container compose run --name api-shell api sh
 container compose run --service-ports api printf ok
@@ -224,6 +225,7 @@ container compose run --entrypoint "/bin/sh -c" api "printf ok"
 container compose run --workdir /app api pwd
 container compose run --user 1000:1000 api id
 container compose run -e LOG_LEVEL=debug --env-from-file .env.local api env
+container compose run -l com.example.role=job api true
 container compose run -v ./scratch:/scratch:ro api ls /scratch
 container compose ps
 container compose logs api

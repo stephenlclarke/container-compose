@@ -331,6 +331,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var servicePorts = false
     @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
     var publish: [String] = []
+    @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, or never.")
+    var pull: String?
     @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
     var name: String?
     @Option(name: .customLong("entrypoint"), help: "Override the service entrypoint for the one-off container.")
@@ -343,6 +345,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var environment: [String] = []
     @Option(name: .customLong("env-from-file"), help: "Read environment variables for the one-off container from a file. May be repeated.")
     var envFiles: [String] = []
+    @Option(name: [.customShort("l"), .customLong("label")], help: "Add or override a label for the one-off container. May be repeated.")
+    var labels: [String] = []
     @Option(name: [.customShort("v"), .customLong("volume")], help: "Bind mount a volume for the one-off container. May be repeated.")
     var volumes: [String] = []
     @Argument(help: "Service name.")
@@ -361,12 +365,14 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 remove: remove,
                 servicePorts: servicePorts,
                 publish: publish,
+                pullPolicy: pull,
                 containerName: name,
                 entrypoint: entrypoint,
                 workingDirectory: workdir,
                 user: user,
                 environment: environment,
                 envFiles: envFiles,
+                labels: labels,
                 volumes: volumes
             )
         )

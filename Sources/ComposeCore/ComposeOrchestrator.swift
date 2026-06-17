@@ -92,12 +92,14 @@ public struct ComposeRunOptions {
     public var remove: Bool
     public var servicePorts: Bool
     public var publish: [String]
+    public var pullPolicy: String?
     public var containerName: String?
     public var entrypoint: String?
     public var workingDirectory: String?
     public var user: String?
     public var environment: [String]
     public var envFiles: [String]
+    public var labels: [String]
     public var volumes: [String]
 
     public init(
@@ -105,24 +107,28 @@ public struct ComposeRunOptions {
         remove: Bool = false,
         servicePorts: Bool = false,
         publish: [String] = [],
+        pullPolicy: String? = nil,
         containerName: String? = nil,
         entrypoint: String? = nil,
         workingDirectory: String? = nil,
         user: String? = nil,
         environment: [String] = [],
         envFiles: [String] = [],
+        labels: [String] = [],
         volumes: [String] = []
     ) {
         self.command = command
         self.remove = remove
         self.servicePorts = servicePorts
         self.publish = publish
+        self.pullPolicy = pullPolicy
         self.containerName = containerName
         self.entrypoint = entrypoint
         self.workingDirectory = workingDirectory
         self.user = user
         self.environment = environment
         self.envFiles = envFiles
+        self.labels = labels
         self.volumes = volumes
     }
 }
@@ -329,8 +335,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
+        let labelOverrides = try parseRunLabelOverrides(run.labels)
+        try validatePullPolicy(run.pullPolicy)
         try validateRuntimeSupport(service: service)
-        try await applyServicePullPolicies(services: [service])
+        try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
@@ -341,7 +349,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 remove: run.remove,
                 oneOff: true,
                 publishedPorts: publishedPorts,
-                containerNameOverride: run.containerName
+                containerNameOverride: run.containerName,
+                labelOverrides: labelOverrides
             ),
             inheritedIO: service.tty == true || service.stdinOpen == true
         )
@@ -1015,6 +1024,31 @@ private extension ComposeOrchestrator {
         return (override, nil)
     }
 
+    /// Parses `compose run --label` overrides while preserving CLI order.
+    func parseRunLabelOverrides(_ overrides: [String]) throws -> [ComposeLabelOverride] {
+        try overrides.map { override in
+            let parsed: ComposeLabelOverride
+            if let equalsIndex = override.firstIndex(of: "=") {
+                let key = String(override[..<equalsIndex])
+                guard !key.isEmpty else {
+                    throw ComposeError.invalidProject("run --label requires KEY or KEY=VALUE")
+                }
+                let value = String(override[override.index(after: equalsIndex)...])
+                parsed = ComposeLabelOverride(key: key, value: value)
+            } else {
+                guard !override.isEmpty else {
+                    throw ComposeError.invalidProject("run --label requires KEY or KEY=VALUE")
+                }
+                parsed = ComposeLabelOverride(key: override, value: nil)
+            }
+
+            guard !parsed.key.hasPrefix(reservedComposeLabelPrefix) else {
+                throw ComposeError.invalidProject("run --label cannot override reserved Compose tracking label '\(parsed.key)'")
+            }
+            return parsed
+        }
+    }
+
     /// Pulls only service images not already present in the local image store.
     func pullMissingImages(services: [ComposeService]) async throws {
         for service in services {
@@ -1041,7 +1075,8 @@ private extension ComposeOrchestrator {
         remove: Bool,
         oneOff: Bool,
         publishedPorts: [String]? = nil,
-        containerNameOverride: String? = nil
+        containerNameOverride: String? = nil,
+        labelOverrides: [ComposeLabelOverride] = []
     ) throws -> [String] {
         var args = ["run"]
         let runtimeName = containerNameOverride.map(slug) ?? containerName(project: project, service: service, oneOff: oneOff)
@@ -1056,8 +1091,12 @@ private extension ComposeOrchestrator {
         for label in serviceLabels(project: project, service: service, oneOff: oneOff) {
             args.append(contentsOf: ["--label", label])
         }
-        for (key, value) in (service.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
+        let overriddenLabelKeys = Set(labelOverrides.map(\.key))
+        for (key, value) in (service.labels ?? [:]).sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
+        }
+        for label in labelOverrides {
+            args.append(contentsOf: ["--label", label.rawValue])
         }
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
             if let value {
@@ -1325,10 +1364,23 @@ private struct ServiceConfigFingerprint: Encodable {
     var volumes: [String: String]
 }
 
+private struct ComposeLabelOverride {
+    var key: String
+    var value: String?
+
+    var rawValue: String {
+        guard let value else {
+            return key
+        }
+        return "\(key)=\(value)"
+    }
+}
+
 private let projectLabel = "com.apple.container.compose.project"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
+private let reservedComposeLabelPrefix = "com.apple.container.compose."
 
 /// Returns whether a service pull policy can be implemented with local runtime primitives.
 private func isSupportedServicePullPolicy(_ policy: String) -> Bool {

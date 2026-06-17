@@ -2670,6 +2670,81 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("run applies explicit pull policy before one-off container")
+    func runAppliesExplicitPullPolicyBeforeOneOffContainer() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pullPolicy = "never"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["true"], pullPolicy: "always")
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "pull", "alpine"])
+        #expect(commands[1].starts(with: ["container", "run"]))
+        #expect(Array(commands[1].suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run pull missing only pulls absent images")
+    func runPullMissingOnlyPullsAbsentImages() async throws {
+        let presentRunner = RecordingRunner(responses: [.success])
+        let absentRunner = RecordingRunner(responses: [.failure, .success])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        try await ComposeOrchestrator(runner: presentRunner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["true"], pullPolicy: "missing")
+        )
+        try await ComposeOrchestrator(runner: absentRunner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["true"], pullPolicy: "missing")
+        )
+
+        let presentCommands = presentRunner.commands.map(\.arguments)
+        #expect(presentCommands[0] == ["container", "image", "inspect", "alpine"])
+        #expect(presentCommands[1].starts(with: ["container", "run"]))
+        let absentCommands = absentRunner.commands.map(\.arguments)
+        #expect(absentCommands[0] == ["container", "image", "inspect", "alpine"])
+        #expect(absentCommands[1] == ["container", "image", "pull", "alpine"])
+        #expect(absentCommands[2].starts(with: ["container", "run"]))
+    }
+
+    @Test("run rejects unsupported explicit pull policy")
+    func runRejectsUnsupportedExplicitPullPolicy() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(command: ["true"], pullPolicy: "daily")
+            )
+            Issue.record("Expected unsupported run pull policy to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unsupported pull policy 'daily'"))
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported restart policies before creating resources")
     func runRejectsUnsupportedRestartPoliciesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -2843,6 +2918,77 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--env-file", ".env"]))
         #expect(command.containsSequence(["--env-file", ".env.local"]))
         #expect(Array(command.suffix(2)) == ["alpine", "env"])
+    }
+
+    @Test("run applies one-off label overrides")
+    func runAppliesOneOffLabelOverrides() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.labels = ["com.example.keep": "yes", "com.example.role": "api"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(
+                command: ["true"],
+                labels: ["com.example.role=job", "com.example.flag"]
+            )
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--label", "com.apple.container.compose.oneoff=true"]))
+        #expect(command.containsSequence(["--label", "com.example.keep=yes"]))
+        #expect(command.containsSequence(["--label", "com.example.role=job"]))
+        #expect(command.containsSequence(["--label", "com.example.flag"]))
+        #expect(!command.containsSequence(["--label", "com.example.role=api"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run rejects empty label override")
+    func runRejectsEmptyLabelOverride() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator().run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(command: ["true"], labels: [""])
+            )
+            Issue.record("Expected empty run label override to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --label requires KEY or KEY=VALUE"))
+        }
+    }
+
+    @Test("run rejects reserved Compose label overrides")
+    func runRejectsReservedComposeLabelOverrides() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator().run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(
+                    command: ["true"],
+                    labels: ["com.apple.container.compose.project=evil"]
+                )
+            )
+            Issue.record("Expected reserved run label override to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --label cannot override reserved Compose tracking label 'com.apple.container.compose.project'"))
+        }
     }
 
     @Test("run applies one-off volume overrides")
