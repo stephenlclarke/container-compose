@@ -77,33 +77,21 @@ public struct ComposeUpOptions {
 
 /// Options for `compose create`.
 public struct ComposeCreateOptions {
-    public var services: [String]
-    public var build: Bool
-    public var noBuild: Bool
-    public var forceRecreate: Bool
-    public var noRecreate: Bool
-    public var removeOrphans: Bool
+    public var services: [String] = []
+    public var build = false
+    public var noBuild = false
+    public var forceRecreate = false
+    public var noRecreate = false
+    public var removeOrphans = false
     public var pullPolicy: String?
-    public var scales: [String]
+    public var scales: [String] = []
 
-    public init(
-        services: [String] = [],
-        build: Bool = false,
-        noBuild: Bool = false,
-        forceRecreate: Bool = false,
-        noRecreate: Bool = false,
-        removeOrphans: Bool = false,
-        pullPolicy: String? = nil,
-        scales: [String] = []
-    ) {
-        self.services = services
-        self.build = build
-        self.noBuild = noBuild
-        self.forceRecreate = forceRecreate
-        self.noRecreate = noRecreate
-        self.removeOrphans = removeOrphans
-        self.pullPolicy = pullPolicy
-        self.scales = scales
+    public init() {
+        // Stored property defaults represent Docker Compose's default create behavior.
+    }
+
+    public init(_ configure: (inout ComposeCreateOptions) -> Void) {
+        configure(&self)
     }
 }
 

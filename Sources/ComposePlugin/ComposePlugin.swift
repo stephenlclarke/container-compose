@@ -181,16 +181,16 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         try await orchestrator().create(
             project: loadedProject,
-            options: ComposeCreateOptions(
-                services: services,
-                build: build,
-                noBuild: noBuild,
-                forceRecreate: forceRecreate,
-                noRecreate: noRecreate,
-                removeOrphans: removeOrphans,
-                pullPolicy: pull,
-                scales: scales
-            )
+            options: ComposeCreateOptions {
+                $0.services = services
+                $0.build = build
+                $0.noBuild = noBuild
+                $0.forceRecreate = forceRecreate
+                $0.noRecreate = noRecreate
+                $0.removeOrphans = removeOrphans
+                $0.pullPolicy = pull
+                $0.scales = scales
+            }
         )
     }
 }
