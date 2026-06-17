@@ -6,7 +6,7 @@ This file separates three different questions that are easy to blur together:
 
 - Does Docker Compose v2 accept and normalize the Compose file?
 - Does [`apple/container`][apple-container] expose the runtime primitive needed to run it?
-- Does [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose) map that normalized model to [`apple/container`][apple-container] commands?
+- Does [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose) map that normalized model to [`apple/container`][apple-container] APIs or commands?
 
 Unsupported runtime features are rejected before resources are created. Harmless metadata can still appear in `container compose config` without implying that `container compose up` applies runtime behavior.
 
@@ -16,13 +16,13 @@ Read every row as a three-step chain:
 
 1. Docker Compose v2 accepts and normalizes the Compose file.
 2. [`apple/container`][apple-container] has a runtime primitive that can perform the behavior.
-3. `container-compose` maps the normalized Compose model to [`apple/container`][apple-container] commands.
+3. `container-compose` maps the normalized Compose model to [`apple/container`][apple-container] APIs or commands.
 
 The first unsupported step owns the gap.
 
 | Bucket | Docker Compose v2 | [`apple/container`][apple-container] | `container-compose` | What happens today | Fix owner |
 | --- | --- | --- | --- | --- | --- |
-| Supported | Accepts the surface | Has a matching primitive | Maps it | Runtime commands execute through [`apple/container`][apple-container] | No compatibility fix needed |
+| Supported | Accepts the surface | Has a matching primitive | Maps it | Runtime work executes through [`apple/container`][apple-container] APIs or CLI commands | No compatibility fix needed |
 | [`apple/container`][apple-container] gap | Accepts the surface | Missing, incomplete, or not exposed | Detects the field and rejects it | Fails before resources are created with an `apple/container` runtime gap message | Upstream [`apple/container`][apple-container], then this repo maps the new primitive |
 | `container-compose` gap | Accepts the surface | Not known to be the first blocker | Does not map it yet | Fails before resources are created with a `container-compose` implementation message | This repository |
 | Config-only | Accepts the surface | Not needed for `config` output | Preserves it for `config` | Appears in normalized output; runtime commands ignore harmless metadata or reject service-level use | Depends on the runtime behavior requested later |
@@ -36,14 +36,14 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Compose v2 surface | Supported subset | [`apple/container`][apple-container] primitive used | Example |
 | --- | --- | --- | --- |
 | Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
-| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container list --format json`, `container image delete` | [S1](#s1-supported-local-web-stack) |
-| Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `container start`, `container stop`, `container delete`, `container delete --force`, `container kill`, `container inspect`, `container list`, `container image delete` | [S1](#s1-supported-local-web-stack) |
-| Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `container list --format json` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
-| Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, `cp --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `container list`, `container logs`, `container exec --interactive --tty`, `container exec --detach`, `container exec --env`, `container exec --user`, `container exec --workdir`, `container cp`, `container stats`, plugin version output | [S1](#s1-supported-local-web-stack) |
-| Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, `port` for static published bindings, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish`, normalized Compose port metadata | [S1](#s1-supported-local-web-stack) |
-| Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `container volume create`, `container volume delete`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
-| Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `dns_opt`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `container stop` flags | [S1](#s1-supported-local-web-stack) |
-| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
+| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build`, `ClientImage.pull(reference:platform:scheme:containerSystemConfig:progressUpdate:maxConcurrentDownloads:)`, `ClientImage.get(names:containerSystemConfig:)`, `ClientImage.push(platform:scheme:containerSystemConfig:progressUpdate:)`, `ClientImage.delete(reference:garbageCollect:)`, `ClientImage.cleanUpOrphanedBlobs()`, `ContainerClient.list(filters:)` | [S1](#s1-supported-local-web-stack) |
+| Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ContainerClient.get(id:)`, `ContainerClient.list(filters:)`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, `ContainerClient.kill(id:signal:)` | [S1](#s1-supported-local-web-stack) |
+| Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `ContainerClient.list(filters:)` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
+| Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, service-to-service `cp`, `cp --index 1`, `export`, `export -o/--output`, `export --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `ContainerClient.list(filters:)`, `ContainerClient.logs(id:)`, `container exec --interactive --tty` for attached exec, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)` and `ClientProcess.start()` for detached exec with `--env`, `--user`, and `--workdir`, `ContainerClient.copyIn(id:source:destination:)`, `ContainerClient.copyOut(id:source:destination:)`, staged service-to-service copies through `copyOut` then `copyIn`, `ContainerClient.export(id:archive:)`, `ContainerClient.stats(id:)`, plugin version output | [S1](#s1-supported-local-web-stack) |
+| Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, `port` for static published bindings, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `NetworkClient.create(configuration:)`, `NetworkClient.delete(id:)`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish`, normalized Compose port metadata | [S1](#s1-supported-local-web-stack) |
+| Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.delete(name:)`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
+| Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `dns_opt`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `deploy.resources.limits.cpus`, `deploy.resources.limits.memory`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `ContainerClient.stop(id:opts:)` | [S1](#s1-supported-local-web-stack) |
+| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, `label_file`, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
 | Simple ordering | `depends_on` with no condition or `condition: service_started`, default `required: true` behavior, and optional `required: false` dependencies when present or omitted from the normalized project; `run` starts supported dependencies before the one-off container; `up --no-deps` for selected services and `run --no-deps` for one-off containers | Plugin dependency ordering before `container run`, with optional missing dependencies skipped and dependency traversal/validation skipped when explicitly requested | [S1](#s1-supported-local-web-stack) |
 
 ### Blocked By apple/container
@@ -65,13 +65,13 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 
 | Compose v2 surface | Examples of fields or commands | Missing plugin work | Example |
 | --- | --- | --- | --- |
-| Replica scaling and local deploy handling | `scale`, `up --scale`, `deploy.replicas` values other than `1`, `exec --index` values other than `1`, `cp --index` values other than `1`, `cp --all`, `deploy` fields beyond local replica count | Multi-replica naming, reconciliation, DNS behavior, logs, `ps`, replica-aware `exec` and `cp`, one-off container copy selection, removal, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources | [C1](#c1-plugin-gap-replica-scaling-and-deploy) |
+| Replica scaling and local deploy handling | `scale`, `up --scale`, `deploy.replicas` values other than `1`, `exec --index` values other than `1`, `cp --index` values other than `1`, `cp --all`, `deploy` fields beyond local replica count and CPU/memory limits | Multi-replica naming, reconciliation, DNS behavior, logs, `ps`, replica-aware `exec` and `cp`, one-off container copy selection, removal, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources | [C1](#c1-plugin-gap-replica-scaling-and-deploy) |
 | Advanced build configuration | `additional_contexts`, `cache_from`, `cache_to`, `dockerfile_inline`, `entitlements`, build `extra_hosts`, build `isolation`, build `labels`, build `network`, `platforms`, build `privileged`, `provenance`, build `pull`, `sbom`, build `secrets`, build `shm_size`, `ssh`, `tags`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 | Dependency lifecycle metadata | `depends_on.restart: true` | Dependency restart propagation | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
-| Metadata, logging, storage shortcuts | `annotations`, `attach`, `label_file`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, label-file loading, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
+| Metadata, logging, storage shortcuts | `annotations`, `attach`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
-| Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
+| Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `convert`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
 
 ### Config-Only Today
 
@@ -88,9 +88,9 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 | Status | Commands |
 | --- | --- |
-| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, static `port`, `kill`, `version` |
+| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, `export`, static `port`, `kill`, `version` |
 | Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc`, `cp --archive`, `cp --follow-link` |
-| Present but blocked by `container-compose` design gaps | `depends_on.restart`, `exec --index` values other than `1`, `cp --index` values other than `1`, `cp --all`, `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
+| Present but blocked by `container-compose` design gaps | `depends_on.restart`, `exec --index` values other than `1`, `cp --index` values other than `1`, `export --index` values other than `1`, `cp --all`, `watch`, `scale`, `attach`, `commit`, `convert`, `publish`, `volumes` |
 
 ## References
 
@@ -100,7 +100,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - Docker Compose v2 Go API package: [`github.com/docker/compose/v2/pkg/api`](https://pkg.go.dev/github.com/docker/compose/v2/pkg/api).
 - Compose model normalizer used here: [`compose-spec/compose-go`](https://github.com/compose-spec/compose-go).
 - Apple container public documentation: [apple.github.io/container/documentation](https://apple.github.io/container/documentation/).
-- Apple `ContainerClient` API documentation for future direct Swift runtime adapter work: [apple.github.io/container/documentation/containerclient](https://apple.github.io/container/documentation/containerclient/).
+- Apple `ContainerClient` API documentation for direct Swift runtime adapter work: [apple.github.io/container/documentation/containerclient](https://apple.github.io/container/documentation/containerclient/).
 
 ## Example Index
 
@@ -108,7 +108,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 | Example | Status bucket | What it demonstrates |
 | --- | --- | --- |
-| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, `create`, ports, static `port`, environment, one network, volumes, labels, lifecycle, logs, exec, stats, copy, and `down --volumes` |
+| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, `create`, ports, static `port`, environment, one network, volumes, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes` |
 | [A1: Apple Gap, Networking](#a1-apple-gap-networking) | [`apple/container`][apple-container] gap | Multiple networks, aliases, fixed IP attachment options, and network namespace modes |
 | [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links) | [`apple/container`][apple-container] gap | Hostname, domain name, explicit host entries, MAC address, and legacy links |
 | [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls) | [`apple/container`][apple-container] gap | Namespace controls, privileged/device access, advanced resources, and sysctls |
@@ -117,7 +117,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 | [C1: Plugin Gap, Replica Scaling And Deploy](#c1-plugin-gap-replica-scaling-and-deploy) | `container-compose` gap | Replica naming, lifecycle, logs, `ps`, `rm`, `exec --index`, DNS, and deploy semantics |
 | [C2: Plugin Gap, Advanced Build Fields](#c2-plugin-gap-advanced-build-fields) | `container-compose` gap | Additional contexts, cache, inline Dockerfile, secrets, SSH, tags, and provenance/SBOM fields |
 | [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks) | `container-compose` gap | Watch/develop, providers, model bindings, and lifecycle hooks |
-| [C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) | `container-compose` gap | Dependency restart propagation, annotations, label files, logging options, inherited mounts, API socket, block I/O, and time-window pull policy |
+| [C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) | `container-compose` gap | Dependency restart propagation, annotations, logging options, inherited mounts, API socket, block I/O, and time-window pull policy |
 | [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands) | `container-compose` gap | Compose v2 commands that still need command-level plugin design |
 | [O1: Config-Only Metadata](#o1-config-only-metadata) | Config-only | Extension metadata, top-level models/secrets, and `expose` in normalized output |
 
@@ -130,7 +130,7 @@ Expected result: `container compose config`, `build`, `create`, `up`, `ps`, `log
 Status path:
 
 - Docker Compose v2: accepts and normalizes this project.
-- [`apple/container`][apple-container]: has the needed build, image, lifecycle, network, volume, log, exec, and copy primitives.
+- [`apple/container`][apple-container]: has the needed build, image, lifecycle, discovery, network, volume, log, exec, copy, and export primitives.
 - `container-compose`: maps the normalized model to those primitives.
 
 ```yaml
@@ -166,6 +166,11 @@ services:
         condition: service_started
     cpus: "1.5"
     mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 256m
     shm_size: 64m
     dns_opt:
       - use-vc
@@ -174,6 +179,8 @@ services:
     stop_grace_period: 10s
     labels:
       example.com/service: api
+    label_file:
+      - ./api.labels
 
   worker:
     build:
@@ -207,6 +214,12 @@ File: `api.env`
 
 ```env
 API_TRACE=1
+```
+
+File: `api.labels`
+
+```env
+example.com/label-file=enabled
 ```
 
 Dockerfile: `worker/Dockerfile`
@@ -264,6 +277,7 @@ container compose exec --index 1 api true
 container compose stats
 container compose stats --no-stream --format json api worker
 container compose cp api:/app/env.txt ./env.txt
+container compose export -o api.tar api
 container compose port api 8080
 container compose stop --timeout 12 api
 container compose restart -t 12 api
@@ -559,13 +573,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Plugin Gap, Replica Scaling And Deploy
 
-Expected result: `container compose up` rejects this because `container-compose` still needs Compose replica naming, reconciliation, DNS, lifecycle, and deploy semantics. `container compose exec --index 2`, `container compose cp --index 2`, and `container compose cp --all` are rejected for the same reason.
+Expected result: `container compose up` rejects this because `container-compose` still needs Compose replica naming, reconciliation, DNS, lifecycle, and deploy semantics beyond the supported local CPU/memory limits. `container compose exec --index 2`, `container compose cp --index 2`, and `container compose cp --all` are rejected for the same reason.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: needs multi-replica orchestration, naming, DNS, lifecycle, replica-aware `exec` and `cp`, one-off container copy selection, and deploy semantics.
+- `container-compose`: maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits, but still needs multi-replica orchestration, naming, DNS, lifecycle, replica-aware `exec` and `cp`, one-off container copy selection, and broader deploy semantics.
 
 The equivalent CLI scaling form is also rejected with the same plugin gap:
 
@@ -688,13 +702,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows
 
-Expected result: `container compose up` rejects this because dependency restart propagation, annotations, label files, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
+Expected result: `container compose up` rejects this because dependency restart propagation, annotations, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this grouped example.
-- `container-compose`: needs dependency restart propagation, runtime mapping, inherited mount behavior, label-file loading, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
+- `container-compose`: needs dependency restart propagation, runtime mapping, inherited mount behavior, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
 
 ```yaml
 # compose.yaml
@@ -716,8 +730,6 @@ services:
         restart: true
     annotations:
       example.com/owner: platform
-    label_file:
-      - ./labels.env
     logging:
       driver: json-file
     pull_policy: daily
@@ -779,7 +791,6 @@ docker compose scale worker=3
 docker compose attach api
 docker compose commit api example/api:snapshot
 docker compose convert
-docker compose export api
 docker compose publish
 docker compose volumes
 ```

@@ -44,13 +44,18 @@ let package = Package(
         ),
         .target(
             name: "ComposeCore",
-            dependencies: [],
+            dependencies: [
+                .product(name: "ContainerAPIClient", package: "container"),
+                .product(name: "ContainerPersistence", package: "container"),
+                .product(name: "ContainerResource", package: "container"),
+            ],
             path: "Sources/ComposeCore"
         ),
         .testTarget(
             name: "ComposeCoreTests",
             dependencies: [
                 "ComposeCore",
+                .product(name: "ContainerResource", package: "container"),
             ],
             path: "Tests/ComposeCoreTests"
         ),

@@ -614,6 +614,37 @@ services:
 	}
 }
 
+func TestLoadProjectNormalizesDeployResourceLimitsAsRuntimeOptions(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 256m
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if api.CPUS != "1.5" {
+		t.Fatalf("api.CPUS = %q, want 1.5", api.CPUS)
+	}
+	if api.MemLimit == "" {
+		t.Fatal("api.MemLimit is empty")
+	}
+	if len(api.UnsupportedDeployFields) != 0 {
+		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
 func TestLoadProjectNormalizesUnsupportedDeployFields(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
@@ -633,6 +664,7 @@ services:
       resources:
         limits:
           memory: 256m
+          pids: 64
         reservations:
           devices:
             - capabilities: ["gpu"]
@@ -976,6 +1008,12 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if got := cpusValue(2.5); got != "2.5" {
 		t.Fatalf("cpusValue(2.5) = %q, want 2.5", got)
 	}
+	if got := nanoCPUsValue(0); got != "" {
+		t.Fatalf("nanoCPUsValue(0) = %q, want empty", got)
+	}
+	if got := nanoCPUsValue(types.NanoCPUs(1.5)); got != "1.5" {
+		t.Fatalf("nanoCPUsValue(1.5) = %q, want 1.5", got)
+	}
 	if got := durationSeconds(nil); got != nil {
 		t.Fatalf("durationSeconds(nil) = %#v, want nil", got)
 	}
@@ -1024,6 +1062,7 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 		Resources: types.Resources{
 			Limits: &types.Resource{
 				MemoryBytes: types.UnitBytes(256),
+				Pids:        64,
 			},
 			Reservations: &types.Resource{
 				GenericResources: []types.GenericResource{{

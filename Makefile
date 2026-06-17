@@ -237,6 +237,12 @@ cli-smoke: build
 	[[ "$$cp_all_output" == *"unsupported compose feature: cp --all: copying from one-off run containers is not implemented by container-compose yet"* ]]; \
 	cp_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 2 api:/tmp/file . 2>&1 || true)"; \
 	[[ "$$cp_index_output" == *"unsupported compose feature: cp --index 2: service replica copy needs replica-aware container lookup"* ]]; \
+	export_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export api)"; \
+	[[ "$$export_output" == *"container export demo-api-1"* ]]; \
+	export_file_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export -o api.tar api)"; \
+	[[ "$$export_file_output" == *"container export --output api.tar demo-api-1"* ]]; \
+	export_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export --index 2 api 2>&1 || true)"; \
+	[[ "$$export_index_output" == *"unsupported compose feature: export --index 2: service replica export needs replica-aware container lookup"* ]]; \
 	stop_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop --timeout 12 api)"; \
 	[[ "$$stop_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	stop_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop -t12 api)"; \
@@ -289,7 +295,7 @@ cli-smoke: build
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
 	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
-	for unsupported_command in watch scale attach commit convert export publish volumes; do \
+	for unsupported_command in watch scale attach commit convert publish volumes; do \
 		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
 		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
 	done

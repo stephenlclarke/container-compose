@@ -44,6 +44,41 @@ The Go boundary is intentionally small. The helper accepts Compose CLI-shaped
 normalization options and emits canonical JSON. Swift treats that JSON as an
 input model and performs all runtime decisions.
 
+## Generated Swift Compose Types
+
+Apple reviewers have discussed generating Swift Compose model types from the
+Compose Specification JSON schema with
+[`quicktype`](https://quicktype.io/), as shown in
+[`apple/container` pull request 239](https://github.com/apple/container/pull/239#issuecomment-3138230001).
+That approach is a good fit for a Swift-native schema package, and it may be
+useful here as an additional typed boundary or as a golden-test aid.
+
+The prototype attached to that discussion decodes raw Compose YAML with Yams
+into Quicktype-generated Swift types. It also illustrates why this needs care
+before adoption: the generated sketch does not preserve every dynamic Compose
+map as a useful Swift model, and it does not run the Compose loader pipeline.
+Any generated-type work should therefore be treated as a narrow model-generation
+experiment until it proves that services, networks, volumes, configs, secrets,
+extensions, and schema unions round-trip correctly.
+
+Generated schema types are not a replacement for `compose-go` normalization in
+the current architecture. The Compose JSON schema describes the accepted model
+shape, while `compose-go` also performs the behavioral loading steps Docker
+Compose users rely on: file discovery, multiple file merges, interpolation,
+profiles, includes, extension handling, path resolution, validation, and
+canonical defaults. Rebuilding those semantics in Swift would add a second
+Compose implementation to maintain.
+
+The current decision is therefore:
+
+- Keep the `compose-go` helper as the source of canonical Compose semantics.
+- Keep orchestration, runtime gap checks, and direct
+  [`apple/container`](https://github.com/apple/container) API integration in
+  Swift.
+- Consider generated Swift Compose schema types only when they reduce
+  boilerplate at the Swift model boundary without weakening compatibility with
+  Docker Compose v2 behavior.
+
 ## Architecture
 
 ```mermaid
@@ -62,6 +97,9 @@ flowchart TD
     SwiftCLI --> Orchestrator["ComposeOrchestrator (Swift)"]
     Model --> Orchestrator
     Orchestrator --> Planner["Dependency order, labels, config hashes"]
+    Orchestrator --> DirectAdapters["Direct API adapters"]
+    DirectAdapters --> AppleAPI["ContainerClient, NetworkClient, ClientVolume"]
+    AppleAPI --> AppleContainer
     Planner --> Runner["ProcessRunner"]
     Runner --> AppleContainer["apple/container CLI and runtime"]
     click AppleContainer "https://github.com/apple/container"
@@ -84,7 +122,9 @@ The installed plugin layout is:
 options, invokes the normalizer, validates the resulting project, and translates
 Compose operations into `container` operations.
 
-Current orchestration uses the installed `container` CLI as its runtime adapter because that keeps behavior aligned with the command surface available to users today. Apple also publishes public DocC documentation for [`container`](https://apple.github.io/container/documentation/) and [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/) APIs; those docs should guide future direct Swift API adapter work when Compose compatibility needs primitives that are available in the API but not yet surfaced through the CLI.
+Current orchestration uses direct Apple `container` APIs where a stable API maps cleanly to a Compose operation, and keeps the installed `container` CLI as the compatibility adapter for command surfaces that are not yet represented by a focused direct adapter. For example, project discovery, `ps`, `images`, recreate checks, and orphan cleanup use `ContainerClient.list(filters:)` and `ContainerClient.get(id:)`; project networks use `NetworkClient.create(configuration:)` and `NetworkClient.delete(id:)`; project volumes use `ClientVolume.create(name:driver:driverOpts:labels:)` and `ClientVolume.delete(name:)`; image pull, missing-image checks, push, and delete use `ClientImage.pull`, `ClientImage.get`, `ClientImage.push`, `ClientImage.delete`, and `ClientImage.cleanUpOrphanedBlobs`; service lifecycle start and cleanup use `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and `ContainerClient.kill(id:signal:)`; `compose logs` uses `ContainerClient.logs(id:)`; `compose stats` uses `ContainerClient.stats(id:)`; `compose cp` uses `ContainerClient.copyIn(id:source:destination:)` and `ContainerClient.copyOut(id:source:destination:)` for service-aware local-to-container, container-to-local, and staged container-to-container copies; and `compose export` uses `ContainerClient.export(id:archive:)` for real execution. These commands render the equivalent `container` command only for `--dry-run` output. Apple publishes public DocC documentation for [`container`](https://apple.github.io/container/documentation/) and [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/) APIs; those docs should guide future direct Swift API adapter work whenever Compose compatibility needs primitives that are available in the API.
+
+Detached `compose exec -d` also uses direct process APIs through `ContainerClient.createProcess(containerId:processId:configuration:stdio:)` and `ClientProcess.start()`. Attached exec remains CLI-backed until the plugin has an Apple API terminal IO adapter that preserves interactive stdin and TTY behavior.
 
 `compose-normalizer` is a Go executable. It has no orchestration behavior. Its
 only job is to load Compose files with `compose-go` and emit the normalized

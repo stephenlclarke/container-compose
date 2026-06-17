@@ -450,7 +450,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		CapAdd:                  append([]string(nil), service.CapAdd...),
 		CapDrop:                 append([]string(nil), service.CapDrop...),
 		SecurityOpt:             append([]string(nil), service.SecurityOpt...),
-		MemLimit:                unitBytesValue(service.MemLimit),
+		MemLimit:                firstNonEmpty(unitBytesValue(service.MemLimit), deployLimitMemory(service.Deploy)),
 		MemReservation:          unitBytesValue(service.MemReservation),
 		MemSwapLimit:            unitBytesValue(service.MemSwapLimit),
 		MemSwappiness:           unitBytesValue(service.MemSwappiness),
@@ -458,7 +458,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		OomKillDisable:          service.OomKillDisable,
 		OomScoreAdj:             service.OomScoreAdj,
 		PidsLimit:               service.PidsLimit,
-		CPUS:                    cpusValue(service.CPUS),
+		CPUS:                    firstNonEmpty(cpusValue(service.CPUS), deployLimitCPUS(service.Deploy)),
 		ShmSize:                 unitBytesValue(service.ShmSize),
 		Ulimits:                 ulimitValues(service.Ulimits),
 		Pid:                     service.Pid,
@@ -517,7 +517,7 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	appendUnsupportedDeployField(&fields, "labels", len(deploy.Labels) > 0)
 	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasFields(deploy.UpdateConfig))
 	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
-	appendUnsupportedDeployField(&fields, "resources.limits", resourceHasFields(deploy.Resources.Limits))
+	appendUnsupportedDeployField(&fields, "resources.limits", resourceHasUnsupportedLimitFields(deploy.Resources.Limits))
 	appendUnsupportedDeployField(&fields, "resources.reservations", resourceHasFields(deploy.Resources.Reservations))
 	appendUnsupportedDeployField(&fields, "restart_policy", restartPolicyHasFields(deploy.RestartPolicy))
 	appendUnsupportedDeployField(&fields, "placement", placementHasFields(deploy.Placement))
@@ -553,6 +553,17 @@ func resourceHasFields(resource *types.Resource) bool {
 	return resource.NanoCPUs != 0 ||
 		resource.MemoryBytes != 0 ||
 		resource.Pids != 0 ||
+		len(resource.Devices) > 0 ||
+		len(resource.GenericResources) > 0
+}
+
+// resourceHasUnsupportedLimitFields reports deploy resource limits that are not
+// backed by the local container runtime flags this plugin already maps.
+func resourceHasUnsupportedLimitFields(resource *types.Resource) bool {
+	if resource == nil {
+		return false
+	}
+	return resource.Pids != 0 ||
 		len(resource.Devices) > 0 ||
 		len(resource.GenericResources) > 0
 }
@@ -888,6 +899,27 @@ func cpusValue(value float32) string {
 		return ""
 	}
 	return fmt.Sprintf("%g", value)
+}
+
+// nanoCPUsValue formats compose-go deploy NanoCPUs values as container --cpus text.
+func nanoCPUsValue(value types.NanoCPUs) string {
+	return cpusValue(value.Value())
+}
+
+// deployLimitCPUS returns the local CPU limit from deploy.resources.limits.
+func deployLimitCPUS(deploy *types.DeployConfig) string {
+	if deploy == nil || deploy.Resources.Limits == nil {
+		return ""
+	}
+	return nanoCPUsValue(deploy.Resources.Limits.NanoCPUs)
+}
+
+// deployLimitMemory returns the local memory limit from deploy.resources.limits.
+func deployLimitMemory(deploy *types.DeployConfig) string {
+	if deploy == nil || deploy.Resources.Limits == nil {
+		return ""
+	}
+	return unitBytesValue(deploy.Resources.Limits.MemoryBytes)
 }
 
 // durationSeconds converts Compose durations to whole seconds for container stop.

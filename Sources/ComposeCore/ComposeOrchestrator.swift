@@ -168,6 +168,17 @@ public struct ComposeCopyOptions {
     }
 }
 
+/// Options for `compose export` commands.
+public struct ComposeExportOptions {
+    public var output: String?
+    public var index: Int
+
+    public init(output: String? = nil, index: Int = 1) {
+        self.output = output
+        self.index = index
+    }
+}
+
 /// Options for `compose ls`.
 public struct ComposeLsOptions {
     public var all: Bool
@@ -240,15 +251,59 @@ private enum ComposeImagesFormat {
     case json
 }
 
+private enum ComposeCopyEndpoint {
+    case local(String)
+    case container(id: String, path: String)
+
+    var runtimeArgument: String {
+        switch self {
+        case .local(let path):
+            path
+        case .container(let id, let path):
+            "\(id):\(path)"
+        }
+    }
+}
+
 /// Converts a normalized Compose project into deterministic `container`
 /// commands.
 public final class ComposeOrchestrator: @unchecked Sendable {
     private let runner: CommandRunning
     private let options: ComposeExecutionOptions
+    private let copier: ContainerCopying
+    private let discoveryManager: ContainerDiscoveryManaging
+    private let execManager: ContainerExecManaging
+    private let exporter: ContainerExporting
+    private let imageManager: ContainerImageManaging
+    private let lifecycleManager: ContainerLifecycleManaging
+    private let logManager: ContainerLogManaging
+    private let resourceManager: ContainerResourceManaging
+    private let statsManager: ContainerStatsManaging
 
-    public init(runner: CommandRunning = ProcessRunner(), options: ComposeExecutionOptions = ComposeExecutionOptions()) {
+    public init(
+        runner: CommandRunning = ProcessRunner(),
+        options: ComposeExecutionOptions = ComposeExecutionOptions(),
+        copier: ContainerCopying = ContainerClientCopier(),
+        discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
+        execManager: ContainerExecManaging = ContainerClientExecManager(),
+        exporter: ContainerExporting = ContainerClientExporter(),
+        imageManager: ContainerImageManaging = ContainerClientImageManager(),
+        lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
+        logManager: ContainerLogManaging = ContainerClientLogManager(),
+        resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
+        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
+    ) {
         self.runner = runner
         self.options = options
+        self.copier = copier
+        self.discoveryManager = discoveryManager
+        self.execManager = execManager
+        self.exporter = exporter
+        self.imageManager = imageManager
+        self.lifecycleManager = lifecycleManager
+        self.logManager = logManager
+        self.resourceManager = resourceManager
+        self.statsManager = statsManager
     }
 
     /// Returns canonical project JSON for `compose config`.
@@ -293,16 +348,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                if !up.forceRecreate, existing.configHash == configHash(project: project, service: service) {
+                if !up.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                try await runContainer(stopArguments(service: service, containerName: name), check: false)
-                try await runContainer(["delete", name], check: false)
+                try await stopContainer(service: service, containerName: name)
+                try await deleteContainer(name)
             }
 
             try await runContainer(
-                runArguments(
+                try runArguments(
                     project: project,
                     service: service,
                     options: RunArgumentOptions {
@@ -342,16 +397,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                if !create.forceRecreate, existing.configHash == configHash(project: project, service: service) {
+                if !create.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                try await runContainer(stopArguments(service: service, containerName: name), check: false)
-                try await runContainer(["delete", name], check: false)
+                try await stopContainer(service: service, containerName: name)
+                try await deleteContainer(name)
             }
 
             try await runContainer(
-                runArguments(
+                try runArguments(
                     project: project,
                     service: service,
                     options: RunArgumentOptions {
@@ -375,20 +430,32 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let declaredContainers = Set(services.map { containerName(project: project, service: $0, oneOff: false) })
         for service in services.reversed() {
             let name = containerName(project: project, service: service, oneOff: false)
-            try await runContainer(stopArguments(service: service, containerName: name, timeout: down.timeout), check: false)
-            try await runContainer(["delete", name], check: false)
+            try await stopContainer(service: service, containerName: name, timeout: down.timeout)
+            try await deleteContainer(name)
         }
         if down.removeOrphans {
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
         }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
-            try await runContainer(["network", "delete", networkRuntimeName(project: project, composeName: name, network: network)], check: false)
+            let runtimeName = networkRuntimeName(project: project, composeName: name, network: network)
+            let args = ["network", "delete", runtimeName]
+            if options.dryRun {
+                try await runContainer(args, check: false)
+            } else {
+                try? await resourceManager.deleteNetwork(id: runtimeName)
+            }
         }
 
         if down.volumes {
             for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
-                try await runContainer(["volume", "delete", volumeRuntimeName(project: project, composeName: name, volume: volume)], check: false)
+                let runtimeName = volumeRuntimeName(project: project, composeName: name, volume: volume)
+                let args = ["volume", "delete", runtimeName]
+                if options.dryRun {
+                    try await runContainer(args, check: false)
+                } else {
+                    try? await resourceManager.deleteVolume(name: runtimeName)
+                }
             }
         }
 
@@ -408,7 +475,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try selectedServices(project: project, selected: selected)
         for service in services {
             guard let image = service.image else { continue }
-            try await runContainer(["image", "pull", image])
+            let args = ["image", "pull", image]
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await imageManager.pullImage(image)
+            }
         }
     }
 
@@ -417,7 +489,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try selectedServices(project: project, selected: selected)
         for service in services {
             guard let image = service.image else { continue }
-            try await runContainer(["image", "push", image])
+            let args = ["image", "push", image]
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await imageManager.pushImage(image, emit: options.emit)
+            }
         }
     }
 
@@ -434,8 +511,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
 
-        let result = try await runContainer(args, emitOutput: false)
-        let records = try composeProjectRecords(output: result.stdout, nameFilters: nameFilters)
+        let containers = try await discoveryManager.listContainers(all: list.all)
+        let records = composeProjectRecords(containers: containers, nameFilters: nameFilters)
         if list.quiet {
             let names = records.map(\.name)
             if !names.isEmpty {
@@ -473,8 +550,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await runContainer(args)
             return
         }
-        let result = try await runContainer(args, emitOutput: false)
-        let containers = try projectContainers(projectName: project.name, output: result.stdout)
+        let containers = try await projectContainers(projectName: project.name, all: all || !statusFilters.isEmpty)
         let filteredContainers = filterContainersByStatus(containers, statuses: statusFilters)
         if quiet {
             let identifiers = containerIdentifiers(filteredContainers)
@@ -503,10 +579,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 args.append("--follow")
             }
             if let runtimeTail {
-                args.append(contentsOf: ["-n", runtimeTail])
+                args.append(contentsOf: ["-n", String(runtimeTail)])
             }
-            args.append(containerName(project: project, service: service, oneOff: false))
-            try await runContainer(args)
+            let id = containerName(project: project, service: service, oneOff: false)
+            args.append(id)
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await logManager.logs(id: id, tail: runtimeTail, follow: follow, emit: options.emit)
+            }
         }
     }
 
@@ -559,6 +640,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         args.append(containerName(project: project, service: service, oneOff: false))
         args.append(contentsOf: exec.command)
+        if exec.detach, !options.dryRun {
+            try await execManager.execDetached(
+                request: ContainerDetachedExecRequest(
+                    id: containerName(project: project, service: service, oneOff: false),
+                    command: exec.command,
+                    environment: exec.environment,
+                    user: exec.user,
+                    workingDirectory: exec.workingDirectory
+                ),
+                emit: options.emit
+            )
+            return
+        }
         try await runContainer(args, inheritedIO: !exec.detach && (exec.interactive || exec.tty))
     }
 
@@ -608,7 +702,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await startDependencyServices(project: runProject, services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
-            runArguments(
+            try runArguments(
                 project: runProject,
                 service: service,
                 options: RunArgumentOptions {
@@ -627,7 +721,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Starts selected service containers.
     public func start(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
-            try await runContainer(["start", containerName(project: project, service: service, oneOff: false)])
+            let id = containerName(project: project, service: service, oneOff: false)
+            let args = ["start", id]
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await lifecycleManager.startContainer(id: id)
+            }
         }
     }
 
@@ -635,9 +735,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func stop(project: ComposeProject, services selected: [String], timeout: Int? = nil) async throws {
         try validateTimeoutSeconds(timeout, command: "stop")
         for service in try selectedServices(project: project, selected: selected) {
-            try await runContainer(
-                stopArguments(service: service, containerName: containerName(project: project, service: service, oneOff: false), timeout: timeout),
-                check: false
+            try await stopContainer(
+                service: service,
+                containerName: containerName(project: project, service: service, oneOff: false),
+                timeout: timeout
             )
         }
     }
@@ -661,16 +762,17 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await stop(project: project, services: services.map(\.name))
         }
         for service in services {
-            var args = ["delete"]
-            if force {
-                args.append("--force")
-            }
-            args.append(containerName(project: project, service: service, oneOff: false))
-            try await runContainer(args, check: false)
+            let name = containerName(project: project, service: service, oneOff: false)
+            try await deleteContainer(name, force: force)
         }
         if volumes {
             for volume in anonymousVolumeRuntimeNames(project: project, services: services) {
-                try await runContainer(["volume", "delete", volume], check: false)
+                let args = ["volume", "delete", volume]
+                if options.dryRun {
+                    try await runContainer(args, check: false)
+                } else {
+                    try? await resourceManager.deleteVolume(name: volume)
+                }
             }
         }
     }
@@ -686,8 +788,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
 
-        let result = try await runContainer(args, emitOutput: false)
-        let records = try composeImageRecords(projectName: project.name, output: result.stdout, selectedServices: selectedServiceNames)
+        let containers = try await projectContainers(projectName: project.name, all: true)
+        let records = composeImageRecords(containers: containers, selectedServices: selectedServiceNames)
         if images.quiet {
             let identifiers = records.map(\.imageID).filter { !$0.isEmpty }
             if !identifiers.isEmpty {
@@ -719,8 +821,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if stats.noStream {
             args.append("--no-stream")
         }
-        args.append(contentsOf: services.map { containerName(project: project, service: $0, oneOff: false) })
-        try await runContainer(args)
+        let ids = services.map { containerName(project: project, service: $0, oneOff: false) }
+        args.append(contentsOf: ids)
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+        try await statsManager.stats(ids: ids, format: stats.format, noStream: stats.noStream, emit: options.emit)
     }
 
     /// Sends a signal to selected service containers.
@@ -730,8 +837,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if let signal {
                 args.append(contentsOf: ["--signal", signal])
             }
-            args.append(containerName(project: project, service: service, oneOff: false))
-            try await runContainer(args, check: false)
+            let containerID = containerName(project: project, service: service, oneOff: false)
+            args.append(containerID)
+            if options.dryRun {
+                try await runContainer(args, check: false)
+                continue
+            }
+            try await lifecycleManager.killContainer(id: containerID, signal: signal ?? "KILL")
         }
     }
 
@@ -751,8 +863,50 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         guard copy.arguments.count == 2 else {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
-        let mappedArguments = try copy.arguments.map { try copyArgument($0, project: project) }
-        try await runContainer(["cp"] + mappedArguments)
+
+        let source = try copyEndpoint(copy.arguments[0], project: project)
+        let destination = try copyEndpoint(copy.arguments[1], project: project)
+        let mappedArguments = [source.runtimeArgument, destination.runtimeArgument]
+        if options.dryRun {
+            try await runContainer(["cp"] + mappedArguments)
+            return
+        }
+
+        switch (source, destination) {
+        case (.container(let id, let sourcePath), .local(let localPath)):
+            try await copier.copyFromContainer(id: id, source: sourcePath, destination: localPath)
+        case (.local(let localPath), .container(let id, let destinationPath)):
+            try await copier.copyIntoContainer(id: id, source: localPath, destination: destinationPath)
+        case (.container(let sourceID, let sourcePath), .container(let destinationID, let destinationPath)):
+            try await copier.copyBetweenContainers(
+                sourceID: sourceID,
+                source: sourcePath,
+                destinationID: destinationID,
+                destination: destinationPath
+            )
+        case (.local, .local):
+            try await runContainer(["cp"] + mappedArguments)
+        }
+    }
+
+    /// Exports an existing service container filesystem as a tar archive.
+    public func export(project: ComposeProject, serviceName: String, options export: ComposeExportOptions = ComposeExportOptions()) async throws {
+        try validateExportOptions(export)
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+
+        var args = ["export"]
+        if let output = export.output {
+            args.append(contentsOf: ["--output", output])
+        }
+        let containerID = containerName(project: project, service: service, oneOff: false)
+        args.append(containerID)
+        if options.dryRun {
+            try await runContainer(args, inheritedIO: export.output == nil)
+            return
+        }
+        try await exporter.exportContainer(id: containerID, output: export.output)
     }
 
     /// Prints the public address for a statically published service port.
@@ -919,6 +1073,7 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedServiceMetadataAndLoggingFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
+        try validateServiceLabels(project: project, service: service)
         if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
@@ -1127,9 +1282,6 @@ private extension ComposeOrchestrator {
         if service.attach != nil {
             fields.append(("attach", "service attach behavior is not implemented by container-compose yet"))
         }
-        if let labelFiles = service.labelFiles, !labelFiles.isEmpty {
-            fields.append(("label_file", "label file support is not implemented by container-compose yet"))
-        }
         if service.logging != nil {
             fields.append(("logging", "service logging configuration is not implemented by container-compose yet"))
         }
@@ -1279,6 +1431,13 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Validates `compose export` options before invoking runtime export.
+    func validateExportOptions(_ options: ComposeExportOptions) throws {
+        if options.index != 1 {
+            throw ComposeError.unsupported("export --index \(options.index): service replica export needs replica-aware container lookup")
+        }
+    }
+
     /// Validates a Compose CLI shutdown timeout before runtime side effects.
     func validateTimeoutSeconds(_ timeout: Int?, command: String) throws {
         guard let timeout else {
@@ -1323,8 +1482,13 @@ private extension ComposeOrchestrator {
         for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(networkRuntimeName(project: project, composeName: composeName, network: network))
-        try await runContainer(args, check: false)
+        let runtimeName = networkRuntimeName(project: project, composeName: composeName, network: network)
+        args.append(runtimeName)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await resourceManager.createNetwork(name: runtimeName, labels: resourceLabels(project: project, labels: network.labels))
+        }
     }
 
     /// Creates a project volume unless it already exists.
@@ -1336,8 +1500,13 @@ private extension ComposeOrchestrator {
         for label in (volume.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(volumeRuntimeName(project: project, composeName: composeName, volume: volume))
-        try await runContainer(args, check: false)
+        let runtimeName = volumeRuntimeName(project: project, composeName: composeName, volume: volume)
+        args.append(runtimeName)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await resourceManager.createVolume(name: runtimeName, labels: resourceLabels(project: project, labels: volume.labels))
+        }
     }
 
     /// Translates one Compose build section into a `container build` command.
@@ -1426,7 +1595,11 @@ private extension ComposeOrchestrator {
         }
         switch policy {
         case "always":
-            try await runContainer(["image", "pull", image])
+            if options.dryRun {
+                try await runContainer(["image", "pull", image])
+            } else {
+                try await imageManager.pullImage(image)
+            }
         case "missing", "if_not_present":
             try await pullMissingImage(image)
         case "never":
@@ -1550,7 +1723,7 @@ private extension ComposeOrchestrator {
                 parsed = ComposeLabelOverride(key: override, value: nil)
             }
 
-            guard !parsed.key.hasPrefix(reservedComposeLabelPrefix) else {
+            guard !reservedComposeLabelPrefixes.contains(where: { parsed.key.hasPrefix($0) }) else {
                 throw ComposeError.invalidProject("run --label cannot override reserved Compose tracking label '\(parsed.key)'")
             }
             return parsed
@@ -1569,9 +1742,12 @@ private extension ComposeOrchestrator {
 
     /// Pulls one image when it is absent from the local image store.
     func pullMissingImage(_ image: String) async throws {
-        let inspect = try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
-        if options.dryRun || !inspect.succeeded {
+        let inspectArgs = ["image", "inspect", image]
+        if options.dryRun {
+            try await runContainer(inspectArgs, check: false, emitOutput: false)
             try await runContainer(["image", "pull", image])
+        } else {
+            try await imageManager.pullMissingImage(image)
         }
     }
 
@@ -1591,11 +1767,12 @@ private extension ComposeOrchestrator {
             args.append("--rm")
         }
 
-        for label in serviceLabels(project: project, service: service, oneOff: run.oneOff) {
+        for label in try serviceLabels(project: project, service: service, oneOff: run.oneOff) {
             args.append(contentsOf: ["--label", label])
         }
+        let effectiveLabels = try effectiveServiceLabels(project: project, service: service)
         let overriddenLabelKeys = Set(run.labelOverrides.map(\.key))
-        for (key, value) in (service.labels ?? [:]).sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
+        for (key, value) in effectiveLabels.sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
         for label in run.labelOverrides {
@@ -1686,23 +1863,27 @@ private extension ComposeOrchestrator {
         return args
     }
 
-    /// Rewrites `SERVICE:path` copy operands to the matching service container.
-    func copyArgument(_ argument: String, project: ComposeProject) throws -> String {
+    /// Rewrites `SERVICE:/path` copy operands to the matching service container.
+    private func copyEndpoint(_ argument: String, project: ComposeProject) throws -> ComposeCopyEndpoint {
         guard let delimiter = argument.firstIndex(of: ":") else {
-            return argument
+            return .local(argument)
         }
         let serviceName = String(argument[..<delimiter])
         guard isCopyServiceReference(serviceName) else {
-            return argument
+            return .local(argument)
         }
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
-        return containerName(project: project, service: service, oneOff: false) + String(argument[delimiter...])
+        let path = String(argument[argument.index(after: delimiter)...])
+        guard path.hasPrefix("/") else {
+            throw ComposeError.invalidProject("container copy path for service '\(serviceName)' must be absolute")
+        }
+        return .container(id: containerName(project: project, service: service, oneOff: false), path: path)
     }
 
     /// Returns whether a copy operand prefix has Compose service-reference shape.
-    func isCopyServiceReference(_ value: String) -> Bool {
+    private func isCopyServiceReference(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("/") && value != "." && value != ".."
     }
 
@@ -1716,17 +1897,17 @@ private extension ComposeOrchestrator {
 
             let name = containerName(project: project, service: service, oneOff: false)
             let existing = try await inspectContainer(name)
-            if let existing, existing.configHash == configHash(project: project, service: service) {
+            if let existing, existing.configHash == (try configHash(project: project, service: service)) {
                 options.emit("compose: reusing existing container \(name)")
                 continue
             }
             if existing != nil {
-                try await runContainer(stopArguments(service: service, containerName: name), check: false)
-                try await runContainer(["delete", name], check: false)
+                try await stopContainer(service: service, containerName: name)
+                try await deleteContainer(name)
             }
 
             try await runContainer(
-                runArguments(
+                try runArguments(
                     project: project,
                     service: service,
                     options: RunArgumentOptions {
@@ -1740,7 +1921,12 @@ private extension ComposeOrchestrator {
     /// Removes images referenced by services according to `down --rmi`.
     func removeImages(project: ComposeProject, policy: DownImageRemovalPolicy) async throws {
         for image in removableDownImages(project: project, policy: policy) {
-            try await runContainer(["image", "delete", "--force", image], check: false)
+            let args = ["image", "delete", "--force", image]
+            if options.dryRun {
+                try await runContainer(args, check: false)
+            } else {
+                try? await imageManager.deleteImage(image, force: true, emit: options.emit)
+            }
         }
     }
 
@@ -1771,8 +1957,8 @@ private extension ComposeOrchestrator {
         return "\(project.name)_\(service.name):latest"
     }
 
-    /// Converts Compose's log tail value to the runtime CLI value.
-    func runtimeLogTail(_ tail: String?) throws -> String? {
+    /// Converts Compose's log tail value to a validated line count.
+    func runtimeLogTail(_ tail: String?) throws -> Int? {
         guard let tail, !tail.isEmpty else {
             return nil
         }
@@ -1782,7 +1968,7 @@ private extension ComposeOrchestrator {
         guard let lines = Int(tail), lines >= 0 else {
             throw ComposeError.invalidProject("logs --tail must be 'all' or a non-negative integer")
         }
-        return String(lines)
+        return lines
     }
 
     /// Parses the `compose port` lookup target and protocol.
@@ -1895,6 +2081,47 @@ private extension ComposeOrchestrator {
         resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
     }
 
+    /// Stops a service container through the direct API while preserving
+    /// dry-run command rendering.
+    func stopContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
+        let args = stopArguments(service: service, containerName: containerName, timeout: timeout)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await lifecycleManager.stopContainer(
+                id: containerName,
+                signal: service.stopSignal,
+                timeoutInSeconds: timeout ?? service.stopGracePeriodSeconds
+            )
+        }
+    }
+
+    /// Stops a container that may not map to a declared service, such as an
+    /// orphan container discovered from project labels.
+    func stopContainer(id: String) async throws {
+        let args = ["stop", id]
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: nil)
+        }
+    }
+
+    /// Deletes a container through the direct API while preserving dry-run
+    /// command rendering.
+    func deleteContainer(_ id: String, force: Bool = false) async throws {
+        var args = ["delete"]
+        if force {
+            args.append("--force")
+        }
+        args.append(id)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await lifecycleManager.deleteContainer(id: id, force: force)
+        }
+    }
+
     /// Returns the stop command arguments for a service container.
     func stopArguments(service: ComposeService, containerName: String, timeout: Int? = nil) -> [String] {
         var args = ["stop"]
@@ -1910,14 +2137,14 @@ private extension ComposeOrchestrator {
 
     /// Returns an existing container's Compose metadata, if the container exists.
     func inspectContainer(_ name: String) async throws -> ExistingContainer? {
-        let result = try await runContainer(["inspect", name], check: false, emitOutput: false)
         if options.dryRun {
+            try await runContainer(["inspect", name], check: false, emitOutput: false)
             return nil
         }
-        guard result.succeeded else {
+        guard let container = try await discoveryManager.getContainer(id: name) else {
             return nil
         }
-        return ExistingContainer(configHash: inspectConfigHash(from: result.stdout))
+        return ExistingContainer(configHash: container.configHash)
     }
 
     /// Removes project-scoped containers that are not in the declared set.
@@ -1928,14 +2155,20 @@ private extension ComposeOrchestrator {
             return
         }
 
-        let result = try await runContainer(args, emitOutput: false)
-        let remainingContainers = try projectContainerIdentifiers(projectName: project.name, output: result.stdout)
+        let remainingContainers = try await projectContainers(projectName: project.name, all: true)
+            .map(\.id)
             .filter { !declaredContainers.contains($0) }
             .sorted()
         for container in remainingContainers {
-            try await runContainer(["stop", container], check: false)
-            try await runContainer(["delete", container], check: false)
+            try await stopContainer(id: container)
+            try await deleteContainer(container)
         }
+    }
+
+    /// Lists containers scoped to a Compose project through the direct API.
+    func projectContainers(projectName: String, all: Bool) async throws -> [ComposeContainerSummary] {
+        let containers = try await discoveryManager.listContainers(all: all)
+        return filterProjectContainers(projectName: projectName, containers: containers)
     }
 
     /// Executes one `container` command or prints it in dry-run mode.
@@ -2045,6 +2278,25 @@ private let workingDirectoryLabel = "com.apple.container.compose.project.working
 private let configFilesLabel = "com.apple.container.compose.project.config-files"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
 private let reservedComposeLabelPrefix = "com.apple.container.compose."
+private let reservedDockerComposeLabelPrefix = "com.docker.compose."
+private let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
+
+private extension ComposeContainerSummary {
+    /// Compose project label attached to a runtime container.
+    var projectName: String? {
+        labels[projectLabel]
+    }
+
+    /// Compose service label attached to a runtime container.
+    var serviceName: String? {
+        labels[serviceLabel]
+    }
+
+    /// Compose config hash label used for recreate decisions.
+    var configHash: String? {
+        labels[configHashLabel]
+    }
+}
 
 /// Returns whether a service pull policy can be implemented with local runtime primitives.
 private func isSupportedServicePullPolicy(_ policy: String) -> Bool {
@@ -2113,12 +2365,27 @@ private func resourceLabels(project: ComposeProject) -> [String] {
     ]
 }
 
+/// Returns resource labels as a dictionary for direct API calls.
+private func resourceLabels(project: ComposeProject, labels: [String: String]?) -> [String: String] {
+    var merged = [
+        projectLabel: project.name,
+        "com.apple.container.compose.version": "1",
+        workingDirectoryLabel: project.workingDirectory,
+        configFilesLabel: project.composeFiles.joined(separator: ","),
+        configFilesHashLabel: composeFilesHash(project.composeFiles),
+    ]
+    for (key, value) in labels ?? [:] {
+        merged[key] = value
+    }
+    return merged
+}
+
 /// Returns labels that identify a service container and its config hash.
-private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) -> [String] {
+private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) throws -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("\(serviceLabel)=\(service.name)")
     labels.append("com.apple.container.compose.oneoff=\(oneOff)")
-    labels.append("\(configHashLabel)=\(configHash(project: project, service: service))")
+    labels.append("\(configHashLabel)=\(try configHash(project: project, service: service))")
     if let firstFile = project.composeFiles.first {
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
     }
@@ -2131,11 +2398,14 @@ private func composeFilesHash(_ composeFiles: [String]) -> String {
 }
 
 /// Hashes the effective service configuration for recreate decisions.
-private func configHash(project: ComposeProject, service: ComposeService) -> String {
+private func configHash(project: ComposeProject, service: ComposeService) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
+    var effectiveService = service
+    effectiveService.labels = try effectiveServiceLabels(project: project, service: service)
+    effectiveService.labelFiles = nil
     let fingerprint = ServiceConfigFingerprint(
-        service: service,
+        service: effectiveService,
         networks: serviceNetworkRuntimeNames(project: project, service: service),
         volumes: serviceVolumeRuntimeNames(project: project, service: service)
     )
@@ -2143,6 +2413,89 @@ private func configHash(project: ComposeProject, service: ComposeService) -> Str
         return stableHash(service.name)
     }
     return stableHash(String(decoding: data, as: UTF8.self))
+}
+
+/// Validates user-supplied service labels and label files before side effects.
+private func validateServiceLabels(project: ComposeProject, service: ComposeService) throws {
+    _ = try effectiveServiceLabels(project: project, service: service)
+}
+
+/// Returns the user labels applied to a service after processing label files.
+private func effectiveServiceLabels(project: ComposeProject, service: ComposeService) throws -> [String: String] {
+    var labels: [String: String] = [:]
+    for file in service.labelFiles ?? [] {
+        for (key, value) in try loadLabels(fromLabelFile: file, project: project, service: service) {
+            labels[key] = value
+        }
+    }
+    for (key, value) in service.labels ?? [:] {
+        try validateUserLabelKey(key, source: "service '\(service.name)' label")
+        labels[key] = value
+    }
+    return labels
+}
+
+/// Loads one Compose `label_file` using the env-file-like key-value syntax.
+private func loadLabels(fromLabelFile path: String, project: ComposeProject, service: ComposeService) throws -> [String: String] {
+    let url = labelFileURL(path, project: project)
+    let contents: String
+    do {
+        contents = try String(contentsOf: url, encoding: .utf8)
+    } catch {
+        throw ComposeError.invalidProject("service '\(service.name)' label_file '\(path)' could not be read")
+    }
+
+    var labels: [String: String] = [:]
+    for (offset, line) in contents.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+        guard let label = try parseLabelFileLine(String(line), path: path, lineNumber: offset + 1, service: service) else {
+            continue
+        }
+        labels[label.key] = label.value
+    }
+    return labels
+}
+
+/// Resolves label files relative to the normalized project directory.
+private func labelFileURL(_ path: String, project: ComposeProject) -> URL {
+    if path.hasPrefix("/") {
+        return URL(fileURLWithPath: path)
+    }
+    return URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: project.workingDirectory, isDirectory: true)).absoluteURL
+}
+
+/// Parses one key-value line from a Compose label file.
+private func parseLabelFileLine(
+    _ line: String,
+    path: String,
+    lineNumber: Int,
+    service: ComposeService
+) throws -> (key: String, value: String)? {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else {
+        return nil
+    }
+
+    let key: String
+    let value: String
+    if let equals = line.firstIndex(of: "=") {
+        key = String(line[..<equals]).trimmingCharacters(in: .whitespacesAndNewlines)
+        value = String(line[line.index(after: equals)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    } else {
+        key = trimmed
+        value = ""
+    }
+    guard !key.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' label_file '\(path)' line \(lineNumber) has an empty label key")
+    }
+    try validateUserLabelKey(key, source: "service '\(service.name)' label_file '\(path)'")
+    return (key, value)
+}
+
+/// Rejects labels that would conflict with Compose tracking metadata.
+private func validateUserLabelKey(_ key: String, source: String) throws {
+    guard !reservedComposeLabelPrefixes.contains(where: { key.hasPrefix($0) }) else {
+        throw ComposeError.invalidProject("\(source) cannot set reserved Compose tracking label '\(key)'")
+    }
 }
 
 /// Returns runtime network names that affect a service's run arguments.
@@ -2166,76 +2519,60 @@ private func serviceVolumeRuntimeNames(project: ComposeProject, service: Compose
     return names
 }
 
-/// Extracts the Compose config hash label from `container inspect` JSON.
-private func inspectConfigHash(from output: String) -> String? {
-    guard let data = output.data(using: .utf8),
-          let json = try? JSONSerialization.jsonObject(with: data)
-    else {
-        return nil
-    }
-    return inspectLabel(configHashLabel, in: json)
-}
-
-/// Recursively searches common inspect JSON shapes for one label value.
-private func inspectLabel(_ key: String, in value: Any) -> String? {
-    if let values = value as? [Any] {
-        return values.lazy.compactMap { inspectLabel(key, in: $0) }.first
-    }
-    guard let object = value as? [String: Any] else {
-        return nil
-    }
-    if let value = labelValue(key, in: object["labels"]) ?? labelValue(key, in: object["Labels"]) {
-        return value
-    }
-    for nestedKey in ["configuration", "Config", "config"] {
-        if let nested = object[nestedKey], let value = inspectLabel(key, in: nested) {
-            return value
-        }
-    }
-    return nil
-}
-
-/// Reads a label value from a JSON object when labels are map-shaped.
-private func labelValue(_ key: String, in value: Any?) -> String? {
-    guard let labels = value as? [String: Any] else {
-        return nil
-    }
-    return labels[key] as? String
-}
-
-/// Returns pretty JSON for containers scoped to one Compose project.
-private func projectContainerListJSON(projectName: String, output: String) throws -> String {
-    try containerListJSON(projectContainers(projectName: projectName, output: output))
-}
-
-/// Returns pretty JSON for a filtered container list.
-private func containerListJSON(_ containers: [Any]) throws -> String {
-    let scopedData = try JSONSerialization.data(withJSONObject: containers, options: [.prettyPrinted, .sortedKeys])
+/// Returns pretty JSON for a filtered direct API container list.
+private func containerListJSON(_ containers: [ComposeContainerSummary]) throws -> String {
+    let scopedData = try JSONSerialization.data(withJSONObject: containers.map(containerListJSONObject), options: [.prettyPrinted, .sortedKeys])
     return String(decoding: scopedData, as: UTF8.self)
 }
 
-/// Returns names or IDs for containers scoped to one Compose project.
-private func projectContainerIdentifiers(projectName: String, output: String) throws -> [String] {
-    try containerIdentifiers(projectContainers(projectName: projectName, output: output))
+/// Builds the legacy `container list --format json` shape used by Compose projections.
+private func containerListJSONObject(_ container: ComposeContainerSummary) -> [String: Any] {
+    [
+        "id": container.id,
+        "configuration": [
+            "image": [
+                "reference": container.imageReference,
+                "descriptor": [
+                    "digest": container.imageDigest ?? "",
+                ],
+            ],
+            "labels": container.labels,
+            "platform": platformJSONObject(container.platform),
+        ],
+        "status": [
+            "state": container.status,
+        ],
+    ]
 }
 
-/// Returns names or IDs from a filtered container list.
-private func containerIdentifiers(_ containers: [Any]) -> [String] {
-    containers.compactMap(containerIdentifier)
+/// Converts a platform string into the JSON object emitted by `container list`.
+private func platformJSONObject(_ value: String) -> [String: String] {
+    let parts = value.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard parts.count >= 2 else {
+        return [:]
+    }
+    var object = [
+        "os": parts[0],
+        "architecture": parts[1],
+    ]
+    if parts.count >= 3, !parts[2].isEmpty {
+        object["variant"] = parts[2]
+    }
+    return object
 }
 
-/// Returns unique service names for containers scoped to one Compose project.
-private func projectContainerServiceNames(projectName: String, output: String) throws -> [String] {
-    try containerServiceNames(projectContainers(projectName: projectName, output: output))
+/// Returns container IDs from a filtered direct API list.
+private func containerIdentifiers(_ containers: [ComposeContainerSummary]) -> [String] {
+    containers.map(\.id)
 }
 
-/// Returns unique service names from a filtered container list.
-private func containerServiceNames(_ containers: [Any]) -> [String] {
+/// Returns unique service names from a filtered direct API list.
+private func containerServiceNames(_ containers: [ComposeContainerSummary]) -> [String] {
     let namesByContainer = containers.compactMap { container -> (identifier: String, service: String)? in
-        guard let service = inspectLabel(serviceLabel, in: container), !service.isEmpty else {
+        guard let service = container.serviceName, !service.isEmpty else {
             return nil
         }
-        return (containerIdentifier(container) ?? service, service)
+        return (container.id, service)
     }
     var seen: Set<String> = []
     var services: [String] = []
@@ -2245,6 +2582,96 @@ private func containerServiceNames(_ containers: [Any]) -> [String] {
         }
     }
     return services
+}
+
+/// Returns project rows from direct API containers, optionally filtered by project name.
+private func composeProjectRecords(containers: [ComposeContainerSummary], nameFilters: [String]) -> [ComposeProjectRecord] {
+    let containers = composeLabeledContainers(containers)
+    let grouped = Dictionary(grouping: containers) { $0.projectName ?? "" }
+    return grouped.keys.sorted().compactMap { projectName in
+        guard !projectName.isEmpty, lsProjectNameMatches(projectName, filters: nameFilters) else {
+            return nil
+        }
+        let projectContainers = grouped[projectName] ?? []
+        return ComposeProjectRecord(
+            name: projectName,
+            status: combinedProjectStatus(projectContainers),
+            configFiles: combinedProjectConfigFiles(projectContainers)
+        )
+    }
+}
+
+/// Returns direct API containers carrying the labels needed to identify Compose projects.
+private func composeLabeledContainers(_ containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
+    containers.filter { $0.projectName != nil && $0.configHash != nil }
+}
+
+/// Combines direct API container states into Docker Compose's `state(count)` form.
+private func combinedProjectStatus(_ containers: [ComposeContainerSummary]) -> String {
+    let statuses = containers.map { $0.status.lowercased() }
+    let counts = Dictionary(grouping: statuses, by: { $0 }).mapValues(\.count)
+    return counts.keys.sorted().map { "\($0)(\(counts[$0] ?? 0))" }.joined(separator: ", ")
+}
+
+/// Combines config-file labels across direct API containers while preserving first-seen order.
+private func combinedProjectConfigFiles(_ containers: [ComposeContainerSummary]) -> String {
+    var seen: Set<String> = []
+    var files: [String] = []
+    for container in containers {
+        let values = [
+            container.labels[configFilesLabel],
+            container.labels["com.apple.container.compose.project.config-file"],
+        ].compactMap { $0 }
+        for value in values {
+            for file in value.split(separator: ",").map(String.init) where !file.isEmpty && seen.insert(file).inserted {
+                files.append(file)
+            }
+        }
+    }
+    return files.isEmpty ? "N/A" : files.joined(separator: ",")
+}
+
+/// Returns image rows from direct API containers scoped by Compose labels.
+private func composeImageRecords(containers: [ComposeContainerSummary], selectedServices: Set<String>?) -> [ComposeImageRecord] {
+    containers.compactMap { container in
+        guard let service = container.serviceName, !service.isEmpty else {
+            return nil
+        }
+        if let selectedServices, !selectedServices.contains(service) {
+            return nil
+        }
+        guard !container.imageReference.isEmpty else {
+            return nil
+        }
+        let reference = splitImageReference(container.imageReference)
+        return ComposeImageRecord(
+            container: container.id,
+            service: service,
+            repository: reference.repository,
+            tag: reference.tag,
+            platform: container.platform,
+            imageID: shortImageID(container.imageDigest)
+        )
+    }
+    .sorted { lhs, rhs in
+        if lhs.container == rhs.container {
+            return lhs.service < rhs.service
+        }
+        return lhs.container < rhs.container
+    }
+}
+
+/// Applies status filtering after direct API project scoping.
+private func filterContainersByStatus(_ containers: [ComposeContainerSummary], statuses: Set<String>) -> [ComposeContainerSummary] {
+    guard !statuses.isEmpty else {
+        return containers
+    }
+    return containers.filter { statuses.contains($0.status.lowercased()) }
+}
+
+/// Filters direct API containers by Compose project label.
+private func filterProjectContainers(projectName: String, containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
+    containers.filter { $0.projectName == projectName }
 }
 
 /// Validates the `compose ls --format` value.
@@ -2270,49 +2697,6 @@ private struct ComposeProjectRecord: Encodable, Equatable {
     let name: String
     let status: String
     let configFiles: String
-}
-
-/// Returns project rows from `container list --format json`, optionally filtered by project name.
-private func composeProjectRecords(output: String, nameFilters: [String]) throws -> [ComposeProjectRecord] {
-    let containers = try composeLabeledContainers(output: output)
-    let grouped = Dictionary(grouping: containers) { inspectLabel(projectLabel, in: $0) ?? "" }
-    return grouped.keys.sorted().compactMap { projectName in
-        guard !projectName.isEmpty, lsProjectNameMatches(projectName, filters: nameFilters) else {
-            return nil
-        }
-        let projectContainers = grouped[projectName] ?? []
-        return ComposeProjectRecord(
-            name: projectName,
-            status: combinedProjectStatus(projectContainers),
-            configFiles: combinedProjectConfigFiles(projectContainers)
-        )
-    }
-}
-
-/// Returns all containers carrying the labels needed to identify Compose projects.
-private func composeLabeledContainers(output: String) throws -> [Any] {
-    try listedContainers(output: output).filter {
-        inspectLabel(projectLabel, in: $0) != nil && inspectLabel(configHashLabel, in: $0) != nil
-    }
-}
-
-/// Parses raw `container list --format json` output into container JSON objects.
-private func listedContainers(output: String) throws -> [Any] {
-    guard let data = output.data(using: .utf8),
-          let json = try? JSONSerialization.jsonObject(with: data)
-    else {
-        throw ComposeError.invalidProject("container list returned invalid JSON")
-    }
-
-    let containers: [Any]
-    if let values = json as? [Any] {
-        containers = values
-    } else if let value = json as? [String: Any] {
-        containers = [value]
-    } else {
-        throw ComposeError.invalidProject("container list returned invalid JSON")
-    }
-    return containers
 }
 
 /// Parses `compose ls --filter` values. Docker Compose currently accepts only `name`.
@@ -2345,31 +2729,6 @@ private func lsProjectNameMatches(_ name: String, filters: [String]) -> Bool {
         }
         return name.range(of: filter, options: .regularExpression) != nil
     }
-}
-
-/// Combines per-container states into the `state(count)` form used by Docker Compose.
-private func combinedProjectStatus(_ containers: [Any]) -> String {
-    let statuses = containers.map { (containerRuntimeState($0) ?? "unknown").lowercased() }
-    let counts = Dictionary(grouping: statuses, by: { $0 }).mapValues(\.count)
-    return counts.keys.sorted().map { "\($0)(\(counts[$0] ?? 0))" }.joined(separator: ", ")
-}
-
-/// Combines config-file labels across project containers while preserving first-seen order.
-private func combinedProjectConfigFiles(_ containers: [Any]) -> String {
-    var seen: Set<String> = []
-    var files: [String] = []
-    for container in containers {
-        let values = [
-            inspectLabel(configFilesLabel, in: container),
-            inspectLabel("com.apple.container.compose.project.config-file", in: container),
-        ].compactMap { $0 }
-        for value in values {
-            for file in value.split(separator: ",").map(String.init) where !file.isEmpty && seen.insert(file).inserted {
-                files.append(file)
-            }
-        }
-    }
-    return files.isEmpty ? "N/A" : files.joined(separator: ",")
 }
 
 /// Renders project rows as a compact table.
@@ -2420,36 +2779,6 @@ private struct ComposeImageRecord: Encodable, Equatable {
     let imageID: String
 }
 
-/// Returns image rows from `container list --format json` scoped by Compose labels.
-private func composeImageRecords(projectName: String, output: String, selectedServices: Set<String>?) throws -> [ComposeImageRecord] {
-    try projectContainers(projectName: projectName, output: output).compactMap { container in
-        guard let service = inspectLabel(serviceLabel, in: container), !service.isEmpty else {
-            return nil
-        }
-        if let selectedServices, !selectedServices.contains(service) {
-            return nil
-        }
-        guard let imageReference = containerImageReference(container), !imageReference.isEmpty else {
-            return nil
-        }
-        let reference = splitImageReference(imageReference)
-        return ComposeImageRecord(
-            container: containerIdentifier(container) ?? service,
-            service: service,
-            repository: reference.repository,
-            tag: reference.tag,
-            platform: containerPlatform(container),
-            imageID: shortImageID(containerImageDigest(container))
-        )
-    }
-    .sorted { lhs, rhs in
-        if lhs.container == rhs.container {
-            return lhs.service < rhs.service
-        }
-        return lhs.container < rhs.container
-    }
-}
-
 /// Renders image rows as a compact table.
 private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String {
     guard !records.isEmpty else {
@@ -2478,65 +2807,6 @@ private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> S
     return String(decoding: data, as: UTF8.self)
 }
 
-/// Extracts a container image reference from common `container list` JSON shapes.
-private func containerImageReference(_ value: Any) -> String? {
-    for path in [
-        ["configuration", "image", "reference"],
-        ["configuration", "image", "name"],
-        ["Config", "Image"],
-        ["config", "image"],
-        ["Image"],
-        ["image"],
-    ] {
-        if let value = stringValue(at: path, in: value), !value.isEmpty {
-            return value
-        }
-    }
-    return nil
-}
-
-/// Extracts an image digest from common `container list` JSON shapes.
-private func containerImageDigest(_ value: Any) -> String? {
-    for path in [
-        ["configuration", "image", "descriptor", "digest"],
-        ["configuration", "image", "digest"],
-        ["Config", "ImageID"],
-        ["ImageID"],
-        ["imageID"],
-        ["imageId"],
-    ] {
-        if let value = stringValue(at: path, in: value), !value.isEmpty {
-            return value
-        }
-    }
-    return nil
-}
-
-/// Extracts a platform string from common `container list` JSON shapes.
-private func containerPlatform(_ value: Any) -> String {
-    for path in [
-        ["configuration", "platform"],
-        ["Config", "Platform"],
-        ["Platform"],
-        ["platform"],
-    ] {
-        guard let platform = nestedValue(at: path, in: value) as? [String: Any] else {
-            continue
-        }
-        let os = platform["os"] as? String ?? platform["OS"] as? String
-        let architecture = platform["architecture"] as? String ?? platform["Architecture"] as? String
-        let variant = platform["variant"] as? String ?? platform["Variant"] as? String
-        guard let os, let architecture, !os.isEmpty, !architecture.isEmpty else {
-            continue
-        }
-        if let variant, !variant.isEmpty {
-            return "\(os)/\(architecture)/\(variant)"
-        }
-        return "\(os)/\(architecture)"
-    }
-    return ""
-}
-
 /// Splits a container image reference into repository and tag display fields.
 private func splitImageReference(_ reference: String) -> (repository: String, tag: String) {
     let withoutDigest = reference.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? reference
@@ -2558,23 +2828,6 @@ private func shortImageID(_ digest: String?) -> String {
         digest = String(digest[digest.index(after: colonIndex)...])
     }
     return String(digest.prefix(12))
-}
-
-/// Reads a string from a nested JSON object path.
-private func stringValue(at path: [String], in value: Any) -> String? {
-    nestedValue(at: path, in: value) as? String
-}
-
-/// Reads a value from a nested JSON object path.
-private func nestedValue(at path: [String], in value: Any) -> Any? {
-    var current = value
-    for key in path {
-        guard let object = current as? [String: Any], let next = object[key] else {
-            return nil
-        }
-        current = next
-    }
-    return current
 }
 
 /// Combines `ps --status` and `ps --filter status=...` into runtime state values.
@@ -2608,60 +2861,6 @@ private func normalizedRuntimeStatus(_ status: String) throws -> String {
     default:
         throw ComposeError.unsupported("ps status '\(status)'; apple/container exposes running, stopped, stopping, and unknown")
     }
-}
-
-/// Applies status filtering after project scoping.
-private func filterContainersByStatus(_ containers: [Any], statuses: Set<String>) -> [Any] {
-    guard !statuses.isEmpty else {
-        return containers
-    }
-    return containers.filter { container in
-        guard let state = containerRuntimeState(container) else {
-            return false
-        }
-        return statuses.contains(state.lowercased())
-    }
-}
-
-/// Filters raw `container list --format json` output by Compose project label.
-private func projectContainers(projectName: String, output: String) throws -> [Any] {
-    // `container list` does not currently expose a label filter in the CLI, so
-    // Compose project scoping is applied client-side after requesting JSON.
-    return try listedContainers(output: output).filter { inspectLabel(projectLabel, in: $0) == projectName }
-}
-
-/// Extracts the runtime state from common `container list --format json` shapes.
-private func containerRuntimeState(_ value: Any) -> String? {
-    guard let object = value as? [String: Any] else {
-        return nil
-    }
-    for key in ["state", "State", "status", "Status"] {
-        if let state = object[key] as? String {
-            return state
-        }
-    }
-    for nestedKey in ["state", "State", "status", "Status"] {
-        if let nested = object[nestedKey], let state = containerRuntimeState(nested) {
-            return state
-        }
-    }
-    return nil
-}
-
-/// Extracts the most useful identifier from one container list object.
-private func containerIdentifier(_ value: Any) -> String? {
-    guard let object = value as? [String: Any] else {
-        return nil
-    }
-    for key in ["id", "ID", "Id", "name", "Name"] {
-        if let value = object[key] as? String, !value.isEmpty {
-            return value
-        }
-    }
-    if let names = object["Names"] as? [String] {
-        return names.first { !$0.isEmpty }
-    }
-    return nil
 }
 
 /// Returns a SHA-256 hex digest for stable names and labels.

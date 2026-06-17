@@ -765,14 +765,24 @@ struct Convert: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose export` until container export mapping exists.
+/// Implements `compose export`.
 struct Export: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "export", abstract: "Export a service container filesystem.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for service container export.
-    func run() throws {
-        try global.orchestrator().unsupported("export", reason: "service container export is not implemented by container-compose yet")
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
+    @Option(name: .shortAndLong, help: "Write the archive to a file instead of stdout.")
+    var output: String?
+    @Argument(help: "Service name.")
+    var service: String
+    /// Exports the selected service container filesystem as a tar archive.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().export(
+            project: loadedProject,
+            serviceName: service,
+            options: ComposeExportOptions(output: output, index: index)
+        )
     }
 }
 
