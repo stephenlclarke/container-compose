@@ -335,6 +335,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var name: String?
     @Option(name: .customLong("entrypoint"), help: "Override the service entrypoint for the one-off container.")
     var entrypoint: String?
+    @Option(name: [.customShort("w"), .customLong("workdir")], help: "Override the working directory for the one-off container.")
+    var workdir: String?
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -352,7 +354,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 servicePorts: servicePorts,
                 publish: publish,
                 containerName: name,
-                entrypoint: entrypoint
+                entrypoint: entrypoint,
+                workingDirectory: workdir
             )
         )
     }

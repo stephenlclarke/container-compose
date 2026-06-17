@@ -2762,6 +2762,30 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
     }
 
+    @Test("run overrides service workdir for one-off containers")
+    func runOverridesServiceWorkdirForOneOffContainers() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.workingDir = "/default"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["pwd"], workingDirectory: "/workspace")
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--workdir", "/workspace"]))
+        #expect(!command.containsSequence(["--workdir", "/default"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "pwd"])
+    }
+
     @Test("up reuses existing containers when no recreate is requested")
     func upReusesExistingContainersWhenNoRecreateIsRequested() async throws {
         let emitted = MessageRecorder()

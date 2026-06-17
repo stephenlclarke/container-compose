@@ -246,6 +246,25 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps run workdir shorthand value before service name")
+    func keepsRunWorkdirShorthandValueBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-w",
+            "/workspace",
+            "api",
+            "pwd",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "-w",
+            "/workspace",
+            "api",
+            "pwd",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([
