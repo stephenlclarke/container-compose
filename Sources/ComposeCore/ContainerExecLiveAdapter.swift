@@ -17,6 +17,7 @@
 import ContainerAPIClient
 import ContainerResource
 import Foundation
+import Logging
 
 /// Live Apple `container` process API entry point for detached exec.
 public enum ContainerExecLiveAdapter {
@@ -34,5 +35,30 @@ public enum ContainerExecLiveAdapter {
             stdio: stdio
         )
         try await process.start()
+    }
+
+    /// Creates an attached process and pumps local stdio until it exits.
+    public static func runAttachedProcess(
+        containerId: String,
+        processId: String,
+        configuration: ProcessConfiguration,
+        interactive: Bool,
+        tty: Bool
+    ) async throws -> Int32 {
+        let client = ContainerClient()
+        let io = try ProcessIO.create(tty: tty, interactive: interactive, detach: false)
+        defer {
+            try? io.close()
+        }
+        let process = try await client.createProcess(
+            containerId: containerId,
+            processId: processId,
+            configuration: configuration,
+            stdio: io.stdio
+        )
+        return try await io.handleProcess(
+            process: process,
+            log: Logger(label: "container-compose.exec")
+        )
     }
 }

@@ -72,6 +72,218 @@ private func temporaryDirectory() throws -> URL {
     return url
 }
 
+private func orchestratorDependencies(
+    configure: (inout ComposeOrchestratorDependencies) -> Void
+) -> ComposeOrchestratorDependencies {
+    var dependencies = ComposeOrchestratorDependencies()
+    configure(&dependencies)
+    return dependencies
+}
+
+private extension ComposeOrchestrator {
+    convenience init(imageManager: ContainerImageManaging) {
+        self.init(dependencies: orchestratorDependencies { $0.imageManager = imageManager })
+    }
+
+    convenience init(runner: CommandRunning, copier: ContainerCopying) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.copier = copier })
+    }
+
+    convenience init(runner: CommandRunning, discoveryManager: ContainerDiscoveryManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.discoveryManager = discoveryManager })
+    }
+
+    convenience init(runner: CommandRunning, execManager: ContainerExecManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.execManager = execManager })
+    }
+
+    convenience init(runner: CommandRunning, exporter: ContainerExporting) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.exporter = exporter })
+    }
+
+    convenience init(runner: CommandRunning, imageManager: ContainerImageManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.imageManager = imageManager })
+    }
+
+    convenience init(runner: CommandRunning, lifecycleManager: ContainerLifecycleManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.lifecycleManager = lifecycleManager })
+    }
+
+    convenience init(runner: CommandRunning, resourceManager: ContainerResourceManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.resourceManager = resourceManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        imageManager: ContainerImageManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.imageManager = imageManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.lifecycleManager = lifecycleManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        imageManager: ContainerImageManaging,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.imageManager = imageManager
+            $0.lifecycleManager = lifecycleManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        imageManager: ContainerImageManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.imageManager = imageManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        lifecycleManager: ContainerLifecycleManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.lifecycleManager = lifecycleManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        copier: ContainerCopying
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.copier = copier })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        discoveryManager: ContainerDiscoveryManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.discoveryManager = discoveryManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        execManager: ContainerExecManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.execManager = execManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        exporter: ContainerExporting
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.exporter = exporter })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        imageManager: ContainerImageManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.imageManager = imageManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.lifecycleManager = lifecycleManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        logManager: ContainerLogManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.logManager = logManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        statsManager: ContainerStatsManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.statsManager = statsManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        lifecycleManager: ContainerLifecycleManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.lifecycleManager = lifecycleManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        imageManager: ContainerImageManaging,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies {
+            $0.imageManager = imageManager
+            $0.lifecycleManager = lifecycleManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        copier: ContainerCopying,
+        execManager: ContainerExecManaging,
+        lifecycleManager: ContainerLifecycleManaging,
+        logManager: ContainerLogManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.execManager = execManager
+            $0.lifecycleManager = lifecycleManager
+            $0.logManager = logManager
+        })
+    }
+}
+
 @Suite("Compose orchestrator")
 struct ComposeOrchestratorTests {
     @Test("orders selected services after dependencies")
@@ -239,7 +451,9 @@ struct ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-optional-1"]))
+        #expect(commands[0].contains("--detach"))
         #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!commands[1].contains("--detach"))
         #expect(await discoveryManager.getRequests == ["demo-optional-1", "demo-api-1"])
     }
 
@@ -1049,32 +1263,125 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("rejects unsupported dependency metadata before side effects")
-    func rejectsUnsupportedDependencyMetadataBeforeSideEffects() async throws {
-        let runner = RecordingRunner()
-        let project = ComposeProject(
+    @Test("up restarts reused dependents when restart dependencies change")
+    func upRestartsReusedDependentsWhenRestartDependenciesChange() async throws {
+        let baselineProject = ComposeProject(
             name: "demo",
             services: [
-                "job": ComposeService(name: "job", image: "example/job:latest"),
+                "db": ComposeService(name: "db", image: "postgres:16"),
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["job": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
                 },
             ]
         )
+        let baselineRunner = RecordingRunner()
+        try await ComposeOrchestrator(runner: baselineRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: baselineProject, options: ComposeUpOptions())
 
-        do {
-            try await ComposeOrchestrator(runner: runner)
-                .up(project: project, options: ComposeUpOptions {
-                    $0.services = ["api"]
-                })
-            Issue.record("Expected unsupported dependency metadata")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' depends on 'job' with restart true; dependency restart propagation is not implemented by container-compose yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        let dbRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        let oldDBHash = try #require(composeConfigHash(in: dbRun))
+        let apiHash = try #require(composeConfigHash(in: apiRun))
 
-        #expect(runner.commands.isEmpty)
+        let changedProject = ComposeProject(
+            name: "demo",
+            services: [
+                "db": composeService(name: "db", image: "postgres:16") {
+                    $0.labels = ["com.example.version": "two"]
+                },
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+            ]
+        )
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-db-1", status: "running", labels: [composeConfigHashLabel: oldDBHash]),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: apiHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        .up(project: changedProject, options: ComposeUpOptions {
+            $0.services = ["api"]
+        })
+
+        #expect(runner.commands.map(\.arguments).count == 1)
+        #expect(runner.commands[0].arguments.containsSequence(["--name", "demo-db-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-db-1", force: false),
+            .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
+            .start(id: "demo-api-1"),
+        ])
+    }
+
+    @Test("up does not dependency restart services already recreated")
+    func upDoesNotDependencyRestartServicesAlreadyRecreated() async throws {
+        let baselineProject = ComposeProject(
+            name: "demo",
+            services: [
+                "db": ComposeService(name: "db", image: "postgres:16"),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                },
+            ]
+        )
+        let baselineRunner = RecordingRunner()
+        try await ComposeOrchestrator(runner: baselineRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: baselineProject, options: ComposeUpOptions())
+
+        let dbRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        let oldDBHash = try #require(composeConfigHash(in: dbRun))
+        let oldAPIHash = try #require(composeConfigHash(in: apiRun))
+
+        let changedProject = ComposeProject(
+            name: "demo",
+            services: [
+                "db": composeService(name: "db", image: "postgres:16") {
+                    $0.labels = ["com.example.version": "two"]
+                },
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.labels = ["com.example.version": "two"]
+                },
+            ]
+        )
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-db-1", status: "running", labels: [composeConfigHashLabel: oldDBHash]),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: oldAPIHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        .up(project: changedProject, options: ComposeUpOptions {
+            $0.services = ["api"]
+        })
+
+        #expect(runner.commands.map(\.arguments).count == 2)
+        #expect(runner.commands[0].arguments.containsSequence(["--name", "demo-db-1"]))
+        #expect(runner.commands[1].arguments.containsSequence(["--name", "demo-api-1"]))
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-db-1", force: false),
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
     }
 
     @Test("rejects unsupported conditions on present optional dependencies")
@@ -1772,8 +2079,78 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported MAC address before creating resources")
-    func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
+    @Test("up maps service MAC address to single network attachment")
+    func upMapsServiceMACAddressToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.macAddress = "02:42:ac:11:00:03"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        )
+            .up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:03"]))
+    }
+
+    @Test("up maps per-network MAC address to single network attachment")
+    func upMapsPerNetworkMACAddressToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(addressing: .init(macAddress: "02:42:ac:11:00:04")),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        )
+            .up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:04"]))
+    }
+
+    @Test("up rejects MAC address without a single network before creating resources")
+    func upRejectsMACAddressWithoutSingleNetworkBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -1791,7 +2168,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported MAC address error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses mac_address '02:42:ac:11:00:03'; MAC address support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' uses mac_address; MAC address support requires exactly one Compose network"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -2539,8 +2916,14 @@ struct ComposeOrchestratorTests {
                         context: "api",
                         dockerfile: "Containerfile",
                         args: ["VERSION": "1"],
+                        cacheFrom: ["type=registry,ref=example/api:cache"],
+                        cacheTo: ["type=local,dest=.cache"],
+                        labels: ["org.opencontainers.image.title": "api", "build.label": "true"],
                         target: "runtime",
-                        noCache: true
+                        noCache: true,
+                        pull: true,
+                        platforms: ["linux/amd64", "linux/arm64"],
+                        tags: ["example/api:latest", "example/api:dev", "example/api:test"]
                     )
                 },
                 "worker": composeService(name: "worker") {
@@ -2554,9 +2937,19 @@ struct ComposeOrchestratorTests {
         try await orchestrator.push(project: project, services: ["api", "worker"])
 
         #expect(runner.commands[0].arguments.containsSequence(["container", "build", "--tag", "example/api:latest"]))
+        #expect(runner.commands[0].arguments.filter { $0 == "example/api:latest" }.count == 1)
+        #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:dev"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:test"]))
         #expect(runner.commands[0].arguments.containsSequence(["--file", "Containerfile"]))
         #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
         #expect(runner.commands[0].arguments.contains("--no-cache"))
+        #expect(runner.commands[0].arguments.contains("--pull"))
+        #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/amd64"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/arm64"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--cache-in", "type=registry,ref=example/api:cache"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--cache-out", "type=local,dest=.cache"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--label", "build.label=true"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--label", "org.opencontainers.image.title=api"]))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
         #expect(runner.commands[0].arguments.last == "api")
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
@@ -2860,11 +3253,13 @@ struct ComposeOrchestratorTests {
     func lifecycleCommandsTargetSelectedServiceContainers() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
+        let execManager = RecordingContainerExecManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let logManager = RecordingContainerLogManager()
         let orchestrator = ComposeOrchestrator(
             runner: runner,
             copier: copier,
+            execManager: execManager,
             lifecycleManager: lifecycleManager,
             logManager: logManager
         )
@@ -2890,10 +3285,15 @@ struct ComposeOrchestratorTests {
         try await orchestrator.kill(project: project, services: ["api"], signal: "SIGTERM")
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/file", "."])
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
-        #expect(runner.commands[0].io == .inherited)
-        #expect(commands.count == 1)
+        #expect(runner.commands.isEmpty)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["echo", "ok"],
+                interactive: true,
+                tty: true
+            ),
+        ])
         #expect(await logManager.requests == [
             ContainerLogRequest(id: "demo-api-1", tail: 10, follow: true),
         ])
@@ -3507,6 +3907,49 @@ struct ComposeOrchestratorTests {
         #expect(await client.processRequests.isEmpty)
     }
 
+    @Test("attached exec manager maps request to direct process API")
+    func attachedExecManagerMapsRequestToDirectProcessAPI() async throws {
+        let snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .running,
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64"
+        )
+        let client = RecordingContainerExecAPIClient(snapshots: [snapshot], attachedStatus: 7)
+        let manager = ContainerClientExecManager(client: client, processIdentifier: { "process-456" })
+
+        let status = try await manager.execAttached(
+            request: ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["echo", "ok"],
+                environment: ["FOO=bar"],
+                user: "1000:1000",
+                workingDirectory: "/app",
+                interactive: true,
+                tty: false
+            )
+        )
+
+        #expect(status == 7)
+        #expect(await client.getRequests == ["demo-api-1"])
+        #expect(await client.attachedProcessRequests == [
+            ContainerAttachedExecProcessRequest(
+                containerId: "demo-api-1",
+                processId: "process-456",
+                executable: "echo",
+                arguments: ["ok"],
+                environment: ["FOO=bar"],
+                workingDirectory: "/app",
+                terminal: false,
+                user: "1000:1000",
+                supplementalGroups: [],
+                interactive: true,
+                tty: false
+            ),
+        ])
+    }
+
     @Test("exec API client forwards configured operations")
     func execAPIClientForwardsConfiguredOperations() async throws {
         let snapshot = try containerSnapshot(
@@ -3526,6 +3969,15 @@ struct ComposeOrchestratorTests {
                     configuration: configuration,
                     stdio: stdio
                 )
+            },
+            runAttached: { containerId, processId, configuration, interactive, tty in
+                try await recorder.runAttachedProcess(
+                    containerId: containerId,
+                    processId: processId,
+                    configuration: configuration,
+                    interactive: interactive,
+                    tty: tty
+                )
             }
         )
         let configuration = ProcessConfiguration(
@@ -3542,8 +3994,16 @@ struct ComposeOrchestratorTests {
             configuration: configuration,
             stdio: []
         )
+        let status = try await client.runAttachedProcess(
+            containerId: "demo-api-1",
+            processId: "process-456",
+            configuration: configuration,
+            interactive: true,
+            tty: false
+        )
 
         #expect(actualSnapshot.id == "demo-api-1")
+        #expect(status == 0)
         #expect(await recorder.getRequests == ["demo-api-1"])
         #expect(await recorder.processRequests == [
             ContainerExecProcessRequest(
@@ -3557,6 +4017,21 @@ struct ComposeOrchestratorTests {
                 user: "0:0",
                 supplementalGroups: [],
                 stdioCount: 0
+            ),
+        ])
+        #expect(await recorder.attachedProcessRequests == [
+            ContainerAttachedExecProcessRequest(
+                containerId: "demo-api-1",
+                processId: "process-456",
+                executable: "date",
+                arguments: ["-u"],
+                environment: ["TZ=UTC"],
+                workingDirectory: "/",
+                terminal: false,
+                user: "0:0",
+                supplementalGroups: [],
+                interactive: true,
+                tty: false
             ),
         ])
     }
@@ -3813,10 +4288,11 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("exec disables TTY while keeping stdin inherited")
-    func execDisablesTTYWhileKeepingStdinInherited() async throws {
+    @Test("exec disables TTY while keeping stdin interactive")
+    func execDisablesTTYWhileKeepingStdinInteractive() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let execManager = RecordingContainerExecManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, execManager: execManager)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -3832,9 +4308,15 @@ struct ComposeOrchestratorTests {
             tty: false
         )
 
-        let command = try #require(runner.commands.first?.arguments)
-        #expect(command == ["container", "exec", "--interactive", "demo-api-1", "echo", "ok"])
-        #expect(runner.commands.first?.io == .inherited)
+        #expect(runner.commands.isEmpty)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["echo", "ok"],
+                interactive: true,
+                tty: false
+            ),
+        ])
     }
 
     @Test("exec maps environment user workdir and detach options")
@@ -5164,7 +5646,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.build = ComposeBuild(context: "job", unsupportedFields: ["cache_from", "platforms"])
+                    $0.build = ComposeBuild(context: "job", unsupportedFields: ["entitlements", "ssh"])
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -5176,7 +5658,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported build fields cache_from, platforms; advanced build fields are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses unsupported build fields entitlements, ssh; advanced build fields are not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -5412,31 +5894,34 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported MAC address before creating resources")
-    func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("run maps service MAC address to single network attachment")
+    func runMapsServiceMACAddressToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.macAddress = "02:42:ac:11:00:04"
+                    $0.networks = ["backend"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
         ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported MAC address error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses mac_address '02:42:ac:11:00:04'; MAC address support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:04"]))
+        #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
 
     @Test("run rejects unsupported healthchecks before creating resources")
@@ -7056,6 +7541,20 @@ private struct ContainerExecProcessRequest: Equatable {
     var stdioCount: Int
 }
 
+private struct ContainerAttachedExecProcessRequest: Equatable {
+    var containerId: String
+    var processId: String
+    var executable: String
+    var arguments: [String]
+    var environment: [String]
+    var workingDirectory: String
+    var terminal: Bool
+    var user: String
+    var supplementalGroups: [UInt32]
+    var interactive: Bool
+    var tty: Bool
+}
+
 private struct ContainerStatsRequest: Equatable {
     var ids: [String]
     var format: String
@@ -7274,14 +7773,26 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
 
 private actor RecordingContainerExecManager: ContainerExecManaging {
     private let outputs: [String: String]
+    private let attachedStatus: Int32
+    private var attachedStorage: [ContainerAttachedExecRequest] = []
     private var storage: [ContainerDetachedExecRequest] = []
 
-    init(outputs: [String: String] = [:]) {
+    init(outputs: [String: String] = [:], attachedStatus: Int32 = 0) {
         self.outputs = outputs
+        self.attachedStatus = attachedStatus
+    }
+
+    var attachedRequests: [ContainerAttachedExecRequest] {
+        attachedStorage
     }
 
     var requests: [ContainerDetachedExecRequest] {
         storage
+    }
+
+    func execAttached(request: ContainerAttachedExecRequest) async throws -> Int32 {
+        attachedStorage.append(request)
+        return attachedStatus
     }
 
     func execDetached(
@@ -7295,11 +7806,14 @@ private actor RecordingContainerExecManager: ContainerExecManaging {
 
 private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
     private let snapshots: [String: ContainerSnapshot]
+    private let attachedStatus: Int32
     private var gets: [String] = []
     private var processes: [ContainerExecProcessRequest] = []
+    private var attachedProcesses: [ContainerAttachedExecProcessRequest] = []
 
-    init(snapshots: [ContainerSnapshot] = []) {
+    init(snapshots: [ContainerSnapshot] = [], attachedStatus: Int32 = 0) {
         self.snapshots = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+        self.attachedStatus = attachedStatus
     }
 
     var getRequests: [String] {
@@ -7308,6 +7822,10 @@ private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
 
     var processRequests: [ContainerExecProcessRequest] {
         processes
+    }
+
+    var attachedProcessRequests: [ContainerAttachedExecProcessRequest] {
+        attachedProcesses
     }
 
     func getContainer(id: String) async throws -> ContainerSnapshot {
@@ -7336,6 +7854,29 @@ private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
             supplementalGroups: configuration.supplementalGroups,
             stdioCount: stdio.count
         ))
+    }
+
+    func runAttachedProcess(
+        containerId: String,
+        processId: String,
+        configuration: ProcessConfiguration,
+        interactive: Bool,
+        tty: Bool
+    ) async throws -> Int32 {
+        attachedProcesses.append(ContainerAttachedExecProcessRequest(
+            containerId: containerId,
+            processId: processId,
+            executable: configuration.executable,
+            arguments: configuration.arguments,
+            environment: configuration.environment,
+            workingDirectory: configuration.workingDirectory,
+            terminal: configuration.terminal,
+            user: configuration.user.description,
+            supplementalGroups: configuration.supplementalGroups,
+            interactive: interactive,
+            tty: tty
+        ))
+        return attachedStatus
     }
 }
 

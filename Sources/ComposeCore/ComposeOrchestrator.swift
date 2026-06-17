@@ -46,6 +46,31 @@ public struct ComposeExecutionOptions {
     }
 }
 
+/// Runtime collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorDependencies: Sendable {
+    public var copier: ContainerCopying
+    public var discoveryManager: ContainerDiscoveryManaging
+    public var execManager: ContainerExecManaging
+    public var exporter: ContainerExporting
+    public var imageManager: ContainerImageManaging
+    public var lifecycleManager: ContainerLifecycleManaging
+    public var logManager: ContainerLogManaging
+    public var resourceManager: ContainerResourceManaging
+    public var statsManager: ContainerStatsManaging
+
+    public init() {
+        copier = ContainerClientCopier()
+        discoveryManager = ContainerClientDiscoveryManager()
+        execManager = ContainerClientExecManager()
+        exporter = ContainerClientExporter()
+        imageManager = ContainerClientImageManager()
+        lifecycleManager = ContainerClientLifecycleManager()
+        logManager = ContainerClientLogManager()
+        resourceManager = ContainerClientResourceManager()
+        statsManager = ContainerClientStatsManager()
+    }
+}
+
 /// Options for `compose up`.
 public struct ComposeUpOptions {
     public var services: [String] = []
@@ -283,27 +308,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public init(
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
-        copier: ContainerCopying = ContainerClientCopier(),
-        discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
-        execManager: ContainerExecManaging = ContainerClientExecManager(),
-        exporter: ContainerExporting = ContainerClientExporter(),
-        imageManager: ContainerImageManaging = ContainerClientImageManager(),
-        lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
-        logManager: ContainerLogManaging = ContainerClientLogManager(),
-        resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
-        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
+        dependencies: ComposeOrchestratorDependencies = ComposeOrchestratorDependencies()
     ) {
         self.runner = runner
         self.options = options
-        self.copier = copier
-        self.discoveryManager = discoveryManager
-        self.execManager = execManager
-        self.exporter = exporter
-        self.imageManager = imageManager
-        self.lifecycleManager = lifecycleManager
-        self.logManager = logManager
-        self.resourceManager = resourceManager
-        self.statsManager = statsManager
+        self.copier = dependencies.copier
+        self.discoveryManager = dependencies.discoveryManager
+        self.execManager = dependencies.execManager
+        self.exporter = dependencies.exporter
+        self.imageManager = dependencies.imageManager
+        self.lifecycleManager = dependencies.lifecycleManager
+        self.logManager = dependencies.logManager
+        self.resourceManager = dependencies.resourceManager
+        self.statsManager = dependencies.statsManager
     }
 
     /// Returns canonical project JSON for `compose config`.
@@ -333,38 +350,59 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await build(project: project, services: services.map(\.name), noCache: false)
         }
 
-        for service in services {
+        let attachedForegroundServiceIndex = up.detach ? nil : services.indices.last
+        var changedServices = Set<String>()
+        for (index, service) in services.enumerated() {
             if !up.build, service.image == nil, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
             }
 
             let name = containerName(project: project, service: service, oneOff: false)
             let existing = try await inspectContainer(name)
+            var serviceChanged = false
             if let existing {
                 // Reuse containers only when the Compose-derived service hash
                 // still matches, unless the caller chose an explicit recreate
                 // policy.
                 if up.noRecreate {
                     options.emit("compose: reusing existing container \(name)")
-                    continue
-                }
-                if !up.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
+                } else if !up.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
-                    continue
+                } else {
+                    try await stopContainer(service: service, containerName: name)
+                    try await deleteContainer(name)
+                    try await runContainer(
+                        try runArguments(
+                            project: project,
+                            service: service,
+                            options: RunArgumentOptions {
+                                $0.detach = up.detach || index != attachedForegroundServiceIndex
+                            }
+                        )
+                    )
+                    serviceChanged = true
                 }
-                try await stopContainer(service: service, containerName: name)
-                try await deleteContainer(name)
+            } else {
+                try await runContainer(
+                    try runArguments(
+                        project: project,
+                        service: service,
+                        options: RunArgumentOptions {
+                            $0.detach = up.detach || index != attachedForegroundServiceIndex
+                        }
+                    )
+                )
+                serviceChanged = true
             }
 
-            try await runContainer(
-                try runArguments(
-                    project: project,
-                    service: service,
-                    options: RunArgumentOptions {
-                        $0.detach = up.detach
-                    }
-                )
-            )
+            if serviceChanged {
+                changedServices.insert(service.name)
+                continue
+            }
+            if existing != nil, shouldRestartAfterDependencyChange(service: service, changedServices: changedServices) {
+                try await restartContainer(service: service, containerName: name)
+                changedServices.insert(service.name)
+            }
         }
 
         if up.removeOrphans {
@@ -640,17 +678,35 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         args.append(containerName(project: project, service: service, oneOff: false))
         args.append(contentsOf: exec.command)
-        if exec.detach, !options.dryRun {
-            try await execManager.execDetached(
-                request: ContainerDetachedExecRequest(
-                    id: containerName(project: project, service: service, oneOff: false),
+        if !options.dryRun {
+            let containerID = containerName(project: project, service: service, oneOff: false)
+            if exec.detach {
+                try await execManager.execDetached(
+                    request: ContainerDetachedExecRequest(
+                        id: containerID,
+                        command: exec.command,
+                        environment: exec.environment,
+                        user: exec.user,
+                        workingDirectory: exec.workingDirectory
+                    ),
+                    emit: options.emit
+                )
+                return
+            }
+            let status = try await execManager.execAttached(
+                request: ContainerAttachedExecRequest(
+                    id: containerID,
                     command: exec.command,
                     environment: exec.environment,
                     user: exec.user,
-                    workingDirectory: exec.workingDirectory
-                ),
-                emit: options.emit
+                    workingDirectory: exec.workingDirectory,
+                    interactive: exec.interactive,
+                    tty: exec.tty
+                )
             )
+            if status != 0 {
+                throw ComposeError.commandFailed(command: shellQuoted([options.containerBinary] + args), status: status, stderr: "")
+            }
             return
         }
         try await runContainer(args, inheritedIO: !exec.detach && (exec.interactive || exec.tty))
@@ -721,13 +777,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Starts selected service containers.
     public func start(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
-            let id = containerName(project: project, service: service, oneOff: false)
-            let args = ["start", id]
-            if options.dryRun {
-                try await runContainer(args)
-            } else {
-                try await lifecycleManager.startContainer(id: id)
-            }
+            try await startContainer(containerName: containerName(project: project, service: service, oneOff: false))
         }
     }
 
@@ -1080,14 +1130,9 @@ private extension ComposeOrchestrator {
         if service.useAPISocket == true {
             throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; API socket mounting is not implemented by container-compose yet")
         }
-        if let macAddress = service.macAddress, !macAddress.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
-        }
+        try validateNetworkMACAddressSupport(service: service, networks: networks)
         if validateDependencies, let dependsOn = service.dependsOn {
             for (dependency, metadata) in dependsOn.sorted(by: { $0.key < $1.key }) {
-                if metadata.restart {
-                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with restart true; dependency restart propagation is not implemented by container-compose yet")
-                }
                 if metadata.required == false, project.services[dependency] == nil {
                     continue
                 }
@@ -1130,6 +1175,27 @@ private extension ComposeOrchestrator {
         }
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
+        }
+    }
+
+    /// Allows MAC addresses only for the single-network attachment that Apple
+    /// `container --network name,mac=...` can represent.
+    func validateNetworkMACAddressSupport(service: ComposeService, networks: [String]) throws {
+        let serviceMACAddress = nonEmpty(service.macAddress)
+        let networkMACAddresses = (service.networkOptions ?? [:]).compactMapValues { nonEmpty($0.macAddress) }
+        guard serviceMACAddress != nil || !networkMACAddresses.isEmpty else {
+            return
+        }
+        guard networks.count == 1, let network = networks.first else {
+            throw ComposeError.unsupported("service '\(service.name)' uses mac_address; MAC address support requires exactly one Compose network")
+        }
+        for networkName in networkMACAddresses.keys.sorted() where networkName != network {
+            throw ComposeError.unsupported("service '\(service.name)' sets mac_address on unattached network '\(networkName)'")
+        }
+        if let serviceMACAddress,
+           let networkMACAddress = networkMACAddresses[network],
+           serviceMACAddress != networkMACAddress {
+            throw ComposeError.invalidProject("service '\(service.name)' sets conflicting mac_address values '\(serviceMACAddress)' and '\(networkMACAddress)' on network '\(network)'")
         }
     }
 
@@ -1520,6 +1586,9 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
         args.append(contentsOf: ["--tag", image])
+        for tag in build.tags ?? [] where !tag.isEmpty && tag != image {
+            args.append(contentsOf: ["--tag", tag])
+        }
         if let dockerfile = build.dockerfile, !dockerfile.isEmpty {
             args.append(contentsOf: ["--file", dockerfile])
         }
@@ -1528,6 +1597,21 @@ private extension ComposeOrchestrator {
         }
         if noCache || build.noCache == true {
             args.append("--no-cache")
+        }
+        if build.pull == true {
+            args.append("--pull")
+        }
+        for platform in build.platforms ?? [] where !platform.isEmpty {
+            args.append(contentsOf: ["--platform", platform])
+        }
+        for cacheSource in build.cacheFrom ?? [] where !cacheSource.isEmpty {
+            args.append(contentsOf: ["--cache-in", cacheSource])
+        }
+        for cacheDestination in build.cacheTo ?? [] where !cacheDestination.isEmpty {
+            args.append(contentsOf: ["--cache-out", cacheDestination])
+        }
+        for (key, value) in (build.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
+            args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
@@ -1798,7 +1882,8 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
         if let network = (service.networks ?? []).first {
-            args.append(contentsOf: ["--network", networkRuntimeName(project: project, composeName: network)])
+            let networkArgument = networkAttachmentArgument(project: project, service: service, network: network)
+            args.append(contentsOf: ["--network", networkArgument])
         }
         if let platform = service.platform, !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])
@@ -2081,6 +2166,17 @@ private extension ComposeOrchestrator {
         resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
     }
 
+    /// Starts a service container through the direct API while preserving
+    /// dry-run command rendering.
+    func startContainer(containerName: String) async throws {
+        let args = ["start", containerName]
+        if options.dryRun {
+            try await runContainer(args)
+        } else {
+            try await lifecycleManager.startContainer(id: containerName)
+        }
+    }
+
     /// Stops a service container through the direct API while preserving
     /// dry-run command rendering.
     func stopContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
@@ -2094,6 +2190,12 @@ private extension ComposeOrchestrator {
                 timeoutInSeconds: timeout ?? service.stopGracePeriodSeconds
             )
         }
+    }
+
+    /// Restarts a service container through the direct API.
+    func restartContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
+        try await stopContainer(service: service, containerName: containerName, timeout: timeout)
+        try await startContainer(containerName: containerName)
     }
 
     /// Stops a container that may not map to a declared service, such as an
@@ -2133,6 +2235,17 @@ private extension ComposeOrchestrator {
         }
         args.append(containerName)
         return args
+    }
+
+    /// Returns true when a service asks to restart after a dependency that
+    /// changed earlier in the current Compose operation.
+    func shouldRestartAfterDependencyChange(service: ComposeService, changedServices: Set<String>) -> Bool {
+        guard let dependsOn = service.dependsOn else {
+            return false
+        }
+        return dependsOn.contains { dependency in
+            dependency.value.restart && changedServices.contains(dependency.key)
+        }
     }
 
     /// Returns an existing container's Compose metadata, if the container exists.
@@ -2241,9 +2354,6 @@ private extension ComposeNetworkOptions {
         if let linkLocalIPs, !linkLocalIPs.isEmpty {
             fields.append("link_local_ips")
         }
-        if let macAddress, !macAddress.isEmpty {
-            fields.append("mac_address")
-        }
         if let priority, priority != 0 {
             fields.append("priority")
         }
@@ -2314,6 +2424,28 @@ private func networkRuntimeName(project: ComposeProject, composeName: String) ->
         return resourceName(project: project.name, name: composeName)
     }
     return networkRuntimeName(project: project, composeName: composeName, network: network)
+}
+
+/// Builds the single network attachment value accepted by Apple `container`.
+private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) -> String {
+    var argument = networkRuntimeName(project: project, composeName: network)
+    if let macAddress = networkMACAddress(service: service, network: network) {
+        argument += ",mac=\(macAddress)"
+    }
+    return argument
+}
+
+/// Resolves the effective MAC address for a supported single-network service.
+private func networkMACAddress(service: ComposeService, network: String) -> String? {
+    nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
+}
+
+/// Returns a string value only when it contains meaningful content.
+private func nonEmpty(_ value: String?) -> String? {
+    guard let value, !value.isEmpty else {
+        return nil
+    }
+    return value
 }
 
 /// Resolves a normalized Compose network definition to its runtime name.
