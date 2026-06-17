@@ -546,8 +546,8 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
-    @Test("moves root compose options for version")
-    func movesRootComposeOptionsForVersion() {
+    @Test("keeps root compose options before version")
+    func keepsRootComposeOptionsBeforeVersion() {
         let rewritten = ComposeArgumentRewriter.rewrite([
             "--ansi",
             "never",
@@ -556,10 +556,29 @@ struct ComposeArgumentRewriterTests {
         ])
 
         #expect(rewritten == [
-            "version",
             "--ansi",
             "never",
             "--dry-run",
+            "version",
+        ])
+    }
+
+    @Test("keeps version format shorthand local to version")
+    func keepsVersionFormatShorthandLocalToVersion() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-f",
+            "compose.yml",
+            "version",
+            "-f",
+            "json",
+        ])
+
+        #expect(rewritten == [
+            "-f",
+            "compose.yml",
+            "version",
+            "-f",
+            "json",
         ])
     }
 

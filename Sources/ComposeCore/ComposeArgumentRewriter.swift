@@ -80,6 +80,9 @@ public enum ComposeArgumentRewriter {
             command: command,
             arguments: Array(arguments[arguments.index(after: commandIndex)...])
         )
+        if command == "version" {
+            return prefix + [command] + suffix
+        }
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
     }

@@ -86,6 +86,14 @@ go-build:
 cli-smoke: build
 	.build/debug/compose --ansi never version >/dev/null
 	.build/debug/compose version --dry-run >/dev/null
+	version_short_output="$$(".build/debug/compose" version --short)"; \
+	[[ "$$version_short_output" == "0.1.0" ]]; \
+	version_json_output="$$(".build/debug/compose" version --format json)"; \
+	[[ "$$version_json_output" == '{"version":"0.1.0"}' ]]; \
+	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
+	[[ "$$version_short_format_output" == '{"version":"0.1.0"}' ]]; \
+	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
+	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \

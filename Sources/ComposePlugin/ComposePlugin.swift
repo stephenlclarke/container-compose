@@ -18,6 +18,9 @@ import ArgumentParser
 import ComposeCore
 import Foundation
 
+private let composePluginVersionNumber = "0.1.0"
+private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
+
 /// Root command for the `container compose` plugin.
 struct ComposePlugin: AsyncParsableCommand {
     @OptionGroup var global: GlobalOptions
@@ -25,7 +28,7 @@ struct ComposePlugin: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "compose",
         abstract: "Manage multi-container applications with Docker Compose syntax",
-        version: "container-compose 0.1.0",
+        version: composePluginVersionString,
         subcommands: [
             Config.self,
             Create.self,
@@ -689,10 +692,48 @@ struct Wait: AsyncParsableCommand, ComposeProjectCommand {
 /// Implements `compose version`.
 struct Version: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "version", abstract: "Print compose plugin version.")
-    @OptionGroup var global: GlobalOptions
+    @OptionGroup var global: VersionGlobalOptions
+    @Option(name: [.customShort("f"), .customLong("format")], help: "Format the output: pretty or json.")
+    var format = "pretty"
+    @Flag(name: .customLong("short"), help: "Show only the compose plugin version number.")
+    var short = false
 
-    /// Prints the plugin version string.
-    func run() {
-        print("container-compose 0.1.0")
+    /// Prints the plugin version in a Docker Compose compatible format.
+    func run() throws {
+        if short {
+            print(composePluginVersionNumber)
+            return
+        }
+
+        switch format.lowercased() {
+        case "pretty":
+            print(composePluginVersionString)
+        case "json":
+            print(#"{"version":"\#(composePluginVersionNumber)"}"#)
+        default:
+            throw ComposeError.unsupported("version --format '\(format)'; supported formats are pretty and json")
+        }
     }
+}
+
+/// Global options accepted after `compose version`.
+struct VersionGlobalOptions: ParsableArguments {
+    @Option(name: .customLong("file"), help: "Accepted for Docker Compose compatibility.")
+    var file: [String] = []
+    @Option(name: [.customShort("p"), .customLong("project-name")], help: "Accepted for Docker Compose compatibility.")
+    var projectName: String?
+    @Option(name: .customLong("profile"), help: "Accepted for Docker Compose compatibility.")
+    var profile: [String] = []
+    @Option(name: .customLong("env-file"), help: "Accepted for Docker Compose compatibility.")
+    var envFile: [String] = []
+    @Option(name: .customLong("project-directory"), help: "Accepted for Docker Compose compatibility.")
+    var projectDirectory: String?
+    @Option(name: .customLong("ansi"), help: "Accepted for Docker Compose compatibility.")
+    var ansi: String?
+    @Option(name: .customLong("progress"), help: "Accepted for Docker Compose compatibility.")
+    var progress: String?
+    @Flag(name: .customLong("dry-run"), help: "Accepted for Docker Compose compatibility.")
+    var dryRun = false
+    @Flag(name: .customLong("verbose"), help: "Accepted for Docker Compose compatibility.")
+    var verbose = false
 }
