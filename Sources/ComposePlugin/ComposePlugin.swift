@@ -44,6 +44,7 @@ struct ComposePlugin: AsyncParsableCommand {
             Restart.self,
             Rm.self,
             Images.self,
+            Stats.self,
             Top.self,
             Events.self,
             Port.self,
@@ -545,6 +546,37 @@ struct Images: AsyncParsableCommand, ComposeProjectCommand {
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().images(project: loadedProject, services: services, options: ComposeImagesOptions(quiet: quiet, format: format))
+    }
+}
+
+/// Implements `compose stats`.
+struct Stats: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "stats", abstract: "Display service container resource usage statistics.")
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: [.customShort("a"), .customLong("all")], help: "Show all containers. Not supported by apple/container stats yet.")
+    var all = false
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Flag(name: .customLong("no-stream"), help: "Disable streaming stats and only pull the first result.")
+    var noStream = false
+    @Flag(name: .customLong("no-trunc"), help: "Do not truncate output. Not supported by apple/container stats yet.")
+    var noTrunc = false
+    @Argument(help: "Optional service name.")
+    var services: [String] = []
+
+    /// Displays resource usage statistics for the project or one selected service.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().stats(
+            project: loadedProject,
+            options: ComposeStatsOptions(
+                services: services,
+                all: all,
+                format: format,
+                noStream: noStream,
+                noTrunc: noTrunc
+            )
+        )
     }
 }
 

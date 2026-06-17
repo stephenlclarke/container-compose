@@ -44,6 +44,7 @@ public enum ComposeArgumentRewriter {
         "rm",
         "run",
         "start",
+        "stats",
         "stop",
         "top",
         "unpause",

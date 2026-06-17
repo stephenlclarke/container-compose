@@ -133,6 +133,23 @@ public struct ComposeImagesOptions {
     }
 }
 
+/// Options for `compose stats`.
+public struct ComposeStatsOptions {
+    public var services: [String]
+    public var all: Bool
+    public var format: String
+    public var noStream: Bool
+    public var noTrunc: Bool
+
+    public init(services: [String] = [], all: Bool = false, format: String = "table", noStream: Bool = false, noTrunc: Bool = false) {
+        self.services = services
+        self.all = all
+        self.format = format
+        self.noStream = noStream
+        self.noTrunc = noTrunc
+    }
+}
+
 /// Options for `compose ls`.
 public struct ComposeLsOptions {
     public var all: Bool
@@ -637,6 +654,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Displays resource usage statistics for selected service containers.
+    public func stats(project: ComposeProject, options stats: ComposeStatsOptions) async throws {
+        try validate(project: project)
+        try validateStatsOptions(stats)
+        let services = try selectedServices(project: project, selected: stats.services)
+        var args = ["stats"]
+        if stats.format != "table" {
+            args.append(contentsOf: ["--format", stats.format])
+        }
+        if stats.noStream {
+            args.append("--no-stream")
+        }
+        args.append(contentsOf: services.map { containerName(project: project, service: $0, oneOff: false) })
+        try await runContainer(args)
+    }
+
     /// Sends a signal to selected service containers.
     public func kill(project: ComposeProject, services selected: [String], signal: String?) async throws {
         for service in try selectedServices(project: project, selected: selected) {
@@ -1083,6 +1116,22 @@ private extension ComposeOrchestrator {
         }
         if !["always", "missing", "if_not_present", "never", "build"].contains(policy) {
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
+        }
+    }
+
+    /// Validates `compose stats` options before invoking runtime stats.
+    func validateStatsOptions(_ options: ComposeStatsOptions) throws {
+        if options.services.count > 1 {
+            throw ComposeError.invalidProject("stats accepts at most one service")
+        }
+        if options.all {
+            throw ComposeError.unsupported("stats --all: apple/container stats only reports running containers")
+        }
+        if options.noTrunc {
+            throw ComposeError.unsupported("stats --no-trunc: apple/container stats does not expose truncation control")
+        }
+        if !["table", "json"].contains(options.format) {
+            throw ComposeError.unsupported("stats --format '\(options.format)': apple/container stats supports table and json output")
         }
     }
 

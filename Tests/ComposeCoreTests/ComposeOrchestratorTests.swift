@@ -1670,6 +1670,74 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("stats targets project service containers")
+    func statsTargetsProjectServiceContainers() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.containerName = "custom-db"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).stats(project: project, options: ComposeStatsOptions())
+        try await ComposeOrchestrator(runner: runner).stats(
+            project: project,
+            options: ComposeStatsOptions(services: ["db"], format: "json", noStream: true)
+        )
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "stats", "demo-api-1", "custom-db"],
+            ["container", "stats", "--format", "json", "--no-stream", "custom-db"],
+        ])
+    }
+
+    @Test("stats rejects unsupported options before runtime commands")
+    func statsRejectsUnsupportedOptionsBeforeRuntimeCommands() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        let cases: [(ComposeStatsOptions, ComposeError)] = [
+            (
+                ComposeStatsOptions(services: ["api", "db"]),
+                .invalidProject("stats accepts at most one service")
+            ),
+            (
+                ComposeStatsOptions(all: true),
+                .unsupported("stats --all: apple/container stats only reports running containers")
+            ),
+            (
+                ComposeStatsOptions(format: "yaml"),
+                .unsupported("stats --format 'yaml': apple/container stats supports table and json output")
+            ),
+            (
+                ComposeStatsOptions(noTrunc: true),
+                .unsupported("stats --no-trunc: apple/container stats does not expose truncation control")
+            ),
+        ]
+
+        for (options, expectedError) in cases {
+            let runner = RecordingRunner()
+            do {
+                try await ComposeOrchestrator(runner: runner).stats(project: project, options: options)
+                Issue.record("Expected unsupported stats option failure")
+            } catch let error as ComposeError {
+                #expect(error == expectedError)
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("ls lists compose projects with grouped status")
     func lsListsComposeProjectsWithGroupedStatus() async throws {
         let emitted = MessageRecorder()

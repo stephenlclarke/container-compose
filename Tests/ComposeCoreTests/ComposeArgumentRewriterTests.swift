@@ -97,6 +97,25 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("recognizes stats as a compose subcommand")
+    func recognizesStatsAsComposeSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--project-name",
+            "demo",
+            "stats",
+            "--no-stream",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "stats",
+            "--project-name",
+            "demo",
+            "--no-stream",
+            "api",
+        ])
+    }
+
     @Test("normalizes logs follow shorthand after subcommand")
     func normalizesLogsFollowShorthandAfterSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([
