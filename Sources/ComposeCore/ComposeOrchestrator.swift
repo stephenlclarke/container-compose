@@ -432,13 +432,29 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Removes selected service containers.
-    public func rm(project: ComposeProject, services selected: [String], stopFirst: Bool) async throws {
+    public func rm(
+        project: ComposeProject,
+        services selected: [String],
+        stopFirst: Bool,
+        force: Bool = false,
+        volumes: Bool = false
+    ) async throws {
         let services = try selectedServices(project: project, selected: selected)
         if stopFirst {
             try await stop(project: project, services: services.map(\.name))
         }
         for service in services {
-            try await runContainer(["delete", containerName(project: project, service: service, oneOff: false)], check: false)
+            var args = ["delete"]
+            if force {
+                args.append("--force")
+            }
+            args.append(containerName(project: project, service: service, oneOff: false))
+            try await runContainer(args, check: false)
+        }
+        if volumes {
+            for volume in anonymousVolumeRuntimeNames(project: project, services: services) {
+                try await runContainer(["volume", "delete", volume], check: false)
+            }
         }
     }
 
@@ -1341,7 +1357,7 @@ private extension ComposeOrchestrator {
         } else if source.isEmpty {
             // Anonymous Compose volumes still need stable names so repeated
             // runs reconcile the same project-scoped container arguments.
-            mappedSource = resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
+            mappedSource = anonymousVolumeRuntimeName(project: project, target: target)
         } else {
             mappedSource = source
         }
@@ -1351,6 +1367,24 @@ private extension ComposeOrchestrator {
             value += ":ro"
         }
         args.append(contentsOf: ["--volume", value])
+    }
+
+    /// Returns stable runtime names for anonymous volumes attached to services.
+    func anonymousVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) -> [String] {
+        let names = services.flatMap { service in
+            (service.volumes ?? []).compactMap { mount -> String? in
+                guard mount.type == "volume", mount.source?.isEmpty != false, let target = mount.target else {
+                    return nil
+                }
+                return anonymousVolumeRuntimeName(project: project, target: target)
+            }
+        }
+        return Array(Set(names)).sorted()
+    }
+
+    /// Returns the project-scoped name used for an anonymous Compose volume.
+    func anonymousVolumeRuntimeName(project: ComposeProject, target: String) -> String {
+        resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
     }
 
     /// Returns the stop command arguments for a service container.
