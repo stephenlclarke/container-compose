@@ -262,7 +262,7 @@ container compose exec -u 1000:1000 api id
 container compose exec -w /app api pwd
 container compose exec --index 1 api true
 container compose stats
-container compose stats --no-stream --format json api
+container compose stats --no-stream --format json api worker
 container compose cp api:/app/env.txt ./env.txt
 container compose port api 8080
 container compose stop --timeout 12 api

@@ -601,10 +601,10 @@ struct Stats: AsyncParsableCommand, ComposeProjectCommand {
     var noStream = false
     @Flag(name: .customLong("no-trunc"), help: "Do not truncate output. Not supported by apple/container stats yet.")
     var noTrunc = false
-    @Argument(help: "Optional service name.")
+    @Argument(help: "Optional service names.")
     var services: [String] = []
 
-    /// Displays resource usage statistics for the project or one selected service.
+    /// Displays resource usage statistics for the project or selected services.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().stats(
