@@ -3178,6 +3178,41 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 
+    @Test("run starts dependencies before one-off container")
+    func runStartsDependenciesBeforeOneOffContainer() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"])
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 3)
+        #expect(commands[0] == ["container", "inspect", "demo-db-1"])
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(commands[1].contains("--detach"))
+        #expect(commands[1].containsSequence(["--label", "com.apple.container.compose.service=db"]))
+        #expect(commands[1].last == "postgres")
+        #expect(commands[2].starts(with: ["container", "run", "--name"]))
+        #expect(commands[2][3].hasPrefix("demo-job-run-"))
+        #expect(Array(commands[2].suffix(2)) == ["alpine", "true"])
+    }
+
     @Test("run creates project resources before one-off containers")
     func runCreatesProjectResourcesBeforeOneOffContainers() async throws {
         let runner = RecordingRunner(responses: [

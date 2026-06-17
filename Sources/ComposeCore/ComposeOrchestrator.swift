@@ -535,9 +535,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validatePullPolicy(run.pullPolicy)
-        try validateRuntimeSupport(service: service, project: runProject, validateDependencies: !run.noDeps)
+        let dependencyServices = try run.noDeps
+            ? []
+            : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
+        try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
+        try await startDependencyServices(project: runProject, services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
             runArguments(
@@ -1602,6 +1606,37 @@ private extension ComposeOrchestrator {
     /// Returns whether a copy operand prefix has Compose service-reference shape.
     func isCopyServiceReference(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("/") && value != "." && value != ".."
+    }
+
+    /// Starts dependency services for `compose run` before the one-off container.
+    func startDependencyServices(project: ComposeProject, services: [ComposeService]) async throws {
+        try await applyServicePullPolicies(services: services)
+        for service in services {
+            if service.image == nil, service.build != nil {
+                try await build(project: project, services: [service.name], noCache: false)
+            }
+
+            let name = containerName(project: project, service: service, oneOff: false)
+            let existing = try await inspectContainer(name)
+            if let existing, existing.configHash == configHash(project: project, service: service) {
+                options.emit("compose: reusing existing container \(name)")
+                continue
+            }
+            if existing != nil {
+                try await runContainer(stopArguments(service: service, containerName: name), check: false)
+                try await runContainer(["delete", name], check: false)
+            }
+
+            try await runContainer(
+                runArguments(
+                    project: project,
+                    service: service,
+                    options: RunArgumentOptions {
+                        $0.detach = true
+                    }
+                )
+            )
+        }
     }
 
     /// Removes images referenced by services according to `down --rmi`.
