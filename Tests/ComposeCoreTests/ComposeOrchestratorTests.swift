@@ -80,6 +80,14 @@ private func orchestratorDependencies(
     return dependencies
 }
 
+private func expectSameInstance<T: AnyObject>(_ actual: Any, _ expected: T, _ name: String) {
+    guard let actual = actual as? T else {
+        Issue.record("Expected \(name) to use \(T.self)")
+        return
+    }
+    #expect(actual === expected)
+}
+
 private extension ComposeOrchestrator {
     convenience init(imageManager: ContainerImageManaging) {
         self.init(dependencies: orchestratorDependencies { $0.imageManager = imageManager })
@@ -286,6 +294,48 @@ private extension ComposeOrchestrator {
 
 @Suite("Compose orchestrator")
 struct ComposeOrchestratorTests {
+    @Test("dependency groups preserve individually configured collaborators")
+    func dependencyGroupsPreserveIndividuallyConfiguredCollaborators() {
+        let copier = RecordingContainerCopier()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let execManager = RecordingContainerExecManager()
+        let exporter = RecordingContainerExporter()
+        let imageManager = RecordingContainerImageManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let logManager = RecordingContainerLogManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let statsManager = RecordingContainerStatsManager()
+        var dependencies = ComposeOrchestratorDependencies(
+            commands: ComposeOrchestratorCommandDependencies(
+                copier: copier,
+                execManager: execManager,
+                exporter: exporter,
+                logManager: logManager
+            ),
+            runtime: ComposeOrchestratorRuntimeDependencies(
+                discoveryManager: discoveryManager,
+                lifecycleManager: lifecycleManager,
+                resourceManager: resourceManager,
+                statsManager: statsManager
+            ),
+            imageManager: imageManager
+        )
+
+        expectSameInstance(dependencies.copier, copier, "copier")
+        expectSameInstance(dependencies.discoveryManager, discoveryManager, "discoveryManager")
+        expectSameInstance(dependencies.execManager, execManager, "execManager")
+        expectSameInstance(dependencies.exporter, exporter, "exporter")
+        expectSameInstance(dependencies.imageManager, imageManager, "imageManager")
+        expectSameInstance(dependencies.lifecycleManager, lifecycleManager, "lifecycleManager")
+        expectSameInstance(dependencies.logManager, logManager, "logManager")
+        expectSameInstance(dependencies.resourceManager, resourceManager, "resourceManager")
+        expectSameInstance(dependencies.statsManager, statsManager, "statsManager")
+
+        let replacementLogManager = RecordingContainerLogManager()
+        dependencies.logManager = replacementLogManager
+        expectSameInstance(dependencies.commands.logManager, replacementLogManager, "commands.logManager")
+    }
+
     @Test("orders selected services after dependencies")
     func ordersSelectedServicesAfterDependencies() throws {
         let project = ComposeProject(

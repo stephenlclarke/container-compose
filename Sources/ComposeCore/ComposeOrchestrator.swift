@@ -46,28 +46,100 @@ public struct ComposeExecutionOptions {
     }
 }
 
-/// Runtime collaborators used by the Compose orchestrator.
-public struct ComposeOrchestratorDependencies: Sendable {
+/// Container command collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorCommandDependencies: Sendable {
     public var copier: ContainerCopying
-    public var discoveryManager: ContainerDiscoveryManaging
     public var execManager: ContainerExecManaging
     public var exporter: ContainerExporting
-    public var imageManager: ContainerImageManaging
-    public var lifecycleManager: ContainerLifecycleManaging
     public var logManager: ContainerLogManaging
+
+    public init(
+        copier: ContainerCopying = ContainerClientCopier(),
+        execManager: ContainerExecManaging = ContainerClientExecManager(),
+        exporter: ContainerExporting = ContainerClientExporter(),
+        logManager: ContainerLogManaging = ContainerClientLogManager()
+    ) {
+        self.copier = copier
+        self.execManager = execManager
+        self.exporter = exporter
+        self.logManager = logManager
+    }
+}
+
+/// Container lifecycle collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorRuntimeDependencies: Sendable {
+    public var discoveryManager: ContainerDiscoveryManaging
+    public var lifecycleManager: ContainerLifecycleManaging
     public var resourceManager: ContainerResourceManaging
     public var statsManager: ContainerStatsManaging
 
-    public init() {
-        copier = ContainerClientCopier()
-        discoveryManager = ContainerClientDiscoveryManager()
-        execManager = ContainerClientExecManager()
-        exporter = ContainerClientExporter()
-        imageManager = ContainerClientImageManager()
-        lifecycleManager = ContainerClientLifecycleManager()
-        logManager = ContainerClientLogManager()
-        resourceManager = ContainerClientResourceManager()
-        statsManager = ContainerClientStatsManager()
+    public init(
+        discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
+        lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
+        resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
+        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
+    ) {
+        self.discoveryManager = discoveryManager
+        self.lifecycleManager = lifecycleManager
+        self.resourceManager = resourceManager
+        self.statsManager = statsManager
+    }
+}
+
+/// Runtime collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorDependencies: Sendable {
+    public var commands: ComposeOrchestratorCommandDependencies
+    public var runtime: ComposeOrchestratorRuntimeDependencies
+    public var imageManager: ContainerImageManaging
+
+    public init(
+        commands: ComposeOrchestratorCommandDependencies = ComposeOrchestratorCommandDependencies(),
+        runtime: ComposeOrchestratorRuntimeDependencies = ComposeOrchestratorRuntimeDependencies(),
+        imageManager: ContainerImageManaging = ContainerClientImageManager()
+    ) {
+        self.commands = commands
+        self.runtime = runtime
+        self.imageManager = imageManager
+    }
+
+    public var copier: ContainerCopying {
+        get { commands.copier }
+        set { commands.copier = newValue }
+    }
+
+    public var discoveryManager: ContainerDiscoveryManaging {
+        get { runtime.discoveryManager }
+        set { runtime.discoveryManager = newValue }
+    }
+
+    public var execManager: ContainerExecManaging {
+        get { commands.execManager }
+        set { commands.execManager = newValue }
+    }
+
+    public var exporter: ContainerExporting {
+        get { commands.exporter }
+        set { commands.exporter = newValue }
+    }
+
+    public var lifecycleManager: ContainerLifecycleManaging {
+        get { runtime.lifecycleManager }
+        set { runtime.lifecycleManager = newValue }
+    }
+
+    public var logManager: ContainerLogManaging {
+        get { commands.logManager }
+        set { commands.logManager = newValue }
+    }
+
+    public var resourceManager: ContainerResourceManaging {
+        get { runtime.resourceManager }
+        set { runtime.resourceManager = newValue }
+    }
+
+    public var statsManager: ContainerStatsManaging {
+        get { runtime.statsManager }
+        set { runtime.statsManager = newValue }
     }
 }
 
