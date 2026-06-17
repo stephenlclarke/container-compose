@@ -27,6 +27,10 @@ public protocol ContainerCopying: Sendable {
     /// Copies `source` from container `id` to `destination` on the local
     /// filesystem.
     func copyFromContainer(id: String, source: String, destination: String) async throws
+
+    /// Copies `source` from one container to `destination` inside another
+    /// container.
+    func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String) async throws
 }
 
 /// Direct Apple container API used for service container filesystem exports.
@@ -38,13 +42,26 @@ public protocol ContainerExporting: Sendable {
 
 /// `ContainerClient`-backed copier for real service container file copies.
 public struct ContainerClientCopier: ContainerCopying {
-    public init() {
-        // Stateless adapter; public initializer supports dependency injection.
+    public typealias CopyInto = @Sendable (String, String, String) async throws -> Void
+    public typealias CopyFrom = @Sendable (String, String, String) async throws -> Void
+
+    private let copyIntoOperation: CopyInto
+    private let copyFromOperation: CopyFrom
+
+    public init(
+        copyInto: @escaping CopyInto = { id, source, destination in
+            try await ContainerClient().copyIn(id: id, source: source, destination: destination, createParents: true)
+        },
+        copyFrom: @escaping CopyFrom = { id, source, destination in
+            try await ContainerClient().copyOut(id: id, source: source, destination: destination)
+        }
+    ) {
+        self.copyIntoOperation = copyInto
+        self.copyFromOperation = copyFrom
     }
 
     /// Copies host files into a service container through `ContainerClient`.
     public func copyIntoContainer(id: String, source: String, destination: String) async throws {
-        let client = ContainerClient()
         let sourcePath = (source as NSString).standardizingPath
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: sourcePath, isDirectory: &isDirectory) else {
@@ -54,12 +71,11 @@ public struct ContainerClientCopier: ContainerCopying {
             throw ComposeError.invalidProject("source path is not a directory: \(source)")
         }
 
-        try await client.copyIn(id: id, source: sourcePath, destination: destination, createParents: true)
+        try await copyIntoOperation(id, sourcePath, destination)
     }
 
     /// Copies service container files to the host through `ContainerClient`.
     public func copyFromContainer(id: String, source: String, destination: String) async throws {
-        let client = ContainerClient()
         let destinationPath = (destination as NSString).standardizingPath
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: destinationPath, isDirectory: &isDirectory)
@@ -70,9 +86,9 @@ public struct ContainerClientCopier: ContainerCopying {
                 throw ComposeError.invalidProject("source path has no last component: \(source)")
             }
             let finalDestination = (destinationPath as NSString).appendingPathComponent(lastComponent)
-            try await client.copyOut(id: id, source: source, destination: finalDestination)
+            try await copyFromOperation(id, source, finalDestination)
         } else if destination.hasSuffix("/") {
-            try await client.copyOut(id: id, source: source, destination: destinationPath)
+            try await copyFromOperation(id, source, destinationPath)
             var resultIsDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: destinationPath, isDirectory: &resultIsDirectory),
                !resultIsDirectory.boolValue {
@@ -80,8 +96,27 @@ public struct ContainerClientCopier: ContainerCopying {
                 throw ComposeError.invalidProject("destination is not a directory: \(destination)")
             }
         } else {
-            try await client.copyOut(id: id, source: source, destination: destinationPath)
+            try await copyFromOperation(id, source, destinationPath)
         }
+    }
+
+    /// Copies service container files through a temporary host path using
+    /// `ContainerClient.copyOut` followed by `ContainerClient.copyIn`.
+    public func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String) async throws {
+        let lastComponent = (source as NSString).lastPathComponent
+        guard !lastComponent.isEmpty && lastComponent != "/" else {
+            throw ComposeError.invalidProject("source path has no last component: \(source)")
+        }
+
+        let tempDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+
+        let stagedSource = tempDirectory.appendingPathComponent(lastComponent).path
+        try await copyFromContainer(id: sourceID, source: source, destination: stagedSource)
+        try await copyIntoContainer(id: destinationID, source: stagedSource, destination: destination)
     }
 }
 

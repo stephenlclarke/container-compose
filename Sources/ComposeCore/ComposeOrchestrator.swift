@@ -877,7 +877,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await copier.copyFromContainer(id: id, source: sourcePath, destination: localPath)
         case (.local(let localPath), .container(let id, let destinationPath)):
             try await copier.copyIntoContainer(id: id, source: localPath, destination: destinationPath)
-        case (.container, .container), (.local, .local):
+        case (.container(let sourceID, let sourcePath), .container(let destinationID, let destinationPath)):
+            try await copier.copyBetweenContainers(
+                sourceID: sourceID,
+                source: sourcePath,
+                destinationID: destinationID,
+                destination: destinationPath
+            )
+        case (.local, .local):
             try await runContainer(["cp"] + mappedArguments)
         }
     }

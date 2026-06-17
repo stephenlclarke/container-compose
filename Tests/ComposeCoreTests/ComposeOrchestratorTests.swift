@@ -4050,6 +4050,7 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "./report.txt"])
         try await orchestrator.copy(project: project, arguments: ["./seed.sql", "db:/docker-entrypoint-initdb.d/seed.sql"])
+        try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "db:/restore/report.txt"])
         try await orchestrator.copy(project: project, arguments: ["./local:file.txt", "./out:file.txt"])
 
         #expect(runner.commands.map(\.arguments) == [
@@ -4058,6 +4059,30 @@ struct ComposeOrchestratorTests {
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
             .into(id: "custom-db", source: "./seed.sql", destination: "/docker-entrypoint-initdb.d/seed.sql"),
+            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "custom-db", destination: "/restore/report.txt"),
+        ])
+    }
+
+    @Test("cp copies between service containers through direct copy APIs")
+    func cpCopiesBetweenServiceContainersThroughDirectAPIs() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, copier: copier).copy(
+            project: project,
+            arguments: ["api:/tmp/report.txt", "worker:/var/lib/report.txt"]
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests == [
+            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-worker-1", destination: "/var/lib/report.txt"),
         ])
     }
 
@@ -4112,6 +4137,73 @@ struct ComposeOrchestratorTests {
         ])
         #expect(runner.commands.isEmpty)
         #expect(await copier.requests.isEmpty)
+    }
+
+    @Test("container copier stages service-to-service copies on the host")
+    func containerCopierStagesServiceToServiceCopiesOnTheHost() async throws {
+        let operations = RecordingContainerCopyOperations()
+        let copier = ContainerClientCopier(
+            copyInto: { id, source, destination in
+                try await operations.copyInto(id: id, source: source, destination: destination)
+            },
+            copyFrom: { id, source, destination in
+                try await operations.copyFrom(id: id, source: source, destination: destination)
+            }
+        )
+
+        try await copier.copyBetweenContainers(
+            sourceID: "demo-api-1",
+            source: "/tmp/report.txt",
+            destinationID: "demo-worker-1",
+            destination: "/var/lib/report.txt"
+        )
+
+        let requests = await operations.requests
+        #expect(requests.count == 2)
+        guard case .from(let sourceID, let source, let stagedPath) = requests[0] else {
+            Issue.record("Expected source container copy-out request")
+            return
+        }
+        guard case .into(let destinationID, let stagedSource, let destination) = requests[1] else {
+            Issue.record("Expected destination container copy-in request")
+            return
+        }
+        #expect(sourceID == "demo-api-1")
+        #expect(source == "/tmp/report.txt")
+        #expect((stagedPath as NSString).lastPathComponent == "report.txt")
+        #expect(destinationID == "demo-worker-1")
+        #expect(stagedSource == stagedPath)
+        #expect(destination == "/var/lib/report.txt")
+        #expect(!FileManager.default.fileExists(atPath: (stagedPath as NSString).deletingLastPathComponent))
+    }
+
+    @Test("container copier rejects root source for service-to-service copies")
+    func containerCopierRejectsRootSourceForServiceToServiceCopies() async throws {
+        let operations = RecordingContainerCopyOperations()
+        let copier = ContainerClientCopier(
+            copyInto: { id, source, destination in
+                try await operations.copyInto(id: id, source: source, destination: destination)
+            },
+            copyFrom: { id, source, destination in
+                try await operations.copyFrom(id: id, source: source, destination: destination)
+            }
+        )
+
+        do {
+            try await copier.copyBetweenContainers(
+                sourceID: "demo-api-1",
+                source: "/",
+                destinationID: "demo-worker-1",
+                destination: "/restore"
+            )
+            Issue.record("Expected root source copy failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("source path has no last component: /"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await operations.requests.isEmpty)
     }
 
     @Test("cp rejects unsupported command options before runtime copy")
@@ -6773,6 +6865,7 @@ private struct ContainerExportRequest: Equatable {
 private enum ContainerCopyRequest: Equatable {
     case into(id: String, source: String, destination: String)
     case from(id: String, source: String, destination: String)
+    case between(sourceID: String, source: String, destinationID: String, destination: String)
 }
 
 private enum ContainerLifecycleRequest: Equatable {
@@ -6860,6 +6953,32 @@ private actor RecordingContainerCopier: ContainerCopying {
 
     func copyFromContainer(id: String, source: String, destination: String) async throws {
         storage.append(.from(id: id, source: source, destination: destination))
+    }
+
+    func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String) async throws {
+        storage.append(.between(sourceID: sourceID, source: source, destinationID: destinationID, destination: destination))
+    }
+}
+
+private actor RecordingContainerCopyOperations {
+    private var storage: [ContainerCopyRequest] = []
+
+    var requests: [ContainerCopyRequest] {
+        storage
+    }
+
+    func copyInto(id: String, source: String, destination: String) async throws {
+        guard FileManager.default.fileExists(atPath: source) else {
+            throw ComposeError.invalidProject("source path does not exist: \(source)")
+        }
+        storage.append(.into(id: id, source: source, destination: destination))
+    }
+
+    func copyFrom(id: String, source: String, destination: String) async throws {
+        storage.append(.from(id: id, source: source, destination: destination))
+        let destinationURL = URL(fileURLWithPath: destination)
+        try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("staged".utf8).write(to: destinationURL)
     }
 }
 
