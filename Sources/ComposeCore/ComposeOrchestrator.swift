@@ -276,6 +276,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let lifecycleManager: ContainerLifecycleManaging
     private let logManager: ContainerLogManaging
     private let resourceManager: ContainerResourceManaging
+    private let statsManager: ContainerStatsManaging
 
     public init(
         runner: CommandRunning = ProcessRunner(),
@@ -285,7 +286,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         exporter: ContainerExporting = ContainerClientExporter(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         logManager: ContainerLogManaging = ContainerClientLogManager(),
-        resourceManager: ContainerResourceManaging = ContainerClientResourceManager()
+        resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
+        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
     ) {
         self.runner = runner
         self.options = options
@@ -295,6 +297,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.lifecycleManager = lifecycleManager
         self.logManager = logManager
         self.resourceManager = resourceManager
+        self.statsManager = statsManager
     }
 
     /// Returns canonical project JSON for `compose config`.
@@ -783,8 +786,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if stats.noStream {
             args.append("--no-stream")
         }
-        args.append(contentsOf: services.map { containerName(project: project, service: $0, oneOff: false) })
-        try await runContainer(args)
+        let ids = services.map { containerName(project: project, service: $0, oneOff: false) }
+        args.append(contentsOf: ids)
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+        try await statsManager.stats(ids: ids, format: stats.format, noStream: stats.noStream, emit: options.emit)
     }
 
     /// Sends a signal to selected service containers.

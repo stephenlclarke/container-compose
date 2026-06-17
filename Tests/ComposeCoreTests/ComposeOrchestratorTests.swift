@@ -2023,6 +2023,8 @@ struct ComposeOrchestratorTests {
     @Test("stats targets project service containers")
     func statsTargetsProjectServiceContainers() async throws {
         let runner = RecordingRunner()
+        let emitted = MessageRecorder()
+        let statsManager = RecordingContainerStatsManager(outputs: ["stats-output"])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2033,16 +2035,55 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).stats(project: project, options: ComposeStatsOptions())
-        try await ComposeOrchestrator(runner: runner).stats(
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            statsManager: statsManager
+        )
+        try await orchestrator.stats(project: project, options: ComposeStatsOptions())
+        try await orchestrator.stats(
             project: project,
             options: ComposeStatsOptions(services: ["api", "db"], format: "json", noStream: true)
         )
 
-        #expect(runner.commands.map(\.arguments) == [
-            ["container", "stats", "demo-api-1", "custom-db"],
-            ["container", "stats", "--format", "json", "--no-stream", "demo-api-1", "custom-db"],
+        #expect(runner.commands.isEmpty)
+        #expect(await statsManager.requests == [
+            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "table", noStream: false),
+            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "json", noStream: true),
         ])
+        #expect(emitted.messages == [
+            "stats-output",
+            "stats-output",
+        ])
+    }
+
+    @Test("stats dry run emits runtime command instead of direct API stats")
+    func statsDryRunEmitsRuntimeCommandInsteadOfDirectAPIStats() async throws {
+        let emitted = MessageRecorder()
+        let statsManager = RecordingContainerStatsManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.containerName = "custom-db"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            statsManager: statsManager
+        ).stats(
+            project: project,
+            options: ComposeStatsOptions(services: ["api", "db"], format: "json", noStream: true)
+        )
+
+        #expect(emitted.messages == [
+            "+ container stats --format json --no-stream demo-api-1 custom-db",
+        ])
+        #expect(await statsManager.requests.isEmpty)
     }
 
     @Test("stats rejects unsupported options before runtime commands")
@@ -3151,6 +3192,176 @@ struct ComposeOrchestratorTests {
 
         #expect(handles.count == 1)
         #expect(await recorder.requests == ["demo-api-1"])
+    }
+
+    @Test("stats manager renders static table from direct API stats")
+    func statsManagerRendersStaticTableFromDirectAPIStats() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [
+                ComposeStatsTarget(id: "demo-api-1", status: "running"),
+                ComposeStatsTarget(id: "demo-db-1", status: "stopped"),
+            ],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, emit: { emitted.append($0) })
+
+        #expect(emitted.messages.count == 1)
+        #expect(emitted.messages[0].contains("Container ID"))
+        #expect(emitted.messages[0].contains("demo-api-1"))
+        #expect(emitted.messages[0].contains("25.00%"))
+        #expect(emitted.messages[0].contains("1.00 MiB / 2.00 MiB"))
+        #expect(!emitted.messages[0].contains("demo-db-1"))
+        #expect(await client.listRequests == [["demo-api-1", "demo-db-1"]])
+        #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
+    }
+
+    @Test("stats manager streams table output from direct API stats")
+    func statsManagerStreamsTableOutputFromDirectAPIStats() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_500_000),
+                ],
+            ]
+        )
+        let sleeper = ThrowingSleeper(throwOnCall: 2)
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { try await sleeper.sleep($0) }
+        )
+
+        do {
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: false, emit: { emitted.append($0) })
+            Issue.record("Expected streaming stats cancellation")
+        } catch is CancellationError {
+            // Expected cancellation from the injected sleeper after one streamed frame.
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let messages = emitted.messages
+        #expect(messages.count == 4)
+        if messages.count == 4 {
+            #expect(messages[0] == "\u{001B}[?1049h\u{001B}[?25l")
+            #expect(messages[1].contains("\u{001B}[H\u{001B}[JContainer ID"))
+            #expect(!messages[1].contains("demo-api-1"))
+            #expect(messages[2].contains("\u{001B}[H\u{001B}[JContainer ID"))
+            #expect(messages[2].contains("demo-api-1"))
+            #expect(messages[2].contains("50.00%"))
+            #expect(messages[3] == "\u{001B}[?25h\u{001B}[?1049l")
+        }
+    }
+
+    @Test("stats manager renders unavailable fields in direct API table output")
+    func statsManagerRendersUnavailableFieldsInDirectAPITableOutput() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: nil),
+                    containerStats(
+                        id: "demo-api-1",
+                        cpuUsageUsec: nil,
+                        memoryUsageBytes: 1_073_741_824,
+                        memoryLimitBytes: nil,
+                        networkRxBytes: nil,
+                        networkTxBytes: nil,
+                        blockReadBytes: nil,
+                        blockWriteBytes: nil,
+                        numProcesses: nil
+                    ),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
+
+        try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { emitted.append($0) })
+
+        #expect(emitted.messages[0].contains("--"))
+        #expect(emitted.messages[0].contains("1.00 GiB / --"))
+        #expect(emitted.messages[0].contains("-- / --"))
+    }
+
+    @Test("stats manager renders static JSON from direct API stats")
+    func statsManagerRendersStaticJSONFromDirectAPIStats() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_500_000, memoryUsageBytes: 2_097_152),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
+
+        try await manager.stats(ids: ["demo-api-1"], format: "json", noStream: false, emit: { emitted.append($0) })
+
+        let decoded = try JSONDecoder().decode([ContainerStats].self, from: Data(emitted.messages[0].utf8))
+        #expect(decoded.count == 1)
+        #expect(decoded[0].id == "demo-api-1")
+        #expect(decoded[0].cpuUsageUsec == 1_500_000)
+        #expect(decoded[0].memoryUsageBytes == 2_097_152)
+        #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
+    }
+
+    @Test("stats manager rejects missing direct API stat targets")
+    func statsManagerRejectsMissingDirectAPIStatTargets() async throws {
+        let client = RecordingContainerStatsAPIClient()
+        let manager = ContainerClientStatsManager(client: client, sleep: { _ in })
+
+        do {
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { _ in })
+            Issue.record("Expected missing stats target error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("no such container: demo-api-1"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.listRequests == [["demo-api-1"]])
+        #expect(await client.statsRequests.isEmpty)
+    }
+
+    @Test("stats API client forwards configured operations")
+    func statsAPIClientForwardsConfiguredOperations() async throws {
+        let recorder = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: ["demo-api-1": [containerStats(id: "demo-api-1", cpuUsageUsec: 42)]]
+        )
+        let client = ContainerStatsAPIClient(
+            list: { ids in try await recorder.listStatsTargets(ids: ids) },
+            stats: { id in try await recorder.stats(id: id) }
+        )
+
+        let targets = try await client.listStatsTargets(ids: ["demo-api-1"])
+        let stats = try await client.stats(id: "demo-api-1")
+
+        #expect(targets == [ComposeStatsTarget(id: "demo-api-1", status: "running")])
+        #expect(stats.id == "demo-api-1")
+        #expect(stats.cpuUsageUsec == 42)
+        #expect(await recorder.listRequests == [["demo-api-1"]])
+        #expect(await recorder.statsRequests == ["demo-api-1"])
     }
 
     @Test("resource manager maps compose resources to direct API client")
@@ -6204,6 +6415,30 @@ private func temporaryLogFileHandle(data: Data) throws -> FileHandle {
     return handle
 }
 
+private func containerStats(
+    id: String,
+    cpuUsageUsec: UInt64?,
+    memoryUsageBytes: UInt64? = 1_048_576,
+    memoryLimitBytes: UInt64? = 2_097_152,
+    networkRxBytes: UInt64? = 1_024,
+    networkTxBytes: UInt64? = 2_048,
+    blockReadBytes: UInt64? = 4_096,
+    blockWriteBytes: UInt64? = 8_192,
+    numProcesses: UInt64? = 3
+) -> ContainerStats {
+    ContainerStats(
+        id: id,
+        memoryUsageBytes: memoryUsageBytes,
+        memoryLimitBytes: memoryLimitBytes,
+        cpuUsageUsec: cpuUsageUsec,
+        networkRxBytes: networkRxBytes,
+        networkTxBytes: networkTxBytes,
+        blockReadBytes: blockReadBytes,
+        blockWriteBytes: blockWriteBytes,
+        numProcesses: numProcesses
+    )
+}
+
 private struct ListedContainer: Decodable {
     var id: String
 }
@@ -6232,6 +6467,12 @@ private struct ContainerLogRequest: Equatable {
     var id: String
     var tail: Int?
     var follow: Bool
+}
+
+private struct ContainerStatsRequest: Equatable {
+    var ids: [String]
+    var format: String
+    var noStream: Bool
 }
 
 private enum ContainerResourceRequest: Equatable {
@@ -6403,6 +6644,82 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     func logFileHandles(id: String) async throws -> [FileHandle] {
         storage.append(id)
         return fileHandles
+    }
+}
+
+private actor RecordingContainerStatsManager: ContainerStatsManaging {
+    private let outputs: [String]
+    private var storage: [ContainerStatsRequest] = []
+
+    init(outputs: [String] = []) {
+        self.outputs = outputs
+    }
+
+    var requests: [ContainerStatsRequest] {
+        storage
+    }
+
+    func stats(
+        ids: [String],
+        format: String,
+        noStream: Bool,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        storage.append(ContainerStatsRequest(ids: ids, format: format, noStream: noStream))
+        for output in outputs {
+            emit(output)
+        }
+    }
+}
+
+private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
+    private let targets: [ComposeStatsTarget]
+    private var statsResponses: [String: [ContainerStats]]
+    private var lists: [[String]] = []
+    private var statsStorage: [String] = []
+
+    init(targets: [ComposeStatsTarget] = [], statsResponses: [String: [ContainerStats]] = [:]) {
+        self.targets = targets
+        self.statsResponses = statsResponses
+    }
+
+    var listRequests: [[String]] {
+        lists
+    }
+
+    var statsRequests: [String] {
+        statsStorage
+    }
+
+    func listStatsTargets(ids: [String]) async throws -> [ComposeStatsTarget] {
+        lists.append(ids)
+        return targets.filter { ids.contains($0.id) }
+    }
+
+    func stats(id: String) async throws -> ContainerStats {
+        statsStorage.append(id)
+        guard var responses = statsResponses[id], let response = responses.first else {
+            throw ComposeError.invalidProject("missing stats fixture for \(id)")
+        }
+        responses.removeFirst()
+        statsResponses[id] = responses.isEmpty ? [response] : responses
+        return response
+    }
+}
+
+private actor ThrowingSleeper {
+    private let throwOnCall: Int
+    private var calls = 0
+
+    init(throwOnCall: Int) {
+        self.throwOnCall = throwOnCall
+    }
+
+    func sleep(_: Duration) async throws {
+        calls += 1
+        if calls >= throwOnCall {
+            throw CancellationError()
+        }
     }
 }
 
