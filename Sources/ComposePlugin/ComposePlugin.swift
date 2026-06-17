@@ -28,11 +28,13 @@ struct ComposePlugin: AsyncParsableCommand {
         version: "container-compose 0.1.0",
         subcommands: [
             Config.self,
+            Create.self,
             Up.self,
             Down.self,
             Build.self,
             Pull.self,
             Push.self,
+            Ls.self,
             Ps.self,
             Logs.self,
             Exec.self,
@@ -42,6 +44,7 @@ struct ComposePlugin: AsyncParsableCommand {
             Restart.self,
             Rm.self,
             Images.self,
+            Stats.self,
             Top.self,
             Events.self,
             Port.self,
@@ -147,6 +150,51 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
+/// Implements `compose create`.
+struct Create: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "create", abstract: "Create service containers without starting them.")
+
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("build"), help: "Build images before creating containers.")
+    var build = false
+    @Flag(name: .customLong("no-build"), help: "Do not build images before creating containers.")
+    var noBuild = false
+    @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
+    var forceRecreate = false
+    @Flag(name: .customLong("no-recreate"), help: "Reuse existing containers.")
+    var noRecreate = false
+    @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, never, or build.")
+    var pull: String?
+    @Flag(name: .customLong("quiet-pull"), help: "Accepted for Docker Compose compatibility.")
+    var quietPull = false
+    @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
+    var removeOrphans = false
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    var scales: [String] = []
+    @Flag(name: [.customShort("y"), .customLong("yes")], help: "Accepted for Docker Compose compatibility.")
+    var yes = false
+    @Argument(help: "Optional service names to create.")
+    var services: [String] = []
+
+    /// Creates selected service containers without starting them.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().create(
+            project: loadedProject,
+            options: ComposeCreateOptions(
+                services: services,
+                build: build,
+                noBuild: noBuild,
+                forceRecreate: forceRecreate,
+                noRecreate: noRecreate,
+                removeOrphans: removeOrphans,
+                pullPolicy: pull,
+                scales: scales
+            )
+        )
+    }
+}
+
 /// Implements `compose up`.
 struct Up: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "up", abstract: "Create and start services.")
@@ -162,7 +210,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var noRecreate = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
-    @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, or never.")
+    @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, or never.")
     var pull: String?
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
@@ -253,6 +301,26 @@ struct Push: AsyncParsableCommand, ComposeProjectCommand {
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().push(project: loadedProject, services: services)
+    }
+}
+
+/// Implements `compose ls`.
+struct Ls: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "ls", abstract: "List Compose projects.")
+
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: .shortAndLong, help: "Show stopped Compose projects.")
+    var all = false
+    @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display project names.")
+    var quiet = false
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Option(name: .customLong("filter"), help: "Filter projects. Supported filter: name.")
+    var filters: [String] = []
+
+    /// Lists project names and status without loading a Compose file.
+    func run() async throws {
+        try await global.orchestrator().ls(options: ComposeLsOptions(all: all, quiet: quiet, format: format, filters: filters))
     }
 }
 
@@ -357,7 +425,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var servicePorts = false
     @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
     var publish: [String] = []
-    @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, or never.")
+    @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, if_not_present, or never.")
     var pull: String?
     @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
     var name: String?
@@ -467,15 +535,48 @@ struct Rm: AsyncParsableCommand, ComposeProjectCommand {
 
 /// Implements `compose images`.
 struct Images: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "images", abstract: "List images used by services.")
+    static let configuration = CommandConfiguration(commandName: "images", abstract: "List images used by created service containers.")
     @OptionGroup var global: GlobalOptions
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Flag(name: .shortAndLong, help: "Only display image IDs.")
+    var quiet = false
     @Argument var services: [String] = []
-    /// Prints image names referenced by selected services.
+    /// Lists images used by project containers.
     func run() async throws {
         let loadedProject = try await project()
-        for image in try orchestrator().images(project: loadedProject, services: services) {
-            print(image)
-        }
+        try await orchestrator().images(project: loadedProject, services: services, options: ComposeImagesOptions(quiet: quiet, format: format))
+    }
+}
+
+/// Implements `compose stats`.
+struct Stats: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "stats", abstract: "Display service container resource usage statistics.")
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: [.customShort("a"), .customLong("all")], help: "Show all containers. Not supported by apple/container stats yet.")
+    var all = false
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Flag(name: .customLong("no-stream"), help: "Disable streaming stats and only pull the first result.")
+    var noStream = false
+    @Flag(name: .customLong("no-trunc"), help: "Do not truncate output. Not supported by apple/container stats yet.")
+    var noTrunc = false
+    @Argument(help: "Optional service name.")
+    var services: [String] = []
+
+    /// Displays resource usage statistics for the project or one selected service.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().stats(
+            project: loadedProject,
+            options: ComposeStatsOptions(
+                services: services,
+                all: all,
+                format: format,
+                noStream: noStream,
+                noTrunc: noTrunc
+            )
+        )
     }
 }
 

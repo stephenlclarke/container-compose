@@ -109,7 +109,7 @@ Run the same validation used by GitHub Actions:
 make ci
 ```
 
-`make ci` resolves Swift packages, runs required Markdown linting and Go formatting checks, runs Swift and Go coverage, checks the coverage threshold, builds the Go helper, and runs the CLI smoke test. The smoke test builds the debug `compose` executable before exercising representative commands.
+`make ci` runs required Markdown linting and Go formatting checks, runs Swift and Go coverage, checks the coverage threshold, builds the Go helper, and runs the CLI smoke test. Swift build and test targets use the checked-in `Package.resolved` by default so CI fails quickly if dependency versions need an intentional lockfile refresh. The smoke test builds the debug `compose` executable before exercising representative commands.
 
 The default minimum coverage is 85 percent for both Swift and Go:
 
@@ -139,6 +139,8 @@ Build the plugin archive consumed by the install guide:
 ```sh
 make package
 ```
+
+GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds.
 
 The package target writes the archive and staging directory:
 

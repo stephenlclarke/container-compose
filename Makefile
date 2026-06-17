@@ -19,6 +19,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := all
 
 SWIFT ?= swift
+SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
 GO ?= go
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
@@ -46,24 +47,24 @@ all: workflow
 
 workflow: ci package
 
-ci: resolve lint coverage-check go-build cli-smoke
+ci: lint coverage-check go-build cli-smoke
 
 resolve:
 	$(SWIFT) package resolve
 
 build:
-	$(SWIFT) build --product compose
+	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose
 
 build-release:
-	$(SWIFT) build -c release --product compose
+	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose
 
 run:
-	$(SWIFT) run compose version
+	$(SWIFT) run $(SWIFT_RESOLVED_FLAGS) compose version
 
 test: swift-test go-test
 
 swift-test:
-	$(SWIFT) test --enable-code-coverage $(SWIFT_TEST_FLAGS)
+	$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --enable-code-coverage $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"; \
@@ -136,6 +137,10 @@ cli-smoke: build
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$up_output" != *"--detach"* ]]; \
+	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
+	[[ "$$create_output" == *"container create"* ]]; \
+	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$create_output" != *"--detach"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
 	[[ "$$detached_output" == *"container run"* ]]; \
 	[[ "$$detached_output" == *"--detach"* ]]; \
@@ -177,12 +182,26 @@ cli-smoke: build
 	[[ "$$ps_status_output" == *"container list --format json --all"* ]]; \
 	ps_filter_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --filter status=exited)"; \
 	[[ "$$ps_filter_output" == *"container list --format json --all"* ]]; \
+	images_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format json api)"; \
+	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
+	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \
+	[[ "$$images_quiet_output" == *"container list --format json --all"* ]]; \
+	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api)"; \
+	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1"* ]]; \
+	ls_json_output="$$(".build/debug/compose" --dry-run ls --format json)"; \
+	[[ "$$ls_json_output" == *"container list --format json"* ]]; \
+	[[ "$$ls_json_output" != *"--all"* ]]; \
+	ls_all_output="$$(".build/debug/compose" --dry-run ls --all --filter name=demo)"; \
+	[[ "$$ls_all_output" == *"container list --format json --all"* ]]; \
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \
 	[[ "$$top_output" == *"unsupported compose feature: top:"* ]]; \
 	[[ "$$top_output" == *"apple/container does not expose a process-list command yet"* ]]; \
 	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json 2>&1 || true)"; \
 	[[ "$$events_output" == *"unsupported compose feature: events:"* ]]; \
 	[[ "$$events_output" == *"apple/container does not expose an event stream yet"* ]]; \
+	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 8080 2>&1 || true)"; \
+	[[ "$$port_output" == *"unsupported compose feature: port:"* ]]; \
+	[[ "$$port_output" == *"published port lookup needs richer inspect output"* ]]; \
 	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api 2>&1 || true)"; \
 	[[ "$$pause_output" == *"unsupported compose feature: pause:"* ]]; \
 	[[ "$$pause_output" == *"apple/container does not expose pause yet"* ]]; \
