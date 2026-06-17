@@ -92,6 +92,8 @@ cli-smoke: build
 	[[ "$$version_json_output" == '{"version":"0.1.0"}' ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
 	[[ "$$version_short_format_output" == '{"version":"0.1.0"}' ]]; \
+	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
+	[[ "$$version_compact_format_output" == '{"version":"0.1.0"}' ]]; \
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
@@ -188,6 +190,8 @@ cli-smoke: build
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
 	logs_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n 5 api)"; \
 	[[ "$$logs_tail_output" == *"container logs -n 5 demo-api-1"* ]]; \
+	logs_compact_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n5 api)"; \
+	[[ "$$logs_compact_tail_output" == *"container logs -n 5 demo-api-1"* ]]; \
 	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
 	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
 	[[ "$$logs_all_output" != *" -n "* ]]; \
@@ -207,8 +211,14 @@ cli-smoke: build
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	stop_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop --timeout 12 api)"; \
 	[[ "$$stop_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
+	stop_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop -t12 api)"; \
+	[[ "$$stop_compact_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	restart_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t 13 api)"; \
 	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	restart_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t13 api)"; \
+	[[ "$$restart_compact_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	kill_compact_signal_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo kill -sSIGKILL api)"; \
+	[[ "$$kill_compact_signal_output" == *"container kill --signal SIGKILL demo-api-1"* ]]; \
 	rm_force_volumes_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo rm -fv api)"; \
 	[[ "$$rm_force_volumes_output" == *"container delete --force demo-api-1"* ]]; \
 	[[ "$$rm_force_volumes_output" == *"container volume delete demo_anon-"* ]]; \

@@ -88,6 +88,22 @@ public enum ComposeArgumentRewriter {
         ("-w", "--workdir"),
     ]
 
+    private static let compactLogValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-n", "--tail"),
+    ]
+
+    private static let compactTimeoutValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-t", "--timeout"),
+    ]
+
+    private static let compactKillValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-s", "--signal"),
+    ]
+
+    private static let compactVersionValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-f", "--format"),
+    ]
+
     /// Returns arguments with known Compose global options moved immediately
     /// after the subcommand while preserving unknown pre-command arguments.
     public static func rewrite(_ arguments: [String]) -> [String] {
@@ -205,12 +221,18 @@ public enum ComposeArgumentRewriter {
         switch command {
         case "exec":
             return rewriteExecOptions(arguments)
+        case "kill":
+            return rewriteCompactCommandValueOptions(arguments, options: compactKillValueOptions)
         case "logs":
             return rewriteLogsOptions(arguments)
+        case "restart", "stop":
+            return rewriteCompactCommandValueOptions(arguments, options: compactTimeoutValueOptions)
         case "rm":
             return rewriteRemoveOptions(arguments)
         case "run":
             return rewriteRunOptions(arguments)
+        case "version":
+            return rewriteCompactCommandValueOptions(arguments, options: compactVersionValueOptions)
         default:
             return arguments
         }
@@ -252,6 +274,9 @@ public enum ComposeArgumentRewriter {
                 // Docker Compose `logs -f` alias before validation sees the
                 // command-local option.
                 rewritten.append("--follow")
+            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactLogValueOptions) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
             } else {
                 rewritten.append(argument)
             }
@@ -287,6 +312,27 @@ public enum ComposeArgumentRewriter {
         return flags.map { flag in
             flag == "f" ? "--force" : "-\(flag)"
         }
+    }
+
+    /// Normalizes compact short options that carry their value in one token.
+    private static func rewriteCompactCommandValueOptions(
+        _ arguments: [String],
+        options: [(shortOption: String, normalizedOption: String)]
+    ) -> [String] {
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: options) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
     }
 
     /// Normalizes Docker Compose `run -p` before the service name.
