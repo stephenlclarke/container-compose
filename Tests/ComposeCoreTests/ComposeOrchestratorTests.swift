@@ -1730,6 +1730,85 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down removes all service images when requested")
+    func downRemovesAllServiceImagesWhenRequested() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:dev"),
+                "web": composeService(name: "web", image: "example/web:dev") {
+                    $0.build = ComposeBuild(context: "web")
+                },
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions(rmi: "all"))
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "stop", "demo-worker-1"],
+            ["container", "delete", "demo-worker-1"],
+            ["container", "stop", "demo-web-1"],
+            ["container", "delete", "demo-web-1"],
+            ["container", "stop", "demo-api-1"],
+            ["container", "delete", "demo-api-1"],
+            ["container", "image", "delete", "--force", "demo_worker:latest"],
+            ["container", "image", "delete", "--force", "example/api:dev"],
+            ["container", "image", "delete", "--force", "example/web:dev"],
+        ])
+    }
+
+    @Test("down removes only local build images when requested")
+    func downRemovesOnlyLocalBuildImagesWhenRequested() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:dev"),
+                "web": composeService(name: "web", image: "example/web:dev") {
+                    $0.build = ComposeBuild(context: "web")
+                },
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions(rmi: "local"))
+
+        #expect(runner.commands.map(\.arguments).suffix(1) == [
+            ["container", "image", "delete", "--force", "demo_worker:latest"],
+        ])
+    }
+
+    @Test("down rejects unsupported rmi policy before runtime commands")
+    func downRejectsUnsupportedRMIPolicyBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions(rmi: "sometimes"))
+            Issue.record("Expected invalid rmi policy error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("down --rmi must be 'all' or 'local'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("lifecycle commands target selected service containers")
     func lifecycleCommandsTargetSelectedServiceContainers() async throws {
         let runner = RecordingRunner()
