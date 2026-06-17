@@ -2792,7 +2792,13 @@ struct ComposeOrchestratorTests {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
         let lifecycleManager = RecordingContainerLifecycleManager()
-        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier, lifecycleManager: lifecycleManager)
+        let logManager = RecordingContainerLogManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            copier: copier,
+            lifecycleManager: lifecycleManager,
+            logManager: logManager
+        )
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2816,11 +2822,13 @@ struct ComposeOrchestratorTests {
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/file", "."])
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "logs", "--follow", "-n", "10", "demo-api-1"])
-        #expect(commands[1] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
-        #expect(runner.commands[1].io == .inherited)
+        #expect(commands[0] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
+        #expect(runner.commands[0].io == .inherited)
+        #expect(commands[1] == ["container", "start", "demo-api-1"])
         #expect(commands[2] == ["container", "start", "demo-api-1"])
-        #expect(commands[3] == ["container", "start", "demo-api-1"])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: 10, follow: true),
+        ])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
@@ -3048,6 +3056,101 @@ struct ComposeOrchestratorTests {
         #expect(fetched?.id == "demo-api-1")
         #expect(await recorder.listFilters.map(\.ids) == [["demo-api-1"]])
         #expect(await recorder.getRequests == ["demo-api-1"])
+    }
+
+    @Test("log manager reads tailed logs from direct API handles")
+    func logManagerReadsTailedLogsFromDirectAPIHandles() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerLogAPIClient(fileHandles: [
+            try temporaryLogFileHandle(contents: "one\ntwo\nthree\n"),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(id: "demo-api-1", tail: 2, follow: false, emit: { emitted.append($0) })
+
+        #expect(emitted.messages == ["two\nthree"])
+        #expect(await client.requests == ["demo-api-1"])
+    }
+
+    @Test("log manager reads all logs from direct API handles")
+    func logManagerReadsAllLogsFromDirectAPIHandles() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerLogAPIClient(fileHandles: [
+            try temporaryLogFileHandle(contents: "one\ntwo\n"),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { emitted.append($0) })
+
+        #expect(emitted.messages == ["one\ntwo"])
+        #expect(await client.requests == ["demo-api-1"])
+    }
+
+    @Test("log manager rejects missing direct API log handles")
+    func logManagerRejectsMissingDirectAPILogHandles() async throws {
+        let client = RecordingContainerLogAPIClient()
+        let manager = ContainerClientLogManager(client: client)
+
+        do {
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { _ in })
+            Issue.record("Expected missing log handle error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("container logs returned no stdio handle for demo-api-1"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.requests == ["demo-api-1"])
+    }
+
+    @Test("log manager rejects invalid UTF-8 from direct API logs")
+    func logManagerRejectsInvalidUTF8FromDirectAPILogs() async throws {
+        let client = RecordingContainerLogAPIClient(fileHandles: [
+            try temporaryLogFileHandle(data: Data([0xFF])),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        do {
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { _ in })
+            Issue.record("Expected invalid UTF-8 log error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("container logs for demo-api-1 are not valid UTF-8"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.requests == ["demo-api-1"])
+    }
+
+    @Test("log manager follows appended direct API log lines")
+    func logManagerFollowsAppendedDirectAPILogLines() async throws {
+        let emitted = MessageRecorder()
+        let pipe = Pipe()
+        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let manager = ContainerClientLogManager(client: client)
+
+        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        try await Task.sleep(for: .milliseconds(50))
+        pipe.fileHandleForWriting.write(Data("live\n".utf8))
+        try pipe.fileHandleForWriting.close()
+        try await followTask
+
+        #expect(emitted.messages == ["live"])
+        #expect(await client.requests == ["demo-api-1"])
+    }
+
+    @Test("log API client forwards configured operation")
+    func logAPIClientForwardsConfiguredOperation() async throws {
+        let fileHandle = try temporaryLogFileHandle(contents: "hello\n")
+        let recorder = RecordingContainerLogAPIClient(fileHandles: [fileHandle])
+        let client = ContainerLogAPIClient { id in
+            try await recorder.logFileHandles(id: id)
+        }
+
+        let handles = try await client.logFileHandles(id: "demo-api-1")
+
+        #expect(handles.count == 1)
+        #expect(await recorder.requests == ["demo-api-1"])
     }
 
     @Test("resource manager maps compose resources to direct API client")
@@ -3335,6 +3438,8 @@ struct ComposeOrchestratorTests {
     @Test("logs accepts Compose all tail value")
     func logsAcceptsComposeAllTailValue() async throws {
         let runner = RecordingRunner()
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["hello"])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -3342,11 +3447,40 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).logs(project: project, services: ["api"], follow: false, tail: "all")
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["api"], follow: false, tail: "all")
 
-        #expect(runner.commands.map(\.arguments) == [
-            ["container", "logs", "demo-api-1"],
+        #expect(runner.commands.isEmpty)
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
         ])
+        #expect(emitted.messages == ["hello"])
+    }
+
+    @Test("logs dry run emits runtime command instead of direct API logs")
+    func logsDryRunEmitsRuntimeCommandInsteadOfDirectAPILogs() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["api"], follow: true, tail: "10")
+
+        #expect(emitted.messages == [
+            "+ container logs --follow -n 10 demo-api-1",
+        ])
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("logs rejects invalid tail values before runtime commands")
@@ -6056,6 +6190,20 @@ private func ociPlatform(_ value: String) throws -> Platform {
     return Platform(arch: parts[1], os: parts[0], variant: variant)
 }
 
+private func temporaryLogFileHandle(contents: String) throws -> FileHandle {
+    try temporaryLogFileHandle(data: Data(contents.utf8))
+}
+
+private func temporaryLogFileHandle(data: Data) throws -> FileHandle {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathExtension("log")
+    try data.write(to: url)
+    let handle = try FileHandle(forReadingFrom: url)
+    try? FileManager.default.removeItem(at: url)
+    return handle
+}
+
 private struct ListedContainer: Decodable {
     var id: String
 }
@@ -6078,6 +6226,12 @@ private enum ContainerLifecycleRequest: Equatable {
     case kill(id: String, signal: String)
     case stop(id: String, signal: String?, timeoutInSeconds: Int?)
     case delete(id: String, force: Bool)
+}
+
+private struct ContainerLogRequest: Equatable {
+    var id: String
+    var tail: Int?
+    var follow: Bool
 }
 
 private enum ContainerResourceRequest: Equatable {
@@ -6206,6 +6360,49 @@ private actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienti
     func getContainer(id: String) async -> ContainerSnapshot? {
         gets.append(id)
         return getResponse
+    }
+}
+
+private actor RecordingContainerLogManager: ContainerLogManaging {
+    private let outputs: [String]
+    private var storage: [ContainerLogRequest] = []
+
+    init(outputs: [String] = []) {
+        self.outputs = outputs
+    }
+
+    var requests: [ContainerLogRequest] {
+        storage
+    }
+
+    func logs(
+        id: String,
+        tail: Int?,
+        follow: Bool,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        storage.append(ContainerLogRequest(id: id, tail: tail, follow: follow))
+        for output in outputs {
+            emit(output)
+        }
+    }
+}
+
+private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
+    private let fileHandles: [FileHandle]
+    private var storage: [String] = []
+
+    init(fileHandles: [FileHandle] = []) {
+        self.fileHandles = fileHandles
+    }
+
+    var requests: [String] {
+        storage
+    }
+
+    func logFileHandles(id: String) async throws -> [FileHandle] {
+        storage.append(id)
+        return fileHandles
     }
 }
 

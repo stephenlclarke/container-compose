@@ -274,6 +274,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let discoveryManager: ContainerDiscoveryManaging
     private let exporter: ContainerExporting
     private let lifecycleManager: ContainerLifecycleManaging
+    private let logManager: ContainerLogManaging
     private let resourceManager: ContainerResourceManaging
 
     public init(
@@ -283,6 +284,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
         exporter: ContainerExporting = ContainerClientExporter(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
+        logManager: ContainerLogManaging = ContainerClientLogManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager()
     ) {
         self.runner = runner
@@ -291,6 +293,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.discoveryManager = discoveryManager
         self.exporter = exporter
         self.lifecycleManager = lifecycleManager
+        self.logManager = logManager
         self.resourceManager = resourceManager
     }
 
@@ -557,10 +560,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 args.append("--follow")
             }
             if let runtimeTail {
-                args.append(contentsOf: ["-n", runtimeTail])
+                args.append(contentsOf: ["-n", String(runtimeTail)])
             }
-            args.append(containerName(project: project, service: service, oneOff: false))
-            try await runContainer(args)
+            let id = containerName(project: project, service: service, oneOff: false)
+            args.append(id)
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await logManager.logs(id: id, tail: runtimeTail, follow: follow, emit: options.emit)
+            }
         }
     }
 
@@ -1888,8 +1896,8 @@ private extension ComposeOrchestrator {
         return "\(project.name)_\(service.name):latest"
     }
 
-    /// Converts Compose's log tail value to the runtime CLI value.
-    func runtimeLogTail(_ tail: String?) throws -> String? {
+    /// Converts Compose's log tail value to a validated line count.
+    func runtimeLogTail(_ tail: String?) throws -> Int? {
         guard let tail, !tail.isEmpty else {
             return nil
         }
@@ -1899,7 +1907,7 @@ private extension ComposeOrchestrator {
         guard let lines = Int(tail), lines >= 0 else {
             throw ComposeError.invalidProject("logs --tail must be 'all' or a non-negative integer")
         }
-        return String(lines)
+        return lines
     }
 
     /// Parses the `compose port` lookup target and protocol.
