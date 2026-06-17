@@ -46,7 +46,7 @@ all: workflow
 
 workflow: ci package
 
-ci: resolve lint build coverage-check go-build cli-smoke
+ci: resolve lint coverage-check go-build cli-smoke
 
 resolve:
 	$(SWIFT) package resolve
