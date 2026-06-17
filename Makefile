@@ -41,7 +41,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package lint format
+.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package coverage-tools-test lint format
 
 all: workflow
 
@@ -275,8 +275,11 @@ package: build-release
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 
-lint:
+coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py
+	$(PYTHON) -m unittest discover Tools/coverage
+
+lint: coverage-tools-test
 	@if command -v "$(MARKDOWNLINT)" >/dev/null 2>&1; then \
 		"$(MARKDOWNLINT)" $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \

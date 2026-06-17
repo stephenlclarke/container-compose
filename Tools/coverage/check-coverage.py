@@ -53,9 +53,9 @@ def go_statement_coverage(path: Path) -> float:
 
 
 def percentage(covered: int, total: int) -> float:
-    """Calculate a percentage, treating an empty report as fully covered."""
+    """Calculate a percentage, treating an empty report as uncovered."""
     if total == 0:
-        return 100.0
+        return 0.0
     return covered * 100.0 / total
 
 
