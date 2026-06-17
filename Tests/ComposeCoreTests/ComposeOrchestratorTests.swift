@@ -1358,6 +1358,132 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["demo-api-1\ndemo-worker-1"])
     }
 
+    @Test("ps services prints project scoped service names")
+    func psServicesPrintsProjectScopedServiceNames() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, services: true)
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json"]])
+        #expect(emitted.messages == ["api\nworker"])
+    }
+
+    @Test("ps quiet takes precedence over services")
+    func psQuietTakesPrecedenceOverServices() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, quiet: true, services: true)
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json"]])
+        #expect(emitted.messages == ["demo-api-1\ndemo-worker-1"])
+    }
+
+    @Test("ps status filters project scoped containers")
+    func psStatusFiltersProjectScopedContainers() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, statuses: ["running"])
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-api-1"])
+    }
+
+    @Test("ps filter status supports exited alias")
+    func psFilterStatusSupportsExitedAlias() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, filters: ["status=exited"])
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-worker-1"])
+    }
+
+    @Test("ps status filters services projection")
+    func psStatusFiltersServicesProjection() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, services: true, statuses: ["running"])
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        #expect(emitted.messages == ["api"])
+    }
+
+    @Test("ps rejects malformed filters before runtime commands")
+    func psRejectsMalformedFiltersBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+
+        do {
+            try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, filters: ["status"])
+            Issue.record("Expected invalid filter error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("ps --filter must be in KEY=VALUE form"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("ps rejects unsupported filter keys before runtime commands")
+    func psRejectsUnsupportedFilterKeysBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+
+        do {
+            try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, filters: ["source=image"])
+            Issue.record("Expected unsupported filter error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("ps --filter source; supported filter is status"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("ps rejects unsupported status filters before runtime commands")
+    func psRejectsUnsupportedStatusFiltersBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+
+        do {
+            try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, statuses: ["paused"])
+            Issue.record("Expected unsupported status error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("ps status 'paused'; apple/container exposes running, stopped, stopping, and unknown"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("describes compose errors")
     func describesComposeErrors() {
         #expect(ComposeError.commandFailed(command: "container ps", status: 7, stderr: "").description == "container ps failed with exit code 7")
@@ -3448,6 +3574,7 @@ private extension CommandResult {
 
 private let composeConfigHashLabel = "com.apple.container.compose.config-hash"
 private let composeProjectLabel = "com.apple.container.compose.project"
+private let composeServiceLabel = "com.apple.container.compose.service"
 
 private struct UnsupportedRuntimeStringFieldCase: Sendable {
     let composeName: String
@@ -3843,24 +3970,36 @@ private func containerListResult() -> CommandResult {
             "id": "demo-api-1",
             "configuration": {
               "labels": {
-                "\(composeProjectLabel)": "demo"
+                "\(composeProjectLabel)": "demo",
+                "\(composeServiceLabel)": "api"
               }
+            },
+            "status": {
+              "state": "running"
             }
           },
           {
             "id": "other-api-1",
             "configuration": {
               "labels": {
-                "\(composeProjectLabel)": "other"
+                "\(composeProjectLabel)": "other",
+                "\(composeServiceLabel)": "api"
               }
+            },
+            "status": {
+              "state": "running"
             }
           },
           {
             "id": "demo-worker-1",
             "Config": {
               "Labels": {
-                "\(composeProjectLabel)": "demo"
+                "\(composeProjectLabel)": "demo",
+                "\(composeServiceLabel)": "worker"
               }
+            },
+            "Status": {
+              "State": "stopped"
             }
           }
         ]
