@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import ContainerResource
 import Foundation
 import Testing
 
@@ -132,12 +133,11 @@ struct ComposeOrchestratorTests {
     @Test("up creates resources and runs services with compose labels")
     func upCreatesResourcesAndRunsServicesWithComposeLabels() async throws {
         let runner = RecordingRunner(responses: [
-            .success,
-            .success,
             .failure,
             .success,
         ])
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let resourceManager = RecordingContainerResourceManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
         let project = composeProject(
             name: "demo",
             services: [
@@ -162,17 +162,26 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.allSatisfy { $0.executable == "/usr/bin/env" })
         #expect(runner.commands.allSatisfy { $0.arguments.first == "container" })
-        #expect(runner.commands[0].arguments.containsSequence(["network", "create"]))
-        #expect(runner.commands[0].arguments.contains("demo_default"))
-        #expect(runner.commands[0].arguments.containsSequence(["--label", "com.apple.container.compose.project.working-directory=/tmp/demo"]))
-        #expect(runner.commands[0].arguments.containsLabel(withPrefix: "com.apple.container.compose.project.config-files-hash="))
-        #expect(runner.commands[1].arguments.containsSequence(["volume", "create"]))
-        #expect(runner.commands[1].arguments.contains("demo_cache"))
-        #expect(runner.commands[1].arguments.containsSequence(["--label", "com.apple.container.compose.project.working-directory=/tmp/demo"]))
-        #expect(runner.commands[1].arguments.containsLabel(withPrefix: "com.apple.container.compose.project.config-files-hash="))
-        #expect(runner.commands[2].arguments == ["container", "inspect", "demo-api-1"])
+        #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
 
-        let run = runner.commands[3].arguments
+        let resources = await resourceManager.requests
+        #expect(resources.count == 2)
+        if case .createNetwork(let name, let labels) = resources[0] {
+            #expect(name == "demo_default")
+            #expect(labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
+            #expect(labels["com.apple.container.compose.project.config-files-hash"] != nil)
+        } else {
+            Issue.record("Expected network creation through direct API")
+        }
+        if case .createVolume(let name, let labels) = resources[1] {
+            #expect(name == "demo_cache")
+            #expect(labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
+            #expect(labels["com.apple.container.compose.project.config-files-hash"] != nil)
+        } else {
+            Issue.record("Expected volume creation through direct API")
+        }
+
+        let run = runner.commands[1].arguments
         #expect(run.starts(with: ["container", "run", "--name", "demo-api-1"]))
         #expect(!run.contains("--detach"))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
@@ -254,11 +263,10 @@ struct ComposeOrchestratorTests {
     @Test("create creates resources and service containers without starting them")
     func createCreatesResourcesAndServiceContainersWithoutStartingThem() async throws {
         let runner = RecordingRunner(responses: [
-            .success,
-            .success,
             .failure,
             .success,
         ])
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -277,14 +285,17 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).create(project: project, options: ComposeCreateOptions())
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0].containsSequence(["container", "network", "create"]))
-        #expect(commands[1].containsSequence(["container", "volume", "create"]))
-        #expect(commands[2] == ["container", "inspect", "demo-api-1"])
+        let resources = await resourceManager.requests
+        #expect(resources.count == 2)
+        #expect(resources.map(\.name) == ["demo_default", "demo_cache"])
+        #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project"] == "demo" })
+        #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project.config-files-hash"]?.count == 64 })
+        #expect(commands[0] == ["container", "inspect", "demo-api-1"])
 
-        let create = commands[3]
+        let create = commands[1]
         #expect(create.starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(!create.contains("--detach"))
         #expect(create.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
@@ -695,11 +706,10 @@ struct ComposeOrchestratorTests {
     @Test("orchestrator honors explicit non external resource names")
     func orchestratorHonorsExplicitNonExternalResourceNames() async throws {
         let upRunner = RecordingRunner(responses: [
-            .success,
-            .success,
             .failure,
             .success,
         ])
+        let upResources = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -713,30 +723,28 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "team-cache")]
         }
 
-        try await ComposeOrchestrator(runner: upRunner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: upRunner, resourceManager: upResources).up(project: project, options: ComposeUpOptions())
 
         let upCommands = upRunner.commands.map(\.arguments)
-        #expect(upCommands[0].containsSequence(["network", "create"]))
-        #expect(upCommands[0].last == "team-net")
-        #expect(upCommands[1].containsSequence(["volume", "create"]))
-        #expect(upCommands[1].last == "team-cache")
-        #expect(upCommands[3].containsSequence(["--network", "team-net"]))
-        #expect(upCommands[3].containsSequence(["--volume", "team-cache:/cache"]))
+        #expect(await upResources.requests.map(\.name) == ["team-net", "team-cache"])
+        #expect(upCommands[1].containsSequence(["--network", "team-net"]))
+        #expect(upCommands[1].containsSequence(["--volume", "team-cache:/cache"]))
 
         let downRunner = RecordingRunner(responses: [
             .success,
             .success,
-            .success,
-            .success,
         ])
+        let downResources = RecordingContainerResourceManager()
 
-        try await ComposeOrchestrator(runner: downRunner).down(project: project, options: ComposeDownOptions(volumes: true))
+        try await ComposeOrchestrator(runner: downRunner, resourceManager: downResources).down(project: project, options: ComposeDownOptions(volumes: true))
 
         #expect(downRunner.commands.map(\.arguments) == [
             ["container", "stop", "demo-api-1"],
             ["container", "delete", "demo-api-1"],
-            ["container", "network", "delete", "team-net"],
-            ["container", "volume", "delete", "team-cache"],
+        ])
+        #expect(await downResources.requests == [
+            .deleteNetwork(id: "team-net"),
+            .deleteVolume(name: "team-cache"),
         ])
     }
 
@@ -2488,10 +2496,9 @@ struct ComposeOrchestratorTests {
             .success,
             .success,
             .success,
-            .success,
-            .success,
         ])
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let resourceManager = RecordingContainerResourceManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
         let project = composeProject(
             name: "demo",
             services: [
@@ -2514,8 +2521,10 @@ struct ComposeOrchestratorTests {
             ["container", "delete", "demo-api-1"],
             ["container", "stop", "demo-db-1"],
             ["container", "delete", "demo-db-1"],
-            ["container", "network", "delete", "demo_default"],
-            ["container", "volume", "delete", "demo_data"],
+        ])
+        #expect(await resourceManager.requests == [
+            .deleteNetwork(id: "demo_default"),
+            .deleteVolume(name: "demo_data"),
         ])
     }
 
@@ -2767,10 +2776,78 @@ struct ComposeOrchestratorTests {
         #expect(await killer.requests.isEmpty)
     }
 
+    @Test("resource manager maps compose resources to direct API client")
+    func resourceManagerMapsComposeResourcesToDirectAPIClient() async throws {
+        let client = RecordingContainerResourceAPIClient()
+        let manager = ContainerClientResourceManager(client: client)
+        let labels = ["com.example.role": "cache"]
+
+        try await manager.createNetwork(name: "demo_default", labels: labels)
+        try await manager.createVolume(name: "demo_cache", labels: labels)
+        try await manager.deleteNetwork(id: "demo_default")
+        try await manager.deleteVolume(name: "demo_cache")
+
+        #expect(await client.requests == [
+            .createNetwork(
+                name: "demo_default",
+                mode: .nat,
+                plugin: "container-network-vmnet",
+                labels: labels
+            ),
+            .createVolume(name: "demo_cache", labels: labels),
+            .deleteNetwork(id: "demo_default"),
+            .deleteVolume(name: "demo_cache"),
+        ])
+    }
+
+    @Test("resource API client forwards configured operations")
+    func resourceAPIClientForwardsConfiguredOperations() async throws {
+        let recorder = RecordingContainerResourceAPIClient()
+        let client = ContainerResourceAPIClient(
+            createNetwork: { configuration in
+                try await recorder.createNetwork(configuration: configuration)
+            },
+            deleteNetwork: { id in
+                try await recorder.deleteNetwork(id: id)
+            },
+            createVolume: { name, labels in
+                try await recorder.createVolume(name: name, labels: labels)
+            },
+            deleteVolume: { name in
+                try await recorder.deleteVolume(name: name)
+            }
+        )
+        let labels = ["com.example.role": "cache"]
+        let configuration = try NetworkConfiguration(
+            name: "demo_default",
+            mode: .nat,
+            labels: try ResourceLabels(labels),
+            plugin: "container-network-vmnet"
+        )
+
+        try await client.createNetwork(configuration: configuration)
+        try await client.createVolume(name: "demo_cache", labels: labels)
+        try await client.deleteNetwork(id: "demo_default")
+        try await client.deleteVolume(name: "demo_cache")
+
+        #expect(await recorder.requests == [
+            .createNetwork(
+                name: "demo_default",
+                mode: .nat,
+                plugin: "container-network-vmnet",
+                labels: labels
+            ),
+            .createVolume(name: "demo_cache", labels: labels),
+            .deleteNetwork(id: "demo_default"),
+            .deleteVolume(name: "demo_cache"),
+        ])
+    }
+
     @Test("rm supports force and anonymous volume removal")
     func rmSupportsForceAndAnonymousVolumeRemoval() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let resourceManager = RecordingContainerResourceManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
         let project = composeProject(
             name: "demo",
             services: [
@@ -2789,10 +2866,11 @@ struct ComposeOrchestratorTests {
         try await orchestrator.rm(project: project, services: ["api"], stopFirst: false, force: true, volumes: true)
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands.count == 2)
+        #expect(commands.count == 1)
         #expect(commands[0] == ["container", "delete", "--force", "demo-api-1"])
-        #expect(commands[1].starts(with: ["container", "volume", "delete"]))
-        #expect(commands[1].last?.hasPrefix("demo_anon-") == true)
+        let resources = await resourceManager.requests
+        #expect(resources.count == 1)
+        #expect(resources.first?.name.hasPrefix("demo_anon-") == true)
         #expect(!commands.contains { $0.contains("demo_cache") })
     }
 
@@ -3590,10 +3668,9 @@ struct ComposeOrchestratorTests {
     func runCreatesProjectResourcesBeforeOneOffContainers() async throws {
         let runner = RecordingRunner(responses: [
             .success,
-            .success,
-            .success,
         ])
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let resourceManager = RecordingContainerResourceManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
         let project = composeProject(
             name: "demo",
             services: [
@@ -3610,14 +3687,11 @@ struct ComposeOrchestratorTests {
         try await orchestrator.run(project: project, serviceName: "job", command: ["true"], remove: true)
 
         let commands = runner.commands.map(\.arguments)
-        #expect(commands[0].containsSequence(["container", "network", "create"]))
-        #expect(commands[0].last == "demo_backend")
-        #expect(commands[1].containsSequence(["container", "volume", "create"]))
-        #expect(commands[1].last == "demo_cache")
-        #expect(commands[2].starts(with: ["container", "run", "--name"]))
-        #expect(commands[2].containsSequence(["--network", "demo_backend"]))
-        #expect(commands[2].containsSequence(["--volume", "demo_cache:/cache"]))
-        #expect(Array(commands[2].suffix(2)) == ["alpine", "true"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands[0].starts(with: ["container", "run", "--name"]))
+        #expect(commands[0].containsSequence(["--network", "demo_backend"]))
+        #expect(commands[0].containsSequence(["--volume", "demo_cache:/cache"]))
+        #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
 
     @Test("run applies service pull policy before creating resources")
@@ -3625,9 +3699,8 @@ struct ComposeOrchestratorTests {
         let runner = RecordingRunner(responses: [
             .success,
             .success,
-            .success,
-            .success,
         ])
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -3642,13 +3715,12 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0] == ["container", "image", "pull", "alpine"])
-        #expect(commands[1].containsSequence(["container", "network", "create"]))
-        #expect(commands[2].containsSequence(["container", "volume", "create"]))
-        #expect(commands[3].starts(with: ["container", "run", "--name"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands[1].starts(with: ["container", "run", "--name"]))
     }
 
     @Test("run rejects unsupported service pull policies before creating resources")
@@ -4830,6 +4902,7 @@ struct ComposeOrchestratorTests {
     @Test("run applies one-off volume overrides")
     func runAppliesOneOffVolumeOverrides() async throws {
         let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -4839,7 +4912,7 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).run(
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).run(
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["ls"]) {
@@ -4847,9 +4920,15 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        let volumeCreate = try #require(runner.commands.first?.arguments)
-        #expect(volumeCreate.containsSequence(["container", "volume", "create"]))
-        #expect(volumeCreate.last == "demo_cache")
+        #expect(await resourceManager.requests == [
+            .createVolume(name: "demo_cache", labels: [
+                "com.apple.container.compose.project": "demo",
+                "com.apple.container.compose.version": "1",
+                "com.apple.container.compose.project.working-directory": FileManager.default.currentDirectoryPath,
+                "com.apple.container.compose.project.config-files": "",
+                "com.apple.container.compose.project.config-files-hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ]),
+        ])
         let command = try #require(runner.commands.last?.arguments)
         #expect(command.containsSequence(["--volume", "/default:/default"]))
         #expect(command.containsSequence(["--volume", "/host:/container:ro"]))
@@ -5710,6 +5789,38 @@ private struct ContainerKillRequest: Equatable {
     var signal: String
 }
 
+private enum ContainerResourceRequest: Equatable {
+    case createNetwork(name: String, labels: [String: String])
+    case deleteNetwork(id: String)
+    case createVolume(name: String, labels: [String: String])
+    case deleteVolume(name: String)
+
+    var name: String {
+        switch self {
+        case .createNetwork(let name, _), .createVolume(let name, _), .deleteVolume(let name):
+            name
+        case .deleteNetwork(let id):
+            id
+        }
+    }
+
+    var labels: [String: String] {
+        switch self {
+        case .createNetwork(_, let labels), .createVolume(_, let labels):
+            labels
+        case .deleteNetwork, .deleteVolume:
+            [:]
+        }
+    }
+}
+
+private enum ContainerResourceAPIRequest: Equatable {
+    case createNetwork(name: String, mode: NetworkMode, plugin: String, labels: [String: String])
+    case deleteNetwork(id: String)
+    case createVolume(name: String, labels: [String: String])
+    case deleteVolume(name: String)
+}
+
 private actor RecordingContainerCopier: ContainerCopying {
     private var storage: [ContainerCopyRequest] = []
 
@@ -5735,6 +5846,59 @@ private actor RecordingContainerKiller: ContainerKilling {
 
     func killContainer(id: String, signal: String) async throws {
         storage.append(ContainerKillRequest(id: id, signal: signal))
+    }
+}
+
+private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting {
+    private var storage: [ContainerResourceAPIRequest] = []
+
+    var requests: [ContainerResourceAPIRequest] {
+        storage
+    }
+
+    func createNetwork(configuration: NetworkConfiguration) async throws {
+        storage.append(.createNetwork(
+            name: configuration.name,
+            mode: configuration.mode,
+            plugin: configuration.plugin,
+            labels: configuration.labels.dictionary
+        ))
+    }
+
+    func deleteNetwork(id: String) async throws {
+        storage.append(.deleteNetwork(id: id))
+    }
+
+    func createVolume(name: String, labels: [String: String]) async throws {
+        storage.append(.createVolume(name: name, labels: labels))
+    }
+
+    func deleteVolume(name: String) async throws {
+        storage.append(.deleteVolume(name: name))
+    }
+}
+
+private actor RecordingContainerResourceManager: ContainerResourceManaging {
+    private var storage: [ContainerResourceRequest] = []
+
+    var requests: [ContainerResourceRequest] {
+        storage
+    }
+
+    func createNetwork(name: String, labels: [String: String]) async throws {
+        storage.append(.createNetwork(name: name, labels: labels))
+    }
+
+    func deleteNetwork(id: String) async throws {
+        storage.append(.deleteNetwork(id: id))
+    }
+
+    func createVolume(name: String, labels: [String: String]) async throws {
+        storage.append(.createVolume(name: name, labels: labels))
+    }
+
+    func deleteVolume(name: String) async throws {
+        storage.append(.deleteVolume(name: name))
     }
 }
 

@@ -273,19 +273,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let copier: ContainerCopying
     private let exporter: ContainerExporting
     private let killer: ContainerKilling
+    private let resourceManager: ContainerResourceManaging
 
     public init(
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
         copier: ContainerCopying = ContainerClientCopier(),
         exporter: ContainerExporting = ContainerClientExporter(),
-        killer: ContainerKilling = ContainerClientKiller()
+        killer: ContainerKilling = ContainerClientKiller(),
+        resourceManager: ContainerResourceManaging = ContainerClientResourceManager()
     ) {
         self.runner = runner
         self.options = options
         self.copier = copier
         self.exporter = exporter
         self.killer = killer
+        self.resourceManager = resourceManager
     }
 
     /// Returns canonical project JSON for `compose config`.
@@ -420,12 +423,24 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
-            try await runContainer(["network", "delete", networkRuntimeName(project: project, composeName: name, network: network)], check: false)
+            let runtimeName = networkRuntimeName(project: project, composeName: name, network: network)
+            let args = ["network", "delete", runtimeName]
+            if options.dryRun {
+                try await runContainer(args, check: false)
+            } else {
+                try? await resourceManager.deleteNetwork(id: runtimeName)
+            }
         }
 
         if down.volumes {
             for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
-                try await runContainer(["volume", "delete", volumeRuntimeName(project: project, composeName: name, volume: volume)], check: false)
+                let runtimeName = volumeRuntimeName(project: project, composeName: name, volume: volume)
+                let args = ["volume", "delete", runtimeName]
+                if options.dryRun {
+                    try await runContainer(args, check: false)
+                } else {
+                    try? await resourceManager.deleteVolume(name: runtimeName)
+                }
             }
         }
 
@@ -707,7 +722,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if volumes {
             for volume in anonymousVolumeRuntimeNames(project: project, services: services) {
-                try await runContainer(["volume", "delete", volume], check: false)
+                let args = ["volume", "delete", volume]
+                if options.dryRun {
+                    try await runContainer(args, check: false)
+                } else {
+                    try? await resourceManager.deleteVolume(name: volume)
+                }
             }
         }
     }
@@ -1407,8 +1427,13 @@ private extension ComposeOrchestrator {
         for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(networkRuntimeName(project: project, composeName: composeName, network: network))
-        try await runContainer(args, check: false)
+        let runtimeName = networkRuntimeName(project: project, composeName: composeName, network: network)
+        args.append(runtimeName)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await resourceManager.createNetwork(name: runtimeName, labels: resourceLabels(project: project, labels: network.labels))
+        }
     }
 
     /// Creates a project volume unless it already exists.
@@ -1420,8 +1445,13 @@ private extension ComposeOrchestrator {
         for label in (volume.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
-        args.append(volumeRuntimeName(project: project, composeName: composeName, volume: volume))
-        try await runContainer(args, check: false)
+        let runtimeName = volumeRuntimeName(project: project, composeName: composeName, volume: volume)
+        args.append(runtimeName)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await resourceManager.createVolume(name: runtimeName, labels: resourceLabels(project: project, labels: volume.labels))
+        }
     }
 
     /// Translates one Compose build section into a `container build` command.
@@ -2199,6 +2229,21 @@ private func resourceLabels(project: ComposeProject) -> [String] {
         "\(configFilesLabel)=\(project.composeFiles.joined(separator: ","))",
         "\(configFilesHashLabel)=\(composeFilesHash(project.composeFiles))",
     ]
+}
+
+/// Returns resource labels as a dictionary for direct API calls.
+private func resourceLabels(project: ComposeProject, labels: [String: String]?) -> [String: String] {
+    var merged = [
+        projectLabel: project.name,
+        "com.apple.container.compose.version": "1",
+        workingDirectoryLabel: project.workingDirectory,
+        configFilesLabel: project.composeFiles.joined(separator: ","),
+        configFilesHashLabel: composeFilesHash(project.composeFiles),
+    ]
+    for (key, value) in labels ?? [:] {
+        merged[key] = value
+    }
+    return merged
 }
 
 /// Returns labels that identify a service container and its config hash.
