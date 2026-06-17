@@ -75,6 +75,14 @@ public enum ComposeArgumentRewriter {
         "-p": .value,
     ]
 
+    private static let compactRunValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-e", "--env"),
+        ("-l", "--label"),
+        ("-u", "--user"),
+        ("-v", "--volume"),
+        ("-w", "--workdir"),
+    ]
+
     /// Returns arguments with known Compose global options moved immediately
     /// after the subcommand while preserving unknown pre-command arguments.
     public static func rewrite(_ arguments: [String]) -> [String] {
@@ -280,6 +288,10 @@ public enum ComposeArgumentRewriter {
                 rewritten.append("--publish")
                 rewritten.append(String(argument.dropFirst(2)))
                 index += 1
+            } else if let split = splitCompactRunValueOption(argument) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+                index += 1
             } else if optionConsumesFollowingValue(argument), arguments.indices.contains(index + 1) {
                 rewritten.append(argument)
                 rewritten.append(arguments[index + 1])
@@ -293,6 +305,26 @@ public enum ComposeArgumentRewriter {
             }
         }
         return rewritten
+    }
+
+    /// Splits compact Docker Compose short options such as `-eFOO=bar`.
+    private static func splitCompactRunValueOption(_ argument: String) -> (option: String, value: String)? {
+        for runOption in compactRunValueOptions {
+            guard argument.hasPrefix(runOption.shortOption), argument.count > runOption.shortOption.count else {
+                continue
+            }
+
+            let suffix = argument.dropFirst(runOption.shortOption.count)
+            if suffix.first == "=" {
+                let value = suffix.dropFirst()
+                guard !value.isEmpty else {
+                    return nil
+                }
+                return (runOption.normalizedOption, String(value))
+            }
+            return (runOption.normalizedOption, String(suffix))
+        }
+        return nil
     }
 
     /// Returns whether a `run` option consumes the following argument.

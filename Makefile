@@ -123,16 +123,31 @@ cli-smoke: build
 	run_user_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -u 1000:1000 api id)"; \
 	[[ "$$run_user_output" == *"--user 1000:1000"* ]]; \
 	[[ "$$run_user_output" == *" alpine id"* ]]; \
+	run_compact_user_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -u1000:1000 api id)"; \
+	[[ "$$run_compact_user_output" == *"--user 1000:1000"* ]]; \
+	[[ "$$run_compact_user_output" == *" alpine id"* ]]; \
 	run_env_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -e LOG_LEVEL=debug --env-from-file .env.local api env)"; \
 	[[ "$$run_env_output" == *"--env LOG_LEVEL=debug"* ]]; \
 	[[ "$$run_env_output" == *"--env-file .env.local"* ]]; \
 	[[ "$$run_env_output" == *" alpine env"* ]]; \
+	run_compact_env_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -eLOG_LEVEL=trace api env)"; \
+	[[ "$$run_compact_env_output" == *"--env LOG_LEVEL=trace"* ]]; \
+	[[ "$$run_compact_env_output" == *" alpine env"* ]]; \
 	run_label_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -l com.example.role=job api true)"; \
 	[[ "$$run_label_output" == *"--label com.example.role=job"* ]]; \
 	[[ "$$run_label_output" == *" alpine true"* ]]; \
+	run_compact_label_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -lcom.example.compact=true api true)"; \
+	[[ "$$run_compact_label_output" == *"--label com.example.compact=true"* ]]; \
+	[[ "$$run_compact_label_output" == *" alpine true"* ]]; \
 	run_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v /host:/container:ro api ls)"; \
 	[[ "$$run_volume_output" == *"--volume /host:/container:ro"* ]]; \
 	[[ "$$run_volume_output" == *" alpine ls"* ]]; \
+	run_compact_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v/host:/container:ro api ls)"; \
+	[[ "$$run_compact_volume_output" == *"--volume /host:/container:ro"* ]]; \
+	[[ "$$run_compact_volume_output" == *" alpine ls"* ]]; \
+	run_compact_workdir_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -w/workspace api pwd)"; \
+	[[ "$$run_compact_workdir_output" == *"--workdir /workspace"* ]]; \
+	[[ "$$run_compact_workdir_output" == *" alpine pwd"* ]]; \
 	run_detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -d api sleep 60)"; \
 	[[ "$$run_detached_output" == *"--detach"* ]]; \
 	[[ "$$run_detached_output" == *" alpine sleep 60"* ]]; \

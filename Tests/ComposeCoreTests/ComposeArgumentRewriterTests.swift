@@ -291,6 +291,66 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes run compact value shorthands before service name")
+    func normalizesRunCompactValueShorthandsBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-eLOG_LEVEL=debug",
+            "-lcom.example.role=job",
+            "-u1000:1000",
+            "-v./host:/container:ro",
+            "-w/workspace",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--env",
+            "LOG_LEVEL=debug",
+            "--label",
+            "com.example.role=job",
+            "--user",
+            "1000:1000",
+            "--volume",
+            "./host:/container:ro",
+            "--workdir",
+            "/workspace",
+            "api",
+            "env",
+        ])
+    }
+
+    @Test("normalizes run compact equals value shorthands before service name")
+    func normalizesRunCompactEqualsValueShorthandsBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-e=LOG_LEVEL=debug",
+            "-l=com.example.role=job",
+            "-u=1000:1000",
+            "-v=./host:/container:ro",
+            "-w=/workspace",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--env",
+            "LOG_LEVEL=debug",
+            "--label",
+            "com.example.role=job",
+            "--user",
+            "1000:1000",
+            "--volume",
+            "./host:/container:ro",
+            "--workdir",
+            "/workspace",
+            "api",
+            "env",
+        ])
+    }
+
     @Test("keeps run no-deps before service name")
     func keepsRunNoDepsBeforeServiceName() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -328,6 +388,42 @@ struct ComposeArgumentRewriterTests {
             "api",
             "echo",
             "-p",
+        ])
+    }
+
+    @Test("does not rewrite run compact value shorthands after service name")
+    func doesNotRewriteRunCompactValueShorthandsAfterServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "api",
+            "echo",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "api",
+            "echo",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
+        ])
+    }
+
+    @Test("does not rewrite run compact value shorthands after terminator")
+    func doesNotRewriteRunCompactValueShorthandsAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "--",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
         ])
     }
 
