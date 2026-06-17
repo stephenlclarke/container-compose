@@ -179,6 +179,40 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.networkMode == "service:redis")
     }
 
+    @Test("normalizes supported deploy resource limits through compose-go")
+    func normalizesSupportedDeployResourceLimitsThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            deploy:
+              resources:
+                limits:
+                  cpus: "1.5"
+                  memory: 256m
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        #expect(api.cpus == "1.5")
+        #expect(api.memLimit?.isEmpty == false)
+        #expect(api.unsupportedDeployFields == nil)
+    }
+
     @Test("normalizer infers project directory from the first compose file")
     func normalizerInfersProjectDirectoryFromFirstComposeFile() async throws {
         let fileManager = FileManager.default

@@ -42,7 +42,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, service-to-service `cp`, `cp --index 1`, `export`, `export -o/--output`, `export --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `ContainerClient.list(filters:)`, `ContainerClient.logs(id:)`, `container exec --interactive --tty` for attached exec, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)` and `ClientProcess.start()` for detached exec with `--env`, `--user`, and `--workdir`, `ContainerClient.copyIn(id:source:destination:)`, `ContainerClient.copyOut(id:source:destination:)`, staged service-to-service copies through `copyOut` then `copyIn`, `ContainerClient.export(id:archive:)`, `ContainerClient.stats(id:)`, plugin version output | [S1](#s1-supported-local-web-stack) |
 | Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, `port` for static published bindings, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `NetworkClient.create(configuration:)`, `NetworkClient.delete(id:)`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish`, normalized Compose port metadata | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.delete(name:)`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
-| Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `dns_opt`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `ContainerClient.stop(id:opts:)` | [S1](#s1-supported-local-web-stack) |
+| Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `dns_opt`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `deploy.resources.limits.cpus`, `deploy.resources.limits.memory`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `ContainerClient.stop(id:opts:)` | [S1](#s1-supported-local-web-stack) |
 | Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, `label_file`, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
 | Simple ordering | `depends_on` with no condition or `condition: service_started`, default `required: true` behavior, and optional `required: false` dependencies when present or omitted from the normalized project; `run` starts supported dependencies before the one-off container; `up --no-deps` for selected services and `run --no-deps` for one-off containers | Plugin dependency ordering before `container run`, with optional missing dependencies skipped and dependency traversal/validation skipped when explicitly requested | [S1](#s1-supported-local-web-stack) |
 
@@ -65,7 +65,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 
 | Compose v2 surface | Examples of fields or commands | Missing plugin work | Example |
 | --- | --- | --- | --- |
-| Replica scaling and local deploy handling | `scale`, `up --scale`, `deploy.replicas` values other than `1`, `exec --index` values other than `1`, `cp --index` values other than `1`, `cp --all`, `deploy` fields beyond local replica count | Multi-replica naming, reconciliation, DNS behavior, logs, `ps`, replica-aware `exec` and `cp`, one-off container copy selection, removal, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources | [C1](#c1-plugin-gap-replica-scaling-and-deploy) |
+| Replica scaling and local deploy handling | `scale`, `up --scale`, `deploy.replicas` values other than `1`, `exec --index` values other than `1`, `cp --index` values other than `1`, `cp --all`, `deploy` fields beyond local replica count and CPU/memory limits | Multi-replica naming, reconciliation, DNS behavior, logs, `ps`, replica-aware `exec` and `cp`, one-off container copy selection, removal, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources | [C1](#c1-plugin-gap-replica-scaling-and-deploy) |
 | Advanced build configuration | `additional_contexts`, `cache_from`, `cache_to`, `dockerfile_inline`, `entitlements`, build `extra_hosts`, build `isolation`, build `labels`, build `network`, `platforms`, build `privileged`, `provenance`, build `pull`, `sbom`, build `secrets`, build `shm_size`, `ssh`, `tags`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 | Dependency lifecycle metadata | `depends_on.restart: true` | Dependency restart propagation | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
@@ -166,6 +166,11 @@ services:
         condition: service_started
     cpus: "1.5"
     mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 256m
     shm_size: 64m
     dns_opt:
       - use-vc
@@ -568,13 +573,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Plugin Gap, Replica Scaling And Deploy
 
-Expected result: `container compose up` rejects this because `container-compose` still needs Compose replica naming, reconciliation, DNS, lifecycle, and deploy semantics. `container compose exec --index 2`, `container compose cp --index 2`, and `container compose cp --all` are rejected for the same reason.
+Expected result: `container compose up` rejects this because `container-compose` still needs Compose replica naming, reconciliation, DNS, lifecycle, and deploy semantics beyond the supported local CPU/memory limits. `container compose exec --index 2`, `container compose cp --index 2`, and `container compose cp --all` are rejected for the same reason.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: needs multi-replica orchestration, naming, DNS, lifecycle, replica-aware `exec` and `cp`, one-off container copy selection, and deploy semantics.
+- `container-compose`: maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits, but still needs multi-replica orchestration, naming, DNS, lifecycle, replica-aware `exec` and `cp`, one-off container copy selection, and broader deploy semantics.
 
 The equivalent CLI scaling form is also rejected with the same plugin gap:
 
