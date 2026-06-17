@@ -255,7 +255,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Lists containers belonging to the Compose project.
-    public func ps(project: ComposeProject, all: Bool) async throws {
+    public func ps(project: ComposeProject, all: Bool, quiet: Bool = false) async throws {
         var args = ["list", "--format", "json"]
         if all {
             args.append("--all")
@@ -265,6 +265,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
         let result = try await runContainer(args, emitOutput: false)
+        if quiet {
+            let identifiers = try projectContainerIdentifiers(projectName: project.name, output: result.stdout)
+            if !identifiers.isEmpty {
+                options.emit(identifiers.joined(separator: "\n"))
+            }
+            return
+        }
         options.emit(try projectContainerListJSON(projectName: project.name, output: result.stdout))
     }
 
