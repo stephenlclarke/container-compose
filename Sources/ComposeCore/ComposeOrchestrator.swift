@@ -48,36 +48,22 @@ public struct ComposeExecutionOptions {
 
 /// Options for `compose up`.
 public struct ComposeUpOptions {
-    public var services: [String]
-    public var build: Bool
-    public var detach: Bool
-    public var forceRecreate: Bool
-    public var noRecreate: Bool
-    public var removeOrphans: Bool
+    public var services: [String] = []
+    public var build = false
+    public var detach = false
+    public var forceRecreate = false
+    public var noRecreate = false
+    public var removeOrphans = false
     public var pullPolicy: String?
-    public var scales: [String]
-    public var noDeps: Bool
+    public var scales: [String] = []
+    public var noDeps = false
 
-    public init(
-        services: [String] = [],
-        build: Bool = false,
-        detach: Bool = false,
-        forceRecreate: Bool = false,
-        noRecreate: Bool = false,
-        removeOrphans: Bool = false,
-        pullPolicy: String? = nil,
-        scales: [String] = [],
-        noDeps: Bool = false
-    ) {
-        self.services = services
-        self.build = build
-        self.detach = detach
-        self.forceRecreate = forceRecreate
-        self.noRecreate = noRecreate
-        self.removeOrphans = removeOrphans
-        self.pullPolicy = pullPolicy
-        self.scales = scales
-        self.noDeps = noDeps
+    public init() {
+        // Stored property defaults represent Docker Compose's default up behavior.
+    }
+
+    public init(_ configure: (inout ComposeUpOptions) -> Void) {
+        configure(&self)
     }
 }
 
@@ -165,6 +151,7 @@ public struct ComposeRunOptions {
     public var remove = false
     public var detach = false
     public var noTty = false
+    public var noDeps = false
     public var servicePorts = false
     public var publish: [String] = []
     public var pullPolicy: String?
@@ -240,9 +227,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateUpOptions(up)
         let services = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
-            : orderedServices(project: project, selected: up.services, rejectOptionalDependencies: true)
+            : orderedServices(project: project, selected: up.services)
+        let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
-        try validateRuntimeSupport(services: services)
+        try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
 
         try await ensureResources(project: project)
 
@@ -296,9 +284,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func create(project: ComposeProject, options create: ComposeCreateOptions) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
-        let services = try orderedServices(project: project, selected: create.services, rejectOptionalDependencies: true)
+        let services = try orderedServices(project: project, selected: create.services)
         try validateCreatePullPolicy(create.pullPolicy)
-        try validateRuntimeSupport(services: services)
+        try validateRuntimeSupport(services: services, project: project)
 
         try await ensureResources(project: project)
 
@@ -547,9 +535,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validatePullPolicy(run.pullPolicy)
-        try validateRuntimeSupport(service: service)
+        let dependencyServices = try run.noDeps
+            ? []
+            : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
+        try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
+        try await startDependencyServices(project: runProject, services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
             runArguments(
@@ -725,10 +717,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
 public extension ComposeOrchestrator {
     /// Returns selected services after their dependencies using a stable
-    /// depth-first traversal. Startup callers reject optional dependencies
-    /// because their lifecycle semantics are not implemented yet; cleanup
-    /// callers can skip missing optional dependencies while removing resources.
-    func orderedServices(project: ComposeProject, selected: [String], rejectOptionalDependencies: Bool = false) throws -> [ComposeService] {
+    /// depth-first traversal. Optional dependencies are included when the
+    /// service exists and skipped when the project does not define it.
+    func orderedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
         let selectedSet = Set(selected)
         var visiting = Set<String>()
         var visited = Set<String>()
@@ -746,13 +737,8 @@ public extension ComposeOrchestrator {
             }
             visiting.insert(name)
             for (dependency, metadata) in (service.dependsOn ?? [:]).sorted(by: { $0.key < $1.key }) {
-                if metadata.required == false {
-                    if rejectOptionalDependencies {
-                        throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
-                    }
-                    if project.services[dependency] == nil {
-                        continue
-                    }
+                if metadata.required == false, project.services[dependency] == nil {
+                    continue
                 }
                 try visit(dependency)
             }
@@ -803,7 +789,11 @@ private extension ComposeOrchestrator {
     }
 
     /// Rejects Compose features that need runtime support not available yet.
-    func validateRuntimeSupport(service: ComposeService) throws {
+    func validateRuntimeSupport(
+        service: ComposeService,
+        project: ComposeProject,
+        validateDependencies: Bool = true
+    ) throws {
         try validateBuildSupport(service: service)
         try validateDeploySupport(service: service)
         try validateProviderModelAndHookSupport(service: service)
@@ -863,13 +853,13 @@ private extension ComposeOrchestrator {
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
-        if let dependsOn = service.dependsOn {
+        if validateDependencies, let dependsOn = service.dependsOn {
             for (dependency, metadata) in dependsOn.sorted(by: { $0.key < $1.key }) {
                 if metadata.restart {
                     throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with restart true; dependency restart propagation is not implemented by container-compose yet")
                 }
-                if metadata.required == false {
-                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                if metadata.required == false, project.services[dependency] == nil {
+                    continue
                 }
                 let condition = metadata.condition
                 if condition != "service_started" && condition != "" {
@@ -951,9 +941,13 @@ private extension ComposeOrchestrator {
     }
 
     /// Validates all selected services before any runtime side effects occur.
-    func validateRuntimeSupport(services: [ComposeService]) throws {
+    func validateRuntimeSupport(
+        services: [ComposeService],
+        project: ComposeProject,
+        validateDependencies: Bool = true
+    ) throws {
         for service in services {
-            try validateRuntimeSupport(service: service)
+            try validateRuntimeSupport(service: service, project: project, validateDependencies: validateDependencies)
         }
     }
 
@@ -1614,6 +1608,37 @@ private extension ComposeOrchestrator {
         !value.isEmpty && !value.contains("/") && value != "." && value != ".."
     }
 
+    /// Starts dependency services for `compose run` before the one-off container.
+    func startDependencyServices(project: ComposeProject, services: [ComposeService]) async throws {
+        try await applyServicePullPolicies(services: services)
+        for service in services {
+            if service.image == nil, service.build != nil {
+                try await build(project: project, services: [service.name], noCache: false)
+            }
+
+            let name = containerName(project: project, service: service, oneOff: false)
+            let existing = try await inspectContainer(name)
+            if let existing, existing.configHash == configHash(project: project, service: service) {
+                options.emit("compose: reusing existing container \(name)")
+                continue
+            }
+            if existing != nil {
+                try await runContainer(stopArguments(service: service, containerName: name), check: false)
+                try await runContainer(["delete", name], check: false)
+            }
+
+            try await runContainer(
+                runArguments(
+                    project: project,
+                    service: service,
+                    options: RunArgumentOptions {
+                        $0.detach = true
+                    }
+                )
+            )
+        }
+    }
+
     /// Removes images referenced by services according to `down --rmi`.
     func removeImages(project: ComposeProject, policy: DownImageRemovalPolicy) async throws {
         for image in removableDownImages(project: project, policy: policy) {
@@ -1849,10 +1874,13 @@ private extension ComposeOrchestrator {
     }
 }
 
+/// Minimal inspect result needed to decide whether an existing service
+/// container can be reused.
 private struct ExistingContainer {
     var configHash: String?
 }
 
+/// Parsed representation of a Compose port mapping for static `port` lookups.
 private struct ComposePublishedPort {
     var hostIP: String?
     var published: String?
@@ -1892,12 +1920,14 @@ private extension ComposeNetworkOptions {
     }
 }
 
+/// Stable service/resource snapshot used to derive the recreate config hash.
 private struct ServiceConfigFingerprint: Encodable {
     var service: ComposeService
     var networks: [String: String]
     var volumes: [String: String]
 }
 
+/// One label override passed to `compose run`.
 private struct ComposeLabelOverride {
     var key: String
     var value: String?

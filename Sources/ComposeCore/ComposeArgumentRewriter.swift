@@ -272,6 +272,10 @@ public enum ComposeArgumentRewriter {
                 } else {
                     index += 1
                 }
+            } else if argument.hasPrefix("-p="), argument.count > 3 {
+                rewritten.append("--publish")
+                rewritten.append(String(argument.dropFirst(3)))
+                index += 1
             } else if argument.hasPrefix("-p"), argument.count > 2 {
                 rewritten.append("--publish")
                 rewritten.append(String(argument.dropFirst(2)))

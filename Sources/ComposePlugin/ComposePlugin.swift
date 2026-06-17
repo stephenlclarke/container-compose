@@ -235,17 +235,17 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         try await orchestrator().up(
             project: loadedProject,
-            options: ComposeUpOptions(
-                services: services,
-                build: build,
-                detach: detach,
-                forceRecreate: forceRecreate,
-                noRecreate: noRecreate,
-                removeOrphans: removeOrphans,
-                pullPolicy: pull,
-                scales: scales,
-                noDeps: noDeps
-            )
+            options: ComposeUpOptions {
+                $0.services = services
+                $0.build = build
+                $0.detach = detach
+                $0.forceRecreate = forceRecreate
+                $0.noRecreate = noRecreate
+                $0.removeOrphans = removeOrphans
+                $0.pullPolicy = pull
+                $0.scales = scales
+                $0.noDeps = noDeps
+            }
         )
     }
 }
@@ -438,6 +438,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var detach = false
     @Flag(name: [.customShort("T"), .customLong("no-tty")], help: "Disable pseudo-TTY allocation.")
     var noTty = false
+    @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
+    var noDeps = false
     @Flag(name: [.customShort("P"), .customLong("service-ports")], help: "Publish all ports declared by the service.")
     var servicePorts = false
     @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
@@ -476,6 +478,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 $0.remove = remove
                 $0.detach = detach
                 $0.noTty = noTty
+                $0.noDeps = noDeps
                 $0.servicePorts = servicePorts
                 $0.publish = publish
                 $0.pullPolicy = pull
