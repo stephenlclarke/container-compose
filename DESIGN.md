@@ -53,6 +53,14 @@ Compose Specification JSON schema with
 That approach is a good fit for a Swift-native schema package, and it may be
 useful here as an additional typed boundary or as a golden-test aid.
 
+The prototype attached to that discussion decodes raw Compose YAML with Yams
+into Quicktype-generated Swift types. It also illustrates why this needs care
+before adoption: the generated sketch does not preserve every dynamic Compose
+map as a useful Swift model, and it does not run the Compose loader pipeline.
+Any generated-type work should therefore be treated as a narrow model-generation
+experiment until it proves that services, networks, volumes, configs, secrets,
+extensions, and schema unions round-trip correctly.
+
 Generated schema types are not a replacement for `compose-go` normalization in
 the current architecture. The Compose JSON schema describes the accepted model
 shape, while `compose-go` also performs the behavioral loading steps Docker
