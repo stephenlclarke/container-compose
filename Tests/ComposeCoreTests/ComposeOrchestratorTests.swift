@@ -239,7 +239,9 @@ struct ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-optional-1"]))
+        #expect(commands[0].contains("--detach"))
         #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!commands[1].contains("--detach"))
         #expect(await discoveryManager.getRequests == ["demo-optional-1", "demo-api-1"])
     }
 

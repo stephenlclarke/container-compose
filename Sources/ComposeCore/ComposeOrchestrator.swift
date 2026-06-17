@@ -333,7 +333,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await build(project: project, services: services.map(\.name), noCache: false)
         }
 
-        for service in services {
+        let attachedForegroundServiceIndex = up.detach ? nil : services.indices.last
+        for (index, service) in services.enumerated() {
             if !up.build, service.image == nil, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
             }
@@ -361,7 +362,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     project: project,
                     service: service,
                     options: RunArgumentOptions {
-                        $0.detach = up.detach
+                        $0.detach = up.detach || index != attachedForegroundServiceIndex
                     }
                 )
             )
