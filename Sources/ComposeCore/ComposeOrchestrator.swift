@@ -104,7 +104,9 @@ public struct ComposeRunOptions {
     public var labels: [String] = []
     public var volumes: [String] = []
 
-    public init(_ configure: (inout ComposeRunOptions) -> Void = { _ in }) {
+    public init() {}
+
+    public init(_ configure: (inout ComposeRunOptions) -> Void) {
         configure(&self)
     }
 }
