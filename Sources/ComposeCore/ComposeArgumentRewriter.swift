@@ -258,6 +258,8 @@ public enum ComposeArgumentRewriter {
             "--user",
             "--volume",
             "--workdir",
+            "-e",
+            "-u",
             "-w",
         ].contains(argument)
     }

@@ -106,6 +106,13 @@ cli-smoke: build
 	run_workdir_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --workdir /workspace api pwd)"; \
 	[[ "$$run_workdir_output" == *"--workdir /workspace"* ]]; \
 	[[ "$$run_workdir_output" == *" alpine pwd"* ]]; \
+	run_user_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -u 1000:1000 api id)"; \
+	[[ "$$run_user_output" == *"--user 1000:1000"* ]]; \
+	[[ "$$run_user_output" == *" alpine id"* ]]; \
+	run_env_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -e LOG_LEVEL=debug --env-from-file .env.local api env)"; \
+	[[ "$$run_env_output" == *"--env LOG_LEVEL=debug"* ]]; \
+	[[ "$$run_env_output" == *"--env-file .env.local"* ]]; \
+	[[ "$$run_env_output" == *" alpine env"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \

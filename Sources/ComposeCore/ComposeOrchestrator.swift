@@ -95,6 +95,9 @@ public struct ComposeRunOptions {
     public var containerName: String?
     public var entrypoint: String?
     public var workingDirectory: String?
+    public var user: String?
+    public var environment: [String]
+    public var envFiles: [String]
 
     public init(
         command: [String] = [],
@@ -103,7 +106,10 @@ public struct ComposeRunOptions {
         publish: [String] = [],
         containerName: String? = nil,
         entrypoint: String? = nil,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        user: String? = nil,
+        environment: [String] = [],
+        envFiles: [String] = []
     ) {
         self.command = command
         self.remove = remove
@@ -112,6 +118,9 @@ public struct ComposeRunOptions {
         self.containerName = containerName
         self.entrypoint = entrypoint
         self.workingDirectory = workingDirectory
+        self.user = user
+        self.environment = environment
+        self.envFiles = envFiles
     }
 }
 
@@ -311,6 +320,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if let workingDirectory = run.workingDirectory {
             service.workingDir = workingDirectory
         }
+        if let user = run.user {
+            service.user = user
+        }
+        try applyRunEnvironmentOverrides(run, service: &service)
         try validateRuntimeSupport(service: service)
         try await applyServicePullPolicies(services: [service])
         try await ensureResources(project: project)
@@ -899,6 +912,39 @@ private extension ComposeOrchestrator {
         default:
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)' for service '\(service.name)'")
         }
+    }
+
+    /// Applies `compose run` environment overrides to the copied service model.
+    func applyRunEnvironmentOverrides(_ run: ComposeRunOptions, service: inout ComposeService) throws {
+        if !run.environment.isEmpty {
+            var environment = service.environment ?? [:]
+            for override in run.environment {
+                let parsed = try parseEnvironmentOverride(override)
+                environment[parsed.key] = parsed.value
+            }
+            service.environment = environment
+        }
+
+        if !run.envFiles.isEmpty {
+            service.envFiles = (service.envFiles ?? []) + run.envFiles
+        }
+    }
+
+    /// Parses a Compose CLI environment override as `NAME` or `NAME=VALUE`.
+    func parseEnvironmentOverride(_ override: String) throws -> (key: String, value: String?) {
+        if let equalsIndex = override.firstIndex(of: "=") {
+            let key = String(override[..<equalsIndex])
+            guard !key.isEmpty else {
+                throw ComposeError.invalidProject("run --env requires NAME or NAME=VALUE")
+            }
+            let value = String(override[override.index(after: equalsIndex)...])
+            return (key, value)
+        }
+
+        guard !override.isEmpty else {
+            throw ComposeError.invalidProject("run --env requires NAME or NAME=VALUE")
+        }
+        return (override, nil)
     }
 
     /// Pulls only service images not already present in the local image store.
