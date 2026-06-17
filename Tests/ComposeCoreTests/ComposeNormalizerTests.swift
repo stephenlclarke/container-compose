@@ -396,18 +396,3 @@ struct ComposeNormalizerTests {
         }
     }
 }
-
-private extension Array where Element: Equatable {
-    func containsSequence(_ sequence: [Element]) -> Bool {
-        guard !sequence.isEmpty, sequence.count <= count else {
-            return false
-        }
-        return indices.contains { index in
-            let end = self.index(index, offsetBy: sequence.count, limitedBy: endIndex)
-            guard let end else {
-                return false
-            }
-            return Array(self[index..<end]) == sequence
-        }
-    }
-}
