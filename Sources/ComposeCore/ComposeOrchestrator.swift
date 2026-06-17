@@ -109,6 +109,19 @@ public struct ComposeRunOptions {
     }
 }
 
+private struct RunArgumentOptions {
+    var detach = false
+    var remove = false
+    var oneOff = false
+    var publishedPorts: [String]?
+    var containerNameOverride: String?
+    var labelOverrides: [ComposeLabelOverride] = []
+
+    init(_ configure: (inout RunArgumentOptions) -> Void = { _ in }) {
+        configure(&self)
+    }
+}
+
 /// Converts a normalized Compose project into deterministic `container`
 /// commands.
 public final class ComposeOrchestrator: @unchecked Sendable {
@@ -166,7 +179,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await runContainer(["delete", name], check: false)
             }
 
-            try await runContainer(runArguments(project: project, service: service, detach: up.detach, remove: false, oneOff: false))
+            try await runContainer(
+                runArguments(
+                    project: project,
+                    service: service,
+                    options: RunArgumentOptions {
+                        $0.detach = up.detach
+                    }
+                )
+            )
         }
 
         if up.removeOrphans {
@@ -327,12 +348,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             runArguments(
                 project: runProject,
                 service: service,
-                detach: run.detach,
-                remove: run.remove,
-                oneOff: true,
-                publishedPorts: publishedPorts,
-                containerNameOverride: run.containerName,
-                labelOverrides: labelOverrides
+                options: RunArgumentOptions {
+                    $0.detach = run.detach
+                    $0.remove = run.remove
+                    $0.oneOff = true
+                    $0.publishedPorts = publishedPorts
+                    $0.containerNameOverride = run.containerName
+                    $0.labelOverrides = labelOverrides
+                }
             ),
             inheritedIO: !run.detach && (service.tty == true || service.stdinOpen == true)
         )
@@ -1050,34 +1073,29 @@ private extension ComposeOrchestrator {
     }
 
     /// Builds the `container run` argument vector for a service.
-    func runArguments(
+    private func runArguments(
         project: ComposeProject,
         service: ComposeService,
-        detach: Bool,
-        remove: Bool,
-        oneOff: Bool,
-        publishedPorts: [String]? = nil,
-        containerNameOverride: String? = nil,
-        labelOverrides: [ComposeLabelOverride] = []
+        options run: RunArgumentOptions = RunArgumentOptions()
     ) throws -> [String] {
         var args = ["run"]
-        let runtimeName = containerNameOverride.map(slug) ?? containerName(project: project, service: service, oneOff: oneOff)
+        let runtimeName = run.containerNameOverride.map(slug) ?? containerName(project: project, service: service, oneOff: run.oneOff)
         args.append(contentsOf: ["--name", runtimeName])
-        if detach {
+        if run.detach {
             args.append("--detach")
         }
-        if remove {
+        if run.remove {
             args.append("--rm")
         }
 
-        for label in serviceLabels(project: project, service: service, oneOff: oneOff) {
+        for label in serviceLabels(project: project, service: service, oneOff: run.oneOff) {
             args.append(contentsOf: ["--label", label])
         }
-        let overriddenLabelKeys = Set(labelOverrides.map(\.key))
+        let overriddenLabelKeys = Set(run.labelOverrides.map(\.key))
         for (key, value) in (service.labels ?? [:]).sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
-        for label in labelOverrides {
+        for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
         }
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
@@ -1090,7 +1108,7 @@ private extension ComposeOrchestrator {
         for envFile in service.envFiles ?? [] {
             args.append(contentsOf: ["--env-file", envFile])
         }
-        for port in publishedPorts ?? service.ports ?? [] {
+        for port in run.publishedPorts ?? service.ports ?? [] {
             args.append(contentsOf: ["--publish", port])
         }
         for mount in service.volumes ?? [] {
