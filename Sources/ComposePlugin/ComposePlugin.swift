@@ -194,11 +194,16 @@ struct Down: AsyncParsableCommand, ComposeProjectCommand {
     var volumes = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
+    @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers.")
+    var timeout: Int?
 
     /// Stops containers and removes project-scoped resources.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().down(project: loadedProject, options: ComposeDownOptions(volumes: volumes, removeOrphans: removeOrphans))
+        try await orchestrator().down(
+            project: loadedProject,
+            options: ComposeDownOptions(volumes: volumes, removeOrphans: removeOrphans, timeout: timeout)
+        )
     }
 }
 
@@ -416,11 +421,13 @@ struct Start: AsyncParsableCommand, ComposeProjectCommand {
 struct Stop: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "stop", abstract: "Stop service containers.")
     @OptionGroup var global: GlobalOptions
+    @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers.")
+    var timeout: Int?
     @Argument var services: [String] = []
     /// Stops selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().stop(project: loadedProject, services: services)
+        try await orchestrator().stop(project: loadedProject, services: services, timeout: timeout)
     }
 }
 
@@ -428,11 +435,13 @@ struct Stop: AsyncParsableCommand, ComposeProjectCommand {
 struct Restart: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "restart", abstract: "Restart service containers.")
     @OptionGroup var global: GlobalOptions
+    @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers.")
+    var timeout: Int?
     @Argument var services: [String] = []
     /// Restarts selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().restart(project: loadedProject, services: services)
+        try await orchestrator().restart(project: loadedProject, services: services, timeout: timeout)
     }
 }
 
