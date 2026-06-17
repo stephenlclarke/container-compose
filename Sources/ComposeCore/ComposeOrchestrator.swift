@@ -271,6 +271,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let runner: CommandRunning
     private let options: ComposeExecutionOptions
     private let copier: ContainerCopying
+    private let discoveryManager: ContainerDiscoveryManaging
     private let exporter: ContainerExporting
     private let lifecycleManager: ContainerLifecycleManaging
     private let resourceManager: ContainerResourceManaging
@@ -279,6 +280,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
         copier: ContainerCopying = ContainerClientCopier(),
+        discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
         exporter: ContainerExporting = ContainerClientExporter(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager()
@@ -286,6 +288,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.runner = runner
         self.options = options
         self.copier = copier
+        self.discoveryManager = discoveryManager
         self.exporter = exporter
         self.lifecycleManager = lifecycleManager
         self.resourceManager = resourceManager
@@ -486,8 +489,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
 
-        let result = try await runContainer(args, emitOutput: false)
-        let records = try composeProjectRecords(output: result.stdout, nameFilters: nameFilters)
+        let containers = try await discoveryManager.listContainers(all: list.all)
+        let records = composeProjectRecords(containers: containers, nameFilters: nameFilters)
         if list.quiet {
             let names = records.map(\.name)
             if !names.isEmpty {
@@ -525,8 +528,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await runContainer(args)
             return
         }
-        let result = try await runContainer(args, emitOutput: false)
-        let containers = try projectContainers(projectName: project.name, output: result.stdout)
+        let containers = try await projectContainers(projectName: project.name, all: all || !statusFilters.isEmpty)
         let filteredContainers = filterContainersByStatus(containers, statuses: statusFilters)
         if quiet {
             let identifiers = containerIdentifiers(filteredContainers)
@@ -740,8 +742,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
 
-        let result = try await runContainer(args, emitOutput: false)
-        let records = try composeImageRecords(projectName: project.name, output: result.stdout, selectedServices: selectedServiceNames)
+        let containers = try await projectContainers(projectName: project.name, all: true)
+        let records = composeImageRecords(containers: containers, selectedServices: selectedServiceNames)
         if images.quiet {
             let identifiers = records.map(\.imageID).filter { !$0.isEmpty }
             if !identifiers.isEmpty {
@@ -2066,14 +2068,14 @@ private extension ComposeOrchestrator {
 
     /// Returns an existing container's Compose metadata, if the container exists.
     func inspectContainer(_ name: String) async throws -> ExistingContainer? {
-        let result = try await runContainer(["inspect", name], check: false, emitOutput: false)
         if options.dryRun {
+            try await runContainer(["inspect", name], check: false, emitOutput: false)
             return nil
         }
-        guard result.succeeded else {
+        guard let container = try await discoveryManager.getContainer(id: name) else {
             return nil
         }
-        return ExistingContainer(configHash: inspectConfigHash(from: result.stdout))
+        return ExistingContainer(configHash: container.configHash)
     }
 
     /// Removes project-scoped containers that are not in the declared set.
@@ -2084,14 +2086,20 @@ private extension ComposeOrchestrator {
             return
         }
 
-        let result = try await runContainer(args, emitOutput: false)
-        let remainingContainers = try projectContainerIdentifiers(projectName: project.name, output: result.stdout)
+        let remainingContainers = try await projectContainers(projectName: project.name, all: true)
+            .map(\.id)
             .filter { !declaredContainers.contains($0) }
             .sorted()
         for container in remainingContainers {
             try await stopContainer(id: container)
             try await deleteContainer(container)
         }
+    }
+
+    /// Lists containers scoped to a Compose project through the direct API.
+    func projectContainers(projectName: String, all: Bool) async throws -> [ComposeContainerSummary] {
+        let containers = try await discoveryManager.listContainers(all: all)
+        return filterProjectContainers(projectName: projectName, containers: containers)
     }
 
     /// Executes one `container` command or prints it in dry-run mode.
@@ -2201,6 +2209,23 @@ private let workingDirectoryLabel = "com.apple.container.compose.project.working
 private let configFilesLabel = "com.apple.container.compose.project.config-files"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
 private let reservedComposeLabelPrefix = "com.apple.container.compose."
+
+private extension ComposeContainerSummary {
+    /// Compose project label attached to a runtime container.
+    var projectName: String? {
+        labels[projectLabel]
+    }
+
+    /// Compose service label attached to a runtime container.
+    var serviceName: String? {
+        labels[serviceLabel]
+    }
+
+    /// Compose config hash label used for recreate decisions.
+    var configHash: String? {
+        labels[configHashLabel]
+    }
+}
 
 /// Returns whether a service pull policy can be implemented with local runtime primitives.
 private func isSupportedServicePullPolicy(_ policy: String) -> Bool {
@@ -2337,76 +2362,60 @@ private func serviceVolumeRuntimeNames(project: ComposeProject, service: Compose
     return names
 }
 
-/// Extracts the Compose config hash label from `container inspect` JSON.
-private func inspectConfigHash(from output: String) -> String? {
-    guard let data = output.data(using: .utf8),
-          let json = try? JSONSerialization.jsonObject(with: data)
-    else {
-        return nil
-    }
-    return inspectLabel(configHashLabel, in: json)
-}
-
-/// Recursively searches common inspect JSON shapes for one label value.
-private func inspectLabel(_ key: String, in value: Any) -> String? {
-    if let values = value as? [Any] {
-        return values.lazy.compactMap { inspectLabel(key, in: $0) }.first
-    }
-    guard let object = value as? [String: Any] else {
-        return nil
-    }
-    if let value = labelValue(key, in: object["labels"]) ?? labelValue(key, in: object["Labels"]) {
-        return value
-    }
-    for nestedKey in ["configuration", "Config", "config"] {
-        if let nested = object[nestedKey], let value = inspectLabel(key, in: nested) {
-            return value
-        }
-    }
-    return nil
-}
-
-/// Reads a label value from a JSON object when labels are map-shaped.
-private func labelValue(_ key: String, in value: Any?) -> String? {
-    guard let labels = value as? [String: Any] else {
-        return nil
-    }
-    return labels[key] as? String
-}
-
-/// Returns pretty JSON for containers scoped to one Compose project.
-private func projectContainerListJSON(projectName: String, output: String) throws -> String {
-    try containerListJSON(projectContainers(projectName: projectName, output: output))
-}
-
-/// Returns pretty JSON for a filtered container list.
-private func containerListJSON(_ containers: [Any]) throws -> String {
-    let scopedData = try JSONSerialization.data(withJSONObject: containers, options: [.prettyPrinted, .sortedKeys])
+/// Returns pretty JSON for a filtered direct API container list.
+private func containerListJSON(_ containers: [ComposeContainerSummary]) throws -> String {
+    let scopedData = try JSONSerialization.data(withJSONObject: containers.map(containerListJSONObject), options: [.prettyPrinted, .sortedKeys])
     return String(decoding: scopedData, as: UTF8.self)
 }
 
-/// Returns names or IDs for containers scoped to one Compose project.
-private func projectContainerIdentifiers(projectName: String, output: String) throws -> [String] {
-    try containerIdentifiers(projectContainers(projectName: projectName, output: output))
+/// Builds the legacy `container list --format json` shape used by Compose projections.
+private func containerListJSONObject(_ container: ComposeContainerSummary) -> [String: Any] {
+    [
+        "id": container.id,
+        "configuration": [
+            "image": [
+                "reference": container.imageReference,
+                "descriptor": [
+                    "digest": container.imageDigest ?? "",
+                ],
+            ],
+            "labels": container.labels,
+            "platform": platformJSONObject(container.platform),
+        ],
+        "status": [
+            "state": container.status,
+        ],
+    ]
 }
 
-/// Returns names or IDs from a filtered container list.
-private func containerIdentifiers(_ containers: [Any]) -> [String] {
-    containers.compactMap(containerIdentifier)
+/// Converts a platform string into the JSON object emitted by `container list`.
+private func platformJSONObject(_ value: String) -> [String: String] {
+    let parts = value.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard parts.count >= 2 else {
+        return [:]
+    }
+    var object = [
+        "os": parts[0],
+        "architecture": parts[1],
+    ]
+    if parts.count >= 3, !parts[2].isEmpty {
+        object["variant"] = parts[2]
+    }
+    return object
 }
 
-/// Returns unique service names for containers scoped to one Compose project.
-private func projectContainerServiceNames(projectName: String, output: String) throws -> [String] {
-    try containerServiceNames(projectContainers(projectName: projectName, output: output))
+/// Returns container IDs from a filtered direct API list.
+private func containerIdentifiers(_ containers: [ComposeContainerSummary]) -> [String] {
+    containers.map(\.id)
 }
 
-/// Returns unique service names from a filtered container list.
-private func containerServiceNames(_ containers: [Any]) -> [String] {
+/// Returns unique service names from a filtered direct API list.
+private func containerServiceNames(_ containers: [ComposeContainerSummary]) -> [String] {
     let namesByContainer = containers.compactMap { container -> (identifier: String, service: String)? in
-        guard let service = inspectLabel(serviceLabel, in: container), !service.isEmpty else {
+        guard let service = container.serviceName, !service.isEmpty else {
             return nil
         }
-        return (containerIdentifier(container) ?? service, service)
+        return (container.id, service)
     }
     var seen: Set<String> = []
     var services: [String] = []
@@ -2416,6 +2425,96 @@ private func containerServiceNames(_ containers: [Any]) -> [String] {
         }
     }
     return services
+}
+
+/// Returns project rows from direct API containers, optionally filtered by project name.
+private func composeProjectRecords(containers: [ComposeContainerSummary], nameFilters: [String]) -> [ComposeProjectRecord] {
+    let containers = composeLabeledContainers(containers)
+    let grouped = Dictionary(grouping: containers) { $0.projectName ?? "" }
+    return grouped.keys.sorted().compactMap { projectName in
+        guard !projectName.isEmpty, lsProjectNameMatches(projectName, filters: nameFilters) else {
+            return nil
+        }
+        let projectContainers = grouped[projectName] ?? []
+        return ComposeProjectRecord(
+            name: projectName,
+            status: combinedProjectStatus(projectContainers),
+            configFiles: combinedProjectConfigFiles(projectContainers)
+        )
+    }
+}
+
+/// Returns direct API containers carrying the labels needed to identify Compose projects.
+private func composeLabeledContainers(_ containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
+    containers.filter { $0.projectName != nil && $0.configHash != nil }
+}
+
+/// Combines direct API container states into Docker Compose's `state(count)` form.
+private func combinedProjectStatus(_ containers: [ComposeContainerSummary]) -> String {
+    let statuses = containers.map { $0.status.lowercased() }
+    let counts = Dictionary(grouping: statuses, by: { $0 }).mapValues(\.count)
+    return counts.keys.sorted().map { "\($0)(\(counts[$0] ?? 0))" }.joined(separator: ", ")
+}
+
+/// Combines config-file labels across direct API containers while preserving first-seen order.
+private func combinedProjectConfigFiles(_ containers: [ComposeContainerSummary]) -> String {
+    var seen: Set<String> = []
+    var files: [String] = []
+    for container in containers {
+        let values = [
+            container.labels[configFilesLabel],
+            container.labels["com.apple.container.compose.project.config-file"],
+        ].compactMap { $0 }
+        for value in values {
+            for file in value.split(separator: ",").map(String.init) where !file.isEmpty && seen.insert(file).inserted {
+                files.append(file)
+            }
+        }
+    }
+    return files.isEmpty ? "N/A" : files.joined(separator: ",")
+}
+
+/// Returns image rows from direct API containers scoped by Compose labels.
+private func composeImageRecords(containers: [ComposeContainerSummary], selectedServices: Set<String>?) -> [ComposeImageRecord] {
+    containers.compactMap { container in
+        guard let service = container.serviceName, !service.isEmpty else {
+            return nil
+        }
+        if let selectedServices, !selectedServices.contains(service) {
+            return nil
+        }
+        guard !container.imageReference.isEmpty else {
+            return nil
+        }
+        let reference = splitImageReference(container.imageReference)
+        return ComposeImageRecord(
+            container: container.id,
+            service: service,
+            repository: reference.repository,
+            tag: reference.tag,
+            platform: container.platform,
+            imageID: shortImageID(container.imageDigest)
+        )
+    }
+    .sorted { lhs, rhs in
+        if lhs.container == rhs.container {
+            return lhs.service < rhs.service
+        }
+        return lhs.container < rhs.container
+    }
+}
+
+/// Applies status filtering after direct API project scoping.
+private func filterContainersByStatus(_ containers: [ComposeContainerSummary], statuses: Set<String>) -> [ComposeContainerSummary] {
+    guard !statuses.isEmpty else {
+        return containers
+    }
+    return containers.filter { statuses.contains($0.status.lowercased()) }
+}
+
+/// Filters direct API containers by Compose project label.
+private func filterProjectContainers(projectName: String, containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
+    containers.filter { $0.projectName == projectName }
 }
 
 /// Validates the `compose ls --format` value.
@@ -2441,49 +2540,6 @@ private struct ComposeProjectRecord: Encodable, Equatable {
     let name: String
     let status: String
     let configFiles: String
-}
-
-/// Returns project rows from `container list --format json`, optionally filtered by project name.
-private func composeProjectRecords(output: String, nameFilters: [String]) throws -> [ComposeProjectRecord] {
-    let containers = try composeLabeledContainers(output: output)
-    let grouped = Dictionary(grouping: containers) { inspectLabel(projectLabel, in: $0) ?? "" }
-    return grouped.keys.sorted().compactMap { projectName in
-        guard !projectName.isEmpty, lsProjectNameMatches(projectName, filters: nameFilters) else {
-            return nil
-        }
-        let projectContainers = grouped[projectName] ?? []
-        return ComposeProjectRecord(
-            name: projectName,
-            status: combinedProjectStatus(projectContainers),
-            configFiles: combinedProjectConfigFiles(projectContainers)
-        )
-    }
-}
-
-/// Returns all containers carrying the labels needed to identify Compose projects.
-private func composeLabeledContainers(output: String) throws -> [Any] {
-    try listedContainers(output: output).filter {
-        inspectLabel(projectLabel, in: $0) != nil && inspectLabel(configHashLabel, in: $0) != nil
-    }
-}
-
-/// Parses raw `container list --format json` output into container JSON objects.
-private func listedContainers(output: String) throws -> [Any] {
-    guard let data = output.data(using: .utf8),
-          let json = try? JSONSerialization.jsonObject(with: data)
-    else {
-        throw ComposeError.invalidProject("container list returned invalid JSON")
-    }
-
-    let containers: [Any]
-    if let values = json as? [Any] {
-        containers = values
-    } else if let value = json as? [String: Any] {
-        containers = [value]
-    } else {
-        throw ComposeError.invalidProject("container list returned invalid JSON")
-    }
-    return containers
 }
 
 /// Parses `compose ls --filter` values. Docker Compose currently accepts only `name`.
@@ -2516,31 +2572,6 @@ private func lsProjectNameMatches(_ name: String, filters: [String]) -> Bool {
         }
         return name.range(of: filter, options: .regularExpression) != nil
     }
-}
-
-/// Combines per-container states into the `state(count)` form used by Docker Compose.
-private func combinedProjectStatus(_ containers: [Any]) -> String {
-    let statuses = containers.map { (containerRuntimeState($0) ?? "unknown").lowercased() }
-    let counts = Dictionary(grouping: statuses, by: { $0 }).mapValues(\.count)
-    return counts.keys.sorted().map { "\($0)(\(counts[$0] ?? 0))" }.joined(separator: ", ")
-}
-
-/// Combines config-file labels across project containers while preserving first-seen order.
-private func combinedProjectConfigFiles(_ containers: [Any]) -> String {
-    var seen: Set<String> = []
-    var files: [String] = []
-    for container in containers {
-        let values = [
-            inspectLabel(configFilesLabel, in: container),
-            inspectLabel("com.apple.container.compose.project.config-file", in: container),
-        ].compactMap { $0 }
-        for value in values {
-            for file in value.split(separator: ",").map(String.init) where !file.isEmpty && seen.insert(file).inserted {
-                files.append(file)
-            }
-        }
-    }
-    return files.isEmpty ? "N/A" : files.joined(separator: ",")
 }
 
 /// Renders project rows as a compact table.
@@ -2591,36 +2622,6 @@ private struct ComposeImageRecord: Encodable, Equatable {
     let imageID: String
 }
 
-/// Returns image rows from `container list --format json` scoped by Compose labels.
-private func composeImageRecords(projectName: String, output: String, selectedServices: Set<String>?) throws -> [ComposeImageRecord] {
-    try projectContainers(projectName: projectName, output: output).compactMap { container in
-        guard let service = inspectLabel(serviceLabel, in: container), !service.isEmpty else {
-            return nil
-        }
-        if let selectedServices, !selectedServices.contains(service) {
-            return nil
-        }
-        guard let imageReference = containerImageReference(container), !imageReference.isEmpty else {
-            return nil
-        }
-        let reference = splitImageReference(imageReference)
-        return ComposeImageRecord(
-            container: containerIdentifier(container) ?? service,
-            service: service,
-            repository: reference.repository,
-            tag: reference.tag,
-            platform: containerPlatform(container),
-            imageID: shortImageID(containerImageDigest(container))
-        )
-    }
-    .sorted { lhs, rhs in
-        if lhs.container == rhs.container {
-            return lhs.service < rhs.service
-        }
-        return lhs.container < rhs.container
-    }
-}
-
 /// Renders image rows as a compact table.
 private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String {
     guard !records.isEmpty else {
@@ -2649,65 +2650,6 @@ private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> S
     return String(decoding: data, as: UTF8.self)
 }
 
-/// Extracts a container image reference from common `container list` JSON shapes.
-private func containerImageReference(_ value: Any) -> String? {
-    for path in [
-        ["configuration", "image", "reference"],
-        ["configuration", "image", "name"],
-        ["Config", "Image"],
-        ["config", "image"],
-        ["Image"],
-        ["image"],
-    ] {
-        if let value = stringValue(at: path, in: value), !value.isEmpty {
-            return value
-        }
-    }
-    return nil
-}
-
-/// Extracts an image digest from common `container list` JSON shapes.
-private func containerImageDigest(_ value: Any) -> String? {
-    for path in [
-        ["configuration", "image", "descriptor", "digest"],
-        ["configuration", "image", "digest"],
-        ["Config", "ImageID"],
-        ["ImageID"],
-        ["imageID"],
-        ["imageId"],
-    ] {
-        if let value = stringValue(at: path, in: value), !value.isEmpty {
-            return value
-        }
-    }
-    return nil
-}
-
-/// Extracts a platform string from common `container list` JSON shapes.
-private func containerPlatform(_ value: Any) -> String {
-    for path in [
-        ["configuration", "platform"],
-        ["Config", "Platform"],
-        ["Platform"],
-        ["platform"],
-    ] {
-        guard let platform = nestedValue(at: path, in: value) as? [String: Any] else {
-            continue
-        }
-        let os = platform["os"] as? String ?? platform["OS"] as? String
-        let architecture = platform["architecture"] as? String ?? platform["Architecture"] as? String
-        let variant = platform["variant"] as? String ?? platform["Variant"] as? String
-        guard let os, let architecture, !os.isEmpty, !architecture.isEmpty else {
-            continue
-        }
-        if let variant, !variant.isEmpty {
-            return "\(os)/\(architecture)/\(variant)"
-        }
-        return "\(os)/\(architecture)"
-    }
-    return ""
-}
-
 /// Splits a container image reference into repository and tag display fields.
 private func splitImageReference(_ reference: String) -> (repository: String, tag: String) {
     let withoutDigest = reference.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? reference
@@ -2729,23 +2671,6 @@ private func shortImageID(_ digest: String?) -> String {
         digest = String(digest[digest.index(after: colonIndex)...])
     }
     return String(digest.prefix(12))
-}
-
-/// Reads a string from a nested JSON object path.
-private func stringValue(at path: [String], in value: Any) -> String? {
-    nestedValue(at: path, in: value) as? String
-}
-
-/// Reads a value from a nested JSON object path.
-private func nestedValue(at path: [String], in value: Any) -> Any? {
-    var current = value
-    for key in path {
-        guard let object = current as? [String: Any], let next = object[key] else {
-            return nil
-        }
-        current = next
-    }
-    return current
 }
 
 /// Combines `ps --status` and `ps --filter status=...` into runtime state values.
@@ -2779,60 +2704,6 @@ private func normalizedRuntimeStatus(_ status: String) throws -> String {
     default:
         throw ComposeError.unsupported("ps status '\(status)'; apple/container exposes running, stopped, stopping, and unknown")
     }
-}
-
-/// Applies status filtering after project scoping.
-private func filterContainersByStatus(_ containers: [Any], statuses: Set<String>) -> [Any] {
-    guard !statuses.isEmpty else {
-        return containers
-    }
-    return containers.filter { container in
-        guard let state = containerRuntimeState(container) else {
-            return false
-        }
-        return statuses.contains(state.lowercased())
-    }
-}
-
-/// Filters raw `container list --format json` output by Compose project label.
-private func projectContainers(projectName: String, output: String) throws -> [Any] {
-    // `container list` does not currently expose a label filter in the CLI, so
-    // Compose project scoping is applied client-side after requesting JSON.
-    return try listedContainers(output: output).filter { inspectLabel(projectLabel, in: $0) == projectName }
-}
-
-/// Extracts the runtime state from common `container list --format json` shapes.
-private func containerRuntimeState(_ value: Any) -> String? {
-    guard let object = value as? [String: Any] else {
-        return nil
-    }
-    for key in ["state", "State", "status", "Status"] {
-        if let state = object[key] as? String {
-            return state
-        }
-    }
-    for nestedKey in ["state", "State", "status", "Status"] {
-        if let nested = object[nestedKey], let state = containerRuntimeState(nested) {
-            return state
-        }
-    }
-    return nil
-}
-
-/// Extracts the most useful identifier from one container list object.
-private func containerIdentifier(_ value: Any) -> String? {
-    guard let object = value as? [String: Any] else {
-        return nil
-    }
-    for key in ["id", "ID", "Id", "name", "Name"] {
-        if let value = object[key] as? String, !value.isEmpty {
-            return value
-        }
-    }
-    if let names = object["Names"] as? [String] {
-        return names.first { !$0.isEmpty }
-    }
-    return nil
 }
 
 /// Returns a SHA-256 hex digest for stable names and labels.

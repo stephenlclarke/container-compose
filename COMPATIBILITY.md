@@ -6,7 +6,7 @@ This file separates three different questions that are easy to blur together:
 
 - Does Docker Compose v2 accept and normalize the Compose file?
 - Does [`apple/container`][apple-container] expose the runtime primitive needed to run it?
-- Does [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose) map that normalized model to [`apple/container`][apple-container] commands?
+- Does [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose) map that normalized model to [`apple/container`][apple-container] APIs or commands?
 
 Unsupported runtime features are rejected before resources are created. Harmless metadata can still appear in `container compose config` without implying that `container compose up` applies runtime behavior.
 
@@ -16,13 +16,13 @@ Read every row as a three-step chain:
 
 1. Docker Compose v2 accepts and normalizes the Compose file.
 2. [`apple/container`][apple-container] has a runtime primitive that can perform the behavior.
-3. `container-compose` maps the normalized Compose model to [`apple/container`][apple-container] commands.
+3. `container-compose` maps the normalized Compose model to [`apple/container`][apple-container] APIs or commands.
 
 The first unsupported step owns the gap.
 
 | Bucket | Docker Compose v2 | [`apple/container`][apple-container] | `container-compose` | What happens today | Fix owner |
 | --- | --- | --- | --- | --- | --- |
-| Supported | Accepts the surface | Has a matching primitive | Maps it | Runtime commands execute through [`apple/container`][apple-container] | No compatibility fix needed |
+| Supported | Accepts the surface | Has a matching primitive | Maps it | Runtime work executes through [`apple/container`][apple-container] APIs or CLI commands | No compatibility fix needed |
 | [`apple/container`][apple-container] gap | Accepts the surface | Missing, incomplete, or not exposed | Detects the field and rejects it | Fails before resources are created with an `apple/container` runtime gap message | Upstream [`apple/container`][apple-container], then this repo maps the new primitive |
 | `container-compose` gap | Accepts the surface | Not known to be the first blocker | Does not map it yet | Fails before resources are created with a `container-compose` implementation message | This repository |
 | Config-only | Accepts the surface | Not needed for `config` output | Preserves it for `config` | Appears in normalized output; runtime commands ignore harmless metadata or reject service-level use | Depends on the runtime behavior requested later |
@@ -36,10 +36,10 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Compose v2 surface | Supported subset | [`apple/container`][apple-container] primitive used | Example |
 | --- | --- | --- | --- |
 | Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
-| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container list --format json`, `container image delete` | [S1](#s1-supported-local-web-stack) |
-| Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `container start`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, `ContainerClient.kill(id:signal:)`, `container inspect`, `container list`, `container image delete` | [S1](#s1-supported-local-web-stack) |
-| Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `container list --format json` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
-| Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, `cp --index 1`, `export`, `export -o/--output`, `export --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `container list`, `container logs`, `container exec --interactive --tty`, `container exec --detach`, `container exec --env`, `container exec --user`, `container exec --workdir`, `ContainerClient.copyIn(id:source:destination:)`, `ContainerClient.copyOut(id:source:destination:)`, `ContainerClient.export(id:archive:)`, `container stats`, plugin version output | [S1](#s1-supported-local-web-stack) |
+| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build`, `container image pull`, `container image push`, `container image inspect`, `ContainerClient.list(filters:)`, `container image delete` | [S1](#s1-supported-local-web-stack) |
+| Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `container start`, `ContainerClient.get(id:)`, `ContainerClient.list(filters:)`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, `ContainerClient.kill(id:signal:)`, `container image delete` | [S1](#s1-supported-local-web-stack) |
+| Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `ContainerClient.list(filters:)` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
+| Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, `cp --index 1`, `export`, `export -o/--output`, `export --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `ContainerClient.list(filters:)`, `container logs`, `container exec --interactive --tty`, `container exec --detach`, `container exec --env`, `container exec --user`, `container exec --workdir`, `ContainerClient.copyIn(id:source:destination:)`, `ContainerClient.copyOut(id:source:destination:)`, `ContainerClient.export(id:archive:)`, `container stats`, plugin version output | [S1](#s1-supported-local-web-stack) |
 | Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, `port` for static published bindings, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `NetworkClient.create(configuration:)`, `NetworkClient.delete(id:)`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish`, normalized Compose port metadata | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.delete(name:)`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `dns_opt`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `ContainerClient.stop(id:opts:)` | [S1](#s1-supported-local-web-stack) |
@@ -100,7 +100,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - Docker Compose v2 Go API package: [`github.com/docker/compose/v2/pkg/api`](https://pkg.go.dev/github.com/docker/compose/v2/pkg/api).
 - Compose model normalizer used here: [`compose-spec/compose-go`](https://github.com/compose-spec/compose-go).
 - Apple container public documentation: [apple.github.io/container/documentation](https://apple.github.io/container/documentation/).
-- Apple `ContainerClient` API documentation for future direct Swift runtime adapter work: [apple.github.io/container/documentation/containerclient](https://apple.github.io/container/documentation/containerclient/).
+- Apple `ContainerClient` API documentation for direct Swift runtime adapter work: [apple.github.io/container/documentation/containerclient](https://apple.github.io/container/documentation/containerclient/).
 
 ## Example Index
 
@@ -130,7 +130,7 @@ Expected result: `container compose config`, `build`, `create`, `up`, `ps`, `log
 Status path:
 
 - Docker Compose v2: accepts and normalizes this project.
-- [`apple/container`][apple-container]: has the needed build, image, lifecycle, network, volume, log, exec, copy, and export primitives.
+- [`apple/container`][apple-container]: has the needed build, image, lifecycle, discovery, network, volume, log, exec, copy, and export primitives.
 - `container-compose`: maps the normalized model to those primitives.
 
 ```yaml
