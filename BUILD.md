@@ -140,6 +140,8 @@ Build the plugin archive consumed by the install guide:
 make package
 ```
 
+GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds.
+
 The package target writes the archive and staging directory:
 
 ```text

@@ -175,6 +175,7 @@ jobs:
 
   package:
     name: Package Plugin
+    if: github.event_name != 'pull_request'
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
