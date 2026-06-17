@@ -104,7 +104,9 @@ public struct ComposeRunOptions {
     public var labels: [String] = []
     public var volumes: [String] = []
 
-    public init(_ configure: (inout ComposeRunOptions) -> Void = { _ in }) {
+    public init() {}
+
+    public init(_ configure: (inout ComposeRunOptions) -> Void) {
         configure(&self)
     }
 }
@@ -117,7 +119,9 @@ private struct RunArgumentOptions {
     var containerNameOverride: String?
     var labelOverrides: [ComposeLabelOverride] = []
 
-    init(_ configure: (inout RunArgumentOptions) -> Void = { _ in }) {
+    init() {}
+
+    init(_ configure: (inout RunArgumentOptions) -> Void) {
         configure(&self)
     }
 }
