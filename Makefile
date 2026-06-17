@@ -19,6 +19,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := all
 
 SWIFT ?= swift
+SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
 GO ?= go
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
@@ -46,24 +47,24 @@ all: workflow
 
 workflow: ci package
 
-ci: resolve lint coverage-check go-build cli-smoke
+ci: lint coverage-check go-build cli-smoke
 
 resolve:
 	$(SWIFT) package resolve
 
 build:
-	$(SWIFT) build --product compose
+	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose
 
 build-release:
-	$(SWIFT) build -c release --product compose
+	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose
 
 run:
-	$(SWIFT) run compose version
+	$(SWIFT) run $(SWIFT_RESOLVED_FLAGS) compose version
 
 test: swift-test go-test
 
 swift-test:
-	$(SWIFT) test --enable-code-coverage $(SWIFT_TEST_FLAGS)
+	$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --enable-code-coverage $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"; \
