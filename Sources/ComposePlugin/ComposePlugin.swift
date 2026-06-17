@@ -364,23 +364,23 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
         try await orchestrator().run(
             project: loadedProject,
             serviceName: service,
-            options: ComposeRunOptions(
-                command: command,
-                remove: remove,
-                detach: detach,
-                noTty: noTty,
-                servicePorts: servicePorts,
-                publish: publish,
-                pullPolicy: pull,
-                containerName: name,
-                entrypoint: entrypoint,
-                workingDirectory: workdir,
-                user: user,
-                environment: environment,
-                envFiles: envFiles,
-                labels: labels,
-                volumes: volumes
-            )
+            options: ComposeRunOptions {
+                $0.command = command
+                $0.remove = remove
+                $0.detach = detach
+                $0.noTty = noTty
+                $0.servicePorts = servicePorts
+                $0.publish = publish
+                $0.pullPolicy = pull
+                $0.containerName = name
+                $0.entrypoint = entrypoint
+                $0.workingDirectory = workdir
+                $0.user = user
+                $0.environment = environment
+                $0.envFiles = envFiles
+                $0.labels = labels
+                $0.volumes = volumes
+            }
         )
     }
 }

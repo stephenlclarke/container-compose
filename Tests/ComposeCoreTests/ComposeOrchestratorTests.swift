@@ -38,6 +38,16 @@ private func composeProject(
     return project
 }
 
+private func composeRunOptions(
+    command: [String] = [],
+    configure: (inout ComposeRunOptions) -> Void = { _ in }
+) -> ComposeRunOptions {
+    var options = ComposeRunOptions()
+    options.command = command
+    configure(&options)
+    return options
+}
+
 private func projectWithRuntimeResources(networkName: String, volumeName: String) -> ComposeProject {
     composeProject(
         name: "demo",
@@ -1794,12 +1804,14 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: defaultRunner).run(
             project: project,
             serviceName: "api",
-            options: ComposeRunOptions(command: ["true"])
+            options: composeRunOptions(command: ["true"])
         )
         try await ComposeOrchestrator(runner: servicePortsRunner).run(
             project: project,
             serviceName: "api",
-            options: ComposeRunOptions(command: ["true"], servicePorts: true)
+            options: composeRunOptions(command: ["true"]) {
+                $0.servicePorts = true
+            }
         )
 
         let defaultCommand = try #require(defaultRunner.commands.first?.arguments)
@@ -1823,10 +1835,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "api",
-            options: ComposeRunOptions(
-                command: ["true"],
-                publish: ["127.0.0.1:9090:90"]
-            )
+            options: composeRunOptions(command: ["true"]) {
+                $0.publish = ["127.0.0.1:9090:90"]
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2685,7 +2696,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["true"], pullPolicy: "always")
+            options: composeRunOptions(command: ["true"]) {
+                $0.pullPolicy = "always"
+            }
         )
 
         let commands = runner.commands.map(\.arguments)
@@ -2706,12 +2719,16 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: presentRunner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["true"], pullPolicy: "missing")
+            options: composeRunOptions(command: ["true"]) {
+                $0.pullPolicy = "missing"
+            }
         )
         try await ComposeOrchestrator(runner: absentRunner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["true"], pullPolicy: "missing")
+            options: composeRunOptions(command: ["true"]) {
+                $0.pullPolicy = "missing"
+            }
         )
 
         let presentCommands = presentRunner.commands.map(\.arguments)
@@ -2735,7 +2752,9 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(
                 project: project,
                 serviceName: "job",
-                options: ComposeRunOptions(command: ["true"], pullPolicy: "daily")
+                options: composeRunOptions(command: ["true"]) {
+                    $0.pullPolicy = "daily"
+                }
             )
             Issue.record("Expected unsupported run pull policy to fail")
         } catch let error as ComposeError {
@@ -2805,7 +2824,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["true"], containerName: "custom-job")
+            options: composeRunOptions(command: ["true"]) {
+                $0.containerName = "custom-job"
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2829,7 +2850,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["sleep", "60"], detach: true)
+            options: composeRunOptions(command: ["sleep", "60"]) {
+                $0.detach = true
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2856,7 +2879,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["sh"], noTty: true)
+            options: composeRunOptions(command: ["sh"]) {
+                $0.noTty = true
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2881,7 +2906,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["echo", "ok"], entrypoint: "/bin/sh -c")
+            options: composeRunOptions(command: ["echo", "ok"]) {
+                $0.entrypoint = "/bin/sh -c"
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2905,7 +2932,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["pwd"], workingDirectory: "/workspace")
+            options: composeRunOptions(command: ["pwd"]) {
+                $0.workingDirectory = "/workspace"
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2929,7 +2958,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(command: ["id"], user: "2000:2000")
+            options: composeRunOptions(command: ["id"]) {
+                $0.user = "2000:2000"
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2954,11 +2985,10 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(
-                command: ["env"],
-                environment: ["LOG_LEVEL=debug", "NEW=value", "PASSTHROUGH", "EMPTY="],
-                envFiles: [".env.local"]
-            )
+            options: composeRunOptions(command: ["env"]) {
+                $0.environment = ["LOG_LEVEL=debug", "NEW=value", "PASSTHROUGH", "EMPTY="]
+                $0.envFiles = [".env.local"]
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2988,10 +3018,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(
-                command: ["true"],
-                labels: ["com.example.role=job", "com.example.flag"]
-            )
+            options: composeRunOptions(command: ["true"]) {
+                $0.labels = ["com.example.role=job", "com.example.flag"]
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -3014,7 +3043,9 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator().run(
                 project: project,
                 serviceName: "job",
-                options: ComposeRunOptions(command: ["true"], labels: [""])
+                options: composeRunOptions(command: ["true"]) {
+                    $0.labels = [""]
+                }
             )
             Issue.record("Expected empty run label override to fail")
         } catch let error as ComposeError {
@@ -3033,10 +3064,9 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator().run(
                 project: project,
                 serviceName: "job",
-                options: ComposeRunOptions(
-                    command: ["true"],
-                    labels: ["com.apple.container.compose.project=evil"]
-                )
+                options: composeRunOptions(command: ["true"]) {
+                    $0.labels = ["com.apple.container.compose.project=evil"]
+                }
             )
             Issue.record("Expected reserved run label override to fail")
         } catch let error as ComposeError {
@@ -3059,10 +3089,9 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).run(
             project: project,
             serviceName: "job",
-            options: ComposeRunOptions(
-                command: ["ls"],
-                volumes: ["/host:/container:ro", "cache:/cache", "/scratch"]
-            )
+            options: composeRunOptions(command: ["ls"]) {
+                $0.volumes = ["/host:/container:ro", "cache:/cache", "/scratch"]
+            }
         )
 
         let volumeCreate = try #require(runner.commands.first?.arguments)
@@ -3087,7 +3116,9 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator().run(
                 project: project,
                 serviceName: "job",
-                options: ComposeRunOptions(command: ["ls"], volumes: ["/host:/container:delegated"])
+                options: composeRunOptions(command: ["ls"]) {
+                    $0.volumes = ["/host:/container:delegated"]
+                }
             )
             Issue.record("Expected unsupported run volume mode to fail")
         } catch let error as ComposeError {
@@ -3106,7 +3137,9 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator().run(
                 project: project,
                 serviceName: "job",
-                options: ComposeRunOptions(command: ["env"], environment: [""])
+                options: composeRunOptions(command: ["env"]) {
+                    $0.environment = [""]
+                }
             )
             Issue.record("Expected empty run environment override to fail")
         } catch let error as ComposeError {
