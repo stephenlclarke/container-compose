@@ -643,7 +643,7 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
 struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "cp", abstract: "Copy files between service containers and local paths.")
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .customLong("all"), help: "Include containers created by the run command. Not implemented yet.")
+    @Flag(name: .customLong("all"), help: "Include containers created by the run command.")
     var all = false
     @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Not supported by apple/container cp yet.")
     var archive = false

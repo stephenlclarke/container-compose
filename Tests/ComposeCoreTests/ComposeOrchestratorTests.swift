@@ -4835,6 +4835,120 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("cp all includes one-off containers when copying into a service")
+    func cpAllIncludesOneOffContainersWhenCopyingIntoAService() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-run-first",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "true",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-worker-run-first",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeOneOffLabel: "true",
+                    composeConfigHashLabel: "worker-hash",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.discoveryManager = discoveryManager
+        })
+
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["./seed.sql", "api:/tmp/seed.sql"]
+                $0.all = true
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await copier.requests == [
+            .into(id: "demo-api-1", source: "./seed.sql", destination: "/tmp/seed.sql"),
+            .into(id: "demo-api-run-first", source: "./seed.sql", destination: "/tmp/seed.sql"),
+        ])
+    }
+
+    @Test("cp all copies from the first matching service container")
+    func cpAllCopiesFromTheFirstMatchingServiceContainer() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-run-first",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "true",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+        let orchestrator = ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.discoveryManager = discoveryManager
+        })
+
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                $0.all = true
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await copier.requests == [
+            .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
+        ])
+    }
+
     @Test("cp dry run emits runtime command instead of direct API copy")
     func cpDryRunEmitsRuntimeCommandInsteadOfDirectAPICopy() async throws {
         let emitted = MessageRecorder()
@@ -4940,14 +5054,6 @@ struct ComposeOrchestratorTests {
         )
         let cases: [(name: String, options: ComposeCopyOptions, expected: ComposeError)] = [
             (
-                name: "--all",
-                options: ComposeCopyOptions {
-                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
-                    $0.all = true
-                },
-                expected: .unsupported("cp --all: copying from one-off run containers is not implemented by container-compose yet")
-            ),
-            (
                 name: "--archive",
                 options: ComposeCopyOptions {
                     $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
@@ -4987,6 +5093,64 @@ struct ComposeOrchestratorTests {
             #expect(runner.commands.isEmpty)
             #expect(await copier.requests.isEmpty)
         }
+    }
+
+    @Test("cp all rejects service to service copies")
+    func cpAllRejectsServiceToServiceCopies() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-worker-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "worker-hash",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.discoveryManager = discoveryManager
+        })
+
+        do {
+            try await orchestrator.copy(
+                project: project,
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "worker:/tmp/report.txt"]
+                    $0.all = true
+                }
+            )
+            Issue.record("Expected unsupported service-to-service cp --all error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("cp --all with service-to-service copies is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true, true])
+        #expect(await copier.requests.isEmpty)
     }
 
     @Test("export maps service containers to runtime export")
@@ -7250,6 +7414,7 @@ private extension CommandResult {
 }
 
 private let composeConfigHashLabel = "com.apple.container.compose.config-hash"
+private let composeOneOffLabel = "com.apple.container.compose.oneoff"
 private let composeProjectLabel = "com.apple.container.compose.project"
 private let composeServiceLabel = "com.apple.container.compose.service"
 private let composeProjectConfigFilesLabel = "com.apple.container.compose.project.config-files"

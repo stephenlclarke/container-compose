@@ -366,16 +366,25 @@ private enum ComposeVolumesFormat {
     case json
 }
 
+private struct ComposeCopyContainerTarget {
+    var id: String
+    var path: String
+
+    var runtimeArgument: String {
+        "\(id):\(path)"
+    }
+}
+
 private enum ComposeCopyEndpoint {
     case local(String)
-    case container(id: String, path: String)
+    case containers([ComposeCopyContainerTarget])
 
     var runtimeArgument: String {
         switch self {
         case .local(let path):
             path
-        case .container(let id, let path):
-            "\(id):\(path)"
+        case .containers(let containers):
+            containers.first?.runtimeArgument ?? ""
         }
     }
 }
@@ -1038,28 +1047,47 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
 
-        let source = try copyEndpoint(copy.arguments[0], project: project)
-        let destination = try copyEndpoint(copy.arguments[1], project: project)
-        let mappedArguments = [source.runtimeArgument, destination.runtimeArgument]
-        if options.dryRun {
-            try await runContainer(["cp"] + mappedArguments)
-            return
-        }
-
+        let source = try await copyEndpoint(copy.arguments[0], project: project, includeOneOff: copy.all && !options.dryRun)
+        let destination = try await copyEndpoint(copy.arguments[1], project: project, includeOneOff: copy.all && !options.dryRun)
         switch (source, destination) {
-        case (.container(let id, let sourcePath), .local(let localPath)):
-            try await copier.copyFromContainer(id: id, source: sourcePath, destination: localPath)
-        case (.local(let localPath), .container(let id, let destinationPath)):
-            try await copier.copyIntoContainer(id: id, source: localPath, destination: destinationPath)
-        case (.container(let sourceID, let sourcePath), .container(let destinationID, let destinationPath)):
+        case (.containers(let sources), .local(let localPath)):
+            guard let source = sources.first else {
+                throw ComposeError.invalidProject("no source container found for cp")
+            }
+            if options.dryRun {
+                try await runContainer(["cp", source.runtimeArgument, localPath])
+                return
+            }
+            try await copier.copyFromContainer(id: source.id, source: source.path, destination: localPath)
+        case (.local(let localPath), .containers(let destinations)):
+            if options.dryRun {
+                for destination in destinations {
+                    try await runContainer(["cp", localPath, destination.runtimeArgument])
+                }
+                return
+            }
+            for destination in destinations {
+                try await copier.copyIntoContainer(id: destination.id, source: localPath, destination: destination.path)
+            }
+        case (.containers(let sources), .containers(let destinations)):
+            if copy.all {
+                throw ComposeError.unsupported("cp --all with service-to-service copies is not implemented by container-compose yet")
+            }
+            guard let source = sources.first, let destination = destinations.first else {
+                throw ComposeError.invalidProject("no source or destination container found for cp")
+            }
+            if options.dryRun {
+                try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+                return
+            }
             try await copier.copyBetweenContainers(
-                sourceID: sourceID,
-                source: sourcePath,
-                destinationID: destinationID,
-                destination: destinationPath
+                sourceID: source.id,
+                source: source.path,
+                destinationID: destination.id,
+                destination: destination.path
             )
         case (.local, .local):
-            try await runContainer(["cp"] + mappedArguments)
+            try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
         }
     }
 
@@ -1607,9 +1635,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose cp` options before invoking runtime copy.
     func validateCopyOptions(_ options: ComposeCopyOptions) throws {
-        if options.all {
-            throw ComposeError.unsupported("cp --all: copying from one-off run containers is not implemented by container-compose yet")
-        }
         if options.archive {
             throw ComposeError.unsupported("cp --archive: apple/container cp does not expose archive mode")
         }
@@ -2073,7 +2098,11 @@ private extension ComposeOrchestrator {
     }
 
     /// Rewrites `SERVICE:/path` copy operands to the matching service container.
-    private func copyEndpoint(_ argument: String, project: ComposeProject) throws -> ComposeCopyEndpoint {
+    private func copyEndpoint(
+        _ argument: String,
+        project: ComposeProject,
+        includeOneOff: Bool
+    ) async throws -> ComposeCopyEndpoint {
         guard let delimiter = argument.firstIndex(of: ":") else {
             return .local(argument)
         }
@@ -2088,7 +2117,22 @@ private extension ComposeOrchestrator {
         guard path.hasPrefix("/") else {
             throw ComposeError.invalidProject("container copy path for service '\(serviceName)' must be absolute")
         }
-        return .container(id: containerName(project: project, service: service, oneOff: false), path: path)
+        if includeOneOff {
+            let containers = try await copyTargets(project: project, service: service, path: path)
+            guard !containers.isEmpty else {
+                throw ComposeError.invalidProject("no container found for service '\(serviceName)'")
+            }
+            return .containers(containers)
+        }
+        return .containers([ComposeCopyContainerTarget(id: containerName(project: project, service: service, oneOff: false), path: path)])
+    }
+
+    /// Returns service and one-off containers that can be targeted by `cp --all`.
+    private func copyTargets(project: ComposeProject, service: ComposeService, path: String) async throws -> [ComposeCopyContainerTarget] {
+        try await projectContainers(projectName: project.name, all: true)
+            .filter { $0.serviceName == service.name }
+            .sorted(by: compareCopyTargetContainers)
+            .map { ComposeCopyContainerTarget(id: $0.id, path: path) }
     }
 
     /// Returns whether a copy operand prefix has Compose service-reference shape.
@@ -2541,6 +2585,7 @@ private struct ComposeLabelOverride {
 
 private let projectLabel = "com.apple.container.compose.project"
 private let serviceLabel = "com.apple.container.compose.service"
+private let oneOffLabel = "com.apple.container.compose.oneoff"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesLabel = "com.apple.container.compose.project.config-files"
@@ -2558,6 +2603,11 @@ private extension ComposeContainerSummary {
     /// Compose service label attached to a runtime container.
     var serviceName: String? {
         labels[serviceLabel]
+    }
+
+    /// Whether this container was created by `compose run`.
+    var isOneOff: Bool {
+        labels[oneOffLabel] == "true"
     }
 
     /// Compose config hash label used for recreate decisions.
@@ -2674,7 +2724,7 @@ private func resourceLabels(project: ComposeProject, labels: [String: String]?) 
 private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) throws -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("\(serviceLabel)=\(service.name)")
-    labels.append("com.apple.container.compose.oneoff=\(oneOff)")
+    labels.append("\(oneOffLabel)=\(oneOff)")
     labels.append("\(configHashLabel)=\(try configHash(project: project, service: service))")
     if let firstFile = project.composeFiles.first {
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
@@ -2962,6 +3012,14 @@ private func filterContainersByStatus(_ containers: [ComposeContainerSummary], s
 /// Filters direct API containers by Compose project label.
 private func filterProjectContainers(projectName: String, containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
     containers.filter { $0.projectName == projectName }
+}
+
+/// Orders normal service containers before one-off `run` containers for `cp --all`.
+private func compareCopyTargetContainers(_ lhs: ComposeContainerSummary, _ rhs: ComposeContainerSummary) -> Bool {
+    if lhs.isOneOff != rhs.isOneOff {
+        return !lhs.isOneOff
+    }
+    return lhs.id < rhs.id
 }
 
 /// Validates the `compose ls --format` value.
