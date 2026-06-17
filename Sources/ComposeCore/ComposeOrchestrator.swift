@@ -348,7 +348,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                if !up.forceRecreate, existing.configHash == configHash(project: project, service: service) {
+                if !up.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
@@ -357,7 +357,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
 
             try await runContainer(
-                runArguments(
+                try runArguments(
                     project: project,
                     service: service,
                     options: RunArgumentOptions {
@@ -397,7 +397,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                if !create.forceRecreate, existing.configHash == configHash(project: project, service: service) {
+                if !create.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
@@ -406,7 +406,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
 
             try await runContainer(
-                runArguments(
+                try runArguments(
                     project: project,
                     service: service,
                     options: RunArgumentOptions {
@@ -702,7 +702,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await startDependencyServices(project: runProject, services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
-            runArguments(
+            try runArguments(
                 project: runProject,
                 service: service,
                 options: RunArgumentOptions {
@@ -1073,6 +1073,7 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedServiceMetadataAndLoggingFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
+        try validateServiceLabels(project: project, service: service)
         if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
@@ -1280,9 +1281,6 @@ private extension ComposeOrchestrator {
         }
         if service.attach != nil {
             fields.append(("attach", "service attach behavior is not implemented by container-compose yet"))
-        }
-        if let labelFiles = service.labelFiles, !labelFiles.isEmpty {
-            fields.append(("label_file", "label file support is not implemented by container-compose yet"))
         }
         if service.logging != nil {
             fields.append(("logging", "service logging configuration is not implemented by container-compose yet"))
@@ -1725,7 +1723,7 @@ private extension ComposeOrchestrator {
                 parsed = ComposeLabelOverride(key: override, value: nil)
             }
 
-            guard !parsed.key.hasPrefix(reservedComposeLabelPrefix) else {
+            guard !reservedComposeLabelPrefixes.contains(where: { parsed.key.hasPrefix($0) }) else {
                 throw ComposeError.invalidProject("run --label cannot override reserved Compose tracking label '\(parsed.key)'")
             }
             return parsed
@@ -1769,11 +1767,12 @@ private extension ComposeOrchestrator {
             args.append("--rm")
         }
 
-        for label in serviceLabels(project: project, service: service, oneOff: run.oneOff) {
+        for label in try serviceLabels(project: project, service: service, oneOff: run.oneOff) {
             args.append(contentsOf: ["--label", label])
         }
+        let effectiveLabels = try effectiveServiceLabels(project: project, service: service)
         let overriddenLabelKeys = Set(run.labelOverrides.map(\.key))
-        for (key, value) in (service.labels ?? [:]).sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
+        for (key, value) in effectiveLabels.sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
         for label in run.labelOverrides {
@@ -1898,7 +1897,7 @@ private extension ComposeOrchestrator {
 
             let name = containerName(project: project, service: service, oneOff: false)
             let existing = try await inspectContainer(name)
-            if let existing, existing.configHash == configHash(project: project, service: service) {
+            if let existing, existing.configHash == (try configHash(project: project, service: service)) {
                 options.emit("compose: reusing existing container \(name)")
                 continue
             }
@@ -1908,7 +1907,7 @@ private extension ComposeOrchestrator {
             }
 
             try await runContainer(
-                runArguments(
+                try runArguments(
                     project: project,
                     service: service,
                     options: RunArgumentOptions {
@@ -2279,6 +2278,8 @@ private let workingDirectoryLabel = "com.apple.container.compose.project.working
 private let configFilesLabel = "com.apple.container.compose.project.config-files"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
 private let reservedComposeLabelPrefix = "com.apple.container.compose."
+private let reservedDockerComposeLabelPrefix = "com.docker.compose."
+private let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
 
 private extension ComposeContainerSummary {
     /// Compose project label attached to a runtime container.
@@ -2380,11 +2381,11 @@ private func resourceLabels(project: ComposeProject, labels: [String: String]?) 
 }
 
 /// Returns labels that identify a service container and its config hash.
-private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) -> [String] {
+private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) throws -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("\(serviceLabel)=\(service.name)")
     labels.append("com.apple.container.compose.oneoff=\(oneOff)")
-    labels.append("\(configHashLabel)=\(configHash(project: project, service: service))")
+    labels.append("\(configHashLabel)=\(try configHash(project: project, service: service))")
     if let firstFile = project.composeFiles.first {
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
     }
@@ -2397,11 +2398,14 @@ private func composeFilesHash(_ composeFiles: [String]) -> String {
 }
 
 /// Hashes the effective service configuration for recreate decisions.
-private func configHash(project: ComposeProject, service: ComposeService) -> String {
+private func configHash(project: ComposeProject, service: ComposeService) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
+    var effectiveService = service
+    effectiveService.labels = try effectiveServiceLabels(project: project, service: service)
+    effectiveService.labelFiles = nil
     let fingerprint = ServiceConfigFingerprint(
-        service: service,
+        service: effectiveService,
         networks: serviceNetworkRuntimeNames(project: project, service: service),
         volumes: serviceVolumeRuntimeNames(project: project, service: service)
     )
@@ -2409,6 +2413,89 @@ private func configHash(project: ComposeProject, service: ComposeService) -> Str
         return stableHash(service.name)
     }
     return stableHash(String(decoding: data, as: UTF8.self))
+}
+
+/// Validates user-supplied service labels and label files before side effects.
+private func validateServiceLabels(project: ComposeProject, service: ComposeService) throws {
+    _ = try effectiveServiceLabels(project: project, service: service)
+}
+
+/// Returns the user labels applied to a service after processing label files.
+private func effectiveServiceLabels(project: ComposeProject, service: ComposeService) throws -> [String: String] {
+    var labels: [String: String] = [:]
+    for file in service.labelFiles ?? [] {
+        for (key, value) in try loadLabels(fromLabelFile: file, project: project, service: service) {
+            labels[key] = value
+        }
+    }
+    for (key, value) in service.labels ?? [:] {
+        try validateUserLabelKey(key, source: "service '\(service.name)' label")
+        labels[key] = value
+    }
+    return labels
+}
+
+/// Loads one Compose `label_file` using the env-file-like key-value syntax.
+private func loadLabels(fromLabelFile path: String, project: ComposeProject, service: ComposeService) throws -> [String: String] {
+    let url = labelFileURL(path, project: project)
+    let contents: String
+    do {
+        contents = try String(contentsOf: url, encoding: .utf8)
+    } catch {
+        throw ComposeError.invalidProject("service '\(service.name)' label_file '\(path)' could not be read")
+    }
+
+    var labels: [String: String] = [:]
+    for (offset, line) in contents.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+        guard let label = try parseLabelFileLine(String(line), path: path, lineNumber: offset + 1, service: service) else {
+            continue
+        }
+        labels[label.key] = label.value
+    }
+    return labels
+}
+
+/// Resolves label files relative to the normalized project directory.
+private func labelFileURL(_ path: String, project: ComposeProject) -> URL {
+    if path.hasPrefix("/") {
+        return URL(fileURLWithPath: path)
+    }
+    return URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: project.workingDirectory, isDirectory: true)).absoluteURL
+}
+
+/// Parses one key-value line from a Compose label file.
+private func parseLabelFileLine(
+    _ line: String,
+    path: String,
+    lineNumber: Int,
+    service: ComposeService
+) throws -> (key: String, value: String)? {
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else {
+        return nil
+    }
+
+    let key: String
+    let value: String
+    if let equals = line.firstIndex(of: "=") {
+        key = String(line[..<equals]).trimmingCharacters(in: .whitespacesAndNewlines)
+        value = String(line[line.index(after: equals)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    } else {
+        key = trimmed
+        value = ""
+    }
+    guard !key.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' label_file '\(path)' line \(lineNumber) has an empty label key")
+    }
+    try validateUserLabelKey(key, source: "service '\(service.name)' label_file '\(path)'")
+    return (key, value)
+}
+
+/// Rejects labels that would conflict with Compose tracking metadata.
+private func validateUserLabelKey(_ key: String, source: String) throws {
+    guard !reservedComposeLabelPrefixes.contains(where: { key.hasPrefix($0) }) else {
+        throw ComposeError.invalidProject("\(source) cannot set reserved Compose tracking label '\(key)'")
+    }
 }
 
 /// Returns runtime network names that affect a service's run arguments.

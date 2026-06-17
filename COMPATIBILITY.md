@@ -43,7 +43,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, `port` for static published bindings, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `NetworkClient.create(configuration:)`, `NetworkClient.delete(id:)`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish`, normalized Compose port metadata | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.delete(name:)`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `dns_opt`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `ContainerClient.stop(id:opts:)` | [S1](#s1-supported-local-web-stack) |
-| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
+| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, `label_file`, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
 | Simple ordering | `depends_on` with no condition or `condition: service_started`, default `required: true` behavior, and optional `required: false` dependencies when present or omitted from the normalized project; `run` starts supported dependencies before the one-off container; `up --no-deps` for selected services and `run --no-deps` for one-off containers | Plugin dependency ordering before `container run`, with optional missing dependencies skipped and dependency traversal/validation skipped when explicitly requested | [S1](#s1-supported-local-web-stack) |
 
 ### Blocked By apple/container
@@ -69,7 +69,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | Advanced build configuration | `additional_contexts`, `cache_from`, `cache_to`, `dockerfile_inline`, `entitlements`, build `extra_hosts`, build `isolation`, build `labels`, build `network`, `platforms`, build `privileged`, `provenance`, build `pull`, `sbom`, build `secrets`, build `shm_size`, `ssh`, `tags`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 | Dependency lifecycle metadata | `depends_on.restart: true` | Dependency restart propagation | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
-| Metadata, logging, storage shortcuts | `annotations`, `attach`, `label_file`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, label-file loading, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
+| Metadata, logging, storage shortcuts | `annotations`, `attach`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `convert`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
 
@@ -108,7 +108,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 | Example | Status bucket | What it demonstrates |
 | --- | --- | --- |
-| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, `create`, ports, static `port`, environment, one network, volumes, labels, lifecycle, logs, exec, stats, copy, and `down --volumes` |
+| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, `create`, ports, static `port`, environment, one network, volumes, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes` |
 | [A1: Apple Gap, Networking](#a1-apple-gap-networking) | [`apple/container`][apple-container] gap | Multiple networks, aliases, fixed IP attachment options, and network namespace modes |
 | [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links) | [`apple/container`][apple-container] gap | Hostname, domain name, explicit host entries, MAC address, and legacy links |
 | [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls) | [`apple/container`][apple-container] gap | Namespace controls, privileged/device access, advanced resources, and sysctls |
@@ -117,7 +117,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 | [C1: Plugin Gap, Replica Scaling And Deploy](#c1-plugin-gap-replica-scaling-and-deploy) | `container-compose` gap | Replica naming, lifecycle, logs, `ps`, `rm`, `exec --index`, DNS, and deploy semantics |
 | [C2: Plugin Gap, Advanced Build Fields](#c2-plugin-gap-advanced-build-fields) | `container-compose` gap | Additional contexts, cache, inline Dockerfile, secrets, SSH, tags, and provenance/SBOM fields |
 | [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks) | `container-compose` gap | Watch/develop, providers, model bindings, and lifecycle hooks |
-| [C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) | `container-compose` gap | Dependency restart propagation, annotations, label files, logging options, inherited mounts, API socket, block I/O, and time-window pull policy |
+| [C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) | `container-compose` gap | Dependency restart propagation, annotations, logging options, inherited mounts, API socket, block I/O, and time-window pull policy |
 | [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands) | `container-compose` gap | Compose v2 commands that still need command-level plugin design |
 | [O1: Config-Only Metadata](#o1-config-only-metadata) | Config-only | Extension metadata, top-level models/secrets, and `expose` in normalized output |
 
@@ -174,6 +174,8 @@ services:
     stop_grace_period: 10s
     labels:
       example.com/service: api
+    label_file:
+      - ./api.labels
 
   worker:
     build:
@@ -207,6 +209,12 @@ File: `api.env`
 
 ```env
 API_TRACE=1
+```
+
+File: `api.labels`
+
+```env
+example.com/label-file=enabled
 ```
 
 Dockerfile: `worker/Dockerfile`
@@ -689,13 +697,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows
 
-Expected result: `container compose up` rejects this because dependency restart propagation, annotations, label files, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
+Expected result: `container compose up` rejects this because dependency restart propagation, annotations, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this grouped example.
-- `container-compose`: needs dependency restart propagation, runtime mapping, inherited mount behavior, label-file loading, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
+- `container-compose`: needs dependency restart propagation, runtime mapping, inherited mount behavior, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
 
 ```yaml
 # compose.yaml
@@ -717,8 +725,6 @@ services:
         restart: true
     annotations:
       example.com/owner: platform
-    label_file:
-      - ./labels.env
     logging:
       driver: json-file
     pull_policy: daily

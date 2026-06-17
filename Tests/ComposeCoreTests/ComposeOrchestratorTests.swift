@@ -65,6 +65,13 @@ private func projectWithRuntimeResources(networkName: String, volumeName: String
     }
 }
 
+private func temporaryDirectory() throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
 @Suite("Compose orchestrator")
 struct ComposeOrchestratorTests {
     @Test("orders selected services after dependencies")
@@ -5897,6 +5904,166 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 
+    @Test("up applies labels from service label files")
+    func upAppliesLabelsFromServiceLabelFiles() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data(
+            """
+            # comments and blank lines are ignored
+            com.example.empty
+            com.example.file=base
+            com.example.shared=base
+
+            """.utf8
+        ).write(to: directory.appendingPathComponent("base.labels"))
+        try Data(
+            """
+            com.example.file=override
+
+            """.utf8
+        ).write(to: directory.appendingPathComponent("override.labels"))
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.labelFiles = ["base.labels", "override.labels"]
+                    $0.labels = [
+                        "com.example.file": "inline",
+                        "com.example.inline": "yes",
+                    ]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--label", "com.example.empty="]))
+        #expect(command.containsSequence(["--label", "com.example.file=inline"]))
+        #expect(command.containsSequence(["--label", "com.example.inline=yes"]))
+        #expect(command.containsSequence(["--label", "com.example.shared=base"]))
+        #expect(!command.containsSequence(["--label", "com.example.file=override"]))
+    }
+
+    @Test("up recreates containers when service label files change")
+    func upRecreatesContainersWhenServiceLabelFilesChange() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let labelFile = directory.appendingPathComponent("service.labels")
+        try Data("com.example.version=one\n".utf8).write(to: labelFile)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.labelFiles = ["service.labels"]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+        }
+        let createRunner = RecordingRunner()
+
+        try await ComposeOrchestrator(
+            runner: createRunner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let oldRun = try #require(createRunner.commands.last?.arguments)
+        let oldHash = try #require(composeConfigHash(in: oldRun))
+        try Data("com.example.version=two\n".utf8).write(to: labelFile)
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: oldHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let newRun = try #require(runner.commands.first?.arguments)
+        #expect(newRun.containsSequence(["--label", "com.example.version=two"]))
+        #expect(composeConfigHash(in: newRun) != oldHash)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
+    @Test("up rejects reserved labels from service label files before creating resources")
+    func upRejectsReservedLabelsFromServiceLabelFilesBeforeCreatingResources() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("com.apple.container.compose.project=evil\n".utf8)
+            .write(to: directory.appendingPathComponent("service.labels"))
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.labelFiles = ["service.labels"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected reserved service label file to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' label_file 'service.labels' cannot set reserved Compose tracking label 'com.apple.container.compose.project'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests == [])
+    }
+
+    @Test("up rejects reserved service labels before creating resources")
+    func upRejectsReservedServiceLabelsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.labels = ["com.docker.compose.project": "evil"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected reserved service label to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' label cannot set reserved Compose tracking label 'com.docker.compose.project'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests == [])
+    }
+
     @Test("run rejects empty label override")
     func runRejectsEmptyLabelOverride() async throws {
         let project = ComposeProject(
@@ -6664,11 +6831,6 @@ private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedSer
             composeName: "attach",
             reason: "service attach behavior is not implemented by container-compose yet",
             configure: { $0.attach = false }
-        ),
-        UnsupportedServiceMetadataAndLoggingFieldCase(
-            composeName: "label_file",
-            reason: "label file support is not implemented by container-compose yet",
-            configure: { $0.labelFiles = ["./service.labels"] }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
