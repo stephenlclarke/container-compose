@@ -1137,7 +1137,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
               let published = mapping.published
         else {
             if mappings.contains(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published == nil }) {
-                throw ComposeError.unsupported("service '\(service.name)' publishes target port \(requested.target)/\(requested.protocolName) dynamically; published port lookup needs richer inspect output")
+                throw dynamicPortUnsupported(serviceName: service.name, target: requested.target, protocolName: requested.protocolName)
             }
             throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
         }
@@ -2311,7 +2311,7 @@ private extension ComposeOrchestrator {
         switch parts.count {
         case 1:
             guard !parts[0].contains("-") else {
-                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
+                throw dynamicPortUnsupported(serviceName: serviceName, target: parts[0], protocolName: protocolName)
             }
             return ComposePublishedPort(hostIP: nil, published: nil, target: parts[0], protocolName: protocolName)
         case 2...:

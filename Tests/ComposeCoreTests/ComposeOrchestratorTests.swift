@@ -5317,8 +5317,8 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("port rejects dynamic bindings that need runtime inspect output")
-    func portRejectsDynamicBindingsThatNeedRuntimeInspectOutput() throws {
+    @Test("port rejects dynamic bindings that need explicit host ports")
+    func portRejectsDynamicBindingsThatNeedExplicitHostPorts() throws {
         let orchestrator = ComposeOrchestrator()
         let project = ComposeProject(
             name: "demo",
@@ -5333,7 +5333,7 @@ struct ComposeOrchestratorTests {
             try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
             Issue.record("Expected unsupported dynamic port lookup")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; published port lookup needs richer inspect output"))
+            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -5359,23 +5359,23 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["0.0.0.0:8080"])
     }
 
-    @Test("port rejects dynamic ranges that need runtime inspect output")
-    func portRejectsDynamicRangesThatNeedRuntimeInspectOutput() throws {
+    @Test("port rejects explicit ranges that need runtime inspect output")
+    func portRejectsExplicitRangesThatNeedRuntimeInspectOutput() throws {
         let orchestrator = ComposeOrchestrator()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.ports = ["80-82"]
+                    $0.ports = ["8080-8082:80-82"]
                 },
             ]
         )
 
         do {
             try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
-            Issue.record("Expected unsupported dynamic port range lookup")
+            Issue.record("Expected unsupported explicit port range lookup")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses port range '80-82'; port range lookup needs richer inspect output"))
+            #expect(error == .unsupported("service 'api' uses port range '8080-8082:80-82'; port range lookup needs richer inspect output"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
