@@ -327,6 +327,10 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("rm"), help: "Remove the one-off container after exit.")
     var remove = false
+    @Flag(name: .shortAndLong, help: "Run the one-off container in the background.")
+    var detach = false
+    @Flag(name: [.customShort("T"), .customLong("no-tty")], help: "Disable pseudo-TTY allocation.")
+    var noTty = false
     @Flag(name: [.customShort("P"), .customLong("service-ports")], help: "Publish all ports declared by the service.")
     var servicePorts = false
     @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
@@ -363,6 +367,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeRunOptions(
                 command: command,
                 remove: remove,
+                detach: detach,
+                noTty: noTty,
                 servicePorts: servicePorts,
                 publish: publish,
                 pullPolicy: pull,

@@ -87,7 +87,7 @@ cli-smoke: build
 	.build/debug/compose version --dry-run >/dev/null
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080:80"\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080:80"\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *" alpine echo hello"* ]]; \
@@ -123,6 +123,15 @@ cli-smoke: build
 	run_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v /host:/container:ro api ls)"; \
 	[[ "$$run_volume_output" == *"--volume /host:/container:ro"* ]]; \
 	[[ "$$run_volume_output" == *" alpine ls"* ]]; \
+	run_detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -d api sleep 60)"; \
+	[[ "$$run_detached_output" == *"--detach"* ]]; \
+	[[ "$$run_detached_output" == *" alpine sleep 60"* ]]; \
+	run_tty_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run shell sh)"; \
+	[[ "$$run_tty_output" == *"--tty"* ]]; \
+	[[ "$$run_tty_output" == *"--interactive"* ]]; \
+	run_no_tty_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -T shell sh)"; \
+	[[ "$$run_no_tty_output" != *"--tty"* ]]; \
+	[[ "$$run_no_tty_output" == *"--interactive"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
