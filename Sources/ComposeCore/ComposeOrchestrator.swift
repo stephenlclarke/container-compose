@@ -93,19 +93,22 @@ public struct ComposeRunOptions {
     public var servicePorts: Bool
     public var publish: [String]
     public var containerName: String?
+    public var entrypoint: String?
 
     public init(
         command: [String] = [],
         remove: Bool = false,
         servicePorts: Bool = false,
         publish: [String] = [],
-        containerName: String? = nil
+        containerName: String? = nil,
+        entrypoint: String? = nil
     ) {
         self.command = command
         self.remove = remove
         self.servicePorts = servicePorts
         self.publish = publish
         self.containerName = containerName
+        self.entrypoint = entrypoint
     }
 }
 
@@ -298,6 +301,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if !run.command.isEmpty {
             service.command = run.command
+        }
+        if let entrypoint = run.entrypoint {
+            service.entrypoint = [entrypoint]
         }
         try validateRuntimeSupport(service: service)
         try await applyServicePullPolicies(services: [service])

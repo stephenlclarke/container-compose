@@ -225,6 +225,27 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps run entrypoint value before service name")
+    func keepsRunEntrypointValueBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "--entrypoint",
+            "/bin/sh -c",
+            "api",
+            "echo",
+            "ok",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--entrypoint",
+            "/bin/sh -c",
+            "api",
+            "echo",
+            "ok",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

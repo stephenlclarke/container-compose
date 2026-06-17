@@ -2738,6 +2738,30 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 
+    @Test("run overrides service entrypoint for one-off containers")
+    func runOverridesServiceEntrypointForOneOffContainers() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.entrypoint = ["/usr/bin/default"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["echo", "ok"], entrypoint: "/bin/sh -c")
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--entrypoint", "/bin/sh -c"]))
+        #expect(!command.containsSequence(["--entrypoint", "/usr/bin/default"]))
+        #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
+    }
+
     @Test("up reuses existing containers when no recreate is requested")
     func upReusesExistingContainersWhenNoRecreateIsRequested() async throws {
         let emitted = MessageRecorder()
