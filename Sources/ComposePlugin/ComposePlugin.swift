@@ -256,11 +256,13 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .shortAndLong, help: "Include stopped containers.")
     var all = false
+    @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display container IDs.")
+    var quiet = false
 
     /// Lists project containers, optionally including stopped containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().ps(project: loadedProject, all: all)
+        try await orchestrator().ps(project: loadedProject, all: all, quiet: quiet)
     }
 }
 

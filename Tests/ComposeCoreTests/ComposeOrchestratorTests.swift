@@ -1343,6 +1343,21 @@ struct ComposeOrchestratorTests {
         #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-api-1", "demo-worker-1"])
     }
 
+    @Test("ps quiet prints project scoped container IDs")
+    func psQuietPrintsProjectScopedContainerIDs() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, quiet: true)
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json"]])
+        #expect(emitted.messages == ["demo-api-1\ndemo-worker-1"])
+    }
+
     @Test("describes compose errors")
     func describesComposeErrors() {
         #expect(ComposeError.commandFailed(command: "container ps", status: 7, stderr: "").description == "container ps failed with exit code 7")
