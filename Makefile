@@ -199,9 +199,8 @@ cli-smoke: build
 	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json 2>&1 || true)"; \
 	[[ "$$events_output" == *"unsupported compose feature: events:"* ]]; \
 	[[ "$$events_output" == *"apple/container does not expose an event stream yet"* ]]; \
-	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 8080 2>&1 || true)"; \
-	[[ "$$port_output" == *"unsupported compose feature: port:"* ]]; \
-	[[ "$$port_output" == *"published port lookup needs richer inspect output"* ]]; \
+	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 80)"; \
+	[[ "$$port_output" == *"0.0.0.0:8080"* ]]; \
 	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api 2>&1 || true)"; \
 	[[ "$$pause_output" == *"unsupported compose feature: pause:"* ]]; \
 	[[ "$$pause_output" == *"apple/container does not expose pause yet"* ]]; \

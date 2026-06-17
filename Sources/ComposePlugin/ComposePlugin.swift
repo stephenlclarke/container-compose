@@ -628,14 +628,28 @@ struct Events: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose port` until inspect exposes port bindings.
+/// Implements `compose port` for static Compose port bindings.
 struct Port: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "port", abstract: "Print public port bindings.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for published port lookup.
-    func run() throws {
-        try global.orchestrator().unsupported("port", reason: "published port lookup needs richer inspect output")
+    @Option(name: .customLong("protocol"), help: "Port protocol: tcp or udp.")
+    var portProtocol = "tcp"
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
+    @Argument(help: "Service name.")
+    var service: String
+    @Argument(help: "Private container port.")
+    var privatePort: String
+    /// Prints the host address and published port for a static service binding.
+    func run() async throws {
+        let loadedProject = try await project()
+        try orchestrator().port(
+            project: loadedProject,
+            serviceName: service,
+            privatePort: privatePort,
+            protocolName: portProtocol,
+            index: index
+        )
     }
 }
 

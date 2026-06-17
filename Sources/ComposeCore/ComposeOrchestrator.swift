@@ -680,6 +680,35 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await runContainer(["cp"] + mappedArguments)
     }
 
+    /// Prints the public address for a statically published service port.
+    public func port(
+        project: ComposeProject,
+        serviceName: String,
+        privatePort: String,
+        protocolName: String,
+        index: Int
+    ) throws {
+        guard index == 1 else {
+            throw ComposeError.unsupported("port --index \(index): replica-aware published port lookup needs richer inspect output")
+        }
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+
+        let requested = try parsePortLookup(privatePort: privatePort, protocolName: protocolName)
+        let mappings = try (service.ports ?? []).map { try parsePublishedPort($0, serviceName: service.name) }
+
+        guard let mapping = mappings.first(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published != nil }),
+              let published = mapping.published
+        else {
+            if mappings.contains(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published == nil }) {
+                throw ComposeError.unsupported("service '\(service.name)' publishes target port \(requested.target)/\(requested.protocolName) dynamically; published port lookup needs richer inspect output")
+            }
+            throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
+        }
+        options.emit("\(mapping.hostIP ?? "0.0.0.0"):\(published)")
+    }
+
     /// Throws a consistently formatted unsupported-feature error.
     public func unsupported(_ feature: String, reason: String) throws -> Never {
         throw ComposeError.unsupported("\(feature): \(reason)")
@@ -1603,6 +1632,67 @@ private extension ComposeOrchestrator {
         return String(lines)
     }
 
+    /// Parses the `compose port` lookup target and protocol.
+    func parsePortLookup(privatePort: String, protocolName: String) throws -> (target: String, protocolName: String) {
+        let normalizedProtocol = try normalizedPortProtocol(protocolName)
+        let parts = privatePort.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let target = parts.first, !target.isEmpty else {
+            throw ComposeError.invalidProject("port requires a private container port")
+        }
+        guard !target.contains("-") else {
+            throw ComposeError.unsupported("port ranges need richer inspect output")
+        }
+        if parts.count == 2 {
+            let requestedProtocol = try normalizedPortProtocol(parts[1])
+            guard requestedProtocol == normalizedProtocol else {
+                throw ComposeError.invalidProject("port protocol '\(requestedProtocol)' conflicts with --protocol \(normalizedProtocol)")
+            }
+        }
+        return (target, normalizedProtocol)
+    }
+
+    /// Parses one normalized Compose port mapping.
+    func parsePublishedPort(_ value: String, serviceName: String) throws -> ComposePublishedPort {
+        let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
+        }
+        let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
+        let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+
+        switch parts.count {
+        case 1:
+            guard !parts[0].contains("-") else {
+                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
+            }
+            return ComposePublishedPort(hostIP: nil, published: nil, target: parts[0], protocolName: protocolName)
+        case 2...:
+            let target = parts[parts.count - 1]
+            let published = parts[parts.count - 2]
+            let hostParts = parts.dropLast(2)
+            let hostIP = hostParts.isEmpty ? nil : hostParts.joined(separator: ":")
+            guard !target.isEmpty, !published.isEmpty else {
+                throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
+            }
+            guard !target.contains("-"), !published.contains("-") else {
+                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
+            }
+            return ComposePublishedPort(hostIP: hostIP?.isEmpty == true ? nil : hostIP, published: published, target: target, protocolName: protocolName)
+        default:
+            throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
+        }
+    }
+
+    /// Normalizes Docker Compose port protocols accepted by `compose port`.
+    func normalizedPortProtocol(_ value: String) throws -> String {
+        switch value.lowercased() {
+        case "tcp", "udp":
+            return value.lowercased()
+        default:
+            throw ComposeError.invalidProject("port --protocol must be tcp or udp")
+        }
+    }
+
     /// Appends a Compose mount in the form accepted by `container run`.
     func appendMount(_ mount: ComposeMount, project: ComposeProject, args: inout [String]) throws {
         if mount.type == "tmpfs" {
@@ -1731,6 +1821,13 @@ private extension ComposeOrchestrator {
 
 private struct ExistingContainer {
     var configHash: String?
+}
+
+private struct ComposePublishedPort {
+    var hostIP: String?
+    var published: String?
+    var target: String
+    var protocolName: String
 }
 
 private extension ComposeNetworkOptions {

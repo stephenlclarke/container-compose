@@ -2599,6 +2599,140 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("port prints static published bindings")
+    func portPrintsStaticPublishedBindings() throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = [
+                        "8080:80",
+                        "127.0.0.1:8443:443",
+                        "5353:53/udp",
+                    ]
+                },
+            ]
+        )
+
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "443", protocolName: "tcp", index: 1)
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "53/udp", protocolName: "udp", index: 1)
+
+        #expect(emitted.messages == [
+            "0.0.0.0:8080",
+            "127.0.0.1:8443",
+            "0.0.0.0:5353",
+        ])
+    }
+
+    @Test("port rejects dynamic bindings that need runtime inspect output")
+    func portRejectsDynamicBindingsThatNeedRuntimeInspectOutput() throws {
+        let orchestrator = ComposeOrchestrator()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["80"]
+                },
+            ]
+        )
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+            Issue.record("Expected unsupported dynamic port lookup")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; published port lookup needs richer inspect output"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("port prefers static bindings when dynamic bindings also exist")
+    func portPrefersStaticBindingsWhenDynamicBindingsAlsoExist() throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["80", "8080:80"]
+                },
+            ]
+        )
+
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+
+        #expect(emitted.messages == ["0.0.0.0:8080"])
+    }
+
+    @Test("port rejects dynamic ranges that need runtime inspect output")
+    func portRejectsDynamicRangesThatNeedRuntimeInspectOutput() throws {
+        let orchestrator = ComposeOrchestrator()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["80-82"]
+                },
+            ]
+        )
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+            Issue.record("Expected unsupported dynamic port range lookup")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses port range '80-82'; port range lookup needs richer inspect output"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("port validates lookup options")
+    func portValidatesLookupOptions() throws {
+        let orchestrator = ComposeOrchestrator()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["8080:80"]
+                },
+            ]
+        )
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
+            Issue.record("Expected unsupported index error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("port --index 2: replica-aware published port lookup needs richer inspect output"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80/udp", protocolName: "tcp", index: 1)
+            Issue.record("Expected protocol conflict")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("port protocol 'udp' conflicts with --protocol tcp"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
+            Issue.record("Expected missing port error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' does not publish target port 81/tcp"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("run supports one-off containers and option flags")
     func runSupportsOneOffContainersAndOptionFlags() async throws {
         let runner = RecordingRunner()

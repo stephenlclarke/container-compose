@@ -40,7 +40,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `container start`, `container stop`, `container delete`, `container delete --force`, `container kill`, `container inspect`, `container list`, `container image delete` | [S1](#s1-supported-local-web-stack) |
 | Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `container list --format json` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
 | Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `-T/--no-tty`, and `--interactive=false`, service-aware `cp`, `stats`, `stats --format table/json`, `stats --no-stream`, `version` | `container list`, `container logs`, `container exec --interactive --tty`, `container cp`, `container stats`, plugin version output | [S1](#s1-supported-local-web-stack) |
-| Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish` | [S1](#s1-supported-local-web-stack) |
+| Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, `port` for static published bindings, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish`, normalized Compose port metadata | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `container volume create`, `container volume delete`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `container stop` flags | [S1](#s1-supported-local-web-stack) |
 | Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
@@ -57,7 +57,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 | Namespace and resource controls | `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`, advanced CPU controls, advanced memory/OOM/PID controls | Namespace selection, parent cgroups, CPU scheduler controls beyond `cpus`, memory controls beyond `mem_limit`, swap/OOM/PID controls | [A3](#a3-apple-gap-runtime-controls) |
 | User, security, devices, DNS, kernel tuning | `group_add`, `security_opt`, `privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`, `dns_opt`, `sysctls` | Supplemental groups, security profiles, privileged mode, host devices, GPUs, DNS resolver options, per-container sysctls | [A3](#a3-apple-gap-runtime-controls) |
 | Health, completion, configs, secrets, restart | `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, service `restart` | Health status, exit code/completion-time metadata, config/secret mount primitives, restart policy support | [A4](#a4-apple-gap-health-secrets-and-restart) |
-| Runtime data and state commands | `top`, `events`, `port`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc` | Process listing, event stream, published-port inspect, pause/unpause, wait/exit metadata, stats all-container/truncation controls | [A5](#a5-apple-gap-runtime-data-commands) |
+| Runtime data and state commands | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc` | Process listing, event stream, runtime-discovered published-port inspect, pause/unpause, wait/exit metadata, stats all-container/truncation controls | [A5](#a5-apple-gap-runtime-data-commands) |
 
 ### Blocked By `container-compose`
 
@@ -87,8 +87,8 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 | Status | Commands |
 | --- | --- |
-| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, `kill`, `version` |
-| Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, `port`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc` |
+| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, static `port`, `kill`, `version` |
+| Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc` |
 | Not implemented by `container-compose` yet | `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
 
 ## References
@@ -105,12 +105,12 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 | Example | Status bucket | What it demonstrates |
 | --- | --- | --- |
-| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, `create`, ports, environment, one network, volumes, labels, lifecycle, logs, exec, stats, copy, and `down --volumes` |
+| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, `create`, ports, static `port`, environment, one network, volumes, labels, lifecycle, logs, exec, stats, copy, and `down --volumes` |
 | [A1: Apple Gap, Networking](#a1-apple-gap-networking) | [`apple/container`][apple-container] gap | Multiple networks, aliases, fixed IP attachment options, and network namespace modes |
 | [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links) | [`apple/container`][apple-container] gap | Hostname, domain name, explicit host entries, MAC address, and legacy links |
 | [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls) | [`apple/container`][apple-container] gap | Namespace controls, privileged/device access, advanced resources, DNS options, and sysctls |
 | [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart) | [`apple/container`][apple-container] gap | Healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies |
-| [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands) | [`apple/container`][apple-container] gap | Process listing, event streams, port lookup, pause/unpause, wait metadata, and stats output controls |
+| [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands) | [`apple/container`][apple-container] gap | Process listing, event streams, dynamic port lookup, pause/unpause, wait metadata, and stats output controls |
 | [C1: Plugin Gap, Replica Scaling And Deploy](#c1-plugin-gap-replica-scaling-and-deploy) | `container-compose` gap | Replica naming, lifecycle, logs, `ps`, `rm`, DNS, and deploy semantics |
 | [C2: Plugin Gap, Advanced Build Fields](#c2-plugin-gap-advanced-build-fields) | `container-compose` gap | Additional contexts, cache, inline Dockerfile, secrets, SSH, tags, and provenance/SBOM fields |
 | [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks) | `container-compose` gap | Watch/develop, providers, model bindings, and lifecycle hooks |
@@ -252,6 +252,7 @@ container compose exec --interactive=false -T api echo ok
 container compose stats
 container compose stats --no-stream --format json api
 container compose cp api:/app/env.txt ./env.txt
+container compose port api 8080
 container compose stop --timeout 12 api
 container compose restart -t 12 api
 container compose kill worker
@@ -486,13 +487,13 @@ CMD ["sh", "-c", "echo worker-ready && sleep 3600"]
 
 ### A5: Apple Gap, Runtime Data Commands
 
-Expected result: these commands and options reject because [`apple/container`][apple-container] needs richer runtime data and state controls.
+Expected result: these commands and options reject because [`apple/container`][apple-container] needs richer runtime data and state controls. `container compose port` supports static published bindings, but dynamic host ports and replica indexes need runtime inspect data that [`apple/container`][apple-container] does not expose yet.
 
 Status path:
 
 - Docker Compose v2: supports these commands.
-- [`apple/container`][apple-container]: missing process listing, event streaming, published-port lookup, pause/unpause, wait/exit metadata, and stats all-container/truncation primitives.
-- `container-compose`: exposes the command names but reports the Apple runtime gap.
+- [`apple/container`][apple-container]: missing process listing, event streaming, runtime-discovered published-port lookup, pause/unpause, wait/exit metadata, and stats all-container/truncation primitives.
+- `container-compose`: exposes the command names and reports the Apple runtime gap for requests that need runtime-discovered state.
 
 ```yaml
 # compose.yaml
@@ -503,7 +504,7 @@ services:
     build:
       context: ./api
     ports:
-      - "8080:8080"
+      - "8080"
 
   worker:
     build:
