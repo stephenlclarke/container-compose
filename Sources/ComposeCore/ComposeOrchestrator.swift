@@ -121,7 +121,9 @@ private struct RunArgumentOptions {
     var containerNameOverride: String?
     var labelOverrides: [ComposeLabelOverride] = []
 
-    init() {}
+    init() {
+        // Stored property defaults represent unmodified service run arguments.
+    }
 
     init(_ configure: (inout RunArgumentOptions) -> Void) {
         configure(&self)
