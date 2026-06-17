@@ -227,8 +227,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
+        let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
-        try validateRuntimeSupport(services: services, project: project)
+        try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
 
         try await ensureResources(project: project)
 
@@ -783,7 +784,11 @@ private extension ComposeOrchestrator {
     }
 
     /// Rejects Compose features that need runtime support not available yet.
-    func validateRuntimeSupport(service: ComposeService, project: ComposeProject) throws {
+    func validateRuntimeSupport(
+        service: ComposeService,
+        project: ComposeProject,
+        validateDependencies: Bool = true
+    ) throws {
         try validateBuildSupport(service: service)
         try validateDeploySupport(service: service)
         try validateProviderModelAndHookSupport(service: service)
@@ -843,7 +848,7 @@ private extension ComposeOrchestrator {
         if let macAddress = service.macAddress, !macAddress.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
-        if let dependsOn = service.dependsOn {
+        if validateDependencies, let dependsOn = service.dependsOn {
             for (dependency, metadata) in dependsOn.sorted(by: { $0.key < $1.key }) {
                 if metadata.restart {
                     throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with restart true; dependency restart propagation is not implemented by container-compose yet")
@@ -931,9 +936,13 @@ private extension ComposeOrchestrator {
     }
 
     /// Validates all selected services before any runtime side effects occur.
-    func validateRuntimeSupport(services: [ComposeService], project: ComposeProject) throws {
+    func validateRuntimeSupport(
+        services: [ComposeService],
+        project: ComposeProject,
+        validateDependencies: Bool = true
+    ) throws {
         for service in services {
-            try validateRuntimeSupport(service: service, project: project)
+            try validateRuntimeSupport(service: service, project: project, validateDependencies: validateDependencies)
         }
     }
 
