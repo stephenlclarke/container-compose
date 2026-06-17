@@ -27,6 +27,7 @@ let package = Package(
     dependencies: [
         .package(name: "container", path: "../container"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
     ],
     targets: [
         .executableTarget(
@@ -48,6 +49,7 @@ let package = Package(
                 .product(name: "ContainerAPIClient", package: "container"),
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
+                .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/ComposeCore"
         ),

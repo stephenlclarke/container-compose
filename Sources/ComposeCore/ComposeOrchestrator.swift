@@ -641,17 +641,35 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         args.append(containerName(project: project, service: service, oneOff: false))
         args.append(contentsOf: exec.command)
-        if exec.detach, !options.dryRun {
-            try await execManager.execDetached(
-                request: ContainerDetachedExecRequest(
-                    id: containerName(project: project, service: service, oneOff: false),
+        if !options.dryRun {
+            let containerID = containerName(project: project, service: service, oneOff: false)
+            if exec.detach {
+                try await execManager.execDetached(
+                    request: ContainerDetachedExecRequest(
+                        id: containerID,
+                        command: exec.command,
+                        environment: exec.environment,
+                        user: exec.user,
+                        workingDirectory: exec.workingDirectory
+                    ),
+                    emit: options.emit
+                )
+                return
+            }
+            let status = try await execManager.execAttached(
+                request: ContainerAttachedExecRequest(
+                    id: containerID,
                     command: exec.command,
                     environment: exec.environment,
                     user: exec.user,
-                    workingDirectory: exec.workingDirectory
-                ),
-                emit: options.emit
+                    workingDirectory: exec.workingDirectory,
+                    interactive: exec.interactive,
+                    tty: exec.tty
+                )
             )
+            if status != 0 {
+                throw ComposeError.commandFailed(command: shellQuoted([options.containerBinary] + args), status: status, stderr: "")
+            }
             return
         }
         try await runContainer(args, inheritedIO: !exec.detach && (exec.interactive || exec.tty))

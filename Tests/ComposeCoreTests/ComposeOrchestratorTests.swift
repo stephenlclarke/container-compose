@@ -2948,11 +2948,13 @@ struct ComposeOrchestratorTests {
     func lifecycleCommandsTargetSelectedServiceContainers() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
+        let execManager = RecordingContainerExecManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let logManager = RecordingContainerLogManager()
         let orchestrator = ComposeOrchestrator(
             runner: runner,
             copier: copier,
+            execManager: execManager,
             lifecycleManager: lifecycleManager,
             logManager: logManager
         )
@@ -2978,10 +2980,15 @@ struct ComposeOrchestratorTests {
         try await orchestrator.kill(project: project, services: ["api"], signal: "SIGTERM")
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/file", "."])
 
-        let commands = runner.commands.map(\.arguments)
-        #expect(commands[0] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
-        #expect(runner.commands[0].io == .inherited)
-        #expect(commands.count == 1)
+        #expect(runner.commands.isEmpty)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["echo", "ok"],
+                interactive: true,
+                tty: true
+            ),
+        ])
         #expect(await logManager.requests == [
             ContainerLogRequest(id: "demo-api-1", tail: 10, follow: true),
         ])
@@ -3595,6 +3602,49 @@ struct ComposeOrchestratorTests {
         #expect(await client.processRequests.isEmpty)
     }
 
+    @Test("attached exec manager maps request to direct process API")
+    func attachedExecManagerMapsRequestToDirectProcessAPI() async throws {
+        let snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .running,
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64"
+        )
+        let client = RecordingContainerExecAPIClient(snapshots: [snapshot], attachedStatus: 7)
+        let manager = ContainerClientExecManager(client: client, processIdentifier: { "process-456" })
+
+        let status = try await manager.execAttached(
+            request: ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["echo", "ok"],
+                environment: ["FOO=bar"],
+                user: "1000:1000",
+                workingDirectory: "/app",
+                interactive: true,
+                tty: false
+            )
+        )
+
+        #expect(status == 7)
+        #expect(await client.getRequests == ["demo-api-1"])
+        #expect(await client.attachedProcessRequests == [
+            ContainerAttachedExecProcessRequest(
+                containerId: "demo-api-1",
+                processId: "process-456",
+                executable: "echo",
+                arguments: ["ok"],
+                environment: ["FOO=bar"],
+                workingDirectory: "/app",
+                terminal: false,
+                user: "1000:1000",
+                supplementalGroups: [],
+                interactive: true,
+                tty: false
+            ),
+        ])
+    }
+
     @Test("exec API client forwards configured operations")
     func execAPIClientForwardsConfiguredOperations() async throws {
         let snapshot = try containerSnapshot(
@@ -3614,6 +3664,15 @@ struct ComposeOrchestratorTests {
                     configuration: configuration,
                     stdio: stdio
                 )
+            },
+            runAttached: { containerId, processId, configuration, interactive, tty in
+                try await recorder.runAttachedProcess(
+                    containerId: containerId,
+                    processId: processId,
+                    configuration: configuration,
+                    interactive: interactive,
+                    tty: tty
+                )
             }
         )
         let configuration = ProcessConfiguration(
@@ -3630,8 +3689,16 @@ struct ComposeOrchestratorTests {
             configuration: configuration,
             stdio: []
         )
+        let status = try await client.runAttachedProcess(
+            containerId: "demo-api-1",
+            processId: "process-456",
+            configuration: configuration,
+            interactive: true,
+            tty: false
+        )
 
         #expect(actualSnapshot.id == "demo-api-1")
+        #expect(status == 0)
         #expect(await recorder.getRequests == ["demo-api-1"])
         #expect(await recorder.processRequests == [
             ContainerExecProcessRequest(
@@ -3645,6 +3712,21 @@ struct ComposeOrchestratorTests {
                 user: "0:0",
                 supplementalGroups: [],
                 stdioCount: 0
+            ),
+        ])
+        #expect(await recorder.attachedProcessRequests == [
+            ContainerAttachedExecProcessRequest(
+                containerId: "demo-api-1",
+                processId: "process-456",
+                executable: "date",
+                arguments: ["-u"],
+                environment: ["TZ=UTC"],
+                workingDirectory: "/",
+                terminal: false,
+                user: "0:0",
+                supplementalGroups: [],
+                interactive: true,
+                tty: false
             ),
         ])
     }
@@ -3901,10 +3983,11 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("exec disables TTY while keeping stdin inherited")
-    func execDisablesTTYWhileKeepingStdinInherited() async throws {
+    @Test("exec disables TTY while keeping stdin interactive")
+    func execDisablesTTYWhileKeepingStdinInteractive() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let execManager = RecordingContainerExecManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, execManager: execManager)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -3920,9 +4003,15 @@ struct ComposeOrchestratorTests {
             tty: false
         )
 
-        let command = try #require(runner.commands.first?.arguments)
-        #expect(command == ["container", "exec", "--interactive", "demo-api-1", "echo", "ok"])
-        #expect(runner.commands.first?.io == .inherited)
+        #expect(runner.commands.isEmpty)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["echo", "ok"],
+                interactive: true,
+                tty: false
+            ),
+        ])
     }
 
     @Test("exec maps environment user workdir and detach options")
@@ -7147,6 +7236,20 @@ private struct ContainerExecProcessRequest: Equatable {
     var stdioCount: Int
 }
 
+private struct ContainerAttachedExecProcessRequest: Equatable {
+    var containerId: String
+    var processId: String
+    var executable: String
+    var arguments: [String]
+    var environment: [String]
+    var workingDirectory: String
+    var terminal: Bool
+    var user: String
+    var supplementalGroups: [UInt32]
+    var interactive: Bool
+    var tty: Bool
+}
+
 private struct ContainerStatsRequest: Equatable {
     var ids: [String]
     var format: String
@@ -7365,14 +7468,26 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
 
 private actor RecordingContainerExecManager: ContainerExecManaging {
     private let outputs: [String: String]
+    private let attachedStatus: Int32
+    private var attachedStorage: [ContainerAttachedExecRequest] = []
     private var storage: [ContainerDetachedExecRequest] = []
 
-    init(outputs: [String: String] = [:]) {
+    init(outputs: [String: String] = [:], attachedStatus: Int32 = 0) {
         self.outputs = outputs
+        self.attachedStatus = attachedStatus
+    }
+
+    var attachedRequests: [ContainerAttachedExecRequest] {
+        attachedStorage
     }
 
     var requests: [ContainerDetachedExecRequest] {
         storage
+    }
+
+    func execAttached(request: ContainerAttachedExecRequest) async throws -> Int32 {
+        attachedStorage.append(request)
+        return attachedStatus
     }
 
     func execDetached(
@@ -7386,11 +7501,14 @@ private actor RecordingContainerExecManager: ContainerExecManaging {
 
 private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
     private let snapshots: [String: ContainerSnapshot]
+    private let attachedStatus: Int32
     private var gets: [String] = []
     private var processes: [ContainerExecProcessRequest] = []
+    private var attachedProcesses: [ContainerAttachedExecProcessRequest] = []
 
-    init(snapshots: [ContainerSnapshot] = []) {
+    init(snapshots: [ContainerSnapshot] = [], attachedStatus: Int32 = 0) {
         self.snapshots = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+        self.attachedStatus = attachedStatus
     }
 
     var getRequests: [String] {
@@ -7399,6 +7517,10 @@ private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
 
     var processRequests: [ContainerExecProcessRequest] {
         processes
+    }
+
+    var attachedProcessRequests: [ContainerAttachedExecProcessRequest] {
+        attachedProcesses
     }
 
     func getContainer(id: String) async throws -> ContainerSnapshot {
@@ -7427,6 +7549,29 @@ private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
             supplementalGroups: configuration.supplementalGroups,
             stdioCount: stdio.count
         ))
+    }
+
+    func runAttachedProcess(
+        containerId: String,
+        processId: String,
+        configuration: ProcessConfiguration,
+        interactive: Bool,
+        tty: Bool
+    ) async throws -> Int32 {
+        attachedProcesses.append(ContainerAttachedExecProcessRequest(
+            containerId: containerId,
+            processId: processId,
+            executable: configuration.executable,
+            arguments: configuration.arguments,
+            environment: configuration.environment,
+            workingDirectory: configuration.workingDirectory,
+            terminal: configuration.terminal,
+            user: configuration.user.description,
+            supplementalGroups: configuration.supplementalGroups,
+            interactive: interactive,
+            tty: tty
+        ))
+        return attachedStatus
     }
 }
 
