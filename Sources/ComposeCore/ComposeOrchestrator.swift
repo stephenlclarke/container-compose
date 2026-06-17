@@ -90,6 +90,7 @@ public struct ComposeDownOptions {
 public struct ComposeRunOptions {
     public var command: [String]
     public var remove: Bool
+    public var detach: Bool
     public var servicePorts: Bool
     public var publish: [String]
     public var pullPolicy: String?
@@ -105,6 +106,7 @@ public struct ComposeRunOptions {
     public init(
         command: [String] = [],
         remove: Bool = false,
+        detach: Bool = false,
         servicePorts: Bool = false,
         publish: [String] = [],
         pullPolicy: String? = nil,
@@ -119,6 +121,7 @@ public struct ComposeRunOptions {
     ) {
         self.command = command
         self.remove = remove
+        self.detach = detach
         self.servicePorts = servicePorts
         self.publish = publish
         self.pullPolicy = pullPolicy
@@ -345,14 +348,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             runArguments(
                 project: runProject,
                 service: service,
-                detach: false,
+                detach: run.detach,
                 remove: run.remove,
                 oneOff: true,
                 publishedPorts: publishedPorts,
                 containerNameOverride: run.containerName,
                 labelOverrides: labelOverrides
             ),
-            inheritedIO: service.tty == true || service.stdinOpen == true
+            inheritedIO: !run.detach && (service.tty == true || service.stdinOpen == true)
         )
     }
 

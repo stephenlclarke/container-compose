@@ -123,6 +123,9 @@ cli-smoke: build
 	run_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v /host:/container:ro api ls)"; \
 	[[ "$$run_volume_output" == *"--volume /host:/container:ro"* ]]; \
 	[[ "$$run_volume_output" == *" alpine ls"* ]]; \
+	run_detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -d api sleep 60)"; \
+	[[ "$$run_detached_output" == *"--detach"* ]]; \
+	[[ "$$run_detached_output" == *" alpine sleep 60"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \

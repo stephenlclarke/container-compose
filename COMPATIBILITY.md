@@ -37,7 +37,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | --- | --- | --- | --- |
 | Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
 | Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, `images`, global `up --pull always/missing/never`, one-off `run --pull always/missing/never`, service `pull_policy: always/missing/if_not_present/never` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container image list` | [S1](#s1-supported-local-web-stack) |
-| Container lifecycle | `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, one-off `run --rm`, one-off `run --name` | `container run`, `container start`, `container stop`, `container delete`, `container kill`, `container inspect`, `container list` | [S1](#s1-supported-local-web-stack) |
+| Container lifecycle | `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container run`, `container start`, `container stop`, `container delete`, `container kill`, `container inspect`, `container list` | [S1](#s1-supported-local-web-stack) |
 | Container interaction | `ps`, `logs`, `exec` with Compose-default stdin/TTY, `-T/--no-tty`, and `--interactive=false`, service-aware `cp`, `version` | `container list`, `container logs`, `container exec --interactive --tty`, `container cp`, plugin version output | [S1](#s1-supported-local-web-stack) |
 | Default networking | One service network, default project networks, external networks, service ports for `up`, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container run --network`, `container run --publish` | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `down --volumes` | `container volume create`, `container volume delete`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
@@ -218,6 +218,7 @@ container compose build
 container compose up --pull missing
 container compose run --pull missing api true
 container compose run --rm api printf ok
+container compose run --detach api sleep 60
 container compose run --name api-shell api sh
 container compose run --service-ports api printf ok
 container compose run -p 9090:8080 api printf ok

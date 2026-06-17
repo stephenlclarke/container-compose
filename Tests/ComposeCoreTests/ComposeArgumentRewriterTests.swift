@@ -183,6 +183,7 @@ struct ComposeArgumentRewriterTests {
     func keepsRunFlagsBeforeServiceNameWhilePreservingCommandArguments() {
         let rewritten = ComposeArgumentRewriter.rewrite([
             "run",
+            "-d",
             "--rm",
             "--service-ports",
             "api",
@@ -192,6 +193,7 @@ struct ComposeArgumentRewriterTests {
 
         #expect(rewritten == [
             "run",
+            "-d",
             "--rm",
             "--service-ports",
             "api",
