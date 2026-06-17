@@ -339,6 +339,10 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var workdir: String?
     @Option(name: [.customShort("u"), .customLong("user")], help: "Override the user for the one-off container.")
     var user: String?
+    @Option(name: [.customShort("e"), .customLong("env")], help: "Set an environment variable for the one-off container. May be repeated.")
+    var environment: [String] = []
+    @Option(name: .customLong("env-from-file"), help: "Read environment variables for the one-off container from a file. May be repeated.")
+    var envFiles: [String] = []
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -358,7 +362,9 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 containerName: name,
                 entrypoint: entrypoint,
                 workingDirectory: workdir,
-                user: user
+                user: user,
+                environment: environment,
+                envFiles: envFiles
             )
         )
     }

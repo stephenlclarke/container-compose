@@ -284,6 +284,29 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps run env shorthand value before service name")
+    func keepsRunEnvShorthandValueBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-e",
+            "LOG_LEVEL=debug",
+            "--env-from-file",
+            ".env.local",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "-e",
+            "LOG_LEVEL=debug",
+            "--env-from-file",
+            ".env.local",
+            "api",
+            "env",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

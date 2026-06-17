@@ -2810,6 +2810,60 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "id"])
     }
 
+    @Test("run applies one-off environment overrides")
+    func runAppliesOneOffEnvironmentOverrides() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.environment = ["EMPTY": nil, "KEEP": "yes", "LOG_LEVEL": "info"]
+                    $0.envFiles = [".env"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(
+                command: ["env"],
+                environment: ["LOG_LEVEL=debug", "NEW=value", "PASSTHROUGH", "EMPTY="],
+                envFiles: [".env.local"]
+            )
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--env", "EMPTY="]))
+        #expect(command.containsSequence(["--env", "KEEP=yes"]))
+        #expect(command.containsSequence(["--env", "LOG_LEVEL=debug"]))
+        #expect(command.containsSequence(["--env", "NEW=value"]))
+        #expect(command.containsSequence(["--env", "PASSTHROUGH"]))
+        #expect(!command.containsSequence(["--env", "LOG_LEVEL=info"]))
+        #expect(command.containsSequence(["--env-file", ".env"]))
+        #expect(command.containsSequence(["--env-file", ".env.local"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "env"])
+    }
+
+    @Test("run rejects empty environment override")
+    func runRejectsEmptyEnvironmentOverride() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator().run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(command: ["env"], environment: [""])
+            )
+            Issue.record("Expected empty run environment override to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --env requires NAME or NAME=VALUE"))
+        }
+    }
+
     @Test("up reuses existing containers when no recreate is requested")
     func upReusesExistingContainersWhenNoRecreateIsRequested() async throws {
         let emitted = MessageRecorder()
