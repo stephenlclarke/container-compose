@@ -59,6 +59,8 @@ struct ComposeNormalizerTests {
               default:
                 aliases:
                   - api.internal
+                driver_opts:
+                  com.docker.network.driver.mtu: "1450"
                 ipv4_address: 10.10.0.5
             ports:
               - "8080:80"
@@ -128,7 +130,12 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.domainName == "example.test")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
-        #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.10.0.5"))])
+        #expect(project.services["api"]?.networkOptions == [
+            "default": ComposeNetworkOptions(
+                driverOpts: ["com.docker.network.driver.mtu": "1450"],
+                addressing: .init(ipv4Address: "10.10.0.5")
+            ),
+        ])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])

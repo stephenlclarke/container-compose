@@ -1697,7 +1697,11 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api") {
                     $0.networks = ["backend"]
                     $0.networkOptions = [
-                        "backend": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.10.0.5"), priority: 42),
+                        "backend": ComposeNetworkOptions(
+                            driverOpts: ["com.example.unsupported": "true"],
+                            addressing: .init(ipv4Address: "10.10.0.5"),
+                            priority: 42
+                        ),
                     ]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -1711,7 +1715,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported network option error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses network attachment options ipv4_address, priority on network 'backend'; network attachment options need an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' uses network attachment options driver_opts, ipv4_address, priority on network 'backend'; network attachment options need an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -2229,6 +2233,75 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
         #expect(commands.count == 1)
         #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:04"]))
+    }
+
+    @Test("up maps supported network MTU option to single network attachment")
+    func upMapsSupportedNetworkMTUOptionToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(
+                            driverOpts: ["com.docker.network.driver.mtu": "1450"],
+                            addressing: .init(macAddress: "02:42:ac:11:00:04")
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        )
+            .up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:04,mtu=1450"]))
+    }
+
+    @Test("up rejects invalid network MTU before creating resources")
+    func upRejectsInvalidNetworkMTUBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(driverOpts: ["com.docker.network.driver.mtu": "fast"]),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid network MTU error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("network MTU driver option 'com.docker.network.driver.mtu' must be a positive integer"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("up rejects MAC address without a single network before creating resources")

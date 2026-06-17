@@ -1242,7 +1242,7 @@ private extension ComposeOrchestrator {
         }
         if let networkOptions = service.networkOptions {
             for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {
-                let fields = options.unsupportedFieldNames()
+                let fields = try options.unsupportedFieldNames()
                 if !fields.isEmpty {
                     let fieldList = fields.joined(separator: ", ")
                     throw ComposeError.unsupported("service '\(service.name)' uses network attachment options \(fieldList) on network '\(network)'; network attachment options need an apple/container runtime gap PR")
@@ -2087,7 +2087,7 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
         if let network = (service.networks ?? []).first {
-            let networkArgument = networkAttachmentArgument(project: project, service: service, network: network)
+            let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
             args.append(contentsOf: ["--network", networkArgument])
         }
         if let platform = service.platform, !platform.isEmpty {
@@ -2592,11 +2592,12 @@ private struct ComposePublishedPort {
 
 private extension ComposeNetworkOptions {
     /// Names the Compose fields that need runtime attachment support.
-    func unsupportedFieldNames() -> [String] {
+    func unsupportedFieldNames() throws -> [String] {
         var fields: [String] = []
-        if let driverOpts, !driverOpts.isEmpty {
+        if let driverOpts, driverOpts.contains(where: { !networkMTUDriverOptionKeys.contains($0.key) }) {
             fields.append("driver_opts")
         }
+        _ = try networkMTU()
         if let gatewayPriority, gatewayPriority != 0 {
             fields.append("gw_priority")
         }
@@ -2616,6 +2617,26 @@ private extension ComposeNetworkOptions {
             fields.append("priority")
         }
         return fields
+    }
+
+    /// Returns the supported MTU driver option value accepted by Apple `container`.
+    func networkMTU() throws -> String? {
+        let values = networkMTUDriverOptionKeys.compactMap { key -> (key: String, value: String)? in
+            guard let value = driverOpts?[key] else {
+                return nil
+            }
+            return (key, value)
+        }
+        guard let first = values.first else {
+            return nil
+        }
+        if values.contains(where: { $0.value != first.value }) {
+            throw ComposeError.invalidProject("network MTU driver options must not conflict")
+        }
+        guard let mtu = Int(first.value), mtu > 0 else {
+            throw ComposeError.invalidProject("network MTU driver option '\(first.key)' must be a positive integer")
+        }
+        return String(mtu)
     }
 }
 
@@ -2649,6 +2670,10 @@ private let configFilesHashLabel = "com.apple.container.compose.project.config-f
 private let reservedComposeLabelPrefix = "com.apple.container.compose."
 private let reservedDockerComposeLabelPrefix = "com.docker.compose."
 private let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
+private let networkMTUDriverOptionKeys = [
+    "com.docker.network.driver.mtu",
+    "mtu",
+]
 
 private extension ComposeContainerSummary {
     /// Compose project label attached to a runtime container.
@@ -2691,10 +2716,17 @@ private func networkRuntimeName(project: ComposeProject, composeName: String) ->
 }
 
 /// Builds the single network attachment value accepted by Apple `container`.
-private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) -> String {
+private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
     var argument = networkRuntimeName(project: project, composeName: network)
+    var options: [String] = []
     if let macAddress = networkMACAddress(service: service, network: network) {
-        argument += ",mac=\(macAddress)"
+        options.append("mac=\(macAddress)")
+    }
+    if let mtu = try service.networkOptions?[network]?.networkMTU() {
+        options.append("mtu=\(mtu)")
+    }
+    if !options.isEmpty {
+        argument += "," + options.joined(separator: ",")
     }
     return argument
 }
