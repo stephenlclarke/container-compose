@@ -126,7 +126,7 @@ public struct ComposeService: Codable, Equatable {
     public var networkAliases: [String: [String]]? = nil
     public var networkOptions: [String: ComposeNetworkOptions]? = nil
     public var networkMode: String? = nil
-    public var dependsOn: [String: String]? = nil
+    public var dependsOn: [String: ComposeDependency]? = nil
     public var links: [String]? = nil
     public var externalLinks: [String]? = nil
     public var labels: [String: String]? = nil
@@ -285,6 +285,51 @@ public struct ComposeService: Codable, Equatable {
         case configs
         case secrets
         case extensions
+    }
+}
+
+/// Dependency metadata normalized from Compose `depends_on` entries.
+public struct ComposeDependency: Codable, Equatable {
+    public var condition: String
+    public var restart: Bool
+    public var required: Bool?
+
+    public init(condition: String = "", restart: Bool = false, required: Bool? = nil) {
+        self.condition = condition
+        self.restart = restart
+        self.required = required
+    }
+
+    public init(from decoder: Decoder) throws {
+        let singleValue = try decoder.singleValueContainer()
+        if let condition = try? singleValue.decode(String.self) {
+            self.init(condition: condition)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let condition = try container.decodeIfPresent(String.self, forKey: .condition) ?? ""
+        let restart = try container.decodeIfPresent(Bool.self, forKey: .restart) ?? false
+        let required = try container.decodeIfPresent(Bool.self, forKey: .required)
+        self.init(condition: condition, restart: restart, required: required)
+    }
+
+    /// Encodes only non-default dependency metadata to keep `config` output compact.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if !condition.isEmpty {
+            try container.encode(condition, forKey: .condition)
+        }
+        if restart {
+            try container.encode(restart, forKey: .restart)
+        }
+        try container.encodeIfPresent(required, forKey: .required)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case condition
+        case restart
+        case required
     }
 }
 

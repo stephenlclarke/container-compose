@@ -88,6 +88,11 @@ struct ComposeNormalizerTests {
               - redis:cache
             external_links:
               - legacy_db:db
+            depends_on:
+              redis:
+                condition: service_started
+                restart: true
+                required: false
           redis:
             image: redis:7
         volumes:
@@ -140,6 +145,7 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.stopGracePeriodSeconds == 90)
         #expect(project.services["api"]?.links == ["redis:cache"])
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
+        #expect(project.services["api"]?.dependsOn == ["redis": ComposeDependency(condition: "service_started", restart: true, required: false)])
         #expect(project.services["api"]?.ports == ["8080:80"])
         #expect(project.volumes["data"] != nil)
     }
@@ -254,7 +260,30 @@ struct ComposeNormalizerTests {
         let runner = RecordingRunner(responses: [
             CommandResult(
                 status: 0,
-                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx","cpuPercent":12.5}},"networks":{},"volumes":{}}"#,
+                stdout: #"""
+                {
+                  "name": "demo",
+                  "workingDirectory": "/tmp/demo",
+                  "composeFiles": ["compose.yml"],
+                  "services": {
+                    "web": {
+                      "name": "web",
+                      "image": "nginx",
+                      "cpuPercent": 12.5,
+                      "dependsOn": {
+                        "db": "service_started",
+                        "job": {
+                          "condition": "service_completed_successfully",
+                          "restart": true,
+                          "required": false
+                        }
+                      }
+                    }
+                  },
+                  "networks": {},
+                  "volumes": {}
+                }
+                """#,
                 stderr: ""
             ),
         ])
@@ -270,6 +299,10 @@ struct ComposeNormalizerTests {
         #expect(project.name == "demo")
         #expect(project.services["web"]?.image == "nginx")
         #expect(project.services["web"]?.cpuPercent == 12.5)
+        #expect(project.services["web"]?.dependsOn == [
+            "db": ComposeDependency(condition: "service_started"),
+            "job": ComposeDependency(condition: "service_completed_successfully", restart: true, required: false),
+        ])
         let command = try #require(runner.commands.first)
         #expect(command.arguments.containsSequence(["--file", "compose.yml"]))
         #expect(command.arguments.containsSequence(["--profile", "dev"]))

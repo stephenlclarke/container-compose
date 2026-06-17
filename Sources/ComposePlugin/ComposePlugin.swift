@@ -18,6 +18,9 @@ import ArgumentParser
 import ComposeCore
 import Foundation
 
+private let composePluginVersionNumber = "0.1.0"
+private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
+
 /// Root command for the `container compose` plugin.
 struct ComposePlugin: AsyncParsableCommand {
     @OptionGroup var global: GlobalOptions
@@ -25,7 +28,7 @@ struct ComposePlugin: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "compose",
         abstract: "Manage multi-container applications with Docker Compose syntax",
-        version: "container-compose 0.1.0",
+        version: composePluginVersionString,
         subcommands: [
             Config.self,
             Create.self,
@@ -48,6 +51,14 @@ struct ComposePlugin: AsyncParsableCommand {
             Top.self,
             Events.self,
             Port.self,
+            Watch.self,
+            Scale.self,
+            Attach.self,
+            Commit.self,
+            Convert.self,
+            Export.self,
+            Publish.self,
+            Volumes.self,
             Cp.self,
             Kill.self,
             Pause.self,
@@ -212,6 +223,10 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var removeOrphans = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, or never.")
     var pull: String?
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    var scales: [String] = []
+    @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
+    var noDeps = false
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
 
@@ -227,7 +242,9 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 forceRecreate: forceRecreate,
                 noRecreate: noRecreate,
                 removeOrphans: removeOrphans,
-                pullPolicy: pull
+                pullPolicy: pull,
+                scales: scales,
+                noDeps: noDeps
             )
         )
     }
@@ -628,14 +645,116 @@ struct Events: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose port` until inspect exposes port bindings.
+/// Implements `compose port` for static Compose port bindings.
 struct Port: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "port", abstract: "Print public port bindings.")
     @OptionGroup var global: GlobalOptions
+    @Option(name: .customLong("protocol"), help: "Port protocol: tcp or udp.")
+    var portProtocol = "tcp"
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
+    @Argument(help: "Service name.")
+    var service: String
+    @Argument(help: "Private container port.")
+    var privatePort: String
+    /// Prints the host address and published port for a static service binding.
+    func run() async throws {
+        let loadedProject = try await project()
+        try orchestrator().port(
+            project: loadedProject,
+            serviceName: service,
+            privatePort: privatePort,
+            protocolName: portProtocol,
+            index: index
+        )
+    }
+}
+
+/// Placeholder for `compose watch` until develop/watch orchestration exists.
+struct Watch: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "watch", abstract: "Watch build context and service files.")
+    @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for published port lookup.
+    /// Reports the plugin gap for watch orchestration.
     func run() throws {
-        try global.orchestrator().unsupported("port", reason: "published port lookup needs richer inspect output")
+        try global.orchestrator().unsupported("watch", reason: "develop/watch workflows are not implemented by container-compose yet")
+    }
+}
+
+/// Placeholder for `compose scale` until replica orchestration exists.
+struct Scale: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "scale", abstract: "Scale services.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports the plugin gap for service replica scaling.
+    func run() throws {
+        try global.orchestrator().unsupported("scale", reason: "service replica scaling is not implemented by container-compose yet")
+    }
+}
+
+/// Placeholder for `compose attach` until attach streaming is designed.
+struct Attach: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "attach", abstract: "Attach to a service container.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports the plugin gap for attach streaming.
+    func run() throws {
+        try global.orchestrator().unsupported("attach", reason: "service attach streaming is not implemented by container-compose yet")
+    }
+}
+
+/// Placeholder for `compose commit` until image snapshot mapping exists.
+struct Commit: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports the plugin gap for committing service containers.
+    func run() throws {
+        try global.orchestrator().unsupported("commit", reason: "service container commit is not implemented by container-compose yet")
+    }
+}
+
+/// Placeholder for `compose convert` until alternate output conversion exists.
+struct Convert: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert the Compose model.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports the plugin gap for Compose model conversion.
+    func run() throws {
+        try global.orchestrator().unsupported("convert", reason: "Compose model conversion is not implemented by container-compose yet")
+    }
+}
+
+/// Placeholder for `compose export` until container export mapping exists.
+struct Export: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "export", abstract: "Export a service container filesystem.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports the plugin gap for service container export.
+    func run() throws {
+        try global.orchestrator().unsupported("export", reason: "service container export is not implemented by container-compose yet")
+    }
+}
+
+/// Placeholder for `compose publish` until project publishing is designed.
+struct Publish: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "publish", abstract: "Publish the Compose application.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports the plugin gap for project publishing.
+    func run() throws {
+        try global.orchestrator().unsupported("publish", reason: "Compose application publishing is not implemented by container-compose yet")
+    }
+}
+
+/// Placeholder for `compose volumes` until volume subcommands are designed.
+struct Volumes: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "volumes", abstract: "Manage Compose volumes.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports the plugin gap for the Compose volumes command group.
+    func run() throws {
+        try global.orchestrator().unsupported("volumes", reason: "Compose volume command group is not implemented by container-compose yet")
     }
 }
 
@@ -675,10 +794,48 @@ struct Wait: AsyncParsableCommand, ComposeProjectCommand {
 /// Implements `compose version`.
 struct Version: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "version", abstract: "Print compose plugin version.")
-    @OptionGroup var global: GlobalOptions
+    @OptionGroup var global: VersionGlobalOptions
+    @Option(name: [.customShort("f"), .customLong("format")], help: "Format the output: pretty or json.")
+    var format = "pretty"
+    @Flag(name: .customLong("short"), help: "Show only the compose plugin version number.")
+    var short = false
 
-    /// Prints the plugin version string.
-    func run() {
-        print("container-compose 0.1.0")
+    /// Prints the plugin version in a Docker Compose compatible format.
+    func run() throws {
+        if short {
+            print(composePluginVersionNumber)
+            return
+        }
+
+        switch format.lowercased() {
+        case "pretty":
+            print(composePluginVersionString)
+        case "json":
+            print(#"{"version":"\#(composePluginVersionNumber)"}"#)
+        default:
+            throw ComposeError.unsupported("version --format '\(format)'; supported formats are pretty and json")
+        }
     }
+}
+
+/// Global options accepted after `compose version`.
+struct VersionGlobalOptions: ParsableArguments {
+    @Option(name: .customLong("file"), help: "Accepted for Docker Compose compatibility.")
+    var file: [String] = []
+    @Option(name: [.customShort("p"), .customLong("project-name")], help: "Accepted for Docker Compose compatibility.")
+    var projectName: String?
+    @Option(name: .customLong("profile"), help: "Accepted for Docker Compose compatibility.")
+    var profile: [String] = []
+    @Option(name: .customLong("env-file"), help: "Accepted for Docker Compose compatibility.")
+    var envFile: [String] = []
+    @Option(name: .customLong("project-directory"), help: "Accepted for Docker Compose compatibility.")
+    var projectDirectory: String?
+    @Option(name: .customLong("ansi"), help: "Accepted for Docker Compose compatibility.")
+    var ansi: String?
+    @Option(name: .customLong("progress"), help: "Accepted for Docker Compose compatibility.")
+    var progress: String?
+    @Flag(name: .customLong("dry-run"), help: "Accepted for Docker Compose compatibility.")
+    var dryRun = false
+    @Flag(name: .customLong("verbose"), help: "Accepted for Docker Compose compatibility.")
+    var verbose = false
 }

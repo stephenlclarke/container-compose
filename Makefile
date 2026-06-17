@@ -86,9 +86,17 @@ go-build:
 cli-smoke: build
 	.build/debug/compose --ansi never version >/dev/null
 	.build/debug/compose version --dry-run >/dev/null
+	version_short_output="$$(".build/debug/compose" version --short)"; \
+	[[ "$$version_short_output" == "0.1.0" ]]; \
+	version_json_output="$$(".build/debug/compose" version --format json)"; \
+	[[ "$$version_json_output" == '{"version":"0.1.0"}' ]]; \
+	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
+	[[ "$$version_short_format_output" == '{"version":"0.1.0"}' ]]; \
+	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
+	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  db:\n    image: alpine\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *" alpine echo hello"* ]]; \
@@ -135,8 +143,14 @@ cli-smoke: build
 	[[ "$$run_no_tty_output" == *"--interactive"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
+	[[ "$$up_output" == *"demo-db-1"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$up_output" != *"--detach"* ]]; \
+	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
+	[[ "$$up_no_deps_output" == *"container run"* ]]; \
+	[[ "$$up_no_deps_output" != *"demo-db-1"* ]]; \
+	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
+	[[ "$$up_scale_output" == *"unsupported compose feature: up --scale: service replica scaling is not implemented by container-compose yet"* ]]; \
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
 	[[ "$$create_output" == *"container create"* ]]; \
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
@@ -199,9 +213,8 @@ cli-smoke: build
 	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json 2>&1 || true)"; \
 	[[ "$$events_output" == *"unsupported compose feature: events:"* ]]; \
 	[[ "$$events_output" == *"apple/container does not expose an event stream yet"* ]]; \
-	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 8080 2>&1 || true)"; \
-	[[ "$$port_output" == *"unsupported compose feature: port:"* ]]; \
-	[[ "$$port_output" == *"published port lookup needs richer inspect output"* ]]; \
+	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 80)"; \
+	[[ "$$port_output" == *"0.0.0.0:8080"* ]]; \
 	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api 2>&1 || true)"; \
 	[[ "$$pause_output" == *"unsupported compose feature: pause:"* ]]; \
 	[[ "$$pause_output" == *"apple/container does not expose pause yet"* ]]; \
@@ -209,7 +222,11 @@ cli-smoke: build
 	[[ "$$unpause_output" == *"unsupported compose feature: unpause:"* ]]; \
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
-	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]
+	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
+	for unsupported_command in watch scale attach commit convert export publish volumes; do \
+		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
+		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
+	done
 
 coverage: swift-coverage go-test
 

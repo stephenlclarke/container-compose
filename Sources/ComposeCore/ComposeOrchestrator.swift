@@ -55,6 +55,8 @@ public struct ComposeUpOptions {
     public var noRecreate: Bool
     public var removeOrphans: Bool
     public var pullPolicy: String?
+    public var scales: [String]
+    public var noDeps: Bool
 
     public init(
         services: [String] = [],
@@ -63,7 +65,9 @@ public struct ComposeUpOptions {
         forceRecreate: Bool = false,
         noRecreate: Bool = false,
         removeOrphans: Bool = false,
-        pullPolicy: String? = nil
+        pullPolicy: String? = nil,
+        scales: [String] = [],
+        noDeps: Bool = false
     ) {
         self.services = services
         self.build = build
@@ -72,6 +76,8 @@ public struct ComposeUpOptions {
         self.noRecreate = noRecreate
         self.removeOrphans = removeOrphans
         self.pullPolicy = pullPolicy
+        self.scales = scales
+        self.noDeps = noDeps
     }
 }
 
@@ -231,7 +237,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Creates project resources and starts selected services in dependency order.
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
-        let services = try orderedServices(project: project, selected: up.services)
+        try validateUpOptions(up)
+        let services = try up.noDeps && !up.services.isEmpty
+            ? selectedServices(project: project, selected: up.services)
+            : orderedServices(project: project, selected: up.services, rejectOptionalDependencies: true)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services)
 
@@ -287,7 +296,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func create(project: ComposeProject, options create: ComposeCreateOptions) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
-        let services = try orderedServices(project: project, selected: create.services)
+        let services = try orderedServices(project: project, selected: create.services, rejectOptionalDependencies: true)
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services)
 
@@ -679,6 +688,35 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await runContainer(["cp"] + mappedArguments)
     }
 
+    /// Prints the public address for a statically published service port.
+    public func port(
+        project: ComposeProject,
+        serviceName: String,
+        privatePort: String,
+        protocolName: String,
+        index: Int
+    ) throws {
+        guard index == 1 else {
+            throw ComposeError.unsupported("port --index \(index): replica-aware published port lookup needs richer inspect output")
+        }
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+
+        let requested = try parsePortLookup(privatePort: privatePort, protocolName: protocolName)
+        let mappings = try (service.ports ?? []).map { try parsePublishedPort($0, serviceName: service.name) }
+
+        guard let mapping = mappings.first(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published != nil }),
+              let published = mapping.published
+        else {
+            if mappings.contains(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published == nil }) {
+                throw ComposeError.unsupported("service '\(service.name)' publishes target port \(requested.target)/\(requested.protocolName) dynamically; published port lookup needs richer inspect output")
+            }
+            throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
+        }
+        options.emit("\(mapping.hostIP ?? "0.0.0.0"):\(published)")
+    }
+
     /// Throws a consistently formatted unsupported-feature error.
     public func unsupported(_ feature: String, reason: String) throws -> Never {
         throw ComposeError.unsupported("\(feature): \(reason)")
@@ -687,8 +725,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
 public extension ComposeOrchestrator {
     /// Returns selected services after their dependencies using a stable
-    /// depth-first traversal.
-    func orderedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
+    /// depth-first traversal. Startup callers reject optional dependencies
+    /// because their lifecycle semantics are not implemented yet; cleanup
+    /// callers can skip missing optional dependencies while removing resources.
+    func orderedServices(project: ComposeProject, selected: [String], rejectOptionalDependencies: Bool = false) throws -> [ComposeService] {
         let selectedSet = Set(selected)
         var visiting = Set<String>()
         var visited = Set<String>()
@@ -705,7 +745,15 @@ public extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("unknown service '\(name)'")
             }
             visiting.insert(name)
-            for dependency in (service.dependsOn ?? [:]).keys.sorted() {
+            for (dependency, metadata) in (service.dependsOn ?? [:]).sorted(by: { $0.key < $1.key }) {
+                if metadata.required == false {
+                    if rejectOptionalDependencies {
+                        throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                    }
+                    if project.services[dependency] == nil {
+                        continue
+                    }
+                }
                 try visit(dependency)
             }
             visiting.remove(name)
@@ -816,9 +864,18 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
         }
         if let dependsOn = service.dependsOn {
-            for (dependency, condition) in dependsOn where condition != "service_started" && condition != "" {
-                let reason = unsupportedDependencyConditionReason(condition)
-                throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
+            for (dependency, metadata) in dependsOn.sorted(by: { $0.key < $1.key }) {
+                if metadata.restart {
+                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with restart true; dependency restart propagation is not implemented by container-compose yet")
+                }
+                if metadata.required == false {
+                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                }
+                let condition = metadata.condition
+                if condition != "service_started" && condition != "" {
+                    let reason = unsupportedDependencyConditionReason(condition)
+                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
+                }
             }
         }
         if let links = service.links, !links.isEmpty {
@@ -1081,6 +1138,16 @@ private extension ComposeOrchestrator {
         }
         if !["always", "missing", "if_not_present", "never"].contains(policy) {
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
+        }
+    }
+
+    /// Validates command-level `compose up` option combinations before runtime side effects.
+    func validateUpOptions(_ options: ComposeUpOptions) throws {
+        if options.forceRecreate, options.noRecreate {
+            throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
+        }
+        if !options.scales.isEmpty {
+            throw ComposeError.unsupported("up --scale: service replica scaling is not implemented by container-compose yet")
         }
     }
 
@@ -1595,6 +1662,67 @@ private extension ComposeOrchestrator {
         return String(lines)
     }
 
+    /// Parses the `compose port` lookup target and protocol.
+    func parsePortLookup(privatePort: String, protocolName: String) throws -> (target: String, protocolName: String) {
+        let normalizedProtocol = try normalizedPortProtocol(protocolName)
+        let parts = privatePort.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let target = parts.first, !target.isEmpty else {
+            throw ComposeError.invalidProject("port requires a private container port")
+        }
+        guard !target.contains("-") else {
+            throw ComposeError.unsupported("port ranges need richer inspect output")
+        }
+        if parts.count == 2 {
+            let requestedProtocol = try normalizedPortProtocol(parts[1])
+            guard requestedProtocol == normalizedProtocol else {
+                throw ComposeError.invalidProject("port protocol '\(requestedProtocol)' conflicts with --protocol \(normalizedProtocol)")
+            }
+        }
+        return (target, normalizedProtocol)
+    }
+
+    /// Parses one normalized Compose port mapping.
+    func parsePublishedPort(_ value: String, serviceName: String) throws -> ComposePublishedPort {
+        let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
+        }
+        let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
+        let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+
+        switch parts.count {
+        case 1:
+            guard !parts[0].contains("-") else {
+                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
+            }
+            return ComposePublishedPort(hostIP: nil, published: nil, target: parts[0], protocolName: protocolName)
+        case 2...:
+            let target = parts[parts.count - 1]
+            let published = parts[parts.count - 2]
+            let hostParts = parts.dropLast(2)
+            let hostIP = hostParts.isEmpty ? nil : hostParts.joined(separator: ":")
+            guard !target.isEmpty, !published.isEmpty else {
+                throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
+            }
+            guard !target.contains("-"), !published.contains("-") else {
+                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
+            }
+            return ComposePublishedPort(hostIP: hostIP?.isEmpty == true ? nil : hostIP, published: published, target: target, protocolName: protocolName)
+        default:
+            throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
+        }
+    }
+
+    /// Normalizes Docker Compose port protocols accepted by `compose port`.
+    func normalizedPortProtocol(_ value: String) throws -> String {
+        switch value.lowercased() {
+        case "tcp", "udp":
+            return value.lowercased()
+        default:
+            throw ComposeError.invalidProject("port --protocol must be tcp or udp")
+        }
+    }
+
     /// Appends a Compose mount in the form accepted by `container run`.
     func appendMount(_ mount: ComposeMount, project: ComposeProject, args: inout [String]) throws {
         if mount.type == "tmpfs" {
@@ -1723,6 +1851,13 @@ private extension ComposeOrchestrator {
 
 private struct ExistingContainer {
     var configHash: String?
+}
+
+private struct ComposePublishedPort {
+    var hostIP: String?
+    var published: String?
+    var target: String
+    var protocolName: String
 }
 
 private extension ComposeNetworkOptions {
@@ -2372,10 +2507,12 @@ private func containerRuntimeState(_ value: Any) -> String? {
     guard let object = value as? [String: Any] else {
         return nil
     }
-    if let state = object["state"] as? String ?? object["State"] as? String {
-        return state
+    for key in ["state", "State", "status", "Status"] {
+        if let state = object[key] as? String {
+            return state
+        }
     }
-    for nestedKey in ["status", "Status"] {
+    for nestedKey in ["state", "State", "status", "Status"] {
         if let nested = object[nestedKey], let state = containerRuntimeState(nested) {
             return state
         }

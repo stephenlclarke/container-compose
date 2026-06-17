@@ -323,6 +323,8 @@ services:
     depends_on:
       redis:
         condition: service_started
+        restart: true
+        required: false
     links:
       - redis:cache
     external_links:
@@ -526,7 +528,13 @@ volumes:
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.NetworkOptions = %#v, want %#v", got, want)
 	}
-	if got, want := api.DependsOn, map[string]string{"redis": "service_started"}; !reflect.DeepEqual(got, want) {
+	if got, want := api.DependsOn, map[string]normalizedDependency{
+		"redis": {
+			Condition: "service_started",
+			Restart:   true,
+			Required:  boolPointer(false),
+		},
+	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DependsOn = %#v, want %#v", got, want)
 	}
 	if got, want := api.Links, []string{"redis:cache"}; !reflect.DeepEqual(got, want) {
@@ -910,6 +918,28 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if dependsOnValues(nil) != nil {
 		t.Fatal("dependsOnValues(nil) returned non-nil")
 	}
+	if got, want := dependsOnValues(types.DependsOnConfig{
+		"db": {
+			Condition: "service_started",
+			Required:  true,
+		},
+		"job": {
+			Condition: "service_completed_successfully",
+			Restart:   true,
+			Required:  false,
+		},
+	}), map[string]normalizedDependency{
+		"db": {
+			Condition: "service_started",
+		},
+		"job": {
+			Condition: "service_completed_successfully",
+			Restart:   true,
+			Required:  boolPointer(false),
+		},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("dependsOnValues() = %#v, want %#v", got, want)
+	}
 	if mapLabels(nil) != nil {
 		t.Fatal("mapLabels(nil) returned non-nil")
 	}
@@ -1136,4 +1166,8 @@ func unsetEnv(t *testing.T, name string) {
 			_ = os.Unsetenv(name)
 		}
 	})
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }

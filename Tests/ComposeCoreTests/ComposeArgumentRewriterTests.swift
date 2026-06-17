@@ -546,8 +546,8 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
-    @Test("moves root compose options for version")
-    func movesRootComposeOptionsForVersion() {
+    @Test("keeps root compose options before version")
+    func keepsRootComposeOptionsBeforeVersion() {
         let rewritten = ComposeArgumentRewriter.rewrite([
             "--ansi",
             "never",
@@ -556,11 +556,58 @@ struct ComposeArgumentRewriterTests {
         ])
 
         #expect(rewritten == [
-            "version",
             "--ansi",
             "never",
             "--dry-run",
+            "version",
         ])
+    }
+
+    @Test("keeps version format shorthand local to version")
+    func keepsVersionFormatShorthandLocalToVersion() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-f",
+            "compose.yml",
+            "version",
+            "-f",
+            "json",
+        ])
+
+        #expect(rewritten == [
+            "-f",
+            "compose.yml",
+            "version",
+            "-f",
+            "json",
+        ])
+    }
+
+    @Test("recognizes explicit unsupported compose command surfaces")
+    func recognizesExplicitUnsupportedComposeCommandSurfaces() {
+        let commands = [
+            "attach",
+            "commit",
+            "convert",
+            "export",
+            "publish",
+            "scale",
+            "volumes",
+            "watch",
+        ]
+
+        for command in commands {
+            let rewritten = ComposeArgumentRewriter.rewrite([
+                "--ansi",
+                "never",
+                command,
+            ])
+
+            #expect(rewritten == [
+                command,
+                "--ansi",
+                "never",
+            ])
+        }
     }
 
     @Test("returns arguments unchanged when no subcommand is present")

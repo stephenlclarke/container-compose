@@ -26,11 +26,15 @@ public enum ComposeArgumentRewriter {
     private static let subcommands: Set<String> = [
         "build",
         "config",
+        "attach",
+        "commit",
+        "convert",
         "cp",
         "create",
         "down",
         "events",
         "exec",
+        "export",
         "images",
         "kill",
         "ls",
@@ -40,9 +44,11 @@ public enum ComposeArgumentRewriter {
         "ps",
         "pull",
         "push",
+        "publish",
         "restart",
         "rm",
         "run",
+        "scale",
         "start",
         "stats",
         "stop",
@@ -50,7 +56,9 @@ public enum ComposeArgumentRewriter {
         "unpause",
         "up",
         "version",
+        "volumes",
         "wait",
+        "watch",
     ]
 
     private static let globalOptions: [String: OptionKind] = [
@@ -80,6 +88,9 @@ public enum ComposeArgumentRewriter {
             command: command,
             arguments: Array(arguments[arguments.index(after: commandIndex)...])
         )
+        if command == "version" {
+            return prefix + [command] + suffix
+        }
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
     }

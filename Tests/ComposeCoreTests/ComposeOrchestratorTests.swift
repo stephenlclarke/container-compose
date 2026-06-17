@@ -71,11 +71,11 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["db": "service_started"]
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
                 },
                 "db": ComposeService(name: "db", image: "postgres:16"),
                 "web": composeService(name: "web", image: "nginx:latest") {
-                    $0.dependsOn = ["api": "service_started"]
+                    $0.dependsOn = ["api": ComposeDependency(condition: "service_started")]
                 },
             ]
         )
@@ -91,10 +91,10 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["worker": "service_started"]
+                    $0.dependsOn = ["worker": ComposeDependency(condition: "service_started")]
                 },
                 "worker": composeService(name: "worker", image: "example/worker:latest") {
-                    $0.dependsOn = ["api": "service_started"]
+                    $0.dependsOn = ["api": ComposeDependency(condition: "service_started")]
                 },
             ]
         )
@@ -441,6 +441,70 @@ struct ComposeOrchestratorTests {
         #expect(pullRunner.commands.isEmpty)
     }
 
+    @Test("up validates incompatible recreate options before side effects")
+    func upValidatesIncompatibleRecreateOptionsBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions(forceRecreate: true, noRecreate: true)
+            )
+            Issue.record("Expected invalid up option combination")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("--force-recreate and --no-recreate are incompatible"))
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects unsupported scale before side effects")
+    func upRejectsUnsupportedScaleBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions(scales: ["api=2"])
+            )
+            Issue.record("Expected unsupported up scale failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("up --scale: service replica scaling is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up no-deps starts only selected services")
+    func upNoDepsStartsOnlySelectedServices() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(
+            project: project,
+            options: ComposeUpOptions(services: ["api"], noDeps: true)
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!commands.contains { $0.contains("demo-db-1") })
+    }
+
     @Test("up uses external resource names without creating project resources")
     func upUsesExternalResourceNamesWithoutCreatingProjectResources() async throws {
         let runner = RecordingRunner(responses: [
@@ -752,7 +816,7 @@ struct ComposeOrchestratorTests {
                 services: [
                     "job": ComposeService(name: "job", image: "example/job:latest"),
                     "api": composeService(name: "api", image: "example/api:latest") {
-                        $0.dependsOn = ["job": testCase.condition]
+                        $0.dependsOn = ["job": ComposeDependency(condition: testCase.condition)]
                     },
                 ]
             )
@@ -763,6 +827,67 @@ struct ComposeOrchestratorTests {
                 Issue.record("Expected unsupported dependency condition")
             } catch let error as ComposeError {
                 #expect(error == .unsupported("service 'api' depends on 'job' with condition '\(testCase.condition)'; \(testCase.reason)"))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+
+        let missingDependencyRunner = RecordingRunner()
+        let missingDependencyProject = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_started", required: false)]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: missingDependencyRunner)
+                .up(project: missingDependencyProject, options: ComposeUpOptions(services: ["api"]))
+            Issue.record("Expected unsupported optional dependency metadata")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' depends on 'optional' with required false; optional dependency startup is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(missingDependencyRunner.commands.isEmpty)
+    }
+
+    @Test("rejects unsupported dependency metadata before side effects")
+    func rejectsUnsupportedDependencyMetadataBeforeSideEffects() async throws {
+        let cases = [
+            (
+                dependency: ComposeDependency(condition: "service_started", restart: true),
+                expected: "service 'api' depends on 'job' with restart true; dependency restart propagation is not implemented by container-compose yet"
+            ),
+            (
+                dependency: ComposeDependency(condition: "service_started", required: false),
+                expected: "service 'api' depends on 'job' with required false; optional dependency startup is not implemented by container-compose yet"
+            ),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let project = ComposeProject(
+                name: "demo",
+                services: [
+                    "job": ComposeService(name: "job", image: "example/job:latest"),
+                    "api": composeService(name: "api", image: "example/api:latest") {
+                        $0.dependsOn = ["job": testCase.dependency]
+                    },
+                ]
+            )
+
+            do {
+                try await ComposeOrchestrator(runner: runner)
+                    .up(project: project, options: ComposeUpOptions(services: ["api"]))
+                Issue.record("Expected unsupported dependency metadata")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported(testCase.expected))
             } catch {
                 Issue.record("Unexpected error: \(error)")
             }
@@ -2227,7 +2352,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.dependsOn = ["db": "service_started"]
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
                     $0.stopSignal = "SIGUSR1"
                     $0.stopGracePeriodSeconds = 9
                 },
@@ -2247,6 +2372,30 @@ struct ComposeOrchestratorTests {
             ["container", "delete", "demo-db-1"],
             ["container", "network", "delete", "demo_default"],
             ["container", "volume", "delete", "demo_data"],
+        ])
+    }
+
+    @Test("down skips missing optional dependencies while cleaning resources")
+    func downSkipsMissingOptionalDependenciesWhileCleaningResources() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_started", required: false)]
+                },
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions())
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "stop", "demo-api-1"],
+            ["container", "delete", "demo-api-1"],
         ])
     }
 
@@ -2580,6 +2729,140 @@ struct ComposeOrchestratorTests {
             ["container", "cp", "./seed.sql", "custom-db:/docker-entrypoint-initdb.d/seed.sql"],
             ["container", "cp", "./local:file.txt", "./out:file.txt"],
         ])
+    }
+
+    @Test("port prints static published bindings")
+    func portPrintsStaticPublishedBindings() throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = [
+                        "8080:80",
+                        "127.0.0.1:8443:443",
+                        "5353:53/udp",
+                    ]
+                },
+            ]
+        )
+
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "443", protocolName: "tcp", index: 1)
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "53/udp", protocolName: "udp", index: 1)
+
+        #expect(emitted.messages == [
+            "0.0.0.0:8080",
+            "127.0.0.1:8443",
+            "0.0.0.0:5353",
+        ])
+    }
+
+    @Test("port rejects dynamic bindings that need runtime inspect output")
+    func portRejectsDynamicBindingsThatNeedRuntimeInspectOutput() throws {
+        let orchestrator = ComposeOrchestrator()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["80"]
+                },
+            ]
+        )
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+            Issue.record("Expected unsupported dynamic port lookup")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; published port lookup needs richer inspect output"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("port prefers static bindings when dynamic bindings also exist")
+    func portPrefersStaticBindingsWhenDynamicBindingsAlsoExist() throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["80", "8080:80"]
+                },
+            ]
+        )
+
+        try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+
+        #expect(emitted.messages == ["0.0.0.0:8080"])
+    }
+
+    @Test("port rejects dynamic ranges that need runtime inspect output")
+    func portRejectsDynamicRangesThatNeedRuntimeInspectOutput() throws {
+        let orchestrator = ComposeOrchestrator()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["80-82"]
+                },
+            ]
+        )
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+            Issue.record("Expected unsupported dynamic port range lookup")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses port range '80-82'; port range lookup needs richer inspect output"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("port validates lookup options")
+    func portValidatesLookupOptions() throws {
+        let orchestrator = ComposeOrchestrator()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["8080:80"]
+                },
+            ]
+        )
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
+            Issue.record("Expected unsupported index error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("port --index 2: replica-aware published port lookup needs richer inspect output"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "80/udp", protocolName: "tcp", index: 1)
+            Issue.record("Expected protocol conflict")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("port protocol 'udp' conflicts with --protocol tcp"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            try orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
+            Issue.record("Expected missing port error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' does not publish target port 81/tcp"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 
     @Test("run supports one-off containers and option flags")
@@ -4798,8 +5081,8 @@ private func containerListResult() -> CommandResult {
                 "\(composeProjectConfigFilesLabel)": "/tmp/demo/compose.yml"
               }
             },
-            "Status": {
-              "State": "stopped"
+            "State": {
+              "Status": "stopped"
             }
           }
         ]
