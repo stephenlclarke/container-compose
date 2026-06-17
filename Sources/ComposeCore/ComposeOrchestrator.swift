@@ -334,6 +334,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         let attachedForegroundServiceIndex = up.detach ? nil : services.indices.last
+        var changedServices = Set<String>()
         for (index, service) in services.enumerated() {
             if !up.build, service.image == nil, service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
@@ -341,31 +342,50 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
             let name = containerName(project: project, service: service, oneOff: false)
             let existing = try await inspectContainer(name)
+            var serviceChanged = false
             if let existing {
                 // Reuse containers only when the Compose-derived service hash
                 // still matches, unless the caller chose an explicit recreate
                 // policy.
                 if up.noRecreate {
                     options.emit("compose: reusing existing container \(name)")
-                    continue
-                }
-                if !up.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
+                } else if !up.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
-                    continue
+                } else {
+                    try await stopContainer(service: service, containerName: name)
+                    try await deleteContainer(name)
+                    try await runContainer(
+                        try runArguments(
+                            project: project,
+                            service: service,
+                            options: RunArgumentOptions {
+                                $0.detach = up.detach || index != attachedForegroundServiceIndex
+                            }
+                        )
+                    )
+                    serviceChanged = true
                 }
-                try await stopContainer(service: service, containerName: name)
-                try await deleteContainer(name)
+            } else {
+                try await runContainer(
+                    try runArguments(
+                        project: project,
+                        service: service,
+                        options: RunArgumentOptions {
+                            $0.detach = up.detach || index != attachedForegroundServiceIndex
+                        }
+                    )
+                )
+                serviceChanged = true
             }
 
-            try await runContainer(
-                try runArguments(
-                    project: project,
-                    service: service,
-                    options: RunArgumentOptions {
-                        $0.detach = up.detach || index != attachedForegroundServiceIndex
-                    }
-                )
-            )
+            if serviceChanged {
+                changedServices.insert(service.name)
+                continue
+            }
+            if existing != nil, shouldRestartAfterDependencyChange(service: service, changedServices: changedServices) {
+                try await restartContainer(service: service, containerName: name)
+                changedServices.insert(service.name)
+            }
         }
 
         if up.removeOrphans {
@@ -740,13 +760,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Starts selected service containers.
     public func start(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
-            let id = containerName(project: project, service: service, oneOff: false)
-            let args = ["start", id]
-            if options.dryRun {
-                try await runContainer(args)
-            } else {
-                try await lifecycleManager.startContainer(id: id)
-            }
+            try await startContainer(containerName: containerName(project: project, service: service, oneOff: false))
         }
     }
 
@@ -1102,9 +1116,6 @@ private extension ComposeOrchestrator {
         try validateNetworkMACAddressSupport(service: service, networks: networks)
         if validateDependencies, let dependsOn = service.dependsOn {
             for (dependency, metadata) in dependsOn.sorted(by: { $0.key < $1.key }) {
-                if metadata.restart {
-                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with restart true; dependency restart propagation is not implemented by container-compose yet")
-                }
                 if metadata.required == false, project.services[dependency] == nil {
                     continue
                 }
@@ -2138,6 +2149,17 @@ private extension ComposeOrchestrator {
         resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
     }
 
+    /// Starts a service container through the direct API while preserving
+    /// dry-run command rendering.
+    func startContainer(containerName: String) async throws {
+        let args = ["start", containerName]
+        if options.dryRun {
+            try await runContainer(args)
+        } else {
+            try await lifecycleManager.startContainer(id: containerName)
+        }
+    }
+
     /// Stops a service container through the direct API while preserving
     /// dry-run command rendering.
     func stopContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
@@ -2151,6 +2173,12 @@ private extension ComposeOrchestrator {
                 timeoutInSeconds: timeout ?? service.stopGracePeriodSeconds
             )
         }
+    }
+
+    /// Restarts a service container through the direct API.
+    func restartContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
+        try await stopContainer(service: service, containerName: containerName, timeout: timeout)
+        try await startContainer(containerName: containerName)
     }
 
     /// Stops a container that may not map to a declared service, such as an
@@ -2190,6 +2218,17 @@ private extension ComposeOrchestrator {
         }
         args.append(containerName)
         return args
+    }
+
+    /// Returns true when a service asks to restart after a dependency that
+    /// changed earlier in the current Compose operation.
+    func shouldRestartAfterDependencyChange(service: ComposeService, changedServices: Set<String>) -> Bool {
+        guard let dependsOn = service.dependsOn else {
+            return false
+        }
+        return dependsOn.contains { dependency in
+            dependency.value.restart && changedServices.contains(dependency.key)
+        }
     }
 
     /// Returns an existing container's Compose metadata, if the container exists.

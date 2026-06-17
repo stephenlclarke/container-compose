@@ -1051,32 +1051,125 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("rejects unsupported dependency metadata before side effects")
-    func rejectsUnsupportedDependencyMetadataBeforeSideEffects() async throws {
-        let runner = RecordingRunner()
-        let project = ComposeProject(
+    @Test("up restarts reused dependents when restart dependencies change")
+    func upRestartsReusedDependentsWhenRestartDependenciesChange() async throws {
+        let baselineProject = ComposeProject(
             name: "demo",
             services: [
-                "job": ComposeService(name: "job", image: "example/job:latest"),
+                "db": ComposeService(name: "db", image: "postgres:16"),
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["job": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
                 },
             ]
         )
+        let baselineRunner = RecordingRunner()
+        try await ComposeOrchestrator(runner: baselineRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: baselineProject, options: ComposeUpOptions())
 
-        do {
-            try await ComposeOrchestrator(runner: runner)
-                .up(project: project, options: ComposeUpOptions {
-                    $0.services = ["api"]
-                })
-            Issue.record("Expected unsupported dependency metadata")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' depends on 'job' with restart true; dependency restart propagation is not implemented by container-compose yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        let dbRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        let oldDBHash = try #require(composeConfigHash(in: dbRun))
+        let apiHash = try #require(composeConfigHash(in: apiRun))
 
-        #expect(runner.commands.isEmpty)
+        let changedProject = ComposeProject(
+            name: "demo",
+            services: [
+                "db": composeService(name: "db", image: "postgres:16") {
+                    $0.labels = ["com.example.version": "two"]
+                },
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+            ]
+        )
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-db-1", status: "running", labels: [composeConfigHashLabel: oldDBHash]),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: apiHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        .up(project: changedProject, options: ComposeUpOptions {
+            $0.services = ["api"]
+        })
+
+        #expect(runner.commands.map(\.arguments).count == 1)
+        #expect(runner.commands[0].arguments.containsSequence(["--name", "demo-db-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-db-1", force: false),
+            .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
+            .start(id: "demo-api-1"),
+        ])
+    }
+
+    @Test("up does not dependency restart services already recreated")
+    func upDoesNotDependencyRestartServicesAlreadyRecreated() async throws {
+        let baselineProject = ComposeProject(
+            name: "demo",
+            services: [
+                "db": ComposeService(name: "db", image: "postgres:16"),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                },
+            ]
+        )
+        let baselineRunner = RecordingRunner()
+        try await ComposeOrchestrator(runner: baselineRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: baselineProject, options: ComposeUpOptions())
+
+        let dbRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        let oldDBHash = try #require(composeConfigHash(in: dbRun))
+        let oldAPIHash = try #require(composeConfigHash(in: apiRun))
+
+        let changedProject = ComposeProject(
+            name: "demo",
+            services: [
+                "db": composeService(name: "db", image: "postgres:16") {
+                    $0.labels = ["com.example.version": "two"]
+                },
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started", restart: true)]
+                    $0.labels = ["com.example.version": "two"]
+                },
+            ]
+        )
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-db-1", status: "running", labels: [composeConfigHashLabel: oldDBHash]),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: oldAPIHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        .up(project: changedProject, options: ComposeUpOptions {
+            $0.services = ["api"]
+        })
+
+        #expect(runner.commands.map(\.arguments).count == 2)
+        #expect(runner.commands[0].arguments.containsSequence(["--name", "demo-db-1"]))
+        #expect(runner.commands[1].arguments.containsSequence(["--name", "demo-api-1"]))
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-db-1", force: false),
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
     }
 
     @Test("rejects unsupported conditions on present optional dependencies")
