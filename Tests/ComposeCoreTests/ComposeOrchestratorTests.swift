@@ -4865,6 +4865,135 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
+    @Test("attach output-only mode follows direct logs")
+    func attachOutputOnlyModeFollowsDirectLogs() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions {
+                $0.noStdin = true
+                $0.sigProxy = "false"
+            }
+        )
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        ])
+        #expect(emitted.messages == ["attached"])
+    }
+
+    @Test("attach dry run emits logs follow command")
+    func attachDryRunEmitsLogsFollowCommand() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            logManager: logManager
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions {
+                $0.noStdin = true
+                $0.sigProxy = "false"
+            }
+        )
+
+        #expect(emitted.messages == [
+            "+ container logs --follow demo-api-1",
+        ])
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("attach rejects unsupported stdin signal and replica options")
+    func attachRejectsUnsupportedStdinSignalAndReplicaOptions() async throws {
+        let cases: [(options: ComposeAttachOptions, error: ComposeError)] = [
+            (
+                ComposeAttachOptions(),
+                .unsupported("attach: apple/container logs is output-only; use --no-stdin --sig-proxy=false")
+            ),
+            (
+                ComposeAttachOptions {
+                    $0.noStdin = true
+                    $0.sigProxy = "true"
+                },
+                .unsupported("attach --sig-proxy=true: apple/container logs does not proxy signals to service processes; use --sig-proxy=false")
+            ),
+            (
+                ComposeAttachOptions {
+                    $0.noStdin = true
+                    $0.sigProxy = "false"
+                    $0.index = 2
+                },
+                .unsupported("attach --index 2: service replica attach needs replica-aware log lookup")
+            ),
+            (
+                ComposeAttachOptions {
+                    $0.noStdin = true
+                    $0.sigProxy = "false"
+                    $0.detachKeys = "ctrl-x"
+                },
+                .unsupported("attach --detach-keys: apple/container logs does not expose detach key handling")
+            ),
+            (
+                ComposeAttachOptions {
+                    $0.sigProxy = "false"
+                },
+                .unsupported("attach: apple/container logs is output-only; use --no-stdin --sig-proxy=false")
+            ),
+        ]
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let logManager = RecordingContainerLogManager()
+            do {
+                try await ComposeOrchestrator(
+                    runner: runner,
+                    options: ComposeExecutionOptions(),
+                    logManager: logManager
+                ).attach(
+                    project: project,
+                    serviceName: "api",
+                    options: testCase.options
+                )
+                Issue.record("Expected attach option validation error")
+            } catch let error as ComposeError {
+                #expect(error == testCase.error)
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+            #expect(await logManager.requests.isEmpty)
+        }
+    }
+
     @Test("logs rejects invalid tail values before runtime commands")
     func logsRejectsInvalidTailValuesBeforeRuntimeCommands() async throws {
         let runner = RecordingRunner()

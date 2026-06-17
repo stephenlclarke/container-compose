@@ -249,6 +249,10 @@ cli-smoke: build
 	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
 	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
 	[[ "$$logs_all_output" != *" -n "* ]]; \
+	attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false api)"; \
+	[[ "$$attach_output" == *"container logs --follow demo-api-1"* ]]; \
+	attach_default_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach api 2>&1 || true)"; \
+	[[ "$$attach_default_output" == *"unsupported compose feature: attach: apple/container logs is output-only"* ]]; \
 	exec_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec api echo ok)"; \
 	[[ "$$exec_output" == *"container exec --interactive --tty demo-api-1 echo ok"* ]]; \
 	exec_no_tty_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -T api echo ok)"; \
@@ -353,7 +357,7 @@ cli-smoke: build
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
 	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
-	for unsupported_command in watch scale attach commit publish; do \
+	for unsupported_command in watch scale commit publish; do \
 		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
 		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
 	done

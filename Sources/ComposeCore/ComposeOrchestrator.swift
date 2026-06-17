@@ -240,6 +240,22 @@ public struct ComposeStatsOptions {
     }
 }
 
+/// Options for `compose attach` commands.
+public struct ComposeAttachOptions {
+    public var noStdin = false
+    public var detachKeys: String?
+    public var index = 1
+    public var sigProxy = "true"
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default attach behavior.
+    }
+
+    public init(_ configure: (inout ComposeAttachOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose exec` commands.
 public struct ComposeExecOptions {
     public var command: [String] = []
@@ -728,6 +744,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await logManager.logs(id: id, tail: runtimeTail, follow: follow, emit: options.emit)
             }
         }
+    }
+
+    /// Attaches to service output using the Apple log stream.
+    public func attach(project: ComposeProject, serviceName: String, options attach: ComposeAttachOptions) async throws {
+        try validateAttachOptions(attach)
+        try await logs(project: project, services: [serviceName], follow: true, tail: nil)
     }
 
     /// Executes a command in an existing service container.
@@ -2317,6 +2339,23 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("logs --tail must be 'all' or a non-negative integer")
         }
         return lines
+    }
+
+    /// Validates that attach uses only the output stream Apple exposes through logs.
+    func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
+        if attach.index != 1 {
+            throw ComposeError.unsupported("attach --index \(attach.index): service replica attach needs replica-aware log lookup")
+        }
+        if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
+            throw ComposeError.unsupported("attach --detach-keys: apple/container logs does not expose detach key handling")
+        }
+        if !attach.noStdin {
+            throw ComposeError.unsupported("attach: apple/container logs is output-only; use --no-stdin --sig-proxy=false")
+        }
+        let sigProxy = attach.sigProxy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if sigProxy != "false" {
+            throw ComposeError.unsupported("attach --sig-proxy=\(attach.sigProxy): apple/container logs does not proxy signals to service processes; use --sig-proxy=false")
+        }
     }
 
     /// Parses the `compose port` lookup target and protocol.

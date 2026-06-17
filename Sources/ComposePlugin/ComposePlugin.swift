@@ -737,14 +737,33 @@ struct Scale: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose attach` until attach streaming is designed.
+/// Implements output-only `compose attach` through the runtime log stream.
 struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "attach", abstract: "Attach to a service container.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for attach streaming.
-    func run() throws {
-        try global.orchestrator().unsupported("attach", reason: "service attach streaming is not implemented by container-compose yet")
+    @Flag(name: .customLong("no-stdin"), help: "Do not attach stdin. Required because apple/container logs are output-only.")
+    var noStdin = false
+    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Not supported by apple/container logs yet.")
+    var detachKeys: String?
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
+    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false for output-only attach.")
+    var sigProxy = "true"
+    @Argument(help: "Service name.")
+    var service: String
+    /// Streams the selected service container output.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().attach(
+            project: loadedProject,
+            serviceName: service,
+            options: ComposeAttachOptions {
+                $0.noStdin = noStdin
+                $0.detachKeys = detachKeys
+                $0.index = index
+                $0.sigProxy = sigProxy
+            }
+        )
     }
 }
 
