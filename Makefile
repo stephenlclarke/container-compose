@@ -183,6 +183,7 @@ cli-smoke: build
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
 	[[ "$$create_output" == *"container create"* ]]; \
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$create_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$create_output" != *"--detach"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
 	[[ "$$detached_output" == *"container run"* ]]; \

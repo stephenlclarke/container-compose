@@ -269,6 +269,7 @@ struct ComposeOrchestratorTests {
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                     $0.networks = ["default"]
                     $0.platform = "linux/amd64"
+                    $0.dnsOptions = ["use-vc"]
                 },
             ]
         ) {
@@ -294,6 +295,7 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--volume", "demo_cache:/cache"]))
         #expect(create.containsSequence(["--network", "demo_default"]))
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
+        #expect(create.containsSequence(["--dns-option", "use-vc"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
