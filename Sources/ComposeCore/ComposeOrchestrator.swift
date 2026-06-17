@@ -2477,10 +2477,12 @@ private func containerRuntimeState(_ value: Any) -> String? {
     guard let object = value as? [String: Any] else {
         return nil
     }
-    if let state = object["state"] as? String ?? object["State"] as? String {
-        return state
+    for key in ["state", "State", "status", "Status"] {
+        if let state = object[key] as? String {
+            return state
+        }
     }
-    for nestedKey in ["status", "Status"] {
+    for nestedKey in ["state", "State", "status", "Status"] {
         if let nested = object[nestedKey], let state = containerRuntimeState(nested) {
             return state
         }

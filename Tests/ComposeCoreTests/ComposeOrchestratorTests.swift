@@ -4949,8 +4949,8 @@ private func containerListResult() -> CommandResult {
                 "\(composeProjectConfigFilesLabel)": "/tmp/demo/compose.yml"
               }
             },
-            "Status": {
-              "State": "stopped"
+            "State": {
+              "Status": "stopped"
             }
           }
         ]
