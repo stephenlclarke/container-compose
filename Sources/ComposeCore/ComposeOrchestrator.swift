@@ -226,9 +226,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateUpOptions(up)
         let services = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
-            : orderedServices(project: project, selected: up.services, rejectOptionalDependencies: true)
+            : orderedServices(project: project, selected: up.services)
         try validatePullPolicy(up.pullPolicy)
-        try validateRuntimeSupport(services: services)
+        try validateRuntimeSupport(services: services, project: project)
 
         try await ensureResources(project: project)
 
@@ -282,9 +282,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func create(project: ComposeProject, options create: ComposeCreateOptions) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
-        let services = try orderedServices(project: project, selected: create.services, rejectOptionalDependencies: true)
+        let services = try orderedServices(project: project, selected: create.services)
         try validateCreatePullPolicy(create.pullPolicy)
-        try validateRuntimeSupport(services: services)
+        try validateRuntimeSupport(services: services, project: project)
 
         try await ensureResources(project: project)
 
@@ -533,7 +533,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validatePullPolicy(run.pullPolicy)
-        try validateRuntimeSupport(service: service)
+        try validateRuntimeSupport(service: service, project: runProject)
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
@@ -711,10 +711,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
 public extension ComposeOrchestrator {
     /// Returns selected services after their dependencies using a stable
-    /// depth-first traversal. Startup callers reject optional dependencies
-    /// because their lifecycle semantics are not implemented yet; cleanup
-    /// callers can skip missing optional dependencies while removing resources.
-    func orderedServices(project: ComposeProject, selected: [String], rejectOptionalDependencies: Bool = false) throws -> [ComposeService] {
+    /// depth-first traversal. Optional dependencies are included when the
+    /// service exists and skipped when the project does not define it.
+    func orderedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
         let selectedSet = Set(selected)
         var visiting = Set<String>()
         var visited = Set<String>()
@@ -732,13 +731,8 @@ public extension ComposeOrchestrator {
             }
             visiting.insert(name)
             for (dependency, metadata) in (service.dependsOn ?? [:]).sorted(by: { $0.key < $1.key }) {
-                if metadata.required == false {
-                    if rejectOptionalDependencies {
-                        throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
-                    }
-                    if project.services[dependency] == nil {
-                        continue
-                    }
+                if metadata.required == false, project.services[dependency] == nil {
+                    continue
                 }
                 try visit(dependency)
             }
@@ -789,7 +783,7 @@ private extension ComposeOrchestrator {
     }
 
     /// Rejects Compose features that need runtime support not available yet.
-    func validateRuntimeSupport(service: ComposeService) throws {
+    func validateRuntimeSupport(service: ComposeService, project: ComposeProject) throws {
         try validateBuildSupport(service: service)
         try validateDeploySupport(service: service)
         try validateProviderModelAndHookSupport(service: service)
@@ -854,8 +848,8 @@ private extension ComposeOrchestrator {
                 if metadata.restart {
                     throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with restart true; dependency restart propagation is not implemented by container-compose yet")
                 }
-                if metadata.required == false {
-                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                if metadata.required == false, project.services[dependency] == nil {
+                    continue
                 }
                 let condition = metadata.condition
                 if condition != "service_started" && condition != "" {
@@ -937,9 +931,9 @@ private extension ComposeOrchestrator {
     }
 
     /// Validates all selected services before any runtime side effects occur.
-    func validateRuntimeSupport(services: [ComposeService]) throws {
+    func validateRuntimeSupport(services: [ComposeService], project: ComposeProject) throws {
         for service in services {
-            try validateRuntimeSupport(service: service)
+            try validateRuntimeSupport(service: service, project: project)
         }
     }
 

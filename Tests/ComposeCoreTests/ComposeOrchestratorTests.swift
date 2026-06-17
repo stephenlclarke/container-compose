@@ -85,6 +85,26 @@ struct ComposeOrchestratorTests {
         #expect(ordered.map(\.name) == ["db", "api", "web"])
     }
 
+    @Test("orders present optional dependencies and skips missing optional dependencies")
+    func ordersPresentOptionalDependenciesAndSkipsMissingOptionalDependencies() throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = [
+                        "cache": ComposeDependency(condition: "service_started", required: false),
+                        "metrics": ComposeDependency(condition: "service_started", required: false),
+                    ]
+                },
+                "cache": ComposeService(name: "cache", image: "redis:7"),
+            ]
+        )
+
+        let ordered = try ComposeOrchestrator().orderedServices(project: project, selected: ["api"])
+
+        #expect(ordered.map(\.name) == ["cache", "api"])
+    }
+
     @Test("detects dependency cycles")
     func detectsDependencyCycles() throws {
         let project = ComposeProject(
@@ -169,6 +189,68 @@ struct ComposeOrchestratorTests {
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
     }
 
+    @Test("up starts present optional dependencies in dependency order")
+    func upStartsPresentOptionalDependenciesInDependencyOrder() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_started", required: false)]
+                },
+                "optional": ComposeService(name: "optional", image: "example/optional:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.services = ["api"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 4)
+        #expect(commands[0] == ["container", "inspect", "demo-optional-1"])
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-optional-1"]))
+        #expect(commands[2] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[3].starts(with: ["container", "run", "--name", "demo-api-1"]))
+    }
+
+    @Test("up skips missing optional dependencies")
+    func upSkipsMissingOptionalDependencies() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_healthy", required: false)]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.services = ["api"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!commands.contains { $0.contains("demo-optional-1") })
+    }
+
     @Test("create creates resources and service containers without starting them")
     func createCreatesResourcesAndServiceContainersWithoutStartingThem() async throws {
         let runner = RecordingRunner(responses: [
@@ -213,6 +295,35 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--network", "demo_default"]))
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
+    }
+
+    @Test("create skips missing optional dependencies")
+    func createSkipsMissingOptionalDependencies() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_healthy", required: false)]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).create(
+            project: project,
+            options: ComposeCreateOptions {
+                $0.services = ["api"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(!commands.contains { $0.contains("demo-optional-1") })
     }
 
     @Test("create applies build pull policy before creating containers")
@@ -853,71 +964,62 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
 
-        let missingDependencyRunner = RecordingRunner()
-        let missingDependencyProject = ComposeProject(
+    @Test("rejects unsupported dependency metadata before side effects")
+    func rejectsUnsupportedDependencyMetadataBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
             name: "demo",
             services: [
+                "job": ComposeService(name: "job", image: "example/job:latest"),
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_started", required: false)]
+                    $0.dependsOn = ["job": ComposeDependency(condition: "service_started", restart: true)]
                 },
             ]
         )
 
         do {
-            try await ComposeOrchestrator(runner: missingDependencyRunner)
-                .up(project: missingDependencyProject, options: ComposeUpOptions {
+            try await ComposeOrchestrator(runner: runner)
+                .up(project: project, options: ComposeUpOptions {
                     $0.services = ["api"]
                 })
-            Issue.record("Expected unsupported optional dependency metadata")
+            Issue.record("Expected unsupported dependency metadata")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' depends on 'optional' with required false; optional dependency startup is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' depends on 'job' with restart true; dependency restart propagation is not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
-        #expect(missingDependencyRunner.commands.isEmpty)
+        #expect(runner.commands.isEmpty)
     }
 
-    @Test("rejects unsupported dependency metadata before side effects")
-    func rejectsUnsupportedDependencyMetadataBeforeSideEffects() async throws {
-        let cases = [
-            (
-                dependency: ComposeDependency(condition: "service_started", restart: true),
-                expected: "service 'api' depends on 'job' with restart true; dependency restart propagation is not implemented by container-compose yet"
-            ),
-            (
-                dependency: ComposeDependency(condition: "service_started", required: false),
-                expected: "service 'api' depends on 'job' with required false; optional dependency startup is not implemented by container-compose yet"
-            ),
-        ]
+    @Test("rejects unsupported conditions on present optional dependencies")
+    func rejectsUnsupportedConditionsOnPresentOptionalDependencies() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": ComposeService(name: "job", image: "example/job:latest"),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["job": ComposeDependency(condition: "service_healthy", required: false)]
+                },
+            ]
+        )
 
-        for testCase in cases {
-            let runner = RecordingRunner()
-            let project = ComposeProject(
-                name: "demo",
-                services: [
-                    "job": ComposeService(name: "job", image: "example/job:latest"),
-                    "api": composeService(name: "api", image: "example/api:latest") {
-                        $0.dependsOn = ["job": testCase.dependency]
-                    },
-                ]
-            )
-
-            do {
-                try await ComposeOrchestrator(runner: runner)
-                    .up(project: project, options: ComposeUpOptions {
-                        $0.services = ["api"]
-                    })
-                Issue.record("Expected unsupported dependency metadata")
-            } catch let error as ComposeError {
-                #expect(error == .unsupported(testCase.expected))
-            } catch {
-                Issue.record("Unexpected error: \(error)")
-            }
-
-            #expect(runner.commands.isEmpty)
+        do {
+            try await ComposeOrchestrator(runner: runner)
+                .up(project: project, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
+            Issue.record("Expected unsupported dependency condition")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' depends on 'job' with condition 'service_healthy'; health status support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects unsupported links before creating resources")
