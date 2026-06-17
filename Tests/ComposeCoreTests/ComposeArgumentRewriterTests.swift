@@ -359,6 +359,78 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes exec compact value shorthands before parsing")
+    func normalizesExecCompactValueShorthandsBeforeParsing() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "-eFOO=bar",
+            "-u1000:1000",
+            "-w/app",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "--env",
+            "FOO=bar",
+            "--user",
+            "1000:1000",
+            "--workdir",
+            "/app",
+            "api",
+            "env",
+        ])
+    }
+
+    @Test("normalizes exec compact values after separated option values")
+    func normalizesExecCompactValuesAfterSeparatedOptionValues() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "-e",
+            "FOO=bar",
+            "-u1000:1000",
+            "--index",
+            "1",
+            "-w/app",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "-e",
+            "FOO=bar",
+            "--user",
+            "1000:1000",
+            "--index",
+            "1",
+            "--workdir",
+            "/app",
+            "api",
+            "env",
+        ])
+    }
+
+    @Test("does not rewrite exec compact values after service name")
+    func doesNotRewriteExecCompactValuesAfterServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "api",
+            "echo",
+            "-u1000",
+            "--interactive=false",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "api",
+            "echo",
+            "-u1000",
+            "--interactive=false",
+        ])
+    }
+
     @Test("does not rewrite exec boolean value forms after terminator")
     func doesNotRewriteExecBooleanValueFormsAfterTerminator() {
         let rewritten = ComposeArgumentRewriter.rewrite([

@@ -88,6 +88,12 @@ public enum ComposeArgumentRewriter {
         ("-w", "--workdir"),
     ]
 
+    private static let compactExecValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-e", "--env"),
+        ("-u", "--user"),
+        ("-w", "--workdir"),
+    ]
+
     private static let compactLogValueOptions: [(shortOption: String, normalizedOption: String)] = [
         ("-n", "--tail"),
     ]
@@ -241,21 +247,43 @@ public enum ComposeArgumentRewriter {
     /// Normalizes Docker Compose `exec` boolean option value forms.
     private static func rewriteExecOptions(_ arguments: [String]) -> [String] {
         var rewritten: [String] = []
+        var index = 0
         var shouldRewriteOptions = true
-        for argument in arguments {
-            if shouldRewriteOptions, argument == "--" {
+        while index < arguments.count {
+            let argument = arguments[index]
+            if !shouldRewriteOptions {
+                rewritten.append(argument)
+                index += 1
+            } else if argument == "--" {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
-            } else if shouldRewriteOptions, argument == "--interactive=false" {
+                index += 1
+            } else if argument == "--interactive=false" {
                 rewritten.append("--no-interactive")
-            } else if shouldRewriteOptions, argument == "--interactive=true" {
+                index += 1
+            } else if argument == "--interactive=true" {
                 rewritten.append("--interactive")
-            } else if shouldRewriteOptions, argument == "--tty=false" {
+                index += 1
+            } else if argument == "--tty=false" {
                 rewritten.append("--no-tty")
-            } else if shouldRewriteOptions, argument == "--tty=true" {
+                index += 1
+            } else if argument == "--tty=true" {
                 rewritten.append("--tty")
-            } else {
+                index += 1
+            } else if let split = splitCompactValueOption(argument, options: compactExecValueOptions) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+                index += 1
+            } else if execOptionConsumesFollowingValue(argument), arguments.indices.contains(index + 1) {
                 rewritten.append(argument)
+                rewritten.append(arguments[index + 1])
+                index += 2
+            } else {
+                if !argument.hasPrefix("-") {
+                    shouldRewriteOptions = false
+                }
+                rewritten.append(argument)
+                index += 1
             }
         }
         return rewritten
@@ -434,6 +462,19 @@ public enum ComposeArgumentRewriter {
             "-l",
             "-u",
             "-v",
+            "-w",
+        ].contains(argument)
+    }
+
+    /// Returns whether an `exec` option consumes the following argument.
+    private static func execOptionConsumesFollowingValue(_ argument: String) -> Bool {
+        [
+            "--env",
+            "--index",
+            "--user",
+            "--workdir",
+            "-e",
+            "-u",
             "-w",
         ].contains(argument)
     }

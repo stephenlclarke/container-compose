@@ -2824,6 +2824,108 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.first?.io == .inherited)
     }
 
+    @Test("exec maps environment user workdir and detach options")
+    func execMapsEnvironmentUserWorkdirAndDetachOptions() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            options: ComposeExecOptions {
+                $0.command = ["env"]
+                $0.detach = true
+                $0.environment = ["FOO=bar", "DEBUG"]
+                $0.user = "1000:1000"
+                $0.workingDirectory = "/app"
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command == [
+            "container",
+            "exec",
+            "--detach",
+            "--env",
+            "FOO=bar",
+            "--env",
+            "DEBUG",
+            "--user",
+            "1000:1000",
+            "--workdir",
+            "/app",
+            "demo-api-1",
+            "env",
+        ])
+        #expect(runner.commands.first?.io == .captured(input: nil))
+    }
+
+    @Test("exec rejects unsupported replica indexes before runtime commands")
+    func execRejectsUnsupportedReplicaIndexesBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.exec(
+                project: project,
+                serviceName: "api",
+                options: ComposeExecOptions {
+                    $0.command = ["true"]
+                    $0.index = 2
+                }
+            )
+            Issue.record("Expected unsupported exec index error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("exec --index: service replica exec needs replica-aware container lookup"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("exec rejects privileged mode before runtime commands")
+    func execRejectsPrivilegedModeBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.exec(
+                project: project,
+                serviceName: "api",
+                options: ComposeExecOptions {
+                    $0.command = ["true"]
+                    $0.privileged = true
+                }
+            )
+            Issue.record("Expected unsupported exec privileged error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("exec --privileged: apple/container exec does not expose privileged process execution"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("logs accepts Compose all tail value")
     func logsAcceptsComposeAllTailValue() async throws {
         let runner = RecordingRunner()

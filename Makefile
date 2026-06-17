@@ -207,6 +207,20 @@ cli-smoke: build
 	[[ "$$exec_non_interactive_output" == *"container exec demo-api-1 echo ok"* ]]; \
 	[[ "$$exec_non_interactive_output" != *"--interactive"* ]]; \
 	[[ "$$exec_non_interactive_output" != *"--tty"* ]]; \
+	exec_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -e FOO=bar -u 1000:1000 -w /app api env)"; \
+	[[ "$$exec_options_output" == *"container exec --env FOO=bar --user 1000:1000 --workdir /app --interactive --tty demo-api-1 env"* ]]; \
+	exec_compact_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -eFOO=bar -u1000:1000 -w/app api env)"; \
+	[[ "$$exec_compact_options_output" == *"container exec --env FOO=bar --user 1000:1000 --workdir /app --interactive --tty demo-api-1 env"* ]]; \
+	exec_mixed_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -e FOO=bar -u1000:1000 -w/app api env)"; \
+	[[ "$$exec_mixed_options_output" == *"container exec --env FOO=bar --user 1000:1000 --workdir /app --interactive --tty demo-api-1 env"* ]]; \
+	exec_detach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -d api sleep 60)"; \
+	[[ "$$exec_detach_output" == *"container exec --detach demo-api-1 sleep 60"* ]]; \
+	[[ "$$exec_detach_output" != *"--interactive"* ]]; \
+	[[ "$$exec_detach_output" != *"--tty"* ]]; \
+	exec_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --index 2 api true 2>&1 || true)"; \
+	[[ "$$exec_index_output" == *"unsupported compose feature: exec --index: service replica exec needs replica-aware container lookup"* ]]; \
+	exec_privileged_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --privileged api true 2>&1 || true)"; \
+	[[ "$$exec_privileged_output" == *"unsupported compose feature: exec --privileged: apple/container exec does not expose privileged process execution"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	stop_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop --timeout 12 api)"; \

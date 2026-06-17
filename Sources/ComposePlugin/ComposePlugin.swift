@@ -409,6 +409,18 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     var tty = true
     @Flag(name: .customShort("T"), help: "Disable pseudo-TTY allocation.")
     var noTty = false
+    @Flag(name: .shortAndLong, help: "Run the command in the background.")
+    var detach = false
+    @Option(name: [.customShort("e"), .customLong("env")], help: "Set an environment variable for the exec process. May be repeated.")
+    var environment: [String] = []
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
+    @Flag(name: .customLong("privileged"), help: "Give extended privileges to the process. Not supported by apple/container exec yet.")
+    var privileged = false
+    @Option(name: [.customShort("u"), .customLong("user")], help: "Run the command as this user.")
+    var user: String?
+    @Option(name: [.customShort("w"), .customLong("workdir")], help: "Path to the working directory inside the container.")
+    var workdir: String?
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Command and arguments.")
@@ -420,9 +432,17 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
         try await orchestrator().exec(
             project: loadedProject,
             serviceName: service,
-            command: command,
-            interactive: interactive,
-            tty: tty && !noTty
+            options: ComposeExecOptions {
+                $0.command = command
+                $0.interactive = interactive
+                $0.tty = tty && !noTty
+                $0.detach = detach
+                $0.environment = environment
+                $0.index = index
+                $0.privileged = privileged
+                $0.user = user
+                $0.workingDirectory = workdir
+            }
         )
     }
 }
