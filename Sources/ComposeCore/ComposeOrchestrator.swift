@@ -46,6 +46,31 @@ public struct ComposeExecutionOptions {
     }
 }
 
+/// Runtime collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorDependencies: Sendable {
+    public var copier: ContainerCopying
+    public var discoveryManager: ContainerDiscoveryManaging
+    public var execManager: ContainerExecManaging
+    public var exporter: ContainerExporting
+    public var imageManager: ContainerImageManaging
+    public var lifecycleManager: ContainerLifecycleManaging
+    public var logManager: ContainerLogManaging
+    public var resourceManager: ContainerResourceManaging
+    public var statsManager: ContainerStatsManaging
+
+    public init() {
+        copier = ContainerClientCopier()
+        discoveryManager = ContainerClientDiscoveryManager()
+        execManager = ContainerClientExecManager()
+        exporter = ContainerClientExporter()
+        imageManager = ContainerClientImageManager()
+        lifecycleManager = ContainerClientLifecycleManager()
+        logManager = ContainerClientLogManager()
+        resourceManager = ContainerClientResourceManager()
+        statsManager = ContainerClientStatsManager()
+    }
+}
+
 /// Options for `compose up`.
 public struct ComposeUpOptions {
     public var services: [String] = []
@@ -283,27 +308,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public init(
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
-        copier: ContainerCopying = ContainerClientCopier(),
-        discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
-        execManager: ContainerExecManaging = ContainerClientExecManager(),
-        exporter: ContainerExporting = ContainerClientExporter(),
-        imageManager: ContainerImageManaging = ContainerClientImageManager(),
-        lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
-        logManager: ContainerLogManaging = ContainerClientLogManager(),
-        resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
-        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
+        dependencies: ComposeOrchestratorDependencies = ComposeOrchestratorDependencies()
     ) {
         self.runner = runner
         self.options = options
-        self.copier = copier
-        self.discoveryManager = discoveryManager
-        self.execManager = execManager
-        self.exporter = exporter
-        self.imageManager = imageManager
-        self.lifecycleManager = lifecycleManager
-        self.logManager = logManager
-        self.resourceManager = resourceManager
-        self.statsManager = statsManager
+        self.copier = dependencies.copier
+        self.discoveryManager = dependencies.discoveryManager
+        self.execManager = dependencies.execManager
+        self.exporter = dependencies.exporter
+        self.imageManager = dependencies.imageManager
+        self.lifecycleManager = dependencies.lifecycleManager
+        self.logManager = dependencies.logManager
+        self.resourceManager = dependencies.resourceManager
+        self.statsManager = dependencies.statsManager
     }
 
     /// Returns canonical project JSON for `compose config`.

@@ -72,6 +72,218 @@ private func temporaryDirectory() throws -> URL {
     return url
 }
 
+private func orchestratorDependencies(
+    configure: (inout ComposeOrchestratorDependencies) -> Void
+) -> ComposeOrchestratorDependencies {
+    var dependencies = ComposeOrchestratorDependencies()
+    configure(&dependencies)
+    return dependencies
+}
+
+private extension ComposeOrchestrator {
+    convenience init(imageManager: ContainerImageManaging) {
+        self.init(dependencies: orchestratorDependencies { $0.imageManager = imageManager })
+    }
+
+    convenience init(runner: CommandRunning, copier: ContainerCopying) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.copier = copier })
+    }
+
+    convenience init(runner: CommandRunning, discoveryManager: ContainerDiscoveryManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.discoveryManager = discoveryManager })
+    }
+
+    convenience init(runner: CommandRunning, execManager: ContainerExecManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.execManager = execManager })
+    }
+
+    convenience init(runner: CommandRunning, exporter: ContainerExporting) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.exporter = exporter })
+    }
+
+    convenience init(runner: CommandRunning, imageManager: ContainerImageManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.imageManager = imageManager })
+    }
+
+    convenience init(runner: CommandRunning, lifecycleManager: ContainerLifecycleManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.lifecycleManager = lifecycleManager })
+    }
+
+    convenience init(runner: CommandRunning, resourceManager: ContainerResourceManaging) {
+        self.init(runner: runner, dependencies: orchestratorDependencies { $0.resourceManager = resourceManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        imageManager: ContainerImageManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.imageManager = imageManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.lifecycleManager = lifecycleManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        imageManager: ContainerImageManaging,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.imageManager = imageManager
+            $0.lifecycleManager = lifecycleManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        imageManager: ContainerImageManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.imageManager = imageManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        lifecycleManager: ContainerLifecycleManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.lifecycleManager = lifecycleManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        copier: ContainerCopying
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.copier = copier })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        discoveryManager: ContainerDiscoveryManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.discoveryManager = discoveryManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        execManager: ContainerExecManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.execManager = execManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        exporter: ContainerExporting
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.exporter = exporter })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        imageManager: ContainerImageManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.imageManager = imageManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.lifecycleManager = lifecycleManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        logManager: ContainerLogManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.logManager = logManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        statsManager: ContainerStatsManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.statsManager = statsManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        discoveryManager: ContainerDiscoveryManaging,
+        lifecycleManager: ContainerLifecycleManaging,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.lifecycleManager = lifecycleManager
+            $0.resourceManager = resourceManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        imageManager: ContainerImageManaging,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies {
+            $0.imageManager = imageManager
+            $0.lifecycleManager = lifecycleManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        copier: ContainerCopying,
+        execManager: ContainerExecManaging,
+        lifecycleManager: ContainerLifecycleManaging,
+        logManager: ContainerLogManaging
+    ) {
+        self.init(runner: runner, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.execManager = execManager
+            $0.lifecycleManager = lifecycleManager
+            $0.logManager = logManager
+        })
+    }
+}
+
 @Suite("Compose orchestrator")
 struct ComposeOrchestratorTests {
     @Test("orders selected services after dependencies")
