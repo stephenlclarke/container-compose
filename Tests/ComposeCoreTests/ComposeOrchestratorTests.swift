@@ -1391,6 +1391,131 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("ls lists compose projects with grouped status")
+    func lsListsComposeProjectsWithGroupedStatus() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ls(options: ComposeLsOptions(all: true))
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        let output = try #require(emitted.messages.first)
+        #expect(output.contains("NAME"))
+        #expect(output.contains("STATUS"))
+        #expect(output.contains("CONFIG FILES"))
+        #expect(output.contains("demo"))
+        #expect(output.contains("running(1), stopped(1)"))
+        #expect(output.contains("/tmp/demo/compose.yml,/tmp/demo/compose.override.yml"))
+        #expect(output.contains("other"))
+        #expect(output.contains("/tmp/other/compose.yml"))
+    }
+
+    @Test("ls defaults to running projects only")
+    func lsDefaultsToRunningProjectsOnly() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ls()
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json"]])
+        #expect(try #require(emitted.messages.first).contains("demo"))
+    }
+
+    @Test("ls quiet prints filtered project names")
+    func lsQuietPrintsFilteredProjectNames() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ls(options: ComposeLsOptions(all: true, quiet: true, filters: ["name=^dem"]))
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        #expect(emitted.messages == ["demo"])
+    }
+
+    @Test("ls json renders compose projects")
+    func lsJSONRendersComposeProjects() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ls(options: ComposeLsOptions(all: true, format: "json"))
+
+        let data = Data(try #require(emitted.messages.first).utf8)
+        let records = try #require(JSONSerialization.jsonObject(with: data) as? [[String: String]])
+        #expect(records.map { $0["name"] } == ["demo", "other"])
+        #expect(records.map { $0["status"] } == ["running(1), stopped(1)", "running(1)"])
+        #expect(records.map { $0["configFiles"] } == [
+            "/tmp/demo/compose.yml,/tmp/demo/compose.override.yml",
+            "/tmp/other/compose.yml",
+        ])
+    }
+
+    @Test("ls rejects malformed filters before runtime commands")
+    func lsRejectsMalformedFiltersBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+
+        do {
+            try await orchestrator.ls(options: ComposeLsOptions(filters: ["name"]))
+            Issue.record("Expected invalid filter error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("ls --filter must be in KEY=VALUE form"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("ls rejects unsupported filter keys before runtime commands")
+    func lsRejectsUnsupportedFilterKeysBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+
+        do {
+            try await orchestrator.ls(options: ComposeLsOptions(filters: ["status=running"]))
+            Issue.record("Expected unsupported filter error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("ls --filter status; supported filter is name"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("ls rejects unsupported output formats")
+    func lsRejectsUnsupportedOutputFormats() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+
+        do {
+            try await orchestrator.ls(options: ComposeLsOptions(format: "yaml"))
+            Issue.record("Expected unsupported ls format error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("ls --format 'yaml'; supported formats are table and json"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("ps filters containers by project label")
     func psFiltersContainersByProjectLabel() async throws {
         let emitted = MessageRecorder()
@@ -3809,6 +3934,7 @@ private extension CommandResult {
 private let composeConfigHashLabel = "com.apple.container.compose.config-hash"
 private let composeProjectLabel = "com.apple.container.compose.project"
 private let composeServiceLabel = "com.apple.container.compose.service"
+private let composeProjectConfigFilesLabel = "com.apple.container.compose.project.config-files"
 
 private struct UnsupportedRuntimeStringFieldCase: Sendable {
     let composeName: String
@@ -4211,7 +4337,9 @@ private func containerListResult() -> CommandResult {
               },
               "labels": {
                 "\(composeProjectLabel)": "demo",
-                "\(composeServiceLabel)": "api"
+                "\(composeServiceLabel)": "api",
+                "\(composeConfigHashLabel)": "api-hash",
+                "\(composeProjectConfigFilesLabel)": "/tmp/demo/compose.yml,/tmp/demo/compose.override.yml"
               },
               "platform": {
                 "os": "linux",
@@ -4233,7 +4361,9 @@ private func containerListResult() -> CommandResult {
               },
               "labels": {
                 "\(composeProjectLabel)": "other",
-                "\(composeServiceLabel)": "api"
+                "\(composeServiceLabel)": "api",
+                "\(composeConfigHashLabel)": "other-hash",
+                "\(composeProjectConfigFilesLabel)": "/tmp/other/compose.yml"
               },
               "platform": {
                 "os": "linux",
@@ -4255,7 +4385,9 @@ private func containerListResult() -> CommandResult {
               },
               "Labels": {
                 "\(composeProjectLabel)": "demo",
-                "\(composeServiceLabel)": "worker"
+                "\(composeServiceLabel)": "worker",
+                "\(composeConfigHashLabel)": "worker-hash",
+                "\(composeProjectConfigFilesLabel)": "/tmp/demo/compose.yml"
               }
             },
             "Status": {

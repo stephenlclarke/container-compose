@@ -101,6 +101,21 @@ public struct ComposeImagesOptions {
     }
 }
 
+/// Options for `compose ls`.
+public struct ComposeLsOptions {
+    public var all: Bool
+    public var quiet: Bool
+    public var format: String
+    public var filters: [String]
+
+    public init(all: Bool = false, quiet: Bool = false, format: String = "table", filters: [String] = []) {
+        self.all = all
+        self.quiet = quiet
+        self.format = format
+        self.filters = filters
+    }
+}
+
 /// Options for `compose run` one-off containers.
 public struct ComposeRunOptions {
     public var command: [String] = []
@@ -281,6 +296,40 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         for service in services {
             guard let image = service.image else { continue }
             try await runContainer(["image", "push", image])
+        }
+    }
+
+    /// Lists Compose projects discovered through project-scoped container labels.
+    public func ls(options list: ComposeLsOptions = ComposeLsOptions()) async throws {
+        let nameFilters = try lsNameFilters(list.filters)
+        let format = try composeLsFormat(list.format)
+        var args = ["list", "--format", "json"]
+        if list.all {
+            args.append("--all")
+        }
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+
+        let result = try await runContainer(args, emitOutput: false)
+        let records = try composeProjectRecords(output: result.stdout, nameFilters: nameFilters)
+        if list.quiet {
+            let names = records.map(\.name)
+            if !names.isEmpty {
+                options.emit(names.joined(separator: "\n"))
+            }
+            return
+        }
+
+        switch format {
+        case .table:
+            let table = renderComposeProjectTable(records)
+            if !table.isEmpty {
+                options.emit(table)
+            }
+        case .json:
+            options.emit(try renderComposeProjectJSON(records))
         }
     }
 
@@ -1565,6 +1614,7 @@ private let projectLabel = "com.apple.container.compose.project"
 private let serviceLabel = "com.apple.container.compose.service"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
+private let configFilesLabel = "com.apple.container.compose.project.config-files"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
 private let reservedComposeLabelPrefix = "com.apple.container.compose."
 
@@ -1630,6 +1680,7 @@ private func resourceLabels(project: ComposeProject) -> [String] {
         "\(projectLabel)=\(project.name)",
         "com.apple.container.compose.version=1",
         "\(workingDirectoryLabel)=\(project.workingDirectory)",
+        "\(configFilesLabel)=\(project.composeFiles.joined(separator: ","))",
         "\(configFilesHashLabel)=\(composeFilesHash(project.composeFiles))",
     ]
 }
@@ -1766,6 +1817,157 @@ private func containerServiceNames(_ containers: [Any]) -> [String] {
         }
     }
     return services
+}
+
+/// Validates the `compose ls --format` value.
+private func composeLsFormat(_ value: String) throws -> ComposeLsFormat {
+    switch value.lowercased() {
+    case "table":
+        return .table
+    case "json":
+        return .json
+    default:
+        throw ComposeError.unsupported("ls --format '\(value)'; supported formats are table and json")
+    }
+}
+
+/// Output modes supported by `compose ls`.
+private enum ComposeLsFormat {
+    case table
+    case json
+}
+
+/// One Docker Compose-style project row derived from labeled containers.
+private struct ComposeProjectRecord: Encodable, Equatable {
+    let name: String
+    let status: String
+    let configFiles: String
+}
+
+/// Returns project rows from `container list --format json`, optionally filtered by project name.
+private func composeProjectRecords(output: String, nameFilters: [String]) throws -> [ComposeProjectRecord] {
+    let containers = try composeLabeledContainers(output: output)
+    let grouped = Dictionary(grouping: containers) { inspectLabel(projectLabel, in: $0) ?? "" }
+    return grouped.keys.sorted().compactMap { projectName in
+        guard !projectName.isEmpty, lsProjectNameMatches(projectName, filters: nameFilters) else {
+            return nil
+        }
+        let projectContainers = grouped[projectName] ?? []
+        return ComposeProjectRecord(
+            name: projectName,
+            status: combinedProjectStatus(projectContainers),
+            configFiles: combinedProjectConfigFiles(projectContainers)
+        )
+    }
+}
+
+/// Returns all containers carrying the labels needed to identify Compose projects.
+private func composeLabeledContainers(output: String) throws -> [Any] {
+    try listedContainers(output: output).filter {
+        inspectLabel(projectLabel, in: $0) != nil && inspectLabel(configHashLabel, in: $0) != nil
+    }
+}
+
+/// Parses raw `container list --format json` output into container JSON objects.
+private func listedContainers(output: String) throws -> [Any] {
+    guard let data = output.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data)
+    else {
+        throw ComposeError.invalidProject("container list returned invalid JSON")
+    }
+
+    let containers: [Any]
+    if let values = json as? [Any] {
+        containers = values
+    } else if let value = json as? [String: Any] {
+        containers = [value]
+    } else {
+        throw ComposeError.invalidProject("container list returned invalid JSON")
+    }
+    return containers
+}
+
+/// Parses `compose ls --filter` values. Docker Compose currently accepts only `name`.
+private func lsNameFilters(_ filters: [String]) throws -> [String] {
+    try filters.map { filter in
+        let parts = filter.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else {
+            throw ComposeError.invalidProject("ls --filter must be in KEY=VALUE form")
+        }
+        let key = String(parts[0])
+        let value = String(parts[1])
+        guard key == "name" else {
+            throw ComposeError.unsupported("ls --filter \(key); supported filter is name")
+        }
+        guard !value.isEmpty else {
+            throw ComposeError.invalidProject("ls --filter name requires a value")
+        }
+        return value
+    }
+}
+
+/// Applies Docker Compose's exact-name or regular-expression project name matching.
+private func lsProjectNameMatches(_ name: String, filters: [String]) -> Bool {
+    guard !filters.isEmpty else {
+        return true
+    }
+    return filters.contains { filter in
+        if name == filter {
+            return true
+        }
+        return name.range(of: filter, options: .regularExpression) != nil
+    }
+}
+
+/// Combines per-container states into the `state(count)` form used by Docker Compose.
+private func combinedProjectStatus(_ containers: [Any]) -> String {
+    let statuses = containers.map { (containerRuntimeState($0) ?? "unknown").lowercased() }
+    let counts = Dictionary(grouping: statuses, by: { $0 }).mapValues(\.count)
+    return counts.keys.sorted().map { "\($0)(\(counts[$0] ?? 0))" }.joined(separator: ", ")
+}
+
+/// Combines config-file labels across project containers while preserving first-seen order.
+private func combinedProjectConfigFiles(_ containers: [Any]) -> String {
+    var seen: Set<String> = []
+    var files: [String] = []
+    for container in containers {
+        let values = [
+            inspectLabel(configFilesLabel, in: container),
+            inspectLabel("com.apple.container.compose.project.config-file", in: container),
+        ].compactMap { $0 }
+        for value in values {
+            for file in value.split(separator: ",").map(String.init) where !file.isEmpty && seen.insert(file).inserted {
+                files.append(file)
+            }
+        }
+    }
+    return files.isEmpty ? "N/A" : files.joined(separator: ",")
+}
+
+/// Renders project rows as a compact table.
+private func renderComposeProjectTable(_ records: [ComposeProjectRecord]) -> String {
+    guard !records.isEmpty else {
+        return ""
+    }
+    let rows = [
+        ["NAME", "STATUS", "CONFIG FILES"],
+    ] + records.map { [$0.name, $0.status, $0.configFiles] }
+    let widths = rows.reduce(Array(repeating: 0, count: rows[0].count)) { current, row in
+        zip(current, row).map { max($0, $1.count) }
+    }
+    return rows.map { row in
+        row.enumerated().map { index, value in
+            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
+        }.joined(separator: "  ")
+    }.joined(separator: "\n")
+}
+
+/// Renders project rows as deterministic JSON.
+private func renderComposeProjectJSON(_ records: [ComposeProjectRecord]) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(records)
+    return String(decoding: data, as: UTF8.self)
 }
 
 /// Validates the `compose images --format` value.
@@ -1995,24 +2197,9 @@ private func filterContainersByStatus(_ containers: [Any], statuses: Set<String>
 
 /// Filters raw `container list --format json` output by Compose project label.
 private func projectContainers(projectName: String, output: String) throws -> [Any] {
-    guard let data = output.data(using: .utf8),
-          let json = try? JSONSerialization.jsonObject(with: data)
-    else {
-        throw ComposeError.invalidProject("container list returned invalid JSON")
-    }
-
-    let containers: [Any]
-    if let values = json as? [Any] {
-        containers = values
-    } else if let value = json as? [String: Any] {
-        containers = [value]
-    } else {
-        throw ComposeError.invalidProject("container list returned invalid JSON")
-    }
-
     // `container list` does not currently expose a label filter in the CLI, so
     // Compose project scoping is applied client-side after requesting JSON.
-    return containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
+    return try listedContainers(output: output).filter { inspectLabel(projectLabel, in: $0) == projectName }
 }
 
 /// Extracts the runtime state from common `container list --format json` shapes.

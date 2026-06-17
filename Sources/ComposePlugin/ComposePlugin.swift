@@ -33,6 +33,7 @@ struct ComposePlugin: AsyncParsableCommand {
             Build.self,
             Pull.self,
             Push.self,
+            Ls.self,
             Ps.self,
             Logs.self,
             Exec.self,
@@ -253,6 +254,26 @@ struct Push: AsyncParsableCommand, ComposeProjectCommand {
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().push(project: loadedProject, services: services)
+    }
+}
+
+/// Implements `compose ls`.
+struct Ls: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "ls", abstract: "List Compose projects.")
+
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: .shortAndLong, help: "Show stopped Compose projects.")
+    var all = false
+    @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display project names.")
+    var quiet = false
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Option(name: .customLong("filter"), help: "Filter projects. Supported filter: name.")
+    var filters: [String] = []
+
+    /// Lists project names and status without loading a Compose file.
+    func run() async throws {
+        try await global.orchestrator().ls(options: ComposeLsOptions(all: all, quiet: quiet, format: format, filters: filters))
     }
 }
 

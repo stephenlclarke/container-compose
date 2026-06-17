@@ -32,6 +32,7 @@ public enum ComposeArgumentRewriter {
         "exec",
         "images",
         "kill",
+        "ls",
         "logs",
         "pause",
         "port",

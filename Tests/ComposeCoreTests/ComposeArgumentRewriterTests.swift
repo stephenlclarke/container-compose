@@ -61,6 +61,23 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("recognizes ls as a compose subcommand")
+    func recognizesLsAsComposeSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--dry-run",
+            "ls",
+            "--format",
+            "json",
+        ])
+
+        #expect(rewritten == [
+            "ls",
+            "--dry-run",
+            "--format",
+            "json",
+        ])
+    }
+
     @Test("normalizes logs follow shorthand after subcommand")
     func normalizesLogsFollowShorthandAfterSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([
