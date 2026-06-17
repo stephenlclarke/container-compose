@@ -164,6 +164,8 @@ cli-smoke: build
 	[[ "$$stop_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	restart_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t 13 api)"; \
 	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	down_rmi_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down --rmi all)"; \
+	[[ "$$down_rmi_output" == *"container image delete --force alpine"* ]]; \
 	ps_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps -q)"; \
 	[[ "$$ps_quiet_output" == *"container list --format json"* ]]; \
 	ps_services_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --services)"; \

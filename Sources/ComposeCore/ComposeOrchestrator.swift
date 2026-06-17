@@ -80,11 +80,13 @@ public struct ComposeDownOptions {
     public var volumes: Bool
     public var removeOrphans: Bool
     public var timeout: Int?
+    public var rmi: String?
 
-    public init(volumes: Bool = false, removeOrphans: Bool = false, timeout: Int? = nil) {
+    public init(volumes: Bool = false, removeOrphans: Bool = false, timeout: Int? = nil, rmi: String? = nil) {
         self.volumes = volumes
         self.removeOrphans = removeOrphans
         self.timeout = timeout
+        self.rmi = rmi
     }
 }
 
@@ -130,6 +132,12 @@ private struct RunArgumentOptions {
     init(_ configure: (inout RunArgumentOptions) -> Void) {
         configure(&self)
     }
+}
+
+private enum DownImageRemovalPolicy {
+    case none
+    case local
+    case all
 }
 
 /// Converts a normalized Compose project into deterministic `container`
@@ -209,6 +217,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Stops and removes project-scoped resources.
     public func down(project: ComposeProject, options down: ComposeDownOptions) async throws {
         try validateTimeoutSeconds(down.timeout, command: "down")
+        let imageRemovalPolicy = try downImageRemovalPolicy(down.rmi)
         let services = try orderedServices(project: project, selected: [])
         let declaredContainers = Set(services.map { containerName(project: project, service: $0, oneOff: false) })
         for service in services.reversed() {
@@ -229,6 +238,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await runContainer(["volume", "delete", volumeRuntimeName(project: project, composeName: name, volume: volume)], check: false)
             }
         }
+
+        try await removeImages(project: project, policy: imageRemovalPolicy)
     }
 
     /// Builds images for services that declare a build section.
@@ -872,6 +883,21 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Validates the `down --rmi` policy before removing resources.
+    func downImageRemovalPolicy(_ policy: String?) throws -> DownImageRemovalPolicy {
+        guard let policy else {
+            return .none
+        }
+        switch policy {
+        case "all":
+            return .all
+        case "local":
+            return .local
+        default:
+            throw ComposeError.invalidProject("down --rmi must be 'all' or 'local'")
+        }
+    }
+
     /// Creates project networks and volumes required before containers start.
     func ensureResources(project: ComposeProject) async throws {
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
@@ -915,7 +941,9 @@ private extension ComposeOrchestrator {
         }
         try validateBuildSupport(service: service)
         var args = ["build"]
-        let image = service.image ?? "\(project.name)_\(service.name):latest"
+        guard let image = serviceImage(project: project, service: service) else {
+            throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
+        }
         args.append(contentsOf: ["--tag", image])
         if let dockerfile = build.dockerfile, !dockerfile.isEmpty {
             args.append(contentsOf: ["--file", dockerfile])
@@ -1218,7 +1246,7 @@ private extension ComposeOrchestrator {
             args.append("--init")
         }
 
-        guard let image = service.image ?? service.build.map({ _ in "\(project.name)_\(service.name):latest" }) else {
+        guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
         args.append(image)
@@ -1244,6 +1272,40 @@ private extension ComposeOrchestrator {
     /// Returns whether a copy operand prefix has Compose service-reference shape.
     func isCopyServiceReference(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("/") && value != "." && value != ".."
+    }
+
+    /// Removes images referenced by services according to `down --rmi`.
+    func removeImages(project: ComposeProject, policy: DownImageRemovalPolicy) async throws {
+        for image in removableDownImages(project: project, policy: policy) {
+            try await runContainer(["image", "delete", "--force", image], check: false)
+        }
+    }
+
+    /// Returns deterministic image references affected by `down --rmi`.
+    func removableDownImages(project: ComposeProject, policy: DownImageRemovalPolicy) -> [String] {
+        let images: [String]
+        switch policy {
+        case .none:
+            images = []
+        case .local:
+            images = project.services.values.compactMap { generatedBuildImage(project: project, service: $0) }
+        case .all:
+            images = project.services.values.compactMap { serviceImage(project: project, service: $0) }
+        }
+        return Array(Set(images)).sorted()
+    }
+
+    /// Returns the runtime image reference for a service, including generated build tags.
+    func serviceImage(project: ComposeProject, service: ComposeService) -> String? {
+        service.image ?? generatedBuildImage(project: project, service: service)
+    }
+
+    /// Returns the generated image tag used for services that only declare `build`.
+    func generatedBuildImage(project: ComposeProject, service: ComposeService) -> String? {
+        guard service.build != nil, service.image == nil else {
+            return nil
+        }
+        return "\(project.name)_\(service.name):latest"
     }
 
     /// Converts Compose's log tail value to the runtime CLI value.

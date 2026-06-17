@@ -196,13 +196,15 @@ struct Down: AsyncParsableCommand, ComposeProjectCommand {
     var removeOrphans = false
     @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers.")
     var timeout: Int?
+    @Option(name: .customLong("rmi"), help: "Remove images used by services: local or all.")
+    var rmi: String?
 
     /// Stops containers and removes project-scoped resources.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().down(
             project: loadedProject,
-            options: ComposeDownOptions(volumes: volumes, removeOrphans: removeOrphans, timeout: timeout)
+            options: ComposeDownOptions(volumes: volumes, removeOrphans: removeOrphans, timeout: timeout, rmi: rmi)
         )
     }
 }
