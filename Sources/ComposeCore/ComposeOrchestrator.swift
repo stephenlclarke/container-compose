@@ -92,6 +92,7 @@ public struct ComposeRunOptions {
     public var remove: Bool
     public var servicePorts: Bool
     public var publish: [String]
+    public var pullPolicy: String?
     public var containerName: String?
     public var entrypoint: String?
     public var workingDirectory: String?
@@ -106,6 +107,7 @@ public struct ComposeRunOptions {
         remove: Bool = false,
         servicePorts: Bool = false,
         publish: [String] = [],
+        pullPolicy: String? = nil,
         containerName: String? = nil,
         entrypoint: String? = nil,
         workingDirectory: String? = nil,
@@ -119,6 +121,7 @@ public struct ComposeRunOptions {
         self.remove = remove
         self.servicePorts = servicePorts
         self.publish = publish
+        self.pullPolicy = pullPolicy
         self.containerName = containerName
         self.entrypoint = entrypoint
         self.workingDirectory = workingDirectory
@@ -333,8 +336,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
+        try validatePullPolicy(run.pullPolicy)
         try validateRuntimeSupport(service: service)
-        try await applyServicePullPolicies(services: [service])
+        try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(

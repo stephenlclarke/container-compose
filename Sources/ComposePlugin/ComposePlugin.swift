@@ -331,6 +331,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var servicePorts = false
     @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
     var publish: [String] = []
+    @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, or never.")
+    var pull: String?
     @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
     var name: String?
     @Option(name: .customLong("entrypoint"), help: "Override the service entrypoint for the one-off container.")
@@ -363,6 +365,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 remove: remove,
                 servicePorts: servicePorts,
                 publish: publish,
+                pullPolicy: pull,
                 containerName: name,
                 entrypoint: entrypoint,
                 workingDirectory: workdir,

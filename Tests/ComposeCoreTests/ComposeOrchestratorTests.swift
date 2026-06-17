@@ -2670,6 +2670,81 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("run applies explicit pull policy before one-off container")
+    func runAppliesExplicitPullPolicyBeforeOneOffContainer() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pullPolicy = "never"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["true"], pullPolicy: "always")
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "pull", "alpine"])
+        #expect(commands[1].starts(with: ["container", "run"]))
+        #expect(Array(commands[1].suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run pull missing only pulls absent images")
+    func runPullMissingOnlyPullsAbsentImages() async throws {
+        let presentRunner = RecordingRunner(responses: [.success])
+        let absentRunner = RecordingRunner(responses: [.failure, .success])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        try await ComposeOrchestrator(runner: presentRunner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["true"], pullPolicy: "missing")
+        )
+        try await ComposeOrchestrator(runner: absentRunner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["true"], pullPolicy: "missing")
+        )
+
+        let presentCommands = presentRunner.commands.map(\.arguments)
+        #expect(presentCommands[0] == ["container", "image", "inspect", "alpine"])
+        #expect(presentCommands[1].starts(with: ["container", "run"]))
+        let absentCommands = absentRunner.commands.map(\.arguments)
+        #expect(absentCommands[0] == ["container", "image", "inspect", "alpine"])
+        #expect(absentCommands[1] == ["container", "image", "pull", "alpine"])
+        #expect(absentCommands[2].starts(with: ["container", "run"]))
+    }
+
+    @Test("run rejects unsupported explicit pull policy")
+    func runRejectsUnsupportedExplicitPullPolicy() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(command: ["true"], pullPolicy: "daily")
+            )
+            Issue.record("Expected unsupported run pull policy to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unsupported pull policy 'daily'"))
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported restart policies before creating resources")
     func runRejectsUnsupportedRestartPoliciesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
