@@ -104,7 +104,9 @@ public struct ComposeRunOptions {
     public var labels: [String] = []
     public var volumes: [String] = []
 
-    public init() {}
+    public init() {
+        // Stored property defaults represent Docker Compose's default run behavior.
+    }
 
     public init(_ configure: (inout ComposeRunOptions) -> Void) {
         configure(&self)
@@ -119,7 +121,9 @@ private struct RunArgumentOptions {
     var containerNameOverride: String?
     var labelOverrides: [ComposeLabelOverride] = []
 
-    init() {}
+    init() {
+        // Stored property defaults represent unmodified service run arguments.
+    }
 
     init(_ configure: (inout RunArgumentOptions) -> Void) {
         configure(&self)
