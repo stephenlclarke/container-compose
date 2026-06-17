@@ -255,7 +255,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Lists containers belonging to the Compose project.
-    public func ps(project: ComposeProject, all: Bool, quiet: Bool = false) async throws {
+    public func ps(project: ComposeProject, all: Bool, quiet: Bool = false, services: Bool = false) async throws {
         var args = ["list", "--format", "json"]
         if all {
             args.append("--all")
@@ -269,6 +269,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             let identifiers = try projectContainerIdentifiers(projectName: project.name, output: result.stdout)
             if !identifiers.isEmpty {
                 options.emit(identifiers.joined(separator: "\n"))
+            }
+            return
+        }
+        if services {
+            let names = try projectContainerServiceNames(projectName: project.name, output: result.stdout)
+            if !names.isEmpty {
+                options.emit(names.joined(separator: "\n"))
             }
             return
         }
@@ -1392,6 +1399,7 @@ private struct ComposeLabelOverride {
 }
 
 private let projectLabel = "com.apple.container.compose.project"
+private let serviceLabel = "com.apple.container.compose.service"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
@@ -1466,7 +1474,7 @@ private func resourceLabels(project: ComposeProject) -> [String] {
 /// Returns labels that identify a service container and its config hash.
 private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) -> [String] {
     var labels = resourceLabels(project: project)
-    labels.append("com.apple.container.compose.service=\(service.name)")
+    labels.append("\(serviceLabel)=\(service.name)")
     labels.append("com.apple.container.compose.oneoff=\(oneOff)")
     labels.append("\(configHashLabel)=\(configHash(project: project, service: service))")
     if let firstFile = project.composeFiles.first {
@@ -1563,6 +1571,25 @@ private func projectContainerListJSON(projectName: String, output: String) throw
 /// Returns names or IDs for containers scoped to one Compose project.
 private func projectContainerIdentifiers(projectName: String, output: String) throws -> [String] {
     try projectContainers(projectName: projectName, output: output).compactMap(containerIdentifier)
+}
+
+/// Returns unique service names for containers scoped to one Compose project.
+private func projectContainerServiceNames(projectName: String, output: String) throws -> [String] {
+    let containers = try projectContainers(projectName: projectName, output: output)
+    let namesByContainer = containers.compactMap { container -> (identifier: String, service: String)? in
+        guard let service = inspectLabel(serviceLabel, in: container), !service.isEmpty else {
+            return nil
+        }
+        return (containerIdentifier(container) ?? service, service)
+    }
+    var seen: Set<String> = []
+    var services: [String] = []
+    for entry in namesByContainer.sorted(by: { $0.identifier < $1.identifier }) {
+        if seen.insert(entry.service).inserted {
+            services.append(entry.service)
+        }
+    }
+    return services
 }
 
 /// Filters raw `container list --format json` output by Compose project label.

@@ -1358,6 +1358,36 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["demo-api-1\ndemo-worker-1"])
     }
 
+    @Test("ps services prints project scoped service names")
+    func psServicesPrintsProjectScopedServiceNames() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, services: true)
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json"]])
+        #expect(emitted.messages == ["api\nworker"])
+    }
+
+    @Test("ps quiet takes precedence over services")
+    func psQuietTakesPrecedenceOverServices() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, quiet: true, services: true)
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json"]])
+        #expect(emitted.messages == ["demo-api-1\ndemo-worker-1"])
+    }
+
     @Test("describes compose errors")
     func describesComposeErrors() {
         #expect(ComposeError.commandFailed(command: "container ps", status: 7, stderr: "").description == "container ps failed with exit code 7")
@@ -3448,6 +3478,7 @@ private extension CommandResult {
 
 private let composeConfigHashLabel = "com.apple.container.compose.config-hash"
 private let composeProjectLabel = "com.apple.container.compose.project"
+private let composeServiceLabel = "com.apple.container.compose.service"
 
 private struct UnsupportedRuntimeStringFieldCase: Sendable {
     let composeName: String
@@ -3843,7 +3874,8 @@ private func containerListResult() -> CommandResult {
             "id": "demo-api-1",
             "configuration": {
               "labels": {
-                "\(composeProjectLabel)": "demo"
+                "\(composeProjectLabel)": "demo",
+                "\(composeServiceLabel)": "api"
               }
             }
           },
@@ -3851,7 +3883,8 @@ private func containerListResult() -> CommandResult {
             "id": "other-api-1",
             "configuration": {
               "labels": {
-                "\(composeProjectLabel)": "other"
+                "\(composeProjectLabel)": "other",
+                "\(composeServiceLabel)": "api"
               }
             }
           },
@@ -3859,7 +3892,8 @@ private func containerListResult() -> CommandResult {
             "id": "demo-worker-1",
             "Config": {
               "Labels": {
-                "\(composeProjectLabel)": "demo"
+                "\(composeProjectLabel)": "demo",
+                "\(composeServiceLabel)": "worker"
               }
             }
           }

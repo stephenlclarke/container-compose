@@ -258,11 +258,13 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     var all = false
     @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display container IDs.")
     var quiet = false
+    @Flag(name: .customLong("services"), help: "Only display service names.")
+    var services = false
 
     /// Lists project containers, optionally including stopped containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().ps(project: loadedProject, all: all, quiet: quiet)
+        try await orchestrator().ps(project: loadedProject, all: all, quiet: quiet, services: services)
     }
 }
 
