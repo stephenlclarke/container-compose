@@ -2845,6 +2845,57 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "env"])
     }
 
+    @Test("run applies one-off volume overrides")
+    func runAppliesOneOffVolumeOverrides() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.volumes = [ComposeMount(type: "bind", source: "/default", target: "/default")]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(
+                command: ["ls"],
+                volumes: ["/host:/container:ro", "cache:/cache", "/scratch"]
+            )
+        )
+
+        let volumeCreate = try #require(runner.commands.first?.arguments)
+        #expect(volumeCreate.containsSequence(["container", "volume", "create"]))
+        #expect(volumeCreate.last == "demo_cache")
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--volume", "/default:/default"]))
+        #expect(command.containsSequence(["--volume", "/host:/container:ro"]))
+        #expect(command.containsSequence(["--volume", "demo_cache:/cache"]))
+        #expect(command.contains { $0.hasPrefix("demo_anon-") && $0.hasSuffix(":/scratch") })
+        #expect(Array(command.suffix(2)) == ["alpine", "ls"])
+    }
+
+    @Test("run rejects unsupported one-off volume mode")
+    func runRejectsUnsupportedOneOffVolumeMode() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator().run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(command: ["ls"], volumes: ["/host:/container:delegated"])
+            )
+            Issue.record("Expected unsupported run volume mode to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --volume mode 'delegated' is not supported; use ro or rw"))
+        }
+    }
+
     @Test("run rejects empty environment override")
     func runRejectsEmptyEnvironmentOverride() async throws {
         let project = ComposeProject(

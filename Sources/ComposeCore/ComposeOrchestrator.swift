@@ -98,6 +98,7 @@ public struct ComposeRunOptions {
     public var user: String?
     public var environment: [String]
     public var envFiles: [String]
+    public var volumes: [String]
 
     public init(
         command: [String] = [],
@@ -109,7 +110,8 @@ public struct ComposeRunOptions {
         workingDirectory: String? = nil,
         user: String? = nil,
         environment: [String] = [],
-        envFiles: [String] = []
+        envFiles: [String] = [],
+        volumes: [String] = []
     ) {
         self.command = command
         self.remove = remove
@@ -121,6 +123,7 @@ public struct ComposeRunOptions {
         self.user = user
         self.environment = environment
         self.envFiles = envFiles
+        self.volumes = volumes
     }
 }
 
@@ -308,7 +311,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Runs a one-off container for a service with Docker Compose compatible options.
     public func run(project: ComposeProject, serviceName: String, options run: ComposeRunOptions) async throws {
-        guard var service = project.services[serviceName] else {
+        var runProject = project
+        guard var service = runProject.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
         if !run.command.isEmpty {
@@ -324,13 +328,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             service.user = user
         }
         try applyRunEnvironmentOverrides(run, service: &service)
+        try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         try validateRuntimeSupport(service: service)
         try await applyServicePullPolicies(services: [service])
-        try await ensureResources(project: project)
+        try await ensureResources(project: runProject)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
             runArguments(
-                project: project,
+                project: runProject,
                 service: service,
                 detach: false,
                 remove: run.remove,
@@ -928,6 +933,69 @@ private extension ComposeOrchestrator {
         if !run.envFiles.isEmpty {
             service.envFiles = (service.envFiles ?? []) + run.envFiles
         }
+    }
+
+    /// Applies `compose run` volume overrides to the copied service model.
+    func applyRunVolumeOverrides(_ run: ComposeRunOptions, project: inout ComposeProject, service: inout ComposeService) throws {
+        guard !run.volumes.isEmpty else {
+            return
+        }
+
+        var volumes = service.volumes ?? []
+        for override in run.volumes {
+            let parsed = try parseRunVolumeOverride(override)
+            volumes.append(parsed.mount)
+            if let name = parsed.namedVolume, project.volumes[name] == nil {
+                project.volumes[name] = ComposeVolume(name: name)
+            }
+        }
+        service.volumes = volumes
+    }
+
+    /// Parses Docker Compose `run --volume` short syntax.
+    func parseRunVolumeOverride(_ override: String) throws -> (mount: ComposeMount, namedVolume: String?) {
+        let parts = override.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        switch parts.count {
+        case 1:
+            let target = parts[0]
+            guard !target.isEmpty else {
+                throw ComposeError.invalidProject("run --volume requires SOURCE:TARGET[:ro|rw] or TARGET")
+            }
+            return (ComposeMount(type: "volume", target: target), nil)
+        case 2, 3:
+            let source = parts[0]
+            let target = parts[1]
+            guard !source.isEmpty, !target.isEmpty else {
+                throw ComposeError.invalidProject("run --volume requires SOURCE:TARGET[:ro|rw] or TARGET")
+            }
+            let readOnly = try parseRunVolumeMode(parts.count == 3 ? parts[2] : nil)
+            if isBindVolumeSource(source) {
+                return (ComposeMount(type: "bind", source: source, target: target, readOnly: readOnly), nil)
+            }
+            return (ComposeMount(type: "volume", source: source, target: target, readOnly: readOnly), source)
+        default:
+            throw ComposeError.invalidProject("run --volume requires SOURCE:TARGET[:ro|rw] or TARGET")
+        }
+    }
+
+    /// Parses the optional access mode from `compose run --volume`.
+    func parseRunVolumeMode(_ mode: String?) throws -> Bool {
+        guard let mode, !mode.isEmpty else {
+            return false
+        }
+        switch mode {
+        case "ro", "readonly":
+            return true
+        case "rw":
+            return false
+        default:
+            throw ComposeError.invalidProject("run --volume mode '\(mode)' is not supported; use ro or rw")
+        }
+    }
+
+    /// Returns whether a `run --volume` source is a host bind path.
+    func isBindVolumeSource(_ source: String) -> Bool {
+        source.hasPrefix("/") || source.hasPrefix(".") || source.hasPrefix("~")
     }
 
     /// Parses a Compose CLI environment override as `NAME` or `NAME=VALUE`.
