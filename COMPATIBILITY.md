@@ -39,7 +39,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container list --format json`, `container image delete` | [S1](#s1-supported-local-web-stack) |
 | Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `container start`, `container stop`, `container delete`, `container delete --force`, `container kill`, `container inspect`, `container list`, `container image delete` | [S1](#s1-supported-local-web-stack) |
 | Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `container list --format json` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
-| Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, `cp --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `container list`, `container logs`, `container exec --interactive --tty`, `container exec --detach`, `container exec --env`, `container exec --user`, `container exec --workdir`, `container cp`, `container stats`, plugin version output | [S1](#s1-supported-local-web-stack) |
+| Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, `cp --index 1`, `export`, `export -o/--output`, `export --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `container list`, `container logs`, `container exec --interactive --tty`, `container exec --detach`, `container exec --env`, `container exec --user`, `container exec --workdir`, `ContainerClient.copyIn(id:source:destination:)`, `ContainerClient.copyOut(id:source:destination:)`, `ContainerClient.export(id:archive:)`, `container stats`, plugin version output | [S1](#s1-supported-local-web-stack) |
 | Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, `port` for static published bindings, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish`, normalized Compose port metadata | [S1](#s1-supported-local-web-stack) |
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `container volume create`, `container volume delete`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `dns_opt`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `container stop` flags | [S1](#s1-supported-local-web-stack) |
@@ -71,7 +71,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | Dependency lifecycle metadata | `depends_on.restart: true` | Dependency restart propagation | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | Metadata, logging, storage shortcuts | `annotations`, `attach`, `label_file`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, label-file loading, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
-| Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
+| Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `convert`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
 
 ### Config-Only Today
 
@@ -88,9 +88,9 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 | Status | Commands |
 | --- | --- |
-| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, static `port`, `kill`, `version` |
+| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, `export`, static `port`, `kill`, `version` |
 | Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc`, `cp --archive`, `cp --follow-link` |
-| Present but blocked by `container-compose` design gaps | `depends_on.restart`, `exec --index` values other than `1`, `cp --index` values other than `1`, `cp --all`, `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
+| Present but blocked by `container-compose` design gaps | `depends_on.restart`, `exec --index` values other than `1`, `cp --index` values other than `1`, `export --index` values other than `1`, `cp --all`, `watch`, `scale`, `attach`, `commit`, `convert`, `publish`, `volumes` |
 
 ## References
 
@@ -130,7 +130,7 @@ Expected result: `container compose config`, `build`, `create`, `up`, `ps`, `log
 Status path:
 
 - Docker Compose v2: accepts and normalizes this project.
-- [`apple/container`][apple-container]: has the needed build, image, lifecycle, network, volume, log, exec, and copy primitives.
+- [`apple/container`][apple-container]: has the needed build, image, lifecycle, network, volume, log, exec, copy, and export primitives.
 - `container-compose`: maps the normalized model to those primitives.
 
 ```yaml
@@ -264,6 +264,7 @@ container compose exec --index 1 api true
 container compose stats
 container compose stats --no-stream --format json api worker
 container compose cp api:/app/env.txt ./env.txt
+container compose export -o api.tar api
 container compose port api 8080
 container compose stop --timeout 12 api
 container compose restart -t 12 api
@@ -779,7 +780,6 @@ docker compose scale worker=3
 docker compose attach api
 docker compose commit api example/api:snapshot
 docker compose convert
-docker compose export api
 docker compose publish
 docker compose volumes
 ```

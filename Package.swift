@@ -44,7 +44,9 @@ let package = Package(
         ),
         .target(
             name: "ComposeCore",
-            dependencies: [],
+            dependencies: [
+                .product(name: "ContainerAPIClient", package: "container"),
+            ],
             path: "Sources/ComposeCore"
         ),
         .testTarget(

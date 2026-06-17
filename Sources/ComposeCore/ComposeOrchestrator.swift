@@ -168,6 +168,17 @@ public struct ComposeCopyOptions {
     }
 }
 
+/// Options for `compose export` commands.
+public struct ComposeExportOptions {
+    public var output: String?
+    public var index: Int
+
+    public init(output: String? = nil, index: Int = 1) {
+        self.output = output
+        self.index = index
+    }
+}
+
 /// Options for `compose ls`.
 public struct ComposeLsOptions {
     public var all: Bool
@@ -240,15 +251,38 @@ private enum ComposeImagesFormat {
     case json
 }
 
+private enum ComposeCopyEndpoint {
+    case local(String)
+    case container(id: String, path: String)
+
+    var runtimeArgument: String {
+        switch self {
+        case .local(let path):
+            path
+        case .container(let id, let path):
+            "\(id):\(path)"
+        }
+    }
+}
+
 /// Converts a normalized Compose project into deterministic `container`
 /// commands.
 public final class ComposeOrchestrator: @unchecked Sendable {
     private let runner: CommandRunning
     private let options: ComposeExecutionOptions
+    private let copier: ContainerCopying
+    private let exporter: ContainerExporting
 
-    public init(runner: CommandRunning = ProcessRunner(), options: ComposeExecutionOptions = ComposeExecutionOptions()) {
+    public init(
+        runner: CommandRunning = ProcessRunner(),
+        options: ComposeExecutionOptions = ComposeExecutionOptions(),
+        copier: ContainerCopying = ContainerClientCopier(),
+        exporter: ContainerExporting = ContainerClientExporter()
+    ) {
         self.runner = runner
         self.options = options
+        self.copier = copier
+        self.exporter = exporter
     }
 
     /// Returns canonical project JSON for `compose config`.
@@ -751,8 +785,43 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         guard copy.arguments.count == 2 else {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
-        let mappedArguments = try copy.arguments.map { try copyArgument($0, project: project) }
-        try await runContainer(["cp"] + mappedArguments)
+
+        let source = try copyEndpoint(copy.arguments[0], project: project)
+        let destination = try copyEndpoint(copy.arguments[1], project: project)
+        let mappedArguments = [source.runtimeArgument, destination.runtimeArgument]
+        if options.dryRun {
+            try await runContainer(["cp"] + mappedArguments)
+            return
+        }
+
+        switch (source, destination) {
+        case (.container(let id, let sourcePath), .local(let localPath)):
+            try await copier.copyFromContainer(id: id, source: sourcePath, destination: localPath)
+        case (.local(let localPath), .container(let id, let destinationPath)):
+            try await copier.copyIntoContainer(id: id, source: localPath, destination: destinationPath)
+        case (.container, .container), (.local, .local):
+            try await runContainer(["cp"] + mappedArguments)
+        }
+    }
+
+    /// Exports an existing service container filesystem as a tar archive.
+    public func export(project: ComposeProject, serviceName: String, options export: ComposeExportOptions = ComposeExportOptions()) async throws {
+        try validateExportOptions(export)
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+
+        var args = ["export"]
+        if let output = export.output {
+            args.append(contentsOf: ["--output", output])
+        }
+        let containerID = containerName(project: project, service: service, oneOff: false)
+        args.append(containerID)
+        if options.dryRun {
+            try await runContainer(args, inheritedIO: export.output == nil)
+            return
+        }
+        try await exporter.exportContainer(id: containerID, output: export.output)
     }
 
     /// Prints the public address for a statically published service port.
@@ -1279,6 +1348,13 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Validates `compose export` options before invoking runtime export.
+    func validateExportOptions(_ options: ComposeExportOptions) throws {
+        if options.index != 1 {
+            throw ComposeError.unsupported("export --index \(options.index): service replica export needs replica-aware container lookup")
+        }
+    }
+
     /// Validates a Compose CLI shutdown timeout before runtime side effects.
     func validateTimeoutSeconds(_ timeout: Int?, command: String) throws {
         guard let timeout else {
@@ -1686,23 +1762,27 @@ private extension ComposeOrchestrator {
         return args
     }
 
-    /// Rewrites `SERVICE:path` copy operands to the matching service container.
-    func copyArgument(_ argument: String, project: ComposeProject) throws -> String {
+    /// Rewrites `SERVICE:/path` copy operands to the matching service container.
+    private func copyEndpoint(_ argument: String, project: ComposeProject) throws -> ComposeCopyEndpoint {
         guard let delimiter = argument.firstIndex(of: ":") else {
-            return argument
+            return .local(argument)
         }
         let serviceName = String(argument[..<delimiter])
         guard isCopyServiceReference(serviceName) else {
-            return argument
+            return .local(argument)
         }
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
-        return containerName(project: project, service: service, oneOff: false) + String(argument[delimiter...])
+        let path = String(argument[argument.index(after: delimiter)...])
+        guard path.hasPrefix("/") else {
+            throw ComposeError.invalidProject("container copy path for service '\(serviceName)' must be absolute")
+        }
+        return .container(id: containerName(project: project, service: service, oneOff: false), path: path)
     }
 
     /// Returns whether a copy operand prefix has Compose service-reference shape.
-    func isCopyServiceReference(_ value: String) -> Bool {
+    private func isCopyServiceReference(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("/") && value != "." && value != ".."
     }
 

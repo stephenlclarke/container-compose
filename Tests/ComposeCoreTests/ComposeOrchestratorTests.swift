@@ -2673,7 +2673,8 @@ struct ComposeOrchestratorTests {
     @Test("lifecycle commands target selected service containers")
     func lifecycleCommandsTargetSelectedServiceContainers() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let copier = RecordingContainerCopier()
+        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2707,7 +2708,9 @@ struct ComposeOrchestratorTests {
         #expect(commands[6] == ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"])
         #expect(commands[7] == ["container", "delete", "demo-api-1"])
         #expect(commands[8] == ["container", "kill", "--signal", "SIGTERM", "demo-api-1"])
-        #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
+        #expect(await copier.requests == [
+            .from(id: "demo-api-1", source: "/tmp/file", destination: "."),
+        ])
     }
 
     @Test("rm supports force and anonymous volume removal")
@@ -2955,7 +2958,8 @@ struct ComposeOrchestratorTests {
     @Test("cp maps service references in both copy directions")
     func cpMapsServiceReferencesInBothCopyDirections() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let copier = RecordingContainerCopier()
+        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2971,15 +2975,18 @@ struct ComposeOrchestratorTests {
         try await orchestrator.copy(project: project, arguments: ["./local:file.txt", "./out:file.txt"])
 
         #expect(runner.commands.map(\.arguments) == [
-            ["container", "cp", "demo-api-1:/tmp/report.txt", "./report.txt"],
-            ["container", "cp", "./seed.sql", "custom-db:/docker-entrypoint-initdb.d/seed.sql"],
             ["container", "cp", "./local:file.txt", "./out:file.txt"],
+        ])
+        #expect(await copier.requests == [
+            .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
+            .into(id: "custom-db", source: "./seed.sql", destination: "/docker-entrypoint-initdb.d/seed.sql"),
         ])
     }
 
     @Test("cp accepts default replica index")
     func cpAcceptsDefaultReplicaIndex() async throws {
         let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2987,7 +2994,7 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).copy(
+        try await ComposeOrchestrator(runner: runner, copier: copier).copy(
             project: project,
             options: ComposeCopyOptions {
                 $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
@@ -2995,9 +3002,38 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(runner.commands.map(\.arguments) == [
-            ["container", "cp", "demo-api-1:/tmp/report.txt", "./report.txt"],
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests == [
+            .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
         ])
+    }
+
+    @Test("cp dry run emits runtime command instead of direct API copy")
+    func cpDryRunEmitsRuntimeCommandInsteadOfDirectAPICopy() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            copier: copier
+        ).copy(
+            project: project,
+            arguments: ["api:/tmp/report.txt", "./report.txt"]
+        )
+
+        #expect(emitted.messages == [
+            "+ container cp demo-api-1:/tmp/report.txt ./report.txt",
+        ])
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests.isEmpty)
     }
 
     @Test("cp rejects unsupported command options before runtime copy")
@@ -3045,8 +3081,9 @@ struct ComposeOrchestratorTests {
 
         for testCase in cases {
             let runner = RecordingRunner()
+            let copier = RecordingContainerCopier()
             do {
-                try await ComposeOrchestrator(runner: runner).copy(project: project, options: testCase.options)
+                try await ComposeOrchestrator(runner: runner, copier: copier).copy(project: project, options: testCase.options)
                 Issue.record("Expected unsupported cp \(testCase.name) error")
             } catch let error as ComposeError {
                 #expect(error == testCase.expected)
@@ -3054,7 +3091,118 @@ struct ComposeOrchestratorTests {
                 Issue.record("Unexpected error for cp \(testCase.name): \(error)")
             }
             #expect(runner.commands.isEmpty)
+            #expect(await copier.requests.isEmpty)
         }
+    }
+
+    @Test("export maps service containers to runtime export")
+    func exportMapsServiceContainersToRuntimeExport() async throws {
+        let runner = RecordingRunner()
+        let exporter = RecordingContainerExporter()
+        let orchestrator = ComposeOrchestrator(runner: runner, exporter: exporter)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.containerName = "custom-db"
+                },
+            ]
+        )
+
+        try await orchestrator.export(project: project, serviceName: "api")
+        try await orchestrator.export(
+            project: project,
+            serviceName: "db",
+            options: ComposeExportOptions(output: "db.tar")
+        )
+
+        #expect(await exporter.requests == [
+            ContainerExportRequest(id: "demo-api-1", output: nil),
+            ContainerExportRequest(id: "custom-db", output: "db.tar"),
+        ])
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("export dry run emits runtime command")
+    func exportDryRunEmitsRuntimeCommand() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let exporter = RecordingContainerExporter()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                dryRun: true,
+                emit: { emitted.append($0) }
+            ),
+            exporter: exporter
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.export(
+            project: project,
+            serviceName: "api",
+            options: ComposeExportOptions(output: "api.tar")
+        )
+
+        #expect(emitted.messages == [
+            "+ container export --output api.tar demo-api-1",
+        ])
+        #expect(runner.commands.isEmpty)
+        #expect(await exporter.requests.isEmpty)
+    }
+
+    @Test("export rejects unknown services before runtime export")
+    func exportRejectsUnknownServicesBeforeRuntimeExport() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).export(project: project, serviceName: "worker")
+            Issue.record("Expected unknown service error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unknown service 'worker'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("export rejects unsupported replica indexes before runtime export")
+    func exportRejectsUnsupportedReplicaIndexesBeforeRuntimeExport() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).export(
+                project: project,
+                serviceName: "api",
+                options: ComposeExportOptions(index: 2)
+            )
+            Issue.record("Expected unsupported export index error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("export --index 2: service replica export needs replica-aware container lookup"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("port prints static published bindings")
@@ -5491,6 +5639,44 @@ private struct ListedContainer: Decodable {
 
 private func listedContainerIDs(from output: String) throws -> [String] {
     try JSONDecoder().decode([ListedContainer].self, from: Data(output.utf8)).map(\.id)
+}
+
+private struct ContainerExportRequest: Equatable {
+    var id: String
+    var output: String?
+}
+
+private enum ContainerCopyRequest: Equatable {
+    case into(id: String, source: String, destination: String)
+    case from(id: String, source: String, destination: String)
+}
+
+private actor RecordingContainerCopier: ContainerCopying {
+    private var storage: [ContainerCopyRequest] = []
+
+    var requests: [ContainerCopyRequest] {
+        storage
+    }
+
+    func copyIntoContainer(id: String, source: String, destination: String) async throws {
+        storage.append(.into(id: id, source: source, destination: destination))
+    }
+
+    func copyFromContainer(id: String, source: String, destination: String) async throws {
+        storage.append(.from(id: id, source: source, destination: destination))
+    }
+}
+
+private actor RecordingContainerExporter: ContainerExporting {
+    private var storage: [ContainerExportRequest] = []
+
+    var requests: [ContainerExportRequest] {
+        storage
+    }
+
+    func exportContainer(id: String, output: String?) async throws {
+        storage.append(ContainerExportRequest(id: id, output: output))
+    }
 }
 
 private final class MessageRecorder: @unchecked Sendable {
