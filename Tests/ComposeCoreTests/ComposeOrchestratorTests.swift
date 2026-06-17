@@ -2674,7 +2674,8 @@ struct ComposeOrchestratorTests {
     func lifecycleCommandsTargetSelectedServiceContainers() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
-        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier)
+        let killer = RecordingContainerKiller()
+        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier, killer: killer)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -2707,10 +2708,63 @@ struct ComposeOrchestratorTests {
         #expect(commands[5] == ["container", "start", "demo-api-1"])
         #expect(commands[6] == ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"])
         #expect(commands[7] == ["container", "delete", "demo-api-1"])
-        #expect(commands[8] == ["container", "kill", "--signal", "SIGTERM", "demo-api-1"])
+        #expect(await killer.requests == [
+            ContainerKillRequest(id: "demo-api-1", signal: "SIGTERM"),
+        ])
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/file", destination: "."),
         ])
+    }
+
+    @Test("kill uses direct runtime API with default and explicit signals")
+    func killUsesDirectRuntimeAPIWithDefaultAndExplicitSignals() async throws {
+        let runner = RecordingRunner()
+        let killer = RecordingContainerKiller()
+        let orchestrator = ComposeOrchestrator(runner: runner, killer: killer)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.containerName = "custom-worker"
+                },
+            ]
+        )
+
+        try await orchestrator.kill(project: project, services: [], signal: nil)
+        try await orchestrator.kill(project: project, services: ["worker"], signal: "SIGTERM")
+
+        #expect(runner.commands.isEmpty)
+        #expect(await killer.requests == [
+            ContainerKillRequest(id: "demo-api-1", signal: "KILL"),
+            ContainerKillRequest(id: "custom-worker", signal: "KILL"),
+            ContainerKillRequest(id: "custom-worker", signal: "SIGTERM"),
+        ])
+    }
+
+    @Test("kill dry run emits runtime commands instead of direct API calls")
+    func killDryRunEmitsRuntimeCommandsInsteadOfDirectAPICalls() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let killer = RecordingContainerKiller()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            killer: killer
+        ).kill(project: project, services: ["api"], signal: "SIGUSR1")
+
+        #expect(emitted.messages == [
+            "+ container kill --signal SIGUSR1 demo-api-1",
+        ])
+        #expect(runner.commands.isEmpty)
+        #expect(await killer.requests.isEmpty)
     }
 
     @Test("rm supports force and anonymous volume removal")
@@ -5651,6 +5705,11 @@ private enum ContainerCopyRequest: Equatable {
     case from(id: String, source: String, destination: String)
 }
 
+private struct ContainerKillRequest: Equatable {
+    var id: String
+    var signal: String
+}
+
 private actor RecordingContainerCopier: ContainerCopying {
     private var storage: [ContainerCopyRequest] = []
 
@@ -5664,6 +5723,18 @@ private actor RecordingContainerCopier: ContainerCopying {
 
     func copyFromContainer(id: String, source: String, destination: String) async throws {
         storage.append(.from(id: id, source: source, destination: destination))
+    }
+}
+
+private actor RecordingContainerKiller: ContainerKilling {
+    private var storage: [ContainerKillRequest] = []
+
+    var requests: [ContainerKillRequest] {
+        storage
+    }
+
+    func killContainer(id: String, signal: String) async throws {
+        storage.append(ContainerKillRequest(id: id, signal: signal))
     }
 }
 

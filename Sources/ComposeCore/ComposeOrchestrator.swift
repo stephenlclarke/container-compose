@@ -272,17 +272,20 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let options: ComposeExecutionOptions
     private let copier: ContainerCopying
     private let exporter: ContainerExporting
+    private let killer: ContainerKilling
 
     public init(
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
         copier: ContainerCopying = ContainerClientCopier(),
-        exporter: ContainerExporting = ContainerClientExporter()
+        exporter: ContainerExporting = ContainerClientExporter(),
+        killer: ContainerKilling = ContainerClientKiller()
     ) {
         self.runner = runner
         self.options = options
         self.copier = copier
         self.exporter = exporter
+        self.killer = killer
     }
 
     /// Returns canonical project JSON for `compose config`.
@@ -764,8 +767,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if let signal {
                 args.append(contentsOf: ["--signal", signal])
             }
-            args.append(containerName(project: project, service: service, oneOff: false))
-            try await runContainer(args, check: false)
+            let containerID = containerName(project: project, service: service, oneOff: false)
+            args.append(containerID)
+            if options.dryRun {
+                try await runContainer(args, check: false)
+                continue
+            }
+            try await killer.killContainer(id: containerID, signal: signal ?? "KILL")
         }
     }
 
