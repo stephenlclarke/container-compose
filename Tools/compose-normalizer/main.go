@@ -169,6 +169,8 @@ type normalizedBuild struct {
 	Context           string            `json:"context,omitempty"`
 	Dockerfile        string            `json:"dockerfile,omitempty"`
 	Args              map[string]string `json:"args,omitempty"`
+	CacheFrom         []string          `json:"cacheFrom,omitempty"`
+	CacheTo           []string          `json:"cacheTo,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`
 	Target            string            `json:"target,omitempty"`
 	NoCache           bool              `json:"noCache,omitempty"`
@@ -479,6 +481,8 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 			Context:           service.Build.Context,
 			Dockerfile:        service.Build.Dockerfile,
 			Args:              buildArgs(service.Build.Args),
+			CacheFrom:         append([]string(nil), service.Build.CacheFrom...),
+			CacheTo:           append([]string(nil), service.Build.CacheTo...),
 			Labels:            mapLabels(service.Build.Labels),
 			Target:            service.Build.Target,
 			NoCache:           service.Build.NoCache,
@@ -865,8 +869,6 @@ func unsupportedBuildFields(build *types.BuildConfig) []string {
 	}
 	fields := []string{}
 	appendUnsupportedBuildField(&fields, "additional_contexts", len(build.AdditionalContexts) > 0)
-	appendUnsupportedBuildField(&fields, "cache_from", len(build.CacheFrom) > 0)
-	appendUnsupportedBuildField(&fields, "cache_to", len(build.CacheTo) > 0)
 	appendUnsupportedBuildField(&fields, "dockerfile_inline", build.DockerfileInline != "")
 	appendUnsupportedBuildField(&fields, "entitlements", len(build.Entitlements) > 0)
 	appendUnsupportedBuildField(&fields, "extra_hosts", len(build.ExtraHosts) > 0)

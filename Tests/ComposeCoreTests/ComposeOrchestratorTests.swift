@@ -2611,6 +2611,8 @@ struct ComposeOrchestratorTests {
                         context: "api",
                         dockerfile: "Containerfile",
                         args: ["VERSION": "1"],
+                        cacheFrom: ["type=registry,ref=example/api:cache"],
+                        cacheTo: ["type=local,dest=.cache"],
                         labels: ["org.opencontainers.image.title": "api", "build.label": "true"],
                         target: "runtime",
                         noCache: true,
@@ -2639,6 +2641,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.contains("--pull"))
         #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/amd64"]))
         #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/arm64"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--cache-in", "type=registry,ref=example/api:cache"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--cache-out", "type=local,dest=.cache"]))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "build.label=true"]))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "org.opencontainers.image.title=api"]))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
@@ -5248,7 +5252,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.build = ComposeBuild(context: "job", unsupportedFields: ["cache_from", "platforms"])
+                    $0.build = ComposeBuild(context: "job", unsupportedFields: ["entitlements", "ssh"])
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -5260,7 +5264,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported build fields cache_from, platforms; advanced build fields are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses unsupported build fields entitlements, ssh; advanced build fields are not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

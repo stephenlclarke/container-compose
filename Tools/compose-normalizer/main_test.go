@@ -850,6 +850,8 @@ services:
         shared: ./shared
       cache_from:
         - type=registry,ref=example/api:cache
+      cache_to:
+        - type=local,dest=.cache
       labels:
         build.label: "true"
       no_cache: true
@@ -899,6 +901,12 @@ services:
 	if got, want := api.Build.Args, map[string]string{"VERSION": "1"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build args = %#v, want %#v", got, want)
 	}
+	if got, want := api.Build.CacheFrom, []string{"type=registry,ref=example/api:cache"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build cache from = %#v, want %#v", got, want)
+	}
+	if got, want := api.Build.CacheTo, []string{"type=local,dest=.cache"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build cache to = %#v, want %#v", got, want)
+	}
 	if got, want := api.Build.Labels, map[string]string{"build.label": "true"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build labels = %#v, want %#v", got, want)
 	}
@@ -914,7 +922,7 @@ services:
 	if got, want := api.Build.Tags, []string{"example/api:dev", "example/api:test"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build tags = %#v, want %#v", got, want)
 	}
-	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts", "cache_from"}; !reflect.DeepEqual(got, want) {
+	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupported build fields = %#v, want %#v", got, want)
 	}
 	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
@@ -1136,8 +1144,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 	})
 	want := []string{
 		"additional_contexts",
-		"cache_from",
-		"cache_to",
 		"dockerfile_inline",
 		"entitlements",
 		"extra_hosts",

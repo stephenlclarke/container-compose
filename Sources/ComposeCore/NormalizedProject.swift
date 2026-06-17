@@ -387,6 +387,8 @@ public struct ComposeBuild: Codable, Equatable {
     public var context: String?
     public var dockerfile: String?
     public var args: [String: String]?
+    public var cacheFrom: [String]?
+    public var cacheTo: [String]?
     public var labels: [String: String]?
     public var target: String?
     public var noCache: Bool?
@@ -399,6 +401,8 @@ public struct ComposeBuild: Codable, Equatable {
         context: String? = nil,
         dockerfile: String? = nil,
         args: [String: String]? = nil,
+        cacheFrom: [String]? = nil,
+        cacheTo: [String]? = nil,
         labels: [String: String]? = nil,
         target: String? = nil,
         noCache: Bool? = nil,
@@ -410,6 +414,8 @@ public struct ComposeBuild: Codable, Equatable {
         self.context = context
         self.dockerfile = dockerfile
         self.args = args
+        self.cacheFrom = cacheFrom
+        self.cacheTo = cacheTo
         self.labels = labels
         self.target = target
         self.noCache = noCache

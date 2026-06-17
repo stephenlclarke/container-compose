@@ -1558,6 +1558,12 @@ private extension ComposeOrchestrator {
         for platform in build.platforms ?? [] where !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])
         }
+        for cacheSource in build.cacheFrom ?? [] where !cacheSource.isEmpty {
+            args.append(contentsOf: ["--cache-in", cacheSource])
+        }
+        for cacheDestination in build.cacheTo ?? [] where !cacheDestination.isEmpty {
+            args.append(contentsOf: ["--cache-out", cacheDestination])
+        }
         for (key, value) in (build.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
