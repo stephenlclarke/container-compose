@@ -222,6 +222,8 @@ cli-smoke: build
 	rm_force_volumes_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo rm -fv api)"; \
 	[[ "$$rm_force_volumes_output" == *"container delete --force demo-api-1"* ]]; \
 	[[ "$$rm_force_volumes_output" == *"container volume delete demo_anon-"* ]]; \
+	down_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down -t12)"; \
+	[[ "$$down_compact_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	down_rmi_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down --rmi all)"; \
 	[[ "$$down_rmi_output" == *"container image delete --force alpine"* ]]; \
 	ps_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps -q)"; \

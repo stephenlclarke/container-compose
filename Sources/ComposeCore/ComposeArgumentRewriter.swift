@@ -225,7 +225,7 @@ public enum ComposeArgumentRewriter {
             return rewriteCompactCommandValueOptions(arguments, options: compactKillValueOptions)
         case "logs":
             return rewriteLogsOptions(arguments)
-        case "restart", "stop":
+        case "down", "restart", "stop":
             return rewriteCompactCommandValueOptions(arguments, options: compactTimeoutValueOptions)
         case "rm":
             return rewriteRemoveOptions(arguments)

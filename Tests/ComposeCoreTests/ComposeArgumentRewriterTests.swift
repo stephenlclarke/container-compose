@@ -273,6 +273,10 @@ struct ComposeArgumentRewriterTests {
 
     @Test("normalizes lifecycle compact timeout shorthands")
     func normalizesLifecycleCompactTimeoutShorthands() {
+        let down = ComposeArgumentRewriter.rewrite([
+            "down",
+            "-t11",
+        ])
         let stop = ComposeArgumentRewriter.rewrite([
             "stop",
             "-t12",
@@ -284,6 +288,11 @@ struct ComposeArgumentRewriterTests {
             "api",
         ])
 
+        #expect(down == [
+            "down",
+            "--timeout",
+            "11",
+        ])
         #expect(stop == [
             "stop",
             "--timeout",
