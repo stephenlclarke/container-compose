@@ -272,6 +272,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let options: ComposeExecutionOptions
     private let copier: ContainerCopying
     private let discoveryManager: ContainerDiscoveryManaging
+    private let execManager: ContainerExecManaging
     private let exporter: ContainerExporting
     private let imageManager: ContainerImageManaging
     private let lifecycleManager: ContainerLifecycleManaging
@@ -284,6 +285,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
         copier: ContainerCopying = ContainerClientCopier(),
         discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
+        execManager: ContainerExecManaging = ContainerClientExecManager(),
         exporter: ContainerExporting = ContainerClientExporter(),
         imageManager: ContainerImageManaging = ContainerClientImageManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
@@ -295,6 +297,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.options = options
         self.copier = copier
         self.discoveryManager = discoveryManager
+        self.execManager = execManager
         self.exporter = exporter
         self.imageManager = imageManager
         self.lifecycleManager = lifecycleManager
@@ -637,6 +640,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         args.append(containerName(project: project, service: service, oneOff: false))
         args.append(contentsOf: exec.command)
+        if exec.detach, !options.dryRun {
+            try await execManager.execDetached(
+                request: ContainerDetachedExecRequest(
+                    id: containerName(project: project, service: service, oneOff: false),
+                    command: exec.command,
+                    environment: exec.environment,
+                    user: exec.user,
+                    workingDirectory: exec.workingDirectory
+                ),
+                emit: options.emit
+            )
+            return
+        }
         try await runContainer(args, inheritedIO: !exec.detach && (exec.interactive || exec.tty))
     }
 

@@ -3430,6 +3430,130 @@ struct ComposeOrchestratorTests {
         #expect(await recorder.statsRequests == ["demo-api-1"])
     }
 
+    @Test("detached exec manager maps request to direct process API")
+    func detachedExecManagerMapsRequestToDirectProcessAPI() async throws {
+        let emitted = MessageRecorder()
+        let snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .running,
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64"
+        )
+        let client = RecordingContainerExecAPIClient(snapshots: [snapshot])
+        let manager = ContainerClientExecManager(client: client, processIdentifier: { "process-123" })
+
+        try await manager.execDetached(
+            request: ContainerDetachedExecRequest(
+                id: "demo-api-1",
+                command: ["env", "ARG"],
+                environment: ["FOO=bar"],
+                user: "1000:1000",
+                workingDirectory: "/app"
+            ),
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == ["demo-api-1"])
+        #expect(await client.getRequests == ["demo-api-1"])
+        #expect(await client.processRequests == [
+            ContainerExecProcessRequest(
+                containerId: "demo-api-1",
+                processId: "process-123",
+                executable: "env",
+                arguments: ["ARG"],
+                environment: ["FOO=bar"],
+                workingDirectory: "/app",
+                terminal: false,
+                user: "1000:1000",
+                supplementalGroups: [],
+                stdioCount: 0
+            ),
+        ])
+    }
+
+    @Test("detached exec manager rejects stopped containers")
+    func detachedExecManagerRejectsStoppedContainers() async throws {
+        let snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .stopped,
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64"
+        )
+        let client = RecordingContainerExecAPIClient(snapshots: [snapshot])
+        let manager = ContainerClientExecManager(client: client, processIdentifier: { "process-123" })
+
+        do {
+            try await manager.execDetached(
+                request: ContainerDetachedExecRequest(id: "demo-api-1", command: ["true"]),
+                emit: { _ in }
+            )
+            Issue.record("Expected stopped container error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("container 'demo-api-1' is not running"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.getRequests == ["demo-api-1"])
+        #expect(await client.processRequests.isEmpty)
+    }
+
+    @Test("exec API client forwards configured operations")
+    func execAPIClientForwardsConfiguredOperations() async throws {
+        let snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .running,
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64"
+        )
+        let recorder = RecordingContainerExecAPIClient(snapshots: [snapshot])
+        let client = ContainerExecAPIClient(
+            get: { try await recorder.getContainer(id: $0) },
+            createAndStart: { containerId, processId, configuration, stdio in
+                try await recorder.createAndStartProcess(
+                    containerId: containerId,
+                    processId: processId,
+                    configuration: configuration,
+                    stdio: stdio
+                )
+            }
+        )
+        let configuration = ProcessConfiguration(
+            executable: "date",
+            arguments: ["-u"],
+            environment: ["TZ=UTC"],
+            workingDirectory: "/"
+        )
+
+        let actualSnapshot = try await client.getContainer(id: "demo-api-1")
+        try await client.createAndStartProcess(
+            containerId: "demo-api-1",
+            processId: "process-123",
+            configuration: configuration,
+            stdio: []
+        )
+
+        #expect(actualSnapshot.id == "demo-api-1")
+        #expect(await recorder.getRequests == ["demo-api-1"])
+        #expect(await recorder.processRequests == [
+            ContainerExecProcessRequest(
+                containerId: "demo-api-1",
+                processId: "process-123",
+                executable: "date",
+                arguments: ["-u"],
+                environment: ["TZ=UTC"],
+                workingDirectory: "/",
+                terminal: false,
+                user: "0:0",
+                supplementalGroups: [],
+                stdioCount: 0
+            ),
+        ])
+    }
+
     @Test("image manager pulls only missing images through direct API")
     func imageManagerPullsOnlyMissingImagesThroughDirectAPI() async throws {
         let client = RecordingContainerImageAPIClient(existingReferences: ["example/api"])
@@ -3709,7 +3833,13 @@ struct ComposeOrchestratorTests {
     @Test("exec maps environment user workdir and detach options")
     func execMapsEnvironmentUserWorkdirAndDetachOptions() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let emitted = MessageRecorder()
+        let execManager = RecordingContainerExecManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            execManager: execManager
+        )
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -3729,23 +3859,48 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        let command = try #require(runner.commands.first?.arguments)
-        #expect(command == [
-            "container",
-            "exec",
-            "--detach",
-            "--env",
-            "FOO=bar",
-            "--env",
-            "DEBUG",
-            "--user",
-            "1000:1000",
-            "--workdir",
-            "/app",
-            "demo-api-1",
-            "env",
+        #expect(runner.commands.isEmpty)
+        #expect(await execManager.requests == [
+            ContainerDetachedExecRequest(
+                id: "demo-api-1",
+                command: ["env"],
+                environment: ["FOO=bar", "DEBUG"],
+                user: "1000:1000",
+                workingDirectory: "/app"
+            ),
         ])
-        #expect(runner.commands.first?.io == .captured(input: nil))
+        #expect(emitted.messages == ["demo-api-1"])
+    }
+
+    @Test("exec dry run renders detached runtime command")
+    func execDryRunRendersDetachedRuntimeCommand() async throws {
+        let runner = RecordingRunner()
+        let emitted = MessageRecorder()
+        let execManager = RecordingContainerExecManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            execManager: execManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            options: ComposeExecOptions {
+                $0.command = ["sleep", "60"]
+                $0.detach = true
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(emitted.messages == ["+ container exec --detach demo-api-1 sleep 60"])
+        #expect(await execManager.requests.isEmpty)
     }
 
     @Test("exec rejects unsupported replica indexes before runtime commands")
@@ -6633,6 +6788,19 @@ private struct ContainerLogRequest: Equatable {
     var follow: Bool
 }
 
+private struct ContainerExecProcessRequest: Equatable {
+    var containerId: String
+    var processId: String
+    var executable: String
+    var arguments: [String]
+    var environment: [String]
+    var workingDirectory: String
+    var terminal: Bool
+    var user: String
+    var supplementalGroups: [UInt32]
+    var stdioCount: Int
+}
+
 private struct ContainerStatsRequest: Equatable {
     var ids: [String]
     var format: String
@@ -6820,6 +6988,73 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     func logFileHandles(id: String) async throws -> [FileHandle] {
         storage.append(id)
         return fileHandles
+    }
+}
+
+private actor RecordingContainerExecManager: ContainerExecManaging {
+    private let outputs: [String: String]
+    private var storage: [ContainerDetachedExecRequest] = []
+
+    init(outputs: [String: String] = [:]) {
+        self.outputs = outputs
+    }
+
+    var requests: [ContainerDetachedExecRequest] {
+        storage
+    }
+
+    func execDetached(
+        request: ContainerDetachedExecRequest,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        storage.append(request)
+        emit(outputs[request.id] ?? request.id)
+    }
+}
+
+private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
+    private let snapshots: [String: ContainerSnapshot]
+    private var gets: [String] = []
+    private var processes: [ContainerExecProcessRequest] = []
+
+    init(snapshots: [ContainerSnapshot] = []) {
+        self.snapshots = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+    }
+
+    var getRequests: [String] {
+        gets
+    }
+
+    var processRequests: [ContainerExecProcessRequest] {
+        processes
+    }
+
+    func getContainer(id: String) async throws -> ContainerSnapshot {
+        gets.append(id)
+        guard let snapshot = snapshots[id] else {
+            throw ComposeError.invalidProject("missing snapshot \(id)")
+        }
+        return snapshot
+    }
+
+    func createAndStartProcess(
+        containerId: String,
+        processId: String,
+        configuration: ProcessConfiguration,
+        stdio: [FileHandle?]
+    ) async throws {
+        processes.append(ContainerExecProcessRequest(
+            containerId: containerId,
+            processId: processId,
+            executable: configuration.executable,
+            arguments: configuration.arguments,
+            environment: configuration.environment,
+            workingDirectory: configuration.workingDirectory,
+            terminal: configuration.terminal,
+            user: configuration.user.description,
+            supplementalGroups: configuration.supplementalGroups,
+            stdioCount: stdio.count
+        ))
     }
 }
 
