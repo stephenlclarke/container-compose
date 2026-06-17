@@ -239,7 +239,9 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(runner: runner).create(
             project: project,
-            options: ComposeCreateOptions(pullPolicy: "build")
+            options: ComposeCreateOptions {
+                $0.pullPolicy = "build"
+            }
         )
 
         let commands = runner.commands.map(\.arguments)
@@ -274,7 +276,9 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(runner: runner).create(
             project: project,
-            options: ComposeCreateOptions(pullPolicy: "if_not_present")
+            options: ComposeCreateOptions {
+                $0.pullPolicy = "if_not_present"
+            }
         )
 
         let commands = runner.commands.map(\.arguments)
@@ -329,7 +333,9 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(runner: runner).create(
             project: project,
-            options: ComposeCreateOptions(noBuild: true)
+            options: ComposeCreateOptions {
+                $0.noBuild = true
+            }
         )
 
         let commands = runner.commands.map(\.arguments)
@@ -350,7 +356,9 @@ struct ComposeOrchestratorTests {
         )
         .create(
             project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
-            options: ComposeCreateOptions(noRecreate: true)
+            options: ComposeCreateOptions {
+                $0.noRecreate = true
+            }
         )
 
         #expect(reuseRunner.commands.map(\.arguments) == [["container", "inspect", "demo-api-1"]])
@@ -385,8 +393,14 @@ struct ComposeOrchestratorTests {
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
         for options in [
-            ComposeCreateOptions(build: true, noBuild: true),
-            ComposeCreateOptions(forceRecreate: true, noRecreate: true),
+            ComposeCreateOptions {
+                $0.build = true
+                $0.noBuild = true
+            },
+            ComposeCreateOptions {
+                $0.forceRecreate = true
+                $0.noRecreate = true
+            },
         ] {
             let runner = RecordingRunner()
             do {
@@ -402,7 +416,9 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(runner: scaleRunner).create(
                 project: project,
-                options: ComposeCreateOptions(scales: ["api=2"])
+                options: ComposeCreateOptions {
+                    $0.scales = ["api=2"]
+                }
             )
             Issue.record("Expected unsupported create scale failure")
         } catch let error as ComposeError {
@@ -414,7 +430,9 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(runner: pullRunner).create(
                 project: project,
-                options: ComposeCreateOptions(pullPolicy: "daily")
+                options: ComposeCreateOptions {
+                    $0.pullPolicy = "daily"
+                }
             )
             Issue.record("Expected unsupported create pull policy failure")
         } catch let error as ComposeError {
