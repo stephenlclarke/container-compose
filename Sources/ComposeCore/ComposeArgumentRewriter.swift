@@ -102,7 +102,7 @@ public enum ComposeArgumentRewriter {
             arguments: Array(arguments[arguments.index(after: commandIndex)...])
         )
         if command == "version" {
-            return prefix + [command] + suffix
+            return normalizeCompactGlobalOptions(prefix) + [command] + suffix
         }
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
@@ -173,6 +173,20 @@ public enum ComposeArgumentRewriter {
         }
 
         return (retained, moved)
+    }
+
+    /// Normalizes compact root options without moving the remaining arguments.
+    private static func normalizeCompactGlobalOptions(_ arguments: [String]) -> [String] {
+        var normalized: [String] = []
+        for argument in arguments {
+            if let split = splitCompactGlobalValueOption(argument) {
+                normalized.append(split.option)
+                normalized.append(split.value)
+            } else {
+                normalized.append(argument)
+            }
+        }
+        return normalized
     }
 
     /// Looks up a known global option, including `--option=value` forms.

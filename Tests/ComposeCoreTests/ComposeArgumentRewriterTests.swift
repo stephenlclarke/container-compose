@@ -741,6 +741,27 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes compact root compose options before version")
+    func normalizesCompactRootComposeOptionsBeforeVersion() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-pcompact",
+            "-f=compose.yml",
+            "--dry-run",
+            "version",
+            "--short",
+        ])
+
+        #expect(rewritten == [
+            "--project-name",
+            "compact",
+            "--file",
+            "compose.yml",
+            "--dry-run",
+            "version",
+            "--short",
+        ])
+    }
+
     @Test("keeps version format shorthand local to version")
     func keepsVersionFormatShorthandLocalToVersion() {
         let rewritten = ComposeArgumentRewriter.rewrite([
