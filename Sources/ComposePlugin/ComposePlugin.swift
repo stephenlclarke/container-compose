@@ -638,11 +638,28 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
 struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "cp", abstract: "Copy files between service containers and local paths.")
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("all"), help: "Include containers created by the run command. Not implemented yet.")
+    var all = false
+    @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Not supported by apple/container cp yet.")
+    var archive = false
+    @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path. Not supported by apple/container cp yet.")
+    var followLink = false
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
     @Argument(parsing: .allUnrecognized) var arguments: [String]
     /// Resolves Compose service references before delegating to the runtime.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().copy(project: loadedProject, arguments: arguments)
+        try await orchestrator().copy(
+            project: loadedProject,
+            options: ComposeCopyOptions {
+                $0.arguments = arguments
+                $0.all = all
+                $0.archive = archive
+                $0.followLink = followLink
+                $0.index = index
+            }
+        )
     }
 }
 

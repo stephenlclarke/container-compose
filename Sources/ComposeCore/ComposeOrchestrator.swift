@@ -151,6 +151,23 @@ public struct ComposeExecOptions {
     }
 }
 
+/// Options for `compose cp` commands.
+public struct ComposeCopyOptions {
+    public var arguments: [String] = []
+    public var all = false
+    public var archive = false
+    public var followLink = false
+    public var index = 1
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default copy behavior.
+    }
+
+    public init(_ configure: (inout ComposeCopyOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose ls`.
 public struct ComposeLsOptions {
     public var all: Bool
@@ -720,10 +737,21 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Copies files between a Compose service container and the local host.
     public func copy(project: ComposeProject, arguments: [String]) async throws {
-        guard arguments.count == 2 else {
+        try await copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = arguments
+            }
+        )
+    }
+
+    /// Copies files between a Compose service container and the local host with Compose options.
+    public func copy(project: ComposeProject, options copy: ComposeCopyOptions) async throws {
+        try validateCopyOptions(copy)
+        guard copy.arguments.count == 2 else {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
-        let mappedArguments = try arguments.map { try copyArgument($0, project: project) }
+        let mappedArguments = try copy.arguments.map { try copyArgument($0, project: project) }
         try await runContainer(["cp"] + mappedArguments)
     }
 
@@ -1238,6 +1266,22 @@ private extension ComposeOrchestrator {
         }
         if options.privileged {
             throw ComposeError.unsupported("exec --privileged: apple/container exec does not expose privileged process execution")
+        }
+    }
+
+    /// Validates `compose cp` options before invoking runtime copy.
+    func validateCopyOptions(_ options: ComposeCopyOptions) throws {
+        if options.all {
+            throw ComposeError.unsupported("cp --all: copying from one-off run containers is not implemented by container-compose yet")
+        }
+        if options.archive {
+            throw ComposeError.unsupported("cp --archive: apple/container cp does not expose archive mode")
+        }
+        if options.followLink {
+            throw ComposeError.unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
+        }
+        if options.index != 1 {
+            throw ComposeError.unsupported("cp --index \(options.index): service replica copy needs replica-aware container lookup")
         }
     }
 

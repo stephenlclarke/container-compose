@@ -2990,6 +2990,86 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("cp accepts default replica index")
+    func cpAcceptsDefaultReplicaIndex() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                $0.index = 1
+            }
+        )
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "cp", "demo-api-1:/tmp/report.txt", "./report.txt"],
+        ])
+    }
+
+    @Test("cp rejects unsupported command options before runtime copy")
+    func cpRejectsUnsupportedCommandOptionsBeforeRuntimeCopy() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let cases: [(name: String, options: ComposeCopyOptions, expected: ComposeError)] = [
+            (
+                name: "--all",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.all = true
+                },
+                expected: .unsupported("cp --all: copying from one-off run containers is not implemented by container-compose yet")
+            ),
+            (
+                name: "--archive",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.archive = true
+                },
+                expected: .unsupported("cp --archive: apple/container cp does not expose archive mode")
+            ),
+            (
+                name: "--follow-link",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.followLink = true
+                },
+                expected: .unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
+            ),
+            (
+                name: "--index",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.index = 2
+                },
+                expected: .unsupported("cp --index 2: service replica copy needs replica-aware container lookup")
+            ),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            do {
+                try await ComposeOrchestrator(runner: runner).copy(project: project, options: testCase.options)
+                Issue.record("Expected unsupported cp \(testCase.name) error")
+            } catch let error as ComposeError {
+                #expect(error == testCase.expected)
+            } catch {
+                Issue.record("Unexpected error for cp \(testCase.name): \(error)")
+            }
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("port prints static published bindings")
     func portPrintsStaticPublishedBindings() throws {
         let emitted = MessageRecorder()
