@@ -307,6 +307,25 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps run volume shorthand value before service name")
+    func keepsRunVolumeShorthandValueBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-v",
+            "/host:/container:ro",
+            "api",
+            "ls",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "-v",
+            "/host:/container:ro",
+            "api",
+            "ls",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

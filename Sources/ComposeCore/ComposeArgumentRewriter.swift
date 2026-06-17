@@ -260,6 +260,7 @@ public enum ComposeArgumentRewriter {
             "--workdir",
             "-e",
             "-u",
+            "-v",
             "-w",
         ].contains(argument)
     }
