@@ -333,6 +333,10 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var publish: [String] = []
     @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
     var name: String?
+    @Option(name: .customLong("entrypoint"), help: "Override the service entrypoint for the one-off container.")
+    var entrypoint: String?
+    @Option(name: [.customShort("w"), .customLong("workdir")], help: "Override the working directory for the one-off container.")
+    var workdir: String?
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -349,7 +353,9 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 remove: remove,
                 servicePorts: servicePorts,
                 publish: publish,
-                containerName: name
+                containerName: name,
+                entrypoint: entrypoint,
+                workingDirectory: workdir
             )
         )
     }
