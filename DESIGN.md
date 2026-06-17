@@ -18,7 +18,7 @@ orchestration layer close to the Swift code and runtime primitives used by
 - Label every project resource with Compose metadata so lifecycle commands are
   project scoped and repeatable.
 - Fail clearly when a Compose feature depends on a runtime primitive that
-  `container` does not expose yet.
+  [`apple/container`](https://github.com/apple/container) does not expose yet.
 
 ## Why Go Is Used
 
@@ -118,8 +118,9 @@ the plugin honest while gaps in
 - Keep Compose parsing out of Swift and runtime orchestration out of Go.
 - Use deterministic names, sorted traversal, and labels to make repeated runs
   predictable.
-- Keep the public behavior close to Docker Compose where `container` has the
-  required primitive, and fail with precise feature names where it does not.
+- Keep the public behavior close to Docker Compose where
+  [`apple/container`](https://github.com/apple/container) has the required
+  primitive, and fail with precise feature names where it does not.
 - Preserve [`apple/container`](https://github.com/apple/container) conventions
   so the plugin can be reviewed for future in-tree adoption with minimal
   conceptual translation.
