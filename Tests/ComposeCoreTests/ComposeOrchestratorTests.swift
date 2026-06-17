@@ -2886,14 +2886,15 @@ struct ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0] == ["container", "exec", "--interactive", "--tty", "demo-api-1", "echo", "ok"])
         #expect(runner.commands[0].io == .inherited)
-        #expect(commands[1] == ["container", "start", "demo-api-1"])
-        #expect(commands[2] == ["container", "start", "demo-api-1"])
+        #expect(commands.count == 1)
         #expect(await logManager.requests == [
             ContainerLogRequest(id: "demo-api-1", tail: 10, follow: true),
         ])
         #expect(await lifecycleManager.requests == [
+            .start(id: "demo-api-1"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
+            .start(id: "demo-api-1"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
             .delete(id: "demo-api-1", force: false),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
@@ -2901,6 +2902,43 @@ struct ComposeOrchestratorTests {
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/file", destination: "."),
         ])
+    }
+
+    @Test("start uses direct runtime API and dry run preserves command output")
+    func startUsesDirectRuntimeAPIAndDryRunPreservesCommandOutput() async throws {
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.containerName = "custom-worker"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, lifecycleManager: lifecycleManager)
+            .start(project: project, services: [])
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .start(id: "demo-api-1"),
+            .start(id: "custom-worker"),
+        ])
+
+        let emitted = MessageRecorder()
+        let dryRunLifecycleManager = RecordingContainerLifecycleManager()
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            lifecycleManager: dryRunLifecycleManager
+        ).start(project: project, services: ["worker"])
+
+        #expect(emitted.messages == [
+            "+ container start custom-worker",
+        ])
+        #expect(await dryRunLifecycleManager.requests.isEmpty)
     }
 
     @Test("kill uses direct runtime API with default and explicit signals")
@@ -2959,12 +2997,14 @@ struct ComposeOrchestratorTests {
         let client = RecordingContainerLifecycleAPIClient()
         let manager = ContainerClientLifecycleManager(client: client)
 
+        try await manager.startContainer(id: "demo-api-1")
         try await manager.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await manager.stopContainer(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12)
         try await manager.stopContainer(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)
         try await manager.deleteContainer(id: "demo-api-1", force: true)
 
         #expect(await client.requests == [
+            .start(id: "demo-api-1"),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: 5),
@@ -3002,6 +3042,9 @@ struct ComposeOrchestratorTests {
     func lifecycleAPIClientForwardsConfiguredOperations() async throws {
         let recorder = RecordingContainerLifecycleAPIClient()
         let client = ContainerLifecycleAPIClient(
+            start: { id in
+                try await recorder.startContainer(id: id)
+            },
             kill: { id, signal in
                 try await recorder.killContainer(id: id, signal: signal)
             },
@@ -3014,11 +3057,13 @@ struct ComposeOrchestratorTests {
         )
         let stopOptions = ContainerStopOptions(timeoutInSeconds: 15, signal: "SIGQUIT")
 
+        try await client.startContainer(id: "demo-api-1")
         try await client.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await client.stopContainer(id: "demo-api-1", options: stopOptions)
         try await client.deleteContainer(id: "demo-api-1", force: false)
 
         #expect(await recorder.requests == [
+            .start(id: "demo-api-1"),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGQUIT", timeoutInSeconds: 15),
             .delete(id: "demo-api-1", force: false),
@@ -3606,12 +3651,11 @@ struct ComposeOrchestratorTests {
         try await orchestrator.restart(project: project, services: ["api"], timeout: 13)
         try await orchestrator.down(project: project, options: ComposeDownOptions(timeout: 14))
 
-        #expect(runner.commands.map(\.arguments) == [
-            ["container", "start", "demo-api-1"],
-        ])
+        #expect(runner.commands.isEmpty)
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 13),
+            .start(id: "demo-api-1"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 14),
             .delete(id: "demo-api-1", force: false),
         ])
@@ -6577,6 +6621,7 @@ private enum ContainerCopyRequest: Equatable {
 }
 
 private enum ContainerLifecycleRequest: Equatable {
+    case start(id: String)
     case kill(id: String, signal: String)
     case stop(id: String, signal: String?, timeoutInSeconds: Int?)
     case delete(id: String, force: Bool)
@@ -6655,6 +6700,10 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
 
     var requests: [ContainerLifecycleRequest] {
         storage
+    }
+
+    func startContainer(id: String) async throws {
+        storage.append(.start(id: id))
     }
 
     func killContainer(id: String, signal: String) async throws {
@@ -6961,6 +7010,10 @@ private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienti
 
     var requests: [ContainerLifecycleRequest] {
         storage
+    }
+
+    func startContainer(id: String) async throws {
+        storage.append(.start(id: id))
     }
 
     func killContainer(id: String, signal: String) async throws {

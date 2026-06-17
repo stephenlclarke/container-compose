@@ -705,7 +705,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Starts selected service containers.
     public func start(project: ComposeProject, services selected: [String]) async throws {
         for service in try selectedServices(project: project, selected: selected) {
-            try await runContainer(["start", containerName(project: project, service: service, oneOff: false)])
+            let id = containerName(project: project, service: service, oneOff: false)
+            let args = ["start", id]
+            if options.dryRun {
+                try await runContainer(args)
+            } else {
+                try await lifecycleManager.startContainer(id: id)
+            }
         }
     }
 

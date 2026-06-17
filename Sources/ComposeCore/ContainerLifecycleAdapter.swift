@@ -20,6 +20,9 @@ import ContainerResource
 /// Low-level Apple container lifecycle calls used by
 /// `ContainerClientLifecycleManager`.
 public protocol ContainerLifecycleAPIClienting: Sendable {
+    /// Starts container `id`.
+    func startContainer(id: String) async throws
+
     /// Sends `signal` to container `id`.
     func killContainer(id: String, signal: String) async throws
 
@@ -33,6 +36,9 @@ public protocol ContainerLifecycleAPIClienting: Sendable {
 /// Direct Apple container APIs used for service container lifecycle
 /// operations.
 public protocol ContainerLifecycleManaging: Sendable {
+    /// Starts container `id`.
+    func startContainer(id: String) async throws
+
     /// Sends `signal` to container `id`.
     func killContainer(id: String, signal: String) async throws
 
@@ -45,22 +51,31 @@ public protocol ContainerLifecycleManaging: Sendable {
 
 /// Thin Apple `container` client wrapper around lifecycle API calls.
 public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
+    public typealias Start = @Sendable (String) async throws -> Void
     public typealias Kill = @Sendable (String, String) async throws -> Void
     public typealias Stop = @Sendable (String, ContainerStopOptions) async throws -> Void
     public typealias Delete = @Sendable (String, Bool) async throws -> Void
 
+    private let startOperation: Start
     private let killOperation: Kill
     private let stopOperation: Stop
     private let deleteOperation: Delete
 
     public init(
+        start: @escaping Start = ContainerLifecycleLiveAdapter.start,
         kill: @escaping Kill = { try await ContainerClient().kill(id: $0, signal: $1) },
         stop: @escaping Stop = { try await ContainerClient().stop(id: $0, opts: $1) },
         delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) }
     ) {
+        self.startOperation = start
         self.killOperation = kill
         self.stopOperation = stop
         self.deleteOperation = delete
+    }
+
+    /// Starts a container through `ContainerClient`.
+    public func startContainer(id: String) async throws {
+        try await startOperation(id)
     }
 
     /// Sends a signal through `ContainerClient`.
@@ -85,6 +100,11 @@ public struct ContainerClientLifecycleManager: ContainerLifecycleManaging {
 
     public init(client: ContainerLifecycleAPIClienting = ContainerLifecycleAPIClient()) {
         self.client = client
+    }
+
+    /// Starts a container through `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`.
+    public func startContainer(id: String) async throws {
+        try await client.startContainer(id: id)
     }
 
     /// Sends a signal through `ContainerClient.kill(id:signal:)`.
