@@ -337,6 +337,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var entrypoint: String?
     @Option(name: [.customShort("w"), .customLong("workdir")], help: "Override the working directory for the one-off container.")
     var workdir: String?
+    @Option(name: [.customShort("u"), .customLong("user")], help: "Override the user for the one-off container.")
+    var user: String?
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -355,7 +357,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 publish: publish,
                 containerName: name,
                 entrypoint: entrypoint,
-                workingDirectory: workdir
+                workingDirectory: workdir,
+                user: user
             )
         )
     }

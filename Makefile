@@ -106,6 +106,9 @@ cli-smoke: build
 	run_workdir_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --workdir /workspace api pwd)"; \
 	[[ "$$run_workdir_output" == *"--workdir /workspace"* ]]; \
 	[[ "$$run_workdir_output" == *" alpine pwd"* ]]; \
+	run_user_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -u 1000:1000 api id)"; \
+	[[ "$$run_user_output" == *"--user 1000:1000"* ]]; \
+	[[ "$$run_user_output" == *" alpine id"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \

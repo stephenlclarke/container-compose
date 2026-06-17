@@ -265,6 +265,25 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("keeps run user shorthand value before service name")
+    func keepsRunUserShorthandValueBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-u",
+            "1000:1000",
+            "api",
+            "id",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "-u",
+            "1000:1000",
+            "api",
+            "id",
+        ])
+    }
+
     @Test("keeps unknown root options before the subcommand")
     func keepsUnknownRootOptionsBeforeSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

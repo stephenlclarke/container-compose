@@ -95,6 +95,7 @@ public struct ComposeRunOptions {
     public var containerName: String?
     public var entrypoint: String?
     public var workingDirectory: String?
+    public var user: String?
 
     public init(
         command: [String] = [],
@@ -103,7 +104,8 @@ public struct ComposeRunOptions {
         publish: [String] = [],
         containerName: String? = nil,
         entrypoint: String? = nil,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        user: String? = nil
     ) {
         self.command = command
         self.remove = remove
@@ -112,6 +114,7 @@ public struct ComposeRunOptions {
         self.containerName = containerName
         self.entrypoint = entrypoint
         self.workingDirectory = workingDirectory
+        self.user = user
     }
 }
 
@@ -310,6 +313,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if let workingDirectory = run.workingDirectory {
             service.workingDir = workingDirectory
+        }
+        if let user = run.user {
+            service.user = user
         }
         try validateRuntimeSupport(service: service)
         try await applyServicePullPolicies(services: [service])
