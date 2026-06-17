@@ -1874,10 +1874,13 @@ private extension ComposeOrchestrator {
     }
 }
 
+/// Minimal inspect result needed to decide whether an existing service
+/// container can be reused.
 private struct ExistingContainer {
     var configHash: String?
 }
 
+/// Parsed representation of a Compose port mapping for static `port` lookups.
 private struct ComposePublishedPort {
     var hostIP: String?
     var published: String?
@@ -1917,12 +1920,14 @@ private extension ComposeNetworkOptions {
     }
 }
 
+/// Stable service/resource snapshot used to derive the recreate config hash.
 private struct ServiceConfigFingerprint: Encodable {
     var service: ComposeService
     var networks: [String: String]
     var volumes: [String: String]
 }
 
+/// One label override passed to `compose run`.
 private struct ComposeLabelOverride {
     var key: String
     var value: String?
