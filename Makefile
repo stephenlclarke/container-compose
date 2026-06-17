@@ -137,6 +137,10 @@ cli-smoke: build
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$up_output" != *"--detach"* ]]; \
+	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
+	[[ "$$create_output" == *"container create"* ]]; \
+	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$create_output" != *"--detach"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
 	[[ "$$detached_output" == *"container run"* ]]; \
 	[[ "$$detached_output" == *"--detach"* ]]; \

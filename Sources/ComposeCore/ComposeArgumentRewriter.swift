@@ -27,6 +27,7 @@ public enum ComposeArgumentRewriter {
         "build",
         "config",
         "cp",
+        "create",
         "down",
         "events",
         "exec",

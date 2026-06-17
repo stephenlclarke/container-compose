@@ -28,6 +28,7 @@ struct ComposePlugin: AsyncParsableCommand {
         version: "container-compose 0.1.0",
         subcommands: [
             Config.self,
+            Create.self,
             Up.self,
             Down.self,
             Build.self,
@@ -148,6 +149,51 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
+/// Implements `compose create`.
+struct Create: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "create", abstract: "Create service containers without starting them.")
+
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("build"), help: "Build images before creating containers.")
+    var build = false
+    @Flag(name: .customLong("no-build"), help: "Do not build images before creating containers.")
+    var noBuild = false
+    @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
+    var forceRecreate = false
+    @Flag(name: .customLong("no-recreate"), help: "Reuse existing containers.")
+    var noRecreate = false
+    @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, never, or build.")
+    var pull: String?
+    @Flag(name: .customLong("quiet-pull"), help: "Accepted for Docker Compose compatibility.")
+    var quietPull = false
+    @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
+    var removeOrphans = false
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    var scales: [String] = []
+    @Flag(name: [.customShort("y"), .customLong("yes")], help: "Accepted for Docker Compose compatibility.")
+    var yes = false
+    @Argument(help: "Optional service names to create.")
+    var services: [String] = []
+
+    /// Creates selected service containers without starting them.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().create(
+            project: loadedProject,
+            options: ComposeCreateOptions(
+                services: services,
+                build: build,
+                noBuild: noBuild,
+                forceRecreate: forceRecreate,
+                noRecreate: noRecreate,
+                removeOrphans: removeOrphans,
+                pullPolicy: pull,
+                scales: scales
+            )
+        )
+    }
+}
+
 /// Implements `compose up`.
 struct Up: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "up", abstract: "Create and start services.")
@@ -163,7 +209,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var noRecreate = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
-    @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, or never.")
+    @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, or never.")
     var pull: String?
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
@@ -378,7 +424,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var servicePorts = false
     @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
     var publish: [String] = []
-    @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, or never.")
+    @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, if_not_present, or never.")
     var pull: String?
     @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
     var name: String?

@@ -75,6 +75,38 @@ public struct ComposeUpOptions {
     }
 }
 
+/// Options for `compose create`.
+public struct ComposeCreateOptions {
+    public var services: [String]
+    public var build: Bool
+    public var noBuild: Bool
+    public var forceRecreate: Bool
+    public var noRecreate: Bool
+    public var removeOrphans: Bool
+    public var pullPolicy: String?
+    public var scales: [String]
+
+    public init(
+        services: [String] = [],
+        build: Bool = false,
+        noBuild: Bool = false,
+        forceRecreate: Bool = false,
+        noRecreate: Bool = false,
+        removeOrphans: Bool = false,
+        pullPolicy: String? = nil,
+        scales: [String] = []
+    ) {
+        self.services = services
+        self.build = build
+        self.noBuild = noBuild
+        self.forceRecreate = forceRecreate
+        self.noRecreate = noRecreate
+        self.removeOrphans = removeOrphans
+        self.pullPolicy = pullPolicy
+        self.scales = scales
+    }
+}
+
 /// Options for `compose down`.
 public struct ComposeDownOptions {
     public var volumes: Bool
@@ -144,6 +176,7 @@ public struct ComposeRunOptions {
 }
 
 private struct RunArgumentOptions {
+    var command = "run"
     var detach = false
     var remove = false
     var oneOff = false
@@ -240,6 +273,55 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         if up.removeOrphans {
+            let declaredContainers = Set(project.services.values.map { containerName(project: project, service: $0, oneOff: false) })
+            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+        }
+    }
+
+    /// Creates project resources and selected service containers without starting them.
+    public func create(project: ComposeProject, options create: ComposeCreateOptions) async throws {
+        try validate(project: project)
+        try validateCreateOptions(create)
+        let services = try orderedServices(project: project, selected: create.services)
+        try validateCreatePullPolicy(create.pullPolicy)
+        try validateRuntimeSupport(services: services)
+
+        try await ensureResources(project: project)
+
+        try await applyCreateImagePolicy(create, project: project, services: services)
+
+        for service in services {
+            if shouldBuildServiceForCreate(create, service: service) {
+                try await build(project: project, services: [service.name], noCache: false)
+            }
+
+            let name = containerName(project: project, service: service, oneOff: false)
+            let existing = try await inspectContainer(name)
+            if let existing {
+                if create.noRecreate {
+                    options.emit("compose: reusing existing container \(name)")
+                    continue
+                }
+                if !create.forceRecreate, existing.configHash == configHash(project: project, service: service) {
+                    options.emit("compose: reusing existing container \(name)")
+                    continue
+                }
+                try await runContainer(stopArguments(service: service, containerName: name), check: false)
+                try await runContainer(["delete", name], check: false)
+            }
+
+            try await runContainer(
+                runArguments(
+                    project: project,
+                    service: service,
+                    options: RunArgumentOptions {
+                        $0.command = "create"
+                    }
+                )
+            )
+        }
+
+        if create.removeOrphans {
             let declaredContainers = Set(project.services.values.map { containerName(project: project, service: $0, oneOff: false) })
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
         }
@@ -976,7 +1058,30 @@ private extension ComposeOrchestrator {
         guard let policy, !policy.isEmpty else {
             return
         }
-        if !["always", "missing", "never"].contains(policy) {
+        if !["always", "missing", "if_not_present", "never"].contains(policy) {
+            throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
+        }
+    }
+
+    /// Validates command-level `compose create` option combinations before runtime side effects.
+    func validateCreateOptions(_ options: ComposeCreateOptions) throws {
+        if options.build, options.noBuild {
+            throw ComposeError.invalidProject("--build and --no-build are incompatible")
+        }
+        if options.forceRecreate, options.noRecreate {
+            throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
+        }
+        if !options.scales.isEmpty {
+            throw ComposeError.unsupported("create --scale: service replica scaling is not implemented by container-compose yet")
+        }
+    }
+
+    /// Validates `create --pull`, including Docker Compose's build policy.
+    func validateCreatePullPolicy(_ policy: String?) throws {
+        guard let policy, !policy.isEmpty else {
+            return
+        }
+        if !["always", "missing", "if_not_present", "never", "build"].contains(policy) {
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
         }
     }
@@ -1079,13 +1184,36 @@ private extension ComposeOrchestrator {
         switch policy {
         case "always":
             try await pull(project: project, services: services.map(\.name))
-        case "missing":
+        case "missing", "if_not_present":
             try await pullMissingImages(services: services)
         case "never":
             return
         default:
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
         }
+    }
+
+    /// Applies `compose create` image preparation before creating containers.
+    func applyCreateImagePolicy(_ create: ComposeCreateOptions, project: ComposeProject, services: [ComposeService]) async throws {
+        if create.pullPolicy == "build" {
+            guard !create.noBuild else {
+                return
+            }
+            try await build(project: project, services: services.map(\.name), noCache: false)
+            return
+        }
+
+        try await applyPullPolicy(create.pullPolicy, project: project, services: services)
+
+        guard create.build, !create.noBuild else {
+            return
+        }
+        try await build(project: project, services: services.map(\.name), noCache: false)
+    }
+
+    /// Returns whether `create` should auto-build a service before container creation.
+    func shouldBuildServiceForCreate(_ create: ComposeCreateOptions, service: ComposeService) -> Bool {
+        !create.noBuild && !create.build && create.pullPolicy != "build" && service.image == nil && service.build != nil
     }
 
     /// Applies service-level `pull_policy` when no global pull override is set.
@@ -1260,7 +1388,7 @@ private extension ComposeOrchestrator {
         service: ComposeService,
         options run: RunArgumentOptions = RunArgumentOptions()
     ) throws -> [String] {
-        var args = ["run"]
+        var args = [run.command]
         let runtimeName = run.containerNameOverride.map(slug) ?? containerName(project: project, service: service, oneOff: run.oneOff)
         args.append(contentsOf: ["--name", runtimeName])
         if run.detach {

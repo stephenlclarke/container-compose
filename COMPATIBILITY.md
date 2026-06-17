@@ -36,14 +36,14 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Compose v2 surface | Supported subset | [`apple/container`][apple-container] primitive used | Example |
 | --- | --- | --- | --- |
 | Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
-| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/never`, one-off `run --pull always/missing/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container list --format json`, `container image delete` | [S1](#s1-supported-local-web-stack) |
-| Container lifecycle | `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container run`, `container start`, `container stop`, `container delete`, `container delete --force`, `container kill`, `container inspect`, `container list`, `container image delete` | [S1](#s1-supported-local-web-stack) |
+| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.target`, `build.no_cache`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build`, `container image pull`, `container image push`, `container image inspect`, `container list --format json`, `container image delete` | [S1](#s1-supported-local-web-stack) |
+| Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `container start`, `container stop`, `container delete`, `container delete --force`, `container kill`, `container inspect`, `container list`, `container image delete` | [S1](#s1-supported-local-web-stack) |
 | Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `container list --format json` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
 | Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `-T/--no-tty`, and `--interactive=false`, service-aware `cp`, `version` | `container list`, `container logs`, `container exec --interactive --tty`, `container cp`, plugin version output | [S1](#s1-supported-local-web-stack) |
-| Default networking | One service network, default project networks, external networks, service ports for `up`, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container run --network`, `container run --publish` | [S1](#s1-supported-local-web-stack) |
-| Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `container volume create`, `container volume delete`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
-| Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container run` and `container stop` flags | [S1](#s1-supported-local-web-stack) |
-| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
+| Default networking | One service network, default project networks, external networks, service ports for `create` and `up`, one-off `run --service-ports/-P`, one-off `run --publish/-p` | `container network create`, `container network delete`, `container create --network`, `container create --publish`, `container run --network`, `container run --publish` | [S1](#s1-supported-local-web-stack) |
+| Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `container volume create`, `container volume delete`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
+| Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `container stop` flags | [S1](#s1-supported-local-web-stack) |
+| Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
 | Simple ordering | `depends_on` with no condition or `condition: service_started` | Plugin dependency ordering before `container run` | [S1](#s1-supported-local-web-stack) |
 
 ### Blocked By apple/container
@@ -70,7 +70,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 | Metadata, logging, storage shortcuts | `annotations`, `attach`, `label_file`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, label-file loading, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
-| Additional CLI commands | `create`, `watch`, `stats`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
+| Additional CLI commands | `watch`, `stats`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
 
 ### Config-Only Today
 
@@ -87,9 +87,9 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 | Status | Commands |
 | --- | --- |
-| Supported | `config`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `cp`, `kill`, `version` |
+| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `cp`, `kill`, `version` |
 | Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, `port`, `pause`, `unpause`, `wait` |
-| Not implemented by `container-compose` yet | `create`, `watch`, `stats`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
+| Not implemented by `container-compose` yet | `watch`, `stats`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
 
 ## References
 
@@ -105,7 +105,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 | Example | Status bucket | What it demonstrates |
 | --- | --- | --- |
-| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, ports, environment, one network, volumes, labels, lifecycle, logs, exec, copy, and `down --volumes` |
+| [S1: Supported Local Web Stack](#s1-supported-local-web-stack) | Supported | Build, images, `create`, ports, environment, one network, volumes, labels, lifecycle, logs, exec, copy, and `down --volumes` |
 | [A1: Apple Gap, Networking](#a1-apple-gap-networking) | [`apple/container`][apple-container] gap | Multiple networks, aliases, fixed IP attachment options, and network namespace modes |
 | [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links) | [`apple/container`][apple-container] gap | Hostname, domain name, explicit host entries, MAC address, and legacy links |
 | [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls) | [`apple/container`][apple-container] gap | Namespace controls, privileged/device access, advanced resources, DNS options, and sysctls |
@@ -122,7 +122,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 ### S1: Supported Local Web Stack
 
-Expected result: `container compose config`, `build`, `up`, `ps`, `logs`, `exec`, `cp`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
+Expected result: `container compose config`, `build`, `create`, `up`, `ps`, `logs`, `exec`, `cp`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
 
 Status path:
 
@@ -216,6 +216,9 @@ Useful supported commands against this project:
 ```sh
 container compose config
 container compose build
+container compose create --build
+container compose create --pull build api
+container compose create --no-build worker
 container compose up --pull missing
 container compose ls
 container compose ls --all
@@ -735,7 +738,6 @@ services:
 Compare the missing command behavior:
 
 ```sh
-docker compose create
 docker compose watch
 docker compose stats
 docker compose scale worker=3

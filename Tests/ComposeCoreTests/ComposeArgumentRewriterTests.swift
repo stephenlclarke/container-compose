@@ -78,6 +78,25 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("recognizes create as a compose subcommand")
+    func recognizesCreateAsComposeSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--file",
+            "compose.yml",
+            "create",
+            "--build",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "create",
+            "--file",
+            "compose.yml",
+            "--build",
+            "api",
+        ])
+    }
+
     @Test("normalizes logs follow shorthand after subcommand")
     func normalizesLogsFollowShorthandAfterSubcommand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

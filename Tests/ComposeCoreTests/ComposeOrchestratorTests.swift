@@ -169,6 +169,260 @@ struct ComposeOrchestratorTests {
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
     }
 
+    @Test("create creates resources and service containers without starting them")
+    func createCreatesResourcesAndServiceContainersWithoutStartingThem() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.command = ["serve"]
+                    $0.environment = ["LOG_LEVEL": "debug"]
+                    $0.ports = ["8080:80"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.networks = ["default"]
+                    $0.platform = "linux/amd64"
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "network", "create"]))
+        #expect(commands[1].containsSequence(["container", "volume", "create"]))
+        #expect(commands[2] == ["container", "inspect", "demo-api-1"])
+
+        let create = commands[3]
+        #expect(create.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(!create.contains("--detach"))
+        #expect(create.containsSequence(["--label", "com.apple.container.compose.project=demo"]))
+        #expect(create.containsSequence(["--label", "com.apple.container.compose.service=api"]))
+        #expect(create.containsSequence(["--label", "com.apple.container.compose.oneoff=false"]))
+        #expect(create.containsSequence(["--env", "LOG_LEVEL=debug"]))
+        #expect(create.containsSequence(["--publish", "8080:80"]))
+        #expect(create.containsSequence(["--volume", "demo_cache:/cache"]))
+        #expect(create.containsSequence(["--network", "demo_default"]))
+        #expect(create.containsSequence(["--platform", "linux/amd64"]))
+        #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
+    }
+
+    @Test("create applies build pull policy before creating containers")
+    func createAppliesBuildPullPolicyBeforeCreatingContainers() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).create(
+            project: project,
+            options: ComposeCreateOptions(pullPolicy: "build")
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
+        #expect(commands[0].last == "api")
+        #expect(commands[1].containsSequence(["container", "build", "--tag", "demo_worker:latest"]))
+        #expect(commands[1].last == "worker")
+        #expect(commands[2] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[3].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(commands[4] == ["container", "inspect", "demo-worker-1"])
+        #expect(commands[5].starts(with: ["container", "create", "--name", "demo-worker-1"]))
+    }
+
+    @Test("create pull if not present pulls only absent images")
+    func createPullIfNotPresentPullsOnlyAbsentImages() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).create(
+            project: project,
+            options: ComposeCreateOptions(pullPolicy: "if_not_present")
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "inspect", "example/api"])
+        #expect(commands[1] == ["container", "image", "inspect", "postgres"])
+        #expect(commands[2] == ["container", "image", "pull", "postgres"])
+        #expect(commands[3] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[4].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(commands[5] == ["container", "inspect", "demo-db-1"])
+        #expect(commands[6].starts(with: ["container", "create", "--name", "demo-db-1"]))
+    }
+
+    @Test("create auto builds build-only services by default")
+    func createAutoBuildsBuildOnlyServicesByDefault() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "build", "--tag", "demo_worker:latest"]))
+        #expect(commands[0].last == "worker")
+        #expect(commands[1] == ["container", "inspect", "demo-worker-1"])
+        #expect(commands[2].starts(with: ["container", "create", "--name", "demo-worker-1"]))
+    }
+
+    @Test("create no-build skips auto build for build-only service")
+    func createNoBuildSkipsAutoBuildForBuildOnlyService() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).create(
+            project: project,
+            options: ComposeCreateOptions(noBuild: true)
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(!commands.contains { $0.containsSequence(["container", "build"]) })
+        #expect(commands[0] == ["container", "inspect", "demo-worker-1"])
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-worker-1"]))
+        #expect(commands[1].last == "demo_worker:latest")
+    }
+
+    @Test("create reuses or recreates existing containers according to policy")
+    func createReusesOrRecreatesExistingContainersAccordingToPolicy() async throws {
+        let emitted = MessageRecorder()
+        let reuseRunner = RecordingRunner(responses: [.success])
+        try await ComposeOrchestrator(
+            runner: reuseRunner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        .create(
+            project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
+            options: ComposeCreateOptions(noRecreate: true)
+        )
+
+        #expect(reuseRunner.commands.map(\.arguments) == [["container", "inspect", "demo-api-1"]])
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+
+        let recreateRunner = RecordingRunner(responses: [
+            inspectResult(configHash: "stale"),
+            .success,
+            .success,
+            .success,
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: recreateRunner).create(project: project, options: ComposeCreateOptions())
+
+        #expect(recreateRunner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
+        #expect(recreateRunner.commands[1].arguments == ["container", "stop", "--signal", "SIGUSR1", "--time", "9", "demo-api-1"])
+        #expect(recreateRunner.commands[2].arguments == ["container", "delete", "demo-api-1"])
+        #expect(recreateRunner.commands[3].arguments.starts(with: ["container", "create", "--name", "demo-api-1"]))
+    }
+
+    @Test("create validates incompatible options and unsupported scale before side effects")
+    func createValidatesIncompatibleOptionsAndUnsupportedScaleBeforeSideEffects() async throws {
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        for options in [
+            ComposeCreateOptions(build: true, noBuild: true),
+            ComposeCreateOptions(forceRecreate: true, noRecreate: true),
+        ] {
+            let runner = RecordingRunner()
+            do {
+                try await ComposeOrchestrator(runner: runner).create(project: project, options: options)
+                Issue.record("Expected invalid create option combination")
+            } catch let error as ComposeError {
+                #expect(error == .invalidProject(options.build ? "--build and --no-build are incompatible" : "--force-recreate and --no-recreate are incompatible"))
+            }
+            #expect(runner.commands.isEmpty)
+        }
+
+        let scaleRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: scaleRunner).create(
+                project: project,
+                options: ComposeCreateOptions(scales: ["api=2"])
+            )
+            Issue.record("Expected unsupported create scale failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("create --scale: service replica scaling is not implemented by container-compose yet"))
+        }
+        #expect(scaleRunner.commands.isEmpty)
+
+        let pullRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: pullRunner).create(
+                project: project,
+                options: ComposeCreateOptions(pullPolicy: "daily")
+            )
+            Issue.record("Expected unsupported create pull policy failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unsupported pull policy 'daily'"))
+        }
+        #expect(pullRunner.commands.isEmpty)
+    }
+
     @Test("up uses external resource names without creating project resources")
     func upUsesExternalResourceNamesWithoutCreatingProjectResources() async throws {
         let runner = RecordingRunner(responses: [
@@ -361,6 +615,31 @@ struct ComposeOrchestratorTests {
         #expect(commands[2] == ["container", "image", "pull", "postgres"])
         #expect(commands[3] == ["container", "inspect", "demo-api-1"])
         #expect(commands[5] == ["container", "inspect", "demo-db-1"])
+    }
+
+    @Test("up pull if not present uses the missing-image flow")
+    func upPullIfNotPresentUsesMissingImageFlow() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(
+            project: project,
+            options: ComposeUpOptions(pullPolicy: "if_not_present")
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "inspect", "example/api"])
+        #expect(commands[1] == ["container", "image", "pull", "example/api"])
+        #expect(commands[2] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[3].starts(with: ["container", "run", "--name", "demo-api-1"]))
     }
 
     @Test("up applies service pull policies when no global pull policy is set")
@@ -3238,6 +3517,29 @@ struct ComposeOrchestratorTests {
         #expect(absentCommands[0] == ["container", "image", "inspect", "alpine"])
         #expect(absentCommands[1] == ["container", "image", "pull", "alpine"])
         #expect(absentCommands[2].starts(with: ["container", "run"]))
+    }
+
+    @Test("run pull if not present uses the missing-image flow")
+    func runPullIfNotPresentUsesMissingImageFlow() async throws {
+        let runner = RecordingRunner(responses: [.failure, .success])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"]) {
+                $0.pullPolicy = "if_not_present"
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0] == ["container", "image", "inspect", "alpine"])
+        #expect(commands[1] == ["container", "image", "pull", "alpine"])
+        #expect(commands[2].starts(with: ["container", "run"]))
+        #expect(Array(commands[2].suffix(2)) == ["alpine", "true"])
     }
 
     @Test("run rejects unsupported explicit pull policy")
