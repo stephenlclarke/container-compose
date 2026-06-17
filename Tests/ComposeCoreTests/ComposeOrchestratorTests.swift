@@ -2845,6 +2845,77 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "env"])
     }
 
+    @Test("run applies one-off label overrides")
+    func runAppliesOneOffLabelOverrides() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.labels = ["com.example.keep": "yes", "com.example.role": "api"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(
+                command: ["true"],
+                labels: ["com.example.role=job", "com.example.flag"]
+            )
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--label", "com.apple.container.compose.oneoff=true"]))
+        #expect(command.containsSequence(["--label", "com.example.keep=yes"]))
+        #expect(command.containsSequence(["--label", "com.example.role=job"]))
+        #expect(command.containsSequence(["--label", "com.example.flag"]))
+        #expect(!command.containsSequence(["--label", "com.example.role=api"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run rejects empty label override")
+    func runRejectsEmptyLabelOverride() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator().run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(command: ["true"], labels: [""])
+            )
+            Issue.record("Expected empty run label override to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --label requires KEY or KEY=VALUE"))
+        }
+    }
+
+    @Test("run rejects reserved Compose label overrides")
+    func runRejectsReservedComposeLabelOverrides() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator().run(
+                project: project,
+                serviceName: "job",
+                options: ComposeRunOptions(
+                    command: ["true"],
+                    labels: ["com.apple.container.compose.project=evil"]
+                )
+            )
+            Issue.record("Expected reserved run label override to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --label cannot override reserved Compose tracking label 'com.apple.container.compose.project'"))
+        }
+    }
+
     @Test("run applies one-off volume overrides")
     func runAppliesOneOffVolumeOverrides() async throws {
         let runner = RecordingRunner()

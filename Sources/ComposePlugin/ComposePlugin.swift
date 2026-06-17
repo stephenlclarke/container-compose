@@ -343,6 +343,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var environment: [String] = []
     @Option(name: .customLong("env-from-file"), help: "Read environment variables for the one-off container from a file. May be repeated.")
     var envFiles: [String] = []
+    @Option(name: [.customShort("l"), .customLong("label")], help: "Add or override a label for the one-off container. May be repeated.")
+    var labels: [String] = []
     @Option(name: [.customShort("v"), .customLong("volume")], help: "Bind mount a volume for the one-off container. May be repeated.")
     var volumes: [String] = []
     @Argument(help: "Service name.")
@@ -367,6 +369,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 user: user,
                 environment: environment,
                 envFiles: envFiles,
+                labels: labels,
                 volumes: volumes
             )
         )

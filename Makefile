@@ -113,6 +113,9 @@ cli-smoke: build
 	[[ "$$run_env_output" == *"--env LOG_LEVEL=debug"* ]]; \
 	[[ "$$run_env_output" == *"--env-file .env.local"* ]]; \
 	[[ "$$run_env_output" == *" alpine env"* ]]; \
+	run_label_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -l com.example.role=job api true)"; \
+	[[ "$$run_label_output" == *"--label com.example.role=job"* ]]; \
+	[[ "$$run_label_output" == *" alpine true"* ]]; \
 	run_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v /host:/container:ro api ls)"; \
 	[[ "$$run_volume_output" == *"--volume /host:/container:ro"* ]]; \
 	[[ "$$run_volume_output" == *" alpine ls"* ]]; \
