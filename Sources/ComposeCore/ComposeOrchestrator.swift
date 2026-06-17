@@ -240,7 +240,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateUpOptions(up)
         let services = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
-            : orderedServices(project: project, selected: up.services)
+            : orderedServices(project: project, selected: up.services, rejectOptionalDependencies: true)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services)
 
@@ -296,7 +296,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func create(project: ComposeProject, options create: ComposeCreateOptions) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
-        let services = try orderedServices(project: project, selected: create.services)
+        let services = try orderedServices(project: project, selected: create.services, rejectOptionalDependencies: true)
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services)
 
@@ -725,8 +725,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
 public extension ComposeOrchestrator {
     /// Returns selected services after their dependencies using a stable
-    /// depth-first traversal.
-    func orderedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
+    /// depth-first traversal. Startup callers reject optional dependencies
+    /// because their lifecycle semantics are not implemented yet; cleanup
+    /// callers can skip missing optional dependencies while removing resources.
+    func orderedServices(project: ComposeProject, selected: [String], rejectOptionalDependencies: Bool = false) throws -> [ComposeService] {
         let selectedSet = Set(selected)
         var visiting = Set<String>()
         var visited = Set<String>()
@@ -745,7 +747,12 @@ public extension ComposeOrchestrator {
             visiting.insert(name)
             for (dependency, metadata) in (service.dependsOn ?? [:]).sorted(by: { $0.key < $1.key }) {
                 if metadata.required == false {
-                    throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                    if rejectOptionalDependencies {
+                        throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with required false; optional dependency startup is not implemented by container-compose yet")
+                    }
+                    if project.services[dependency] == nil {
+                        continue
+                    }
                 }
                 try visit(dependency)
             }

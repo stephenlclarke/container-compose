@@ -2375,6 +2375,30 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down skips missing optional dependencies while cleaning resources")
+    func downSkipsMissingOptionalDependenciesWhileCleaningResources() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["optional": ComposeDependency(condition: "service_started", required: false)]
+                },
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions())
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "stop", "demo-api-1"],
+            ["container", "delete", "demo-api-1"],
+        ])
+    }
+
     @Test("down leaves orphan containers unless requested")
     func downLeavesOrphanContainersUnlessRequested() async throws {
         let runner = RecordingRunner(responses: [
