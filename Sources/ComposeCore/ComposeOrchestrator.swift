@@ -90,6 +90,17 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Options for `compose images`.
+public struct ComposeImagesOptions {
+    public var quiet: Bool
+    public var format: String
+
+    public init(quiet: Bool = false, format: String = "table") {
+        self.quiet = quiet
+        self.format = format
+    }
+}
+
 /// Options for `compose run` one-off containers.
 public struct ComposeRunOptions {
     public var command: [String] = []
@@ -138,6 +149,11 @@ private enum DownImageRemovalPolicy {
     case none
     case local
     case all
+}
+
+private enum ComposeImagesFormat {
+    case table
+    case json
 }
 
 /// Converts a normalized Compose project into deterministic `container`
@@ -458,9 +474,36 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
-    /// Returns image names referenced by selected services.
-    public func images(project: ComposeProject, services selected: [String]) throws -> [String] {
-        try selectedServices(project: project, selected: selected).compactMap(\.image).sorted()
+    /// Lists images used by created project containers.
+    public func images(project: ComposeProject, services selected: [String], options images: ComposeImagesOptions) async throws {
+        let services = try selectedServices(project: project, selected: selected)
+        let selectedServiceNames = selected.isEmpty ? nil : Set(services.map(\.name))
+        let format = try composeImagesFormat(images.format)
+        let args = ["list", "--format", "json", "--all"]
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+
+        let result = try await runContainer(args, emitOutput: false)
+        let records = try composeImageRecords(projectName: project.name, output: result.stdout, selectedServices: selectedServiceNames)
+        if images.quiet {
+            let identifiers = records.map(\.imageID).filter { !$0.isEmpty }
+            if !identifiers.isEmpty {
+                options.emit(identifiers.joined(separator: "\n"))
+            }
+            return
+        }
+
+        switch format {
+        case .table:
+            let table = renderComposeImageTable(records)
+            if !table.isEmpty {
+                options.emit(table)
+            }
+        case .json:
+            options.emit(try renderComposeImageJSON(records))
+        }
     }
 
     /// Sends a signal to selected service containers.
@@ -1723,6 +1766,185 @@ private func containerServiceNames(_ containers: [Any]) -> [String] {
         }
     }
     return services
+}
+
+/// Validates the `compose images --format` value.
+private func composeImagesFormat(_ value: String) throws -> ComposeImagesFormat {
+    switch value.lowercased() {
+    case "table":
+        return .table
+    case "json":
+        return .json
+    default:
+        throw ComposeError.unsupported("images --format '\(value)'; supported formats are table and json")
+    }
+}
+
+/// One Docker Compose-style image row derived from a created project container.
+private struct ComposeImageRecord: Encodable, Equatable {
+    let container: String
+    let service: String
+    let repository: String
+    let tag: String
+    let platform: String
+    let imageID: String
+}
+
+/// Returns image rows from `container list --format json` scoped by Compose labels.
+private func composeImageRecords(projectName: String, output: String, selectedServices: Set<String>?) throws -> [ComposeImageRecord] {
+    try projectContainers(projectName: projectName, output: output).compactMap { container in
+        guard let service = inspectLabel(serviceLabel, in: container), !service.isEmpty else {
+            return nil
+        }
+        if let selectedServices, !selectedServices.contains(service) {
+            return nil
+        }
+        guard let imageReference = containerImageReference(container), !imageReference.isEmpty else {
+            return nil
+        }
+        let reference = splitImageReference(imageReference)
+        return ComposeImageRecord(
+            container: containerIdentifier(container) ?? service,
+            service: service,
+            repository: reference.repository,
+            tag: reference.tag,
+            platform: containerPlatform(container),
+            imageID: shortImageID(containerImageDigest(container))
+        )
+    }
+    .sorted { lhs, rhs in
+        if lhs.container == rhs.container {
+            return lhs.service < rhs.service
+        }
+        return lhs.container < rhs.container
+    }
+}
+
+/// Renders image rows as a compact table.
+private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String {
+    guard !records.isEmpty else {
+        return ""
+    }
+    let rows = [
+        ["CONTAINER", "REPOSITORY", "TAG", "IMAGE ID", "PLATFORM"],
+    ] + records.map { record in
+        [record.container, record.repository, record.tag, record.imageID.isEmpty ? "<none>" : record.imageID, record.platform]
+    }
+    let widths = rows.reduce(Array(repeating: 0, count: rows[0].count)) { current, row in
+        zip(current, row).map { max($0, $1.count) }
+    }
+    return rows.map { row in
+        row.enumerated().map { index, value in
+            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
+        }.joined(separator: "  ")
+    }.joined(separator: "\n")
+}
+
+/// Renders image rows as deterministic JSON.
+private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(records)
+    return String(decoding: data, as: UTF8.self)
+}
+
+/// Extracts a container image reference from common `container list` JSON shapes.
+private func containerImageReference(_ value: Any) -> String? {
+    for path in [
+        ["configuration", "image", "reference"],
+        ["configuration", "image", "name"],
+        ["Config", "Image"],
+        ["config", "image"],
+        ["Image"],
+        ["image"],
+    ] {
+        if let value = stringValue(at: path, in: value), !value.isEmpty {
+            return value
+        }
+    }
+    return nil
+}
+
+/// Extracts an image digest from common `container list` JSON shapes.
+private func containerImageDigest(_ value: Any) -> String? {
+    for path in [
+        ["configuration", "image", "descriptor", "digest"],
+        ["configuration", "image", "digest"],
+        ["Config", "ImageID"],
+        ["ImageID"],
+        ["imageID"],
+        ["imageId"],
+    ] {
+        if let value = stringValue(at: path, in: value), !value.isEmpty {
+            return value
+        }
+    }
+    return nil
+}
+
+/// Extracts a platform string from common `container list` JSON shapes.
+private func containerPlatform(_ value: Any) -> String {
+    for path in [
+        ["configuration", "platform"],
+        ["Config", "Platform"],
+        ["Platform"],
+        ["platform"],
+    ] {
+        guard let platform = nestedValue(at: path, in: value) as? [String: Any] else {
+            continue
+        }
+        let os = platform["os"] as? String ?? platform["OS"] as? String
+        let architecture = platform["architecture"] as? String ?? platform["Architecture"] as? String
+        let variant = platform["variant"] as? String ?? platform["Variant"] as? String
+        guard let os, let architecture, !os.isEmpty, !architecture.isEmpty else {
+            continue
+        }
+        if let variant, !variant.isEmpty {
+            return "\(os)/\(architecture)/\(variant)"
+        }
+        return "\(os)/\(architecture)"
+    }
+    return ""
+}
+
+/// Splits a container image reference into repository and tag display fields.
+private func splitImageReference(_ reference: String) -> (repository: String, tag: String) {
+    let withoutDigest = reference.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? reference
+    guard let lastColon = withoutDigest.lastIndex(of: ":") else {
+        return (withoutDigest, "<none>")
+    }
+    if let lastSlash = withoutDigest.lastIndex(of: "/"), lastColon < lastSlash {
+        return (withoutDigest, "<none>")
+    }
+    return (String(withoutDigest[..<lastColon]), String(withoutDigest[withoutDigest.index(after: lastColon)...]))
+}
+
+/// Returns the short Docker-style image ID without an algorithm prefix.
+private func shortImageID(_ digest: String?) -> String {
+    guard var digest, !digest.isEmpty else {
+        return ""
+    }
+    if let colonIndex = digest.firstIndex(of: ":") {
+        digest = String(digest[digest.index(after: colonIndex)...])
+    }
+    return String(digest.prefix(12))
+}
+
+/// Reads a string from a nested JSON object path.
+private func stringValue(at path: [String], in value: Any) -> String? {
+    nestedValue(at: path, in: value) as? String
+}
+
+/// Reads a value from a nested JSON object path.
+private func nestedValue(at path: [String], in value: Any) -> Any? {
+    var current = value
+    for key in path {
+        guard let object = current as? [String: Any], let next = object[key] else {
+            return nil
+        }
+        current = next
+    }
+    return current
 }
 
 /// Combines `ps --status` and `ps --filter status=...` into runtime state values.

@@ -178,6 +178,10 @@ cli-smoke: build
 	[[ "$$ps_status_output" == *"container list --format json --all"* ]]; \
 	ps_filter_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --filter status=exited)"; \
 	[[ "$$ps_filter_output" == *"container list --format json --all"* ]]; \
+	images_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format json api)"; \
+	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
+	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \
+	[[ "$$images_quiet_output" == *"container list --format json --all"* ]]; \
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \
 	[[ "$$top_output" == *"unsupported compose feature: top:"* ]]; \
 	[[ "$$top_output" == *"apple/container does not expose a process-list command yet"* ]]; \

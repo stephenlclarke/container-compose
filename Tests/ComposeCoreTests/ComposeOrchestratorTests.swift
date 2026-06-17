@@ -1295,22 +1295,100 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("lists selected service images")
-    func listsSelectedServiceImages() throws {
+    @Test("images lists selected created container image records")
+    func imagesListsSelectedCreatedContainerImageRecords() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
         let project = ComposeProject(
             name: "demo",
             services: [
                 "api": ComposeService(name: "api", image: "example/api:latest"),
-                "builder": composeService(name: "builder") {
-                    $0.build = ComposeBuild(context: ".")
-                },
+                "worker": ComposeService(name: "worker", image: "example/worker:debug"),
                 "web": ComposeService(name: "web", image: "nginx:latest"),
             ]
         )
 
-        let images = try ComposeOrchestrator().images(project: project, services: ["web", "builder", "api"])
+        try await orchestrator.images(project: project, services: ["api"], options: ComposeImagesOptions())
 
-        #expect(images == ["example/api:latest", "nginx:latest"])
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        let output = try #require(emitted.messages.first)
+        #expect(output.contains("CONTAINER"))
+        #expect(output.contains("REPOSITORY"))
+        #expect(output.contains("demo-api-1"))
+        #expect(output.contains("localhost:5000/example/api"))
+        #expect(output.contains("latest"))
+        #expect(output.contains("aaaaaaaaaaaa"))
+        #expect(output.contains("linux/arm64"))
+        #expect(!output.contains("demo-worker-1"))
+    }
+
+    @Test("images quiet prints created image IDs")
+    func imagesQuietPrintsCreatedImageIDs() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+                "worker": ComposeService(name: "worker", image: "example/worker:debug"),
+            ]
+        )
+
+        try await orchestrator.images(project: project, services: [], options: ComposeImagesOptions(quiet: true))
+
+        #expect(runner.commands.map(\.arguments) == [["container", "list", "--format", "json", "--all"]])
+        #expect(emitted.messages == ["aaaaaaaaaaaa\nbbbbbbbbbbbb"])
+    }
+
+    @Test("images json renders created image records")
+    func imagesJSONRendersCreatedImageRecords() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [containerListResult()])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+                "worker": ComposeService(name: "worker", image: "example/worker:debug"),
+            ]
+        )
+
+        try await orchestrator.images(project: project, services: [], options: ComposeImagesOptions(format: "json"))
+
+        let data = Data(try #require(emitted.messages.first).utf8)
+        let records = try #require(JSONSerialization.jsonObject(with: data) as? [[String: String]])
+        #expect(records.map { $0["container"] } == ["demo-api-1", "demo-worker-1"])
+        #expect(records.map { $0["repository"] } == ["localhost:5000/example/api", "example/worker"])
+        #expect(records.map { $0["tag"] } == ["latest", "debug"])
+        #expect(records.map { $0["imageID"] } == ["aaaaaaaaaaaa", "bbbbbbbbbbbb"])
+    }
+
+    @Test("images rejects unsupported output formats")
+    func imagesRejectsUnsupportedOutputFormats() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).images(project: project, services: [], options: ComposeImagesOptions(format: "yaml"))
+            Issue.record("Expected unsupported images format error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("images --format 'yaml'; supported formats are table and json"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("ps filters containers by project label")
@@ -4125,9 +4203,19 @@ private func containerListResult() -> CommandResult {
           {
             "id": "demo-api-1",
             "configuration": {
+              "image": {
+                "reference": "localhost:5000/example/api:latest",
+                "descriptor": {
+                  "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              },
               "labels": {
                 "\(composeProjectLabel)": "demo",
                 "\(composeServiceLabel)": "api"
+              },
+              "platform": {
+                "os": "linux",
+                "architecture": "arm64"
               }
             },
             "status": {
@@ -4137,9 +4225,19 @@ private func containerListResult() -> CommandResult {
           {
             "id": "other-api-1",
             "configuration": {
+              "image": {
+                "reference": "other/api:latest",
+                "descriptor": {
+                  "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                }
+              },
               "labels": {
                 "\(composeProjectLabel)": "other",
                 "\(composeServiceLabel)": "api"
+              },
+              "platform": {
+                "os": "linux",
+                "architecture": "arm64"
               }
             },
             "status": {
@@ -4149,6 +4247,12 @@ private func containerListResult() -> CommandResult {
           {
             "id": "demo-worker-1",
             "Config": {
+              "Image": "example/worker:debug",
+              "ImageID": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "Platform": {
+                "OS": "linux",
+                "Architecture": "amd64"
+              },
               "Labels": {
                 "\(composeProjectLabel)": "demo",
                 "\(composeServiceLabel)": "worker"

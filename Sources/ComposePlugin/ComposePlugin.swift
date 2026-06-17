@@ -467,15 +467,17 @@ struct Rm: AsyncParsableCommand, ComposeProjectCommand {
 
 /// Implements `compose images`.
 struct Images: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "images", abstract: "List images used by services.")
+    static let configuration = CommandConfiguration(commandName: "images", abstract: "List images used by created service containers.")
     @OptionGroup var global: GlobalOptions
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Flag(name: .shortAndLong, help: "Only display image IDs.")
+    var quiet = false
     @Argument var services: [String] = []
-    /// Prints image names referenced by selected services.
+    /// Lists images used by project containers.
     func run() async throws {
         let loadedProject = try await project()
-        for image in try orchestrator().images(project: loadedProject, services: services) {
-            print(image)
-        }
+        try await orchestrator().images(project: loadedProject, services: services, options: ComposeImagesOptions(quiet: quiet, format: format))
     }
 }
 
