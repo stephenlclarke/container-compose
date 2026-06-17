@@ -449,7 +449,10 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(runner: runner).up(
                 project: project,
-                options: ComposeUpOptions(forceRecreate: true, noRecreate: true)
+                options: ComposeUpOptions {
+                    $0.forceRecreate = true
+                    $0.noRecreate = true
+                }
             )
             Issue.record("Expected invalid up option combination")
         } catch let error as ComposeError {
@@ -466,7 +469,9 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(runner: runner).up(
                 project: project,
-                options: ComposeUpOptions(scales: ["api=2"])
+                options: ComposeUpOptions {
+                    $0.scales = ["api=2"]
+                }
             )
             Issue.record("Expected unsupported up scale failure")
         } catch let error as ComposeError {
@@ -495,7 +500,10 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(runner: runner).up(
             project: project,
-            options: ComposeUpOptions(services: ["api"], noDeps: true)
+            options: ComposeUpOptions {
+                $0.services = ["api"]
+                $0.noDeps = true
+            }
         )
 
         let commands = runner.commands.map(\.arguments)
@@ -603,7 +611,9 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.up(project: project, options: ComposeUpOptions(removeOrphans: true))
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.removeOrphans = true
+        })
 
         #expect(runner.commands.count == 5)
         #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
@@ -630,7 +640,9 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions(detach: true))
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions {
+            $0.detach = true
+        })
 
         #expect(runner.commands[1].arguments.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
         #expect(runner.commands[1].arguments.last == "example/api:latest")
@@ -659,7 +671,9 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.up(project: project, options: ComposeUpOptions(build: true))
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.build = true
+        })
 
         let buildCommands = runner.commands.map(\.arguments).filter { $0.starts(with: ["container", "build"]) }
         #expect(buildCommands.count == 2)
@@ -689,7 +703,9 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.up(project: project, options: ComposeUpOptions(pullPolicy: "missing"))
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.pullPolicy = "missing"
+        })
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0] == ["container", "image", "inspect", "example/api"])
@@ -714,7 +730,9 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(runner: runner).up(
             project: project,
-            options: ComposeUpOptions(pullPolicy: "if_not_present")
+            options: ComposeUpOptions {
+                $0.pullPolicy = "if_not_present"
+            }
         )
 
         let commands = runner.commands.map(\.arguments)
@@ -823,7 +841,9 @@ struct ComposeOrchestratorTests {
 
             do {
                 try await ComposeOrchestrator(runner: runner)
-                    .up(project: project, options: ComposeUpOptions(services: ["api"]))
+                    .up(project: project, options: ComposeUpOptions {
+                        $0.services = ["api"]
+                    })
                 Issue.record("Expected unsupported dependency condition")
             } catch let error as ComposeError {
                 #expect(error == .unsupported("service 'api' depends on 'job' with condition '\(testCase.condition)'; \(testCase.reason)"))
@@ -846,7 +866,9 @@ struct ComposeOrchestratorTests {
 
         do {
             try await ComposeOrchestrator(runner: missingDependencyRunner)
-                .up(project: missingDependencyProject, options: ComposeUpOptions(services: ["api"]))
+                .up(project: missingDependencyProject, options: ComposeUpOptions {
+                    $0.services = ["api"]
+                })
             Issue.record("Expected unsupported optional dependency metadata")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'api' depends on 'optional' with required false; optional dependency startup is not implemented by container-compose yet"))
@@ -884,7 +906,9 @@ struct ComposeOrchestratorTests {
 
             do {
                 try await ComposeOrchestrator(runner: runner)
-                    .up(project: project, options: ComposeUpOptions(services: ["api"]))
+                    .up(project: project, options: ComposeUpOptions {
+                        $0.services = ["api"]
+                    })
                 Issue.record("Expected unsupported dependency metadata")
             } catch let error as ComposeError {
                 #expect(error == .unsupported(testCase.expected))
@@ -4328,7 +4352,9 @@ struct ComposeOrchestratorTests {
         )
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
-        try await orchestrator.up(project: project, options: ComposeUpOptions(noRecreate: true))
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.noRecreate = true
+        })
 
         #expect(runner.commands.map(\.arguments) == [["container", "inspect", "demo-api-1"]])
         #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
@@ -4428,7 +4454,9 @@ struct ComposeOrchestratorTests {
             .success,
         ])
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions(forceRecreate: true))
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions {
+            $0.forceRecreate = true
+        })
 
         #expect(runner.commands[0].arguments == ["container", "inspect", "demo-api-1"])
         #expect(runner.commands[1].arguments == ["container", "stop", "demo-api-1"])
@@ -4457,7 +4485,9 @@ struct ComposeOrchestratorTests {
         )
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "alpine")])
 
-        try await orchestrator.up(project: project, options: ComposeUpOptions(noRecreate: true))
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.noRecreate = true
+        })
 
         let messages = emitted.messages
         #expect(messages.contains("+ container inspect demo-api-1"))
@@ -4475,7 +4505,9 @@ struct ComposeOrchestratorTests {
         )
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "alpine")])
 
-        try await orchestrator.up(project: project, options: ComposeUpOptions(pullPolicy: "missing"))
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.pullPolicy = "missing"
+        })
 
         let messages = emitted.messages
         #expect(messages.contains("+ container image inspect alpine"))
@@ -4527,7 +4559,9 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(runner: invalidPullPolicyRunner).up(
                 project: invalidPullPolicyProject,
-                options: ComposeUpOptions(pullPolicy: "sometimes")
+                options: ComposeUpOptions {
+                    $0.pullPolicy = "sometimes"
+                }
             )
             Issue.record("Expected unsupported pull policy failure")
         } catch let error as ComposeError {

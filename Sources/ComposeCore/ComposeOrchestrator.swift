@@ -48,36 +48,22 @@ public struct ComposeExecutionOptions {
 
 /// Options for `compose up`.
 public struct ComposeUpOptions {
-    public var services: [String]
-    public var build: Bool
-    public var detach: Bool
-    public var forceRecreate: Bool
-    public var noRecreate: Bool
-    public var removeOrphans: Bool
+    public var services: [String] = []
+    public var build = false
+    public var detach = false
+    public var forceRecreate = false
+    public var noRecreate = false
+    public var removeOrphans = false
     public var pullPolicy: String?
-    public var scales: [String]
-    public var noDeps: Bool
+    public var scales: [String] = []
+    public var noDeps = false
 
-    public init(
-        services: [String] = [],
-        build: Bool = false,
-        detach: Bool = false,
-        forceRecreate: Bool = false,
-        noRecreate: Bool = false,
-        removeOrphans: Bool = false,
-        pullPolicy: String? = nil,
-        scales: [String] = [],
-        noDeps: Bool = false
-    ) {
-        self.services = services
-        self.build = build
-        self.detach = detach
-        self.forceRecreate = forceRecreate
-        self.noRecreate = noRecreate
-        self.removeOrphans = removeOrphans
-        self.pullPolicy = pullPolicy
-        self.scales = scales
-        self.noDeps = noDeps
+    public init() {
+        // Stored property defaults represent Docker Compose's default up behavior.
+    }
+
+    public init(_ configure: (inout ComposeUpOptions) -> Void) {
+        configure(&self)
     }
 }
 

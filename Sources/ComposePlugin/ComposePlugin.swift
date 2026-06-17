@@ -235,17 +235,17 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         try await orchestrator().up(
             project: loadedProject,
-            options: ComposeUpOptions(
-                services: services,
-                build: build,
-                detach: detach,
-                forceRecreate: forceRecreate,
-                noRecreate: noRecreate,
-                removeOrphans: removeOrphans,
-                pullPolicy: pull,
-                scales: scales,
-                noDeps: noDeps
-            )
+            options: ComposeUpOptions {
+                $0.services = services
+                $0.build = build
+                $0.detach = detach
+                $0.forceRecreate = forceRecreate
+                $0.noRecreate = noRecreate
+                $0.removeOrphans = removeOrphans
+                $0.pullPolicy = pull
+                $0.scales = scales
+                $0.noDeps = noDeps
+            }
         )
     }
 }
