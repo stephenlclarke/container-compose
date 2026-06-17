@@ -272,7 +272,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let options: ComposeExecutionOptions
     private let copier: ContainerCopying
     private let exporter: ContainerExporting
-    private let killer: ContainerKilling
+    private let lifecycleManager: ContainerLifecycleManaging
     private let resourceManager: ContainerResourceManaging
 
     public init(
@@ -280,14 +280,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
         copier: ContainerCopying = ContainerClientCopier(),
         exporter: ContainerExporting = ContainerClientExporter(),
-        killer: ContainerKilling = ContainerClientKiller(),
+        lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager()
     ) {
         self.runner = runner
         self.options = options
         self.copier = copier
         self.exporter = exporter
-        self.killer = killer
+        self.lifecycleManager = lifecycleManager
         self.resourceManager = resourceManager
     }
 
@@ -337,8 +337,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                try await runContainer(stopArguments(service: service, containerName: name), check: false)
-                try await runContainer(["delete", name], check: false)
+                try await stopContainer(service: service, containerName: name)
+                try await deleteContainer(name)
             }
 
             try await runContainer(
@@ -386,8 +386,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                try await runContainer(stopArguments(service: service, containerName: name), check: false)
-                try await runContainer(["delete", name], check: false)
+                try await stopContainer(service: service, containerName: name)
+                try await deleteContainer(name)
             }
 
             try await runContainer(
@@ -415,8 +415,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let declaredContainers = Set(services.map { containerName(project: project, service: $0, oneOff: false) })
         for service in services.reversed() {
             let name = containerName(project: project, service: service, oneOff: false)
-            try await runContainer(stopArguments(service: service, containerName: name, timeout: down.timeout), check: false)
-            try await runContainer(["delete", name], check: false)
+            try await stopContainer(service: service, containerName: name, timeout: down.timeout)
+            try await deleteContainer(name)
         }
         if down.removeOrphans {
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
@@ -687,9 +687,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func stop(project: ComposeProject, services selected: [String], timeout: Int? = nil) async throws {
         try validateTimeoutSeconds(timeout, command: "stop")
         for service in try selectedServices(project: project, selected: selected) {
-            try await runContainer(
-                stopArguments(service: service, containerName: containerName(project: project, service: service, oneOff: false), timeout: timeout),
-                check: false
+            try await stopContainer(
+                service: service,
+                containerName: containerName(project: project, service: service, oneOff: false),
+                timeout: timeout
             )
         }
     }
@@ -713,12 +714,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await stop(project: project, services: services.map(\.name))
         }
         for service in services {
-            var args = ["delete"]
-            if force {
-                args.append("--force")
-            }
-            args.append(containerName(project: project, service: service, oneOff: false))
-            try await runContainer(args, check: false)
+            let name = containerName(project: project, service: service, oneOff: false)
+            try await deleteContainer(name, force: force)
         }
         if volumes {
             for volume in anonymousVolumeRuntimeNames(project: project, services: services) {
@@ -793,7 +790,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await runContainer(args, check: false)
                 continue
             }
-            try await killer.killContainer(id: containerID, signal: signal ?? "KILL")
+            try await lifecycleManager.killContainer(id: containerID, signal: signal ?? "KILL")
         }
     }
 
@@ -1839,8 +1836,8 @@ private extension ComposeOrchestrator {
                 continue
             }
             if existing != nil {
-                try await runContainer(stopArguments(service: service, containerName: name), check: false)
-                try await runContainer(["delete", name], check: false)
+                try await stopContainer(service: service, containerName: name)
+                try await deleteContainer(name)
             }
 
             try await runContainer(
@@ -2013,6 +2010,47 @@ private extension ComposeOrchestrator {
         resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
     }
 
+    /// Stops a service container through the direct API while preserving
+    /// dry-run command rendering.
+    func stopContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
+        let args = stopArguments(service: service, containerName: containerName, timeout: timeout)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await lifecycleManager.stopContainer(
+                id: containerName,
+                signal: service.stopSignal,
+                timeoutInSeconds: timeout ?? service.stopGracePeriodSeconds
+            )
+        }
+    }
+
+    /// Stops a container that may not map to a declared service, such as an
+    /// orphan container discovered from project labels.
+    func stopContainer(id: String) async throws {
+        let args = ["stop", id]
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: nil)
+        }
+    }
+
+    /// Deletes a container through the direct API while preserving dry-run
+    /// command rendering.
+    func deleteContainer(_ id: String, force: Bool = false) async throws {
+        var args = ["delete"]
+        if force {
+            args.append("--force")
+        }
+        args.append(id)
+        if options.dryRun {
+            try await runContainer(args, check: false)
+        } else {
+            try? await lifecycleManager.deleteContainer(id: id, force: force)
+        }
+    }
+
     /// Returns the stop command arguments for a service container.
     func stopArguments(service: ComposeService, containerName: String, timeout: Int? = nil) -> [String] {
         var args = ["stop"]
@@ -2051,8 +2089,8 @@ private extension ComposeOrchestrator {
             .filter { !declaredContainers.contains($0) }
             .sorted()
         for container in remainingContainers {
-            try await runContainer(["stop", container], check: false)
-            try await runContainer(["delete", container], check: false)
+            try await stopContainer(id: container)
+            try await deleteContainer(container)
         }
     }
 
