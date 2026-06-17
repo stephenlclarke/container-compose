@@ -84,6 +84,8 @@ The installed plugin layout is:
 options, invokes the normalizer, validates the resulting project, and translates
 Compose operations into `container` operations.
 
+Current orchestration uses the installed `container` CLI as its runtime adapter because that keeps behavior aligned with the command surface available to users today. Apple also publishes public DocC documentation for [`container`](https://apple.github.io/container/documentation/) and [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/) APIs; those docs should guide future direct Swift API adapter work when Compose compatibility needs primitives that are available in the API but not yet surfaced through the CLI.
+
 `compose-normalizer` is a Go executable. It has no orchestration behavior. Its
 only job is to load Compose files with `compose-go` and emit the normalized
 project as JSON.

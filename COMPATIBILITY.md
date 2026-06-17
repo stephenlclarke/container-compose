@@ -99,6 +99,8 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - Docker Compose v2 implementation: [`docker/compose`](https://github.com/docker/compose).
 - Docker Compose v2 Go API package: [`github.com/docker/compose/v2/pkg/api`](https://pkg.go.dev/github.com/docker/compose/v2/pkg/api).
 - Compose model normalizer used here: [`compose-spec/compose-go`](https://github.com/compose-spec/compose-go).
+- Apple container public documentation: [apple.github.io/container/documentation](https://apple.github.io/container/documentation/).
+- Apple `ContainerClient` API documentation for future direct Swift runtime adapter work: [apple.github.io/container/documentation/containerclient](https://apple.github.io/container/documentation/containerclient/).
 
 ## Example Index
 
