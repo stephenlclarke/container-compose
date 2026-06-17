@@ -264,8 +264,8 @@ cli-smoke: build
 	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
 	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \
 	[[ "$$images_quiet_output" == *"container list --format json --all"* ]]; \
-	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api)"; \
-	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1"* ]]; \
+	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api db)"; \
+	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1 demo-db-1"* ]]; \
 	ls_json_output="$$(".build/debug/compose" --dry-run ls --format json)"; \
 	[[ "$$ls_json_output" == *"container list --format json"* ]]; \
 	[[ "$$ls_json_output" != *"--all"* ]]; \

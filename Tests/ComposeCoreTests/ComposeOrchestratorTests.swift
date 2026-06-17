@@ -1977,12 +1977,12 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).stats(project: project, options: ComposeStatsOptions())
         try await ComposeOrchestrator(runner: runner).stats(
             project: project,
-            options: ComposeStatsOptions(services: ["db"], format: "json", noStream: true)
+            options: ComposeStatsOptions(services: ["api", "db"], format: "json", noStream: true)
         )
 
         #expect(runner.commands.map(\.arguments) == [
             ["container", "stats", "demo-api-1", "custom-db"],
-            ["container", "stats", "--format", "json", "--no-stream", "custom-db"],
+            ["container", "stats", "--format", "json", "--no-stream", "demo-api-1", "custom-db"],
         ])
     }
 
@@ -1997,10 +1997,6 @@ struct ComposeOrchestratorTests {
         )
 
         let cases: [(ComposeStatsOptions, ComposeError)] = [
-            (
-                ComposeStatsOptions(services: ["api", "db"]),
-                .invalidProject("stats accepts at most one service")
-            ),
             (
                 ComposeStatsOptions(all: true),
                 .unsupported("stats --all: apple/container stats only reports running containers")

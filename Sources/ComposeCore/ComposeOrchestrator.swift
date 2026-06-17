@@ -1242,9 +1242,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose stats` options before invoking runtime stats.
     func validateStatsOptions(_ options: ComposeStatsOptions) throws {
-        if options.services.count > 1 {
-            throw ComposeError.invalidProject("stats accepts at most one service")
-        }
         if options.all {
             throw ComposeError.unsupported("stats --all: apple/container stats only reports running containers")
         }
