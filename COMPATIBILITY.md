@@ -230,6 +230,7 @@ container compose ls --quiet
 container compose images --format json
 container compose images -q
 container compose run --pull missing api true
+container compose run --no-deps api true
 container compose run --rm api printf ok
 container compose run --detach api sleep 60
 container compose run --name api-shell api sh
