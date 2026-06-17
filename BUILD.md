@@ -106,7 +106,9 @@ make test
 Use the Makefile targets for local Swift tests instead of invoking
 `swift test` directly. The Makefile derives the Swift Testing framework and
 runtime library paths from the active `swift` executable and fails if SwiftPM
-builds the test bundle without actually running tests.
+builds the test bundle without actually running tests. Swift coverage export
+uses the `llvm-cov` binary from that same toolchain when available; set
+`SWIFT_LLVM_COV=/absolute/path/to/llvm-cov` to override it.
 
 Run the same validation used by GitHub Actions:
 
