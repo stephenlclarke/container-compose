@@ -2613,6 +2613,7 @@ struct ComposeOrchestratorTests {
                         args: ["VERSION": "1"],
                         target: "runtime",
                         noCache: true,
+                        pull: true,
                         tags: ["example/api:latest", "example/api:dev", "example/api:test"]
                     )
                 },
@@ -2633,6 +2634,7 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["--file", "Containerfile"]))
         #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
         #expect(runner.commands[0].arguments.contains("--no-cache"))
+        #expect(runner.commands[0].arguments.contains("--pull"))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
         #expect(runner.commands[0].arguments.last == "api")
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))

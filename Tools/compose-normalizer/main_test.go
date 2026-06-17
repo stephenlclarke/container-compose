@@ -853,6 +853,7 @@ services:
       labels:
         build.label: "true"
       no_cache: true
+      pull: true
       platforms:
         - linux/arm64
       tags:
@@ -900,6 +901,9 @@ services:
 	}
 	if !api.Build.NoCache {
 		t.Fatal("api.Build.NoCache = false, want true")
+	}
+	if !api.Build.Pull {
+		t.Fatal("api.Build.Pull = false, want true")
 	}
 	if got, want := api.Build.Tags, []string{"example/api:dev", "example/api:test"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build tags = %#v, want %#v", got, want)
@@ -1137,7 +1141,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		"platforms",
 		"privileged",
 		"provenance",
-		"pull",
 		"sbom",
 		"secrets",
 		"shm_size",

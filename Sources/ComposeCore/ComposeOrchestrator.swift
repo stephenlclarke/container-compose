@@ -1552,6 +1552,9 @@ private extension ComposeOrchestrator {
         if noCache || build.noCache == true {
             args.append("--no-cache")
         }
+        if build.pull == true {
+            args.append("--pull")
+        }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
         }
