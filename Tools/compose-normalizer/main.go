@@ -173,6 +173,7 @@ type normalizedBuild struct {
 	Target            string            `json:"target,omitempty"`
 	NoCache           bool              `json:"noCache,omitempty"`
 	Pull              bool              `json:"pull,omitempty"`
+	Platforms         []string          `json:"platforms,omitempty"`
 	Tags              []string          `json:"tags,omitempty"`
 	UnsupportedFields []string          `json:"unsupportedFields,omitempty"`
 }
@@ -482,6 +483,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 			Target:            service.Build.Target,
 			NoCache:           service.Build.NoCache,
 			Pull:              service.Build.Pull,
+			Platforms:         append([]string(nil), service.Build.Platforms...),
 			Tags:              append([]string(nil), service.Build.Tags...),
 			UnsupportedFields: unsupportedBuildFields(service.Build),
 		}
@@ -870,7 +872,6 @@ func unsupportedBuildFields(build *types.BuildConfig) []string {
 	appendUnsupportedBuildField(&fields, "extra_hosts", len(build.ExtraHosts) > 0)
 	appendUnsupportedBuildField(&fields, "isolation", build.Isolation != "")
 	appendUnsupportedBuildField(&fields, "network", build.Network != "")
-	appendUnsupportedBuildField(&fields, "platforms", len(build.Platforms) > 0)
 	appendUnsupportedBuildField(&fields, "privileged", build.Privileged)
 	appendUnsupportedBuildField(&fields, "provenance", build.Provenance != "")
 	appendUnsupportedBuildField(&fields, "sbom", build.SBOM != "")

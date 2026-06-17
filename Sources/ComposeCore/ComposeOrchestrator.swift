@@ -1555,6 +1555,9 @@ private extension ComposeOrchestrator {
         if build.pull == true {
             args.append("--pull")
         }
+        for platform in build.platforms ?? [] where !platform.isEmpty {
+            args.append(contentsOf: ["--platform", platform])
+        }
         for (key, value) in (build.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }

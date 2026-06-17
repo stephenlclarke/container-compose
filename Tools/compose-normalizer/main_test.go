@@ -908,10 +908,13 @@ services:
 	if !api.Build.Pull {
 		t.Fatal("api.Build.Pull = false, want true")
 	}
+	if got, want := api.Build.Platforms, []string{"linux/arm64"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build platforms = %#v, want %#v", got, want)
+	}
 	if got, want := api.Build.Tags, []string{"example/api:dev", "example/api:test"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build tags = %#v, want %#v", got, want)
 	}
-	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts", "cache_from", "platforms"}; !reflect.DeepEqual(got, want) {
+	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts", "cache_from"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupported build fields = %#v, want %#v", got, want)
 	}
 	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
@@ -1140,7 +1143,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		"extra_hosts",
 		"isolation",
 		"network",
-		"platforms",
 		"privileged",
 		"provenance",
 		"sbom",

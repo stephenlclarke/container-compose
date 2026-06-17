@@ -2615,6 +2615,7 @@ struct ComposeOrchestratorTests {
                         target: "runtime",
                         noCache: true,
                         pull: true,
+                        platforms: ["linux/amd64", "linux/arm64"],
                         tags: ["example/api:latest", "example/api:dev", "example/api:test"]
                     )
                 },
@@ -2636,6 +2637,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
         #expect(runner.commands[0].arguments.contains("--no-cache"))
         #expect(runner.commands[0].arguments.contains("--pull"))
+        #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/amd64"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--platform", "linux/arm64"]))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "build.label=true"]))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "org.opencontainers.image.title=api"]))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
