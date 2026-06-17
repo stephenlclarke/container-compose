@@ -8,7 +8,7 @@ This file separates three different questions that are easy to blur together:
 - Does [`apple/container`][apple-container] expose the runtime primitive needed to run it?
 - Does [`stephenlclarke/container-compose`](https://github.com/stephenlclarke/container-compose) map that normalized model to [`apple/container`][apple-container] APIs or commands?
 
-Unsupported runtime features are rejected before resources are created. Harmless metadata can still appear in `container compose config` without implying that `container compose up` applies runtime behavior.
+Unsupported runtime features are rejected before resources are created. Harmless metadata can still appear in `container compose config` or `container compose convert` without implying that `container compose up` applies runtime behavior.
 
 ## How To Read This File
 
@@ -35,7 +35,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 | Compose v2 surface | Supported subset | [`apple/container`][apple-container] primitive used | Example |
 | --- | --- | --- | --- |
-| Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
+| Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config`/`convert` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
 | Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.cache_from`, `build.cache_to`, `build.labels`, `build.platforms`, `build.target`, `build.no_cache`, `build.pull`, `build.tags`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build --pull --platform --cache-in --cache-out --tag --label`, `ClientImage.pull(reference:platform:scheme:containerSystemConfig:progressUpdate:maxConcurrentDownloads:)`, `ClientImage.get(names:containerSystemConfig:)`, `ClientImage.push(platform:scheme:containerSystemConfig:progressUpdate:)`, `ClientImage.delete(reference:garbageCollect:)`, `ClientImage.cleanUpOrphanedBlobs()`, `ContainerClient.list(filters:)` | [S1](#s1-supported-local-web-stack) |
 | Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ContainerClient.get(id:)`, `ContainerClient.list(filters:)`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, `ContainerClient.kill(id:signal:)` | [S1](#s1-supported-local-web-stack) |
 | Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `ContainerClient.list(filters:)` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
@@ -70,7 +70,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 | Metadata, logging, storage shortcuts | `annotations`, `attach`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
-| Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `convert`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
+| Additional CLI commands | `watch`, `scale`, `attach`, `commit`, `publish`, `volumes` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
 
 ### Config-Only Today
 
@@ -78,18 +78,18 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 | Compose v2 surface | Current behavior | Example |
 | --- | --- | --- |
-| Top-level and service `x-*` extensions | Preserved by `container compose config`; no runtime behavior by itself | [O1](#o1-config-only-metadata) |
-| Service `expose` | Preserved by `config`; it does not publish host ports. Use `ports` for host publishing | [O1](#o1-config-only-metadata) |
-| Top-level `configs` and `secrets` definitions | Preserved by `config`; service-level consumption is an [`apple/container`][apple-container] gap because mounts need runtime support | [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-secrets-and-restart) |
-| Top-level `models` definitions | Preserved by `config`; service-level model bindings are a plugin gap | [O1](#o1-config-only-metadata), [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
+| Top-level and service `x-*` extensions | Preserved by `container compose config` and `container compose convert`; no runtime behavior by itself | [O1](#o1-config-only-metadata) |
+| Service `expose` | Preserved by `config` and `convert`; it does not publish host ports. Use `ports` for host publishing | [O1](#o1-config-only-metadata) |
+| Top-level `configs` and `secrets` definitions | Preserved by `config` and `convert`; service-level consumption is an [`apple/container`][apple-container] gap because mounts need runtime support | [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-secrets-and-restart) |
+| Top-level `models` definitions | Preserved by `config` and `convert`; service-level model bindings are a plugin gap | [O1](#o1-config-only-metadata), [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 
 ## CLI Command Status
 
 | Status | Commands |
 | --- | --- |
-| Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, `export`, static `port`, `kill`, `version` |
+| Supported | `config`, `convert`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, `export`, static `port`, `kill`, `version` |
 | Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc`, `cp --archive`, `cp --follow-link` |
-| Present but blocked by `container-compose` design gaps | `exec --index` values other than `1`, `cp --index` values other than `1`, `export --index` values other than `1`, `cp --all`, `watch`, `scale`, `attach`, `commit`, `convert`, `publish`, `volumes` |
+| Present but blocked by `container-compose` design gaps | `exec --index` values other than `1`, `cp --index` values other than `1`, `export --index` values other than `1`, `cp --all`, `watch`, `scale`, `attach`, `commit`, `publish`, `volumes` |
 
 ## References
 
@@ -124,7 +124,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 ### S1: Supported Local Web Stack
 
-Expected result: `container compose config`, `build`, `create`, `up`, `ps`, `logs`, `exec`, `stats`, `cp`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
+Expected result: `container compose config`, `container compose convert`, `build`, `create`, `up`, `ps`, `logs`, `exec`, `stats`, `cp`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
 
 Status path:
 
@@ -795,7 +795,6 @@ docker compose watch
 docker compose scale worker=3
 docker compose attach api
 docker compose commit api example/api:snapshot
-docker compose convert
 docker compose publish
 docker compose volumes
 ```

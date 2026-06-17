@@ -971,8 +971,8 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
-    @Test("recognizes explicit unsupported compose command surfaces")
-    func recognizesExplicitUnsupportedComposeCommandSurfaces() {
+    @Test("recognizes explicit compose command surfaces")
+    func recognizesExplicitComposeCommandSurfaces() {
         let commands = [
             "attach",
             "commit",

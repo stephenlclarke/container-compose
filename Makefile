@@ -127,6 +127,10 @@ cli-smoke: build
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes:\n      - /scratch\n    dns_opt:\n      - use-vc\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
+	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
+	convert_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" convert)"; \
+	[[ "$$convert_output" == "$$config_output" ]]; \
+	[[ "$$convert_output" == *'"name":"demo"'* ]]; \
 	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
 	[[ "$$compact_global_output" == *"compact-db-1"* ]]; \
 	[[ "$$compact_global_output" == *"compact-api-1"* ]]; \
@@ -322,7 +326,7 @@ cli-smoke: build
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
 	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
-	for unsupported_command in watch scale attach commit convert publish volumes; do \
+	for unsupported_command in watch scale attach commit publish volumes; do \
 		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
 		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
 	done

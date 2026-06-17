@@ -146,6 +146,12 @@ extension ComposeProjectCommand {
     func orchestrator() -> ComposeOrchestrator {
         global.orchestrator()
     }
+
+    /// Prints the canonical normalized project JSON.
+    func printCanonicalProject() async throws {
+        let loadedProject = try await project()
+        print(try orchestrator().config(project: loadedProject))
+    }
 }
 
 /// Implements `compose config`.
@@ -156,8 +162,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Prints the canonical project JSON emitted by the orchestrator.
     func run() async throws {
-        let project = try await project()
-        print(try orchestrator().config(project: project))
+        try await printCanonicalProject()
     }
 }
 
@@ -754,14 +759,13 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose convert` until alternate output conversion exists.
+/// Implements `compose convert` as the canonical config renderer.
 struct Convert: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert the Compose model.")
+    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert the Compose model to canonical JSON.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for Compose model conversion.
-    func run() throws {
-        try global.orchestrator().unsupported("convert", reason: "Compose model conversion is not implemented by container-compose yet")
+    /// Prints the canonical project JSON emitted by the orchestrator.
+    func run() async throws {
+        try await printCanonicalProject()
     }
 }
 
