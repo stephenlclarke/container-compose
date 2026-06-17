@@ -52,7 +52,7 @@ resolve:
 	$(SWIFT) package resolve
 
 build:
-	$(SWIFT) build
+	$(SWIFT) build --product compose
 
 build-release:
 	$(SWIFT) build -c release --product compose
