@@ -131,6 +131,7 @@ cli-smoke: build
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes:\n      - /scratch\n    dns_opt:\n      - use-vc\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
@@ -147,6 +148,8 @@ cli-smoke: build
 	[[ "$$run_output" != *"--publish 8080:80"* ]]; \
 	run_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --service-ports api echo hello)"; \
 	[[ "$$run_service_ports_output" == *"--publish 8080:80"* ]]; \
+	run_dynamic_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" run --service-ports api echo hello 2>&1 || true)"; \
+	[[ "$$run_dynamic_service_ports_output" == *"unsupported compose feature: service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"* ]]; \
 	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
 	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
 	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
@@ -223,6 +226,8 @@ cli-smoke: build
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$create_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$create_output" != *"--detach"* ]]; \
+	create_dynamic_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" create api 2>&1 || true)"; \
+	[[ "$$create_dynamic_ports_output" == *"unsupported compose feature: service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
 	[[ "$$detached_output" == *"container run"* ]]; \
 	[[ "$$detached_output" == *"--detach"* ]]; \

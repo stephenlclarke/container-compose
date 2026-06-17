@@ -860,6 +860,30 @@ struct ComposeOrchestratorTests {
         #expect(pullRunner.commands.isEmpty)
     }
 
+    @Test("create rejects dynamic published ports before side effects")
+    func createRejectsDynamicPublishedPortsBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["80"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
+            Issue.record("Expected unsupported dynamic port failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up validates incompatible recreate options before side effects")
     func upValidatesIncompatibleRecreateOptionsBeforeSideEffects() async throws {
         let runner = RecordingRunner()
@@ -5500,6 +5524,78 @@ struct ComposeOrchestratorTests {
         let servicePortsCommand = try #require(servicePortsRunner.commands.first?.arguments)
         #expect(!defaultCommand.containsSequence(["--publish", "8080:80"]))
         #expect(servicePortsCommand.containsSequence(["--publish", "8080:80"]))
+    }
+
+    @Test("run rejects dynamic published ports only when publishing them")
+    func runRejectsDynamicPublishedPortsOnlyWhenPublishingThem() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.ports = ["80"]
+                },
+            ]
+        )
+
+        let defaultRunner = RecordingRunner()
+        try await ComposeOrchestrator(runner: defaultRunner).run(
+            project: project,
+            serviceName: "api",
+            options: composeRunOptions(command: ["true"])
+        )
+        let defaultCommand = try #require(defaultRunner.commands.first?.arguments)
+        #expect(!defaultCommand.contains("--publish"))
+
+        let servicePortsRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: servicePortsRunner).run(
+                project: project,
+                serviceName: "api",
+                options: composeRunOptions(command: ["true"]) {
+                    $0.servicePorts = true
+                }
+            )
+            Issue.record("Expected unsupported dynamic service port failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(servicePortsRunner.commands.isEmpty)
+
+        let hostIPRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: hostIPRunner).run(
+                project: project,
+                serviceName: "api",
+                options: composeRunOptions(command: ["true"]) {
+                    $0.publish = ["127.0.0.1:80"]
+                }
+            )
+            Issue.record("Expected unsupported host IP dynamic publish failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(hostIPRunner.commands.isEmpty)
+
+        let publishRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: publishRunner).run(
+                project: project,
+                serviceName: "api",
+                options: composeRunOptions(command: ["true"]) {
+                    $0.publish = ["80/udp"]
+                }
+            )
+            Issue.record("Expected unsupported dynamic run publish failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' publishes target port 80/udp dynamically; apple/container publish requires explicit host ports"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(publishRunner.commands.isEmpty)
     }
 
     @Test("run publishes manual ports without service ports")

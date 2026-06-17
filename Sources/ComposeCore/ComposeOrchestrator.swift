@@ -440,6 +440,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
+        try validatePublishedPorts(services: services)
 
         try await ensureResources(project: project)
 
@@ -517,6 +518,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try orderedServices(project: project, selected: create.services)
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services, project: project)
+        try validatePublishedPorts(services: services)
 
         try await ensureResources(project: project)
 
@@ -852,10 +854,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             ? []
             : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
         try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
+        try validatePublishedPorts(services: dependencyServices)
+        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
+        try validatePublishedPorts(publishedPorts, serviceName: service.name)
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
         try await startDependencyServices(project: runProject, services: dependencyServices)
-        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
             try runArguments(
                 project: runProject,
@@ -1623,6 +1627,57 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Validates service port mappings before resource creation.
+    func validatePublishedPorts(services: [ComposeService]) throws {
+        for service in services {
+            try validatePublishedPorts(service.ports ?? [], serviceName: service.name)
+        }
+    }
+
+    /// Validates one service's port mappings before they reach Apple `container`.
+    func validatePublishedPorts(_ ports: [String], serviceName: String) throws {
+        for port in ports {
+            try validatePublishedPort(port, serviceName: serviceName)
+        }
+    }
+
+    /// Rejects Docker Compose dynamic host-port allocation because Apple
+    /// `container --publish` currently requires an explicit host port.
+    func validatePublishedPort(_ value: String, serviceName: String) throws {
+        let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
+        }
+        let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
+        let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2 else {
+            throw dynamicPortUnsupported(serviceName: serviceName, target: rawBinding, protocolName: protocolName)
+        }
+
+        let published = parts[parts.count - 2]
+        guard isExplicitHostPort(published) else {
+            throw dynamicPortUnsupported(serviceName: serviceName, target: parts.last ?? rawBinding, protocolName: protocolName)
+        }
+    }
+
+    /// Returns true when a publish field names concrete Apple host ports.
+    func isExplicitHostPort(_ value: String) -> Bool {
+        let bounds = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard [1, 2].contains(bounds.count) else {
+            return false
+        }
+        let ports = bounds.compactMap { UInt16($0) }
+        guard ports.count == bounds.count, ports.allSatisfy({ $0 > 1 }) else {
+            return false
+        }
+        return ports.count == 1 || ports[0] <= ports[1]
+    }
+
+    /// Creates the unsupported-feature error for dynamic host-port allocation.
+    func dynamicPortUnsupported(serviceName: String, target: String, protocolName: String) -> ComposeError {
+        .unsupported("service '\(serviceName)' publishes target port \(target)/\(protocolName) dynamically; apple/container publish requires explicit host ports")
+    }
+
     /// Validates `compose exec` options before invoking runtime exec.
     func validateExecOptions(_ options: ComposeExecOptions) throws {
         if options.index != 1 {
@@ -2022,6 +2077,7 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--env-file", envFile])
         }
         for port in run.publishedPorts ?? service.ports ?? [] {
+            try validatePublishedPort(port, serviceName: service.name)
             args.append(contentsOf: ["--publish", port])
         }
         for mount in service.volumes ?? [] {
