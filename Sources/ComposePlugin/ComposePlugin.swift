@@ -260,11 +260,22 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     var quiet = false
     @Flag(name: .customLong("services"), help: "Only display service names.")
     var services = false
+    @Option(name: .customLong("status"), help: "Filter services by container status.")
+    var statuses: [String] = []
+    @Option(name: .customLong("filter"), help: "Filter services by a property. Supported filter: status.")
+    var filters: [String] = []
 
     /// Lists project containers, optionally including stopped containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().ps(project: loadedProject, all: all, quiet: quiet, services: services)
+        try await orchestrator().ps(
+            project: loadedProject,
+            all: all,
+            quiet: quiet,
+            services: services,
+            statuses: statuses,
+            filters: filters
+        )
     }
 }
 

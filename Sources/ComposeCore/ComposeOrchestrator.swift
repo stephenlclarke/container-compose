@@ -255,9 +255,17 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Lists containers belonging to the Compose project.
-    public func ps(project: ComposeProject, all: Bool, quiet: Bool = false, services: Bool = false) async throws {
+    public func ps(
+        project: ComposeProject,
+        all: Bool,
+        quiet: Bool = false,
+        services: Bool = false,
+        statuses: [String] = [],
+        filters: [String] = []
+    ) async throws {
+        let statusFilters = try psStatusFilters(statuses: statuses, filters: filters)
         var args = ["list", "--format", "json"]
-        if all {
+        if all || !statusFilters.isEmpty {
             args.append("--all")
         }
         if options.dryRun {
@@ -265,21 +273,23 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
         let result = try await runContainer(args, emitOutput: false)
+        let containers = try projectContainers(projectName: project.name, output: result.stdout)
+        let filteredContainers = filterContainersByStatus(containers, statuses: statusFilters)
         if quiet {
-            let identifiers = try projectContainerIdentifiers(projectName: project.name, output: result.stdout)
+            let identifiers = containerIdentifiers(filteredContainers)
             if !identifiers.isEmpty {
                 options.emit(identifiers.joined(separator: "\n"))
             }
             return
         }
         if services {
-            let names = try projectContainerServiceNames(projectName: project.name, output: result.stdout)
+            let names = containerServiceNames(filteredContainers)
             if !names.isEmpty {
                 options.emit(names.joined(separator: "\n"))
             }
             return
         }
-        options.emit(try projectContainerListJSON(projectName: project.name, output: result.stdout))
+        options.emit(try containerListJSON(filteredContainers))
     }
 
     /// Streams or prints logs for selected service containers.
@@ -1563,19 +1573,32 @@ private func labelValue(_ key: String, in value: Any?) -> String? {
 
 /// Returns pretty JSON for containers scoped to one Compose project.
 private func projectContainerListJSON(projectName: String, output: String) throws -> String {
-    let scopedContainers = try projectContainers(projectName: projectName, output: output)
-    let scopedData = try JSONSerialization.data(withJSONObject: scopedContainers, options: [.prettyPrinted, .sortedKeys])
+    try containerListJSON(projectContainers(projectName: projectName, output: output))
+}
+
+/// Returns pretty JSON for a filtered container list.
+private func containerListJSON(_ containers: [Any]) throws -> String {
+    let scopedData = try JSONSerialization.data(withJSONObject: containers, options: [.prettyPrinted, .sortedKeys])
     return String(decoding: scopedData, as: UTF8.self)
 }
 
 /// Returns names or IDs for containers scoped to one Compose project.
 private func projectContainerIdentifiers(projectName: String, output: String) throws -> [String] {
-    try projectContainers(projectName: projectName, output: output).compactMap(containerIdentifier)
+    try containerIdentifiers(projectContainers(projectName: projectName, output: output))
+}
+
+/// Returns names or IDs from a filtered container list.
+private func containerIdentifiers(_ containers: [Any]) -> [String] {
+    containers.compactMap(containerIdentifier)
 }
 
 /// Returns unique service names for containers scoped to one Compose project.
 private func projectContainerServiceNames(projectName: String, output: String) throws -> [String] {
-    let containers = try projectContainers(projectName: projectName, output: output)
+    try containerServiceNames(projectContainers(projectName: projectName, output: output))
+}
+
+/// Returns unique service names from a filtered container list.
+private func containerServiceNames(_ containers: [Any]) -> [String] {
     let namesByContainer = containers.compactMap { container -> (identifier: String, service: String)? in
         guard let service = inspectLabel(serviceLabel, in: container), !service.isEmpty else {
             return nil
@@ -1590,6 +1613,52 @@ private func projectContainerServiceNames(projectName: String, output: String) t
         }
     }
     return services
+}
+
+/// Combines `ps --status` and `ps --filter status=...` into runtime state values.
+private func psStatusFilters(statuses: [String], filters: [String]) throws -> Set<String> {
+    var requestedStatuses = statuses
+    for filter in filters {
+        let parts = filter.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else {
+            throw ComposeError.invalidProject("ps --filter must be in KEY=VALUE form")
+        }
+        let key = String(parts[0])
+        let value = String(parts[1])
+        guard key == "status" else {
+            throw ComposeError.unsupported("ps --filter \(key); supported filter is status")
+        }
+        guard !value.isEmpty else {
+            throw ComposeError.invalidProject("ps --filter status requires a value")
+        }
+        requestedStatuses.append(value)
+    }
+    return Set(try requestedStatuses.map(normalizedRuntimeStatus))
+}
+
+/// Maps Compose status vocabulary onto states exposed by `apple/container`.
+private func normalizedRuntimeStatus(_ status: String) throws -> String {
+    switch status.lowercased() {
+    case "running", "stopped", "stopping", "unknown":
+        return status.lowercased()
+    case "exited":
+        return "stopped"
+    default:
+        throw ComposeError.unsupported("ps status '\(status)'; apple/container exposes running, stopped, stopping, and unknown")
+    }
+}
+
+/// Applies status filtering after project scoping.
+private func filterContainersByStatus(_ containers: [Any], statuses: Set<String>) -> [Any] {
+    guard !statuses.isEmpty else {
+        return containers
+    }
+    return containers.filter { container in
+        guard let state = containerRuntimeState(container) else {
+            return false
+        }
+        return statuses.contains(state.lowercased())
+    }
 }
 
 /// Filters raw `container list --format json` output by Compose project label.
@@ -1612,6 +1681,22 @@ private func projectContainers(projectName: String, output: String) throws -> [A
     // `container list` does not currently expose a label filter in the CLI, so
     // Compose project scoping is applied client-side after requesting JSON.
     return containers.filter { inspectLabel(projectLabel, in: $0) == projectName }
+}
+
+/// Extracts the runtime state from common `container list --format json` shapes.
+private func containerRuntimeState(_ value: Any) -> String? {
+    guard let object = value as? [String: Any] else {
+        return nil
+    }
+    if let state = object["state"] as? String ?? object["State"] as? String {
+        return state
+    }
+    for nestedKey in ["status", "Status"] {
+        if let nested = object[nestedKey], let state = containerRuntimeState(nested) {
+            return state
+        }
+    }
+    return nil
 }
 
 /// Extracts the most useful identifier from one container list object.
