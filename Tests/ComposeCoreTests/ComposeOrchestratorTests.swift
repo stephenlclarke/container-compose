@@ -2840,6 +2840,32 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "sleep", "60"])
     }
 
+    @Test("run disables pseudo tty while preserving interactive stdin")
+    func runDisablesPseudoTtyWhilePreservingInteractiveStdin() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.tty = true
+                    $0.stdinOpen = true
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: ComposeRunOptions(command: ["sh"], noTty: true)
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(runner.commands.first?.io == .inherited)
+        #expect(!command.contains("--tty"))
+        #expect(command.contains("--interactive"))
+        #expect(Array(command.suffix(2)) == ["alpine", "sh"])
+    }
+
     @Test("run overrides service entrypoint for one-off containers")
     func runOverridesServiceEntrypointForOneOffContainers() async throws {
         let runner = RecordingRunner()

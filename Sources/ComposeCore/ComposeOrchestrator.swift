@@ -91,6 +91,7 @@ public struct ComposeRunOptions {
     public var command: [String]
     public var remove: Bool
     public var detach: Bool
+    public var noTty: Bool
     public var servicePorts: Bool
     public var publish: [String]
     public var pullPolicy: String?
@@ -107,6 +108,7 @@ public struct ComposeRunOptions {
         command: [String] = [],
         remove: Bool = false,
         detach: Bool = false,
+        noTty: Bool = false,
         servicePorts: Bool = false,
         publish: [String] = [],
         pullPolicy: String? = nil,
@@ -122,6 +124,7 @@ public struct ComposeRunOptions {
         self.command = command
         self.remove = remove
         self.detach = detach
+        self.noTty = noTty
         self.servicePorts = servicePorts
         self.publish = publish
         self.pullPolicy = pullPolicy
@@ -335,6 +338,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if let user = run.user {
             service.user = user
+        }
+        if run.noTty {
+            service.tty = false
         }
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)

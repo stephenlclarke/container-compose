@@ -184,6 +184,7 @@ struct ComposeArgumentRewriterTests {
         let rewritten = ComposeArgumentRewriter.rewrite([
             "run",
             "-d",
+            "-T",
             "--rm",
             "--service-ports",
             "api",
@@ -194,6 +195,7 @@ struct ComposeArgumentRewriterTests {
         #expect(rewritten == [
             "run",
             "-d",
+            "-T",
             "--rm",
             "--service-ports",
             "api",
