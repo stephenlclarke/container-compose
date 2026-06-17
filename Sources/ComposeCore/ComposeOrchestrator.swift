@@ -1081,9 +1081,7 @@ private extension ComposeOrchestrator {
         if service.useAPISocket == true {
             throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; API socket mounting is not implemented by container-compose yet")
         }
-        if let macAddress = service.macAddress, !macAddress.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses mac_address '\(macAddress)'; MAC address support needs an apple/container runtime gap PR")
-        }
+        try validateNetworkMACAddressSupport(service: service, networks: networks)
         if validateDependencies, let dependsOn = service.dependsOn {
             for (dependency, metadata) in dependsOn.sorted(by: { $0.key < $1.key }) {
                 if metadata.restart {
@@ -1131,6 +1129,27 @@ private extension ComposeOrchestrator {
         }
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
+        }
+    }
+
+    /// Allows MAC addresses only for the single-network attachment that Apple
+    /// `container --network name,mac=...` can represent.
+    func validateNetworkMACAddressSupport(service: ComposeService, networks: [String]) throws {
+        let serviceMACAddress = nonEmpty(service.macAddress)
+        let networkMACAddresses = (service.networkOptions ?? [:]).compactMapValues { nonEmpty($0.macAddress) }
+        guard serviceMACAddress != nil || !networkMACAddresses.isEmpty else {
+            return
+        }
+        guard networks.count == 1, let network = networks.first else {
+            throw ComposeError.unsupported("service '\(service.name)' uses mac_address; MAC address support requires exactly one Compose network")
+        }
+        for networkName in networkMACAddresses.keys.sorted() where networkName != network {
+            throw ComposeError.unsupported("service '\(service.name)' sets mac_address on unattached network '\(networkName)'")
+        }
+        if let serviceMACAddress,
+           let networkMACAddress = networkMACAddresses[network],
+           serviceMACAddress != networkMACAddress {
+            throw ComposeError.invalidProject("service '\(service.name)' sets conflicting mac_address values '\(serviceMACAddress)' and '\(networkMACAddress)' on network '\(network)'")
         }
     }
 
@@ -1799,7 +1818,8 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
         if let network = (service.networks ?? []).first {
-            args.append(contentsOf: ["--network", networkRuntimeName(project: project, composeName: network)])
+            let networkArgument = networkAttachmentArgument(project: project, service: service, network: network)
+            args.append(contentsOf: ["--network", networkArgument])
         }
         if let platform = service.platform, !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])
@@ -2242,9 +2262,6 @@ private extension ComposeNetworkOptions {
         if let linkLocalIPs, !linkLocalIPs.isEmpty {
             fields.append("link_local_ips")
         }
-        if let macAddress, !macAddress.isEmpty {
-            fields.append("mac_address")
-        }
         if let priority, priority != 0 {
             fields.append("priority")
         }
@@ -2315,6 +2332,28 @@ private func networkRuntimeName(project: ComposeProject, composeName: String) ->
         return resourceName(project: project.name, name: composeName)
     }
     return networkRuntimeName(project: project, composeName: composeName, network: network)
+}
+
+/// Builds the single network attachment value accepted by Apple `container`.
+private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) -> String {
+    var argument = networkRuntimeName(project: project, composeName: network)
+    if let macAddress = networkMACAddress(service: service, network: network) {
+        argument += ",mac=\(macAddress)"
+    }
+    return argument
+}
+
+/// Resolves the effective MAC address for a supported single-network service.
+private func networkMACAddress(service: ComposeService, network: String) -> String? {
+    nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
+}
+
+/// Returns a string value only when it contains meaningful content.
+private func nonEmpty(_ value: String?) -> String? {
+    guard let value, !value.isEmpty else {
+        return nil
+    }
+    return value
 }
 
 /// Resolves a normalized Compose network definition to its runtime name.

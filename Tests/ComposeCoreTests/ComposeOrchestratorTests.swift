@@ -1774,8 +1774,78 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported MAC address before creating resources")
-    func upRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
+    @Test("up maps service MAC address to single network attachment")
+    func upMapsServiceMACAddressToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.macAddress = "02:42:ac:11:00:03"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        )
+            .up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:03"]))
+    }
+
+    @Test("up maps per-network MAC address to single network attachment")
+    func upMapsPerNetworkMACAddressToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(addressing: .init(macAddress: "02:42:ac:11:00:04")),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        )
+            .up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:04"]))
+    }
+
+    @Test("up rejects MAC address without a single network before creating resources")
+    func upRejectsMACAddressWithoutSingleNetworkBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -1793,7 +1863,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported MAC address error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses mac_address '02:42:ac:11:00:03'; MAC address support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' uses mac_address; MAC address support requires exactly one Compose network"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -5414,31 +5484,34 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported MAC address before creating resources")
-    func runRejectsUnsupportedMACAddressBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("run maps service MAC address to single network attachment")
+    func runMapsServiceMACAddressToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.macAddress = "02:42:ac:11:00:04"
+                    $0.networks = ["backend"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
         ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported MAC address error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses mac_address '02:42:ac:11:00:04'; MAC address support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,mac=02:42:ac:11:00:04"]))
+        #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
 
     @Test("run rejects unsupported healthchecks before creating resources")
