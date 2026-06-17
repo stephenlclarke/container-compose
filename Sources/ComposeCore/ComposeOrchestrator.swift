@@ -958,9 +958,6 @@ private extension ComposeOrchestrator {
         if let domainName = service.domainName, !domainName.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses domainname; custom domain name support needs an apple/container runtime gap PR")
         }
-        if let dnsOptions = service.dnsOptions, !dnsOptions.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses dns_opt; DNS option support needs an apple/container runtime gap PR")
-        }
         if let sysctls = service.sysctls, !sysctls.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
         }
@@ -1658,6 +1655,9 @@ private extension ComposeOrchestrator {
         }
         for dnsSearch in service.dnsSearch ?? [] {
             args.append(contentsOf: ["--dns-search", dnsSearch])
+        }
+        for dnsOption in service.dnsOptions ?? [] {
+            args.append(contentsOf: ["--dns-option", dnsOption])
         }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])

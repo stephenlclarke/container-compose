@@ -98,7 +98,7 @@ cli-smoke: build
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n    dns_opt:\n      - use-vc\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
@@ -173,6 +173,7 @@ cli-smoke: build
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"demo-db-1"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$up_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$up_output" != *"--detach"* ]]; \
 	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
 	[[ "$$up_no_deps_output" == *"container run"* ]]; \

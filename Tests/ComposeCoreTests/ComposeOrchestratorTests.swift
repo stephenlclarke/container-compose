@@ -1138,33 +1138,22 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported DNS options before creating resources")
-    func upRejectsUnsupportedDNSOptionsBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps DNS options to runtime arguments")
+    func upMapsDNSOptionsToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.failure, .success])
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.dnsOptions = ["use-vc"]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported DNS option error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses dns_opt; DNS option support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--dns-option", "use-vc"]))
     }
 
     @Test("up rejects unsupported sysctls before creating resources")
@@ -3232,6 +3221,7 @@ struct ComposeOrchestratorTests {
                     $0.tmpfs = ["/cache"]
                     $0.dns = ["1.1.1.1"]
                     $0.dnsSearch = ["local"]
+                    $0.dnsOptions = ["use-vc"]
                     $0.capAdd = ["NET_ADMIN"]
                     $0.capDrop = ["MKNOD"]
                     $0.memLimit = "1024"
@@ -3264,6 +3254,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
         #expect(command.containsSequence(["--dns", "1.1.1.1"]))
         #expect(command.containsSequence(["--dns-search", "local"]))
+        #expect(command.containsSequence(["--dns-option", "use-vc"]))
         #expect(command.containsSequence(["--memory", "1024"]))
         #expect(command.containsSequence(["--cpus", "2"]))
         #expect(command.containsSequence(["--shm-size", "67108864"]))
@@ -3574,33 +3565,22 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported DNS options before creating resources")
-    func runRejectsUnsupportedDNSOptionsBeforeCreatingResources() async throws {
+    @Test("run maps DNS options to runtime arguments")
+    func runMapsDNSOptionsToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.dnsOptions = ["use-vc"]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported DNS option error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses dns_opt; DNS option support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--dns-option", "use-vc"]))
     }
 
     @Test("run rejects unsupported sysctls before creating resources")
