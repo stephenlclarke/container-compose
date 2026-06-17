@@ -132,6 +132,10 @@ cli-smoke: build
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes:\n      - /scratch\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
+	mkdir -p "$$tmpdir/api"; \
+	printf 'FROM alpine:3.20\n' > "$$tmpdir/api/Dockerfile"; \
+	printf 'secret\n' > "$$tmpdir/build-token.txt"; \
+	printf 'services:\n  api:\n    image: example/api:build\n    build:\n      context: ./api\n      secrets:\n        - source: file_token\n        - source: env_token\n          target: npm_token\nsecrets:\n  file_token:\n    file: ./build-token.txt\n  env_token:\n    environment: NPM_TOKEN\n' > "$$tmpdir/build-secrets.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
@@ -153,6 +157,9 @@ cli-smoke: build
 	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
 	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
 	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
+	build_secret_output="$$(NPM_TOKEN=local-secret ".build/debug/compose" --dry-run -f "$$tmpdir/build-secrets.yml" build api)"; \
+	[[ "$$build_secret_output" == *"--secret id=file_token,src=$$tmpdir/build-token.txt"* ]]; \
+	[[ "$$build_secret_output" == *"--secret id=npm_token,env=NPM_TOKEN"* ]]; \
 	run_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --pull missing api true)"; \
 	[[ "$$run_pull_output" == *"container image inspect alpine"* ]]; \
 	[[ "$$run_pull_output" == *"container image pull alpine"* ]]; \

@@ -36,7 +36,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Compose v2 surface | Supported subset | [`apple/container`][apple-container] primitive used | Example |
 | --- | --- | --- | --- |
 | Config normalization | File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, `-p/--project-name`, and canonical `config`/`convert` JSON | No runtime primitive; `compose-go` normalizes the Compose model | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata) |
-| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.cache_from`, `build.cache_to`, `build.labels`, `build.platforms`, `build.target`, `build.no_cache`, `build.pull`, `build.tags`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build --pull --platform --cache-in --cache-out --tag --label`, `ClientImage.pull(reference:platform:scheme:containerSystemConfig:progressUpdate:maxConcurrentDownloads:)`, `ClientImage.get(names:containerSystemConfig:)`, `ClientImage.push(platform:scheme:containerSystemConfig:progressUpdate:)`, `ClientImage.delete(reference:garbageCollect:)`, `ClientImage.cleanUpOrphanedBlobs()`, `ContainerClient.list(filters:)` | [S1](#s1-supported-local-web-stack) |
+| Build and images | `build.context`, `build.dockerfile`, `build.args`, `build.cache_from`, `build.cache_to`, `build.labels`, `build.platforms`, `build.target`, `build.no_cache`, `build.pull`, `build.tags`, file-backed and environment-backed `build.secrets`, CLI `build --no-cache`, `pull`, `push`, runtime-scoped `images`, `images --format table/json`, `images --quiet/-q`, global `up --pull always/missing/if_not_present/never`, `create --pull always/missing/if_not_present/never/build`, `create --build`, `create --no-build`, one-off `run --pull always/missing/if_not_present/never`, service `pull_policy: always/missing/if_not_present/never`, image removal through `down --rmi local/all` | `container build --pull --platform --cache-in --cache-out --tag --label --secret`, `ClientImage.pull(reference:platform:scheme:containerSystemConfig:progressUpdate:maxConcurrentDownloads:)`, `ClientImage.get(names:containerSystemConfig:)`, `ClientImage.push(platform:scheme:containerSystemConfig:progressUpdate:)`, `ClientImage.delete(reference:garbageCollect:)`, `ClientImage.cleanUpOrphanedBlobs()`, `ContainerClient.list(filters:)` | [S1](#s1-supported-local-web-stack) |
 | Container lifecycle | `create`, `up`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `rm --force/-f`, `kill`, deterministic names, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, `down --rmi local/all`, `stop/restart/down --timeout`, one-off `run --rm`, one-off `run --detach/-d`, one-off `run --name` | `container create`, `container run`, `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ContainerClient.get(id:)`, `ContainerClient.list(filters:)`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, `ContainerClient.kill(id:signal:)` | [S1](#s1-supported-local-web-stack) |
 | Project discovery | `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...` from project labels on created containers | `ContainerClient.list(filters:)` and Compose project/config-hash labels | [S1](#s1-supported-local-web-stack) |
 | Container interaction | `ps`, `ps --quiet`, `ps --services`, `ps --status running/exited`, `ps --filter status=...`, `logs`, `exec` with Compose-default stdin/TTY, `exec -T/--no-tty`, `exec --interactive=false`, `exec --detach/-d`, `exec --env/-e`, `exec --user/-u`, `exec --workdir/-w`, `exec --index 1`, service-aware `cp`, service-to-service `cp`, `cp --index 1`, local/service `cp --all` including one-off `run` containers, service-to-service `cp --all` into every resolved destination container, `export`, `export -o/--output`, `export --index 1`, `stats [SERVICE...]`, `stats --format table/json`, `stats --no-stream`, `version`, `version --short`, `version -f/--format pretty/json` | `ContainerClient.list(filters:)`, `ContainerClient.logs(id:)`, `ProcessIO.create(tty:interactive:detach:)`, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)`, `ProcessIO.handleProcess(process:log:)` for attached exec, `ClientProcess.start()` for detached exec with `--env`, `--user`, and `--workdir`, `ContainerClient.copyIn(id:source:destination:)`, `ContainerClient.copyOut(id:source:destination:)`, staged service-to-service copies through `copyOut` then `copyIn`, `ContainerClient.list(filters:)` for one-off copy target discovery, `ContainerClient.export(id:archive:)`, `ContainerClient.stats(id:)`, plugin version output | [S1](#s1-supported-local-web-stack) |
@@ -66,7 +66,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | Compose v2 surface | Examples of fields or commands | Missing plugin work | Example |
 | --- | --- | --- | --- |
 | Replica scaling and local deploy handling | `scale`, `up --scale`, `deploy.replicas` values other than `1`, `exec --index` values other than `1`, `cp --index` values other than `1`, `deploy` fields beyond local replica count and CPU/memory limits | Multi-replica naming, reconciliation, DNS behavior, logs, `ps`, replica-aware `exec` and `cp`, removal, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources | [C1](#c1-plugin-gap-replica-scaling-and-deploy) |
-| Advanced build configuration | `additional_contexts`, `dockerfile_inline`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, build `secrets`, build `shm_size`, `ssh`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
+| Advanced build configuration | `additional_contexts`, `dockerfile_inline`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, build secrets without top-level `file` or `environment` backing, build secret `uid`/`gid`/`mode`, build `shm_size`, `ssh`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 | Metadata, logging, storage shortcuts | `annotations`, `attach`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
@@ -80,7 +80,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 | --- | --- | --- |
 | Top-level and service `x-*` extensions | Preserved by `container compose config` and `container compose convert`; no runtime behavior by itself | [O1](#o1-config-only-metadata) |
 | Service `expose` | Preserved by `config` and `convert`; it does not publish host ports. Use `ports` for host publishing | [O1](#o1-config-only-metadata) |
-| Top-level `configs` and `secrets` definitions | Preserved by `config` and `convert`; service-level consumption is an [`apple/container`][apple-container] gap because mounts need runtime support | [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-secrets-and-restart) |
+| Top-level `configs` and `secrets` definitions | Preserved by `config` and `convert`; file-backed and environment-backed secrets can feed supported `build.secrets`; service-level consumption is an [`apple/container`][apple-container] gap because mounts need runtime support | [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-secrets-and-restart) |
 | Top-level `models` definitions | Preserved by `config` and `convert`; service-level model bindings are a plugin gap | [O1](#o1-config-only-metadata), [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 
 ## CLI Command Status
@@ -114,7 +114,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 | [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart) | [`apple/container`][apple-container] gap | Healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies |
 | [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands) | [`apple/container`][apple-container] gap | Process listing, event streams, dynamic port lookup, pause/unpause, wait metadata, and stats output controls |
 | [C1: Plugin Gap, Replica Scaling And Deploy](#c1-plugin-gap-replica-scaling-and-deploy) | `container-compose` gap | Replica naming, lifecycle, logs, `ps`, `rm`, `exec --index`, DNS, and deploy semantics |
-| [C2: Plugin Gap, Advanced Build Fields](#c2-plugin-gap-advanced-build-fields) | `container-compose` gap | Additional contexts, inline Dockerfile, secrets, SSH, and provenance/SBOM fields |
+| [C2: Plugin Gap, Advanced Build Fields](#c2-plugin-gap-advanced-build-fields) | `container-compose` gap | Additional contexts, inline Dockerfile, unsupported secret forms and metadata, SSH, and provenance/SBOM fields |
 | [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks) | `container-compose` gap | Watch/develop, providers, model bindings, and lifecycle hooks |
 | [C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) | `container-compose` gap | Dependency restart propagation, annotations, logging options, inherited mounts, API socket, block I/O, and time-window pull policy |
 | [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands) | `container-compose` gap | Compose v2 commands that still need command-level plugin design |
@@ -155,6 +155,10 @@ services:
         - linux/arm64
       tags:
         - example/api:local
+      secrets:
+        - source: build_cert
+        - source: npm_token
+          target: npm_token
     image: example/api:dev
     pull_policy: missing
     command: ["sh", "-c", "printf 'ready\n'; sleep 3600"]
@@ -211,16 +215,31 @@ volumes:
   api-cache:
     labels:
       example.com/volume: cache
+
+secrets:
+  build_cert:
+    file: ./build-cert.pem
+  npm_token:
+    environment: NPM_TOKEN
 ```
 
 Dockerfile: `api/Dockerfile`
 
 ```dockerfile
+# syntax=docker/dockerfile:1
 FROM alpine:3.20
 ARG APP_ENV=dev
+RUN --mount=type=secret,id=build_cert --mount=type=secret,id=npm_token \
+    test -s /run/secrets/build_cert && test -s /run/secrets/npm_token
 RUN mkdir -p /app /cache /config && printf '%s\n' "$APP_ENV" > /app/env.txt
 EXPOSE 8080
 CMD ["sh", "-c", "sleep 3600"]
+```
+
+File: `build-cert.pem`
+
+```text
+local-build-secret-placeholder
 ```
 
 File: `api.env`
@@ -245,6 +264,7 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 Useful supported commands against this project:
 
 ```sh
+export NPM_TOKEN=local-build-secret-placeholder
 container compose config
 container compose build
 container compose create --build
@@ -629,7 +649,7 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C2: Plugin Gap, Advanced Build Fields
 
-Expected result: `container compose build` rejects this before running `container build` because the advanced build fields need safe plugin mapping first.
+Expected result: `container compose build` rejects this before running `container build` because the advanced build fields and secret metadata need safe plugin mapping first.
 
 Status path:
 
@@ -649,7 +669,9 @@ services:
       additional_contexts:
         shared: ./shared
       secrets:
-        - npm_token
+        - source: npm_token
+          uid: "1000"
+          mode: 0400
       ssh:
         - default
 

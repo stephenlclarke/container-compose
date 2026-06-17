@@ -3241,6 +3241,10 @@ struct ComposeOrchestratorTests {
                         cacheFrom: ["type=registry,ref=example/api:cache"],
                         cacheTo: ["type=local,dest=.cache"],
                         labels: ["org.opencontainers.image.title": "api", "build.label": "true"],
+                        secrets: [
+                            ComposeBuildSecret(id: "file_token", file: "./token.txt"),
+                            ComposeBuildSecret(id: "npm_token", environment: "NPM_TOKEN"),
+                        ],
                         target: "runtime",
                         noCache: true,
                         pull: true,
@@ -3272,6 +3276,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["--cache-out", "type=local,dest=.cache"]))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "build.label=true"]))
         #expect(runner.commands[0].arguments.containsSequence(["--label", "org.opencontainers.image.title=api"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--secret", "id=file_token,src=./token.txt"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--secret", "id=npm_token,env=NPM_TOKEN"]))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
         #expect(runner.commands[0].arguments.last == "api")
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
@@ -3318,6 +3324,33 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'api' uses unsupported build fields dockerfile_inline, secrets; advanced build fields are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("build rejects malformed build secrets before emitting commands")
+    func buildRejectsMalformedBuildSecretsBeforeEmittingCommands() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        secrets: [ComposeBuildSecret(id: "both", file: "./token.txt", environment: "TOKEN")]
+                    )
+                },
+            ]
+        )
+        let runner = RecordingRunner()
+
+        do {
+            try await ComposeOrchestrator(runner: runner).build(project: project, services: [], noCache: false)
+            Issue.record("Expected invalid build secret error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("build secret 'both' cannot define both file and environment"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

@@ -1833,11 +1833,34 @@ private extension ComposeOrchestrator {
         for (key, value) in (build.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
+        for secret in build.secrets ?? [] {
+            args.append(contentsOf: ["--secret", try buildSecretArgument(secret)])
+        }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
         }
         args.append(build.context ?? ".")
         try await runContainer(args)
+    }
+
+    /// Encodes one Compose build secret for Apple `container build --secret`.
+    func buildSecretArgument(_ secret: ComposeBuildSecret) throws -> String {
+        let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            throw ComposeError.invalidProject("build secret id must not be empty")
+        }
+        let file = secret.file?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let environment = secret.environment?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let file, !file.isEmpty, let environment, !environment.isEmpty {
+            throw ComposeError.invalidProject("build secret '\(id)' cannot define both file and environment")
+        }
+        if let file, !file.isEmpty {
+            return "id=\(id),src=\(file)"
+        }
+        if let environment, !environment.isEmpty {
+            return "id=\(id),env=\(environment)"
+        }
+        throw ComposeError.invalidProject("build secret '\(id)' must define file or environment")
     }
 
     /// Applies the Compose `up --pull` policy before starting services.

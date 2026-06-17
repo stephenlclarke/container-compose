@@ -166,18 +166,27 @@ type normalizedService struct {
 
 // normalizedBuild keeps the build fields needed to call `container build`.
 type normalizedBuild struct {
-	Context           string            `json:"context,omitempty"`
-	Dockerfile        string            `json:"dockerfile,omitempty"`
-	Args              map[string]string `json:"args,omitempty"`
-	CacheFrom         []string          `json:"cacheFrom,omitempty"`
-	CacheTo           []string          `json:"cacheTo,omitempty"`
-	Labels            map[string]string `json:"labels,omitempty"`
-	Target            string            `json:"target,omitempty"`
-	NoCache           bool              `json:"noCache,omitempty"`
-	Pull              bool              `json:"pull,omitempty"`
-	Platforms         []string          `json:"platforms,omitempty"`
-	Tags              []string          `json:"tags,omitempty"`
-	UnsupportedFields []string          `json:"unsupportedFields,omitempty"`
+	Context           string                  `json:"context,omitempty"`
+	Dockerfile        string                  `json:"dockerfile,omitempty"`
+	Args              map[string]string       `json:"args,omitempty"`
+	CacheFrom         []string                `json:"cacheFrom,omitempty"`
+	CacheTo           []string                `json:"cacheTo,omitempty"`
+	Labels            map[string]string       `json:"labels,omitempty"`
+	Secrets           []normalizedBuildSecret `json:"secrets,omitempty"`
+	Target            string                  `json:"target,omitempty"`
+	NoCache           bool                    `json:"noCache,omitempty"`
+	Pull              bool                    `json:"pull,omitempty"`
+	Platforms         []string                `json:"platforms,omitempty"`
+	Tags              []string                `json:"tags,omitempty"`
+	UnsupportedFields []string                `json:"unsupportedFields,omitempty"`
+}
+
+// normalizedBuildSecret contains the Apple `container build --secret` fields
+// that can be safely derived from a Compose top-level secret definition.
+type normalizedBuildSecret struct {
+	ID          string `json:"id"`
+	File        string `json:"file,omitempty"`
+	Environment string `json:"environment,omitempty"`
 }
 
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
@@ -347,7 +356,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	}
 
 	for _, service := range project.Services {
-		result.Services[service.Name] = normalizeService(service)
+		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
 		result.Networks[name] = normalizedNetwork{
@@ -382,7 +391,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 }
 
 // normalizeService copies a compose-go service into the stable Swift model.
-func normalizeService(service types.ServiceConfig) normalizedService {
+func normalizeService(service types.ServiceConfig, secrets map[string]types.SecretConfig) normalizedService {
 	result := normalizedService{
 		Name:                    service.Name,
 		Image:                   service.Image,
@@ -477,6 +486,7 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 		Uts:                     service.Uts,
 	}
 	if service.Build != nil {
+		buildSecrets, unsupportedSecrets := buildSecretValues(service.Build, secrets)
 		result.Build = &normalizedBuild{
 			Context:           service.Build.Context,
 			Dockerfile:        service.Build.Dockerfile,
@@ -484,12 +494,13 @@ func normalizeService(service types.ServiceConfig) normalizedService {
 			CacheFrom:         append([]string(nil), service.Build.CacheFrom...),
 			CacheTo:           append([]string(nil), service.Build.CacheTo...),
 			Labels:            mapLabels(service.Build.Labels),
+			Secrets:           buildSecrets,
 			Target:            service.Build.Target,
 			NoCache:           service.Build.NoCache,
 			Pull:              service.Build.Pull,
 			Platforms:         append([]string(nil), service.Build.Platforms...),
 			Tags:              append([]string(nil), service.Build.Tags...),
-			UnsupportedFields: unsupportedBuildFields(service.Build),
+			UnsupportedFields: unsupportedBuildFields(service.Build, unsupportedSecrets),
 		}
 	}
 	if service.HealthCheck != nil {
@@ -862,8 +873,57 @@ func buildArgs(args types.MappingWithEquals) map[string]string {
 	return result
 }
 
+// buildSecretValues converts supported Compose build secrets to Apple build
+// secret arguments and reports whether any secret needs unsupported behavior.
+func buildSecretValues(build *types.BuildConfig, secrets map[string]types.SecretConfig) ([]normalizedBuildSecret, bool) {
+	if build == nil || len(build.Secrets) == 0 {
+		return nil, false
+	}
+	values := []normalizedBuildSecret{}
+	unsupported := false
+	for _, secret := range build.Secrets {
+		id, ok := buildSecretID(secret)
+		if !ok || secret.UID != "" || secret.GID != "" || secret.Mode != nil {
+			unsupported = true
+			continue
+		}
+		source, ok := secrets[secret.Source]
+		if !ok {
+			unsupported = true
+			continue
+		}
+		switch {
+		case source.Environment != "":
+			values = append(values, normalizedBuildSecret{ID: id, Environment: source.Environment})
+		case source.File != "":
+			values = append(values, normalizedBuildSecret{ID: id, File: source.File})
+		default:
+			unsupported = true
+		}
+	}
+	return values, unsupported
+}
+
+// buildSecretID returns the BuildKit secret id Compose expects to expose.
+func buildSecretID(secret types.ServiceSecretConfig) (string, bool) {
+	source := strings.TrimSpace(secret.Source)
+	if source == "" {
+		return "", false
+	}
+	target := strings.TrimSpace(secret.Target)
+	if target == "" || target == "/run/secrets/"+source {
+		return source, true
+	}
+	const secretsDirectory = "/run/secrets/"
+	if strings.HasPrefix(target, secretsDirectory) {
+		id := strings.TrimPrefix(target, secretsDirectory)
+		return id, id != "" && !strings.Contains(id, "/")
+	}
+	return target, !strings.Contains(target, "/")
+}
+
 // unsupportedBuildFields reports Compose build fields not mapped to container build yet.
-func unsupportedBuildFields(build *types.BuildConfig) []string {
+func unsupportedBuildFields(build *types.BuildConfig, unsupportedSecrets bool) []string {
 	if build == nil {
 		return nil
 	}
@@ -877,7 +937,7 @@ func unsupportedBuildFields(build *types.BuildConfig) []string {
 	appendUnsupportedBuildField(&fields, "privileged", build.Privileged)
 	appendUnsupportedBuildField(&fields, "provenance", build.Provenance != "")
 	appendUnsupportedBuildField(&fields, "sbom", build.SBOM != "")
-	appendUnsupportedBuildField(&fields, "secrets", len(build.Secrets) > 0)
+	appendUnsupportedBuildField(&fields, "secrets", unsupportedSecrets)
 	appendUnsupportedBuildField(&fields, "shm_size", unitBytesValue(build.ShmSize) != "")
 	appendUnsupportedBuildField(&fields, "ssh", len(build.SSH) > 0)
 	appendUnsupportedBuildField(&fields, "ulimits", len(build.Ulimits) > 0)

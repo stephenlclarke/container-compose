@@ -157,6 +157,61 @@ struct ComposeNormalizerTests {
         #expect(project.volumes["data"] != nil)
     }
 
+    @Test("normalizes supported build secrets through compose-go")
+    func normalizesSupportedBuildSecretsThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        let tokenFile = directory.appendingPathComponent("token.txt")
+        let tokenVariable = "BUILD_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        setenv(tokenVariable, "secret", 1)
+        defer {
+            unsetenv(tokenVariable)
+        }
+        try Data("token\n".utf8).write(to: tokenFile)
+        try """
+        services:
+          api:
+            build:
+              context: .
+              secrets:
+                - source: file_token
+                - source: env_token
+                  target: npm_token
+          worker:
+            build:
+              context: .
+              secrets:
+                - external_token
+        secrets:
+          file_token:
+            file: ./token.txt
+          env_token:
+            environment: \(tokenVariable)
+          external_token:
+            external: true
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.services["api"]?.build?.secrets == [
+            ComposeBuildSecret(id: "file_token", file: tokenFile.path),
+            ComposeBuildSecret(id: "npm_token", environment: tokenVariable),
+        ])
+        #expect(project.services["api"]?.build?.unsupportedFields == nil)
+        #expect(project.services["worker"]?.build?.unsupportedFields == ["secrets"])
+    }
+
     @Test("normalizes network mode through compose-go")
     func normalizesNetworkModeThroughComposeGo() async throws {
         let fileManager = FileManager.default

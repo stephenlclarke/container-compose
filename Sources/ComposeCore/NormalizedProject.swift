@@ -390,6 +390,7 @@ public struct ComposeBuild: Codable, Equatable {
     public var cacheFrom: [String]?
     public var cacheTo: [String]?
     public var labels: [String: String]?
+    public var secrets: [ComposeBuildSecret]?
     public var target: String?
     public var noCache: Bool?
     public var pull: Bool?
@@ -404,6 +405,7 @@ public struct ComposeBuild: Codable, Equatable {
         cacheFrom: [String]? = nil,
         cacheTo: [String]? = nil,
         labels: [String: String]? = nil,
+        secrets: [ComposeBuildSecret]? = nil,
         target: String? = nil,
         noCache: Bool? = nil,
         pull: Bool? = nil,
@@ -417,12 +419,26 @@ public struct ComposeBuild: Codable, Equatable {
         self.cacheFrom = cacheFrom
         self.cacheTo = cacheTo
         self.labels = labels
+        self.secrets = secrets
         self.target = target
         self.noCache = noCache
         self.pull = pull
         self.platforms = platforms
         self.tags = tags
         self.unsupportedFields = unsupportedFields
+    }
+}
+
+/// Build-time secret supported by Apple `container build --secret`.
+public struct ComposeBuildSecret: Codable, Equatable {
+    public var id: String
+    public var file: String?
+    public var environment: String?
+
+    public init(id: String, file: String? = nil, environment: String? = nil) {
+        self.id = id
+        self.file = file
+        self.environment = environment
     }
 }
 
