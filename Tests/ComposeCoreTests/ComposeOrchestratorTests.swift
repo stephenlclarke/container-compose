@@ -246,6 +246,14 @@ private extension ComposeOrchestrator {
     convenience init(
         runner: CommandRunning,
         options: ComposeExecutionOptions,
+        resourceManager: ContainerResourceManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.resourceManager = resourceManager })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
         statsManager: ContainerStatsManaging
     ) {
         self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.statsManager = statsManager })
@@ -2449,6 +2457,173 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("volumes lists project and declared external volume records")
+    func volumesListsProjectAndDeclaredExternalVolumeRecords() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: "demo_cache",
+                driver: "local",
+                source: "/volumes/demo_cache",
+                labels: ["com.apple.container.compose.project": "demo"]
+            ),
+            ComposeVolumeSummary(name: "shared-data", driver: "local", source: "/volumes/shared-data"),
+            ComposeVolumeSummary(
+                name: "other_cache",
+                driver: "local",
+                source: "/volumes/other_cache",
+                labels: ["com.apple.container.compose.project": "other"]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(type: "volume", source: "cache", target: "/cache"),
+                        ComposeMount(type: "volume", source: "shared", target: "/shared"),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = [
+                "cache": ComposeVolume(name: "cache"),
+                "shared": ComposeVolume(name: "shared-data", external: true),
+            ]
+        }
+
+        try await orchestrator.volumes(project: project, options: ComposeVolumesOptions())
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests == [.listVolumes])
+        let output = try #require(emitted.messages.first)
+        #expect(output.contains("DRIVER"))
+        #expect(output.contains("VOLUME NAME"))
+        #expect(output.contains("demo_cache"))
+        #expect(output.contains("shared-data"))
+        #expect(!output.contains("other_cache"))
+    }
+
+    @Test("volumes quiet prints selected service volume names")
+    func volumesQuietPrintsSelectedServiceVolumeNames() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: "demo_cache",
+                labels: ["com.apple.container.compose.project": "demo"]
+            ),
+            ComposeVolumeSummary(
+                name: "demo_worker",
+                labels: ["com.apple.container.compose.project": "demo"]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "worker", target: "/work")]
+                },
+            ]
+        ) {
+            $0.volumes = [
+                "cache": ComposeVolume(name: "cache"),
+                "worker": ComposeVolume(name: "worker"),
+            ]
+        }
+
+        try await orchestrator.volumes(
+            project: project,
+            options: ComposeVolumesOptions(services: ["worker"], quiet: true)
+        )
+
+        #expect(await resourceManager.requests == [.listVolumes])
+        #expect(emitted.messages == ["demo_worker"])
+    }
+
+    @Test("volumes json renders project volume records")
+    func volumesJSONRendersProjectVolumeRecords() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: "demo_cache",
+                driver: "local",
+                labels: ["com.apple.container.compose.project": "demo"]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: ["api": composeService(name: "api", image: "example/api")]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await orchestrator.volumes(project: project, options: ComposeVolumesOptions(format: "json"))
+
+        let data = Data(try #require(emitted.messages.first).utf8)
+        let records = try #require(JSONSerialization.jsonObject(with: data) as? [[String: String]])
+        #expect(records == [["driver": "local", "name": "demo_cache"]])
+        #expect(await resourceManager.requests == [.listVolumes])
+    }
+
+    @Test("volumes dry run renders the backing direct API command")
+    func volumesDryRunRendersBackingDirectAPICommand() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await orchestrator.volumes(project: project, options: ComposeVolumesOptions())
+
+        #expect(emitted.messages == ["+ container volume list --format json"])
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("volumes rejects unsupported output formats")
+    func volumesRejectsUnsupportedOutputFormats() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .volumes(project: project, options: ComposeVolumesOptions(format: "yaml"))
+            Issue.record("Expected unsupported volumes format error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("volumes --format 'yaml'; supported formats are table and json"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("stats targets project service containers")
     func statsTargetsProjectServiceContainers() async throws {
         let runner = RecordingRunner()
@@ -4185,15 +4360,19 @@ struct ComposeOrchestratorTests {
 
     @Test("resource manager maps compose resources to direct API client")
     func resourceManagerMapsComposeResourcesToDirectAPIClient() async throws {
-        let client = RecordingContainerResourceAPIClient()
+        let client = RecordingContainerResourceAPIClient(volumes: [
+            ComposeVolumeSummary(name: "demo_cache", labels: ["com.example.role": "cache"]),
+        ])
         let manager = ContainerClientResourceManager(client: client)
         let labels = ["com.example.role": "cache"]
 
         try await manager.createNetwork(name: "demo_default", labels: labels)
         try await manager.createVolume(name: "demo_cache", labels: labels)
+        let volumes = try await manager.listVolumes()
         try await manager.deleteNetwork(id: "demo_default")
         try await manager.deleteVolume(name: "demo_cache")
 
+        #expect(volumes == [ComposeVolumeSummary(name: "demo_cache", labels: labels)])
         #expect(await client.requests == [
             .createNetwork(
                 name: "demo_default",
@@ -4202,6 +4381,7 @@ struct ComposeOrchestratorTests {
                 labels: labels
             ),
             .createVolume(name: "demo_cache", labels: labels),
+            .listVolumes,
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_cache"),
         ])
@@ -4220,6 +4400,9 @@ struct ComposeOrchestratorTests {
             createVolume: { name, labels in
                 try await recorder.createVolume(name: name, labels: labels)
             },
+            listVolumes: {
+                try await recorder.listVolumes()
+            },
             deleteVolume: { name in
                 try await recorder.deleteVolume(name: name)
             }
@@ -4234,6 +4417,7 @@ struct ComposeOrchestratorTests {
 
         try await client.createNetwork(configuration: configuration)
         try await client.createVolume(name: "demo_cache", labels: labels)
+        _ = try await client.listVolumes()
         try await client.deleteNetwork(id: "demo_default")
         try await client.deleteVolume(name: "demo_cache")
 
@@ -4245,6 +4429,7 @@ struct ComposeOrchestratorTests {
                 labels: labels
             ),
             .createVolume(name: "demo_cache", labels: labels),
+            .listVolumes,
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_cache"),
         ])
@@ -7623,12 +7808,15 @@ private enum ContainerResourceRequest: Equatable {
     case createNetwork(name: String, labels: [String: String])
     case deleteNetwork(id: String)
     case createVolume(name: String, labels: [String: String])
+    case listVolumes
     case deleteVolume(name: String)
 
     var name: String {
         switch self {
         case .createNetwork(let name, _), .createVolume(let name, _), .deleteVolume(let name):
             name
+        case .listVolumes:
+            ""
         case .deleteNetwork(let id):
             id
         }
@@ -7638,7 +7826,7 @@ private enum ContainerResourceRequest: Equatable {
         switch self {
         case .createNetwork(_, let labels), .createVolume(_, let labels):
             labels
-        case .deleteNetwork, .deleteVolume:
+        case .deleteNetwork, .listVolumes, .deleteVolume:
             [:]
         }
     }
@@ -7648,6 +7836,7 @@ private enum ContainerResourceAPIRequest: Equatable {
     case createNetwork(name: String, mode: NetworkMode, plugin: String, labels: [String: String])
     case deleteNetwork(id: String)
     case createVolume(name: String, labels: [String: String])
+    case listVolumes
     case deleteVolume(name: String)
 }
 
@@ -8141,7 +8330,12 @@ private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienti
 }
 
 private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting {
+    private let volumes: [ComposeVolumeSummary]
     private var storage: [ContainerResourceAPIRequest] = []
+
+    init(volumes: [ComposeVolumeSummary] = []) {
+        self.volumes = volumes
+    }
 
     var requests: [ContainerResourceAPIRequest] {
         storage
@@ -8164,13 +8358,23 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
         storage.append(.createVolume(name: name, labels: labels))
     }
 
+    func listVolumes() async throws -> [ComposeVolumeSummary] {
+        storage.append(.listVolumes)
+        return volumes
+    }
+
     func deleteVolume(name: String) async throws {
         storage.append(.deleteVolume(name: name))
     }
 }
 
 private actor RecordingContainerResourceManager: ContainerResourceManaging {
+    private let volumes: [ComposeVolumeSummary]
     private var storage: [ContainerResourceRequest] = []
+
+    init(volumes: [ComposeVolumeSummary] = []) {
+        self.volumes = volumes
+    }
 
     var requests: [ContainerResourceRequest] {
         storage
@@ -8186,6 +8390,11 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
 
     func createVolume(name: String, labels: [String: String]) async throws {
         storage.append(.createVolume(name: name, labels: labels))
+    }
+
+    func listVolumes() async throws -> [ComposeVolumeSummary] {
+        storage.append(.listVolumes)
+        return volumes
     }
 
     func deleteVolume(name: String) async throws {

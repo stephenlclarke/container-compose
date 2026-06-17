@@ -210,6 +210,19 @@ public struct ComposeImagesOptions {
     }
 }
 
+/// Options for `compose volumes`.
+public struct ComposeVolumesOptions {
+    public var services: [String]
+    public var quiet: Bool
+    public var format: String
+
+    public init(services: [String] = [], quiet: Bool = false, format: String = "table") {
+        self.services = services
+        self.quiet = quiet
+        self.format = format
+    }
+}
+
 /// Options for `compose stats`.
 public struct ComposeStatsOptions {
     public var services: [String]
@@ -344,6 +357,11 @@ private enum DownImageRemovalPolicy {
 }
 
 private enum ComposeImagesFormat {
+    case table
+    case json
+}
+
+private enum ComposeVolumesFormat {
     case table
     case json
 }
@@ -928,6 +946,40 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
         case .json:
             options.emit(try renderComposeImageJSON(records))
+        }
+    }
+
+    /// Lists volumes that belong to the Compose project or selected services.
+    public func volumes(project: ComposeProject, options volumes: ComposeVolumesOptions) async throws {
+        let services = try selectedServices(project: project, selected: volumes.services)
+        let format = try composeVolumesFormat(volumes.format)
+        let args = ["volume", "list", "--format", "json"]
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+
+        let records = try await composeVolumeRecords(
+            project: project,
+            services: services,
+            restrictToSelectedServices: !volumes.services.isEmpty
+        )
+        if volumes.quiet {
+            let names = records.map(\.name)
+            if !names.isEmpty {
+                options.emit(names.joined(separator: "\n"))
+            }
+            return
+        }
+
+        switch format {
+        case .table:
+            let table = renderComposeVolumeTable(records)
+            if !table.isEmpty {
+                options.emit(table)
+            }
+        case .json:
+            options.emit(try renderComposeVolumeJSON(records))
         }
     }
 
@@ -2356,6 +2408,40 @@ private extension ComposeOrchestrator {
         return filterProjectContainers(projectName: projectName, containers: containers)
     }
 
+    /// Lists project volume records through the direct resource API.
+    func composeVolumeRecords(
+        project: ComposeProject,
+        services: [ComposeService],
+        restrictToSelectedServices: Bool
+    ) async throws -> [ComposeVolumeRecord] {
+        let attachedVolumeNames = serviceAttachedVolumeRuntimeNames(project: project, services: services)
+        let volumes = try await resourceManager.listVolumes()
+        return volumes
+            .filter { volume in
+                if restrictToSelectedServices {
+                    return attachedVolumeNames.contains(volume.name)
+                }
+                return volume.labels[projectLabel] == project.name || attachedVolumeNames.contains(volume.name)
+            }
+            .map { ComposeVolumeRecord(driver: $0.driver, name: $0.name) }
+            .sorted { $0.name < $1.name }
+    }
+
+    /// Returns existing runtime volume names attached by the selected services.
+    func serviceAttachedVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) -> Set<String> {
+        var names = Set<String>()
+        for service in services {
+            for mount in service.volumes ?? [] where mount.type == "volume" {
+                if let source = mount.source, !source.isEmpty {
+                    names.insert(volumeRuntimeName(project: project, composeName: source))
+                } else if let target = mount.target {
+                    names.insert(anonymousVolumeRuntimeName(project: project, target: target))
+                }
+            }
+        }
+        return names
+    }
+
     /// Executes one `container` command or prints it in dry-run mode.
     @discardableResult
     func runContainer(
@@ -2983,6 +3069,12 @@ private struct ComposeImageRecord: Encodable, Equatable {
     let imageID: String
 }
 
+/// One Docker Compose-style volume row derived from Apple container volumes.
+private struct ComposeVolumeRecord: Encodable, Equatable {
+    let driver: String
+    let name: String
+}
+
 /// Renders image rows as a compact table.
 private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String {
     guard !records.isEmpty else {
@@ -3005,6 +3097,44 @@ private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String 
 
 /// Renders image rows as deterministic JSON.
 private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(records)
+    return String(decoding: data, as: UTF8.self)
+}
+
+/// Validates the `compose volumes --format` value.
+private func composeVolumesFormat(_ value: String) throws -> ComposeVolumesFormat {
+    switch value.lowercased() {
+    case "table":
+        return .table
+    case "json":
+        return .json
+    default:
+        throw ComposeError.unsupported("volumes --format '\(value)'; supported formats are table and json")
+    }
+}
+
+/// Renders volume rows as a compact table.
+private func renderComposeVolumeTable(_ records: [ComposeVolumeRecord]) -> String {
+    guard !records.isEmpty else {
+        return ""
+    }
+    let rows = [
+        ["DRIVER", "VOLUME NAME"],
+    ] + records.map { [$0.driver, $0.name] }
+    let widths = rows.reduce(Array(repeating: 0, count: rows[0].count)) { current, row in
+        zip(current, row).map { max($0, $1.count) }
+    }
+    return rows.map { row in
+        row.enumerated().map { index, value in
+            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
+        }.joined(separator: "  ")
+    }.joined(separator: "\n")
+}
+
+/// Renders volume rows as deterministic JSON.
+private func renderComposeVolumeJSON(_ records: [ComposeVolumeRecord]) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(records)

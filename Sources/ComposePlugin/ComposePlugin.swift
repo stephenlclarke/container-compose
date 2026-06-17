@@ -801,14 +801,23 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose volumes` until volume subcommands are designed.
+/// Implements `compose volumes`.
 struct Volumes: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "volumes", abstract: "Manage Compose volumes.")
+    static let configuration = CommandConfiguration(commandName: "volumes", abstract: "List Compose volumes.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for the Compose volumes command group.
-    func run() throws {
-        try global.orchestrator().unsupported("volumes", reason: "Compose volume command group is not implemented by container-compose yet")
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Flag(name: .shortAndLong, help: "Only display volume names.")
+    var quiet = false
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Lists existing project-scoped volumes through the resource API.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().volumes(
+            project: loadedProject,
+            options: ComposeVolumesOptions(services: services, quiet: quiet, format: format)
+        )
     }
 }
 

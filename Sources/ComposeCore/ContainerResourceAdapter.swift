@@ -17,6 +17,40 @@
 import ContainerAPIClient
 import ContainerResource
 
+/// Runtime volume metadata needed by Compose project commands.
+public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
+    public var name: String
+    public var driver: String
+    public var source: String
+    public var labels: [String: String]
+    public var sizeInBytes: UInt64?
+
+    public init(
+        name: String,
+        driver: String = "local",
+        source: String = "",
+        labels: [String: String] = [:],
+        sizeInBytes: UInt64? = nil
+    ) {
+        self.name = name
+        self.driver = driver
+        self.source = source
+        self.labels = labels
+        self.sizeInBytes = sizeInBytes
+    }
+
+    /// Creates a Compose-facing summary from an Apple container volume.
+    public init(configuration: VolumeConfiguration) {
+        self.init(
+            name: configuration.name,
+            driver: configuration.driver,
+            source: configuration.source,
+            labels: configuration.labels,
+            sizeInBytes: configuration.sizeInBytes
+        )
+    }
+}
+
 /// Low-level Apple container resource calls used by
 /// `ContainerClientResourceManager`.
 public protocol ContainerResourceAPIClienting: Sendable {
@@ -28,6 +62,9 @@ public protocol ContainerResourceAPIClienting: Sendable {
 
     /// Creates a local volume with the supplied runtime name and labels.
     func createVolume(name: String, labels: [String: String]) async throws
+
+    /// Lists local volumes available through the Apple container API.
+    func listVolumes() async throws -> [ComposeVolumeSummary]
 
     /// Deletes the runtime volume named by `name`.
     func deleteVolume(name: String) async throws
@@ -45,6 +82,9 @@ public protocol ContainerResourceManaging: Sendable {
     /// Creates a local volume with the supplied runtime name and labels.
     func createVolume(name: String, labels: [String: String]) async throws
 
+    /// Lists local volumes available to Compose project commands.
+    func listVolumes() async throws -> [ComposeVolumeSummary]
+
     /// Deletes the runtime volume named by `name`.
     func deleteVolume(name: String) async throws
 }
@@ -54,22 +94,26 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     public typealias CreateNetwork = @Sendable (NetworkConfiguration) async throws -> Void
     public typealias DeleteNetwork = @Sendable (String) async throws -> Void
     public typealias CreateVolume = @Sendable (String, [String: String]) async throws -> Void
+    public typealias ListVolumes = @Sendable () async throws -> [ComposeVolumeSummary]
     public typealias DeleteVolume = @Sendable (String) async throws -> Void
 
     private let createNetworkOperation: CreateNetwork
     private let deleteNetworkOperation: DeleteNetwork
     private let createVolumeOperation: CreateVolume
+    private let listVolumesOperation: ListVolumes
     private let deleteVolumeOperation: DeleteVolume
 
     public init(
         createNetwork: @escaping CreateNetwork = { _ = try await NetworkClient().create(configuration: $0) },
         deleteNetwork: @escaping DeleteNetwork = { try await NetworkClient().delete(id: $0) },
         createVolume: @escaping CreateVolume = { _ = try await ClientVolume.create(name: $0, labels: $1) },
+        listVolumes: @escaping ListVolumes = { try await ClientVolume.list().map(ComposeVolumeSummary.init(configuration:)) },
         deleteVolume: @escaping DeleteVolume = { try await ClientVolume.delete(name: $0) }
     ) {
         self.createNetworkOperation = createNetwork
         self.deleteNetworkOperation = deleteNetwork
         self.createVolumeOperation = createVolume
+        self.listVolumesOperation = listVolumes
         self.deleteVolumeOperation = deleteVolume
     }
 
@@ -86,6 +130,11 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     /// Creates a volume through `ClientVolume`.
     public func createVolume(name: String, labels: [String: String]) async throws {
         try await createVolumeOperation(name, labels)
+    }
+
+    /// Lists volumes through `ClientVolume`.
+    public func listVolumes() async throws -> [ComposeVolumeSummary] {
+        try await listVolumesOperation()
     }
 
     /// Deletes a volume through `ClientVolume`.
@@ -122,6 +171,11 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
     /// Creates a Compose project volume through `ClientVolume`.
     public func createVolume(name: String, labels: [String: String]) async throws {
         try await client.createVolume(name: name, labels: labels)
+    }
+
+    /// Lists local volumes through `ClientVolume`.
+    public func listVolumes() async throws -> [ComposeVolumeSummary] {
+        try await client.listVolumes()
     }
 
     /// Deletes a Compose project volume through `ClientVolume`.
