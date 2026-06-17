@@ -99,9 +99,9 @@ make test
 ```
 
 Use the Makefile targets for local Swift tests instead of invoking
-`swift test` directly. The Makefile adds the Swift Testing framework search
-paths needed by Command Line Tools installs that do not place `Testing.framework`
-on SwiftPM's default test runtime path.
+`swift test` directly. The Makefile derives the Swift Testing framework and
+runtime library paths from the active Apple developer directory and fails if
+SwiftPM builds the test bundle without actually running tests.
 
 Run the same validation used by GitHub Actions:
 

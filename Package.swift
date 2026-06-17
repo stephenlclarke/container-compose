@@ -15,38 +15,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import Foundation
 import PackageDescription
-
-let swiftTestingFrameworkPath = "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
-let swiftTestingRuntimeLibraryPath = "/Library/Developer/CommandLineTools/Library/Developer/usr/lib"
-let swiftTestingSettings = resolvedSwiftTestingSettings()
-
-func resolvedSwiftTestingSettings() -> (swift: [SwiftSetting], linker: [LinkerSetting]) {
-    guard FileManager.default.fileExists(atPath: "\(swiftTestingFrameworkPath)/Testing.framework") else {
-        return ([], [])
-    }
-
-    var linkerSettings: [LinkerSetting] = [
-        .unsafeFlags(
-            ["-F", swiftTestingFrameworkPath, "-Xlinker", "-rpath", "-Xlinker", swiftTestingFrameworkPath],
-            .when(platforms: [.macOS])
-        ),
-    ]
-    if FileManager.default.fileExists(atPath: "\(swiftTestingRuntimeLibraryPath)/lib_TestingInterop.dylib") {
-        linkerSettings.append(
-            .unsafeFlags(
-                ["-Xlinker", "-rpath", "-Xlinker", swiftTestingRuntimeLibraryPath],
-                .when(platforms: [.macOS])
-            )
-        )
-    }
-
-    return (
-        [.unsafeFlags(["-F", swiftTestingFrameworkPath], .when(platforms: [.macOS]))],
-        linkerSettings
-    )
-}
 
 let package = Package(
     name: "container-compose",
@@ -90,9 +59,7 @@ let package = Package(
                 "ComposeCore",
                 .product(name: "ContainerResource", package: "container"),
             ],
-            path: "Tests/ComposeCoreTests",
-            swiftSettings: swiftTestingSettings.swift,
-            linkerSettings: swiftTestingSettings.linker
+            path: "Tests/ComposeCoreTests"
         ),
     ]
 )

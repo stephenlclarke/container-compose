@@ -27,15 +27,27 @@ COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
 SONAR_QUALITYGATE_WAIT ?= false
-SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= /Library/Developer/CommandLineTools/Library/Developer/Frameworks
-SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= /Library/Developer/CommandLineTools/Library/Developer/usr/lib
+DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
+SWIFT_TEST_FRAMEWORK_CANDIDATES := \
+	$(DEVELOPER_DIR)/Library/Developer/Frameworks \
+	$(DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/Library/Frameworks \
+	/Library/Developer/CommandLineTools/Library/Developer/Frameworks
+SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
+	$(DEVELOPER_DIR)/Library/Developer/usr/lib \
+	$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host \
+	$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx \
+	/Library/Developer/CommandLineTools/Library/Developer/usr/lib
+SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
+SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
+SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
 MARKDOWN_FILES := README.md BUILD.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md
 
-# Command Line Tools installs can place Swift Testing outside SwiftPM's default rpaths.
-ifneq ($(wildcard $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)/Testing.framework),)
-SWIFT_TEST_FLAGS ?= -Xswiftc -F -Xswiftc $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH) -Xlinker -rpath -Xlinker $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)
-ifneq ($(wildcard $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)/lib_TestingInterop.dylib),)
-SWIFT_TEST_FLAGS += -Xlinker -rpath -Xlinker $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)
+# Some local toolchains can build Swift Testing targets without adding the
+# framework and interop library to SwiftPM's generated test runner.
+ifneq ($(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),)
+SWIFT_TEST_FLAGS ?= -Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)'
+ifneq ($(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),)
+SWIFT_TEST_FLAGS += -Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'
 endif
 else
 SWIFT_TEST_FLAGS ?=
@@ -64,7 +76,12 @@ run:
 test: swift-test go-test
 
 swift-test:
-	$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --enable-code-coverage $(SWIFT_TEST_FLAGS)
+	@mkdir -p .build
+	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --enable-code-coverage $(SWIFT_TEST_FLAGS) 2>&1 | tee "$(SWIFT_TEST_RESULT_LOG)"
+	@if ! grep -Eq 'Test run with [1-9][0-9]* tests .* passed|Executed [1-9][0-9]* tests' "$(SWIFT_TEST_RESULT_LOG)"; then \
+		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
+		exit 1; \
+	fi
 
 swift-coverage: swift-test
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"; \
