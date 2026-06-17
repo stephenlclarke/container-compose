@@ -268,6 +268,29 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes run compact publish shorthand before service name")
+    func normalizesRunCompactPublishShorthandBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-p8080:80",
+            "-p=9090:90",
+            "api",
+            "echo",
+            "ok",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--publish",
+            "8080:80",
+            "--publish",
+            "9090:90",
+            "api",
+            "echo",
+            "ok",
+        ])
+    }
+
     @Test("keeps run no-deps before service name")
     func keepsRunNoDepsBeforeServiceName() {
         let rewritten = ComposeArgumentRewriter.rewrite([
