@@ -4238,7 +4238,27 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator().copy(project: ComposeProject(name: "demo", services: [:]), arguments: [])
             Issue.record("Expected cp argument failure")
         } catch let error as ComposeError {
-            #expect(error == .invalidProject("cp requires source and destination"))
+            #expect(error == .invalidProject("cp requires exactly source and destination"))
+        }
+
+        do {
+            try await ComposeOrchestrator().copy(
+                project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
+                arguments: ["api:/tmp/file"]
+            )
+            Issue.record("Expected cp single-operand failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("cp requires exactly source and destination"))
+        }
+
+        do {
+            try await ComposeOrchestrator().copy(
+                project: ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")]),
+                arguments: ["api:/tmp/file", ".", "extra"]
+            )
+            Issue.record("Expected cp extra-operand failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("cp requires exactly source and destination"))
         }
 
         do {

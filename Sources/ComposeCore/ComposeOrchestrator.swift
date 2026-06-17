@@ -684,8 +684,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Copies files between a Compose service container and the local host.
     public func copy(project: ComposeProject, arguments: [String]) async throws {
-        guard !arguments.isEmpty else {
-            throw ComposeError.invalidProject("cp requires source and destination")
+        guard arguments.count == 2 else {
+            throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
         let mappedArguments = try arguments.map { try copyArgument($0, project: project) }
         try await runContainer(["cp"] + mappedArguments)
