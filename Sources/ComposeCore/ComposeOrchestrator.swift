@@ -79,10 +79,12 @@ public struct ComposeUpOptions {
 public struct ComposeDownOptions {
     public var volumes: Bool
     public var removeOrphans: Bool
+    public var timeout: Int?
 
-    public init(volumes: Bool = false, removeOrphans: Bool = false) {
+    public init(volumes: Bool = false, removeOrphans: Bool = false, timeout: Int? = nil) {
         self.volumes = volumes
         self.removeOrphans = removeOrphans
+        self.timeout = timeout
     }
 }
 
@@ -206,11 +208,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Stops and removes project-scoped resources.
     public func down(project: ComposeProject, options down: ComposeDownOptions) async throws {
+        try validateTimeoutSeconds(down.timeout, command: "down")
         let services = try orderedServices(project: project, selected: [])
         let declaredContainers = Set(services.map { containerName(project: project, service: $0, oneOff: false) })
         for service in services.reversed() {
             let name = containerName(project: project, service: service, oneOff: false)
-            try await runContainer(stopArguments(service: service, containerName: name), check: false)
+            try await runContainer(stopArguments(service: service, containerName: name, timeout: down.timeout), check: false)
             try await runContainer(["delete", name], check: false)
         }
         if down.removeOrphans {
@@ -401,18 +404,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Stops selected service containers.
-    public func stop(project: ComposeProject, services selected: [String]) async throws {
+    public func stop(project: ComposeProject, services selected: [String], timeout: Int? = nil) async throws {
+        try validateTimeoutSeconds(timeout, command: "stop")
         for service in try selectedServices(project: project, selected: selected) {
             try await runContainer(
-                stopArguments(service: service, containerName: containerName(project: project, service: service, oneOff: false)),
+                stopArguments(service: service, containerName: containerName(project: project, service: service, oneOff: false), timeout: timeout),
                 check: false
             )
         }
     }
 
     /// Restarts selected service containers.
-    public func restart(project: ComposeProject, services selected: [String]) async throws {
-        try await stop(project: project, services: selected)
+    public func restart(project: ComposeProject, services selected: [String], timeout: Int? = nil) async throws {
+        try await stop(project: project, services: selected, timeout: timeout)
         try await start(project: project, services: selected)
     }
 
@@ -858,6 +862,16 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Validates a Compose CLI shutdown timeout before runtime side effects.
+    func validateTimeoutSeconds(_ timeout: Int?, command: String) throws {
+        guard let timeout else {
+            return
+        }
+        guard timeout >= 0, timeout <= Int(Int32.max) else {
+            throw ComposeError.invalidProject("\(command) --timeout must be between 0 and \(Int32.max) seconds")
+        }
+    }
+
     /// Creates project networks and volumes required before containers start.
     func ensureResources(project: ComposeProject) async throws {
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
@@ -1278,12 +1292,12 @@ private extension ComposeOrchestrator {
     }
 
     /// Returns the stop command arguments for a service container.
-    func stopArguments(service: ComposeService, containerName: String) -> [String] {
+    func stopArguments(service: ComposeService, containerName: String, timeout: Int? = nil) -> [String] {
         var args = ["stop"]
         if let signal = service.stopSignal, !signal.isEmpty {
             args.append(contentsOf: ["--signal", signal])
         }
-        if let seconds = service.stopGracePeriodSeconds {
+        if let seconds = timeout ?? service.stopGracePeriodSeconds {
             args.append(contentsOf: ["--time", "\(seconds)"])
         }
         args.append(containerName)

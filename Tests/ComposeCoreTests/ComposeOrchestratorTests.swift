@@ -1770,6 +1770,54 @@ struct ComposeOrchestratorTests {
         #expect(commands[9] == ["container", "cp", "demo-api-1:/tmp/file", "."])
     }
 
+    @Test("lifecycle timeout overrides service stop grace period")
+    func lifecycleTimeoutOverridesServiceStopGracePeriod() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+            ]
+        )
+
+        try await orchestrator.stop(project: project, services: ["api"], timeout: 12)
+        try await orchestrator.restart(project: project, services: ["api"], timeout: 13)
+        try await orchestrator.down(project: project, options: ComposeDownOptions(timeout: 14))
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "stop", "--signal", "SIGUSR1", "--time", "12", "demo-api-1"],
+            ["container", "stop", "--signal", "SIGUSR1", "--time", "13", "demo-api-1"],
+            ["container", "start", "demo-api-1"],
+            ["container", "stop", "--signal", "SIGUSR1", "--time", "14", "demo-api-1"],
+            ["container", "delete", "demo-api-1"],
+        ])
+    }
+
+    @Test("lifecycle rejects invalid timeout before runtime commands")
+    func lifecycleRejectsInvalidTimeoutBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        do {
+            try await orchestrator.stop(project: project, services: ["api"], timeout: -1)
+            Issue.record("Expected invalid timeout error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("stop --timeout must be between 0 and 2147483647 seconds"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("exec disables TTY while keeping stdin inherited")
     func execDisablesTTYWhileKeepingStdinInherited() async throws {
         let runner = RecordingRunner()

@@ -160,6 +160,10 @@ cli-smoke: build
 	[[ "$$exec_non_interactive_output" != *"--tty"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
+	stop_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop --timeout 12 api)"; \
+	[[ "$$stop_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
+	restart_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t 13 api)"; \
+	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
 	ps_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps -q)"; \
 	[[ "$$ps_quiet_output" == *"container list --format json"* ]]; \
 	ps_services_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --services)"; \
