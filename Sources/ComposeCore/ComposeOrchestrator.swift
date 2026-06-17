@@ -55,6 +55,7 @@ public struct ComposeUpOptions {
     public var noRecreate: Bool
     public var removeOrphans: Bool
     public var pullPolicy: String?
+    public var scales: [String]
 
     public init(
         services: [String] = [],
@@ -63,7 +64,8 @@ public struct ComposeUpOptions {
         forceRecreate: Bool = false,
         noRecreate: Bool = false,
         removeOrphans: Bool = false,
-        pullPolicy: String? = nil
+        pullPolicy: String? = nil,
+        scales: [String] = []
     ) {
         self.services = services
         self.build = build
@@ -72,6 +74,7 @@ public struct ComposeUpOptions {
         self.noRecreate = noRecreate
         self.removeOrphans = removeOrphans
         self.pullPolicy = pullPolicy
+        self.scales = scales
     }
 }
 
@@ -1118,6 +1121,9 @@ private extension ComposeOrchestrator {
     func validateUpOptions(_ options: ComposeUpOptions) throws {
         if options.forceRecreate, options.noRecreate {
             throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
+        }
+        if !options.scales.isEmpty {
+            throw ComposeError.unsupported("up --scale: service replica scaling is not implemented by container-compose yet")
         }
     }
 

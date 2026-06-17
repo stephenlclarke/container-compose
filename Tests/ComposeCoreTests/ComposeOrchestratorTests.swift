@@ -458,6 +458,25 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects unsupported scale before side effects")
+    func upRejectsUnsupportedScaleBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions(scales: ["api=2"])
+            )
+            Issue.record("Expected unsupported up scale failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("up --scale: service replica scaling is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up uses external resource names without creating project resources")
     func upUsesExternalResourceNamesWithoutCreatingProjectResources() async throws {
         let runner = RecordingRunner(responses: [

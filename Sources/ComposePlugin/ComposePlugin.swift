@@ -223,6 +223,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var removeOrphans = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, or never.")
     var pull: String?
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    var scales: [String] = []
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
 
@@ -238,7 +240,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 forceRecreate: forceRecreate,
                 noRecreate: noRecreate,
                 removeOrphans: removeOrphans,
-                pullPolicy: pull
+                pullPolicy: pull,
+                scales: scales
             )
         )
     }
