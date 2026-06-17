@@ -441,6 +441,23 @@ struct ComposeOrchestratorTests {
         #expect(pullRunner.commands.isEmpty)
     }
 
+    @Test("up validates incompatible recreate options before side effects")
+    func upValidatesIncompatibleRecreateOptionsBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions(forceRecreate: true, noRecreate: true)
+            )
+            Issue.record("Expected invalid up option combination")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("--force-recreate and --no-recreate are incompatible"))
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up uses external resource names without creating project resources")
     func upUsesExternalResourceNamesWithoutCreatingProjectResources() async throws {
         let runner = RecordingRunner(responses: [

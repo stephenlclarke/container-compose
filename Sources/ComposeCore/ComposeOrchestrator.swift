@@ -231,6 +231,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Creates project resources and starts selected services in dependency order.
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
+        try validateUpOptions(up)
         let services = try orderedServices(project: project, selected: up.services)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services)
@@ -1081,6 +1082,13 @@ private extension ComposeOrchestrator {
         }
         if !["always", "missing", "if_not_present", "never"].contains(policy) {
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
+        }
+    }
+
+    /// Validates command-level `compose up` option combinations before runtime side effects.
+    func validateUpOptions(_ options: ComposeUpOptions) throws {
+        if options.forceRecreate, options.noRecreate {
+            throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
         }
     }
 
