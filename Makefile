@@ -27,23 +27,30 @@ COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
 SONAR_QUALITYGATE_WAIT ?= false
-DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
+XCODE_SELECT_DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
+SWIFT_RUNTIME_RESOURCE_PATH ?= $(shell $(SWIFT) -print-target-info 2>/dev/null | $(PYTHON) -c 'import json, sys; print(json.load(sys.stdin).get("paths", {}).get("runtimeResourcePath", ""))' 2>/dev/null || true)
+SWIFT_XCODE_DEVELOPER_DIR := $(patsubst %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,%,$(filter %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,$(SWIFT_RUNTIME_RESOURCE_PATH)))
+SWIFT_CLT_DEVELOPER_DIR := $(patsubst %/usr/lib/swift,%,$(filter-out %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,$(filter %/usr/lib/swift,$(SWIFT_RUNTIME_RESOURCE_PATH))))
+SWIFT_ACTIVE_DEVELOPER_DIR ?= $(firstword $(SWIFT_XCODE_DEVELOPER_DIR) $(SWIFT_CLT_DEVELOPER_DIR) $(XCODE_SELECT_DEVELOPER_DIR))
 SWIFT_TEST_FRAMEWORK_CANDIDATES := \
-	$(DEVELOPER_DIR)/Library/Developer/Frameworks \
-	$(DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/Library/Frameworks \
-	/Library/Developer/CommandLineTools/Library/Developer/Frameworks
+	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/Library/Frameworks \
+	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Library/Developer/Frameworks \
+	$(XCODE_SELECT_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/Library/Frameworks \
+	$(XCODE_SELECT_DEVELOPER_DIR)/Library/Developer/Frameworks
 SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
-	$(DEVELOPER_DIR)/Library/Developer/usr/lib \
-	$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host \
-	$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx \
-	/Library/Developer/CommandLineTools/Library/Developer/usr/lib
+	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/usr/lib \
+	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Library/Developer/usr/lib \
+	$(XCODE_SELECT_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/usr/lib \
+	$(XCODE_SELECT_DEVELOPER_DIR)/Library/Developer/usr/lib
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
 MARKDOWN_FILES := README.md BUILD.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md
 
 # Some local toolchains can build Swift Testing targets without adding the
-# framework and interop library to SwiftPM's generated test runner.
+# framework and interop library to SwiftPM's generated test runner. Derive
+# those paths from the selected Swift executable so `SWIFT=... make swift-test`
+# does not mix Xcode and Command Line Tools runtimes.
 ifneq ($(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),)
 SWIFT_TEST_FLAGS ?= -Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)'
 ifneq ($(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),)
