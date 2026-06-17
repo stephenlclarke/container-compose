@@ -1,4 +1,4 @@
-module github.com/container-compose/compose-normalizer
+module github.com/stephenlclarke/container-compose/Tools/compose-normalizer
 
 go 1.23
 
