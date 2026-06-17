@@ -1074,24 +1074,40 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await copier.copyIntoContainer(id: destination.id, source: localPath, destination: destination.path)
             }
         case (.containers(let sources), .containers(let destinations)):
-            if copy.all {
-                throw ComposeError.unsupported("cp --all with service-to-service copies is not implemented by container-compose yet")
-            }
-            guard let source = sources.first, let destination = destinations.first else {
-                throw ComposeError.invalidProject("no source or destination container found for cp")
-            }
-            if options.dryRun {
+            try await copyBetweenContainerTargets(sources: sources, destinations: destinations, allDestinations: copy.all)
+        case (.local, .local):
+            try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+        }
+    }
+
+    /// Stages copies from one source service container into selected destination containers.
+    private func copyBetweenContainerTargets(
+        sources: [ComposeCopyContainerTarget],
+        destinations: [ComposeCopyContainerTarget],
+        allDestinations: Bool
+    ) async throws {
+        guard let source = sources.first else {
+            throw ComposeError.invalidProject("no source or destination container found for cp")
+        }
+        let selectedDestinations = allDestinations ? destinations : Array(destinations.prefix(1))
+        guard !selectedDestinations.isEmpty else {
+            throw ComposeError.invalidProject("no source or destination container found for cp")
+        }
+
+        if options.dryRun {
+            for destination in selectedDestinations {
                 try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
-                return
             }
+            return
+        }
+
+        for destination in selectedDestinations {
             try await copier.copyBetweenContainers(
                 sourceID: source.id,
                 source: source.path,
                 destinationID: destination.id,
                 destination: destination.path
             )
-        case (.local, .local):
-            try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
         }
     }
 

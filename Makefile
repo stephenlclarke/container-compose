@@ -278,6 +278,8 @@ cli-smoke: build
 	[[ "$$cp_follow_link_output" == *"unsupported compose feature: cp --follow-link: apple/container cp does not expose follow-link mode"* ]]; \
 	cp_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --all api:/tmp/file .)"; \
 	[[ "$$cp_all_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
+	cp_all_service_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --all api:/tmp/file db:/tmp/file)"; \
+	[[ "$$cp_all_service_output" == *"container cp demo-api-1:/tmp/file demo-db-1:/tmp/file"* ]]; \
 	cp_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 2 api:/tmp/file . 2>&1 || true)"; \
 	[[ "$$cp_index_output" == *"unsupported compose feature: cp --index 2: service replica copy needs replica-aware container lookup"* ]]; \
 	export_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export api)"; \

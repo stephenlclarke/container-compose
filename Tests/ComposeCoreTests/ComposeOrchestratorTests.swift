@@ -5192,8 +5192,8 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("cp all rejects service to service copies")
-    func cpAllRejectsServiceToServiceCopies() async throws {
+    @Test("cp all stages service to service copies into every destination container")
+    func cpAllStagesServiceToServiceCopiesIntoEveryDestinationContainer() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
@@ -5217,6 +5217,16 @@ struct ComposeOrchestratorTests {
                     composeConfigHashLabel: "worker-hash",
                 ]
             ),
+            ComposeContainerSummary(
+                id: "demo-worker-run-first",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeOneOffLabel: "true",
+                    composeConfigHashLabel: "worker-hash",
+                ]
+            ),
         ])
         let project = ComposeProject(
             name: "demo",
@@ -5230,24 +5240,20 @@ struct ComposeOrchestratorTests {
             $0.discoveryManager = discoveryManager
         })
 
-        do {
-            try await orchestrator.copy(
-                project: project,
-                options: ComposeCopyOptions {
-                    $0.arguments = ["api:/tmp/report.txt", "worker:/tmp/report.txt"]
-                    $0.all = true
-                }
-            )
-            Issue.record("Expected unsupported service-to-service cp --all error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("cp --all with service-to-service copies is not implemented by container-compose yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "worker:/tmp/report.txt"]
+                $0.all = true
+            }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [true, true])
-        #expect(await copier.requests.isEmpty)
+        #expect(await copier.requests == [
+            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-worker-1", destination: "/tmp/report.txt"),
+            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-worker-run-first", destination: "/tmp/report.txt"),
+        ])
     }
 
     @Test("export maps service containers to runtime export")
