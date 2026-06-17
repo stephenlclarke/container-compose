@@ -18,7 +18,7 @@ orchestration layer close to the Swift code and runtime primitives used by
 - Label every project resource with Compose metadata so lifecycle commands are
   project scoped and repeatable.
 - Fail clearly when a Compose feature depends on a runtime primitive that
-  `container` does not expose yet.
+  [`apple/container`](https://github.com/apple/container) does not expose yet.
 
 ## Why Go Is Used
 
@@ -84,6 +84,8 @@ The installed plugin layout is:
 options, invokes the normalizer, validates the resulting project, and translates
 Compose operations into `container` operations.
 
+Current orchestration uses the installed `container` CLI as its runtime adapter because that keeps behavior aligned with the command surface available to users today. Apple also publishes public DocC documentation for [`container`](https://apple.github.io/container/documentation/) and [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/) APIs; those docs should guide future direct Swift API adapter work when Compose compatibility needs primitives that are available in the API but not yet surfaced through the CLI.
+
 `compose-normalizer` is a Go executable. It has no orchestration behavior. Its
 only job is to load Compose files with `compose-go` and emit the normalized
 project as JSON.
@@ -118,8 +120,9 @@ the plugin honest while gaps in
 - Keep Compose parsing out of Swift and runtime orchestration out of Go.
 - Use deterministic names, sorted traversal, and labels to make repeated runs
   predictable.
-- Keep the public behavior close to Docker Compose where `container` has the
-  required primitive, and fail with precise feature names where it does not.
+- Keep the public behavior close to Docker Compose where
+  [`apple/container`](https://github.com/apple/container) has the required
+  primitive, and fail with precise feature names where it does not.
 - Preserve [`apple/container`](https://github.com/apple/container) conventions
   so the plugin can be reviewed for future in-tree adoption with minimal
   conceptual translation.

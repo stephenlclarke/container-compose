@@ -130,6 +130,44 @@ public struct ComposeStatsOptions {
     }
 }
 
+/// Options for `compose exec` commands.
+public struct ComposeExecOptions {
+    public var command: [String] = []
+    public var interactive = true
+    public var tty = true
+    public var detach = false
+    public var environment: [String] = []
+    public var index = 1
+    public var privileged = false
+    public var user: String?
+    public var workingDirectory: String?
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default exec behavior.
+    }
+
+    public init(_ configure: (inout ComposeExecOptions) -> Void) {
+        configure(&self)
+    }
+}
+
+/// Options for `compose cp` commands.
+public struct ComposeCopyOptions {
+    public var arguments: [String] = []
+    public var all = false
+    public var archive = false
+    public var followLink = false
+    public var index = 1
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default copy behavior.
+    }
+
+    public init(_ configure: (inout ComposeCopyOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose ls`.
 public struct ComposeLsOptions {
     public var all: Bool
@@ -480,22 +518,48 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         interactive: Bool = true,
         tty: Bool = true
     ) async throws {
+        try await exec(
+            project: project,
+            serviceName: serviceName,
+            options: ComposeExecOptions {
+                $0.command = command
+                $0.interactive = interactive
+                $0.tty = tty
+            }
+        )
+    }
+
+    /// Executes a command in an existing service container with Compose options.
+    public func exec(project: ComposeProject, serviceName: String, options exec: ComposeExecOptions) async throws {
+        try validateExecOptions(exec)
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
-        guard !command.isEmpty else {
+        guard !exec.command.isEmpty else {
             throw ComposeError.invalidProject("exec requires a command")
         }
         var args = ["exec"]
-        if interactive {
+        if exec.detach {
+            args.append("--detach")
+        }
+        for environment in exec.environment {
+            args.append(contentsOf: ["--env", environment])
+        }
+        if let user = exec.user {
+            args.append(contentsOf: ["--user", user])
+        }
+        if let workingDirectory = exec.workingDirectory {
+            args.append(contentsOf: ["--workdir", workingDirectory])
+        }
+        if exec.interactive, !exec.detach {
             args.append("--interactive")
         }
-        if tty {
+        if exec.tty, !exec.detach {
             args.append("--tty")
         }
         args.append(containerName(project: project, service: service, oneOff: false))
-        args.append(contentsOf: command)
-        try await runContainer(args, inheritedIO: interactive || tty)
+        args.append(contentsOf: exec.command)
+        try await runContainer(args, inheritedIO: !exec.detach && (exec.interactive || exec.tty))
     }
 
     /// Runs a one-off container for a service.
@@ -673,10 +737,21 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Copies files between a Compose service container and the local host.
     public func copy(project: ComposeProject, arguments: [String]) async throws {
-        guard arguments.count == 2 else {
+        try await copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = arguments
+            }
+        )
+    }
+
+    /// Copies files between a Compose service container and the local host with Compose options.
+    public func copy(project: ComposeProject, options copy: ComposeCopyOptions) async throws {
+        try validateCopyOptions(copy)
+        guard copy.arguments.count == 2 else {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
-        let mappedArguments = try arguments.map { try copyArgument($0, project: project) }
+        let mappedArguments = try copy.arguments.map { try copyArgument($0, project: project) }
         try await runContainer(["cp"] + mappedArguments)
     }
 
@@ -882,9 +957,6 @@ private extension ComposeOrchestrator {
         }
         if let domainName = service.domainName, !domainName.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses domainname; custom domain name support needs an apple/container runtime gap PR")
-        }
-        if let dnsOptions = service.dnsOptions, !dnsOptions.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses dns_opt; DNS option support needs an apple/container runtime gap PR")
         }
         if let sysctls = service.sysctls, !sysctls.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
@@ -1170,9 +1242,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose stats` options before invoking runtime stats.
     func validateStatsOptions(_ options: ComposeStatsOptions) throws {
-        if options.services.count > 1 {
-            throw ComposeError.invalidProject("stats accepts at most one service")
-        }
         if options.all {
             throw ComposeError.unsupported("stats --all: apple/container stats only reports running containers")
         }
@@ -1181,6 +1250,32 @@ private extension ComposeOrchestrator {
         }
         if !["table", "json"].contains(options.format) {
             throw ComposeError.unsupported("stats --format '\(options.format)': apple/container stats supports table and json output")
+        }
+    }
+
+    /// Validates `compose exec` options before invoking runtime exec.
+    func validateExecOptions(_ options: ComposeExecOptions) throws {
+        if options.index != 1 {
+            throw ComposeError.unsupported("exec --index: service replica exec needs replica-aware container lookup")
+        }
+        if options.privileged {
+            throw ComposeError.unsupported("exec --privileged: apple/container exec does not expose privileged process execution")
+        }
+    }
+
+    /// Validates `compose cp` options before invoking runtime copy.
+    func validateCopyOptions(_ options: ComposeCopyOptions) throws {
+        if options.all {
+            throw ComposeError.unsupported("cp --all: copying from one-off run containers is not implemented by container-compose yet")
+        }
+        if options.archive {
+            throw ComposeError.unsupported("cp --archive: apple/container cp does not expose archive mode")
+        }
+        if options.followLink {
+            throw ComposeError.unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
+        }
+        if options.index != 1 {
+            throw ComposeError.unsupported("cp --index \(options.index): service replica copy needs replica-aware container lookup")
         }
     }
 
@@ -1557,6 +1652,9 @@ private extension ComposeOrchestrator {
         }
         for dnsSearch in service.dnsSearch ?? [] {
             args.append(contentsOf: ["--dns-search", dnsSearch])
+        }
+        for dnsOption in service.dnsOptions ?? [] {
+            args.append(contentsOf: ["--dns-option", dnsOption])
         }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])

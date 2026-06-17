@@ -269,6 +269,7 @@ struct ComposeOrchestratorTests {
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                     $0.networks = ["default"]
                     $0.platform = "linux/amd64"
+                    $0.dnsOptions = ["use-vc"]
                 },
             ]
         ) {
@@ -294,6 +295,7 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--volume", "demo_cache:/cache"]))
         #expect(create.containsSequence(["--network", "demo_default"]))
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
+        #expect(create.containsSequence(["--dns-option", "use-vc"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
@@ -1138,33 +1140,22 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported DNS options before creating resources")
-    func upRejectsUnsupportedDNSOptionsBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps DNS options to runtime arguments")
+    func upMapsDNSOptionsToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.failure, .success])
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.dnsOptions = ["use-vc"]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported DNS option error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses dns_opt; DNS option support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--dns-option", "use-vc"]))
     }
 
     @Test("up rejects unsupported sysctls before creating resources")
@@ -1986,12 +1977,12 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(runner: runner).stats(project: project, options: ComposeStatsOptions())
         try await ComposeOrchestrator(runner: runner).stats(
             project: project,
-            options: ComposeStatsOptions(services: ["db"], format: "json", noStream: true)
+            options: ComposeStatsOptions(services: ["api", "db"], format: "json", noStream: true)
         )
 
         #expect(runner.commands.map(\.arguments) == [
             ["container", "stats", "demo-api-1", "custom-db"],
-            ["container", "stats", "--format", "json", "--no-stream", "custom-db"],
+            ["container", "stats", "--format", "json", "--no-stream", "demo-api-1", "custom-db"],
         ])
     }
 
@@ -2006,10 +1997,6 @@ struct ComposeOrchestratorTests {
         )
 
         let cases: [(ComposeStatsOptions, ComposeError)] = [
-            (
-                ComposeStatsOptions(services: ["api", "db"]),
-                .invalidProject("stats accepts at most one service")
-            ),
             (
                 ComposeStatsOptions(all: true),
                 .unsupported("stats --all: apple/container stats only reports running containers")
@@ -2824,6 +2811,108 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.first?.io == .inherited)
     }
 
+    @Test("exec maps environment user workdir and detach options")
+    func execMapsEnvironmentUserWorkdirAndDetachOptions() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            options: ComposeExecOptions {
+                $0.command = ["env"]
+                $0.detach = true
+                $0.environment = ["FOO=bar", "DEBUG"]
+                $0.user = "1000:1000"
+                $0.workingDirectory = "/app"
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command == [
+            "container",
+            "exec",
+            "--detach",
+            "--env",
+            "FOO=bar",
+            "--env",
+            "DEBUG",
+            "--user",
+            "1000:1000",
+            "--workdir",
+            "/app",
+            "demo-api-1",
+            "env",
+        ])
+        #expect(runner.commands.first?.io == .captured(input: nil))
+    }
+
+    @Test("exec rejects unsupported replica indexes before runtime commands")
+    func execRejectsUnsupportedReplicaIndexesBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.exec(
+                project: project,
+                serviceName: "api",
+                options: ComposeExecOptions {
+                    $0.command = ["true"]
+                    $0.index = 2
+                }
+            )
+            Issue.record("Expected unsupported exec index error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("exec --index: service replica exec needs replica-aware container lookup"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("exec rejects privileged mode before runtime commands")
+    func execRejectsPrivilegedModeBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(runner: runner)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.exec(
+                project: project,
+                serviceName: "api",
+                options: ComposeExecOptions {
+                    $0.command = ["true"]
+                    $0.privileged = true
+                }
+            )
+            Issue.record("Expected unsupported exec privileged error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("exec --privileged: apple/container exec does not expose privileged process execution"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("logs accepts Compose all tail value")
     func logsAcceptsComposeAllTailValue() async throws {
         let runner = RecordingRunner()
@@ -2886,6 +2975,86 @@ struct ComposeOrchestratorTests {
             ["container", "cp", "./seed.sql", "custom-db:/docker-entrypoint-initdb.d/seed.sql"],
             ["container", "cp", "./local:file.txt", "./out:file.txt"],
         ])
+    }
+
+    @Test("cp accepts default replica index")
+    func cpAcceptsDefaultReplicaIndex() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                $0.index = 1
+            }
+        )
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "cp", "demo-api-1:/tmp/report.txt", "./report.txt"],
+        ])
+    }
+
+    @Test("cp rejects unsupported command options before runtime copy")
+    func cpRejectsUnsupportedCommandOptionsBeforeRuntimeCopy() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let cases: [(name: String, options: ComposeCopyOptions, expected: ComposeError)] = [
+            (
+                name: "--all",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.all = true
+                },
+                expected: .unsupported("cp --all: copying from one-off run containers is not implemented by container-compose yet")
+            ),
+            (
+                name: "--archive",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.archive = true
+                },
+                expected: .unsupported("cp --archive: apple/container cp does not expose archive mode")
+            ),
+            (
+                name: "--follow-link",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.followLink = true
+                },
+                expected: .unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
+            ),
+            (
+                name: "--index",
+                options: ComposeCopyOptions {
+                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                    $0.index = 2
+                },
+                expected: .unsupported("cp --index 2: service replica copy needs replica-aware container lookup")
+            ),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            do {
+                try await ComposeOrchestrator(runner: runner).copy(project: project, options: testCase.options)
+                Issue.record("Expected unsupported cp \(testCase.name) error")
+            } catch let error as ComposeError {
+                #expect(error == testCase.expected)
+            } catch {
+                Issue.record("Unexpected error for cp \(testCase.name): \(error)")
+            }
+            #expect(runner.commands.isEmpty)
+        }
     }
 
     @Test("port prints static published bindings")
@@ -3050,6 +3219,7 @@ struct ComposeOrchestratorTests {
                     $0.tmpfs = ["/cache"]
                     $0.dns = ["1.1.1.1"]
                     $0.dnsSearch = ["local"]
+                    $0.dnsOptions = ["use-vc"]
                     $0.capAdd = ["NET_ADMIN"]
                     $0.capDrop = ["MKNOD"]
                     $0.memLimit = "1024"
@@ -3082,6 +3252,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
         #expect(command.containsSequence(["--dns", "1.1.1.1"]))
         #expect(command.containsSequence(["--dns-search", "local"]))
+        #expect(command.containsSequence(["--dns-option", "use-vc"]))
         #expect(command.containsSequence(["--memory", "1024"]))
         #expect(command.containsSequence(["--cpus", "2"]))
         #expect(command.containsSequence(["--shm-size", "67108864"]))
@@ -3392,33 +3563,22 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported DNS options before creating resources")
-    func runRejectsUnsupportedDNSOptionsBeforeCreatingResources() async throws {
+    @Test("run maps DNS options to runtime arguments")
+    func runMapsDNSOptionsToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.dnsOptions = ["use-vc"]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported DNS option error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses dns_opt; DNS option support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--dns-option", "use-vc"]))
     }
 
     @Test("run rejects unsupported sysctls before creating resources")
@@ -5362,21 +5522,6 @@ private final class OneOffIdentifierSource: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return values.isEmpty ? "fallback" : values.removeFirst()
-    }
-}
-
-private extension Array where Element: Equatable {
-    func containsSequence(_ sequence: [Element]) -> Bool {
-        guard !sequence.isEmpty, sequence.count <= count else {
-            return false
-        }
-        return indices.contains { index in
-            let end = self.index(index, offsetBy: sequence.count, limitedBy: endIndex)
-            guard let end else {
-                return false
-            }
-            return Array(self[index..<end]) == sequence
-        }
     }
 }
 

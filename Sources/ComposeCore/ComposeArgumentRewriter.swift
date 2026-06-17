@@ -75,6 +75,41 @@ public enum ComposeArgumentRewriter {
         "-p": .value,
     ]
 
+    private static let compactGlobalValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-f", "--file"),
+        ("-p", "--project-name"),
+    ]
+
+    private static let compactRunValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-e", "--env"),
+        ("-l", "--label"),
+        ("-u", "--user"),
+        ("-v", "--volume"),
+        ("-w", "--workdir"),
+    ]
+
+    private static let compactExecValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-e", "--env"),
+        ("-u", "--user"),
+        ("-w", "--workdir"),
+    ]
+
+    private static let compactLogValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-n", "--tail"),
+    ]
+
+    private static let compactTimeoutValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-t", "--timeout"),
+    ]
+
+    private static let compactKillValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-s", "--signal"),
+    ]
+
+    private static let compactVersionValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-f", "--format"),
+    ]
+
     /// Returns arguments with known Compose global options moved immediately
     /// after the subcommand while preserving unknown pre-command arguments.
     public static func rewrite(_ arguments: [String]) -> [String] {
@@ -89,7 +124,7 @@ public enum ComposeArgumentRewriter {
             arguments: Array(arguments[arguments.index(after: commandIndex)...])
         )
         if command == "version" {
-            return prefix + [command] + suffix
+            return normalizeCompactGlobalOptions(prefix) + [command] + suffix
         }
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
@@ -105,6 +140,11 @@ public enum ComposeArgumentRewriter {
             }
             if subcommands.contains(argument) {
                 return index
+            }
+
+            if splitCompactGlobalValueOption(argument) != nil {
+                index = arguments.index(after: index)
+                continue
             }
 
             guard let kind = globalOptionKind(argument) else {
@@ -132,6 +172,13 @@ public enum ComposeArgumentRewriter {
         // report them accurately.
         while index < arguments.count {
             let argument = arguments[index]
+            if let split = splitCompactGlobalValueOption(argument) {
+                moved.append(split.option)
+                moved.append(split.value)
+                index += 1
+                continue
+            }
+
             guard let kind = globalOptionKind(argument) else {
                 retained.append(argument)
                 index += 1
@@ -150,6 +197,20 @@ public enum ComposeArgumentRewriter {
         return (retained, moved)
     }
 
+    /// Normalizes compact root options without moving the remaining arguments.
+    private static func normalizeCompactGlobalOptions(_ arguments: [String]) -> [String] {
+        var normalized: [String] = []
+        for argument in arguments {
+            if let split = splitCompactGlobalValueOption(argument) {
+                normalized.append(split.option)
+                normalized.append(split.value)
+            } else {
+                normalized.append(argument)
+            }
+        }
+        return normalized
+    }
+
     /// Looks up a known global option, including `--option=value` forms.
     private static func globalOptionKind(_ argument: String) -> OptionKind? {
         if let kind = globalOptions[argument] {
@@ -166,12 +227,18 @@ public enum ComposeArgumentRewriter {
         switch command {
         case "exec":
             return rewriteExecOptions(arguments)
+        case "kill":
+            return rewriteCompactCommandValueOptions(arguments, options: compactKillValueOptions)
         case "logs":
             return rewriteLogsOptions(arguments)
+        case "down", "restart", "stop":
+            return rewriteCompactCommandValueOptions(arguments, options: compactTimeoutValueOptions)
         case "rm":
             return rewriteRemoveOptions(arguments)
         case "run":
             return rewriteRunOptions(arguments)
+        case "version":
+            return rewriteCompactCommandValueOptions(arguments, options: compactVersionValueOptions)
         default:
             return arguments
         }
@@ -180,21 +247,43 @@ public enum ComposeArgumentRewriter {
     /// Normalizes Docker Compose `exec` boolean option value forms.
     private static func rewriteExecOptions(_ arguments: [String]) -> [String] {
         var rewritten: [String] = []
+        var index = 0
         var shouldRewriteOptions = true
-        for argument in arguments {
-            if shouldRewriteOptions, argument == "--" {
+        while index < arguments.count {
+            let argument = arguments[index]
+            if !shouldRewriteOptions {
+                rewritten.append(argument)
+                index += 1
+            } else if argument == "--" {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
-            } else if shouldRewriteOptions, argument == "--interactive=false" {
+                index += 1
+            } else if argument == "--interactive=false" {
                 rewritten.append("--no-interactive")
-            } else if shouldRewriteOptions, argument == "--interactive=true" {
+                index += 1
+            } else if argument == "--interactive=true" {
                 rewritten.append("--interactive")
-            } else if shouldRewriteOptions, argument == "--tty=false" {
+                index += 1
+            } else if argument == "--tty=false" {
                 rewritten.append("--no-tty")
-            } else if shouldRewriteOptions, argument == "--tty=true" {
+                index += 1
+            } else if argument == "--tty=true" {
                 rewritten.append("--tty")
-            } else {
+                index += 1
+            } else if let split = splitCompactValueOption(argument, options: compactExecValueOptions) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+                index += 1
+            } else if execOptionConsumesFollowingValue(argument), arguments.indices.contains(index + 1) {
                 rewritten.append(argument)
+                rewritten.append(arguments[index + 1])
+                index += 2
+            } else {
+                if !argument.hasPrefix("-") {
+                    shouldRewriteOptions = false
+                }
+                rewritten.append(argument)
+                index += 1
             }
         }
         return rewritten
@@ -213,6 +302,9 @@ public enum ComposeArgumentRewriter {
                 // Docker Compose `logs -f` alias before validation sees the
                 // command-local option.
                 rewritten.append("--follow")
+            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactLogValueOptions) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
             } else {
                 rewritten.append(argument)
             }
@@ -250,6 +342,27 @@ public enum ComposeArgumentRewriter {
         }
     }
 
+    /// Normalizes compact short options that carry their value in one token.
+    private static func rewriteCompactCommandValueOptions(
+        _ arguments: [String],
+        options: [(shortOption: String, normalizedOption: String)]
+    ) -> [String] {
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: options) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
+    }
+
     /// Normalizes Docker Compose `run -p` before the service name.
     private static func rewriteRunOptions(_ arguments: [String]) -> [String] {
         var rewritten: [String] = []
@@ -280,6 +393,10 @@ public enum ComposeArgumentRewriter {
                 rewritten.append("--publish")
                 rewritten.append(String(argument.dropFirst(2)))
                 index += 1
+            } else if let split = splitCompactRunValueOption(argument) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+                index += 1
             } else if optionConsumesFollowingValue(argument), arguments.indices.contains(index + 1) {
                 rewritten.append(argument)
                 rewritten.append(arguments[index + 1])
@@ -293,6 +410,39 @@ public enum ComposeArgumentRewriter {
             }
         }
         return rewritten
+    }
+
+    /// Splits compact Docker Compose global short options such as `-fcompose.yml`.
+    private static func splitCompactGlobalValueOption(_ argument: String) -> (option: String, value: String)? {
+        splitCompactValueOption(argument, options: compactGlobalValueOptions)
+    }
+
+    /// Splits compact Docker Compose short options such as `-eFOO=bar`.
+    private static func splitCompactRunValueOption(_ argument: String) -> (option: String, value: String)? {
+        splitCompactValueOption(argument, options: compactRunValueOptions)
+    }
+
+    /// Splits one-token short option values and strips an optional separator.
+    private static func splitCompactValueOption(
+        _ argument: String,
+        options: [(shortOption: String, normalizedOption: String)]
+    ) -> (option: String, value: String)? {
+        for option in options {
+            guard argument.hasPrefix(option.shortOption), argument.count > option.shortOption.count else {
+                continue
+            }
+
+            let suffix = argument.dropFirst(option.shortOption.count)
+            if suffix.first == "=" {
+                let value = suffix.dropFirst()
+                guard !value.isEmpty else {
+                    return nil
+                }
+                return (option.normalizedOption, String(value))
+            }
+            return (option.normalizedOption, String(suffix))
+        }
+        return nil
     }
 
     /// Returns whether a `run` option consumes the following argument.
@@ -312,6 +462,19 @@ public enum ComposeArgumentRewriter {
             "-l",
             "-u",
             "-v",
+            "-w",
+        ].contains(argument)
+    }
+
+    /// Returns whether an `exec` option consumes the following argument.
+    private static func execOptionConsumesFollowingValue(_ argument: String) -> Bool {
+        [
+            "--env",
+            "--index",
+            "--user",
+            "--workdir",
+            "-e",
+            "-u",
             "-w",
         ].contains(argument)
     }

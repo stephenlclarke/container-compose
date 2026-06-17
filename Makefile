@@ -41,7 +41,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package lint format
+.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package coverage-tools-test lint format
 
 all: workflow
 
@@ -92,11 +92,20 @@ cli-smoke: build
 	[[ "$$version_json_output" == '{"version":"0.1.0"}' ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
 	[[ "$$version_short_format_output" == '{"version":"0.1.0"}' ]]; \
+	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
+	[[ "$$version_compact_format_output" == '{"version":"0.1.0"}' ]]; \
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
+	stats_help_output="$$(".build/debug/compose" stats --help)"; \
+	[[ "$$stats_help_output" == *"Optional service names."* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n    dns_opt:\n      - use-vc\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
+	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
+	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
+	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
+	[[ "$$compact_global_output" == *"compact-db-1"* ]]; \
+	[[ "$$compact_global_output" == *"compact-api-1"* ]]; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *"demo-db-1"* ]]; \
@@ -123,16 +132,31 @@ cli-smoke: build
 	run_user_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -u 1000:1000 api id)"; \
 	[[ "$$run_user_output" == *"--user 1000:1000"* ]]; \
 	[[ "$$run_user_output" == *" alpine id"* ]]; \
+	run_compact_user_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -u1000:1000 api id)"; \
+	[[ "$$run_compact_user_output" == *"--user 1000:1000"* ]]; \
+	[[ "$$run_compact_user_output" == *" alpine id"* ]]; \
 	run_env_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -e LOG_LEVEL=debug --env-from-file .env.local api env)"; \
 	[[ "$$run_env_output" == *"--env LOG_LEVEL=debug"* ]]; \
 	[[ "$$run_env_output" == *"--env-file .env.local"* ]]; \
 	[[ "$$run_env_output" == *" alpine env"* ]]; \
+	run_compact_env_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -eLOG_LEVEL=trace api env)"; \
+	[[ "$$run_compact_env_output" == *"--env LOG_LEVEL=trace"* ]]; \
+	[[ "$$run_compact_env_output" == *" alpine env"* ]]; \
 	run_label_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -l com.example.role=job api true)"; \
 	[[ "$$run_label_output" == *"--label com.example.role=job"* ]]; \
 	[[ "$$run_label_output" == *" alpine true"* ]]; \
+	run_compact_label_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -lcom.example.compact=true api true)"; \
+	[[ "$$run_compact_label_output" == *"--label com.example.compact=true"* ]]; \
+	[[ "$$run_compact_label_output" == *" alpine true"* ]]; \
 	run_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v /host:/container:ro api ls)"; \
 	[[ "$$run_volume_output" == *"--volume /host:/container:ro"* ]]; \
 	[[ "$$run_volume_output" == *" alpine ls"* ]]; \
+	run_compact_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -v/host:/container:ro api ls)"; \
+	[[ "$$run_compact_volume_output" == *"--volume /host:/container:ro"* ]]; \
+	[[ "$$run_compact_volume_output" == *" alpine ls"* ]]; \
+	run_compact_workdir_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -w/workspace api pwd)"; \
+	[[ "$$run_compact_workdir_output" == *"--workdir /workspace"* ]]; \
+	[[ "$$run_compact_workdir_output" == *" alpine pwd"* ]]; \
 	run_detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -d api sleep 60)"; \
 	[[ "$$run_detached_output" == *"--detach"* ]]; \
 	[[ "$$run_detached_output" == *" alpine sleep 60"* ]]; \
@@ -151,6 +175,7 @@ cli-smoke: build
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"demo-db-1"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$up_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$up_output" != *"--detach"* ]]; \
 	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
 	[[ "$$up_no_deps_output" == *"container run"* ]]; \
@@ -160,6 +185,7 @@ cli-smoke: build
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
 	[[ "$$create_output" == *"container create"* ]]; \
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$create_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$create_output" != *"--detach"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
 	[[ "$$detached_output" == *"container run"* ]]; \
@@ -168,6 +194,8 @@ cli-smoke: build
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
 	logs_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n 5 api)"; \
 	[[ "$$logs_tail_output" == *"container logs -n 5 demo-api-1"* ]]; \
+	logs_compact_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n5 api)"; \
+	[[ "$$logs_compact_tail_output" == *"container logs -n 5 demo-api-1"* ]]; \
 	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
 	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
 	[[ "$$logs_all_output" != *" -n "* ]]; \
@@ -183,15 +211,47 @@ cli-smoke: build
 	[[ "$$exec_non_interactive_output" == *"container exec demo-api-1 echo ok"* ]]; \
 	[[ "$$exec_non_interactive_output" != *"--interactive"* ]]; \
 	[[ "$$exec_non_interactive_output" != *"--tty"* ]]; \
+	exec_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -e FOO=bar -u 1000:1000 -w /app api env)"; \
+	[[ "$$exec_options_output" == *"container exec --env FOO=bar --user 1000:1000 --workdir /app --interactive --tty demo-api-1 env"* ]]; \
+	exec_compact_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -eFOO=bar -u1000:1000 -w/app api env)"; \
+	[[ "$$exec_compact_options_output" == *"container exec --env FOO=bar --user 1000:1000 --workdir /app --interactive --tty demo-api-1 env"* ]]; \
+	exec_mixed_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -e FOO=bar -u1000:1000 -w/app api env)"; \
+	[[ "$$exec_mixed_options_output" == *"container exec --env FOO=bar --user 1000:1000 --workdir /app --interactive --tty demo-api-1 env"* ]]; \
+	exec_detach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -d api sleep 60)"; \
+	[[ "$$exec_detach_output" == *"container exec --detach demo-api-1 sleep 60"* ]]; \
+	[[ "$$exec_detach_output" != *"--interactive"* ]]; \
+	[[ "$$exec_detach_output" != *"--tty"* ]]; \
+	exec_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --index 2 api true 2>&1 || true)"; \
+	[[ "$$exec_index_output" == *"unsupported compose feature: exec --index: service replica exec needs replica-aware container lookup"* ]]; \
+	exec_privileged_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --privileged api true 2>&1 || true)"; \
+	[[ "$$exec_privileged_output" == *"unsupported compose feature: exec --privileged: apple/container exec does not expose privileged process execution"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
+	cp_index_one_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 1 api:/tmp/file .)"; \
+	[[ "$$cp_index_one_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
+	cp_archive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -a api:/tmp/file . 2>&1 || true)"; \
+	[[ "$$cp_archive_output" == *"unsupported compose feature: cp --archive: apple/container cp does not expose archive mode"* ]]; \
+	cp_follow_link_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -L api:/tmp/file . 2>&1 || true)"; \
+	[[ "$$cp_follow_link_output" == *"unsupported compose feature: cp --follow-link: apple/container cp does not expose follow-link mode"* ]]; \
+	cp_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --all api:/tmp/file . 2>&1 || true)"; \
+	[[ "$$cp_all_output" == *"unsupported compose feature: cp --all: copying from one-off run containers is not implemented by container-compose yet"* ]]; \
+	cp_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 2 api:/tmp/file . 2>&1 || true)"; \
+	[[ "$$cp_index_output" == *"unsupported compose feature: cp --index 2: service replica copy needs replica-aware container lookup"* ]]; \
 	stop_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop --timeout 12 api)"; \
 	[[ "$$stop_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
+	stop_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop -t12 api)"; \
+	[[ "$$stop_compact_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	restart_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t 13 api)"; \
 	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	restart_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t13 api)"; \
+	[[ "$$restart_compact_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	kill_compact_signal_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo kill -sSIGKILL api)"; \
+	[[ "$$kill_compact_signal_output" == *"container kill --signal SIGKILL demo-api-1"* ]]; \
 	rm_force_volumes_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo rm -fv api)"; \
 	[[ "$$rm_force_volumes_output" == *"container delete --force demo-api-1"* ]]; \
 	[[ "$$rm_force_volumes_output" == *"container volume delete demo_anon-"* ]]; \
+	down_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down -t12)"; \
+	[[ "$$down_compact_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	down_rmi_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down --rmi all)"; \
 	[[ "$$down_rmi_output" == *"container image delete --force alpine"* ]]; \
 	ps_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps -q)"; \
@@ -206,8 +266,8 @@ cli-smoke: build
 	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
 	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \
 	[[ "$$images_quiet_output" == *"container list --format json --all"* ]]; \
-	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api)"; \
-	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1"* ]]; \
+	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api db)"; \
+	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1 demo-db-1"* ]]; \
 	ls_json_output="$$(".build/debug/compose" --dry-run ls --format json)"; \
 	[[ "$$ls_json_output" == *"container list --format json"* ]]; \
 	[[ "$$ls_json_output" != *"--all"* ]]; \
@@ -275,8 +335,11 @@ package: build-release
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 
-lint:
+coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py
+	$(PYTHON) -m unittest discover Tools/coverage
+
+lint: coverage-tools-test
 	@if command -v "$(MARKDOWNLINT)" >/dev/null 2>&1; then \
 		"$(MARKDOWNLINT)" $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \

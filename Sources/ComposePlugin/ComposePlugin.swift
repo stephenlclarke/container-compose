@@ -409,6 +409,18 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     var tty = true
     @Flag(name: .customShort("T"), help: "Disable pseudo-TTY allocation.")
     var noTty = false
+    @Flag(name: .shortAndLong, help: "Run the command in the background.")
+    var detach = false
+    @Option(name: [.customShort("e"), .customLong("env")], help: "Set an environment variable for the exec process. May be repeated.")
+    var environment: [String] = []
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
+    @Flag(name: .customLong("privileged"), help: "Give extended privileges to the process. Not supported by apple/container exec yet.")
+    var privileged = false
+    @Option(name: [.customShort("u"), .customLong("user")], help: "Run the command as this user.")
+    var user: String?
+    @Option(name: [.customShort("w"), .customLong("workdir")], help: "Path to the working directory inside the container.")
+    var workdir: String?
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Command and arguments.")
@@ -420,9 +432,17 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
         try await orchestrator().exec(
             project: loadedProject,
             serviceName: service,
-            command: command,
-            interactive: interactive,
-            tty: tty && !noTty
+            options: ComposeExecOptions {
+                $0.command = command
+                $0.interactive = interactive
+                $0.tty = tty && !noTty
+                $0.detach = detach
+                $0.environment = environment
+                $0.index = index
+                $0.privileged = privileged
+                $0.user = user
+                $0.workingDirectory = workdir
+            }
         )
     }
 }
@@ -581,10 +601,10 @@ struct Stats: AsyncParsableCommand, ComposeProjectCommand {
     var noStream = false
     @Flag(name: .customLong("no-trunc"), help: "Do not truncate output. Not supported by apple/container stats yet.")
     var noTrunc = false
-    @Argument(help: "Optional service name.")
+    @Argument(help: "Optional service names.")
     var services: [String] = []
 
-    /// Displays resource usage statistics for the project or one selected service.
+    /// Displays resource usage statistics for the project or selected services.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().stats(
@@ -618,11 +638,28 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
 struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "cp", abstract: "Copy files between service containers and local paths.")
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("all"), help: "Include containers created by the run command. Not implemented yet.")
+    var all = false
+    @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Not supported by apple/container cp yet.")
+    var archive = false
+    @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path. Not supported by apple/container cp yet.")
+    var followLink = false
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
     @Argument(parsing: .allUnrecognized) var arguments: [String]
     /// Resolves Compose service references before delegating to the runtime.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().copy(project: loadedProject, arguments: arguments)
+        try await orchestrator().copy(
+            project: loadedProject,
+            options: ComposeCopyOptions {
+                $0.arguments = arguments
+                $0.all = all
+                $0.archive = archive
+                $0.followLink = followLink
+                $0.index = index
+            }
+        )
     }
 }
 

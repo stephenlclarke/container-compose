@@ -42,6 +42,42 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes compact root compose options after the subcommand")
+    func normalizesCompactRootComposeOptionsAfterSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-f=compose.yml",
+            "-p=demo",
+            "--dry-run",
+            "config",
+        ])
+
+        #expect(rewritten == [
+            "config",
+            "--file",
+            "compose.yml",
+            "--project-name",
+            "demo",
+            "--dry-run",
+        ])
+    }
+
+    @Test("skips compact root option values when locating the subcommand")
+    func skipsCompactRootOptionValuesWhenLocatingSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-fup.yml",
+            "-plogs",
+            "ps",
+        ])
+
+        #expect(rewritten == [
+            "ps",
+            "--file",
+            "up.yml",
+            "--project-name",
+            "logs",
+        ])
+    }
+
     @Test("leaves subcommand options and arguments in place")
     func leavesSubcommandOptionsAndArgumentsInPlace() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -135,6 +171,25 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes logs compact tail shorthand after subcommand")
+    func normalizesLogsCompactTailShorthandAfterSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "logs",
+            "-n5",
+            "-n=all",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "logs",
+            "--tail",
+            "5",
+            "--tail",
+            "all",
+            "api",
+        ])
+    }
+
     @Test("does not rewrite logs follow shorthand after terminator")
     func doesNotRewriteLogsFollowShorthandAfterTerminator() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -147,6 +202,21 @@ struct ComposeArgumentRewriterTests {
             "logs",
             "--",
             "-f",
+        ])
+    }
+
+    @Test("does not rewrite logs compact tail shorthand after terminator")
+    func doesNotRewriteLogsCompactTailShorthandAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "logs",
+            "--",
+            "-n5",
+        ])
+
+        #expect(rewritten == [
+            "logs",
+            "--",
+            "-n5",
         ])
     }
 
@@ -201,6 +271,73 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes lifecycle compact timeout shorthands")
+    func normalizesLifecycleCompactTimeoutShorthands() {
+        let down = ComposeArgumentRewriter.rewrite([
+            "down",
+            "-t11",
+        ])
+        let stop = ComposeArgumentRewriter.rewrite([
+            "stop",
+            "-t12",
+            "api",
+        ])
+        let restart = ComposeArgumentRewriter.rewrite([
+            "restart",
+            "-t=13",
+            "api",
+        ])
+
+        #expect(down == [
+            "down",
+            "--timeout",
+            "11",
+        ])
+        #expect(stop == [
+            "stop",
+            "--timeout",
+            "12",
+            "api",
+        ])
+        #expect(restart == [
+            "restart",
+            "--timeout",
+            "13",
+            "api",
+        ])
+    }
+
+    @Test("normalizes kill compact signal shorthand")
+    func normalizesKillCompactSignalShorthand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "kill",
+            "-sSIGKILL",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "kill",
+            "--signal",
+            "SIGKILL",
+            "api",
+        ])
+    }
+
+    @Test("does not rewrite compact command values after terminator")
+    func doesNotRewriteCompactCommandValuesAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "kill",
+            "--",
+            "-sSIGKILL",
+        ])
+
+        #expect(rewritten == [
+            "kill",
+            "--",
+            "-sSIGKILL",
+        ])
+    }
+
     @Test("normalizes exec boolean value forms before parsing")
     func normalizesExecBooleanValueFormsBeforeParsing() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -219,6 +356,78 @@ struct ComposeArgumentRewriterTests {
             "api",
             "echo",
             "ok",
+        ])
+    }
+
+    @Test("normalizes exec compact value shorthands before parsing")
+    func normalizesExecCompactValueShorthandsBeforeParsing() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "-eFOO=bar",
+            "-u1000:1000",
+            "-w/app",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "--env",
+            "FOO=bar",
+            "--user",
+            "1000:1000",
+            "--workdir",
+            "/app",
+            "api",
+            "env",
+        ])
+    }
+
+    @Test("normalizes exec compact values after separated option values")
+    func normalizesExecCompactValuesAfterSeparatedOptionValues() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "-e",
+            "FOO=bar",
+            "-u1000:1000",
+            "--index",
+            "1",
+            "-w/app",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "-e",
+            "FOO=bar",
+            "--user",
+            "1000:1000",
+            "--index",
+            "1",
+            "--workdir",
+            "/app",
+            "api",
+            "env",
+        ])
+    }
+
+    @Test("does not rewrite exec compact values after service name")
+    func doesNotRewriteExecCompactValuesAfterServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "exec",
+            "api",
+            "echo",
+            "-u1000",
+            "--interactive=false",
+        ])
+
+        #expect(rewritten == [
+            "exec",
+            "api",
+            "echo",
+            "-u1000",
+            "--interactive=false",
         ])
     }
 
@@ -291,6 +500,66 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes run compact value shorthands before service name")
+    func normalizesRunCompactValueShorthandsBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-eLOG_LEVEL=debug",
+            "-lcom.example.role=job",
+            "-u1000:1000",
+            "-v./host:/container:ro",
+            "-w/workspace",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--env",
+            "LOG_LEVEL=debug",
+            "--label",
+            "com.example.role=job",
+            "--user",
+            "1000:1000",
+            "--volume",
+            "./host:/container:ro",
+            "--workdir",
+            "/workspace",
+            "api",
+            "env",
+        ])
+    }
+
+    @Test("normalizes run compact equals value shorthands before service name")
+    func normalizesRunCompactEqualsValueShorthandsBeforeServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "-e=LOG_LEVEL=debug",
+            "-l=com.example.role=job",
+            "-u=1000:1000",
+            "-v=./host:/container:ro",
+            "-w=/workspace",
+            "api",
+            "env",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--env",
+            "LOG_LEVEL=debug",
+            "--label",
+            "com.example.role=job",
+            "--user",
+            "1000:1000",
+            "--volume",
+            "./host:/container:ro",
+            "--workdir",
+            "/workspace",
+            "api",
+            "env",
+        ])
+    }
+
     @Test("keeps run no-deps before service name")
     func keepsRunNoDepsBeforeServiceName() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -328,6 +597,42 @@ struct ComposeArgumentRewriterTests {
             "api",
             "echo",
             "-p",
+        ])
+    }
+
+    @Test("does not rewrite run compact value shorthands after service name")
+    func doesNotRewriteRunCompactValueShorthandsAfterServiceName() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "api",
+            "echo",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "api",
+            "echo",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
+        ])
+    }
+
+    @Test("does not rewrite run compact value shorthands after terminator")
+    func doesNotRewriteRunCompactValueShorthandsAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "run",
+            "--",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
+        ])
+
+        #expect(rewritten == [
+            "run",
+            "--",
+            "-eLOG_LEVEL=debug",
+            "-v./host:/container:ro",
         ])
     }
 
@@ -609,6 +914,27 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes compact root compose options before version")
+    func normalizesCompactRootComposeOptionsBeforeVersion() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-pcompact",
+            "-f=compose.yml",
+            "--dry-run",
+            "version",
+            "--short",
+        ])
+
+        #expect(rewritten == [
+            "--project-name",
+            "compact",
+            "--file",
+            "compose.yml",
+            "--dry-run",
+            "version",
+            "--short",
+        ])
+    }
+
     @Test("keeps version format shorthand local to version")
     func keepsVersionFormatShorthandLocalToVersion() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -624,6 +950,23 @@ struct ComposeArgumentRewriterTests {
             "compose.yml",
             "version",
             "-f",
+            "json",
+        ])
+    }
+
+    @Test("normalizes version compact format shorthand after version")
+    func normalizesVersionCompactFormatShorthandAfterVersion() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-fcompose.yml",
+            "version",
+            "-fjson",
+        ])
+
+        #expect(rewritten == [
+            "--file",
+            "compose.yml",
+            "version",
+            "--format",
             "json",
         ])
     }
