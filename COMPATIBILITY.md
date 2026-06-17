@@ -89,7 +89,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 | --- | --- |
 | Supported | `config`, `create`, `up`, `down`, `build`, `pull`, `push`, `ls`, `ps`, `logs`, `exec`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `stats`, `cp`, static `port`, `kill`, `version` |
 | Present but blocked by [`apple/container`][apple-container] runtime gaps | `top`, `events`, dynamic `port` lookup, `port --index` values other than `1`, `pause`, `unpause`, `wait`, `stats --all`, `stats --no-trunc` |
-| Not implemented by `container-compose` yet | `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
+| Present but blocked by `container-compose` design gaps | `watch`, `scale`, `attach`, `commit`, `convert`, `export`, `publish`, `volumes` |
 
 ## References
 
@@ -717,13 +717,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C5: Plugin Gap, Additional CLI Commands
 
-Expected result: these Docker Compose v2 commands need command-level design and runtime mapping inside `container-compose`.
+Expected result: these Docker Compose v2 commands are recognized by `container-compose` and fail with command-specific `container-compose` design gap messages.
 
 Status path:
 
 - Docker Compose v2: supports these commands.
 - [`apple/container`][apple-container]: command-specific runtime availability still needs to be assessed as each command is implemented.
-- `container-compose`: does not implement these command surfaces yet.
+- `container-compose`: exposes these command names and reports the plugin design gap instead of failing as an unknown subcommand.
 
 ```yaml
 # compose.yaml

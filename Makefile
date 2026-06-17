@@ -216,7 +216,11 @@ cli-smoke: build
 	[[ "$$unpause_output" == *"unsupported compose feature: unpause:"* ]]; \
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
-	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]
+	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
+	for unsupported_command in watch scale attach commit convert export publish volumes; do \
+		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
+		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
+	done
 
 coverage: swift-coverage go-test
 

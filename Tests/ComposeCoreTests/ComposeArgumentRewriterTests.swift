@@ -582,6 +582,34 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("recognizes explicit unsupported compose command surfaces")
+    func recognizesExplicitUnsupportedComposeCommandSurfaces() {
+        let commands = [
+            "attach",
+            "commit",
+            "convert",
+            "export",
+            "publish",
+            "scale",
+            "volumes",
+            "watch",
+        ]
+
+        for command in commands {
+            let rewritten = ComposeArgumentRewriter.rewrite([
+                "--ansi",
+                "never",
+                command,
+            ])
+
+            #expect(rewritten == [
+                command,
+                "--ansi",
+                "never",
+            ])
+        }
+    }
+
     @Test("returns arguments unchanged when no subcommand is present")
     func returnsArgumentsUnchangedWhenNoSubcommandIsPresent() {
         let arguments = ["--help", "--verbose"]
