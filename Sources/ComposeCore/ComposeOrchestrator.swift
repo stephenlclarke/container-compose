@@ -870,6 +870,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
+        try validateProjectNetworks(runProject)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validatePullPolicy(run.pullPolicy)
         let dependencyServices = try run.noDeps
@@ -1259,6 +1260,7 @@ private extension ComposeOrchestrator {
         guard !project.services.isEmpty else {
             throw ComposeError.invalidProject("no services defined")
         }
+        try validateProjectNetworks(project)
     }
 
     /// Rejects Compose features that need runtime support not available yet.
@@ -1369,6 +1371,17 @@ private extension ComposeOrchestrator {
         }
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
+        }
+    }
+
+    /// Rejects project network fields that are not mapped to Apple network creation.
+    func validateProjectNetworks(_ project: ComposeProject) throws {
+        for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) {
+            guard let fields = network.unsupportedFields, !fields.isEmpty else {
+                continue
+            }
+            let fieldList = fields.joined(separator: ", ")
+            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); only internal and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks")
         }
     }
 
@@ -1784,6 +1797,15 @@ private extension ComposeOrchestrator {
     /// Creates a project network unless it already exists.
     func ensureNetwork(project: ComposeProject, composeName: String, network: ComposeNetwork) async throws {
         var args = ["network", "create"]
+        if network.isInternal == true {
+            args.append("--internal")
+        }
+        if let ipv4Subnet = network.ipv4Subnet, !ipv4Subnet.isEmpty {
+            args.append(contentsOf: ["--subnet", ipv4Subnet])
+        }
+        if let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
+            args.append(contentsOf: ["--subnet-v6", ipv6Subnet])
+        }
         for label in resourceLabels(project: project) {
             args.append(contentsOf: ["--label", label])
         }
@@ -1795,7 +1817,13 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await resourceManager.createNetwork(name: runtimeName, labels: resourceLabels(project: project, labels: network.labels))
+            try? await resourceManager.createNetwork(ComposeNetworkCreateRequest(
+                name: runtimeName,
+                isInternal: network.isInternal == true,
+                ipv4Subnet: network.ipv4Subnet,
+                ipv6Subnet: network.ipv6Subnet,
+                labels: resourceLabels(project: project, labels: network.labels)
+            ))
         }
     }
 

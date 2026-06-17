@@ -1169,6 +1169,41 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	}
 }
 
+func TestNetworkIPAMValues(t *testing.T) {
+	gotIPv4, gotIPv6, gotUnsupported := networkIPAMValues(types.IPAMConfig{
+		Config: []*types.IPAMPool{
+			{Subnet: "10.77.0.0/24"},
+			{Subnet: "fd77::/64"},
+		},
+	})
+	if gotIPv4 != "10.77.0.0/24" || gotIPv6 != "fd77::/64" || gotUnsupported != nil {
+		t.Fatalf("networkIPAMValues supported = %q, %q, %#v", gotIPv4, gotIPv6, gotUnsupported)
+	}
+
+	gotIPv4, gotIPv6, gotUnsupported = networkIPAMValues(types.IPAMConfig{
+		Driver: "custom",
+		Config: []*types.IPAMPool{
+			{
+				Subnet:             "10.77.0.0/24",
+				Gateway:            "10.77.0.1",
+				IPRange:            "10.77.0.128/25",
+				AuxiliaryAddresses: types.Mapping{"api": "10.77.0.10"},
+			},
+			{Subnet: "10.78.0.0/24"},
+		},
+	})
+	wantUnsupported := []string{
+		"ipam.driver",
+		"ipam.config.gateway",
+		"ipam.config.ip_range",
+		"ipam.config.aux_addresses",
+		"ipam.config.subnet",
+	}
+	if gotIPv4 != "10.77.0.0/24" || gotIPv6 != "" || !reflect.DeepEqual(gotUnsupported, wantUnsupported) {
+		t.Fatalf("networkIPAMValues unsupported = %q, %q, %#v; want %#v", gotIPv4, gotIPv6, gotUnsupported, wantUnsupported)
+	}
+}
+
 func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 	got := unsupportedBuildFields(&types.BuildConfig{
 		AdditionalContexts: types.Mapping{"shared": "./shared"},

@@ -99,6 +99,13 @@ struct ComposeNormalizerTests {
             image: redis:7
         volumes:
           data: {}
+        networks:
+          default:
+            internal: true
+            ipam:
+              config:
+                - subnet: 10.10.0.0/24
+                - subnet: fd00:10::/64
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -154,6 +161,12 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.dependsOn == ["redis": ComposeDependency(condition: "service_started", restart: true, required: false)])
         #expect(project.services["api"]?.ports == ["8080:80"])
+        #expect(project.networks["default"] == ComposeNetwork(
+            name: "sample_default",
+            isInternal: true,
+            ipv4Subnet: "10.10.0.0/24",
+            ipv6Subnet: "fd00:10::/64"
+        ))
         #expect(project.volumes["data"] != nil)
     }
 

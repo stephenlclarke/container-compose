@@ -200,10 +200,14 @@ type normalizedMount struct {
 
 // normalizedNetwork contains project-level network metadata.
 type normalizedNetwork struct {
-	Name     string            `json:"name"`
-	External bool              `json:"external,omitempty"`
-	Driver   string            `json:"driver,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Name              string            `json:"name"`
+	External          bool              `json:"external,omitempty"`
+	Driver            string            `json:"driver,omitempty"`
+	Internal          bool              `json:"internal,omitempty"`
+	Labels            map[string]string `json:"labels,omitempty"`
+	IPv4Subnet        string            `json:"ipv4Subnet,omitempty"`
+	IPv6Subnet        string            `json:"ipv6Subnet,omitempty"`
+	UnsupportedFields []string          `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedNetworkOptions preserves per-service network attachment settings.
@@ -359,11 +363,16 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
+		ipv4Subnet, ipv6Subnet, unsupportedFields := networkIPAMValues(network.Ipam)
 		result.Networks[name] = normalizedNetwork{
-			Name:     firstNonEmpty(network.Name, name),
-			External: bool(network.External),
-			Driver:   network.Driver,
-			Labels:   mapLabels(network.Labels),
+			Name:              firstNonEmpty(network.Name, name),
+			External:          bool(network.External),
+			Driver:            network.Driver,
+			Internal:          network.Internal,
+			Labels:            mapLabels(network.Labels),
+			IPv4Subnet:        ipv4Subnet,
+			IPv6Subnet:        ipv6Subnet,
+			UnsupportedFields: unsupportedFields,
 		}
 	}
 	for name, volume := range project.Volumes {
@@ -727,6 +736,56 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+// networkIPAMValues returns the one IPv4 and one IPv6 subnet Apple can create.
+func networkIPAMValues(ipam types.IPAMConfig) (string, string, []string) {
+	fields := []string{}
+	appendUnsupportedNetworkField(&fields, "ipam.driver", ipam.Driver != "")
+	var ipv4Subnet string
+	var ipv6Subnet string
+	for _, pool := range ipam.Config {
+		if pool == nil {
+			continue
+		}
+		appendUnsupportedNetworkField(&fields, "ipam.config.gateway", pool.Gateway != "")
+		appendUnsupportedNetworkField(&fields, "ipam.config.ip_range", pool.IPRange != "")
+		appendUnsupportedNetworkField(&fields, "ipam.config.aux_addresses", len(pool.AuxiliaryAddresses) > 0)
+		subnet := strings.TrimSpace(pool.Subnet)
+		if subnet == "" {
+			continue
+		}
+		if strings.Contains(subnet, ":") {
+			if ipv6Subnet != "" {
+				appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
+				continue
+			}
+			ipv6Subnet = subnet
+			continue
+		}
+		if ipv4Subnet != "" {
+			appendUnsupportedNetworkField(&fields, "ipam.config.subnet", true)
+			continue
+		}
+		ipv4Subnet = subnet
+	}
+	if len(fields) == 0 {
+		return ipv4Subnet, ipv6Subnet, nil
+	}
+	return ipv4Subnet, ipv6Subnet, fields
+}
+
+// appendUnsupportedNetworkField records unsupported network metadata once.
+func appendUnsupportedNetworkField(fields *[]string, name string, present bool) {
+	if !present {
+		return
+	}
+	for _, field := range *fields {
+		if field == name {
+			return
+		}
+	}
+	*fields = append(*fields, name)
 }
 
 // networkAliasValues returns declared aliases keyed by Compose network name.

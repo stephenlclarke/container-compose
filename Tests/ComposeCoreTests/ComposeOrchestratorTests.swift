@@ -16,6 +16,8 @@
 
 import ComposeCore
 import ContainerResource
+import ContainerizationError
+import ContainerizationExtras
 import ContainerizationOCI
 import Foundation
 import Testing
@@ -450,10 +452,13 @@ struct ComposeOrchestratorTests {
 
         let resources = await resourceManager.requests
         #expect(resources.count == 2)
-        if case .createNetwork(let name, let labels) = resources[0] {
-            #expect(name == "demo_default")
-            #expect(labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
-            #expect(labels["com.apple.container.compose.project.config-files-hash"] != nil)
+        if case .createNetwork(let request) = resources[0] {
+            #expect(request.name == "demo_default")
+            #expect(request.isInternal == false)
+            #expect(request.ipv4Subnet == nil)
+            #expect(request.ipv6Subnet == nil)
+            #expect(request.labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
+            #expect(request.labels["com.apple.container.compose.project.config-files-hash"] != nil)
         } else {
             Issue.record("Expected network creation through direct API")
         }
@@ -480,6 +485,117 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--network", "demo_default"]))
         #expect(run.containsSequence(["--platform", "linux/amd64"]))
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
+    }
+
+    @Test("up creates internal IPAM networks through direct API")
+    func upCreatesInternalIPAMNetworksThroughDirectAPI() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    isInternal: true,
+                    labels: ["com.example.network": "backend"],
+                    ipv4Subnet: "10.77.0.0/24",
+                    ipv6Subnet: "fd77::/64"
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let resources = await resourceManager.requests
+        #expect(resources.count == 1)
+        if case .createNetwork(let request) = resources[0] {
+            #expect(request.name == "demo_backend")
+            #expect(request.isInternal == true)
+            #expect(request.ipv4Subnet == "10.77.0.0/24")
+            #expect(request.ipv6Subnet == "fd77::/64")
+            #expect(request.labels["com.apple.container.compose.project"] == "demo")
+            #expect(request.labels["com.apple.container.compose.project.config-files-hash"] != nil)
+            #expect(request.labels["com.example.network"] == "backend")
+        } else {
+            Issue.record("Expected network creation through direct API")
+        }
+        #expect(runner.commands.map(\.arguments)[0].containsSequence(["--network", "demo_backend"]))
+    }
+
+    @Test("up dry run renders internal IPAM network create")
+    func upDryRunRendersInternalIPAMNetworkCreate() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    isInternal: true,
+                    ipv4Subnet: "10.77.0.0/24",
+                    ipv6Subnet: "fd77::/64"
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages.contains { message in
+            message.contains("container network create --internal --subnet 10.77.0.0/24 --subnet-v6 fd77::/64")
+        })
+    }
+
+    @Test("up rejects unsupported project network IPAM before side effects")
+    func upRejectsUnsupportedProjectNetworkIPAMBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    unsupportedFields: ["ipam.config.gateway"]
+                ),
+            ]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported project network IPAM error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("network 'backend' uses unsupported fields ipam.config.gateway; only internal and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("up starts present optional dependencies in dependency order")
@@ -4496,7 +4612,13 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientResourceManager(client: client)
         let labels = ["com.example.role": "cache"]
 
-        try await manager.createNetwork(name: "demo_default", labels: labels)
+        try await manager.createNetwork(ComposeNetworkCreateRequest(
+            name: "demo_default",
+            isInternal: true,
+            ipv4Subnet: "10.10.0.0/24",
+            ipv6Subnet: "fd00:10::/64",
+            labels: labels
+        ))
         try await manager.createVolume(name: "demo_cache", labels: labels)
         let volumes = try await manager.listVolumes()
         try await manager.deleteNetwork(id: "demo_default")
@@ -4506,8 +4628,10 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == [
             .createNetwork(
                 name: "demo_default",
-                mode: .nat,
+                mode: .hostOnly,
                 plugin: "container-network-vmnet",
+                ipv4Subnet: "10.10.0.0/24",
+                ipv6Subnet: "fd00:10::/64",
                 labels: labels
             ),
             .createVolume(name: "demo_cache", labels: labels),
@@ -4515,6 +4639,48 @@ struct ComposeOrchestratorTests {
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_cache"),
         ])
+    }
+
+    @Test("resource manager ignores existing network create errors")
+    func resourceManagerIgnoresExistingNetworkCreateErrors() async throws {
+        let client = RecordingContainerResourceAPIClient(networkCreateError: ContainerizationError(
+            .exists,
+            message: "network demo_default already exists"
+        ))
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.createNetwork(ComposeNetworkCreateRequest(name: "demo_default"))
+
+        #expect(await client.requests == [
+            .createNetwork(
+                name: "demo_default",
+                mode: .nat,
+                plugin: "container-network-vmnet",
+                ipv4Subnet: nil,
+                ipv6Subnet: nil,
+                labels: [:]
+            ),
+        ])
+    }
+
+    @Test("resource manager rejects invalid network subnet before API create")
+    func resourceManagerRejectsInvalidNetworkSubnetBeforeAPICreate() async throws {
+        let client = RecordingContainerResourceAPIClient()
+        let manager = ContainerClientResourceManager(client: client)
+
+        do {
+            try await manager.createNetwork(ComposeNetworkCreateRequest(
+                name: "demo_default",
+                ipv4Subnet: "not-a-cidr"
+            ))
+            Issue.record("Expected invalid subnet error")
+        } catch CIDR.Error.invalidCIDR(let cidr) {
+            #expect(cidr == "not-a-cidr")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.requests.isEmpty)
     }
 
     @Test("resource API client forwards configured operations")
@@ -4556,6 +4722,8 @@ struct ComposeOrchestratorTests {
                 name: "demo_default",
                 mode: .nat,
                 plugin: "container-network-vmnet",
+                ipv4Subnet: nil,
+                ipv6Subnet: nil,
                 labels: labels
             ),
             .createVolume(name: "demo_cache", labels: labels),
@@ -8307,7 +8475,7 @@ private enum ContainerImageRequest: Equatable {
 }
 
 private enum ContainerResourceRequest: Equatable {
-    case createNetwork(name: String, labels: [String: String])
+    case createNetwork(ComposeNetworkCreateRequest)
     case deleteNetwork(id: String)
     case createVolume(name: String, labels: [String: String])
     case listVolumes
@@ -8315,7 +8483,9 @@ private enum ContainerResourceRequest: Equatable {
 
     var name: String {
         switch self {
-        case .createNetwork(let name, _), .createVolume(let name, _), .deleteVolume(let name):
+        case .createNetwork(let request):
+            request.name
+        case .createVolume(let name, _), .deleteVolume(let name):
             name
         case .listVolumes:
             ""
@@ -8326,7 +8496,9 @@ private enum ContainerResourceRequest: Equatable {
 
     var labels: [String: String] {
         switch self {
-        case .createNetwork(_, let labels), .createVolume(_, let labels):
+        case .createNetwork(let request):
+            request.labels
+        case .createVolume(_, let labels):
             labels
         case .deleteNetwork, .listVolumes, .deleteVolume:
             [:]
@@ -8335,7 +8507,14 @@ private enum ContainerResourceRequest: Equatable {
 }
 
 private enum ContainerResourceAPIRequest: Equatable {
-    case createNetwork(name: String, mode: NetworkMode, plugin: String, labels: [String: String])
+    case createNetwork(
+        name: String,
+        mode: NetworkMode,
+        plugin: String,
+        ipv4Subnet: String?,
+        ipv6Subnet: String?,
+        labels: [String: String]
+    )
     case deleteNetwork(id: String)
     case createVolume(name: String, labels: [String: String])
     case listVolumes
@@ -8833,10 +9012,12 @@ private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienti
 
 private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting {
     private let volumes: [ComposeVolumeSummary]
+    private let networkCreateError: (any Error)?
     private var storage: [ContainerResourceAPIRequest] = []
 
-    init(volumes: [ComposeVolumeSummary] = []) {
+    init(volumes: [ComposeVolumeSummary] = [], networkCreateError: (any Error)? = nil) {
         self.volumes = volumes
+        self.networkCreateError = networkCreateError
     }
 
     var requests: [ContainerResourceAPIRequest] {
@@ -8848,8 +9029,13 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
             name: configuration.name,
             mode: configuration.mode,
             plugin: configuration.plugin,
+            ipv4Subnet: configuration.ipv4Subnet?.description,
+            ipv6Subnet: configuration.ipv6Subnet?.description,
             labels: configuration.labels.dictionary
         ))
+        if let networkCreateError {
+            throw networkCreateError
+        }
     }
 
     func deleteNetwork(id: String) async throws {
@@ -8882,8 +9068,8 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
         storage
     }
 
-    func createNetwork(name: String, labels: [String: String]) async throws {
-        storage.append(.createNetwork(name: name, labels: labels))
+    func createNetwork(_ request: ComposeNetworkCreateRequest) async throws {
+        storage.append(.createNetwork(request))
     }
 
     func deleteNetwork(id: String) async throws {

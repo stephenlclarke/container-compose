@@ -464,13 +464,41 @@ public struct ComposeNetwork: Codable, Equatable {
     public var name: String
     public var external: Bool?
     public var driver: String?
+    public var isInternal: Bool?
     public var labels: [String: String]?
+    public var ipv4Subnet: String?
+    public var ipv6Subnet: String?
+    public var unsupportedFields: [String]?
 
-    public init(name: String, external: Bool? = nil, driver: String? = nil, labels: [String: String]? = nil) {
+    public init(
+        name: String,
+        external: Bool? = nil,
+        driver: String? = nil,
+        isInternal: Bool? = nil,
+        labels: [String: String]? = nil,
+        ipv4Subnet: String? = nil,
+        ipv6Subnet: String? = nil,
+        unsupportedFields: [String]? = nil
+    ) {
         self.name = name
         self.external = external
         self.driver = driver
+        self.isInternal = isInternal
         self.labels = labels
+        self.ipv4Subnet = ipv4Subnet
+        self.ipv6Subnet = ipv6Subnet
+        self.unsupportedFields = unsupportedFields
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case external
+        case driver
+        case isInternal = "internal"
+        case labels
+        case ipv4Subnet
+        case ipv6Subnet
+        case unsupportedFields
     }
 }
 

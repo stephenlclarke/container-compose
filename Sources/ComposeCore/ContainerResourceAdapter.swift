@@ -16,6 +16,8 @@
 
 import ContainerAPIClient
 import ContainerResource
+import ContainerizationError
+import ContainerizationExtras
 
 /// Runtime volume metadata needed by Compose project commands.
 public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
@@ -51,6 +53,29 @@ public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
     }
 }
 
+/// Fully resolved Compose network creation request.
+public struct ComposeNetworkCreateRequest: Equatable, Sendable {
+    public var name: String
+    public var isInternal: Bool
+    public var ipv4Subnet: String?
+    public var ipv6Subnet: String?
+    public var labels: [String: String]
+
+    public init(
+        name: String,
+        isInternal: Bool = false,
+        ipv4Subnet: String? = nil,
+        ipv6Subnet: String? = nil,
+        labels: [String: String] = [:]
+    ) {
+        self.name = name
+        self.isInternal = isInternal
+        self.ipv4Subnet = ipv4Subnet
+        self.ipv6Subnet = ipv6Subnet
+        self.labels = labels
+    }
+}
+
 /// Low-level Apple container resource calls used by
 /// `ContainerClientResourceManager`.
 public protocol ContainerResourceAPIClienting: Sendable {
@@ -73,8 +98,8 @@ public protocol ContainerResourceAPIClienting: Sendable {
 /// Direct Apple container APIs used for Compose-scoped network and volume
 /// resources.
 public protocol ContainerResourceManaging: Sendable {
-    /// Creates a NAT network with the supplied runtime name and labels.
-    func createNetwork(name: String, labels: [String: String]) async throws
+    /// Creates a project network with resolved Apple runtime metadata.
+    func createNetwork(_ request: ComposeNetworkCreateRequest) async throws
 
     /// Deletes the runtime network named by `id`.
     func deleteNetwork(id: String) async throws
@@ -153,14 +178,21 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
     }
 
     /// Creates a Compose project network through `NetworkClient`.
-    public func createNetwork(name: String, labels: [String: String]) async throws {
+    public func createNetwork(_ request: ComposeNetworkCreateRequest) async throws {
         let configuration = try NetworkConfiguration(
-            name: name,
-            mode: .nat,
-            labels: try ResourceLabels(labels),
-            plugin: "container-network-vmnet"
+            name: request.name,
+            mode: request.isInternal ? .hostOnly : .nat,
+            ipv4Subnet: try request.ipv4Subnet.map { try CIDRv4($0) },
+            ipv6Subnet: try request.ipv6Subnet.map { try CIDRv6($0) },
+            labels: try ResourceLabels(request.labels),
+            plugin: "container-network-vmnet",
+            options: [:]
         )
-        try await client.createNetwork(configuration: configuration)
+        do {
+            try await client.createNetwork(configuration: configuration)
+        } catch let error as ContainerizationError where error.code == .exists {
+            return
+        }
     }
 
     /// Deletes a Compose project network through `NetworkClient`.
