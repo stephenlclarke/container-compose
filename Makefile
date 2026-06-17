@@ -97,6 +97,9 @@ cli-smoke: build
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
+	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
+	[[ "$$compact_global_output" == *"compact-db-1"* ]]; \
+	[[ "$$compact_global_output" == *"compact-api-1"* ]]; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *"demo-db-1"* ]]; \

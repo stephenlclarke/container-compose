@@ -42,6 +42,42 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes compact root compose options after the subcommand")
+    func normalizesCompactRootComposeOptionsAfterSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-f=compose.yml",
+            "-p=demo",
+            "--dry-run",
+            "config",
+        ])
+
+        #expect(rewritten == [
+            "config",
+            "--file",
+            "compose.yml",
+            "--project-name",
+            "demo",
+            "--dry-run",
+        ])
+    }
+
+    @Test("skips compact root option values when locating the subcommand")
+    func skipsCompactRootOptionValuesWhenLocatingSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "-fup.yml",
+            "-plogs",
+            "ps",
+        ])
+
+        #expect(rewritten == [
+            "ps",
+            "--file",
+            "up.yml",
+            "--project-name",
+            "logs",
+        ])
+    }
+
     @Test("leaves subcommand options and arguments in place")
     func leavesSubcommandOptionsAndArgumentsInPlace() {
         let rewritten = ComposeArgumentRewriter.rewrite([
