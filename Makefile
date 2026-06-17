@@ -96,7 +96,7 @@ cli-smoke: build
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    volumes:\n      - /scratch\n  db:\n    image: alpine\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n' > "$$tmpdir/compose.yml"; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *" alpine echo hello"* ]]; \
@@ -143,8 +143,12 @@ cli-smoke: build
 	[[ "$$run_no_tty_output" == *"--interactive"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container run"* ]]; \
+	[[ "$$up_output" == *"demo-db-1"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$up_output" != *"--detach"* ]]; \
+	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
+	[[ "$$up_no_deps_output" == *"container run"* ]]; \
+	[[ "$$up_no_deps_output" != *"demo-db-1"* ]]; \
 	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
 	[[ "$$up_scale_output" == *"unsupported compose feature: up --scale: service replica scaling is not implemented by container-compose yet"* ]]; \
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \

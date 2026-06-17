@@ -56,6 +56,7 @@ public struct ComposeUpOptions {
     public var removeOrphans: Bool
     public var pullPolicy: String?
     public var scales: [String]
+    public var noDeps: Bool
 
     public init(
         services: [String] = [],
@@ -65,7 +66,8 @@ public struct ComposeUpOptions {
         noRecreate: Bool = false,
         removeOrphans: Bool = false,
         pullPolicy: String? = nil,
-        scales: [String] = []
+        scales: [String] = [],
+        noDeps: Bool = false
     ) {
         self.services = services
         self.build = build
@@ -75,6 +77,7 @@ public struct ComposeUpOptions {
         self.removeOrphans = removeOrphans
         self.pullPolicy = pullPolicy
         self.scales = scales
+        self.noDeps = noDeps
     }
 }
 
@@ -235,7 +238,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
         try validateUpOptions(up)
-        let services = try orderedServices(project: project, selected: up.services)
+        let services = try up.noDeps && !up.services.isEmpty
+            ? selectedServices(project: project, selected: up.services)
+            : orderedServices(project: project, selected: up.services)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services)
 

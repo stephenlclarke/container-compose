@@ -44,7 +44,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 | Default storage | Named volumes, external volumes, bind mounts, anonymous volumes, read-only mounts, tmpfs mounts, one-off `run --volume/-v`, `rm --volumes/-v` for anonymous volumes, `down --volumes` for named project volumes | `container volume create`, `container volume delete`, `container create --volume`, `container create --tmpfs`, `container run --volume`, `container run --tmpfs` | [S1](#s1-supported-local-web-stack) |
 | Common runtime options | `command`, `entrypoint`, one-off `run --entrypoint`, `container_name`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, `stdin_open`, `read_only`, `init`, `platform`, `runtime`, `dns`, `dns_search`, `cap_add`, `cap_drop`, `cpus`, `mem_limit`, `shm_size`, `ulimits`, `stop_signal`, `stop_grace_period` | `container create`, `container run`, and `container stop` flags | [S1](#s1-supported-local-web-stack) |
 | Environment and labels | Service `environment`, `env_file`, one-off `run --env/-e`, one-off `run --env-from-file`, one-off `run --label/-l`, service labels, network labels, volume labels, Compose project/service/config-hash labels | `container create --env`, `container create --env-file`, `container run --env`, `container run --env-file`, resource/container labels | [S1](#s1-supported-local-web-stack) |
-| Simple ordering | `depends_on` with no condition or `condition: service_started` | Plugin dependency ordering before `container run` | [S1](#s1-supported-local-web-stack) |
+| Simple ordering | `depends_on` with no condition or `condition: service_started`; `up --no-deps` for selected services | Plugin dependency ordering before `container run`, with dependency traversal skipped when requested | [S1](#s1-supported-local-web-stack) |
 
 ### Blocked By apple/container
 
@@ -220,6 +220,7 @@ container compose create --build
 container compose create --pull build api
 container compose create --no-build worker
 container compose up --pull missing
+container compose up --no-deps api
 container compose ls
 container compose ls --all
 container compose ls --filter name=supported-demo

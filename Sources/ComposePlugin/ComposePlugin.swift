@@ -225,6 +225,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var pull: String?
     @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
     var scales: [String] = []
+    @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
+    var noDeps = false
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
 
@@ -241,7 +243,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 noRecreate: noRecreate,
                 removeOrphans: removeOrphans,
                 pullPolicy: pull,
-                scales: scales
+                scales: scales,
+                noDeps: noDeps
             )
         )
     }

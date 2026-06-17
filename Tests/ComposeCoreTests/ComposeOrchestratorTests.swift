@@ -477,6 +477,34 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up no-deps starts only selected services")
+    func upNoDepsStartsOnlySelectedServices() async throws {
+        let runner = RecordingRunner(responses: [
+            .failure,
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": "service_started"]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(
+            project: project,
+            options: ComposeUpOptions(services: ["api"], noDeps: true)
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0] == ["container", "inspect", "demo-api-1"])
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!commands.contains { $0.contains("demo-db-1") })
+    }
+
     @Test("up uses external resource names without creating project resources")
     func upUsesExternalResourceNamesWithoutCreatingProjectResources() async throws {
         let runner = RecordingRunner(responses: [
