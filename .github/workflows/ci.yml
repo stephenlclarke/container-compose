@@ -63,7 +63,6 @@ jobs:
           {
             swift --version 2>&1
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
-            git -C container rev-parse HEAD
             shasum -a 256 container/Package.swift container/Package.resolved
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
@@ -197,7 +196,6 @@ jobs:
           {
             swift --version 2>&1
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
-            git -C container rev-parse HEAD
             shasum -a 256 container/Package.swift container/Package.resolved
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
