@@ -88,54 +88,24 @@ public struct ComposeDownOptions {
 
 /// Options for `compose run` one-off containers.
 public struct ComposeRunOptions {
-    public var command: [String]
-    public var remove: Bool
-    public var detach: Bool
-    public var noTty: Bool
-    public var servicePorts: Bool
-    public var publish: [String]
+    public var command: [String] = []
+    public var remove = false
+    public var detach = false
+    public var noTty = false
+    public var servicePorts = false
+    public var publish: [String] = []
     public var pullPolicy: String?
     public var containerName: String?
     public var entrypoint: String?
     public var workingDirectory: String?
     public var user: String?
-    public var environment: [String]
-    public var envFiles: [String]
-    public var labels: [String]
-    public var volumes: [String]
+    public var environment: [String] = []
+    public var envFiles: [String] = []
+    public var labels: [String] = []
+    public var volumes: [String] = []
 
-    public init(
-        command: [String] = [],
-        remove: Bool = false,
-        detach: Bool = false,
-        noTty: Bool = false,
-        servicePorts: Bool = false,
-        publish: [String] = [],
-        pullPolicy: String? = nil,
-        containerName: String? = nil,
-        entrypoint: String? = nil,
-        workingDirectory: String? = nil,
-        user: String? = nil,
-        environment: [String] = [],
-        envFiles: [String] = [],
-        labels: [String] = [],
-        volumes: [String] = []
-    ) {
-        self.command = command
-        self.remove = remove
-        self.detach = detach
-        self.noTty = noTty
-        self.servicePorts = servicePorts
-        self.publish = publish
-        self.pullPolicy = pullPolicy
-        self.containerName = containerName
-        self.entrypoint = entrypoint
-        self.workingDirectory = workingDirectory
-        self.user = user
-        self.environment = environment
-        self.envFiles = envFiles
-        self.labels = labels
-        self.volumes = volumes
+    public init(_ configure: (inout ComposeRunOptions) -> Void = { _ in }) {
+        configure(&self)
     }
 }
 
@@ -317,7 +287,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await run(
             project: project,
             serviceName: serviceName,
-            options: ComposeRunOptions(command: command, remove: remove)
+            options: ComposeRunOptions {
+                $0.command = command
+                $0.remove = remove
+            }
         )
     }
 
