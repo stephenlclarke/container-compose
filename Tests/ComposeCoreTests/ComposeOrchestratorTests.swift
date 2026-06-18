@@ -7326,9 +7326,11 @@ struct ComposeOrchestratorTests {
                 composeServiceLabel: "api",
                 composeConfigHashLabel: "api-hash",
             ],
-            imageReference: "example/api:latest",
-            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            platform: "linux/arm64",
+            image: .init(
+                reference: "example/api:latest",
+                digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                platform: "linux/arm64"
+            ),
             publishedPorts: [
                 ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 2),
             ],
@@ -11456,8 +11458,7 @@ struct ComposeOrchestratorTests {
                             type: "tmpfs",
                             target: "/scratch",
                             readOnly: true,
-                            tmpfsSize: "67108864",
-                            tmpfsMode: "1777"
+                            tmpfs: .init(size: "67108864", mode: "1777")
                         ),
                     ]
                 },
@@ -13366,9 +13367,11 @@ private func discoveredContainers() -> [ComposeContainerSummary] {
                 composeConfigHashLabel: "api-hash",
                 composeProjectConfigFilesLabel: "/tmp/demo/compose.yml,/tmp/demo/compose.override.yml",
             ],
-            imageReference: "localhost:5000/example/api:latest",
-            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            platform: "linux/arm64"
+            image: .init(
+                reference: "localhost:5000/example/api:latest",
+                digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                platform: "linux/arm64"
+            )
         ),
         ComposeContainerSummary(
             id: "other-api-1",
@@ -13379,9 +13382,11 @@ private func discoveredContainers() -> [ComposeContainerSummary] {
                 composeConfigHashLabel: "other-hash",
                 composeProjectConfigFilesLabel: "/tmp/other/compose.yml",
             ],
-            imageReference: "other/api:latest",
-            imageDigest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            platform: "linux/arm64"
+            image: .init(
+                reference: "other/api:latest",
+                digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                platform: "linux/arm64"
+            )
         ),
         ComposeContainerSummary(
             id: "demo-worker-1",
@@ -13392,9 +13397,11 @@ private func discoveredContainers() -> [ComposeContainerSummary] {
                 composeConfigHashLabel: "worker-hash",
                 composeProjectConfigFilesLabel: "/tmp/demo/compose.yml",
             ],
-            imageReference: "example/worker:debug",
-            imageDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            platform: "linux/amd64"
+            image: .init(
+                reference: "example/worker:debug",
+                digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                platform: "linux/amd64"
+            )
         ),
     ]
 }

@@ -598,6 +598,17 @@ public struct ComposeBuildSecret: Codable, Equatable {
 
 /// Mount definition normalized from Compose volume and bind syntax.
 public struct ComposeMount: Codable, Equatable, Sendable {
+    /// Tmpfs options grouped for construction while preserving flat storage.
+    public struct TmpfsOptions: Codable, Equatable, Sendable {
+        public var size: String?
+        public var mode: String?
+
+        public init(size: String? = nil, mode: String? = nil) {
+            self.size = size
+            self.mode = mode
+        }
+    }
+
     public var type: String?
     public var source: String?
     public var target: String?
@@ -612,8 +623,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         source: String? = nil,
         target: String? = nil,
         readOnly: Bool? = nil,
-        tmpfsSize: String? = nil,
-        tmpfsMode: String? = nil,
+        tmpfs: TmpfsOptions = TmpfsOptions(),
         raw: String? = nil,
         unsupportedFields: [String]? = nil
     ) {
@@ -621,8 +631,8 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         self.source = source
         self.target = target
         self.readOnly = readOnly
-        self.tmpfsSize = tmpfsSize
-        self.tmpfsMode = tmpfsMode
+        self.tmpfsSize = tmpfs.size
+        self.tmpfsMode = tmpfs.mode
         self.raw = raw
         self.unsupportedFields = unsupportedFields
     }

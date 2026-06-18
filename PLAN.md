@@ -470,6 +470,60 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Added Hawkeye license-header tooling, adopted apple/container&#x27;s build-once Swift coverage pattern, cached repo-local tools in CI, documented apple/container upstream Compose parity gaps, and reformatted planning and compatibility docs for readability.</td>
     </tr>
+    <tr>
+      <td>CI smoke build reuse</td>
+      <td>2026-06-18 19:16:00 BST</td>
+      <td>2026-06-18 19:16:00 BST</td>
+      <td>2026-06-18 19:16:00 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Reused the debug <code>compose</code> executable emitted by the Swift coverage test build for <code>make ci</code> smoke tests, avoiding a second non-coverage SwiftPM product build on the CI path while keeping standalone <code>make cli-smoke</code> build-first behavior.</td>
+    </tr>
+    <tr>
+      <td>Sonar empty closure cleanup</td>
+      <td>2026-06-18 19:20:02 BST</td>
+      <td>2026-06-18 19:20:02 BST</td>
+      <td>2026-06-18 19:20:02 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Documented the intentionally empty <code>push --quiet</code> emission closure so the Swift source makes the quiet-mode behavior clear to reviewers and static analysis.</td>
+    </tr>
+    <tr>
+      <td>Sonar unused replica validation parameter cleanup</td>
+      <td>2026-06-18 19:22:19 BST</td>
+      <td>2026-06-18 19:22:19 BST</td>
+      <td>2026-06-18 19:22:19 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Removed the unused <code>project</code> parameter from replica support validation and its call sites so the helper signature reflects the data it actually needs.</td>
+    </tr>
+    <tr>
+      <td>Sonar container summary initializer grouping</td>
+      <td>2026-06-18 19:28:33 BST</td>
+      <td>2026-06-18 19:28:33 BST</td>
+      <td>2026-06-18 19:28:33 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Grouped discovered image metadata behind a typed <code>ComposeContainerSummary.Image</code> constructor value so the public summary initializer stays under the Sonar parameter threshold while preserving flat stored discovery fields.</td>
+    </tr>
+    <tr>
+      <td>Sonar mount initializer tmpfs grouping</td>
+      <td>2026-06-18 19:31:44 BST</td>
+      <td>2026-06-18 19:31:44 BST</td>
+      <td>2026-06-18 19:31:44 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Grouped tmpfs constructor fields behind <code>ComposeMount.TmpfsOptions</code> so normalized mount construction stays under the Sonar parameter threshold while keeping flat decoded mount fields for orchestration.</td>
+    </tr>
+    <tr>
+      <td>Sonar execution options runtime hook grouping</td>
+      <td>2026-06-18 19:37:47 BST</td>
+      <td>2026-06-18 19:37:47 BST</td>
+      <td>2026-06-18 19:37:47 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Grouped runtime injection callbacks behind <code>ComposeExecutionOptions.RuntimeHooks</code> and retained small convenience initializers for existing CLI and test configuration paths.</td>
+    </tr>
   </tbody>
 </table>
 
