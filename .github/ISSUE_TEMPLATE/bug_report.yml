@@ -1,0 +1,91 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Bug report
+description: File a bug report.
+title: "[Bug]: "
+type: "Bug"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please do not
+        include credentials, private registry tokens, or sensitive Compose
+        files.
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: I have done the following
+      description: Select that you have completed the following prerequisites.
+      options:
+        - label: I have searched the existing issues
+          required: true
+        - label: If possible, I've reproduced the issue using the `main` branch of this project
+          required: false
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Explain how to reproduce the incorrect behavior.
+
+        A minimal Compose file and command sequence are very helpful.
+      placeholder: |
+        ```yaml
+        services:
+          app:
+            image: alpine
+        ```
+
+        ```sh
+        container compose up
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Problem description
+      description: Briefly describe your problem, and what you believe the correct behavior should be.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: |
+        Examples:
+          - **OS**: macOS 26.0 (25A354)
+          - **Xcode**: Version 26.0 (17A324)
+          - **Container**: Container CLI version 0.1.0
+          - **container-compose**: 0.1.0
+      value: |
+        - OS:
+        - Xcode:
+        - Container:
+        - container-compose:
+      render: markdown
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
+        - label: I removed secrets and private data from this report
+          required: true

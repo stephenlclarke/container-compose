@@ -1,0 +1,77 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Compose compatibility gap
+description: Track a Docker Compose v2 surface that is missing or incomplete.
+title: "[Compatibility]: "
+type: "Feature"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping map Docker Compose v2 behavior onto
+        container-compose and apple/container runtime primitives.
+  - type: input
+    id: compose-surface
+    attributes:
+      label: Compose surface
+      description: Command, file key, runtime primitive, or behavior.
+      placeholder: logs --tail, services.healthcheck, build.secrets
+    validations:
+      required: true
+  - type: textarea
+    id: docker-behavior
+    attributes:
+      label: Docker Compose v2 behavior
+      description: Describe what Docker Compose does. Link to upstream docs when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current container-compose behavior
+      description: What does this project currently do?
+    validations:
+      required: true
+  - type: dropdown
+    id: likely-owner
+    attributes:
+      label: Likely owner
+      options:
+        - container-compose design gap
+        - apple/container runtime gap
+        - both
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Minimal example
+      description: Provide a small compose file or command sequence.
+      render: yaml
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct and documentation
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
+        - label: I checked COMPATIBILITY.md.
+          required: true
+        - label: I checked PLAN.md.
+          required: true
