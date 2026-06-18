@@ -1339,6 +1339,62 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true])
     }
 
+    @Test("up allocates published port ranges per service replica")
+    func upAllocatesPublishedPortRangesPerServiceReplica() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+            $0.ports = ["8080-8081:80"]
+        }])
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].containsSequence(["--publish", "8080:80"]))
+        #expect(!commands[0].containsSequence(["--publish", "8081:80"]))
+        #expect(commands[1].containsSequence(["--publish", "8081:80"]))
+        #expect(!commands[1].containsSequence(["--publish", "8080:80"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("create allocates multi port ranges per service replica")
+    func createAllocatesMultiPortRangesPerServiceReplica() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+            $0.ports = ["127.0.0.1:8080-8083:80-81/udp"]
+        }])
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).create(
+            project: project,
+            options: ComposeCreateOptions {
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].containsSequence(["--publish", "127.0.0.1:8080:80/udp"]))
+        #expect(commands[0].containsSequence(["--publish", "127.0.0.1:8081:81/udp"]))
+        #expect(commands[1].containsSequence(["--publish", "127.0.0.1:8082:80/udp"]))
+        #expect(commands[1].containsSequence(["--publish", "127.0.0.1:8083:81/udp"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
     @Test("scale creates detached service replicas")
     func scaleCreatesDetachedServiceReplicas() async throws {
         let runner = RecordingRunner(responses: [
@@ -1512,7 +1568,7 @@ struct ComposeOrchestratorTests {
             )
             Issue.record("Expected published-port scale failure")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' publishes ports; scaled published ports are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' publishes '8080:80'; scaled published ports require at least 2 explicit host ports for 2 replicas"))
         }
         #expect(portRunner.commands.isEmpty)
     }
@@ -7792,6 +7848,30 @@ struct ComposeOrchestratorTests {
         )
 
         try await orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
+
+        #expect(emitted.messages == ["127.0.0.1:8081"])
+        #expect(await discoveryManager.getRequests.isEmpty)
+    }
+
+    @Test("port dry run resolves scaled published ranges by index")
+    func portDryRunResolvesScaledPublishedRangesByIndex() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                    $0.ports = ["127.0.0.1:8080-8081:80"]
+                },
+            ]
+        )
+
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
 
         #expect(emitted.messages == ["127.0.0.1:8081"])
         #expect(await discoveryManager.getRequests.isEmpty)

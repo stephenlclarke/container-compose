@@ -429,6 +429,7 @@ private struct RunArgumentOptions {
     var remove = false
     var oneOff = false
     var containerIndex: Int?
+    var replicaCount: Int?
     var publishedPorts: [String]?
     var containerNameOverride: String?
     var labelOverrides: [ComposeLabelOverride] = []
@@ -451,6 +452,13 @@ private enum DownImageRemovalPolicy {
 private enum ComposeImagesFormat {
     case table
     case json
+}
+
+private struct ParsedPublishedPortMapping {
+    var hostAddress: String?
+    var hostRange: (start: Int, count: Int)
+    var targetRange: (start: Int, count: Int)
+    var protocolName: String
 }
 
 private enum ComposeVolumesFormat {
@@ -595,6 +603,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                             runOptions: RunArgumentOptions {
                                 $0.detach = up.detach || attachedForegroundService?.name != name
                                 $0.containerIndex = replicaIndex
+                                $0.replicaCount = replicaCount
                             },
                             forceRecreate: up.forceRecreate,
                             noRecreate: up.noRecreate,
@@ -732,6 +741,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                             runOptions: RunArgumentOptions {
                                 $0.command = "create"
                                 $0.containerIndex = replicaIndex
+                                $0.replicaCount = replicaCount
                             },
                             forceRecreate: create.forceRecreate,
                             noRecreate: create.noRecreate,
@@ -1462,7 +1472,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let requested = try parsePortLookup(privatePort: privatePort, protocolName: protocolName)
         try validatePublishedPorts(service.ports ?? [], serviceName: service.name)
         if options.dryRun {
-            try emitDryRunPort(service: service, requested: requested)
+            try emitDryRunPort(service: service, requested: requested, index: index)
             return
         }
 
@@ -2212,7 +2222,7 @@ private extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("service '\(service.name)' uses container_name; scale greater than 1 requires Compose-managed replica names")
             }
             if let ports = service.ports, !ports.isEmpty {
-                throw ComposeError.unsupported("service '\(service.name)' publishes ports; scaled published ports are not implemented by container-compose yet")
+                try validateScaledPublishedPorts(ports, serviceName: service.name, replicaCount: replicaCount)
             }
             if hasExplicitMACAddress(service) {
                 throw ComposeError.unsupported("service '\(service.name)' uses mac_address; scaled MAC addresses would collide across replicas")
@@ -2275,6 +2285,25 @@ private extension ComposeOrchestrator {
     /// Rejects Docker Compose dynamic host-port allocation because Apple
     /// `container --publish` currently requires an explicit host port.
     func validatePublishedPort(_ value: String, serviceName: String) throws {
+        _ = try parsePublishedPortMapping(value, serviceName: serviceName)
+    }
+
+    /// Validates that a scaled service has enough explicit host ports for every replica.
+    func validateScaledPublishedPorts(_ ports: [String], serviceName: String, replicaCount: Int) throws {
+        guard replicaCount > 1 else {
+            return
+        }
+        for port in ports {
+            let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
+            let requiredHostPorts = mapping.targetRange.count * replicaCount
+            guard mapping.hostRange.count >= requiredHostPorts else {
+                throw ComposeError.unsupported("service '\(serviceName)' publishes '\(port)'; scaled published ports require at least \(requiredHostPorts) explicit host ports for \(replicaCount) replicas")
+            }
+        }
+    }
+
+    /// Parses one Compose port mapping with an explicit host port or host range.
+    func parsePublishedPortMapping(_ value: String, serviceName: String) throws -> ParsedPublishedPortMapping {
         let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
             throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
@@ -2289,6 +2318,81 @@ private extension ComposeOrchestrator {
         guard isExplicitHostPort(published) else {
             throw dynamicPortUnsupported(serviceName: serviceName, target: parts.last ?? rawBinding, protocolName: protocolName)
         }
+        let target = parts[parts.count - 1]
+        let hostParts = parts.dropLast(2)
+        let hostAddress = hostParts.isEmpty ? nil : hostParts.joined(separator: ":")
+        return ParsedPublishedPortMapping(
+            hostAddress: hostAddress,
+            hostRange: try portRange(published, field: "host", mapping: value, serviceName: serviceName),
+            targetRange: try portRange(target, field: "container", mapping: value, serviceName: serviceName),
+            protocolName: protocolName
+        )
+    }
+
+    /// Returns concrete Apple `--publish` arguments for a service replica.
+    func publishedPortArguments(
+        ports: [String],
+        serviceName: String,
+        replicaIndex: Int?,
+        replicaCount: Int?
+    ) throws -> [String] {
+        guard let replicaIndex,
+              let replicaCount,
+              replicaCount > 1
+        else {
+            for port in ports {
+                try validatePublishedPort(port, serviceName: serviceName)
+            }
+            return ports
+        }
+        guard replicaIndex >= 1, replicaIndex <= replicaCount else {
+            throw ComposeError.invalidProject("container index must be between 1 and \(replicaCount)")
+        }
+        return try ports.flatMap { port in
+            try publishedPortArguments(
+                port: port,
+                serviceName: serviceName,
+                replicaIndex: replicaIndex,
+                replicaCount: replicaCount
+            )
+        }
+    }
+
+    /// Splits one scaled Compose port range into this replica's concrete mappings.
+    func publishedPortArguments(
+        port: String,
+        serviceName: String,
+        replicaIndex: Int,
+        replicaCount: Int
+    ) throws -> [String] {
+        let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
+        let targetCount = mapping.targetRange.count
+        let requiredHostPorts = targetCount * replicaCount
+        guard mapping.hostRange.count >= requiredHostPorts else {
+            throw ComposeError.unsupported("service '\(serviceName)' publishes '\(port)'; scaled published ports require at least \(requiredHostPorts) explicit host ports for \(replicaCount) replicas")
+        }
+
+        let replicaOffset = (replicaIndex - 1) * targetCount
+        return (0..<targetCount).map { offset in
+            formatPublishedPort(
+                hostAddress: mapping.hostAddress,
+                hostPort: mapping.hostRange.start + replicaOffset + offset,
+                targetPort: mapping.targetRange.start + offset,
+                protocolName: mapping.protocolName
+            )
+        }
+    }
+
+    /// Formats a normalized published-port mapping for Apple `container`.
+    func formatPublishedPort(hostAddress: String?, hostPort: Int, targetPort: Int, protocolName: String) -> String {
+        var value = "\(hostPort):\(targetPort)"
+        if let hostAddress, !hostAddress.isEmpty {
+            value = "\(hostAddress):\(value)"
+        }
+        if protocolName != "tcp" {
+            value += "/\(protocolName)"
+        }
+        return value
     }
 
     /// Returns true when a publish field names concrete Apple host ports.
@@ -2786,8 +2890,13 @@ private extension ComposeOrchestrator {
         for envFile in service.envFiles ?? [] {
             args.append(contentsOf: ["--env-file", envFile])
         }
-        for port in run.publishedPorts ?? service.ports ?? [] {
-            try validatePublishedPort(port, serviceName: service.name)
+        let publishedPorts = try publishedPortArguments(
+            ports: run.publishedPorts ?? service.ports ?? [],
+            serviceName: service.name,
+            replicaIndex: run.containerIndex,
+            replicaCount: run.replicaCount
+        )
+        for port in publishedPorts {
             args.append(contentsOf: ["--publish", port])
         }
         for mount in service.volumes ?? [] {
@@ -3071,45 +3180,46 @@ private extension ComposeOrchestrator {
     /// Emits a dry-run `port` answer from normalized Compose metadata.
     func emitDryRunPort(
         service: ComposeService,
-        requested: (target: String, protocolName: String)
+        requested: (target: String, protocolName: String),
+        index: Int
     ) throws {
-        let ports = try (service.ports ?? []).flatMap {
-            try dryRunPublishedPorts(from: $0, serviceName: service.name)
+        guard index >= 1 else {
+            throw ComposeError.invalidProject("container index must be greater than zero")
         }
+        let replicaCount = max(service.scale ?? 1, index)
+        let ports = try dryRunPublishedPorts(service: service, replicaIndex: index, replicaCount: replicaCount)
         guard let mapping = publishedPort(in: ports, target: requested.target, protocolName: requested.protocolName) else {
             throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
         }
         options.emit("\(mapping.hostAddress):\(mapping.hostPort)")
     }
 
+    /// Expands Compose metadata into dry-run published ports for one service replica.
+    func dryRunPublishedPorts(service: ComposeService, replicaIndex: Int, replicaCount: Int) throws -> [ComposeContainerPublishedPort] {
+        let portArguments = try publishedPortArguments(
+            ports: service.ports ?? [],
+            serviceName: service.name,
+            replicaIndex: replicaCount > 1 ? replicaIndex : nil,
+            replicaCount: replicaCount > 1 ? replicaCount : nil
+        )
+        return try portArguments.flatMap {
+            try dryRunPublishedPorts(from: $0, serviceName: service.name)
+        }
+    }
+
     /// Expands one explicit Compose port mapping for dry-run `port` previews.
     func dryRunPublishedPorts(from value: String, serviceName: String) throws -> [ComposeContainerPublishedPort] {
-        let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
-        guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
-            throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
-        }
-        let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
-        let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count >= 2 else {
-            throw dynamicPortUnsupported(serviceName: serviceName, target: rawBinding, protocolName: protocolName)
-        }
-
-        let target = parts[parts.count - 1]
-        let published = parts[parts.count - 2]
-        let hostParts = parts.dropLast(2)
-        let hostAddress = hostParts.isEmpty ? "0.0.0.0" : hostParts.joined(separator: ":")
-        let hostRange = try portRange(published, field: "host", mapping: value, serviceName: serviceName)
-        let targetRange = try portRange(target, field: "container", mapping: value, serviceName: serviceName)
-        guard hostRange.count == targetRange.count else {
+        let mapping = try parsePublishedPortMapping(value, serviceName: serviceName)
+        guard mapping.hostRange.count == mapping.targetRange.count else {
             throw ComposeError.invalidProject("service '\(serviceName)' has mismatched port ranges '\(value)'")
         }
 
-        return (0..<hostRange.count).map { offset in
+        return (0..<mapping.hostRange.count).map { offset in
             ComposeContainerPublishedPort(
-                hostAddress: hostAddress,
-                hostPort: UInt16(hostRange.start + offset),
-                containerPort: UInt16(targetRange.start + offset),
-                protocolName: protocolName
+                hostAddress: mapping.hostAddress ?? "0.0.0.0",
+                hostPort: UInt16(mapping.hostRange.start + offset),
+                containerPort: UInt16(mapping.targetRange.start + offset),
+                protocolName: mapping.protocolName
             )
         }
     }

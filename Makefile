@@ -135,6 +135,7 @@ cli-smoke: build
 	printf 'services:\n  api:\n    image: alpine\n    attach: false\n' > "$$tmpdir/attach-false.yml"; \
 	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n  db:\n    image: alpine\n' > "$$tmpdir/scale-deps.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080-8081:80"\n' > "$$tmpdir/scale-ports.yml"; \
 	mkdir -p "$$tmpdir/api"; \
 	printf 'FROM alpine:3.20\n' > "$$tmpdir/api/Dockerfile"; \
 	printf 'secret\n' > "$$tmpdir/build-token.txt"; \
@@ -285,7 +286,12 @@ cli-smoke: build
 	[[ "$$up_scale_output" == *"--name demo-worker-1"* ]]; \
 	[[ "$$up_scale_output" == *"--name demo-worker-2 --detach"* ]]; \
 	up_scale_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
-	[[ "$$up_scale_ports_output" == *"unsupported compose feature: service 'api' publishes ports; scaled published ports are not implemented by container-compose yet"* ]]; \
+	[[ "$$up_scale_ports_output" == *"unsupported compose feature: service 'api' publishes '8080:80'; scaled published ports require at least 2 explicit host ports for 2 replicas"* ]]; \
+	up_scale_port_range_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-ports.yml" up --scale api=2 api)"; \
+	[[ "$$up_scale_port_range_output" == *"--name demo-api-1"* ]]; \
+	[[ "$$up_scale_port_range_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$up_scale_port_range_output" == *"--name demo-api-2 --detach"* ]]; \
+	[[ "$$up_scale_port_range_output" == *"--publish 8081:80"* ]]; \
 	create_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" create --scale worker=2 worker)"; \
 	[[ "$$create_scale_output" == *"--name demo-worker-1"* ]]; \
 	[[ "$$create_scale_output" == *"--name demo-worker-2"* ]]; \
@@ -303,7 +309,7 @@ cli-smoke: build
 	scale_missing_output="$$(".build/debug/compose" --dry-run scale 2>&1 || true)"; \
 	[[ "$$scale_missing_output" == *"invalid compose project: scale requires at least one SERVICE=REPLICAS argument"* ]]; \
 	scale_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" scale api=2 2>&1 || true)"; \
-	[[ "$$scale_ports_output" == *"unsupported compose feature: service 'api' publishes ports; scaled published ports are not implemented by container-compose yet"* ]]; \
+	[[ "$$scale_ports_output" == *"unsupported compose feature: service 'api' publishes '8080:80'; scaled published ports require at least 2 explicit host ports for 2 replicas"* ]]; \
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
 	[[ "$$create_output" == *"container create"* ]]; \
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
