@@ -38,14 +38,17 @@ Docker Compose v2 accepts the surface and runtime support is not needed for norm
 
 ## Status Lozenges
 
-The lozenges use a traffic-light scheme: green is supported/no-gap, yellow is partial, red is blocked by [`apple/container`][apple-container], orange is blocked in this repository, and gray is config-only.
+The lozenges use static flat badge images so the traffic-light colours render
+inside GitHub Markdown and HTML tables: green is supported/no-gap, yellow is
+partial, red is blocked by [`apple/container`][apple-container], orange is
+blocked in this repository, and gray is config-only.
 
-- <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>: Docker Compose v2 accepts the surface, [`apple/container`][apple-container] has the required primitive, and `container-compose` maps it.
-- <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">NO PLUGIN GAP</span>: no current runtime or command surface is blocked first by this repository.
-- <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>: the common local workflow is supported, but adjacent Compose behavior still depends on an [`apple/container`][apple-container] runtime gap.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>: the first missing piece is an [`apple/container`][apple-container] runtime primitive.
-- <span style="background:#FFFAE6;color:#974F0C;border:1px solid #FFE2A8;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PLUGIN GAP</span>: [`apple/container`][apple-container] is not known to be the blocker and this repository still needs implementation work.
-- <span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span>: normalized output is preserved, but runtime behavior is not applied.
+- <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">: Docker Compose v2 accepts the surface, [`apple/container`][apple-container] has the required primitive, and `container-compose` maps it.
+- <img alt="NO PLUGIN GAP" src="https://img.shields.io/badge/NO%20PLUGIN%20GAP-2E7D32?style=flat-square">: no current runtime or command surface is blocked first by this repository.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">: the common local workflow is supported, but adjacent Compose behavior still depends on an [`apple/container`][apple-container] runtime gap.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">: the first missing piece is an [`apple/container`][apple-container] runtime primitive.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square">: [`apple/container`][apple-container] is not known to be the blocker and this repository still needs implementation work.
+- <img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square">: normalized output is preserved, but runtime behavior is not applied.
 
 ## Compatibility Snapshot
 
@@ -60,22 +63,22 @@ The lozenges use a traffic-light scheme: green is supported/no-gap, yellow is pa
   <tbody>
     <tr>
       <td>Common local Compose workflows</td>
-      <td><span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span> <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span></td>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
       <td>The supported matrix covers the local-development path where Docker Compose v2, Apple/container, and this plugin all have matching behavior; partial rows call out adjacent Apple/container gaps.</td>
     </tr>
     <tr>
       <td>Apple/container primitive gaps</td>
-      <td><span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span></td>
+      <td><img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"></td>
       <td>The Compose surface is valid, but the first missing piece is an Apple/container runtime, build, networking, storage, logging, or command-data primitive.</td>
     </tr>
     <tr>
       <td>container-compose design gaps</td>
-      <td><span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">NO PLUGIN GAP</span></td>
-      <td>No current runtime or command surface is blocked first by this repository. New plugin-owned gaps should be marked with <span style="background:#FFFAE6;color:#974F0C;border:1px solid #FFE2A8;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PLUGIN GAP</span> until implemented.</td>
+      <td><img alt="NO PLUGIN GAP" src="https://img.shields.io/badge/NO%20PLUGIN%20GAP-2E7D32?style=flat-square"></td>
+      <td>No current runtime or command surface is blocked first by this repository. New plugin-owned gaps should be marked with <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> until implemented.</td>
     </tr>
     <tr>
       <td>Normalized metadata only</td>
-      <td><span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span></td>
+      <td><img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square"></td>
       <td>The data is preserved for <code>config</code> and <code>convert</code>; runtime commands either ignore harmless metadata or reject service-level use when no supported mapping exists.</td>
     </tr>
   </tbody>
@@ -97,7 +100,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Config normalization
 
-- **Status:** <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>
+- **Status:** <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 - **Compose surface:**
   - File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, and `-p/--project-name`.
   - Canonical `config` and `convert` JSON.
@@ -107,7 +110,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Build and images
 
-- **Status:** <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>
+- **Status:** <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 - **Compose surface:**
   - Build inputs: `build.context`, `build.dockerfile`, `build.dockerfile_inline`, `build.args`, `build.cache_from`, `build.cache_to`, `build.labels`, `build.platforms`, `build.target`, `build.no_cache`, `build.pull`, `build.tags`, and file-backed or environment-backed `build.secrets`.
   - Build commands: `build --no-cache`, `build --pull`, `build --push`, `build --quiet/-q`, and `build --with-dependencies`.
@@ -122,7 +125,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Container lifecycle
 
-- **Status:** <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
   - Project lifecycle: `create`, `up`, `down`, `start`, `stop`, `restart`, `rm`, `kill`, and `wait`.
   - Reconciliation: deterministic names, indexed replicas, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, and `down --rmi local/all`.
@@ -135,7 +138,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Project discovery
 
-- **Status:** <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>
+- **Status:** <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 - **Compose surface:** `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...`.
 - **Apple/container path:** `ContainerClient.list(filters:)` and Compose project/config-hash labels.
 - **container-compose status:** Supported from labels on created containers.
@@ -143,7 +146,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Container interaction
 
-- **Status:** <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
   - Discovery and output: `ps`, filtered `ps`, `logs`, indexed `logs`, harmless `logs --no-color` and `logs --no-log-prefix`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
@@ -155,7 +158,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Develop watch workflows
 
-- **Status:** <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>
+- **Status:** <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 - **Compose surface:** `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, `watch --quiet`, selected services, and normalized `develop.watch` triggers for `sync`, `sync+restart`, `sync+exec`, `restart`, and `rebuild`.
 - **Apple/container path:** Dry-run validation does not mutate runtime state. Live watch uses direct copy, exec, lifecycle restart, build, and image prune paths where Apple/container exposes them.
 - **container-compose status:** Supported for polling-based local file watching, initial sync, changed-file sync, deleted-file cleanup, sync exec hooks, restarts, rebuilds, and rebuild pruning. `develop.watch` metadata is harmless for ordinary `up` and `run`.
@@ -163,7 +166,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Provider services
 
-- **Status:** <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>
+- **Status:** <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 - **Compose surface:** Service `provider.type`, `provider.options`, provider `compose metadata`, provider `compose up`, provider `compose down`, optional provider `compose stop`, provider `info`/`debug`/`error`/`setenv` messages, and provider environment injection into direct dependents.
 - **Apple/container path:** Provider services are non-container lifecycle hooks. No Apple/container runtime primitive is needed until a provider's returned values are injected into dependent service container environment variables.
 - **container-compose status:** Supported for local `up`, dependency startup for one-off `run`, `down`, and advertised `stop`. Providers are resolved as an executable path, `docker-<type>` in `PATH`, or `<type>` in `PATH`; required metadata parameters are validated before invoking provider `up`/`down`; unknown provider options are filtered when metadata is available.
@@ -171,7 +174,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Default networking
 
-- **Status:** <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
   - One service network, default project networks, external networks, `network_mode: none`, project network `internal`, and one IPv4 plus one IPv6 project network IPAM `subnet`.
   - Explicit host-published ports, target-only dynamically allocated host ports, and host-bound dynamic ports for `create`, `up`, and one-off `run`.
@@ -183,7 +186,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Default storage
 
-- **Status:** <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
   - Named volumes, external volumes, bind mounts, read-only mounts, anonymous volumes, and deterministic per-replica anonymous volume names.
   - File-backed service `configs` and `secrets` mounted read-only at Compose-compatible targets.
@@ -199,7 +202,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Common runtime options
 
-- **Status:** <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
   - Process options: `command`, `entrypoint`, one-off `run --entrypoint`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, and `stdin_open`.
   - Runtime options: `container_name`, `read_only`, `init`, `platform`, `runtime`, DNS settings, capabilities, CPU/memory local limits, `shm_size`, `ulimits`, `stop_signal`, and `stop_grace_period`.
@@ -209,7 +212,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Environment and metadata
 
-- **Status:** <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>
+- **Status:** <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 - **Compose surface:** Service `environment`, `env_file`, one-off env and label flags, service labels, service annotations, `deploy.labels` service metadata, `label_file`, network labels, volume labels, and Compose project/service/config-hash labels.
 - **Apple/container path:** Supported `container create/run --env`, `--env-file`, and resource/container labels.
 - **container-compose status:** Supported. Service annotations are mapped to runtime metadata labels. `deploy.labels` are preserved as service metadata but are not applied as container labels.
@@ -217,7 +220,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Simple ordering
 
-- **Status:** <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:** `depends_on` with no condition or `condition: service_started`, same-project `volumes_from` implicit dependencies, optional dependencies, `depends_on.<service>.restart: true` for single-replica restarts, `up --always-recreate-deps`, `up --no-deps`, and `run --no-deps`.
 - **Apple/container path:** Plugin dependency ordering, dependency-change tracking, `ContainerClient.stop(id:opts:)`, and `ContainerClient.start(id:)`.
 - **container-compose status:** Supported for service-started ordering and selected dependency traversal behavior.
@@ -229,7 +232,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Rich network attachment and IPAM controls
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** Multiple service networks, aliases, service-name DNS for replicas, `deploy.endpoint_mode`, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
 - **Missing Apple/container primitive:** Multi-network attach/connect, per-network aliases/options beyond MAC and MTU, VIP/DNSRR service endpoint discovery, multi-record DNS lookup for scaled service names, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
 - **container-compose status:** Rejected before resources are created.
@@ -237,7 +240,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Host identity and legacy links
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `hostname`, `domainname`, `extra_hosts`, `links`, and `external_links`.
 - **Missing Apple/container primitive:** Hostname/domain controls, explicit host entries, and legacy link/alias semantics.
 - **container-compose status:** Rejected before resources are created.
@@ -245,7 +248,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Namespace and resource controls
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`, CPU scheduler controls beyond supported `cpus`, memory/OOM/PID controls beyond supported `mem_limit`, `deploy.resources.limits.pids`, `deploy.resources.limits.devices`, `deploy.resources.limits.generic_resources`, and `deploy.resources.reservations`.
 - **Missing Apple/container primitive:** Namespace selection, parent cgroups, CPU scheduler controls beyond `cpus`, memory controls beyond `mem_limit`, swap/OOM/PID controls, deploy PID/device/generic-resource limits, and platform resource reservation guarantees.
 - **container-compose status:** Rejected before resources are created.
@@ -253,7 +256,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### User, security, devices, and kernel tuning
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `group_add`, `security_opt`, service `privileged`, `exec --privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`, and `sysctls`.
 - **Missing Apple/container primitive:** Supplemental groups, security profiles beyond supported `cap_add`/`cap_drop`, privileged mode, host devices, GPUs, per-container sysctls, and privileged exec processes.
 - **container-compose status:** Rejected before resources are created.
@@ -261,7 +264,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Health, completion, config/secret stores, service restart
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, `deploy.mode: replicated-job`, `deploy.mode: global-job`, external/content/environment-backed service `configs` and `secrets`, service `restart`, and `deploy.restart_policy`.
 - **Missing Apple/container primitive:** Health status, exit code/completion-time metadata, Compose-compatible job lifecycle and scheduler semantics, first-class config/secret store or materialization primitives, ownership/mode controls for non-file-backed grants, and restart policy support.
 - **container-compose status:** Rejected before resources are created.
@@ -269,7 +272,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Compose model runner
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** Top-level `models`, service `models`, `endpoint_var`, `model_var`, `context_size`, and `runtime_flags`.
 - **Missing Apple/container primitive:** Compose-compatible model runner lifecycle, model pull/configure operations, endpoint discovery, and an endpoint URL that is reachable from Apple/container service containers. Docker Compose implements this through the Docker Model plugin; Apple/container does not expose an equivalent primitive yet.
 - **container-compose status:** `config` and `convert` preserve top-level model definitions and service model binding metadata. Runtime commands reject service model bindings before resources are created.
@@ -277,7 +280,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Start-first service replacement
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `deploy.update_config.order: start-first` and any future update order that requires more than the local stop-first recreate boundary.
 - **Missing Apple/container primitive:** A Docker Compose compatible replacement handoff: create a temporary replacement while the old service container is still running, then either rename the replacement to the stable Compose container identity or move the service hostname/alias to it after the old container is removed. Current Apple/container APIs expose create, stop, and delete, but no container rename or service-alias handoff, and container creation rejects duplicate container IDs and duplicate attachment hostnames. Unknown update orders are rejected as Apple/container update-orchestration gaps rather than plugin backlog.
 - **container-compose status:** Rejected before resources are created with a precise Apple/container runtime-gap message.
@@ -285,7 +288,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Advanced build configuration
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `additional_contexts`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, unsupported build secret forms and metadata, build `shm_size`, `ssh`, and build `ulimits`.
 - **Missing Apple/container primitive:** Docker Compose compatible BuildKit inputs for additional contexts, build host entries, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced build secret metadata, build shared memory, build ulimits, and provenance/SBOM attestations.
 - **container-compose status:** Rejected before `container build` is invoked.
@@ -293,7 +296,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Advanced mounts and storage controls
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** Long-form service `volume.subpath`, image-backed service mounts, `image.subpath`, advanced bind/volume options such as bind propagation, SELinux flags, recursive bind behavior, mount consistency, non-local service `volume_driver`, service `storage_opt`, and external inherited block mounts.
 - **Missing Apple/container primitive:** Named-volume subpath mounts, image-backed service mounts, advanced bind/volume controls, non-local service volume drivers, per-container root filesystem storage options, and a Compose-compatible way to inherit external block mounts. The current Apple/container CLI/API mount surface exposes volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath, image mount source selector, propagation/SELinux/consistency controls, block-mount inheritance mapping, or service storage option mapping.
 - **container-compose status:** Rejected before resources are created.
@@ -301,7 +304,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Service logging controls
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** Service `logging`, `log_driver`, and `log_opt`.
 - **Missing Apple/container primitive:** Compose-compatible service logging drivers, logging options, rotation policy, and log metadata controls. Current Apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration.
 - **container-compose status:** Rejected before resources are created.
@@ -309,7 +312,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### API socket and block I/O controls
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `use_api_socket` and `blkio_config`.
 - **Missing Apple/container primitive:** A safe Docker-compatible or Apple/container-compatible API socket boundary with credential handoff and least-privilege controls, plus block I/O resource controls for blkio weight and read/write throttling. Apple/container can mount Unix sockets and report block I/O stats, but it does not expose the Docker Compose API-socket or blkio resource-control behavior that these fields require.
 - **container-compose status:** Rejected before resources are created.
@@ -317,7 +320,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Runtime data commands
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
 - **Missing Apple/container primitive:** Process listing, event stream, pause/unpause, stored process exit codes after container stop, and copy archive/follow-link controls.
 - **container-compose status:** Rejected before resources are created.
@@ -325,7 +328,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Interactive init-process attach and foreground hook boundaries
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** Default stdin/signal-proxy `attach`, `attach --sig-proxy=true`, `attach --detach-keys`, attached `up` with service `post_start`, foreground one-off `run` with service `post_start`, and foreground one-off `run` with service `pre_stop`.
 - **Missing Apple/container primitive:** Reattaching stdin/stdout/stderr to an already-running init process, signal proxying to that process, detach-key handling, and an interceptable foreground one-off stop boundary. Apple/container can wire stdio while bootstrapping a container or creating a new exec process, but it does not expose a Compose-compatible path that starts the init process, lets `container-compose` run lifecycle hooks, then reattaches to the same init process before it exits.
 - **container-compose status:** Output-only `attach --no-stdin --sig-proxy=false` is supported through log streaming. Default interactive attach rejects before side effects with a precise Apple/container runtime-gap message.
@@ -333,7 +336,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Image commit and Compose application publishing
 
-- **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 - **Compose surface:** `commit`, `publish`, and `oci://` Compose application references.
 - **Missing Apple/container primitive:** Container-to-image commit snapshots with image metadata, plus Compose application OCI artifact publishing and consumption.
 - **container-compose status:** Command names are exposed so Docker Compose v2 scripts get precise unsupported-feature errors instead of unknown-command failures.
@@ -341,7 +344,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 ### Blocked By `container-compose`
 
-Status: <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">NO PLUGIN GAP</span>
+Status: <img alt="NO PLUGIN GAP" src="https://img.shields.io/badge/NO%20PLUGIN%20GAP-2E7D32?style=flat-square">
 
 No remaining runtime surface-level gaps are currently classified here. Mixed examples below still capture areas where plugin work was completed alongside Apple/container runtime boundaries, but the open unsupported runtime surfaces are now tracked under the first missing Apple/container primitive.
 
@@ -351,26 +354,26 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 #### Top-level and service `x-*` extensions
 
-- **Status:** <span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span>
+- **Status:** <img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square">
 - **Current behavior:** Preserved by `container compose config` and `container compose convert`; no runtime behavior by itself.
 - **Example:** [O1](#o1-config-only-metadata).
 
 #### Service `expose`
 
-- **Status:** <span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span>
+- **Status:** <img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square">
 - **Current behavior:** Preserved by `config` and `convert`; it does not publish host ports. Use `ports` for host publishing.
 - **Example:** [O1](#o1-config-only-metadata).
 
 #### Top-level `configs` and `secrets` definitions
 
-- **Status:** <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span>
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Current behavior:** Preserved by `config` and `convert`. File-backed definitions can feed service `configs` and `secrets` through read-only runtime bind mounts. File-backed and environment-backed secrets can feed supported `build.secrets`.
 - **Runtime boundary:** External definitions, inline `content`, environment-backed runtime grants, and strict `uid`/`gid`/`mode` materialization need first-class [`apple/container`][apple-container] config/secret store or materialization primitives.
 - **Examples:** [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart).
 
 #### Top-level `models` definitions
 
-- **Status:** <span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span>
+- **Status:** <img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square">
 - **Current behavior:** Preserved by `config` and `convert`.
 - **Runtime boundary:** Service-level model bindings are an [`apple/container`][apple-container] model-runner gap.
 - **Examples:** [O1](#o1-config-only-metadata), [A11](#a11-apple-gap-compose-model-runner).
@@ -379,7 +382,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 ### Supported Commands
 
-Status: <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span>
+Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 
 - Config and project: `config`, `convert`, and `ls`.
 - Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, and running/stopping-container `wait`.
@@ -391,7 +394,7 @@ Status: <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;b
 
 ### Commands Blocked By [`apple/container`][apple-container] Runtime Gaps
 
-Status: <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
+Status: <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 
 - `top`, `events`, `pause`, and `unpause`.
 - Already-stopped `wait` exit-code replay.
@@ -402,7 +405,7 @@ Status: <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;b
 
 ### Commands Blocked By `container-compose` Design Gaps
 
-Status: <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">NO PLUGIN GAP</span>
+Status: <img alt="NO PLUGIN GAP" src="https://img.shields.io/badge/NO%20PLUGIN%20GAP-2E7D32?style=flat-square">
 
 - No remaining command-level gaps are currently classified here. Plugin-owned orchestration gaps are tracked in the compatibility sections above.
 
@@ -420,24 +423,24 @@ Status: <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;b
 
 Every example includes a Compose file or commands plus the matching Dockerfile snippets needed to try the surface in an isolated scratch directory.
 
-- <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span> [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, file-backed service configs/secrets, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
-- <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span> [S2: Supported Provider Service](#s2-supported-provider-service): Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates hostname, domain name, explicit host entries, and legacy links.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A4: Apple Gap, Health, Config And Secret Stores, And Restart](#a4-apple-gap-health-config-and-secret-stores-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, deploy job modes, external/content/environment-backed service secrets/configs, and restart policies.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): Demonstrates service logging drivers and logging options.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
-- <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span> [C1: Replica Scaling And Deploy Metadata](#c1-replica-scaling-and-deploy-metadata): Demonstrates supported scale forms, collision safeguards, local deploy metadata, and remaining [`apple/container`][apple-container] deploy/runtime gaps.
-- <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span> [C3: Partial, Develop, Providers, And Hooks](#c3-partial-develop-providers-and-hooks): Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
-- <span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span> [O1: Config-Only Metadata](#o1-config-only-metadata): Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
+- <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, file-backed service configs/secrets, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
+- <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [S2: Supported Provider Service](#s2-supported-provider-service): Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates hostname, domain name, explicit host entries, and legacy links.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A4: Apple Gap, Health, Config And Secret Stores, And Restart](#a4-apple-gap-health-config-and-secret-stores-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, deploy job modes, external/content/environment-backed service secrets/configs, and restart policies.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): Demonstrates service logging drivers and logging options.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [C1: Replica Scaling And Deploy Metadata](#c1-replica-scaling-and-deploy-metadata): Demonstrates supported scale forms, collision safeguards, local deploy metadata, and remaining [`apple/container`][apple-container] deploy/runtime gaps.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [C3: Partial, Develop, Providers, And Hooks](#c3-partial-develop-providers-and-hooks): Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
+- <img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square"> [O1: Config-Only Metadata](#o1-config-only-metadata): Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
 ## Examples With Dockerfiles
 
