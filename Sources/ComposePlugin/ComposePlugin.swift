@@ -598,7 +598,7 @@ struct Images: AsyncParsableCommand, ComposeProjectCommand {
 struct Stats: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "stats", abstract: "Display service container resource usage statistics.")
     @OptionGroup var global: GlobalOptions
-    @Flag(name: [.customShort("a"), .customLong("all")], help: "Show all containers. Not supported by apple/container stats yet.")
+    @Flag(name: [.customShort("a"), .customLong("all")], help: "Show all service containers.")
     var all = false
     @Option(name: .customLong("format"), help: "Output format: table or json.")
     var format = "table"

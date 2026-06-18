@@ -45,6 +45,7 @@ public protocol ContainerStatsManaging: Sendable {
         ids: [String],
         format: String,
         noStream: Bool,
+        includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws
 }
@@ -105,10 +106,11 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         ids: [String],
         format: String,
         noStream: Bool,
+        includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
         if format == "json" || noStream {
-            let records = try await collectStats(ids: ids)
+            let records = try await collectStats(ids: ids, includeStopped: includeStopped)
             emit(try renderStats(records, format: format))
             return
         }
@@ -120,30 +122,54 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
 
         emit("\u{001B}[H\u{001B}[J" + renderStatsTable([]))
         while !Task.isCancelled {
-            let records = try await collectStats(ids: ids)
+            let records = try await collectStats(ids: ids, includeStopped: includeStopped)
             emit("\u{001B}[H\u{001B}[J" + renderStatsTable(records))
             try await sleep(sampleInterval)
         }
     }
 
     /// Collects two samples for running containers so CPU percentages are meaningful.
-    private func collectStats(ids: [String]) async throws -> [StatsSnapshot] {
+    private func collectStats(ids: [String], includeStopped: Bool) async throws -> [StatsSnapshot] {
         let targets = try await validatedTargets(ids: ids)
         var snapshots: [StatsSnapshot] = []
 
-        for target in targets where target.status == "running" {
+        for target in targets {
+            guard target.status == "running" else {
+                if includeStopped {
+                    let stats = unavailableStats(id: target.id)
+                    snapshots.append(StatsSnapshot(first: stats, second: stats, refresh: false))
+                }
+                continue
+            }
             let stats = try await client.stats(id: target.id)
-            snapshots.append(StatsSnapshot(first: stats, second: stats))
+            snapshots.append(StatsSnapshot(first: stats, second: stats, refresh: true))
         }
 
-        if !snapshots.isEmpty {
+        if snapshots.contains(where: \.refresh) {
             try await sleep(sampleInterval)
             for index in snapshots.indices {
-                snapshots[index].second = try await client.stats(id: snapshots[index].second.id)
+                if snapshots[index].refresh {
+                    snapshots[index].second = try await client.stats(id: snapshots[index].second.id)
+                }
             }
         }
 
         return snapshots
+    }
+
+    /// Builds an empty stat record for stopped containers included by `--all`.
+    private func unavailableStats(id: String) -> ContainerStats {
+        ContainerStats(
+            id: id,
+            memoryUsageBytes: nil,
+            memoryLimitBytes: nil,
+            cpuUsageUsec: nil,
+            networkRxBytes: nil,
+            networkTxBytes: nil,
+            blockReadBytes: nil,
+            blockWriteBytes: nil,
+            numProcesses: nil
+        )
     }
 
     /// Mirrors the Apple CLI check that every named container exists.
@@ -233,6 +259,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
 private struct StatsSnapshot {
     var first: ContainerStats
     var second: ContainerStats
+    var refresh: Bool
 }
 
 /// Renders rows as a padded table.

@@ -3037,13 +3037,19 @@ struct ComposeOrchestratorTests {
             project: project,
             options: ComposeStatsOptions(services: ["api", "db"], format: "json", noStream: true)
         )
+        try await orchestrator.stats(
+            project: project,
+            options: ComposeStatsOptions(services: ["api"], all: true, noStream: true)
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await statsManager.requests == [
-            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "table", noStream: false),
-            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "json", noStream: true),
+            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "table", noStream: false, includeStopped: false),
+            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "json", noStream: true, includeStopped: false),
+            ContainerStatsRequest(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: true),
         ])
         #expect(emitted.messages == [
+            "stats-output",
             "stats-output",
             "stats-output",
         ])
@@ -3069,11 +3075,11 @@ struct ComposeOrchestratorTests {
             statsManager: statsManager
         ).stats(
             project: project,
-            options: ComposeStatsOptions(services: ["api", "db"], format: "json", noStream: true)
+            options: ComposeStatsOptions(services: ["api", "db"], all: true, format: "json", noStream: true)
         )
 
         #expect(emitted.messages == [
-            "+ container stats --format json --no-stream demo-api-1 custom-db",
+            "+ container stats --format json --no-stream --all demo-api-1 custom-db",
         ])
         #expect(await statsManager.requests.isEmpty)
     }
@@ -3089,10 +3095,6 @@ struct ComposeOrchestratorTests {
         )
 
         let cases: [(ComposeStatsOptions, ComposeError)] = [
-            (
-                ComposeStatsOptions(all: true),
-                .unsupported("stats --all: apple/container stats only reports running containers")
-            ),
             (
                 ComposeStatsOptions(format: "yaml"),
                 .unsupported("stats --format 'yaml': apple/container stats supports table and json output")
@@ -4615,7 +4617,7 @@ struct ComposeOrchestratorTests {
             sleep: { _ in }
         )
 
-        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, emit: { emitted.append($0) })
+        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, includeStopped: false, emit: { emitted.append($0) })
 
         #expect(emitted.messages.count == 1)
         #expect(emitted.messages[0].contains("Container ID"))
@@ -4623,6 +4625,39 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages[0].contains("25.00%"))
         #expect(emitted.messages[0].contains("1.00 MiB / 2.00 MiB"))
         #expect(!emitted.messages[0].contains("demo-db-1"))
+        #expect(await client.listRequests == [["demo-api-1", "demo-db-1"]])
+        #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
+    }
+
+    @Test("stats manager includes stopped containers when all is requested")
+    func statsManagerIncludesStoppedContainersWhenAllIsRequested() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [
+                ComposeStatsTarget(id: "demo-api-1", status: "running"),
+                ComposeStatsTarget(id: "demo-db-1", status: "stopped"),
+            ],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, includeStopped: true, emit: { emitted.append($0) })
+
+        #expect(emitted.messages.count == 1)
+        #expect(emitted.messages[0].contains("demo-api-1"))
+        #expect(emitted.messages[0].contains("25.00%"))
+        #expect(emitted.messages[0].contains("demo-db-1"))
+        #expect(emitted.messages[0].contains("-- / --"))
         #expect(await client.listRequests == [["demo-api-1", "demo-db-1"]])
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
     }
@@ -4648,7 +4683,7 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: false, emit: { emitted.append($0) })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: false, includeStopped: false, emit: { emitted.append($0) })
             Issue.record("Expected streaming stats cancellation")
         } catch is CancellationError {
             // Expected cancellation from the injected sleeper after one streamed frame.
@@ -4693,7 +4728,7 @@ struct ComposeOrchestratorTests {
         )
         let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
 
-        try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { emitted.append($0) })
+        try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { emitted.append($0) })
 
         #expect(emitted.messages[0].contains("--"))
         #expect(emitted.messages[0].contains("1.00 GiB / --"))
@@ -4714,7 +4749,7 @@ struct ComposeOrchestratorTests {
         )
         let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
 
-        try await manager.stats(ids: ["demo-api-1"], format: "json", noStream: false, emit: { emitted.append($0) })
+        try await manager.stats(ids: ["demo-api-1"], format: "json", noStream: false, includeStopped: false, emit: { emitted.append($0) })
 
         let decoded = try JSONDecoder().decode([ContainerStats].self, from: Data(emitted.messages[0].utf8))
         #expect(decoded.count == 1)
@@ -4730,7 +4765,7 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientStatsManager(client: client, sleep: { _ in })
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { _ in })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { _ in })
             Issue.record("Expected missing stats target error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("no such container: demo-api-1"))
@@ -4753,7 +4788,7 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientStatsManager(client: client, sleep: { _ in })
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { _ in })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { _ in })
             Issue.record("Expected initial stats failure")
         } catch let error as ComposeError {
             #expect(error == expected)
@@ -4781,7 +4816,7 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { _ in })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { _ in })
             Issue.record("Expected follow-up stats failure")
         } catch let error as ComposeError {
             #expect(error == expected)
@@ -9115,6 +9150,7 @@ private struct ContainerStatsRequest: Equatable {
     var ids: [String]
     var format: String
     var noStream: Bool
+    var includeStopped: Bool
 }
 
 private enum ContainerImageRequest: Equatable {
@@ -9489,9 +9525,10 @@ private actor RecordingContainerStatsManager: ContainerStatsManaging {
         ids: [String],
         format: String,
         noStream: Bool,
+        includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        storage.append(ContainerStatsRequest(ids: ids, format: format, noStream: noStream))
+        storage.append(ContainerStatsRequest(ids: ids, format: format, noStream: noStream, includeStopped: includeStopped))
         for output in outputs {
             emit(output)
         }

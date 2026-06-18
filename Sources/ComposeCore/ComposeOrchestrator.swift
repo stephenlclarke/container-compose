@@ -1031,13 +1031,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if stats.noStream {
             args.append("--no-stream")
         }
+        if stats.all {
+            args.append("--all")
+        }
         let ids = services.map { containerName(project: project, service: $0, oneOff: false) }
         args.append(contentsOf: ids)
         if options.dryRun {
             try await runContainer(args)
             return
         }
-        try await statsManager.stats(ids: ids, format: stats.format, noStream: stats.noStream, emit: options.emit)
+        try await statsManager.stats(
+            ids: ids,
+            format: stats.format,
+            noStream: stats.noStream,
+            includeStopped: stats.all,
+            emit: options.emit
+        )
     }
 
     /// Sends a signal to selected service containers.
@@ -1680,9 +1689,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose stats` options before invoking runtime stats.
     func validateStatsOptions(_ options: ComposeStatsOptions) throws {
-        if options.all {
-            throw ComposeError.unsupported("stats --all: apple/container stats only reports running containers")
-        }
         if options.noTrunc {
             throw ComposeError.unsupported("stats --no-trunc: apple/container stats does not expose truncation control")
         }
