@@ -533,10 +533,12 @@ struct ComposeOrchestratorTests {
         } else {
             Issue.record("Expected network creation through direct API")
         }
-        if case .createVolume(let name, let labels) = resources[1] {
-            #expect(name == "demo_cache")
-            #expect(labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
-            #expect(labels["com.apple.container.compose.project.config-files-hash"] != nil)
+        if case .createVolume(let request) = resources[1] {
+            #expect(request.name == "demo_cache")
+            #expect(request.driver == nil)
+            #expect(request.driverOpts == [:])
+            #expect(request.labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
+            #expect(request.labels["com.apple.container.compose.project.config-files-hash"] != nil)
         } else {
             Issue.record("Expected volume creation through direct API")
         }
@@ -556,6 +558,86 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--network", "demo_default"]))
         #expect(run.containsSequence(["--platform", "linux/amd64"]))
         #expect(Array(run.suffix(2)) == ["example/api:latest", "serve"])
+    }
+
+    @Test("up creates volume driver options through direct API")
+    func upCreatesVolumeDriverOptionsThroughDirectAPI() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = [
+                "cache": ComposeVolume(
+                    name: "cache",
+                    driver: "local",
+                    driverOpts: [
+                        "journal": "ordered",
+                        "size": "64m",
+                    ],
+                    labels: ["com.example.volume": "cache"]
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let requests = await resourceManager.requests
+        let request = try #require(requests.compactMap { event -> ComposeVolumeCreateRequest? in
+            if case .createVolume(let request) = event {
+                return request
+            }
+            return nil
+        }.first)
+        #expect(request.name == "demo_cache")
+        #expect(request.driver == "local")
+        #expect(request.resolvedDriver == "local")
+        #expect(request.driverOpts == [
+            "journal": "ordered",
+            "size": "64m",
+        ])
+        #expect(request.labels["com.apple.container.compose.project"] == "demo")
+        #expect(request.labels["com.apple.container.compose.project.config-files-hash"] != nil)
+        #expect(request.labels["com.example.volume"] == "cache")
+    }
+
+    @Test("up dry run renders volume driver options")
+    func upDryRunRendersVolumeDriverOptions() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = [
+                "cache": ComposeVolume(
+                    name: "cache",
+                    driver: "local",
+                    driverOpts: [
+                        "journal": "ordered",
+                        "size": "64m",
+                    ]
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages.contains { message in
+            message.contains("container volume create --opt journal=ordered --opt size=64m")
+        })
     }
 
     @Test("up creates internal IPAM networks through direct API")
@@ -6449,7 +6531,12 @@ struct ComposeOrchestratorTests {
             ipv6Subnet: "fd00:10::/64",
             labels: labels
         ))
-        try await manager.createVolume(name: "demo_cache", labels: labels)
+        try await manager.createVolume(ComposeVolumeCreateRequest(
+            name: "demo_cache",
+            driver: "local",
+            driverOpts: ["size": "64m"],
+            labels: labels
+        ))
         let volumes = try await manager.listVolumes()
         try await manager.deleteNetwork(id: "demo_default")
         try await manager.deleteVolume(name: "demo_cache")
@@ -6464,7 +6551,12 @@ struct ComposeOrchestratorTests {
                 ipv6Subnet: "fd00:10::/64",
                 labels: labels
             ),
-            .createVolume(name: "demo_cache", labels: labels),
+            .createVolume(ComposeVolumeCreateRequest(
+                name: "demo_cache",
+                driver: "local",
+                driverOpts: ["size": "64m"],
+                labels: labels
+            )),
             .listVolumes,
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_cache"),
@@ -6523,8 +6615,8 @@ struct ComposeOrchestratorTests {
             deleteNetwork: { id in
                 try await recorder.deleteNetwork(id: id)
             },
-            createVolume: { name, labels in
-                try await recorder.createVolume(name: name, labels: labels)
+            createVolume: { request in
+                try await recorder.createVolume(request)
             },
             listVolumes: {
                 try await recorder.listVolumes()
@@ -6542,7 +6634,12 @@ struct ComposeOrchestratorTests {
         )
 
         try await client.createNetwork(configuration: configuration)
-        try await client.createVolume(name: "demo_cache", labels: labels)
+        try await client.createVolume(ComposeVolumeCreateRequest(
+            name: "demo_cache",
+            driver: "local",
+            driverOpts: ["size": "64m"],
+            labels: labels
+        ))
         _ = try await client.listVolumes()
         try await client.deleteNetwork(id: "demo_default")
         try await client.deleteVolume(name: "demo_cache")
@@ -6556,7 +6653,12 @@ struct ComposeOrchestratorTests {
                 ipv6Subnet: nil,
                 labels: labels
             ),
-            .createVolume(name: "demo_cache", labels: labels),
+            .createVolume(ComposeVolumeCreateRequest(
+                name: "demo_cache",
+                driver: "local",
+                driverOpts: ["size": "64m"],
+                labels: labels
+            )),
             .listVolumes,
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_cache"),
@@ -9889,13 +9991,13 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(await resourceManager.requests == [
-            .createVolume(name: "demo_cache", labels: [
+            .createVolume(ComposeVolumeCreateRequest(name: "demo_cache", labels: [
                 "com.apple.container.compose.project": "demo",
                 "com.apple.container.compose.version": "1",
                 "com.apple.container.compose.project.working-directory": FileManager.default.currentDirectoryPath,
                 "com.apple.container.compose.project.config-files": "",
                 "com.apple.container.compose.project.config-files-hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            ]),
+            ])),
         ])
         let command = try #require(runner.commands.last?.arguments)
         #expect(command.containsSequence(["--volume", "/default:/default"]))
@@ -10955,7 +11057,7 @@ private enum ContainerImageRequest: Equatable {
 private enum ContainerResourceRequest: Equatable {
     case createNetwork(ComposeNetworkCreateRequest)
     case deleteNetwork(id: String)
-    case createVolume(name: String, labels: [String: String])
+    case createVolume(ComposeVolumeCreateRequest)
     case listVolumes
     case deleteVolume(name: String)
 
@@ -10963,7 +11065,9 @@ private enum ContainerResourceRequest: Equatable {
         switch self {
         case .createNetwork(let request):
             request.name
-        case .createVolume(let name, _), .deleteVolume(let name):
+        case .createVolume(let request):
+            request.name
+        case .deleteVolume(let name):
             name
         case .listVolumes:
             ""
@@ -10976,8 +11080,8 @@ private enum ContainerResourceRequest: Equatable {
         switch self {
         case .createNetwork(let request):
             request.labels
-        case .createVolume(_, let labels):
-            labels
+        case .createVolume(let request):
+            request.labels
         case .deleteNetwork, .listVolumes, .deleteVolume:
             [:]
         }
@@ -10994,7 +11098,7 @@ private enum ContainerResourceAPIRequest: Equatable {
         labels: [String: String]
     )
     case deleteNetwork(id: String)
-    case createVolume(name: String, labels: [String: String])
+    case createVolume(ComposeVolumeCreateRequest)
     case listVolumes
     case deleteVolume(name: String)
 }
@@ -11610,8 +11714,8 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
         storage.append(.deleteNetwork(id: id))
     }
 
-    func createVolume(name: String, labels: [String: String]) async throws {
-        storage.append(.createVolume(name: name, labels: labels))
+    func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
+        storage.append(.createVolume(request))
     }
 
     func listVolumes() async throws -> [ComposeVolumeSummary] {
@@ -11664,8 +11768,8 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
         }
     }
 
-    func createVolume(name: String, labels: [String: String]) async throws {
-        storage.append(.createVolume(name: name, labels: labels))
+    func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
+        storage.append(.createVolume(request))
         if let volumeCreateError {
             throw volumeCreateError
         }

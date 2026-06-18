@@ -76,6 +76,34 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
     }
 }
 
+/// Fully resolved Compose volume creation request.
+public struct ComposeVolumeCreateRequest: Equatable, Sendable {
+    public var name: String
+    public var driver: String?
+    public var driverOpts: [String: String]
+    public var labels: [String: String]
+
+    public init(
+        name: String,
+        driver: String? = nil,
+        driverOpts: [String: String] = [:],
+        labels: [String: String] = [:]
+    ) {
+        self.name = name
+        self.driver = driver
+        self.driverOpts = driverOpts
+        self.labels = labels
+    }
+
+    /// Returns the Apple container volume driver for direct API calls.
+    public var resolvedDriver: String {
+        guard let driver, !driver.isEmpty else {
+            return "local"
+        }
+        return driver
+    }
+}
+
 /// Low-level Apple container resource calls used by
 /// `ContainerClientResourceManager`.
 public protocol ContainerResourceAPIClienting: Sendable {
@@ -85,8 +113,8 @@ public protocol ContainerResourceAPIClienting: Sendable {
     /// Deletes the runtime network named by `id`.
     func deleteNetwork(id: String) async throws
 
-    /// Creates a local volume with the supplied runtime name and labels.
-    func createVolume(name: String, labels: [String: String]) async throws
+    /// Creates a volume with resolved Apple runtime metadata.
+    func createVolume(_ request: ComposeVolumeCreateRequest) async throws
 
     /// Lists local volumes available through the Apple container API.
     func listVolumes() async throws -> [ComposeVolumeSummary]
@@ -104,8 +132,8 @@ public protocol ContainerResourceManaging: Sendable {
     /// Deletes the runtime network named by `id`.
     func deleteNetwork(id: String) async throws
 
-    /// Creates a local volume with the supplied runtime name and labels.
-    func createVolume(name: String, labels: [String: String]) async throws
+    /// Creates a volume with resolved Apple runtime metadata.
+    func createVolume(_ request: ComposeVolumeCreateRequest) async throws
 
     /// Lists local volumes available to Compose project commands.
     func listVolumes() async throws -> [ComposeVolumeSummary]
@@ -114,11 +142,25 @@ public protocol ContainerResourceManaging: Sendable {
     func deleteVolume(name: String) async throws
 }
 
+public extension ContainerResourceAPIClienting {
+    /// Creates a default local volume with labels.
+    func createVolume(name: String, labels: [String: String]) async throws {
+        try await createVolume(ComposeVolumeCreateRequest(name: name, labels: labels))
+    }
+}
+
+public extension ContainerResourceManaging {
+    /// Creates a default local volume with labels.
+    func createVolume(name: String, labels: [String: String]) async throws {
+        try await createVolume(ComposeVolumeCreateRequest(name: name, labels: labels))
+    }
+}
+
 /// Thin Apple `container` client wrapper around network and volume API calls.
 public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     public typealias CreateNetwork = @Sendable (NetworkConfiguration) async throws -> Void
     public typealias DeleteNetwork = @Sendable (String) async throws -> Void
-    public typealias CreateVolume = @Sendable (String, [String: String]) async throws -> Void
+    public typealias CreateVolume = @Sendable (ComposeVolumeCreateRequest) async throws -> Void
     public typealias ListVolumes = @Sendable () async throws -> [ComposeVolumeSummary]
     public typealias DeleteVolume = @Sendable (String) async throws -> Void
 
@@ -131,7 +173,14 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     public init(
         createNetwork: @escaping CreateNetwork = { _ = try await NetworkClient().create(configuration: $0) },
         deleteNetwork: @escaping DeleteNetwork = { try await NetworkClient().delete(id: $0) },
-        createVolume: @escaping CreateVolume = { _ = try await ClientVolume.create(name: $0, labels: $1) },
+        createVolume: @escaping CreateVolume = {
+            _ = try await ClientVolume.create(
+                name: $0.name,
+                driver: $0.resolvedDriver,
+                driverOpts: $0.driverOpts,
+                labels: $0.labels
+            )
+        },
         listVolumes: @escaping ListVolumes = { try await ClientVolume.list().map(ComposeVolumeSummary.init(configuration:)) },
         deleteVolume: @escaping DeleteVolume = { try await ClientVolume.delete(name: $0) }
     ) {
@@ -153,8 +202,8 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     }
 
     /// Creates a volume through `ClientVolume`.
-    public func createVolume(name: String, labels: [String: String]) async throws {
-        try await createVolumeOperation(name, labels)
+    public func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
+        try await createVolumeOperation(request)
     }
 
     /// Lists volumes through `ClientVolume`.
@@ -201,8 +250,8 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
     }
 
     /// Creates a Compose project volume through `ClientVolume`.
-    public func createVolume(name: String, labels: [String: String]) async throws {
-        try await client.createVolume(name: name, labels: labels)
+    public func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
+        try await client.createVolume(request)
     }
 
     /// Lists local volumes through `ClientVolume`.

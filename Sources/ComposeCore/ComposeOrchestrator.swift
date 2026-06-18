@@ -2507,6 +2507,10 @@ private extension ComposeOrchestrator {
     /// Creates a project volume unless it already exists.
     func ensureVolume(project: ComposeProject, composeName: String, volume: ComposeVolume) async throws {
         var args = ["volume", "create"]
+        let driverOpts = volume.driverOpts ?? [:]
+        for option in driverOpts.sorted(by: { $0.key < $1.key }) {
+            args.append(contentsOf: ["--opt", "\(option.key)=\(option.value)"])
+        }
         for label in resourceLabels(project: project) {
             args.append(contentsOf: ["--label", label])
         }
@@ -2518,7 +2522,12 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try await resourceManager.createVolume(name: runtimeName, labels: resourceLabels(project: project, labels: volume.labels))
+            try await resourceManager.createVolume(ComposeVolumeCreateRequest(
+                name: runtimeName,
+                driver: volume.driver,
+                driverOpts: driverOpts,
+                labels: resourceLabels(project: project, labels: volume.labels)
+            ))
         }
     }
 

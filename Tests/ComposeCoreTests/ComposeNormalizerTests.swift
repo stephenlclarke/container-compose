@@ -101,7 +101,13 @@ struct ComposeNormalizerTests {
             image: alpine:3.20
             network_mode: none
         volumes:
-          data: {}
+          data:
+            driver: local
+            driver_opts:
+              size: 64m
+              journal: ordered
+            labels:
+              role: state
         networks:
           default:
             internal: true
@@ -173,7 +179,15 @@ struct ComposeNormalizerTests {
                 ipv6Subnet: "fd00:10::/64"
             )
         ))
-        #expect(project.volumes["data"] != nil)
+        #expect(project.volumes["data"] == ComposeVolume(
+            name: "sample_data",
+            driver: "local",
+            driverOpts: [
+                "journal": "ordered",
+                "size": "64m",
+            ],
+            labels: ["role": "state"]
+        ))
     }
 
     @Test("normalizes supported build secrets through compose-go")

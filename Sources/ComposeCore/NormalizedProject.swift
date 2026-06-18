@@ -576,12 +576,20 @@ public struct ComposeVolume: Codable, Equatable {
     public var name: String
     public var external: Bool?
     public var driver: String?
+    public var driverOpts: [String: String]?
     public var labels: [String: String]?
 
-    public init(name: String, external: Bool? = nil, driver: String? = nil, labels: [String: String]? = nil) {
+    public init(
+        name: String,
+        external: Bool? = nil,
+        driver: String? = nil,
+        driverOpts: [String: String]? = nil,
+        labels: [String: String]? = nil
+    ) {
         self.name = name
         self.external = external
         self.driver = driver
+        self.driverOpts = driverOpts
         self.labels = labels
     }
 }

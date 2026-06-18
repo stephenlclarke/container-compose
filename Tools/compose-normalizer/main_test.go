@@ -482,6 +482,10 @@ networks:
       role: test
 volumes:
   data:
+    driver: local
+    driver_opts:
+      journal: ordered
+      size: 64m
     labels:
       role: state
 `)
@@ -693,6 +697,12 @@ volumes:
 	}
 	if got, want := project.Volumes["data"].Labels, map[string]string{"role": "state"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("data labels = %#v, want %#v", got, want)
+	}
+	if project.Volumes["data"].Driver != "local" {
+		t.Fatalf("data driver = %q, want local", project.Volumes["data"].Driver)
+	}
+	if got, want := project.Volumes["data"].DriverOpts, map[string]string{"journal": "ordered", "size": "64m"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("data driver opts = %#v, want %#v", got, want)
 	}
 }
 

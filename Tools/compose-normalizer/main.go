@@ -236,10 +236,11 @@ type normalizedDependency struct {
 
 // normalizedVolume contains project-level volume metadata.
 type normalizedVolume struct {
-	Name     string            `json:"name"`
-	External bool              `json:"external,omitempty"`
-	Driver   string            `json:"driver,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Name       string            `json:"name"`
+	External   bool              `json:"external,omitempty"`
+	Driver     string            `json:"driver,omitempty"`
+	DriverOpts map[string]string `json:"driverOpts,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
 }
 
 // main exits with the helper status code returned by run.
@@ -381,10 +382,11 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	}
 	for name, volume := range project.Volumes {
 		result.Volumes[name] = normalizedVolume{
-			Name:     firstNonEmpty(volume.Name, name),
-			External: bool(volume.External),
-			Driver:   volume.Driver,
-			Labels:   mapLabels(volume.Labels),
+			Name:       firstNonEmpty(volume.Name, name),
+			External:   bool(volume.External),
+			Driver:     volume.Driver,
+			DriverOpts: mapOptions(volume.DriverOpts),
+			Labels:     mapLabels(volume.Labels),
 		}
 	}
 	if len(project.Configs) > 0 {
