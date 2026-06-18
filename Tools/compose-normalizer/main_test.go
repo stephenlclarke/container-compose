@@ -924,6 +924,9 @@ services:
       placement:
         constraints:
           - node.role == worker
+        preferences:
+          - spread: node.labels.zone
+        max_replicas_per_node: 1
       endpoint_mode: vip
 `)
 
@@ -941,11 +944,9 @@ services:
 	}
 	want := []string{
 		"mode",
-		"rollback_config",
 		"resources.limits.pids",
 		"resources.reservations.devices",
 		"restart_policy",
-		"placement",
 		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(api.UnsupportedDeployFields, want) {
@@ -1353,6 +1354,20 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	}}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(local update metadata) = %#v, want empty", fields)
 	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{
+		RollbackConfig: &types.UpdateConfig{
+			Parallelism:   &parallelism,
+			FailureAction: "pause",
+			Order:         "stop-first",
+		},
+		Placement: types.Placement{
+			Constraints: []string{"node.role == worker"},
+			Preferences: []types.PlacementPreferences{{Spread: "node.labels.zone"}},
+			MaxReplicas: 1,
+		},
+	}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(local rollback and placement metadata) = %#v, want empty", fields)
+	}
 	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Order: "unknown"}}); !reflect.DeepEqual(fields, []string{"update_config.order"}) {
 		t.Fatalf("unsupportedDeployFields(unknown order update) = %#v, want [update_config.order]", fields)
 	}
@@ -1444,16 +1459,16 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 		},
 		Placement: types.Placement{
 			Constraints: []string{"node.role == worker"},
+			Preferences: []types.PlacementPreferences{{Spread: "node.labels.zone"}},
+			MaxReplicas: 1,
 		},
 		EndpointMode: "vip",
 	})
 	want := []string{
 		"mode",
-		"rollback_config",
 		"resources.limits.pids",
 		"resources.reservations.generic_resources",
 		"restart_policy",
-		"placement",
 		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(got, want) {

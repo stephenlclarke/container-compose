@@ -77,7 +77,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **Compose surface:**
   - Project lifecycle: `create`, `up`, `down`, `start`, `stop`, `restart`, `rm`, `kill`, and `wait`.
   - Reconciliation: deterministic names, indexed replicas, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, and `down --rmi local/all`.
-  - Scaling: `up --scale`, `create --scale`, standalone `scale`, `scale --no-deps`, service `scale`, local `deploy.replicas`, `deploy.update_config.order: stop-first`, `deploy.update_config.delay` between recreated replicas, and Docker Compose local no-op `deploy.update_config` metadata such as `parallelism`, `failure_action`, `monitor`, and `max_failure_ratio`.
+  - Scaling: `up --scale`, `create --scale`, standalone `scale`, `scale --no-deps`, service `scale`, local `deploy.replicas`, `deploy.update_config.order: stop-first`, `deploy.update_config.delay` between recreated replicas, and Docker Compose local no-op deploy metadata such as `deploy.update_config.parallelism`, `deploy.rollback_config`, and `deploy.placement`.
   - Options: `up --no-start`, `up --always-recreate-deps`, timeouts, service `attach: false`, `rm --force/-f`, `wait --down-project`, `run --rm`, `run --detach/-d`, and `run --name`.
   - Lifecycle hooks: service `post_start` and `pre_stop` for detached service starts, `start`, `stop`, `restart`, `down`, service recreation, and replica pruning; service `post_start` for detached one-off `run`; service `pre_stop` for detached one-off cleanup when `container-compose` later stops the one-off container through project cleanup.
 - **Apple/container path:** `container create`, `container run`, `ContainerClient.bootstrap`, `ClientProcess.start`, `ClientProcess.wait`, `ContainerClient.get`, `ContainerClient.list`, `ContainerClient.stop`, `ContainerClient.delete`, `ContainerClient.kill`, and direct process exec through `ContainerClient.createProcess` / `ClientProcess.start`.
@@ -265,9 +265,9 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 
 #### Local deploy handling
 
-- **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, memory limits, stop-first update config with update delay, and Docker Compose local no-op update metadata.
+- **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, memory limits, stop-first update config with update delay, Docker Compose local no-op update metadata, rollback metadata, and placement metadata.
 - **Apple/container path:** Not known to be the first blocker after excluding `deploy.restart_policy`, `deploy.endpoint_mode`, `deploy.resources.limits.pids`, `deploy.resources.reservations`, and `deploy.update_config.order: start-first`, which are tracked as Apple/container gaps.
-- **Missing plugin work:** A local interpretation of rollback behavior and placement rules. Start-first service replacement is tracked separately as an Apple/container handoff gap in [A12](#a12-apple-gap-start-first-service-replacement).
+- **Missing plugin work:** A local interpretation of non-replicated deploy modes such as `deploy.mode: global`. Rollback and placement are accepted as Docker Compose local metadata. Start-first service replacement is tracked separately as an Apple/container handoff gap in [A12](#a12-apple-gap-start-first-service-replacement).
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
 #### API socket and block I/O
@@ -996,13 +996,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Plugin Gap, Replica Scaling Edge Cases And Deploy
 
-Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `delay`, Docker Compose local no-op update metadata, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses. Start-first service replacement is tracked in [A12](#a12-apple-gap-start-first-service-replacement).
+Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `delay`, Docker Compose local no-op update metadata, `deploy.rollback_config`, `deploy.placement`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses. Start-first service replacement is tracked in [A12](#a12-apple-gap-start-first-service-replacement).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: supports the lifecycle and resource primitives needed for these local scale forms, while scaled service-name DNS is tracked in [A1](#a1-apple-gap-networking).
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first` and `deploy.update_config.delay` because the orchestrator recreates local replicas one at a time with a stop-before-start boundary; accepts Docker Compose local no-op update metadata such as `parallelism`, `failure_action`, `monitor`, and `max_failure_ratio`; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; reports Apple/container resource gaps for `deploy.resources.limits.pids`, `deploy.resources.reservations`, and `deploy.update_config.order: start-first`; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, fixed MAC addresses, rollback config, and placement rules before creating resources.
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first` and `deploy.update_config.delay` because the orchestrator recreates local replicas one at a time with a stop-before-start boundary; accepts Docker Compose local no-op deploy metadata such as `deploy.update_config.parallelism`, `deploy.update_config.failure_action`, `deploy.update_config.monitor`, `deploy.update_config.max_failure_ratio`, `deploy.rollback_config`, and `deploy.placement`; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; reports Apple/container resource gaps for `deploy.resources.limits.pids`, `deploy.resources.reservations`, and `deploy.update_config.order: start-first`; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources.
 
 The equivalent supported CLI scaling forms are:
 
@@ -1032,6 +1032,17 @@ services:
         failure_action: pause
         monitor: 15s
         max_failure_ratio: 0.3
+      rollback_config:
+        parallelism: 2
+        order: stop-first
+        failure_action: pause
+        monitor: 15s
+      placement:
+        constraints:
+          - node.role == worker
+        preferences:
+          - spread: node.labels.zone
+        max_replicas_per_node: 1
 
   api:
     build:

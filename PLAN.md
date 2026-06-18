@@ -315,7 +315,7 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 15:22:32 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. Rollback behavior and placement rules remain broader deploy backlog. <code>start-first</code> replacement was later classified as an Apple/container handoff gap, and update metadata such as <code>parallelism</code> was later accepted as Docker Compose local no-op metadata.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code> replacement was later classified as an Apple/container handoff gap, and update metadata such as <code>parallelism</code>, rollback metadata, and placement metadata were later accepted as Docker Compose local no-op metadata.</td>
     </tr>
     <tr>
       <td>Deploy stop-first update delay</td>
@@ -343,6 +343,15 @@ Use `not started` or `not completed` where the event has not happened yet.
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local orchestration and confirmed <code>deploy.update_config.parallelism</code>, <code>failure_action</code>, <code>monitor</code>, and <code>max_failure_ratio</code> are not applied to local container replacement. These fields are now accepted as Docker Compose local no-op metadata instead of rejected as plugin-owned missing update batching.</td>
+    </tr>
+    <tr>
+      <td>Deploy rollback and placement metadata</td>
+      <td>2026-06-18 17:05:01 BST</td>
+      <td>2026-06-18 17:05:01 BST</td>
+      <td>2026-06-18 17:05:01 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local orchestration and found no local application of <code>deploy.rollback_config</code> or <code>deploy.placement</code>. The normalizer now accepts rollback and placement sections, including placement constraints, preferences, and <code>max_replicas_per_node</code>, as Docker Compose local no-op metadata.</td>
     </tr>
     <tr>
       <td>Deploy resource gap classification</td>
@@ -502,7 +511,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, stop-first <code>deploy.update_config</code> including <code>delay</code> is accepted because it matches the existing recreate path, and update metadata such as <code>parallelism</code>, <code>failure_action</code>, <code>monitor</code>, and <code>max_failure_ratio</code> is accepted as Docker Compose local no-op metadata. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.reservations</code>, and <code>deploy.update_config.order: start-first</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, stop-first <code>deploy.update_config</code> including <code>delay</code> is accepted because it matches the existing recreate path, and update, rollback, and placement metadata are accepted as Docker Compose local no-op metadata. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.reservations</code>, and <code>deploy.update_config.order: start-first</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields such as non-replicated deploy modes only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>

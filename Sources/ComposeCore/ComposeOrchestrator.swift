@@ -2387,7 +2387,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); resource reservations need an apple/container scheduler/resource reservation gap PR")
         }
         let fieldList = fields.joined(separator: ", ")
-        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config with delay is not implemented by container-compose yet")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, stop-first updates, and Docker Compose local metadata is not implemented by container-compose yet")
     }
 
     /// Returns unsupported deploy resource limits that need Apple runtime support.

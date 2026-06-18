@@ -425,6 +425,17 @@ struct ComposeNormalizerTests {
                 failure_action: pause
                 monitor: 15s
                 max_failure_ratio: 0.3
+              rollback_config:
+                parallelism: 2
+                order: stop-first
+                failure_action: pause
+                monitor: 15s
+              placement:
+                constraints:
+                  - node.role == worker
+                preferences:
+                  - spread: node.labels.zone
+                max_replicas_per_node: 1
               resources:
                 limits:
                   cpus: "1.5"

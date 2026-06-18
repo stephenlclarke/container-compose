@@ -3497,7 +3497,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.unsupportedDeployFields = ["mode", "placement"]
+                    $0.unsupportedDeployFields = ["mode"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -3509,7 +3509,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported deploy field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode, placement; Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config with delay is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode; Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, stop-first updates, and Docker Compose local metadata is not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

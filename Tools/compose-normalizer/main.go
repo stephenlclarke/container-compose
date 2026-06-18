@@ -697,7 +697,7 @@ func serviceScale(service types.ServiceConfig) *int {
 }
 
 // unsupportedDeployFields reports deploy fields beyond the local deploy subset
-// the orchestrator already models.
+// the orchestrator models or safely preserves as Docker Compose local metadata.
 func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	if deploy == nil {
 		return nil
@@ -705,11 +705,9 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	fields := []string{}
 	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
 	fields = append(fields, unsupportedUpdateConfigFields(deploy.UpdateConfig)...)
-	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
 	fields = append(fields, unsupportedDeployLimitFields(deploy.Resources.Limits)...)
 	fields = append(fields, unsupportedDeployReservationFields(deploy.Resources.Reservations)...)
 	appendUnsupportedDeployField(&fields, "restart_policy", restartPolicyHasFields(deploy.RestartPolicy))
-	appendUnsupportedDeployField(&fields, "placement", placementHasFields(deploy.Placement))
 	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
 	return fields
 }
@@ -773,19 +771,6 @@ func unsupportedUpdateOrderFields(order string) []string {
 	return []string{"update_config.order"}
 }
 
-// updateConfigHasFields reports whether rollback behavior was configured.
-func updateConfigHasFields(config *types.UpdateConfig) bool {
-	if config == nil {
-		return false
-	}
-	return config.Parallelism != nil ||
-		config.Delay != 0 ||
-		config.FailureAction != "" ||
-		config.Monitor != 0 ||
-		config.MaxFailureRatio != 0 ||
-		config.Order != ""
-}
-
 // unsupportedDeployLimitFields reports deploy resource limits that are not
 // backed by the local container runtime flags this plugin already maps.
 func unsupportedDeployLimitFields(resource *types.Resource) []string {
@@ -823,13 +808,6 @@ func restartPolicyHasFields(policy *types.RestartPolicy) bool {
 		policy.Delay != nil ||
 		policy.MaxAttempts != nil ||
 		policy.Window != nil
-}
-
-// placementHasFields reports whether deploy placement constraints were configured.
-func placementHasFields(placement types.Placement) bool {
-	return len(placement.Constraints) > 0 ||
-		len(placement.Preferences) > 0 ||
-		placement.MaxReplicas != 0
 }
 
 // jsonMap widens typed compose-go maps so they can be encoded without losing
