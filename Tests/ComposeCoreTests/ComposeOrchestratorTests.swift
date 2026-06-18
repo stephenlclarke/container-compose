@@ -3679,6 +3679,43 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up accepts local service volume driver")
+    func upAcceptsLocalServiceVolumeDriver() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumeDriver = "local"
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager(),
+            resourceManager: resourceManager
+        )
+            .up(project: project, options: ComposeUpOptions())
+
+        let volumeRequest = try #require(await resourceManager.requests.compactMap { request -> ComposeVolumeCreateRequest? in
+            guard case .createVolume(let volume) = request else {
+                return nil
+            }
+            return volume
+        }.first)
+        #expect(volumeRequest.name == "demo_cache")
+        #expect(volumeRequest.resolvedDriver == "local")
+        #expect(volumeRequest.driverOpts == [:])
+        #expect(volumeRequest.labels[composeProjectLabel] == "demo")
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
+    }
+
     @Test("up accepts volume nocopy normalized marker")
     func upAcceptsVolumeNoCopyNormalizedMarker() async throws {
         let runner = RecordingRunner()
@@ -10733,6 +10770,37 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("run rejects advanced mount fields as apple container gap")
+    func runRejectsAdvancedMountFieldsAsAppleContainerGap() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "bind",
+                            source: "/host",
+                            target: "/cache",
+                            unsupportedFields: ["consistency", "bind.propagation"]
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported advanced mount option error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses unsupported volume fields consistency, bind.propagation; advanced service volume options need an apple/container mount primitive gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run maps long form tmpfs options to typed mount")
     func runMapsLongFormTmpfsOptionsToTypedMount() async throws {
         let runner = RecordingRunner()
@@ -12481,22 +12549,22 @@ private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedSer
     [
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
-            reason: "service logging configuration is not implemented by container-compose yet",
+            reason: "service logging driver/options need an apple/container runtime gap PR",
             configure: { $0.logging = .object(["driver": .string("json-file")]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_driver",
-            reason: "service logging configuration is not implemented by container-compose yet",
+            reason: "service logging driver/options need an apple/container runtime gap PR",
             configure: { $0.logDriver = "json-file" }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_opt",
-            reason: "service logging configuration is not implemented by container-compose yet",
+            reason: "service logging driver/options need an apple/container runtime gap PR",
             configure: { $0.logOptions = ["max-size": "10m"] }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "storage_opt",
-            reason: "service storage options are not implemented by container-compose yet",
+            reason: "per-container storage options need an apple/container rootfs storage runtime gap PR",
             configure: { $0.storageOptions = ["size": "1G"] }
         ),
     ]
@@ -12516,8 +12584,8 @@ private func unsupportedServiceVolumeShortcutFieldCases() -> [UnsupportedService
     [
         UnsupportedServiceVolumeShortcutFieldCase(
             composeName: "volume_driver",
-            reason: "service-level volume driver support is not implemented by container-compose yet",
-            configure: { $0.volumeDriver = "local" }
+            reason: "non-local service volume drivers need an apple/container volume driver runtime gap PR",
+            configure: { $0.volumeDriver = "nfs" }
         ),
     ]
 }

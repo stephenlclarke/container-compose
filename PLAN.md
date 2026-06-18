@@ -129,6 +129,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Added tmpfs options, volume driver options, and same-project service volume inheritance.</td>
     </tr>
     <tr>
+      <td>Logging and storage blocker classification</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 14:20:37 BST</td>
+      <td>2026-06-18 14:28:22 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, and advanced bind/volume mount options as Apple/container runtime primitive gaps. External-container <code>volumes_from</code>, API socket exposure, and block I/O remain container-compose design/security-review work.</td>
+    </tr>
+    <tr>
       <td>Lifecycle and <code>up</code> option expansion</td>
       <td>2026-06-18 04:41:20 BST</td>
       <td>2026-06-18 04:41:20 BST</td>
@@ -444,11 +453,11 @@ Apple/container API work is discovered during implementation.
     <tr>
       <td>Logging and storage metadata</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
+      <td>2026-06-18 14:20:37 BST</td>
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Covers logging options, storage options, image-declared inherited mounts, external <code>volumes_from</code>, advanced bind/volume options beyond supported <code>volume.nocopy</code>, and image mounts.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>volume_driver: local</code> is supported. Logging driver/options, service <code>storage_opt</code>, non-local service volume drivers, image-declared inherited mounts, image mounts, and advanced bind/volume options are now tracked as Apple/container runtime gaps. Remaining plugin-owned work in this area is external-container <code>volumes_from</code> mount discovery and reconciliation.</td>
     </tr>
     <tr>
       <td>API socket and block I/O support</td>
@@ -497,7 +506,7 @@ Suggested Apple/container PR batches:
 4. Runtime-control parity: namespace modes, cgroups, privileged/device/GPU
    controls, sysctls, and supplemental groups.
 5. Mount and storage parity: advanced bind/volume/image mounts, storage
-   options, inherited image volumes, and external-container volume inheritance.
+   options, non-local service volume drivers, and inherited image volumes.
 6. Health and completion parity: health status, health-aware waits, stored exit
    code, and completion timestamps.
 7. Mount and policy parity: first-class config/secret mounts and restart
@@ -609,11 +618,11 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Advanced mount and storage options</td>
       <td>2026-06-18 10:34:11 BST</td>
-      <td>not started</td>
+      <td>2026-06-18 14:20:37 BST</td>
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, service <code>storage_opt</code>, image-declared inherited mounts, and safe external-container <code>volumes_from</code> behavior. Current Apple/container mount flags cover the common local subset only.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, non-local service volume drivers, service <code>storage_opt</code>, and image-declared inherited mounts. Current Apple/container mount flags cover the common local subset only. External-container <code>volumes_from</code> is still plugin-owned until mount discovery proves that an Apple/container primitive is missing.</td>
     </tr>
     <tr>
       <td>Health status and dependency gates</td>
@@ -654,7 +663,7 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Docker Compose log parity</td>
       <td>2026-06-18 10:29:02 BST</td>
-      <td>not started</td>
+      <td>2026-06-18 14:20:37 BST</td>
       <td>not completed</td>
     </tr>
     <tr>

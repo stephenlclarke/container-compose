@@ -2109,7 +2109,7 @@ private extension ComposeOrchestrator {
                 throw ComposeError.unsupported("service '\(service.name)' uses volume.subpath; volume subpath mounts need an apple/container mount primitive gap PR")
             }
             let fieldList = fields.joined(separator: ", ")
-            throw ComposeError.unsupported("service '\(service.name)' uses unsupported volume fields \(fieldList); advanced service volume options are not implemented by container-compose yet")
+            throw ComposeError.unsupported("service '\(service.name)' uses unsupported volume fields \(fieldList); advanced service volume options need an apple/container mount primitive gap PR")
         }
         if service.useAPISocket == true {
             throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; API socket mounting is not implemented by container-compose yet")
@@ -2772,20 +2772,20 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Returns unsupported service metadata, logging, and storage option fields.
+    /// Returns logging and storage fields that need Apple runtime primitives.
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
         if service.logging != nil {
-            fields.append(("logging", "service logging configuration is not implemented by container-compose yet"))
+            fields.append(("logging", "service logging driver/options need an apple/container runtime gap PR"))
         }
         if let logDriver = service.logDriver, !logDriver.isEmpty {
-            fields.append(("log_driver", "service logging configuration is not implemented by container-compose yet"))
+            fields.append(("log_driver", "service logging driver/options need an apple/container runtime gap PR"))
         }
         if let logOptions = service.logOptions, !logOptions.isEmpty {
-            fields.append(("log_opt", "service logging configuration is not implemented by container-compose yet"))
+            fields.append(("log_opt", "service logging driver/options need an apple/container runtime gap PR"))
         }
         if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
-            fields.append(("storage_opt", "service storage options are not implemented by container-compose yet"))
+            fields.append(("storage_opt", "per-container storage options need an apple/container rootfs storage runtime gap PR"))
         }
         return fields
     }
@@ -2818,8 +2818,8 @@ private extension ComposeOrchestrator {
     /// Returns unsupported service-level volume driver fields.
     func unsupportedServiceVolumeShortcutFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
-        if let volumeDriver = service.volumeDriver, !volumeDriver.isEmpty {
-            fields.append(("volume_driver", "service-level volume driver support is not implemented by container-compose yet"))
+        if let volumeDriver = service.volumeDriver, !volumeDriver.isEmpty, volumeDriver.lowercased() != "local" {
+            fields.append(("volume_driver", "non-local service volume drivers need an apple/container volume driver runtime gap PR"))
         }
         return fields
     }
