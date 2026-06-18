@@ -85,8 +85,9 @@ type normalizedService struct {
 	CPURealtimeRuntime      int64                               `json:"cpuRealtimeRuntime,omitempty"`
 	CPUSet                  string                              `json:"cpuset,omitempty"`
 	CPUShares               int64                               `json:"cpuShares,omitempty"`
-	Develop                 bool                                `json:"develop,omitempty"`
+	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
+	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
 	Entrypoint              []string                            `json:"entrypoint,omitempty"`
@@ -168,6 +169,7 @@ type normalizedService struct {
 type normalizedBuild struct {
 	Context           string                  `json:"context,omitempty"`
 	Dockerfile        string                  `json:"dockerfile,omitempty"`
+	DockerfileInline  string                  `json:"dockerfileInline,omitempty"`
 	Args              map[string]string       `json:"args,omitempty"`
 	CacheFrom         []string                `json:"cacheFrom,omitempty"`
 	CacheTo           []string                `json:"cacheTo,omitempty"`
@@ -189,13 +191,42 @@ type normalizedBuildSecret struct {
 	Environment string `json:"environment,omitempty"`
 }
 
+// normalizedDevelop preserves Compose Develop Specification data needed by
+// future watch orchestration.
+type normalizedDevelop struct {
+	Watch []normalizedWatchTrigger `json:"watch,omitempty"`
+}
+
+// normalizedWatchTrigger records one compose-go develop.watch trigger.
+type normalizedWatchTrigger struct {
+	Path        string                   `json:"path"`
+	Action      string                   `json:"action"`
+	Target      string                   `json:"target,omitempty"`
+	Ignore      []string                 `json:"ignore,omitempty"`
+	Include     []string                 `json:"include,omitempty"`
+	InitialSync bool                     `json:"initialSync,omitempty"`
+	Exec        *normalizedWatchExecHook `json:"exec,omitempty"`
+}
+
+// normalizedWatchExecHook records sync+exec metadata without executing it.
+type normalizedWatchExecHook struct {
+	Command     []string           `json:"command,omitempty"`
+	User        string             `json:"user,omitempty"`
+	Privileged  bool               `json:"privileged,omitempty"`
+	WorkingDir  string             `json:"workingDir,omitempty"`
+	Environment map[string]*string `json:"environment,omitempty"`
+}
+
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
 type normalizedMount struct {
-	Type     string `json:"type,omitempty"`
-	Source   string `json:"source,omitempty"`
-	Target   string `json:"target,omitempty"`
-	ReadOnly bool   `json:"readOnly,omitempty"`
-	Raw      string `json:"raw,omitempty"`
+	Type              string   `json:"type,omitempty"`
+	Source            string   `json:"source,omitempty"`
+	Target            string   `json:"target,omitempty"`
+	ReadOnly          bool     `json:"readOnly,omitempty"`
+	TmpfsSize         string   `json:"tmpfsSize,omitempty"`
+	TmpfsMode         string   `json:"tmpfsMode,omitempty"`
+	Raw               string   `json:"raw,omitempty"`
+	UnsupportedFields []string `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedNetwork contains project-level network metadata.
@@ -232,10 +263,11 @@ type normalizedDependency struct {
 
 // normalizedVolume contains project-level volume metadata.
 type normalizedVolume struct {
-	Name     string            `json:"name"`
-	External bool              `json:"external,omitempty"`
-	Driver   string            `json:"driver,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Name       string            `json:"name"`
+	External   bool              `json:"external,omitempty"`
+	Driver     string            `json:"driver,omitempty"`
+	DriverOpts map[string]string `json:"driverOpts,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
 }
 
 // main exits with the helper status code returned by run.
@@ -377,10 +409,11 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	}
 	for name, volume := range project.Volumes {
 		result.Volumes[name] = normalizedVolume{
-			Name:     firstNonEmpty(volume.Name, name),
-			External: bool(volume.External),
-			Driver:   volume.Driver,
-			Labels:   mapLabels(volume.Labels),
+			Name:       firstNonEmpty(volume.Name, name),
+			External:   bool(volume.External),
+			Driver:     volume.Driver,
+			DriverOpts: mapOptions(volume.DriverOpts),
+			Labels:     mapLabels(volume.Labels),
 		}
 	}
 	if len(project.Configs) > 0 {
@@ -421,8 +454,9 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CPURealtimeRuntime:      service.CPURTRuntime,
 		CPUSet:                  service.CPUSet,
 		CPUShares:               service.CPUShares,
-		Develop:                 service.Develop != nil,
+		Develop:                 developValues(service.Develop),
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
+		DeployLabels:            deployLabels(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
 		Provider:                service.Provider != nil,
@@ -499,6 +533,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		result.Build = &normalizedBuild{
 			Context:           service.Build.Context,
 			Dockerfile:        service.Build.Dockerfile,
+			DockerfileInline:  service.Build.DockerfileInline,
 			Args:              buildArgs(service.Build.Args),
 			CacheFrom:         append([]string(nil), service.Build.CacheFrom...),
 			CacheTo:           append([]string(nil), service.Build.CacheTo...),
@@ -527,6 +562,73 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 	return result
 }
 
+// developValues preserves Compose Develop Specification watch triggers for
+// Swift command validation and future watch orchestration.
+func developValues(develop *types.DevelopConfig) *normalizedDevelop {
+	if develop == nil {
+		return nil
+	}
+	return &normalizedDevelop{
+		Watch: watchTriggerValues(develop.Watch),
+	}
+}
+
+// watchTriggerValues copies compose-go watch triggers into the stable JSON
+// shape consumed by Swift.
+func watchTriggerValues(triggers []types.Trigger) []normalizedWatchTrigger {
+	if len(triggers) == 0 {
+		return nil
+	}
+	result := make([]normalizedWatchTrigger, 0, len(triggers))
+	for _, trigger := range triggers {
+		result = append(result, normalizedWatchTrigger{
+			Path:        trigger.Path,
+			Action:      string(trigger.Action),
+			Target:      trigger.Target,
+			Ignore:      append([]string(nil), trigger.Ignore...),
+			Include:     append([]string(nil), trigger.Include...),
+			InitialSync: trigger.InitialSync,
+			Exec:        watchExecHookValue(trigger.Exec),
+		})
+	}
+	return result
+}
+
+// watchExecHookValue copies sync+exec hook data when a trigger declares it.
+func watchExecHookValue(hook types.ServiceHook) *normalizedWatchExecHook {
+	if len(hook.Command) == 0 &&
+		hook.User == "" &&
+		!hook.Privileged &&
+		hook.WorkingDir == "" &&
+		len(hook.Environment) == 0 {
+		return nil
+	}
+	return &normalizedWatchExecHook{
+		Command:     append([]string(nil), hook.Command...),
+		User:        hook.User,
+		Privileged:  hook.Privileged,
+		WorkingDir:  hook.WorkingDir,
+		Environment: mappingWithEqualsValues(hook.Environment),
+	}
+}
+
+// mappingWithEqualsValues preserves keys with omitted values.
+func mappingWithEqualsValues(values types.MappingWithEquals) map[string]*string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := map[string]*string{}
+	for key, value := range values {
+		if value == nil {
+			result[key] = nil
+			continue
+		}
+		copied := *value
+		result[key] = &copied
+	}
+	return result
+}
+
 // serviceScale preserves an explicit Compose scale or deploy replica count.
 func serviceScale(service types.ServiceConfig) *int {
 	if service.Scale != nil {
@@ -539,14 +641,14 @@ func serviceScale(service types.ServiceConfig) *int {
 	return nil
 }
 
-// unsupportedDeployFields reports deploy fields beyond local replica count.
+// unsupportedDeployFields reports deploy fields beyond local replica count and
+// the ordinary replicated service mode the local orchestrator already models.
 func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	if deploy == nil {
 		return nil
 	}
 	fields := []string{}
-	appendUnsupportedDeployField(&fields, "mode", deploy.Mode != "")
-	appendUnsupportedDeployField(&fields, "labels", len(deploy.Labels) > 0)
+	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
 	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasFields(deploy.UpdateConfig))
 	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
 	appendUnsupportedDeployField(&fields, "resources.limits", resourceHasUnsupportedLimitFields(deploy.Resources.Limits))
@@ -555,6 +657,25 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	appendUnsupportedDeployField(&fields, "placement", placementHasFields(deploy.Placement))
 	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
 	return fields
+}
+
+// deployLabels returns Compose deploy service metadata without treating it as
+// container labels.
+func deployLabels(deploy *types.DeployConfig) map[string]string {
+	if deploy == nil {
+		return nil
+	}
+	return mapLabels(deploy.Labels)
+}
+
+// unsupportedDeployMode allows Compose's default replicated service mode. Other
+// modes, such as global, need scheduler semantics this local plugin does not
+// provide.
+func unsupportedDeployMode(mode string) bool {
+	if mode == "" {
+		return false
+	}
+	return !strings.EqualFold(mode, "replicated")
 }
 
 // appendUnsupportedDeployField records one unsupported deploy field when present.
@@ -716,13 +837,75 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 	result := make([]normalizedMount, 0, len(volumes))
 	for _, volume := range volumes {
 		result = append(result, normalizedMount{
-			Type:     volume.Type,
-			Source:   volume.Source,
-			Target:   volume.Target,
-			ReadOnly: volume.ReadOnly,
+			Type:              volume.Type,
+			Source:            volume.Source,
+			Target:            volume.Target,
+			ReadOnly:          volume.ReadOnly,
+			TmpfsSize:         tmpfsSizeValue(volume),
+			TmpfsMode:         tmpfsModeValue(volume),
+			UnsupportedFields: unsupportedMountFields(volume),
 		})
 	}
 	return result
+}
+
+// tmpfsSizeValue returns the normalized byte count for long-form tmpfs mounts.
+func tmpfsSizeValue(volume types.ServiceVolumeConfig) string {
+	if volume.Type != "tmpfs" || volume.Tmpfs == nil {
+		return ""
+	}
+	return unitBytesValue(volume.Tmpfs.Size)
+}
+
+// tmpfsModeValue returns the normalized octal mode for long-form tmpfs mounts.
+func tmpfsModeValue(volume types.ServiceVolumeConfig) string {
+	if volume.Type != "tmpfs" || volume.Tmpfs == nil || volume.Tmpfs.Mode == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%04o", volume.Tmpfs.Mode)
+}
+
+// unsupportedMountFields reports mount options that the Apple runtime
+// argument shape used by this plugin cannot preserve yet.
+func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
+	fields := []string{}
+	if volume.Type != "" && volume.Type != "bind" && volume.Type != "volume" && volume.Type != "tmpfs" {
+		appendUnsupportedMountField(&fields, "type")
+	}
+	appendUnsupportedMountFieldWhen(&fields, "consistency", volume.Consistency != "")
+	if volume.Bind != nil {
+		appendUnsupportedMountFieldWhen(&fields, "bind.selinux", volume.Bind.SELinux != "")
+		appendUnsupportedMountFieldWhen(&fields, "bind.propagation", volume.Bind.Propagation != "")
+		appendUnsupportedMountFieldWhen(&fields, "bind.recursive", volume.Bind.Recursive != "")
+	}
+	if volume.Volume != nil {
+		appendUnsupportedMountFieldWhen(&fields, "volume.labels", len(volume.Volume.Labels) > 0)
+		appendUnsupportedMountFieldWhen(&fields, "volume.subpath", volume.Volume.Subpath != "")
+	}
+	if volume.Image != nil {
+		appendUnsupportedMountFieldWhen(&fields, "image.subpath", volume.Image.SubPath != "")
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return fields
+}
+
+// appendUnsupportedMountField records one unsupported mount field once.
+func appendUnsupportedMountField(fields *[]string, name string) {
+	for _, field := range *fields {
+		if field == name {
+			return
+		}
+	}
+	*fields = append(*fields, name)
+}
+
+// appendUnsupportedMountFieldWhen records one unsupported mount field when present.
+func appendUnsupportedMountFieldWhen(fields *[]string, name string, present bool) {
+	if present {
+		appendUnsupportedMountField(fields, name)
+	}
 }
 
 // networkValues returns deterministic service network names.
@@ -988,7 +1171,6 @@ func unsupportedBuildFields(build *types.BuildConfig, unsupportedSecrets bool) [
 	}
 	fields := []string{}
 	appendUnsupportedBuildField(&fields, "additional_contexts", len(build.AdditionalContexts) > 0)
-	appendUnsupportedBuildField(&fields, "dockerfile_inline", build.DockerfileInline != "")
 	appendUnsupportedBuildField(&fields, "entitlements", len(build.Entitlements) > 0)
 	appendUnsupportedBuildField(&fields, "extra_hosts", len(build.ExtraHosts) > 0)
 	appendUnsupportedBuildField(&fields, "isolation", build.Isolation != "")

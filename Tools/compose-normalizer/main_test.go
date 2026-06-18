@@ -260,6 +260,102 @@ secrets:
 	}
 }
 
+func TestLoadProjectMarksUnsupportedVolumeOptions(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "data"), "data\n")
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  bindy:
+    image: alpine
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+        consistency: delegated
+        bind:
+          propagation: rshared
+          selinux: z
+          recursive: readonly
+  named:
+    image: alpine
+    volumes:
+      - type: volume
+        source: cache
+        target: /cache
+        volume:
+          nocopy: true
+          subpath: nested
+          labels:
+            owner: platform
+  scratch:
+    image: alpine
+    volumes:
+      - type: tmpfs
+        target: /scratch
+        tmpfs:
+          size: 64m
+          mode: 1777
+  imagey:
+    image: alpine
+    volumes:
+      - type: image
+        source: alpine
+        target: /image
+        image:
+          subpath: etc
+volumes:
+  cache: {}
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	cases := map[string][]string{
+		"bindy":   {"consistency", "bind.selinux", "bind.propagation", "bind.recursive"},
+		"named":   {"volume.labels", "volume.subpath"},
+		"scratch": nil,
+		"imagey":  {"type", "image.subpath"},
+	}
+	for serviceName, want := range cases {
+		mounts := project.Services[serviceName].Volumes
+		if len(mounts) != 1 {
+			t.Fatalf("%s mounts = %#v, want one mount", serviceName, mounts)
+		}
+		if got := mounts[0].UnsupportedFields; !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s unsupported volume fields = %#v, want %#v", serviceName, got, want)
+		}
+	}
+}
+
+func TestMountValuesPreservesSupportedTmpfsOptions(t *testing.T) {
+	got := mountValues([]types.ServiceVolumeConfig{
+		{
+			Type:     "tmpfs",
+			Target:   "/scratch",
+			ReadOnly: true,
+			Tmpfs: &types.ServiceVolumeTmpfs{
+				Size: types.UnitBytes(64 * 1024 * 1024),
+				Mode: 0o1777,
+			},
+		},
+	})
+	want := []normalizedMount{
+		{
+			Type:      "tmpfs",
+			Target:    "/scratch",
+			ReadOnly:  true,
+			TmpfsSize: "67108864",
+			TmpfsMode: "1777",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mountValues(tmpfs) = %#v, want %#v", got, want)
+	}
+}
+
 func TestLoadProjectNormalizesComposeModel(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")
@@ -291,6 +387,20 @@ services:
       watch:
         - path: ./src
           action: rebuild
+          include:
+            - "*.swift"
+          ignore:
+            - .build/
+        - path: ./assets
+          action: sync+exec
+          target: /app/assets
+          initial_sync: true
+          exec:
+            command: ["sh", "-c", "touch /tmp/reloaded"]
+            user: app
+            working_dir: /app
+            environment:
+              MODE: dev
     domainname: example.test
     credential_spec:
       file: credential-spec.json
@@ -386,6 +496,10 @@ networks:
       role: test
 volumes:
   data:
+    driver: local
+    driver_opts:
+      journal: ordered
+      size: 64m
     labels:
       role: state
 `)
@@ -451,8 +565,31 @@ volumes:
 	if api.CPUShares != 512 {
 		t.Fatalf("api.CPUShares = %d, want 512", api.CPUShares)
 	}
-	if !api.Develop {
-		t.Fatal("api.Develop = false, want true")
+	canonicalDir := canonicalPath(t, dir)
+	wantDevelop := &normalizedDevelop{
+		Watch: []normalizedWatchTrigger{
+			{
+				Path:    filepath.Join(canonicalDir, "src"),
+				Action:  "rebuild",
+				Ignore:  []string{".build/"},
+				Include: []string{"*.swift"},
+			},
+			{
+				Path:        filepath.Join(canonicalDir, "assets"),
+				Action:      "sync+exec",
+				Target:      "/app/assets",
+				InitialSync: true,
+				Exec: &normalizedWatchExecHook{
+					Command:     []string{"sh", "-c", "touch /tmp/reloaded"},
+					User:        "app",
+					WorkingDir:  "/app",
+					Environment: map[string]*string{"MODE": stringPointer("dev")},
+				},
+			},
+		},
+	}
+	if !reflect.DeepEqual(api.Develop, wantDevelop) {
+		t.Fatalf("api.Develop = %#v, want %#v", api.Develop, wantDevelop)
 	}
 	if api.Ipc != "host" {
 		t.Fatalf("api.Ipc = %q, want host", api.Ipc)
@@ -598,6 +735,12 @@ volumes:
 	if got, want := project.Volumes["data"].Labels, map[string]string{"role": "state"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("data labels = %#v, want %#v", got, want)
 	}
+	if project.Volumes["data"].Driver != "local" {
+		t.Fatalf("data driver = %q, want local", project.Volumes["data"].Driver)
+	}
+	if got, want := project.Volumes["data"].DriverOpts, map[string]string{"journal": "ordered", "size": "64m"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("data driver opts = %#v, want %#v", got, want)
+	}
 }
 
 func TestNormalizeServicePreservesCPUPercent(t *testing.T) {
@@ -663,6 +806,58 @@ services:
 	}
 }
 
+func TestLoadProjectAcceptsReplicatedDeployMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    deploy:
+      mode: replicated
+      replicas: 2
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if api.Scale == nil || *api.Scale != 2 {
+		t.Fatalf("api.Scale = %#v, want 2", api.Scale)
+	}
+	if len(api.UnsupportedDeployFields) != 0 {
+		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
+func TestLoadProjectPreservesDeployLabelsAsServiceMetadata(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    deploy:
+      labels:
+        com.example.service: api
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if got, want := api.DeployLabels, map[string]string{"com.example.service": "api"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.DeployLabels = %#v, want %#v", got, want)
+	}
+	if len(api.UnsupportedDeployFields) != 0 {
+		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
 func TestLoadProjectNormalizesDeployResourceLimitsAsRuntimeOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
@@ -703,7 +898,7 @@ services:
     image: nginx:alpine
     deploy:
       replicas: 1
-      mode: replicated
+      mode: global
       labels:
         com.example.role: api
       update_config:
@@ -734,9 +929,11 @@ services:
 	if api.Scale == nil || *api.Scale != 1 {
 		t.Fatalf("api.Scale = %#v, want 1", api.Scale)
 	}
+	if got, want := api.DeployLabels, map[string]string{"com.example.role": "api"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.DeployLabels = %#v, want %#v", got, want)
+	}
 	want := []string{
 		"mode",
-		"labels",
 		"update_config",
 		"rollback_config",
 		"resources.limits",
@@ -921,6 +1118,12 @@ services:
     mem_limit: 128m
   worker:
     image: alpine
+  inline:
+    build:
+      context: ./inline
+      dockerfile_inline: |
+        FROM alpine:3.20
+        RUN echo inline
 `)
 
 	project, err := loadProject(
@@ -973,6 +1176,16 @@ services:
 	}
 	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupported build fields = %#v, want %#v", got, want)
+	}
+	inline := project.Services["inline"]
+	if inline.Build == nil {
+		t.Fatal("inline.Build is nil")
+	}
+	if inline.Build.DockerfileInline != "FROM alpine:3.20\nRUN echo inline\n" {
+		t.Fatalf("inline Dockerfile = %q, want normalized inline Dockerfile", inline.Build.DockerfileInline)
+	}
+	if fields := inline.Build.UnsupportedFields; len(fields) != 0 {
+		t.Fatalf("inline unsupported build fields = %#v, want empty", fields)
 	}
 	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("env files = %#v, want %#v", got, want)
@@ -1069,6 +1282,15 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(empty) = %#v, want empty", fields)
 	}
+	if labels := deployLabels(&types.DeployConfig{Labels: types.Labels{"com.example.service": "api"}}); !reflect.DeepEqual(labels, map[string]string{"com.example.service": "api"}) {
+		t.Fatalf("deployLabels() = %#v, want service label", labels)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated"}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(replicated) = %#v, want empty", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); !reflect.DeepEqual(fields, []string{"mode"}) {
+		t.Fatalf("unsupportedDeployFields(global) = %#v, want [mode]", fields)
+	}
 	if got := unitBytesValue(0); got != "" {
 		t.Fatalf("unitBytesValue(0) = %q, want empty", got)
 	}
@@ -1124,7 +1346,7 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	delay := types.Duration(5 * time.Second)
 
 	got := unsupportedDeployFields(&types.DeployConfig{
-		Mode:   "replicated",
+		Mode:   "global",
 		Labels: types.Labels{"com.example.role": "api"},
 		UpdateConfig: &types.UpdateConfig{
 			Parallelism: &parallelism,
@@ -1155,7 +1377,6 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	})
 	want := []string{
 		"mode",
-		"labels",
 		"update_config",
 		"rollback_config",
 		"resources.limits",
@@ -1228,7 +1449,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 	}, true)
 	want := []string{
 		"additional_contexts",
-		"dockerfile_inline",
 		"entitlements",
 		"extra_hosts",
 		"isolation",
@@ -1310,5 +1530,9 @@ func unsetEnv(t *testing.T, name string) {
 }
 
 func boolPointer(value bool) *bool {
+	return &value
+}
+
+func stringPointer(value string) *string {
 	return &value
 }

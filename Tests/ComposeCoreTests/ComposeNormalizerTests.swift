@@ -101,7 +101,13 @@ struct ComposeNormalizerTests {
             image: alpine:3.20
             network_mode: none
         volumes:
-          data: {}
+          data:
+            driver: local
+            driver_opts:
+              size: 64m
+              journal: ordered
+            labels:
+              role: state
         networks:
           default:
             internal: true
@@ -173,7 +179,15 @@ struct ComposeNormalizerTests {
                 ipv6Subnet: "fd00:10::/64"
             )
         ))
-        #expect(project.volumes["data"] != nil)
+        #expect(project.volumes["data"] == ComposeVolume(
+            name: "sample_data",
+            driver: "local",
+            driverOpts: [
+                "journal": "ordered",
+                "size": "64m",
+            ],
+            labels: ["role": "state"]
+        ))
     }
 
     @Test("normalizes supported build secrets through compose-go")
@@ -231,11 +245,51 @@ struct ComposeNormalizerTests {
         #expect(project.services["worker"]?.build?.unsupportedFields == ["secrets"])
     }
 
+    @Test("normalizes volume nocopy as supported no-op")
+    func normalizesVolumeNoCopyAsSupportedNoOp() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            volumes:
+              - type: volume
+                source: cache
+                target: /cache
+                volume:
+                  nocopy: true
+        volumes:
+          cache: {}
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        let mount = try #require(api.volumes?.first)
+        #expect(mount.type == "volume")
+        #expect(mount.source == "cache")
+        #expect(mount.target == "/cache")
+        #expect(mount.unsupportedFields == nil)
+    }
+
     @Test("grouped model initializers preserve flat normalized fields")
     func groupedModelInitializersPreserveFlatNormalizedFields() throws {
         let build = ComposeBuild(
             context: "api",
             dockerfile: "Containerfile",
+            dockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
             args: ["VERSION": "1"],
             cache: ComposeBuild.Cache(
                 from: ["type=registry,ref=example/api:cache"],
@@ -265,6 +319,7 @@ struct ComposeNormalizerTests {
 
         #expect(build.cacheFrom == ["type=registry,ref=example/api:cache"])
         #expect(build.cacheTo == ["type=local,dest=.cache"])
+        #expect(build.dockerfileInline == "FROM alpine:3.20\nRUN echo inline\n")
         #expect(build.labels == ["org.opencontainers.image.title": "api"])
         #expect(build.secrets == [ComposeBuildSecret(id: "token", environment: "TOKEN")])
         #expect(build.target == "runtime")
@@ -327,6 +382,10 @@ struct ComposeNormalizerTests {
           api:
             image: nginx:latest
             deploy:
+              mode: replicated
+              replicas: 2
+              labels:
+                com.example.service: api
               resources:
                 limits:
                   cpus: "1.5"
@@ -340,6 +399,8 @@ struct ComposeNormalizerTests {
         ))
 
         let api = try #require(project.services["api"])
+        #expect(api.scale == 2)
+        #expect(api.deployLabels == ["com.example.service": "api"])
         #expect(api.cpus == "1.5")
         #expect(api.memLimit?.isEmpty == false)
         #expect(api.unsupportedDeployFields == nil)
@@ -419,6 +480,62 @@ struct ComposeNormalizerTests {
         #expect(api.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
         #expect(api.secrets == [.object(["source": .string("app_secret"), "target": .string("/run/secrets/app_secret")])])
         #expect(api.extensions?["x-service"] == .object(["owner": .string("platform")]))
+    }
+
+    @Test("normalizer preserves develop watch triggers")
+    func normalizerPreservesDevelopWatchTriggers() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine
+            develop:
+              watch:
+                - path: ./src
+                  action: rebuild
+                  include:
+                    - "*.swift"
+                  ignore:
+                    - .build/
+                - path: ./assets
+                  action: sync+exec
+                  target: /app/assets
+                  initial_sync: true
+                  exec:
+                    command: ["sh", "-c", "touch /tmp/reloaded"]
+                    user: app
+                    working_dir: /app
+                    environment:
+                      MODE: dev
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+        let api = try #require(project.services["api"])
+        let watch = try #require(api.develop?.watch)
+
+        #expect(watch.count == 2)
+        #expect(watch[0].path.hasSuffix("/src"))
+        #expect(watch[0].action == "rebuild")
+        #expect(watch[0].ignore == [".build/"])
+        #expect(watch[0].include == ["*.swift"])
+        #expect(watch[1].path.hasSuffix("/assets"))
+        #expect(watch[1].action == "sync+exec")
+        #expect(watch[1].target == "/app/assets")
+        #expect(watch[1].initialSync == true)
+        #expect(watch[1].exec == ComposeDevelopWatchExec(
+            command: ["sh", "-c", "touch /tmp/reloaded"],
+            user: "app",
+            workingDir: "/app",
+            environment: ["MODE": "dev"]
+        ))
     }
 
     @Test("normalizer decodes JSON and forwards compose options")

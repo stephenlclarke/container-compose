@@ -181,11 +181,11 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
     var noRecreate = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, never, or build.")
     var pull: String?
-    @Flag(name: .customLong("quiet-pull"), help: "Accepted for Docker Compose compatibility.")
+    @Flag(name: .customLong("quiet-pull"), help: "Pull without printing progress output.")
     var quietPull = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
-    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. May be repeated.")
     var scales: [String] = []
     @Flag(name: [.customShort("y"), .customLong("yes")], help: "Accepted for Docker Compose compatibility.")
     var yes = false
@@ -206,6 +206,7 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
                 $0.removeOrphans = removeOrphans
                 $0.pullPolicy = pull
                 $0.scales = scales
+                $0.quietPull = quietPull
             }
         )
     }
@@ -218,20 +219,32 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .shortAndLong, help: "Build images before starting services.")
     var build = false
+    @Flag(name: .customLong("quiet-build"), help: "Suppress build output.")
+    var quietBuild = false
+    @Flag(name: .customLong("no-build"), help: "Do not build images before starting services.")
+    var noBuild = false
     @Flag(name: .shortAndLong, help: "Run containers in the background.")
     var detach = false
     @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
     var forceRecreate = false
+    @Flag(name: .customLong("always-recreate-deps"), help: "Recreate dependent containers.")
+    var alwaysRecreateDeps = false
     @Flag(name: .customLong("no-recreate"), help: "Reuse existing containers.")
     var noRecreate = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, or never.")
     var pull: String?
-    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    @Flag(name: .customLong("quiet-pull"), help: "Pull without printing progress output.")
+    var quietPull = false
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. May be repeated.")
     var scales: [String] = []
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
     var noDeps = false
+    @Flag(name: .customLong("no-start"), help: "Create services without starting them.")
+    var noStart = false
+    @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers during recreate shutdown.")
+    var timeout: Int?
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
 
@@ -243,13 +256,19 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeUpOptions {
                 $0.services = services
                 $0.build = build
+                $0.quietBuild = quietBuild
+                $0.noBuild = noBuild
                 $0.detach = detach
                 $0.forceRecreate = forceRecreate
+                $0.alwaysRecreateDeps = alwaysRecreateDeps
                 $0.noRecreate = noRecreate
                 $0.removeOrphans = removeOrphans
                 $0.pullPolicy = pull
+                $0.quietPull = quietPull
                 $0.scales = scales
                 $0.noDeps = noDeps
+                $0.noStart = noStart
+                $0.timeout = timeout
             }
         )
     }
@@ -286,13 +305,31 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("no-cache"), help: "Do not use cached image layers.")
     var noCache = false
+    @Flag(name: .customLong("pull"), help: "Always attempt to pull newer base images.")
+    var pull = false
+    @Flag(name: .customLong("push"), help: "Push service images after building.")
+    var push = false
+    @Flag(name: .shortAndLong, help: "Suppress build output.")
+    var quiet = false
+    @Flag(name: .customLong("with-dependencies"), help: "Also build service dependencies.")
+    var withDependencies = false
     @Argument(help: "Optional services to build.")
     var services: [String] = []
 
     /// Builds selected service images.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().build(project: loadedProject, services: services, noCache: noCache)
+        try await orchestrator().build(
+            project: loadedProject,
+            options: ComposeBuildOptions {
+                $0.services = services
+                $0.noCache = noCache
+                $0.pull = pull
+                $0.push = push
+                $0.quiet = quiet
+                $0.withDependencies = withDependencies
+            }
+        )
     }
 }
 
@@ -301,13 +338,33 @@ struct Pull: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "pull", abstract: "Pull service images.")
 
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("ignore-buildable"), help: "Ignore services that can be built locally.")
+    var ignoreBuildable = false
+    @Flag(name: .customLong("ignore-pull-failures"), help: "Pull what can be pulled and ignore image pull failures.")
+    var ignorePullFailures = false
+    @Flag(name: .customLong("include-deps"), help: "Also pull images for service dependencies.")
+    var includeDeps = false
+    @Option(name: .customLong("policy"), help: "Image pull policy: missing or always.")
+    var policy: String?
+    @Flag(name: .shortAndLong, help: "Pull without printing progress output.")
+    var quiet = false
     @Argument(help: "Optional services to pull.")
     var services: [String] = []
 
     /// Pulls selected service images.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().pull(project: loadedProject, services: services)
+        try await orchestrator().pull(
+            project: loadedProject,
+            options: ComposePullOptions {
+                $0.services = services
+                $0.ignoreBuildable = ignoreBuildable
+                $0.ignorePullFailures = ignorePullFailures
+                $0.includeDependencies = includeDeps
+                $0.policy = policy
+                $0.quiet = quiet
+            }
+        )
     }
 }
 
@@ -316,13 +373,27 @@ struct Push: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "push", abstract: "Push service images.")
 
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("ignore-push-failures"), help: "Push what can be pushed and ignore image push failures.")
+    var ignorePushFailures = false
+    @Flag(name: .customLong("include-deps"), help: "Also push images for service dependencies.")
+    var includeDeps = false
+    @Flag(name: .shortAndLong, help: "Push without printing progress output.")
+    var quiet = false
     @Argument(help: "Optional services to push.")
     var services: [String] = []
 
     /// Pushes selected service images.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().push(project: loadedProject, services: services)
+        try await orchestrator().push(
+            project: loadedProject,
+            options: ComposePushOptions {
+                $0.services = services
+                $0.ignorePushFailures = ignorePushFailures
+                $0.includeDependencies = includeDeps
+                $0.quiet = quiet
+            }
+        )
     }
 }
 
@@ -385,13 +456,19 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var follow = false
     @Option(name: [.customShort("n"), .customLong("tail")], help: "Number of lines to show from the end of logs, or all.")
     var tail: String?
+    @Option(name: .customLong("index"), help: "Target service container index.")
+    var index = 1
+    @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Accepted because container-compose log output is already monochrome.")
+    var noColor = false
+    @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes. Accepted because container-compose log output is already prefix-free.")
+    var noLogPrefix = false
     @Argument(help: "Optional services to show.")
     var services: [String] = []
 
     /// Streams or prints logs for selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().logs(project: loadedProject, services: services, follow: follow, tail: tail)
+        try await orchestrator().logs(project: loadedProject, services: services, follow: follow, tail: tail, index: index)
     }
 }
 
@@ -487,6 +564,10 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var labels: [String] = []
     @Option(name: [.customShort("v"), .customLong("volume")], help: "Bind mount a volume for the one-off container. May be repeated.")
     var volumes: [String] = []
+    @Option(name: .customLong("cap-add"), help: "Add a Linux capability to the one-off container. May be repeated.")
+    var capAdd: [String] = []
+    @Option(name: .customLong("cap-drop"), help: "Drop a Linux capability from the one-off container. May be repeated.")
+    var capDrop: [String] = []
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -515,6 +596,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 $0.envFiles = envFiles
                 $0.labels = labels
                 $0.volumes = volumes
+                $0.capAdd = capAdd
+                $0.capDrop = capDrop
             }
         )
     }
@@ -604,7 +687,7 @@ struct Stats: AsyncParsableCommand, ComposeProjectCommand {
     var format = "table"
     @Flag(name: .customLong("no-stream"), help: "Disable streaming stats and only pull the first result.")
     var noStream = false
-    @Flag(name: .customLong("no-trunc"), help: "Do not truncate output. Not supported by apple/container stats yet.")
+    @Flag(name: .customLong("no-trunc"), help: "Do not truncate output.")
     var noTrunc = false
     @Argument(help: "Optional service names.")
     var services: [String] = []
@@ -715,25 +798,54 @@ struct Port: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose watch` until develop/watch orchestration exists.
+/// Validates `compose watch` service selections and develop.watch metadata.
 struct Watch: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "watch", abstract: "Watch build context and service files.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for watch orchestration.
-    func run() throws {
-        try global.orchestrator().unsupported("watch", reason: "develop/watch workflows are not implemented by container-compose yet")
+    @Flag(name: .customLong("no-up"), help: "Do not build and start services before watching.")
+    var noUp = false
+    @Flag(name: .customLong("prune"), inversion: .prefixedNo, help: "Prune dangling images after rebuilds.")
+    var prune = true
+    @Flag(name: .customLong("quiet"), help: "Hide build output.")
+    var quiet = false
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Validates watch inputs before file watching is implemented.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().watch(
+            project: loadedProject,
+            options: ComposeWatchOptions(
+                services: services,
+                noUp: noUp,
+                prune: prune,
+                quiet: quiet
+            )
+        )
     }
 }
 
-/// Placeholder for `compose scale` until replica orchestration exists.
+/// Implements `compose scale`.
 struct Scale: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "scale", abstract: "Scale services.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for service replica scaling.
-    func run() throws {
-        try global.orchestrator().unsupported("scale", reason: "service replica scaling is not implemented by container-compose yet")
+    @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
+    var noDeps = false
+    @Argument(help: "Service scale assignments as SERVICE=REPLICAS.")
+    var scales: [String] = []
+    /// Scales selected services using Compose-compatible replica assignments.
+    func run() async throws {
+        guard !scales.isEmpty else {
+            throw ComposeError.invalidProject("scale requires at least one SERVICE=REPLICAS argument")
+        }
+        let loadedProject = try await project()
+        try await orchestrator().scale(
+            project: loadedProject,
+            options: ComposeScaleOptions {
+                $0.scales = scales
+                $0.noDeps = noDeps
+            }
+        )
     }
 }
 
@@ -745,7 +857,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     var noStdin = false
     @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Not supported by apple/container logs yet.")
     var detachKeys: String?
-    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware log lookup is available.")
+    @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
     @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false for output-only attach.")
     var sigProxy = "true"
@@ -767,14 +879,14 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose commit` until image snapshot mapping exists.
+/// Placeholder for `compose commit` until Apple/container can commit containers to images.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for committing service containers.
+    /// Reports the runtime gap for committing service containers.
     func run() throws {
-        try global.orchestrator().unsupported("commit", reason: "service container commit is not implemented by container-compose yet")
+        try global.orchestrator().unsupported("commit", reason: "apple/container does not expose a container commit image snapshot primitive yet")
     }
 }
 
@@ -809,14 +921,14 @@ struct Export: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose publish` until project publishing is designed.
+/// Placeholder for `compose publish` until Apple/container supports Compose OCI artifacts.
 struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "publish", abstract: "Publish the Compose application.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for project publishing.
+    /// Reports the runtime gap for Compose application publishing.
     func run() throws {
-        try global.orchestrator().unsupported("publish", reason: "Compose application publishing is not implemented by container-compose yet")
+        try global.orchestrator().unsupported("publish", reason: "apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet")
     }
 }
 
@@ -862,14 +974,18 @@ struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose wait` until exit metadata is available.
+/// Implements `compose wait` for running service containers.
 struct Wait: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "wait", abstract: "Wait for service containers to exit.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for wait semantics.
-    func run() throws {
-        try global.orchestrator().unsupported("wait", reason: "exit code and completion time need an apple/container runtime gap PR")
+    @Flag(name: .customLong("down-project"), help: "Drop the project when the first container stops. Not implemented yet.")
+    var downProject = false
+    @Argument(help: "Service names.")
+    var services: [String] = []
+    /// Waits for selected service containers and prints exit codes.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().wait(project: loadedProject, options: ComposeWaitOptions(services: services, downProject: downProject))
     }
 }
 

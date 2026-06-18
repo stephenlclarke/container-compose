@@ -105,8 +105,9 @@ public struct ComposeService: Codable, Equatable {
     public var cpuRealtimeRuntime: Int? = nil
     public var cpuset: String? = nil
     public var cpuShares: Int? = nil
-    public var develop: Bool? = nil
+    public var develop: ComposeDevelop? = nil
     public var unsupportedDeployFields: [String]? = nil
+    public var deployLabels: [String: String]? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -210,6 +211,7 @@ public struct ComposeService: Codable, Equatable {
         case cpuShares
         case develop
         case unsupportedDeployFields
+        case deployLabels
         case build
         case command
         case entrypoint
@@ -285,6 +287,67 @@ public struct ComposeService: Codable, Equatable {
         case configs
         case secrets
         case extensions
+    }
+}
+
+/// Compose Develop Specification data used by `compose watch`.
+public struct ComposeDevelop: Codable, Equatable {
+    public var watch: [ComposeDevelopWatch]?
+
+    public init(watch: [ComposeDevelopWatch]? = nil) {
+        self.watch = watch
+    }
+}
+
+/// One Compose `develop.watch` trigger.
+public struct ComposeDevelopWatch: Codable, Equatable {
+    public var path: String
+    public var action: String
+    public var target: String?
+    public var ignore: [String]?
+    public var include: [String]?
+    public var initialSync: Bool?
+    public var exec: ComposeDevelopWatchExec?
+
+    public init(
+        path: String,
+        action: String,
+        target: String? = nil,
+        ignore: [String]? = nil,
+        include: [String]? = nil,
+        initialSync: Bool? = nil,
+        exec: ComposeDevelopWatchExec? = nil
+    ) {
+        self.path = path
+        self.action = action
+        self.target = target
+        self.ignore = ignore
+        self.include = include
+        self.initialSync = initialSync
+        self.exec = exec
+    }
+}
+
+/// Optional command metadata for `develop.watch` `sync+exec` triggers.
+public struct ComposeDevelopWatchExec: Codable, Equatable {
+    public var command: [String]?
+    public var user: String?
+    public var privileged: Bool?
+    public var workingDir: String?
+    public var environment: [String: String?]?
+
+    public init(
+        command: [String]? = nil,
+        user: String? = nil,
+        privileged: Bool? = nil,
+        workingDir: String? = nil,
+        environment: [String: String?]? = nil
+    ) {
+        self.command = command
+        self.user = user
+        self.privileged = privileged
+        self.workingDir = workingDir
+        self.environment = environment
     }
 }
 
@@ -434,6 +497,7 @@ public struct ComposeBuild: Codable, Equatable {
 
     public var context: String?
     public var dockerfile: String?
+    public var dockerfileInline: String?
     public var args: [String: String]?
     public var cacheFrom: [String]?
     public var cacheTo: [String]?
@@ -449,6 +513,7 @@ public struct ComposeBuild: Codable, Equatable {
     public init(
         context: String? = nil,
         dockerfile: String? = nil,
+        dockerfileInline: String? = nil,
         args: [String: String]? = nil,
         cache: Cache = Cache(),
         metadata: Metadata = Metadata(),
@@ -456,6 +521,7 @@ public struct ComposeBuild: Codable, Equatable {
     ) {
         self.context = context
         self.dockerfile = dockerfile
+        self.dockerfileInline = dockerfileInline
         self.args = args
         self.cacheFrom = cache.from
         self.cacheTo = cache.to
@@ -489,14 +555,29 @@ public struct ComposeMount: Codable, Equatable {
     public var source: String?
     public var target: String?
     public var readOnly: Bool?
+    public var tmpfsSize: String?
+    public var tmpfsMode: String?
     public var raw: String?
+    public var unsupportedFields: [String]?
 
-    public init(type: String? = nil, source: String? = nil, target: String? = nil, readOnly: Bool? = nil, raw: String? = nil) {
+    public init(
+        type: String? = nil,
+        source: String? = nil,
+        target: String? = nil,
+        readOnly: Bool? = nil,
+        tmpfsSize: String? = nil,
+        tmpfsMode: String? = nil,
+        raw: String? = nil,
+        unsupportedFields: [String]? = nil
+    ) {
         self.type = type
         self.source = source
         self.target = target
         self.readOnly = readOnly
+        self.tmpfsSize = tmpfsSize
+        self.tmpfsMode = tmpfsMode
         self.raw = raw
+        self.unsupportedFields = unsupportedFields
     }
 }
 
@@ -558,12 +639,20 @@ public struct ComposeVolume: Codable, Equatable {
     public var name: String
     public var external: Bool?
     public var driver: String?
+    public var driverOpts: [String: String]?
     public var labels: [String: String]?
 
-    public init(name: String, external: Bool? = nil, driver: String? = nil, labels: [String: String]? = nil) {
+    public init(
+        name: String,
+        external: Bool? = nil,
+        driver: String? = nil,
+        driverOpts: [String: String]? = nil,
+        labels: [String: String]? = nil
+    ) {
         self.name = name
         self.external = external
         self.driver = driver
+        self.driverOpts = driverOpts
         self.labels = labels
     }
 }

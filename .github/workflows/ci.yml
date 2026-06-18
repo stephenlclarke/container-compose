@@ -86,6 +86,12 @@ jobs:
       - name: Install Markdown lint
         run: npm install --global markdownlint-cli@0.48.0
 
+      - name: Cache local repo tools
+        uses: actions/cache@v5
+        with:
+          path: container-compose/.local/bin
+          key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
+
       - name: Print toolchain versions
         run: |
           swift --version
@@ -95,6 +101,8 @@ jobs:
       - name: Run local CI workflow
         run: make ci
         working-directory: container-compose
+        env:
+          HAWKEYE_AUTO_INSTALL: "1"
 
       - name: Cache SonarQube packages
         if: >

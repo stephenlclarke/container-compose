@@ -47,7 +47,7 @@ SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
-MARKDOWN_FILES := README.md BUILD.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md
+MARKDOWN_FILES := README.md BUILD.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md
 
 # Some local toolchains can build Swift Testing targets without adding the
 # framework and interop library to SwiftPM's generated test runner. Derive
@@ -62,13 +62,13 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package coverage-tools-test lint format
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
 workflow: ci package
 
-ci: lint coverage-check go-build cli-smoke
+ci: check coverage-check go-build cli-smoke
 
 resolve:
 	$(SWIFT) package resolve
@@ -84,9 +84,12 @@ run:
 
 test: swift-test go-test
 
-swift-test:
+swift-test-build:
+	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --build-tests --enable-code-coverage $(SWIFT_TEST_FLAGS)
+
+swift-test: swift-test-build
 	@mkdir -p .build
-	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --enable-code-coverage $(SWIFT_TEST_FLAGS) 2>&1 | tee "$(SWIFT_TEST_RESULT_LOG)"
+	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_FLAGS) 2>&1 | tee "$(SWIFT_TEST_RESULT_LOG)"
 	@if ! grep -Eq 'Test run with [1-9][0-9]* tests .* passed|Executed [1-9][0-9]* tests' "$(SWIFT_TEST_RESULT_LOG)"; then \
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \
@@ -130,12 +133,24 @@ cli-smoke: build
 	[[ "$$stats_help_output" == *"Optional service names."* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes:\n      - /scratch\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    annotations:\n      example.com/owner: platform\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes_from:\n      - db:ro\n    volumes:\n      - /scratch\n      - cache:/cache\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n    volumes:\n      - cache:/db-cache\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\nvolumes:\n  cache:\n    driver: local\n    driver_opts:\n      journal: ordered\n      size: 64m\n' > "$$tmpdir/compose.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    attach: false\n' > "$$tmpdir/attach-false.yml"; \
+	mkdir -p "$$tmpdir/src"; \
+	printf 'services:\n  api:\n    image: alpine\n    develop:\n      watch:\n        - path: ./src\n          action: rebuild\n' > "$$tmpdir/watch.yml"; \
+	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n  db:\n    image: alpine\n' > "$$tmpdir/scale-deps.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080-8081:80"\n' > "$$tmpdir/scale-ports.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    volumes:\n      - /scratch\n' > "$$tmpdir/scale-volumes.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    pull_policy: daily\n' > "$$tmpdir/pull-window.yml"; \
+	printf 'services:\n  api:\n    image: example/api:build\n    build:\n      context: ./api\n    pull_policy: build\n' > "$$tmpdir/pull-build.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    volumes:\n      - type: tmpfs\n        target: /scratch\n        tmpfs:\n          size: 64m\n          mode: 1777\n' > "$$tmpdir/tmpfs-options.yml"; \
 	mkdir -p "$$tmpdir/api"; \
 	printf 'FROM alpine:3.20\n' > "$$tmpdir/api/Dockerfile"; \
 	printf 'secret\n' > "$$tmpdir/build-token.txt"; \
 	printf 'services:\n  api:\n    image: example/api:build\n    build:\n      context: ./api\n      secrets:\n        - source: file_token\n        - source: env_token\n          target: npm_token\nsecrets:\n  file_token:\n    file: ./build-token.txt\n  env_token:\n    environment: NPM_TOKEN\n' > "$$tmpdir/build-secrets.yml"; \
+	printf 'name: inline-build\nservices:\n  api:\n    image: example/api:inline\n    build:\n      context: ./api\n      dockerfile_inline: |\n        FROM alpine:3.20\n        RUN echo inline\n' > "$$tmpdir/build-inline.yml"; \
+	printf 'services:\n  worker:\n    build:\n      context: ./api\n' > "$$tmpdir/build-only.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
@@ -145,9 +160,24 @@ cli-smoke: build
 	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
 	[[ "$$compact_global_output" == *"compact-db-1"* ]]; \
 	[[ "$$compact_global_output" == *"compact-api-1"* ]]; \
+	pull_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pull --include-deps --ignore-pull-failures --policy missing -q api)"; \
+	[[ "$$(printf '%s\n' "$$pull_options_output" | grep -c "container image inspect alpine")" == "2" ]]; \
+	pull_window_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/pull-window.yml" up api)"; \
+	[[ "$$pull_window_output" == *"container image inspect alpine"* ]]; \
+	[[ "$$pull_window_output" == *"container image pull alpine"* ]]; \
+	[[ "$$pull_window_output" == *"container run"* ]]; \
+	pull_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/pull-build.yml" up api)"; \
+	[[ "$$pull_build_output" == *"container build --tag example/api:build"* ]]; \
+	[[ "$$pull_build_output" == *"container run"* ]]; \
+	tmpfs_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/tmpfs-options.yml" up api)"; \
+	[[ "$$tmpfs_options_output" == *"--mount type=tmpfs,destination=/scratch,size=67108864,mode=1777"* ]]; \
+	[[ "$$tmpfs_options_output" != *"--tmpfs /scratch"* ]]; \
+	push_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" push --include-deps --ignore-push-failures -q api)"; \
+	[[ "$$(printf '%s\n' "$$push_options_output" | grep -c "container image push alpine")" == "2" ]]; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *"demo-db-1"* ]]; \
+	[[ "$$run_output" == *"--volume demo_cache:/db-cache:ro"* ]]; \
 	[[ "$$run_output" == *" alpine echo hello"* ]]; \
 	[[ "$$run_output" != *"--publish 8080:80"* ]]; \
 	run_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --service-ports api echo hello)"; \
@@ -157,9 +187,18 @@ cli-smoke: build
 	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
 	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
 	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
-	build_secret_output="$$(NPM_TOKEN=local-secret ".build/debug/compose" --dry-run -f "$$tmpdir/build-secrets.yml" build api)"; \
+	run_capability_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --cap-add SYS_PTRACE --cap-drop NET_RAW api echo hello)"; \
+	[[ "$$run_capability_output" == *"--cap-add SYS_PTRACE"* ]]; \
+	[[ "$$run_capability_output" == *"--cap-drop NET_RAW"* ]]; \
+	build_secret_output="$$(NPM_TOKEN=local-secret ".build/debug/compose" --dry-run -f "$$tmpdir/build-secrets.yml" build --pull --with-dependencies -q api)"; \
 	[[ "$$build_secret_output" == *"--secret id=file_token,src=$$tmpdir/build-token.txt"* ]]; \
 	[[ "$$build_secret_output" == *"--secret id=npm_token,env=NPM_TOKEN"* ]]; \
+	[[ "$$build_secret_output" == *"--pull"* ]]; \
+	[[ "$$build_secret_output" == *"--quiet"* ]]; \
+	build_inline_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-inline.yml" build api)"; \
+	[[ "$$build_inline_output" == *"container build"* ]]; \
+	[[ "$$build_inline_output" == *"--tag example/api:inline"* ]]; \
+	[[ "$$build_inline_output" == *"--file "*"container-compose-inline-build-api-"*"/Dockerfile"* ]]; \
 	run_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --pull missing api true)"; \
 	[[ "$$run_pull_output" == *"container image inspect alpine"* ]]; \
 	[[ "$$run_pull_output" == *"container image pull alpine"* ]]; \
@@ -220,24 +259,95 @@ cli-smoke: build
 	[[ "$$run_no_network_output" == *" alpine true"* ]]; \
 	up_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up api)"; \
 	[[ "$$up_output" == *"container network create --internal --subnet 10.77.0.0/24 --subnet-v6 fd77::/64"* ]]; \
+	[[ "$$up_output" == *"container volume create --opt journal=ordered --opt size=64m"* ]]; \
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"demo-db-1"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$up_output" == *"--volume demo_cache:/db-cache:ro"* ]]; \
 	[[ "$$up_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$up_output" == *"--network demo_default,mac=02:42:ac:11:00:03,mtu=1450"* ]]; \
+	[[ "$$up_output" == *"--label example.com/owner=platform"* ]]; \
 	[[ "$$up_output" == *"--name demo-db-1 --detach"* ]]; \
 	[[ "$$up_output" != *"--name demo-api-1 --detach"* ]]; \
+	up_attach_false_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/attach-false.yml" up api)"; \
+	[[ "$$up_attach_false_output" == *"--name demo-api-1 --detach"* ]]; \
+	up_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --pull always --quiet-pull api)"; \
+	[[ "$$up_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
+	[[ "$$up_quiet_pull_output" == *"container run"* ]]; \
+	up_always_recreate_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --always-recreate-deps api)"; \
+	[[ "$$up_always_recreate_deps_output" == *"container run"* ]]; \
+	[[ "$$up_always_recreate_deps_output" == *"demo-db-1"* ]]; \
+	[[ "$$up_always_recreate_deps_output" == *"demo-api-1"* ]]; \
+	up_always_recreate_no_recreate_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --always-recreate-deps --no-recreate api 2>&1 || true)"; \
+	[[ "$$up_always_recreate_no_recreate_output" == *"invalid compose project: --always-recreate-deps and --no-recreate are incompatible"* ]]; \
+	up_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --timeout 12 api)"; \
+	[[ "$$up_timeout_output" == *"container run"* ]]; \
+	up_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up -t12 api)"; \
+	[[ "$$up_compact_timeout_output" == *"container run"* ]]; \
+	up_invalid_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --timeout=-1 api 2>&1 || true)"; \
+	[[ "$$up_invalid_timeout_output" == *"invalid compose project: up --timeout must be between 0 and 2147483647 seconds"* ]]; \
 	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
 	[[ "$$up_no_deps_output" == *"container run"* ]]; \
 	[[ "$$up_no_deps_output" != *"demo-db-1"* ]]; \
-	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
-	[[ "$$up_scale_output" == *"unsupported compose feature: up --scale: service replica scaling is not implemented by container-compose yet"* ]]; \
+	up_no_start_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-start api)"; \
+	[[ "$$up_no_start_output" == *"container create"* ]]; \
+	[[ "$$up_no_start_output" != *"container run"* ]]; \
+	[[ "$$up_no_start_output" == *"demo-db-1"* ]]; \
+	[[ "$$up_no_start_output" == *"demo-api-1"* ]]; \
+	up_no_start_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-start --no-deps api)"; \
+	[[ "$$up_no_start_no_deps_output" == *"container create"* ]]; \
+	[[ "$$up_no_start_no_deps_output" != *"container run"* ]]; \
+	[[ "$$up_no_start_no_deps_output" != *"demo-db-1"* ]]; \
+	up_no_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --no-build worker)"; \
+	[[ "$$up_no_build_output" == *"container run"* ]]; \
+	[[ "$$up_no_build_output" != *"container build"* ]]; \
+	[[ "$$up_no_build_output" == *"demo_worker:latest"* ]]; \
+	up_quiet_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --quiet-build worker)"; \
+	[[ "$$up_quiet_build_output" == *"container build"* ]]; \
+	[[ "$$up_quiet_build_output" == *"--quiet"* ]]; \
+	[[ "$$up_quiet_build_output" == *"container run"* ]]; \
+	up_build_no_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --build --no-build worker 2>&1 || true)"; \
+	[[ "$$up_build_no_build_output" == *"invalid compose project: --build and --no-build are incompatible"* ]]; \
+	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" up --scale worker=2 worker)"; \
+	[[ "$$up_scale_output" == *"--name demo-worker-1"* ]]; \
+	[[ "$$up_scale_output" == *"--name demo-worker-2 --detach"* ]]; \
+	up_scale_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
+	[[ "$$up_scale_ports_output" == *"unsupported compose feature: service 'api' publishes '8080:80'; scaled published ports require at least 2 explicit host ports for 2 replicas"* ]]; \
+	up_scale_port_range_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-ports.yml" up --scale api=2 api)"; \
+	[[ "$$up_scale_port_range_output" == *"--name demo-api-1"* ]]; \
+	[[ "$$up_scale_port_range_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$up_scale_port_range_output" == *"--name demo-api-2 --detach"* ]]; \
+	[[ "$$up_scale_port_range_output" == *"--publish 8081:80"* ]]; \
+	up_scale_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-volumes.yml" up --scale api=2 api)"; \
+	[[ "$$up_scale_volume_output" == *"--volume demo_anon-api-1-"*":/scratch"* ]]; \
+	[[ "$$up_scale_volume_output" == *"--volume demo_anon-api-2-"*":/scratch"* ]]; \
+	create_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" create --scale worker=2 worker)"; \
+	[[ "$$create_scale_output" == *"--name demo-worker-1"* ]]; \
+	[[ "$$create_scale_output" == *"--name demo-worker-2"* ]]; \
+	scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" scale worker=2)"; \
+	[[ "$$scale_output" == *"--name demo-worker-1 --detach"* ]]; \
+	[[ "$$scale_output" == *"--name demo-worker-2 --detach"* ]]; \
+	scale_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-deps.yml" scale api=2)"; \
+	[[ "$$scale_deps_output" == *"--name demo-db-1 --detach"* ]]; \
+	[[ "$$scale_deps_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$scale_deps_output" == *"--name demo-api-2 --detach"* ]]; \
+	scale_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-deps.yml" scale --no-deps api=2)"; \
+	[[ "$$scale_no_deps_output" != *"demo-db-1"* ]]; \
+	[[ "$$scale_no_deps_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$scale_no_deps_output" == *"--name demo-api-2 --detach"* ]]; \
+	scale_missing_output="$$(".build/debug/compose" --dry-run scale 2>&1 || true)"; \
+	[[ "$$scale_missing_output" == *"invalid compose project: scale requires at least one SERVICE=REPLICAS argument"* ]]; \
+	scale_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" scale api=2 2>&1 || true)"; \
+	[[ "$$scale_ports_output" == *"unsupported compose feature: service 'api' publishes '8080:80'; scaled published ports require at least 2 explicit host ports for 2 replicas"* ]]; \
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
 	[[ "$$create_output" == *"container create"* ]]; \
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$create_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$create_output" == *"--network demo_default,mac=02:42:ac:11:00:03,mtu=1450"* ]]; \
 	[[ "$$create_output" != *"--detach"* ]]; \
+	create_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --pull always --quiet-pull api)"; \
+	[[ "$$create_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
+	[[ "$$create_quiet_pull_output" == *"container create"* ]]; \
 	create_dynamic_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" create api 2>&1 || true)"; \
 	[[ "$$create_dynamic_ports_output" == *"unsupported compose feature: service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
@@ -253,8 +363,14 @@ cli-smoke: build
 	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
 	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
 	[[ "$$logs_all_output" != *" -n "* ]]; \
+	logs_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --index 2 api)"; \
+	[[ "$$logs_index_output" == *"container logs demo-api-2"* ]]; \
+	logs_display_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --no-color --no-log-prefix api)"; \
+	[[ "$$logs_display_output" == *"container logs demo-api-1"* ]]; \
 	attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false api)"; \
 	[[ "$$attach_output" == *"container logs --follow demo-api-1"* ]]; \
+	attach_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false --index 2 api)"; \
+	[[ "$$attach_index_output" == *"container logs --follow demo-api-2"* ]]; \
 	attach_default_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach api 2>&1 || true)"; \
 	[[ "$$attach_default_output" == *"unsupported compose feature: attach: apple/container logs is output-only"* ]]; \
 	exec_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec api echo ok)"; \
@@ -359,12 +475,23 @@ cli-smoke: build
 	unpause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" unpause api 2>&1 || true)"; \
 	[[ "$$unpause_output" == *"unsupported compose feature: unpause:"* ]]; \
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
-	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
-	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
-	for unsupported_command in watch scale commit publish; do \
-		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
-		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
-	done
+	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api)"; \
+	[[ "$$wait_output" == *"container wait demo-api-1"* ]]; \
+	wait_down_project_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait --down-project api)"; \
+	[[ "$$wait_down_project_output" == *"container wait demo-api-1"* ]]; \
+	[[ "$$wait_down_project_output" == *"container delete demo-api-1"* ]]; \
+	watch_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" watch --no-up --no-prune --quiet api)"; \
+	[[ "$$watch_output" == *"compose: watch project demo services api"* ]]; \
+	[[ "$$watch_output" == *"compose: watch initial-up disabled"* ]]; \
+	[[ "$$watch_output" == *"compose: watch prune disabled"* ]]; \
+	[[ "$$watch_output" == *"compose: watch quiet enabled"* ]]; \
+	[[ "$$watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
+	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot 2>&1 || true)"; \
+	[[ "$$commit_output" == *"unsupported compose feature: commit:"* ]]; \
+	[[ "$$commit_output" == *"apple/container does not expose a container commit image snapshot primitive yet"* ]]; \
+	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \
+	[[ "$$publish_output" == *"unsupported compose feature: publish:"* ]]; \
+	[[ "$$publish_output" == *"apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet"* ]]
 
 coverage: swift-coverage go-test
 
@@ -411,7 +538,12 @@ coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py
 	$(PYTHON) -m unittest discover Tools/coverage
 
+check: lint check-licenses
+
 lint: coverage-tools-test
+	@while IFS= read -r -d '' script; do \
+		bash -n "$$script"; \
+	done < <(find scripts -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)
 	@if command -v "$(MARKDOWNLINT)" >/dev/null 2>&1; then \
 		"$(MARKDOWNLINT)" $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \
@@ -426,8 +558,28 @@ lint: coverage-tools-test
 		exit 1; \
 	fi
 
-format:
+fmt: format
+
+format: update-licenses
 	cd Tools/compose-normalizer && $(GO) fmt ./...
+
+check-licenses:
+	@./scripts/ensure-hawkeye-exists.sh
+	@.local/bin/hawkeye check --fail-if-unknown
+
+update-licenses:
+	@./scripts/ensure-hawkeye-exists.sh
+	@.local/bin/hawkeye format --fail-if-unknown --fail-if-updated false
+
+pre-commit:
+	$(eval HOOKS_DIR := $(shell git rev-parse --git-path hooks))
+	cp scripts/pre-commit.fmt "$(HOOKS_DIR)/"
+	touch "$(HOOKS_DIR)/pre-commit"
+	grep -v 'hooks/pre-commit\.fmt' "$(HOOKS_DIR)/pre-commit" > /tmp/container-compose-pre-commit.new || true
+	printf 'PRECOMMIT_NOFMT=$${PRECOMMIT_NOFMT} "$$(git rev-parse --git-path hooks/pre-commit.fmt)"\n' >> /tmp/container-compose-pre-commit.new
+	mv /tmp/container-compose-pre-commit.new "$(HOOKS_DIR)/pre-commit"
+	chmod +x "$(HOOKS_DIR)/pre-commit"
+	@./scripts/ensure-hawkeye-exists.sh
 
 clean:
 	$(SWIFT) package clean

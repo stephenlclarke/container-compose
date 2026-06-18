@@ -1,5 +1,6 @@
 .build/
 .swiftpm/
+.local/
 .DS_Store
 __pycache__/
 bin/
