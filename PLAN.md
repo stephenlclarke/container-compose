@@ -611,6 +611,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Renamed the C3 compatibility example from a stale plugin-gap label to a partial support label, updated the matching anchors, and aligned this plan's watch/develop note with the current no-plugin-gap compatibility snapshot.</td>
     </tr>
+    <tr>
+      <td><code>BUILD.md</code> dynamic port boundary wording</td>
+      <td>2026-06-18 20:12:53 BST</td>
+      <td>2026-06-18 20:12:53 BST</td>
+      <td>2026-06-18 20:12:53 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Corrected the runtime-boundary guide so it no longer describes dynamic host-port allocation as unsupported. The guide now matches the implementation and compatibility matrix: container-compose allocates ephemeral host ports before calling apple/container with explicit <code>--publish</code> bindings.</td>
+    </tr>
   </tbody>
 </table>
 
