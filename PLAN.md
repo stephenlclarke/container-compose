@@ -537,6 +537,15 @@ The lozenges use a traffic-light scheme: green is complete, yellow is active, re
     <tr>
       <td colspan="4"><strong>Notes:</strong> Capture the implementation workflow preference to choose one Compose functional topic, drive it to completion or to a documented Apple/container blocker, and only then move to another topic. The existing adoption-friction guidance in <code>DESIGN.md</code> and <code>CONTRIBUTING.md</code> remains the review standard for keeping future Apple/container adoption practical.</td>
     </tr>
+    <tr>
+      <td>C3 compatibility status wording</td>
+      <td>2026-06-18 18:14:47 BST</td>
+      <td>2026-06-18 18:14:47 BST</td>
+      <td>2026-06-18 18:14:47 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Renamed the C3 compatibility example from a stale plugin-gap label to a partial support label, updated the matching anchors, and aligned this plan's watch/develop note with the current no-plugin-gap compatibility snapshot.</td>
+    </tr>
   </tbody>
 </table>
 
@@ -565,7 +574,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 13:00:42 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. Remaining C3 plugin work is tracked separately under providers and lifecycle hooks. Service model runtime behavior moved to the Apple/container upstream backlog after the model-runner boundary was confirmed.</td>
+      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. The C3 compatibility example now describes the completed watch/develop, provider, and detached lifecycle-hook paths together with the remaining Apple/container foreground hook boundaries. Service model runtime behavior moved to the Apple/container upstream backlog after the model-runner boundary was confirmed.</td>
     </tr>
     <tr>
       <td>Replica scaling edge cases</td>

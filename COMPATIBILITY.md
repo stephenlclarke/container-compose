@@ -159,7 +159,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **Compose surface:** `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, `watch --quiet`, selected services, and normalized `develop.watch` triggers for `sync`, `sync+restart`, `sync+exec`, `restart`, and `rebuild`.
 - **Apple/container path:** Dry-run validation does not mutate runtime state. Live watch uses direct copy, exec, lifecycle restart, build, and image prune paths where Apple/container exposes them.
 - **container-compose status:** Supported for polling-based local file watching, initial sync, changed-file sync, deleted-file cleanup, sync exec hooks, restarts, rebuilds, and rebuild pruning. `develop.watch` metadata is harmless for ordinary `up` and `run`.
-- **Example:** [C3](#c3-plugin-gap-develop-providers-and-hooks).
+- **Example:** [C3](#c3-partial-develop-providers-and-hooks).
 
 #### Provider services
 
@@ -436,7 +436,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
 - <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span> [C1: Replica Scaling And Deploy Metadata](#c1-replica-scaling-and-deploy-metadata): Demonstrates supported scale forms, collision safeguards, local deploy metadata, and remaining [`apple/container`][apple-container] deploy/runtime gaps.
-- <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span> [C3: Plugin Gap, Develop, Providers, And Hooks](#c3-plugin-gap-develop-providers-and-hooks): Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
+- <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span> [C3: Partial, Develop, Providers, And Hooks](#c3-partial-develop-providers-and-hooks): Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
 - <span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span> [O1: Config-Only Metadata](#o1-config-only-metadata): Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
 ## Examples With Dockerfiles
@@ -1337,7 +1337,7 @@ File: `config/example.txt`
 local config placeholder
 ```
 
-### C3: Plugin Gap, Develop, Providers, And Hooks
+### C3: Partial, Develop, Providers, And Hooks
 
 Expected result: `container compose config` preserves the `develop.watch`, `provider`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata and supports provider-backed dependencies as shown in [S2](#s2-supported-provider-service). Detached service lifecycle paths and detached one-off `run` execute supported `post_start` hooks through direct exec, and service-aware stops execute supported `pre_stop` hooks before stopping containers. Detached one-off containers also execute `pre_stop` when `container-compose` later stops them through project cleanup. Attached `up` or foreground `run` with lifecycle hooks reject clearly until Apple/container exposes the foreground attach and stop-boundary primitives tracked in [A9](#a9-apple-gap-interactive-attach).
 
@@ -1349,7 +1349,7 @@ Status path:
 
 ```yaml
 # compose.yaml
-name: plugin-extension-gap-demo
+name: partial-extension-demo
 
 services:
   api:
@@ -1462,7 +1462,7 @@ Status path:
 
 - Docker Compose v2: supports default interactive attach behavior and foreground lifecycle hook ordering.
 - [`apple/container`][apple-container]: log streaming is available for output-only attach, and stdio can be wired while bootstrapping a container or creating a new exec process. It does not expose a Compose-compatible reattach path for an already-running init process or an interceptable stop boundary for foreground one-off containers.
-- `container-compose`: supports output-only attach and detached lifecycle-hook paths, then reports the Apple/container runtime gap for default interactive attach and foreground hook ordering. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
+- `container-compose`: supports output-only attach and detached lifecycle-hook paths, then reports the Apple/container runtime gap for default interactive attach and foreground hook ordering. `watch` command validation is tracked in [C3](#c3-partial-develop-providers-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
 
 ```yaml
 # compose.yaml
