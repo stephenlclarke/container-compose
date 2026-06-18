@@ -188,7 +188,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Health, completion, configs, secrets, service restart
 
-- **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, and service `restart`.
+- **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, service `restart`, and `deploy.restart_policy`.
 - **Missing Apple/container primitive:** Health status, exit code/completion-time metadata, config/secret mount primitives, and restart policy support.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A4](#a4-apple-gap-health-secrets-and-restart).
@@ -220,7 +220,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 
 #### Local deploy handling
 
-- **Compose surface:** Deploy fields beyond local replica count and CPU/memory limits.
+- **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, and memory limits.
 - **Apple/container path:** Not known to be the first blocker.
 - **Missing plugin work:** A local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
@@ -751,11 +751,11 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### A4: Apple Gap, Health, Secrets, And Restart
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs health status, completion metadata, config/secret mounts, and restart policies.
+Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs health status, completion metadata, config/secret mounts, and restart policies for both service `restart` and `deploy.restart_policy`.
 
 Status path:
 
-- Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, and restart policies.
+- Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, service restart policies, and deploy restart policies.
 - [`apple/container`][apple-container]: missing health status, exit/completion metadata, config/secret mount primitives, and restart policy support.
 - `container-compose`: detects those fields and reports the Apple runtime gap.
 
@@ -789,6 +789,10 @@ services:
   worker:
     build:
       context: ./worker
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
     depends_on:
       api:
         condition: service_healthy

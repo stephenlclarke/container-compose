@@ -210,6 +210,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is accepted as the local mode that matches existing replica orchestration. Non-replicated deploy modes remain open because they need scheduler semantics rather than simple local replica indexing.</td>
     </tr>
     <tr>
+      <td>Deploy restart policy blocker classification</td>
+      <td>2026-06-18 12:05:43 BST</td>
+      <td>2026-06-18 12:05:43 BST</td>
+      <td>2026-06-18 12:05:43 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.restart_policy</code> with service-level <code>restart</code> as an Apple/container runtime gap. Apple/container exposes lifecycle restart commands but no create/run restart policy primitive.</td>
+    </tr>
+    <tr>
       <td>Run capability overrides</td>
       <td>2026-06-18 10:16:25 BST</td>
       <td>2026-06-18 10:16:25 BST</td>
@@ -349,7 +358,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, and <code>deploy.restart_policy</code> is tracked with Apple/container restart policy parity. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
@@ -565,7 +574,7 @@ Suggested Apple/container PR batches:
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs service restart policy support compatible with local Docker Compose behavior.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs service <code>restart</code> and <code>deploy.restart_policy</code> support compatible with local Docker Compose behavior.</td>
     </tr>
     <tr>
       <td>Docker Compose log parity</td>

@@ -3410,7 +3410,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported deploy field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode, resources.limits, placement; Compose Deploy Specification beyond replica count is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode, resources.limits, placement; Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, and memory limits is not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -9819,7 +9819,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.unsupportedDeployFields = ["labels", "restart_policy", "endpoint_mode"]
+                    $0.unsupportedDeployFields = ["restart_policy"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -9831,7 +9831,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported deploy field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported deploy fields labels, restart_policy, endpoint_mode; Compose Deploy Specification beyond replica count is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses deploy.restart_policy; restart policy support needs an apple/container runtime gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

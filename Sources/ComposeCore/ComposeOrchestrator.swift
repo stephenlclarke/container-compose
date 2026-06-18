@@ -1998,13 +1998,16 @@ private extension ComposeOrchestrator {
         throw ComposeError.unsupported("service '\(service.name)' uses unsupported build fields \(fieldList); advanced build fields need Docker Compose compatible apple/container build primitives")
     }
 
-    /// Rejects deploy fields beyond replica count that are not orchestrated yet.
+    /// Rejects deploy fields that are not part of the supported local subset.
     func validateDeploySupport(service: ComposeService) throws {
         guard let fields = service.unsupportedDeployFields, !fields.isEmpty else {
             return
         }
+        if fields.contains("restart_policy") {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy; restart policy support needs an apple/container runtime gap PR")
+        }
         let fieldList = fields.joined(separator: ", ")
-        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond replica count is not implemented by container-compose yet")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, and memory limits is not implemented by container-compose yet")
     }
 
     /// Rejects service extension points that need explicit orchestration design.
