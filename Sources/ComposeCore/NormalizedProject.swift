@@ -384,6 +384,54 @@ public struct ComposeNetworkOptions: Codable, Equatable {
 
 /// Build configuration for a Compose service.
 public struct ComposeBuild: Codable, Equatable {
+    /// Build cache sources and destinations.
+    public struct Cache: Equatable {
+        public var from: [String]?
+        public var to: [String]?
+
+        public init(from: [String]? = nil, to: [String]? = nil) {
+            self.from = from
+            self.to = to
+        }
+    }
+
+    /// Build labels and secrets that become build-time metadata.
+    public struct Metadata: Equatable {
+        public var labels: [String: String]?
+        public var secrets: [ComposeBuildSecret]?
+
+        public init(labels: [String: String]? = nil, secrets: [ComposeBuildSecret]? = nil) {
+            self.labels = labels
+            self.secrets = secrets
+        }
+    }
+
+    /// Optional build behavior that is not required for every service.
+    public struct Options: Equatable {
+        public var target: String?
+        public var noCache: Bool?
+        public var pull: Bool?
+        public var platforms: [String]?
+        public var tags: [String]?
+        public var unsupportedFields: [String]?
+
+        public init(
+            target: String? = nil,
+            noCache: Bool? = nil,
+            pull: Bool? = nil,
+            platforms: [String]? = nil,
+            tags: [String]? = nil,
+            unsupportedFields: [String]? = nil
+        ) {
+            self.target = target
+            self.noCache = noCache
+            self.pull = pull
+            self.platforms = platforms
+            self.tags = tags
+            self.unsupportedFields = unsupportedFields
+        }
+    }
+
     public var context: String?
     public var dockerfile: String?
     public var args: [String: String]?
@@ -402,30 +450,23 @@ public struct ComposeBuild: Codable, Equatable {
         context: String? = nil,
         dockerfile: String? = nil,
         args: [String: String]? = nil,
-        cacheFrom: [String]? = nil,
-        cacheTo: [String]? = nil,
-        labels: [String: String]? = nil,
-        secrets: [ComposeBuildSecret]? = nil,
-        target: String? = nil,
-        noCache: Bool? = nil,
-        pull: Bool? = nil,
-        platforms: [String]? = nil,
-        tags: [String]? = nil,
-        unsupportedFields: [String]? = nil
+        cache: Cache = Cache(),
+        metadata: Metadata = Metadata(),
+        options: Options = Options()
     ) {
         self.context = context
         self.dockerfile = dockerfile
         self.args = args
-        self.cacheFrom = cacheFrom
-        self.cacheTo = cacheTo
-        self.labels = labels
-        self.secrets = secrets
-        self.target = target
-        self.noCache = noCache
-        self.pull = pull
-        self.platforms = platforms
-        self.tags = tags
-        self.unsupportedFields = unsupportedFields
+        self.cacheFrom = cache.from
+        self.cacheTo = cache.to
+        self.labels = metadata.labels
+        self.secrets = metadata.secrets
+        self.target = options.target
+        self.noCache = options.noCache
+        self.pull = options.pull
+        self.platforms = options.platforms
+        self.tags = options.tags
+        self.unsupportedFields = options.unsupportedFields
     }
 }
 
@@ -461,6 +502,17 @@ public struct ComposeMount: Codable, Equatable {
 
 /// Network definition normalized from the Compose project.
 public struct ComposeNetwork: Codable, Equatable {
+    /// IPAM subnets supported by Apple `container` network creation.
+    public struct Subnets: Equatable {
+        public var ipv4Subnet: String?
+        public var ipv6Subnet: String?
+
+        public init(ipv4Subnet: String? = nil, ipv6Subnet: String? = nil) {
+            self.ipv4Subnet = ipv4Subnet
+            self.ipv6Subnet = ipv6Subnet
+        }
+    }
+
     public var name: String
     public var external: Bool?
     public var driver: String?
@@ -476,8 +528,7 @@ public struct ComposeNetwork: Codable, Equatable {
         driver: String? = nil,
         isInternal: Bool? = nil,
         labels: [String: String]? = nil,
-        ipv4Subnet: String? = nil,
-        ipv6Subnet: String? = nil,
+        subnets: Subnets = Subnets(),
         unsupportedFields: [String]? = nil
     ) {
         self.name = name
@@ -485,8 +536,8 @@ public struct ComposeNetwork: Codable, Equatable {
         self.driver = driver
         self.isInternal = isInternal
         self.labels = labels
-        self.ipv4Subnet = ipv4Subnet
-        self.ipv6Subnet = ipv6Subnet
+        self.ipv4Subnet = subnets.ipv4Subnet
+        self.ipv6Subnet = subnets.ipv6Subnet
         self.unsupportedFields = unsupportedFields
     }
 

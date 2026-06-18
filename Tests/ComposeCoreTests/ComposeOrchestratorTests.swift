@@ -541,8 +541,10 @@ struct ComposeOrchestratorTests {
                     name: "backend",
                     isInternal: true,
                     labels: ["com.example.network": "backend"],
-                    ipv4Subnet: "10.77.0.0/24",
-                    ipv6Subnet: "fd77::/64"
+                    subnets: ComposeNetwork.Subnets(
+                        ipv4Subnet: "10.77.0.0/24",
+                        ipv6Subnet: "fd77::/64"
+                    )
                 ),
             ]
         }
@@ -584,8 +586,10 @@ struct ComposeOrchestratorTests {
                 "backend": ComposeNetwork(
                     name: "backend",
                     isInternal: true,
-                    ipv4Subnet: "10.77.0.0/24",
-                    ipv6Subnet: "fd77::/64"
+                    subnets: ComposeNetwork.Subnets(
+                        ipv4Subnet: "10.77.0.0/24",
+                        ipv6Subnet: "fd77::/64"
+                    )
                 ),
             ]
         }
@@ -2208,7 +2212,10 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.build = ComposeBuild(context: "api", unsupportedFields: ["additional_contexts", "ssh"])
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        options: ComposeBuild.Options(unsupportedFields: ["additional_contexts", "ssh"])
+                    )
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -3531,18 +3538,24 @@ struct ComposeOrchestratorTests {
                         context: "api",
                         dockerfile: "Containerfile",
                         args: ["VERSION": "1"],
-                        cacheFrom: ["type=registry,ref=example/api:cache"],
-                        cacheTo: ["type=local,dest=.cache"],
-                        labels: ["org.opencontainers.image.title": "api", "build.label": "true"],
-                        secrets: [
-                            ComposeBuildSecret(id: "file_token", file: "./token.txt"),
-                            ComposeBuildSecret(id: "npm_token", environment: "NPM_TOKEN"),
-                        ],
-                        target: "runtime",
-                        noCache: true,
-                        pull: true,
-                        platforms: ["linux/amd64", "linux/arm64"],
-                        tags: ["example/api:latest", "example/api:dev", "example/api:test"]
+                        cache: ComposeBuild.Cache(
+                            from: ["type=registry,ref=example/api:cache"],
+                            to: ["type=local,dest=.cache"]
+                        ),
+                        metadata: ComposeBuild.Metadata(
+                            labels: ["org.opencontainers.image.title": "api", "build.label": "true"],
+                            secrets: [
+                                ComposeBuildSecret(id: "file_token", file: "./token.txt"),
+                                ComposeBuildSecret(id: "npm_token", environment: "NPM_TOKEN"),
+                            ]
+                        ),
+                        options: ComposeBuild.Options(
+                            target: "runtime",
+                            noCache: true,
+                            pull: true,
+                            platforms: ["linux/amd64", "linux/arm64"],
+                            tags: ["example/api:latest", "example/api:dev", "example/api:test"]
+                        )
                     )
                 },
                 "worker": composeService(name: "worker") {
@@ -3589,7 +3602,10 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.build = ComposeBuild(context: "api", noCache: true)
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        options: ComposeBuild.Options(noCache: true)
+                    )
                 },
             ]
         )
@@ -3607,7 +3623,10 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api:latest") {
-                    $0.build = ComposeBuild(context: "api", unsupportedFields: ["dockerfile_inline", "secrets"])
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        options: ComposeBuild.Options(unsupportedFields: ["dockerfile_inline", "secrets"])
+                    )
                 },
             ]
         )
@@ -3632,7 +3651,9 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api:latest") {
                     $0.build = ComposeBuild(
                         context: "api",
-                        secrets: [ComposeBuildSecret(id: "both", file: "./token.txt", environment: "TOKEN")]
+                        metadata: ComposeBuild.Metadata(
+                            secrets: [ComposeBuildSecret(id: "both", file: "./token.txt", environment: "TOKEN")]
+                        )
                     )
                 },
             ]
@@ -7405,7 +7426,10 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.build = ComposeBuild(context: "job", unsupportedFields: ["entitlements", "ssh"])
+                    $0.build = ComposeBuild(
+                        context: "job",
+                        options: ComposeBuild.Options(unsupportedFields: ["entitlements", "ssh"])
+                    )
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
