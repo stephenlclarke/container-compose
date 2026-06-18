@@ -1525,7 +1525,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
-    /// Attaches to service output using the Apple log stream.
+    /// Attaches to service output using the apple/container log stream.
     public func attach(project: ComposeProject, serviceName: String, options attach: ComposeAttachOptions) async throws {
         try validateAttachOptions(attach)
         guard let service = project.services[serviceName] else {
@@ -2393,7 +2393,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Rejects project network fields that are not mapped to Apple network creation.
+    /// Rejects project network fields that are not mapped to apple/container network creation.
     func validateProjectNetworks(_ project: ComposeProject) throws {
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) {
             guard let fields = network.unsupportedFields, !fields.isEmpty else {
@@ -2409,7 +2409,7 @@ private extension ComposeOrchestrator {
         networkMode == "none"
     }
 
-    /// Allows MAC addresses only for the single-network attachment that Apple
+    /// Allows MAC addresses only for the single-network attachment that apple/container
     /// `container --network name,mac=...` can represent.
     func validateNetworkMACAddressSupport(service: ComposeService, networks: [String]) throws {
         let serviceMACAddress = nonEmpty(service.macAddress)
@@ -2430,7 +2430,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Rejects build fields that Apple `container build` cannot represent yet.
+    /// Rejects build fields that apple/container `container build` cannot represent yet.
     func validateBuildSupport(service: ComposeService) throws {
         guard let fields = service.build?.unsupportedFields, !fields.isEmpty else {
             return
@@ -2477,7 +2477,7 @@ private extension ComposeOrchestrator {
         fields.first { $0.hasPrefix("mode.") }?.replacingOccurrences(of: "mode.", with: "")
     }
 
-    /// Returns unsupported deploy resource limits that need Apple runtime support.
+    /// Returns unsupported deploy resource limits that need apple/container runtime support.
     func unsupportedDeployResourceLimitField(in fields: [String]) -> String? {
         fields.first { $0.hasPrefix("resources.limits.") }
     }
@@ -3257,7 +3257,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Returns logging and storage fields that need Apple runtime primitives.
+    /// Returns logging and storage fields that need apple/container runtime primitives.
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
         if service.logging != nil {
@@ -3329,7 +3329,7 @@ private extension ComposeOrchestrator {
         return resolved
     }
 
-    /// Rejects external mounts that cannot be represented by Apple `container`
+    /// Rejects external mounts that cannot be represented by apple/container
     /// create/run volume arguments.
     func validateExternalVolumeMounts(_ container: ComposeContainerSummary, reference: ExternalVolumesFromReference) throws {
         for mount in container.mounts {
@@ -3342,7 +3342,7 @@ private extension ComposeOrchestrator {
     }
 
     /// Returns unsupported long-form service mount fields that cannot be
-    /// represented by the current Apple `container --volume/--tmpfs` mapping.
+    /// represented by the current apple/container `container --volume/--tmpfs` mapping.
     func unsupportedServiceMountFields(service: ComposeService, project: ComposeProject) throws -> [String]? {
         var seen = Set<String>()
         let fields = try effectiveServiceVolumes(project: project, service: service)
@@ -3536,7 +3536,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Validates one service's port mappings before they reach Apple `container`.
+    /// Validates one service's port mappings before they reach apple/container.
     func validatePublishedPorts(_ ports: [String], serviceName: String) throws {
         for port in ports {
             try validatePublishedPort(port, serviceName: serviceName)
@@ -3609,7 +3609,7 @@ private extension ComposeOrchestrator {
         )
     }
 
-    /// Returns concrete Apple `--publish` arguments for a service replica.
+    /// Returns concrete apple/container `--publish` arguments for a service replica.
     func publishedPortArguments(
         ports: [String],
         serviceName: String,
@@ -3640,7 +3640,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Expands one Compose port mapping into concrete Apple `--publish` values.
+    /// Expands one Compose port mapping into concrete apple/container `--publish` values.
     func publishedPortArguments(port: String, serviceName: String) throws -> [String] {
         let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
         guard let hostRange = mapping.hostRange else {
@@ -3700,7 +3700,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Formats a normalized published-port mapping for Apple `container`.
+    /// Formats a normalized published-port mapping for apple/container.
     func formatPublishedPort(hostAddress: String?, hostPort: Int, targetPort: Int, protocolName: String) -> String {
         var value = "\(hostPort):\(targetPort)"
         if let hostAddress, !hostAddress.isEmpty {
@@ -3721,7 +3721,7 @@ private extension ComposeOrchestrator {
         return "[\(value)]"
     }
 
-    /// Returns true when a publish field names concrete Apple host ports.
+    /// Returns true when a publish field names concrete apple/container host ports.
     func isExplicitHostPort(_ value: String) -> Bool {
         let bounds = value.split(separator: "-", omittingEmptySubsequences: false)
         guard [1, 2].contains(bounds.count) else {
@@ -3910,7 +3910,7 @@ private extension ComposeOrchestrator {
         try await runContainer(args)
     }
 
-    /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for Apple `container build`.
+    /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for apple/container build.
     func materializeInlineDockerfile(project: ComposeProject, service: ComposeService, contents: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("container-compose-\(project.name)-\(service.name)-\(UUID().uuidString)", isDirectory: true)
@@ -3920,7 +3920,7 @@ private extension ComposeOrchestrator {
         return dockerfile
     }
 
-    /// Encodes one Compose build secret for Apple `container build --secret`.
+    /// Encodes one Compose build secret for apple/container `container build --secret`.
     func buildSecretArgument(_ secret: ComposeBuildSecret) throws -> String {
         let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty else {
@@ -4273,7 +4273,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Builds the Apple `container image pull` dry-run arguments.
+    /// Builds the apple/container `container image pull` dry-run arguments.
     func imagePullArguments(_ image: String, quiet: Bool) -> [String] {
         var args = ["image", "pull"]
         if quiet {
@@ -4600,7 +4600,7 @@ private extension ComposeOrchestrator {
         return lines
     }
 
-    /// Validates that attach stays on the output-only log-follow path Apple exposes today.
+    /// Validates that attach stays on the output-only log-follow path apple/container exposes today.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
         if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
             throw ComposeError.unsupported("attach --detach-keys: apple/container does not expose detach-key handling for interactive attach")
@@ -4614,7 +4614,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Ensures `wait` only asks Apple for live process state it can return.
+    /// Ensures `wait` only asks apple/container for live process state it can return.
     func validateWaitTarget(_ target: ServiceContainerTarget) async throws {
         guard let container = try await discoveryManager.getContainer(id: target.name) else {
             throw ComposeError.invalidProject("service '\(target.service.name)' container '\(target.name)' does not exist")
@@ -4622,7 +4622,7 @@ private extension ComposeOrchestrator {
         try validateWaitTarget(container, service: target.service)
     }
 
-    /// Ensures `wait` only asks Apple for live process state it can return.
+    /// Ensures `wait` only asks apple/container for live process state it can return.
     func validateWaitTarget(_ container: ComposeContainerSummary, service: ComposeService) throws {
         let status = container.status.lowercased()
         guard status == "running" || status == "stopping" else {
@@ -4849,7 +4849,7 @@ private extension ComposeOrchestrator {
         mount.readOnly == true || nonEmpty(mount.tmpfsSize) != nil || nonEmpty(mount.tmpfsMode) != nil
     }
 
-    /// Builds a typed Apple `container --mount` value for long-form tmpfs options.
+    /// Builds a typed apple/container `container --mount` value for long-form tmpfs options.
     func typedTmpfsMountArgument(_ mount: ComposeMount, target: String) -> String {
         var fields = [
             "type=tmpfs",
@@ -5189,7 +5189,7 @@ private extension ComposeNetworkOptions {
         return fields
     }
 
-    /// Returns the supported MTU driver option value accepted by Apple `container`.
+    /// Returns the supported MTU driver option value accepted by apple/container.
     func networkMTU() throws -> String? {
         let values = networkMTUDriverOptionKeys.compactMap { key -> (key: String, value: String)? in
             guard let value = driverOpts?[key] else {
@@ -5342,7 +5342,7 @@ private func networkRuntimeName(project: ComposeProject, composeName: String) ->
     return networkRuntimeName(project: project, composeName: composeName, network: network)
 }
 
-/// Builds the single network attachment value accepted by Apple `container`.
+/// Builds the single network attachment value accepted by apple/container.
 private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
     var argument = networkRuntimeName(project: project, composeName: network)
     var options: [String] = []
@@ -5608,7 +5608,7 @@ private func effectiveServiceVolumes(
 }
 
 /// Converts supported file-backed service configs and secrets into read-only
-/// bind mounts accepted by Apple `container --volume`.
+/// bind mounts accepted by apple/container `container --volume`.
 private func serviceConfigSecretMounts(project: ComposeProject, service: ComposeService) throws -> [ComposeMount] {
     try serviceConfigSecretMounts(
         project: project,
@@ -5904,7 +5904,7 @@ private func effectiveServiceLabels(project: ComposeProject, service: ComposeSer
     return labels
 }
 
-/// Returns Compose service annotations mapped to Apple runtime metadata labels.
+/// Returns Compose service annotations mapped to apple/container runtime metadata labels.
 private func effectiveServiceAnnotations(
     service: ComposeService,
     conflictingLabelKeys: Set<String>,
@@ -6291,7 +6291,7 @@ private struct ComposeImageRecord: Encodable, Equatable {
     let imageID: String
 }
 
-/// One Docker Compose-style volume row derived from Apple container volumes.
+/// One Docker Compose-style volume row derived from apple/container volumes.
 private struct ComposeVolumeRecord: Encodable, Equatable {
     let driver: String
     let name: String

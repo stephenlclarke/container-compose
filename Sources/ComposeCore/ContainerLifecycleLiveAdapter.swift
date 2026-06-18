@@ -18,7 +18,7 @@ import ContainerAPIClient
 import ContainerResource
 import Foundation
 
-/// Live Apple `container` lifecycle API bridge used by production starts.
+/// Live apple/container lifecycle API bridge used by production starts.
 public enum ContainerLifecycleLiveAdapter {
     /// Bootstraps and starts the init process without attaching stdio.
     public static func start(id: String) async throws {
@@ -31,7 +31,7 @@ public enum ContainerLifecycleLiveAdapter {
     }
 
     /// Waits for a running container's init process without replaying stopped
-    /// container state that Apple snapshots do not expose yet.
+    /// container state that apple/container snapshots do not expose yet.
     public static func wait(id: String) async throws -> Int32 {
         let client = ContainerClient()
         let container = try await client.get(id: id)

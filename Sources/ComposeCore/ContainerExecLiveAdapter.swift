@@ -19,7 +19,7 @@ import ContainerResource
 import Foundation
 import Logging
 
-/// Live Apple `container` process API entry point for detached exec.
+/// Live apple/container process API entry point for detached exec.
 public enum ContainerExecLiveAdapter {
     /// Creates a process inside `containerId` and starts it through `ContainerClient`.
     public static func createAndStartProcess(

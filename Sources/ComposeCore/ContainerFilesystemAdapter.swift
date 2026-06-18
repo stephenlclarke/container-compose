@@ -17,7 +17,7 @@
 import ContainerAPIClient
 import Foundation
 
-/// Direct Apple container API used for copying files between service
+/// Direct apple/container API used for copying files between service
 /// containers and the local filesystem.
 public protocol ContainerCopying: Sendable {
     /// Copies `source` from the local filesystem into `destination` inside
@@ -33,7 +33,7 @@ public protocol ContainerCopying: Sendable {
     func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String) async throws
 }
 
-/// Direct Apple container API used for service container filesystem exports.
+/// Direct apple/container API used for service container filesystem exports.
 public protocol ContainerExporting: Sendable {
     /// Exports `id` as a tar archive to `output`, or streams the archive to
     /// stdout when `output` is nil.
@@ -145,7 +145,7 @@ public struct ContainerClientExporter: ContainerExporting {
         }
     }
 
-    /// Resolves output paths the same way the Apple container CLI does.
+    /// Resolves output paths the same way the apple/container CLI does.
     private static func outputURL(_ output: String) -> URL {
         let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         return URL(fileURLWithPath: output, relativeTo: currentDirectory).absoluteURL

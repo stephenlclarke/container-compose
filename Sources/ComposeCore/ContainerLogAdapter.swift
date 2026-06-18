@@ -17,13 +17,13 @@
 import ContainerAPIClient
 import Foundation
 
-/// Low-level Apple container log call used by `ContainerClientLogManager`.
+/// Low-level apple/container log call used by `ContainerClientLogManager`.
 public protocol ContainerLogAPIClienting: Sendable {
-    /// Returns the log file handles exposed by Apple container for `id`.
+    /// Returns the log file handles exposed by apple/container for `id`.
     func logFileHandles(id: String) async throws -> [FileHandle]
 }
 
-/// Direct Apple container API used for service container logs.
+/// Direct apple/container API used for service container logs.
 public protocol ContainerLogManaging: Sendable {
     /// Emits logs for container `id`, optionally following appended lines.
     func logs(
@@ -34,7 +34,7 @@ public protocol ContainerLogManaging: Sendable {
     ) async throws
 }
 
-/// Thin Apple `container` client wrapper around log API calls.
+/// Thin apple/container client wrapper around log API calls.
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     public typealias Logs = @Sendable (String) async throws -> [FileHandle]
 

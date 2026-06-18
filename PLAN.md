@@ -638,6 +638,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Normalized Swift Testing display names for upstream runtime gap coverage so test output uses <code>apple/container</code> consistently with the documentation and unsupported-feature messages.</td>
     </tr>
+    <tr>
+      <td>Source comment upstream naming</td>
+      <td>2026-06-18 20:30:59 BST</td>
+      <td>2026-06-18 20:30:59 BST</td>
+      <td>2026-06-18 20:30:59 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Normalized maintained Swift and Go source comments so direct runtime API notes use <code>apple/container</code> consistently with documentation, tests, and unsupported-feature messages.</td>
+    </tr>
   </tbody>
 </table>
 
