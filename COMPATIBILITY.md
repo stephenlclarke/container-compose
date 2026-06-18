@@ -210,6 +210,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** `config` and `convert` preserve top-level model definitions and service model binding metadata. Runtime commands reject service model bindings before resources are created.
 - **Example:** [A11](#a11-apple-gap-compose-model-runner).
 
+#### Start-first service replacement
+
+- **Compose surface:** `deploy.update_config.order: start-first`.
+- **Missing Apple/container primitive:** A Docker Compose compatible replacement handoff: create a temporary replacement while the old service container is still running, then either rename the replacement to the stable Compose container identity or move the service hostname/alias to it after the old container is removed. Current Apple/container APIs expose create, stop, and delete, but no container rename or service-alias handoff, and container creation rejects duplicate container IDs and duplicate attachment hostnames.
+- **container-compose status:** Rejected before resources are created with a precise Apple/container runtime-gap message.
+- **Example:** [A12](#a12-apple-gap-start-first-service-replacement).
+
 #### Advanced build configuration
 
 - **Compose surface:** `additional_contexts`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, unsupported build secret forms and metadata, build `shm_size`, `ssh`, and build `ulimits`.
@@ -259,8 +266,8 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 #### Local deploy handling
 
 - **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config with update delay.
-- **Apple/container path:** Not known to be the first blocker after excluding `deploy.restart_policy`, `deploy.endpoint_mode`, `deploy.resources.limits.pids`, and `deploy.resources.reservations`, which are tracked as Apple/container gaps.
-- **Missing plugin work:** A local interpretation of broader deploy semantics, including start-first updates, all-at-once or multi-container update parallelism, rollback behavior, and placement rules.
+- **Apple/container path:** Not known to be the first blocker after excluding `deploy.restart_policy`, `deploy.endpoint_mode`, `deploy.resources.limits.pids`, `deploy.resources.reservations`, and `deploy.update_config.order: start-first`, which are tracked as Apple/container gaps.
+- **Missing plugin work:** A local interpretation of broader deploy semantics, including all-at-once or multi-container update parallelism, rollback behavior, and placement rules. Start-first service replacement is tracked separately as an Apple/container handoff gap in [A12](#a12-apple-gap-start-first-service-replacement).
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
 #### API socket and block I/O
@@ -348,6 +355,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): [`apple/container`][apple-container] gap. Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
 - [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): [`apple/container`][apple-container] gap. Demonstrates service logging drivers and logging options.
 - [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): [`apple/container`][apple-container] gap. Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
+- [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): [`apple/container`][apple-container] gap. Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, And Hooks](#c3-plugin-gap-develop-providers-and-hooks): Mixed status. Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
 - [C4: Plugin Gap, API Socket And Block I/O](#c4-plugin-gap-api-socket-and-block-io): `container-compose` gap. Demonstrates API socket exposure and block I/O controls after supported volume inheritance is accepted.
@@ -988,13 +996,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Plugin Gap, Replica Scaling Edge Cases And Deploy
 
-Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `parallelism: 1` and `delay`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. It rejects the `canary.deploy.update_config` field in this example because start-first update orchestration needs Compose deploy semantics beyond the local stop-before-start recreate path. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses.
+Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `parallelism: 1` and `delay`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses. Start-first service replacement is tracked in [A12](#a12-apple-gap-start-first-service-replacement).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: supports the lifecycle and resource primitives needed for these local scale forms, while scaled service-name DNS is tracked in [A1](#a1-apple-gap-networking).
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first`, `deploy.update_config.parallelism: 1`, and `deploy.update_config.delay` because the orchestrator recreates local replicas one at a time with a stop-before-start boundary; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; reports Apple/container resource gaps for `deploy.resources.limits.pids` and `deploy.resources.reservations`; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, fixed MAC addresses, and broader deploy update options before creating resources. It still needs broader deploy semantics.
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first`, `deploy.update_config.parallelism: 1`, and `deploy.update_config.delay` because the orchestrator recreates local replicas one at a time with a stop-before-start boundary; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; reports Apple/container resource gaps for `deploy.resources.limits.pids`, `deploy.resources.reservations`, and `deploy.update_config.order: start-first`; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, fixed MAC addresses, and broader deploy update options before creating resources. It still needs broader deploy semantics for parallel update batches, rollback behavior, and placement rules.
 
 The equivalent supported CLI scaling forms are:
 
@@ -1029,13 +1037,6 @@ services:
       - "8080-8081:80"
     volumes:
       - /scratch
-
-  canary:
-    build:
-      context: ./worker
-    deploy:
-      update_config:
-        order: start-first
 ```
 
 Dockerfile: `api/Dockerfile`
@@ -1450,6 +1451,36 @@ Dockerfile: `api/Dockerfile`
 ```dockerfile
 FROM alpine:3.20
 CMD ["sh", "-c", "env | sort && sleep 3600"]
+```
+
+### A12: Apple Gap, Start-First Service Replacement
+
+Expected result: `container compose up api` rejects before creating resources because Docker Compose `deploy.update_config.order: start-first` replaces an existing service container by creating a temporary replacement while the old stable container still exists, then stopping/removing the old container and finalizing the replacement identity. Apple/container currently has create, stop, and delete APIs, but no container rename or service hostname/alias handoff primitive for that finalization step.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes `deploy.update_config.order: start-first`, using a temporary replacement handoff for changed service containers.
+- [`apple/container`][apple-container]: missing a Compose-compatible container rename or service-alias handoff primitive, and rejects duplicate container IDs and duplicate attachment hostnames during creation.
+- `container-compose`: recognizes the normalized field and reports the Apple/container runtime gap before resources are created.
+
+```yaml
+# compose.yaml
+name: apple-start-first-gap-demo
+
+services:
+  api:
+    build:
+      context: ./api
+    deploy:
+      update_config:
+        order: start-first
+```
+
+Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "date && sleep 3600"]
 ```
 
 ### O1: Config-Only Metadata

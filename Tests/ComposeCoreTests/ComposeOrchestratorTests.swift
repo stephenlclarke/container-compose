@@ -3544,6 +3544,33 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up rejects start-first deploy updates as an Apple runtime gap")
+    func upRejectsStartFirstDeployUpdatesAsAppleRuntimeGaps() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.unsupportedDeployFields = ["update_config.order.start-first"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected start-first deploy update error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects deploy resource reservations as Apple runtime gaps")
     func upRejectsDeployResourceReservationsAsAppleRuntimeGaps() async throws {
         let runner = RecordingRunner()
@@ -10973,6 +11000,33 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported deploy field error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses deploy.restart_policy; restart policy support needs an apple/container runtime gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run rejects start-first deploy updates as an Apple runtime gap")
+    func runRejectsStartFirstDeployUpdatesAsAppleRuntimeGaps() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.unsupportedDeployFields = ["update_config.order.start-first"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected start-first deploy update error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

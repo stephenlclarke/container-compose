@@ -315,7 +315,7 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 15:22:32 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> and <code>deploy.update_config.parallelism: 1</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code>, all-at-once or multi-container update parallelism, rollback behavior, and placement rules remain broader deploy backlog.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> and <code>deploy.update_config.parallelism: 1</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. All-at-once or multi-container update parallelism, rollback behavior, and placement rules remain broader deploy backlog. <code>start-first</code> replacement was later classified as an Apple/container handoff gap.</td>
     </tr>
     <tr>
       <td>Deploy stop-first update delay</td>
@@ -325,6 +325,15 @@ Use `not started` or `not completed` where the event has not happened yet.
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Preserved <code>deploy.update_config.delay</code> from compose-go normalization and applied it between local replica replacements only when the prior replica and current replica both need stop-first recreation. First-time service creation and scale-out do not sleep.</td>
+    </tr>
+    <tr>
+      <td>Deploy start-first update boundary</td>
+      <td>2026-06-18 16:48:46 BST</td>
+      <td>2026-06-18 16:48:46 BST</td>
+      <td>2026-06-18 16:48:46 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.update_config.order: start-first</code> as an Apple/container runtime gap. Docker Compose creates a temporary replacement container, stops/removes the old stable container, then finalizes the replacement identity; Apple/container currently exposes create/stop/delete without a container rename or service hostname/alias handoff primitive.</td>
     </tr>
     <tr>
       <td>Deploy resource gap classification</td>
@@ -484,7 +493,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, and stop-first single-parallel <code>deploy.update_config</code> including <code>delay</code> is accepted because it matches the existing recreate path. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, and <code>deploy.resources.reservations</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, and stop-first single-parallel <code>deploy.update_config</code> including <code>delay</code> is accepted because it matches the existing recreate path. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.reservations</code>, and <code>deploy.update_config.order: start-first</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
@@ -573,24 +582,26 @@ Suggested Apple/container PR batches:
    options, non-local service volume drivers, and inherited image volumes.
 6. Health and completion parity: health status, health-aware waits, stored exit
    code, and completion timestamps.
-7. Mount and policy parity: first-class config/secret mounts and restart
+7. Start-first replacement parity: container rename or service alias handoff for
+   Docker Compose compatible temporary replacement finalization.
+8. Mount and policy parity: first-class config/secret mounts and restart
    policies.
-8. Log-data parity: timestamped log records, stream/source metadata, tail and
+9. Log-data parity: timestamped log records, stream/source metadata, tail and
    since/until filtering, prefix-friendly service/replica attribution, and
    durable closed-container log replay, plus service logging driver/option
    controls.
-9. Interactive attach parity: reattach stdin/stdout/stderr to an already-running
+10. Interactive attach parity: reattach stdin/stdout/stderr to an already-running
    init process, proxy signals, support detach-key behavior, and expose the
    start-hook-reattach or stop-boundary primitives needed for foreground
    lifecycle hooks.
-10. Command-data parity: events, process listing, pause/unpause, and copy
+11. Command-data parity: events, process listing, pause/unpause, and copy
    archive/follow-link controls.
-11. Image and artifact parity: container commit image snapshots and Compose
+12. Image and artifact parity: container commit image snapshots and Compose
     application OCI artifact publish/consume support.
-12. Model-runner parity: a Compose-compatible model runner backend, model
+13. Model-runner parity: a Compose-compatible model runner backend, model
     pull/configure lifecycle, endpoint discovery, and service-container
     reachability for model endpoints.
-13. Runtime API socket parity: a safe Compose-compatible equivalent for
+14. Runtime API socket parity: a safe Compose-compatible equivalent for
     `use_api_socket` that does not overexpose host control surfaces.
 
 <table>
@@ -629,6 +640,15 @@ Suggested Apple/container PR batches:
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases, endpoint modes such as <code>vip</code> and <code>dnsrr</code>, plus DNS lookup that can return multiple A/AAAA records for scaled service names. Apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
+    </tr>
+    <tr>
+      <td>Start-first service replacement handoff</td>
+      <td>2026-06-18 16:48:46 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>deploy.update_config.order: start-first</code> needs a temporary replacement handoff. Docker Compose creates a replacement under a temporary name, stops/removes the old stable container, then renames the replacement. Apple/container needs either a container rename primitive or service hostname/alias movement that can preserve the Compose service identity without duplicate ID or duplicate hostname conflicts.</td>
     </tr>
     <tr>
       <td>Fixed addresses and richer IPAM</td>

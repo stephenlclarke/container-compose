@@ -485,6 +485,36 @@ struct ComposeNormalizerTests {
         ])
     }
 
+    @Test("normalizes start-first deploy update through compose-go")
+    func normalizesStartFirstDeployUpdateThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            deploy:
+              update_config:
+                order: start-first
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        #expect(api.unsupportedDeployFields == ["update_config.order.start-first"])
+    }
+
     @Test("normalizer infers project directory from the first compose file")
     func normalizerInfersProjectDirectoryFromFirstComposeFile() async throws {
         let fileManager = FileManager.default

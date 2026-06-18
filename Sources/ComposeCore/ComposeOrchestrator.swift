@@ -2377,6 +2377,9 @@ private extension ComposeOrchestrator {
         if fields.contains("endpoint_mode") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR")
         }
+        if fields.contains("update_config.order.start-first") {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive")
+        }
         if let field = unsupportedDeployResourceLimitField(in: fields) {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); apple/container exposes local deploy CPU and memory limits but not this deploy resource limit yet")
         }

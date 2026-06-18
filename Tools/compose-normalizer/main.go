@@ -704,7 +704,7 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	}
 	fields := []string{}
 	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
-	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasUnsupportedFields(deploy.UpdateConfig))
+	fields = append(fields, unsupportedUpdateConfigFields(deploy.UpdateConfig)...)
 	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
 	fields = append(fields, unsupportedDeployLimitFields(deploy.Resources.Limits)...)
 	fields = append(fields, unsupportedDeployReservationFields(deploy.Resources.Reservations)...)
@@ -749,28 +749,36 @@ func appendUnsupportedDeployField(fields *[]string, name string, present bool) {
 	}
 }
 
-// updateConfigHasUnsupportedFields reports update behavior outside the
-// stop-first, one-at-a-time recreation the local orchestrator already performs.
-func updateConfigHasUnsupportedFields(config *types.UpdateConfig) bool {
+// unsupportedUpdateConfigFields reports update behavior outside the stop-first,
+// one-at-a-time recreation the local orchestrator already performs.
+func unsupportedUpdateConfigFields(config *types.UpdateConfig) []string {
 	if config == nil {
-		return false
+		return nil
 	}
+	fields := []string{}
 	if config.Parallelism != nil && *config.Parallelism != 1 {
-		return true
+		fields = append(fields, "update_config.parallelism")
 	}
-	return config.FailureAction != "" ||
-		config.Monitor != 0 ||
-		config.MaxFailureRatio != 0 ||
-		updateConfigHasUnsupportedOrder(config.Order)
+	appendUnsupportedDeployField(&fields, "update_config.failure_action", config.FailureAction != "")
+	appendUnsupportedDeployField(&fields, "update_config.monitor", config.Monitor != 0)
+	appendUnsupportedDeployField(&fields, "update_config.max_failure_ratio", config.MaxFailureRatio != 0)
+	fields = append(fields, unsupportedUpdateOrderFields(config.Order)...)
+	return fields
 }
 
-// updateConfigHasUnsupportedOrder reports update orders that need a different
+// unsupportedUpdateOrderFields reports update orders that need a different
 // recreate boundary from the existing local stop-before-start path.
-func updateConfigHasUnsupportedOrder(order string) bool {
+func unsupportedUpdateOrderFields(order string) []string {
 	if order == "" {
-		return false
+		return nil
 	}
-	return !strings.EqualFold(order, "stop-first")
+	if strings.EqualFold(order, "stop-first") {
+		return nil
+	}
+	if strings.EqualFold(order, "start-first") {
+		return []string{"update_config.order.start-first"}
+	}
+	return []string{"update_config.order"}
 }
 
 // updateConfigHasFields reports whether rollback behavior was configured.
