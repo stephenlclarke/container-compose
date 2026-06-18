@@ -25,6 +25,7 @@ public struct ComposeExecutionOptions {
     public var containerBinary: String
     public var environmentLauncher: String
     public var oneOffIdentifier: @Sendable () -> String
+    public var currentDate: @Sendable () -> Date
     public var emit: @Sendable (String) -> Void
 
     public init(
@@ -32,12 +33,14 @@ public struct ComposeExecutionOptions {
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
+        currentDate: @escaping @Sendable () -> Date = Date.init,
         emit: @escaping @Sendable (String) -> Void = { print($0) }
     ) {
         self.dryRun = dryRun
         self.containerBinary = containerBinary
         self.environmentLauncher = environmentLauncher
         self.oneOffIdentifier = oneOffIdentifier
+        self.currentDate = currentDate
         self.emit = emit
     }
 
@@ -91,15 +94,18 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var commands: ComposeOrchestratorCommandDependencies
     public var runtime: ComposeOrchestratorRuntimeDependencies
     public var imageManager: ContainerImageManaging
+    public var pullMetadataStore: ComposePullMetadataStoring
 
     public init(
         commands: ComposeOrchestratorCommandDependencies = ComposeOrchestratorCommandDependencies(),
         runtime: ComposeOrchestratorRuntimeDependencies = ComposeOrchestratorRuntimeDependencies(),
-        imageManager: ContainerImageManaging = ContainerClientImageManager()
+        imageManager: ContainerImageManaging = ContainerClientImageManager(),
+        pullMetadataStore: ComposePullMetadataStoring = FileComposePullMetadataStore()
     ) {
         self.commands = commands
         self.runtime = runtime
         self.imageManager = imageManager
+        self.pullMetadataStore = pullMetadataStore
     }
 
     public var copier: ContainerCopying {
@@ -516,6 +522,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let imageManager: ContainerImageManaging
     private let lifecycleManager: ContainerLifecycleManaging
     private let logManager: ContainerLogManaging
+    private let pullMetadataStore: ComposePullMetadataStoring
     private let resourceManager: ContainerResourceManaging
     private let statsManager: ContainerStatsManaging
 
@@ -533,6 +540,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.imageManager = dependencies.imageManager
         self.lifecycleManager = dependencies.lifecycleManager
         self.logManager = dependencies.logManager
+        self.pullMetadataStore = dependencies.pullMetadataStore
         self.resourceManager = dependencies.resourceManager
         self.statsManager = dependencies.statsManager
     }
@@ -880,10 +888,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             do {
                 if pull.policy == "missing" {
                     try await pullMissingImage(image, quiet: pull.quiet)
-                } else if options.dryRun {
-                    try await runContainer(imagePullArguments(image, quiet: pull.quiet))
                 } else {
-                    try await imageManager.pullImage(image)
+                    try await pullImage(image, quiet: pull.quiet)
                 }
             } catch {
                 guard pull.ignorePullFailures else {
@@ -1834,7 +1840,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses secrets; secret mount support needs an apple/container runtime gap PR")
         }
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
-            throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, and never")
+            throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, daily, weekly, and every_<duration>")
         }
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
@@ -2680,16 +2686,16 @@ private extension ComposeOrchestrator {
         }
         switch policy {
         case "always":
-            if options.dryRun {
-                try await runContainer(imagePullArguments(image, quiet: quiet))
-            } else {
-                try await imageManager.pullImage(image)
-            }
+            try await pullImage(image, quiet: quiet)
         case "missing", "if_not_present":
             try await pullMissingImage(image, quiet: quiet)
         case "never":
             return
         default:
+            if let interval = stalePullPolicyInterval(policy) {
+                try await pullImageIfStale(image, interval: interval, quiet: quiet)
+                return
+            }
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)' for service '\(service.name)'")
         }
     }
@@ -2833,6 +2839,37 @@ private extension ComposeOrchestrator {
             try await runContainer(imagePullArguments(image, quiet: quiet))
         } else {
             try await imageManager.pullMissingImage(image)
+        }
+    }
+
+    /// Pulls one image and records its successful pull timestamp.
+    func pullImage(_ image: String, quiet: Bool = false) async throws {
+        if options.dryRun {
+            try await runContainer(imagePullArguments(image, quiet: quiet))
+            return
+        }
+        try await imageManager.pullImage(image)
+        try await pullMetadataStore.recordPullDate(options.currentDate(), for: image)
+    }
+
+    /// Pulls an image when absent or older than a Compose time-window policy.
+    func pullImageIfStale(_ image: String, interval: TimeInterval, quiet: Bool = false) async throws {
+        if options.dryRun {
+            try await runContainer(["image", "inspect", image], check: false, emitOutput: false)
+            try await runContainer(imagePullArguments(image, quiet: quiet))
+            return
+        }
+        let exists = try await imageManager.imageExists(image)
+        if !exists {
+            try await pullImage(image, quiet: quiet)
+            return
+        }
+        guard let lastPull = try await pullMetadataStore.lastPullDate(for: image) else {
+            try await pullImage(image, quiet: quiet)
+            return
+        }
+        if options.currentDate().timeIntervalSince(lastPull) >= interval {
+            try await pullImage(image, quiet: quiet)
         }
     }
 
@@ -3622,7 +3659,64 @@ private extension ComposeContainerSummary {
 
 /// Returns whether a service pull policy can be implemented with local runtime primitives.
 private func isSupportedServicePullPolicy(_ policy: String) -> Bool {
-    ["always", "missing", "if_not_present", "never"].contains(policy)
+    ["always", "missing", "if_not_present", "never"].contains(policy) || stalePullPolicyInterval(policy) != nil
+}
+
+/// Returns the refresh interval for Compose time-window pull policies.
+private func stalePullPolicyInterval(_ policy: String) -> TimeInterval? {
+    switch policy {
+    case "daily":
+        return 24 * 60 * 60
+    case "weekly":
+        return 7 * 24 * 60 * 60
+    default:
+        guard policy.hasPrefix("every_") else {
+            return nil
+        }
+        return parsePullPolicyDuration(String(policy.dropFirst("every_".count))).map(TimeInterval.init)
+    }
+}
+
+/// Parses Compose duration suffixes such as `1h30m` into seconds.
+private func parsePullPolicyDuration(_ value: String) -> Int? {
+    guard !value.isEmpty else {
+        return nil
+    }
+    var index = value.startIndex
+    var total = 0
+    while index < value.endIndex {
+        let digitStart = index
+        while index < value.endIndex, value[index].isNumber {
+            index = value.index(after: index)
+        }
+        guard digitStart < index,
+              let amount = Int(value[digitStart..<index]),
+              index < value.endIndex,
+              let multiplier = pullPolicyDurationMultiplier(value[index]) else {
+            return nil
+        }
+        total += amount * multiplier
+        index = value.index(after: index)
+    }
+    return total > 0 ? total : nil
+}
+
+/// Returns the seconds represented by one Compose pull-policy duration unit.
+private func pullPolicyDurationMultiplier(_ unit: Character) -> Int? {
+    switch unit {
+    case "w":
+        return 7 * 24 * 60 * 60
+    case "d":
+        return 24 * 60 * 60
+    case "h":
+        return 60 * 60
+    case "m":
+        return 60
+    case "s":
+        return 1
+    default:
+        return nil
+    }
 }
 
 /// Returns the runtime resource name for a project-scoped network or volume.

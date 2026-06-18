@@ -31,6 +31,9 @@ public protocol ContainerImageAPIClienting: Sendable {
 
 /// Direct Apple container image APIs used for Compose image workflows.
 public protocol ContainerImageManaging: Sendable {
+    /// Returns whether `reference` exists in the local image store.
+    func imageExists(_ reference: String) async throws -> Bool
+
     /// Pulls `reference`.
     func pullImage(_ reference: String) async throws
 
@@ -111,6 +114,11 @@ public struct ContainerClientImageManager: ContainerImageManaging {
 
     public init(client: ContainerImageAPIClienting = ContainerImageAPIClient()) {
         self.client = client
+    }
+
+    /// Checks the local image store through the direct Apple image API.
+    public func imageExists(_ reference: String) async throws -> Bool {
+        try await client.imageExists(reference: reference)
     }
 
     /// Pulls an image through the direct Apple image API.

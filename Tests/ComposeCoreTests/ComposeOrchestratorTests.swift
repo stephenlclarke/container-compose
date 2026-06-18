@@ -131,6 +131,16 @@ private func orchestratorDependencies(
     configure: (inout ComposeOrchestratorDependencies) -> Void
 ) -> ComposeOrchestratorDependencies {
     var dependencies = ComposeOrchestratorDependencies()
+    dependencies.copier = RecordingContainerCopier()
+    dependencies.discoveryManager = RecordingContainerDiscoveryManager()
+    dependencies.execManager = RecordingContainerExecManager()
+    dependencies.exporter = RecordingContainerExporter()
+    dependencies.imageManager = RecordingContainerImageManager()
+    dependencies.lifecycleManager = RecordingContainerLifecycleManager()
+    dependencies.logManager = RecordingContainerLogManager()
+    dependencies.pullMetadataStore = RecordingPullMetadataStore()
+    dependencies.resourceManager = RecordingContainerResourceManager()
+    dependencies.statsManager = RecordingContainerStatsManager()
     configure(&dependencies)
     return dependencies
 }
@@ -1853,7 +1863,8 @@ struct ComposeOrchestratorTests {
         ).up(project: project, options: ComposeUpOptions())
 
         let upCommands = upRunner.commands.map(\.arguments)
-        #expect(await upResources.requests.map(\.name) == ["team-net", "team-cache"])
+        let upResourceRequests = await upResources.requests
+        #expect(upResourceRequests.map(\.name) == ["team-net", "team-cache"])
         #expect(upCommands[0].containsSequence(["--network", "team-net"]))
         #expect(upCommands[0].containsSequence(["--volume", "team-cache:/cache"]))
         #expect(await upDiscovery.getRequests == ["demo-api-1"])
@@ -1864,19 +1875,24 @@ struct ComposeOrchestratorTests {
         ])
         let downResources = RecordingContainerResourceManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
+        let downDiscovery = RecordingContainerDiscoveryManager()
 
         try await ComposeOrchestrator(
             runner: downRunner,
+            discoveryManager: downDiscovery,
             lifecycleManager: lifecycleManager,
             resourceManager: downResources
         ).down(project: project, options: ComposeDownOptions(volumes: true))
 
+        let lifecycleRequests = await lifecycleManager.requests
+        let downResourceRequests = await downResources.requests
         #expect(downRunner.commands.isEmpty)
-        #expect(await lifecycleManager.requests == [
+        #expect(lifecycleRequests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-api-1", force: false),
         ])
-        #expect(await downResources.requests == [
+        #expect(await downDiscovery.listRequests == [true])
+        #expect(downResourceRequests == [
             .deleteNetwork(id: "team-net"),
             .deleteVolume(name: "team-cache"),
         ])
@@ -2306,6 +2322,113 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1", "demo-worker-1"])
     }
 
+    @Test("up pulls service image when daily policy has no metadata")
+    func upPullsServiceImageWhenDailyPolicyHasNoMetadata() async throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager(existingReferences: ["example/api"])
+        let metadataStore = RecordingPullMetadataStore()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pullPolicy = "daily"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(currentDate: { now }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.imageManager = imageManager
+                $0.pullMetadataStore = metadataStore
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        #expect(await imageManager.requests == [
+            .exists("example/api"),
+            .pull("example/api"),
+        ])
+        #expect(await metadataStore.recordedDate(for: "example/api") == now)
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+    }
+
+    @Test("up skips service image pull when weekly policy is fresh")
+    func upSkipsServiceImagePullWhenWeeklyPolicyIsFresh() async throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let imageManager = RecordingContainerImageManager(existingReferences: ["example/api"])
+        let metadataStore = RecordingPullMetadataStore(dates: [
+            "example/api": now.addingTimeInterval(-60 * 60),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pullPolicy = "weekly"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(currentDate: { now }),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.pullMetadataStore = metadataStore
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        #expect(await imageManager.requests == [.exists("example/api")])
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+    }
+
+    @Test("up pulls service image when every duration policy is stale")
+    func upPullsServiceImageWhenEveryDurationPolicyIsStale() async throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let imageManager = RecordingContainerImageManager(existingReferences: ["example/api"])
+        let metadataStore = RecordingPullMetadataStore(dates: [
+            "example/api": now.addingTimeInterval(-91 * 60),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pullPolicy = "every_1h30m"
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(currentDate: { now }),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+                $0.pullMetadataStore = metadataStore
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        #expect(await imageManager.requests == [
+            .exists("example/api"),
+            .pull("example/api"),
+        ])
+        #expect(await metadataStore.recordedDate(for: "example/api") == now)
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+    }
+
     @Test("up quiet-pull dry run disables service pull policy progress")
     func upQuietPullDryRunDisablesServicePullPolicyProgress() async throws {
         let emitted = MessageRecorder()
@@ -2354,7 +2477,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported service pull policy error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses pull_policy 'build'; supported values are always, missing, if_not_present, and never"))
+            #expect(error == .unsupported("service 'api' uses pull_policy 'build'; supported values are always, missing, if_not_present, never, daily, weekly, and every_<duration>"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -6198,14 +6321,35 @@ struct ComposeOrchestratorTests {
         let client = RecordingContainerImageAPIClient(existingReferences: ["example/api"])
         let manager = ContainerClientImageManager(client: client)
 
+        let exists = try await manager.imageExists("example/api")
         try await manager.pullMissingImage("example/api")
         try await manager.pullMissingImage("postgres")
 
+        #expect(exists == true)
         #expect(await client.requests == [
+            .exists("example/api"),
             .exists("example/api"),
             .exists("postgres"),
             .pull("postgres"),
         ])
+    }
+
+    @Test("file pull metadata store persists pull dates")
+    func filePullMetadataStorePersistsPullDates() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("container-compose-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let fileURL = directory.appendingPathComponent("pull-metadata.json", isDirectory: false)
+        let firstStore = FileComposePullMetadataStore(fileURL: fileURL)
+        let recorded = Date(timeIntervalSince1970: 1_000_000)
+
+        #expect(try await firstStore.lastPullDate(for: "example/api") == nil)
+        try await firstStore.recordPullDate(recorded, for: "example/api")
+
+        let secondStore = FileComposePullMetadataStore(fileURL: fileURL)
+        #expect(try await secondStore.lastPullDate(for: "example/api") == recorded)
     }
 
     @Test("image manager emits pushed and deleted direct API references")
@@ -8324,7 +8468,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.pullPolicy = "daily"
+                    $0.pullPolicy = "sometimes"
                     $0.networks = ["backend"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -8338,7 +8482,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported service pull policy error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses pull_policy 'daily'; supported values are always, missing, if_not_present, and never"))
+            #expect(error == .unsupported("service 'job' uses pull_policy 'sometimes'; supported values are always, missing, if_not_present, never, daily, weekly, and every_<duration>"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -11197,6 +11341,7 @@ private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
 
 private actor RecordingContainerImageManager: ContainerImageManaging {
     private var storage: [ContainerImageRequest] = []
+    private var existingReferences: Set<String>
     private let pullFailures: Set<String>
     private let pullMissingFailures: Set<String>
     private var pushOutputs: [String: String]
@@ -11205,6 +11350,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
     private let failure: ComposeError?
 
     init(
+        existingReferences: Set<String> = [],
         pullFailures: Set<String> = [],
         pullMissingFailures: Set<String> = [],
         pushOutputs: [String: String] = [:],
@@ -11212,6 +11358,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         deleteOutputs: [String: String?] = [:],
         failure: ComposeError? = nil
     ) {
+        self.existingReferences = existingReferences
         self.pullFailures = pullFailures
         self.pullMissingFailures = pullMissingFailures
         self.pushOutputs = pushOutputs
@@ -11224,6 +11371,14 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         storage
     }
 
+    func imageExists(_ reference: String) async throws -> Bool {
+        if let failure {
+            throw failure
+        }
+        storage.append(.exists(reference))
+        return existingReferences.contains(reference)
+    }
+
     func pullImage(_ reference: String) async throws {
         if let failure {
             throw failure
@@ -11232,6 +11387,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         if pullFailures.contains(reference) {
             throw ComposeError.invalidProject("pull failed: \(reference)")
         }
+        existingReferences.insert(reference)
     }
 
     func pullMissingImage(_ reference: String) async throws {
@@ -11242,6 +11398,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         if pullMissingFailures.contains(reference) {
             throw ComposeError.invalidProject("pull failed: \(reference)")
         }
+        existingReferences.insert(reference)
     }
 
     func pushImage(_ reference: String, emit: @escaping @Sendable (String) -> Void) async throws {
@@ -11320,6 +11477,26 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
             return output
         }
         return nil
+    }
+}
+
+private actor RecordingPullMetadataStore: ComposePullMetadataStoring {
+    private var dates: [String: Date]
+
+    init(dates: [String: Date] = [:]) {
+        self.dates = dates
+    }
+
+    func lastPullDate(for reference: String) async throws -> Date? {
+        dates[reference]
+    }
+
+    func recordPullDate(_ date: Date, for reference: String) async throws {
+        dates[reference] = date
+    }
+
+    func recordedDate(for reference: String) -> Date? {
+        dates[reference]
     }
 }
 
