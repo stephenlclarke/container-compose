@@ -183,6 +183,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Mapped anonymous service volumes to deterministic per-replica runtime names when services are scaled and removed those volumes with <code>down --volumes</code>.</td>
     </tr>
     <tr>
+      <td>Replica collision safeguards</td>
+      <td>2026-06-18 11:52:13 BST</td>
+      <td>2026-06-18 11:52:13 BST</td>
+      <td>2026-06-18 11:52:13 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Confirmed scaled services reject duplicate runtime names from <code>container_name</code>, too-small fixed published-port ranges, and service-level or per-network fixed MAC addresses before creating resources. Added explicit fixed MAC regression coverage and updated compatibility docs so the remaining replica backlog is service-discovery/deploy work.</td>
+    </tr>
+    <tr>
       <td>Run capability overrides</td>
       <td>2026-06-18 10:16:25 BST</td>
       <td>2026-06-18 10:16:25 BST</td>
@@ -313,7 +322,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming is complete. Remaining edge cases cover fixed single host-port conflicts, too-small ranges, fixed MAC addresses, <code>container_name</code>, and broader deploy semantics.</td>
+      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Remaining edge cases cover scaled service DNS/service-discovery semantics and broader deploy behavior.</td>
     </tr>
     <tr>
       <td>Local deploy interpretation</td>

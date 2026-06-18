@@ -218,11 +218,11 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 These are valid Docker Compose v2 surfaces where [`apple/container`][apple-container] is not known to be the first blocker. The missing design, orchestration, or safety policy belongs in this repository.
 
-#### Replica scaling edge cases and local deploy handling
+#### Replica scaling service discovery and local deploy handling
 
-- **Compose surface:** Scaled services that publish a single fixed host port, publish too-small host ranges, set fixed MAC addresses, use `container_name`, or use deploy fields beyond local replica count and CPU/memory limits.
+- **Compose surface:** Replica service-discovery semantics and deploy fields beyond local replica count and CPU/memory limits.
 - **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** Dynamic allocation for fixed/single host ports, per-replica MAC policy, and a local interpretation of broader deploy semantics.
+- **Missing plugin work:** DNS/service-name behavior for multiple replicas and a local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
 #### Develop, providers, models, hooks
@@ -325,7 +325,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, dynamic host-port allocation, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
 - [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
-- [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates scaled fixed-port collisions, fixed MAC addresses, DNS, and deploy semantics.
+- [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, DNS, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
 - [C4: Plugin Gap, Metadata, Storage, And API Socket](#c4-plugin-gap-metadata-storage-and-api-socket): `container-compose` gap. Demonstrates logging options, external inherited mounts, advanced service volume options, API socket, and block I/O.
 - [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands): `container-compose` gap. Demonstrates default interactive attach behavior that still needs command-level plugin design.
@@ -866,13 +866,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Plugin Gap, Replica Scaling Edge Cases And Deploy
 
-Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including services with explicit host port ranges large enough to allocate one deterministic slice per replica and services with anonymous volumes that can be named per replica. It rejects the `worker.deploy.update_config` field in this example because update orchestration needs Compose deploy semantics beyond local replica count and CPU/memory limits. Scaled services are currently limited to Compose-managed names and services without fixed/single host-port collisions or fixed MAC addresses.
+Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including services with explicit host port ranges large enough to allocate one deterministic slice per replica and services with anonymous volumes that can be named per replica. It rejects the `worker.deploy.update_config` field in this example because update orchestration needs Compose deploy semantics beyond local replica count and CPU/memory limits. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, and local `deploy.replicas` to indexed containers; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; and can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`. It still needs dynamic allocation for fixed/single host ports, per-replica MAC policy, DNS semantics, and broader deploy semantics.
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, and local `deploy.replicas` to indexed containers; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources. It still needs DNS semantics for scaled service names and broader deploy semantics.
 
 The equivalent supported CLI scaling forms are:
 

@@ -1738,6 +1738,56 @@ struct ComposeOrchestratorTests {
             #expect(error == .unsupported("service 'api' publishes '8080:80'; scaled published ports require at least 2 explicit host ports for 2 replicas"))
         }
         #expect(portRunner.commands.isEmpty)
+
+        let serviceMACRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: serviceMACRunner).up(
+                project: composeProject(
+                    name: "demo",
+                    services: [
+                        "api": composeService(name: "api", image: "example/api") {
+                            $0.macAddress = "02:42:ac:11:00:03"
+                            $0.networks = ["backend"]
+                        },
+                    ]
+                ) {
+                    $0.networks = ["backend": ComposeNetwork(name: "backend")]
+                },
+                options: ComposeUpOptions {
+                    $0.scales = ["api=2"]
+                }
+            )
+            Issue.record("Expected service mac_address scale failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses mac_address; scaled MAC addresses would collide across replicas"))
+        }
+        #expect(serviceMACRunner.commands.isEmpty)
+
+        let networkMACRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: networkMACRunner).up(
+                project: composeProject(
+                    name: "demo",
+                    services: [
+                        "api": composeService(name: "api", image: "example/api") {
+                            $0.networks = ["backend"]
+                            $0.networkOptions = [
+                                "backend": ComposeNetworkOptions(addressing: .init(macAddress: "02:42:ac:11:00:04")),
+                            ]
+                        },
+                    ]
+                ) {
+                    $0.networks = ["backend": ComposeNetwork(name: "backend")]
+                },
+                options: ComposeUpOptions {
+                    $0.scales = ["api=2"]
+                }
+            )
+            Issue.record("Expected per-network mac_address scale failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses mac_address; scaled MAC addresses would collide across replicas"))
+        }
+        #expect(networkMACRunner.commands.isEmpty)
     }
 
     @Test("up no-deps starts only selected services")
