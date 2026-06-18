@@ -219,6 +219,15 @@ Use `not started` or `not completed` where the event has not happened yet.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Reformat dense plan and compatibility status surfaces, align contributor guidance with Apple/container and Containerization contributor expectations, and document the adoption-friction goal.</td>
     </tr>
+    <tr>
+      <td>Adoption friction design note</td>
+      <td>2026-06-18 11:17:32 BST</td>
+      <td>2026-06-18 11:17:32 BST</td>
+      <td>2026-06-18 11:18:08 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Make reducing friction for possible Apple/container adoption an explicit design constraint, with clear boundaries for Compose normalization, Swift orchestration, direct runtime API mapping, compatibility documentation, and upstream runtime primitive gaps.</td>
+    </tr>
   </tbody>
 </table>
 

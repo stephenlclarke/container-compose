@@ -39,6 +39,14 @@ adapter exists. Keeping those seams explicit makes future upstream PRs smaller:
 runtime primitives can be proposed against Apple/container first, then this
 plugin can map the newly available API in a focused follow-up.
 
+Adoption friction should be treated as a design constraint, not cleanup. A
+reviewer should be able to tell whether a change is Compose normalization,
+Swift orchestration, runtime API mapping, compatibility documentation, or an
+Apple/container primitive gap without first untangling local conventions. When a
+feature cannot be upstreamed directly, the reason should be visible in the
+design notes, compatibility tables, or backlog so the eventual adoption path
+stays practical.
+
 ## Why Go Is Used
 
 Go is used only for the Compose normalization helper. The rest of the plugin is
