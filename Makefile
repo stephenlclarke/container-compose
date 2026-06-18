@@ -463,8 +463,10 @@ cli-smoke: build
 	unpause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" unpause api 2>&1 || true)"; \
 	[[ "$$unpause_output" == *"unsupported compose feature: unpause:"* ]]; \
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
-	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
-	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
+	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api)"; \
+	[[ "$$wait_output" == *"container wait demo-api-1"* ]]; \
+	wait_down_project_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait --down-project api 2>&1 || true)"; \
+	[[ "$$wait_down_project_output" == *"unsupported compose feature: wait --down-project:"* ]]; \
 	for unsupported_command in watch commit publish; do \
 		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
 		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \

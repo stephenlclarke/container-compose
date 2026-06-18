@@ -952,14 +952,18 @@ struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose wait` until exit metadata is available.
+/// Implements `compose wait` for running service containers.
 struct Wait: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "wait", abstract: "Wait for service containers to exit.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for wait semantics.
-    func run() throws {
-        try global.orchestrator().unsupported("wait", reason: "exit code and completion time need an apple/container runtime gap PR")
+    @Flag(name: .customLong("down-project"), help: "Drop the project when the first container stops. Not implemented yet.")
+    var downProject = false
+    @Argument(help: "Service names.")
+    var services: [String] = []
+    /// Waits for selected service containers and prints exit codes.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().wait(project: loadedProject, options: ComposeWaitOptions(services: services, downProject: downProject))
     }
 }
 

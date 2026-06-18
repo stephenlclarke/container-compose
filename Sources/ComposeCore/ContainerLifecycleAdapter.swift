@@ -29,6 +29,9 @@ public protocol ContainerLifecycleAPIClienting: Sendable {
     /// Stops container `id` with fully resolved stop options.
     func stopContainer(id: String, options: ContainerStopOptions) async throws
 
+    /// Waits for container `id`'s init process and returns its exit code.
+    func waitContainer(id: String) async throws -> Int32
+
     /// Deletes container `id`, forcing removal when requested.
     func deleteContainer(id: String, force: Bool) async throws
 }
@@ -45,6 +48,9 @@ public protocol ContainerLifecycleManaging: Sendable {
     /// Stops container `id` with the supplied signal and timeout.
     func stopContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws
 
+    /// Waits for container `id`'s init process and returns its exit code.
+    func waitContainer(id: String) async throws -> Int32
+
     /// Deletes container `id`, forcing removal when requested.
     func deleteContainer(id: String, force: Bool) async throws
 }
@@ -54,22 +60,26 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     public typealias Start = @Sendable (String) async throws -> Void
     public typealias Kill = @Sendable (String, String) async throws -> Void
     public typealias Stop = @Sendable (String, ContainerStopOptions) async throws -> Void
+    public typealias Wait = @Sendable (String) async throws -> Int32
     public typealias Delete = @Sendable (String, Bool) async throws -> Void
 
     private let startOperation: Start
     private let killOperation: Kill
     private let stopOperation: Stop
+    private let waitOperation: Wait
     private let deleteOperation: Delete
 
     public init(
         start: @escaping Start = ContainerLifecycleLiveAdapter.start,
         kill: @escaping Kill = { try await ContainerClient().kill(id: $0, signal: $1) },
         stop: @escaping Stop = { try await ContainerClient().stop(id: $0, opts: $1) },
+        wait: @escaping Wait = ContainerLifecycleLiveAdapter.wait,
         delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) }
     ) {
         self.startOperation = start
         self.killOperation = kill
         self.stopOperation = stop
+        self.waitOperation = wait
         self.deleteOperation = delete
     }
 
@@ -86,6 +96,11 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     /// Stops a container through `ContainerClient`.
     public func stopContainer(id: String, options: ContainerStopOptions) async throws {
         try await stopOperation(id, options)
+    }
+
+    /// Waits for a container init process through `ContainerClient`.
+    public func waitContainer(id: String) async throws -> Int32 {
+        try await waitOperation(id)
     }
 
     /// Deletes a container through `ContainerClient`.
@@ -120,6 +135,11 @@ public struct ContainerClientLifecycleManager: ContainerLifecycleManaging {
             signal: signal
         )
         try await client.stopContainer(id: id, options: options)
+    }
+
+    /// Waits for a running container through `ContainerClient`.
+    public func waitContainer(id: String) async throws -> Int32 {
+        try await client.waitContainer(id: id)
     }
 
     /// Deletes a container through `ContainerClient.delete(id:force:)`.

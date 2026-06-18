@@ -5813,22 +5813,194 @@ struct ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
+    @Test("wait uses direct runtime API for selected running service containers")
+    func waitUsesDirectRuntimeAPIForSelectedRunningServiceContainers() async throws {
+        let emitted = MessageRecorder()
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-api-1": 7])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    "com.apple.container.compose.project": "demo",
+                    "com.apple.container.compose.service": "api",
+                    "com.apple.container.compose.oneoff": "false",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).wait(project: project, options: ComposeWaitOptions(services: ["api"]))
+
+        #expect(emitted.messages == ["7"])
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-api-1"),
+        ])
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("wait includes scaled service containers discovered through compose labels")
+    func waitIncludesScaledServiceContainersDiscoveredThroughComposeLabels() async throws {
+        let emitted = MessageRecorder()
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
+            "demo-api-1": 0,
+            "demo-api-2": 3,
+        ])
+        let labels = [
+            "com.apple.container.compose.project": "demo",
+            "com.apple.container.compose.service": "api",
+            "com.apple.container.compose.oneoff": "false",
+        ]
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-2", status: "stopping", labels: labels),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: labels),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).wait(project: project)
+
+        #expect(emitted.messages == ["0", "3"])
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-api-1"),
+            .wait(id: "demo-api-2"),
+        ])
+    }
+
+    @Test("wait rejects already stopped containers before direct API wait")
+    func waitRejectsAlreadyStoppedContainersBeforeDirectAPIWait() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "stopped",
+                labels: [
+                    "com.apple.container.compose.project": "demo",
+                    "com.apple.container.compose.service": "api",
+                    "com.apple.container.compose.oneoff": "false",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                dependencies: orchestratorDependencies {
+                    $0.discoveryManager = discoveryManager
+                    $0.lifecycleManager = lifecycleManager
+                }
+            ).wait(project: project)
+            Issue.record("Expected stopped wait target to be rejected")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("wait: service 'api' container 'demo-api-1' is stopped; apple/container does not expose stored exit codes for already-stopped containers"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("wait dry run emits runtime wait commands")
+    func waitDryRunEmitsRuntimeWaitCommands() async throws {
+        let emitted = MessageRecorder()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).wait(project: project)
+
+        #expect(emitted.messages == [
+            "+ container wait demo-api-1",
+            "+ container wait demo-api-2",
+        ])
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("wait down-project reports pending orchestration gap")
+    func waitDownProjectReportsPendingOrchestrationGap() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                dependencies: orchestratorDependencies {
+                    $0.lifecycleManager = lifecycleManager
+                }
+            ).wait(project: project, options: ComposeWaitOptions(downProject: true))
+            Issue.record("Expected down-project wait to be rejected")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("wait --down-project: project teardown after the first container exit is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
     @Test("lifecycle manager maps compose lifecycle to direct API client")
     func lifecycleManagerMapsComposeLifecycleToDirectAPIClient() async throws {
-        let client = RecordingContainerLifecycleAPIClient()
+        let client = RecordingContainerLifecycleAPIClient(waitExitCodes: ["demo-api-1": 4])
         let manager = ContainerClientLifecycleManager(client: client)
 
         try await manager.startContainer(id: "demo-api-1")
         try await manager.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await manager.stopContainer(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12)
         try await manager.stopContainer(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)
+        let exitCode = try await manager.waitContainer(id: "demo-api-1")
         try await manager.deleteContainer(id: "demo-api-1", force: true)
 
+        #expect(exitCode == 4)
         #expect(await client.requests == [
             .start(id: "demo-api-1"),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: 5),
+            .wait(id: "demo-api-1"),
             .delete(id: "demo-api-1", force: true),
         ])
     }
@@ -5872,6 +6044,9 @@ struct ComposeOrchestratorTests {
             stop: { id, options in
                 try await recorder.stopContainer(id: id, options: options)
             },
+            wait: { id in
+                try await recorder.waitContainer(id: id)
+            },
             delete: { id, force in
                 try await recorder.deleteContainer(id: id, force: force)
             }
@@ -5881,12 +6056,14 @@ struct ComposeOrchestratorTests {
         try await client.startContainer(id: "demo-api-1")
         try await client.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await client.stopContainer(id: "demo-api-1", options: stopOptions)
+        _ = try await client.waitContainer(id: "demo-api-1")
         try await client.deleteContainer(id: "demo-api-1", force: false)
 
         #expect(await recorder.requests == [
             .start(id: "demo-api-1"),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGQUIT", timeoutInSeconds: 15),
+            .wait(id: "demo-api-1"),
             .delete(id: "demo-api-1", force: false),
         ])
     }
@@ -11382,6 +11559,7 @@ private enum ContainerLifecycleRequest: Equatable {
     case start(id: String)
     case kill(id: String, signal: String)
     case stop(id: String, signal: String?, timeoutInSeconds: Int?)
+    case wait(id: String)
     case delete(id: String, force: Bool)
 }
 
@@ -11527,11 +11705,13 @@ private actor RecordingContainerCopyOperations {
 private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     private let stopError: (any Error)?
     private let deleteError: (any Error)?
+    private let waitExitCodes: [String: Int32]
     private var storage: [ContainerLifecycleRequest] = []
 
-    init(stopError: (any Error)? = nil, deleteError: (any Error)? = nil) {
+    init(stopError: (any Error)? = nil, deleteError: (any Error)? = nil, waitExitCodes: [String: Int32] = [:]) {
         self.stopError = stopError
         self.deleteError = deleteError
+        self.waitExitCodes = waitExitCodes
     }
 
     var requests: [ContainerLifecycleRequest] {
@@ -11551,6 +11731,11 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
         if let stopError {
             throw stopError
         }
+    }
+
+    func waitContainer(id: String) async throws -> Int32 {
+        storage.append(.wait(id: id))
+        return waitExitCodes[id] ?? 0
     }
 
     func deleteContainer(id: String, force: Bool) async throws {
@@ -12034,7 +12219,12 @@ private actor ThrowingSleeper {
 }
 
 private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
+    private let waitExitCodes: [String: Int32]
     private var storage: [ContainerLifecycleRequest] = []
+
+    init(waitExitCodes: [String: Int32] = [:]) {
+        self.waitExitCodes = waitExitCodes
+    }
 
     var requests: [ContainerLifecycleRequest] {
         storage
@@ -12054,6 +12244,11 @@ private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienti
             signal: options.signal,
             timeoutInSeconds: Int(options.timeoutInSeconds)
         ))
+    }
+
+    func waitContainer(id: String) async throws -> Int32 {
+        storage.append(.wait(id: id))
+        return waitExitCodes[id] ?? 0
     }
 
     func deleteContainer(id: String, force: Bool) async throws {

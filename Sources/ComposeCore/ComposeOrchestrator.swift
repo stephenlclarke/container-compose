@@ -321,6 +321,17 @@ public struct ComposeStatsOptions {
     }
 }
 
+/// Options for `compose wait` commands.
+public struct ComposeWaitOptions {
+    public var services: [String]
+    public var downProject: Bool
+
+    public init(services: [String] = [], downProject: Bool = false) {
+        self.services = services
+        self.downProject = downProject
+    }
+}
+
 /// Options for `compose attach` commands.
 public struct ComposeAttachOptions {
     public var noStdin = false
@@ -1368,6 +1379,27 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 continue
             }
             try await lifecycleManager.killContainer(id: containerID, signal: signal ?? "KILL")
+        }
+    }
+
+    /// Waits for selected service containers to exit and prints their exit codes.
+    public func wait(project: ComposeProject, options wait: ComposeWaitOptions = ComposeWaitOptions()) async throws {
+        guard !wait.downProject else {
+            throw ComposeError.unsupported("wait --down-project: project teardown after the first container exit is not implemented by container-compose yet")
+        }
+        let services = try selectedServices(project: project, selected: wait.services)
+        for target in try await serviceContainerTargets(project: project, services: services) {
+            let containerID = target.name
+            if options.dryRun {
+                try await runContainer(["wait", containerID])
+                continue
+            }
+            guard let container = try await discoveryManager.getContainer(id: containerID) else {
+                throw ComposeError.invalidProject("service '\(target.service.name)' container '\(containerID)' does not exist")
+            }
+            try validateWaitTarget(container, service: target.service)
+            let exitCode = try await lifecycleManager.waitContainer(id: containerID)
+            options.emit(String(exitCode))
         }
     }
 
@@ -3253,6 +3285,14 @@ private extension ComposeOrchestrator {
         let sigProxy = attach.sigProxy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if sigProxy != "false" {
             throw ComposeError.unsupported("attach --sig-proxy=\(attach.sigProxy): apple/container logs does not proxy signals to service processes; use --sig-proxy=false")
+        }
+    }
+
+    /// Ensures `wait` only asks Apple for live process state it can return.
+    func validateWaitTarget(_ container: ComposeContainerSummary, service: ComposeService) throws {
+        let status = container.status.lowercased()
+        guard status == "running" || status == "stopping" else {
+            throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is \(container.status); apple/container does not expose stored exit codes for already-stopped containers")
         }
     }
 
