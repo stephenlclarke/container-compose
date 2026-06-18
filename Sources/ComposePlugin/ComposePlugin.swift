@@ -316,13 +316,27 @@ struct Push: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "push", abstract: "Push service images.")
 
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("ignore-push-failures"), help: "Push what can be pushed and ignore image push failures.")
+    var ignorePushFailures = false
+    @Flag(name: .customLong("include-deps"), help: "Also push images for service dependencies.")
+    var includeDeps = false
+    @Flag(name: .shortAndLong, help: "Push without printing progress output.")
+    var quiet = false
     @Argument(help: "Optional services to push.")
     var services: [String] = []
 
     /// Pushes selected service images.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().push(project: loadedProject, services: services)
+        try await orchestrator().push(
+            project: loadedProject,
+            options: ComposePushOptions {
+                $0.services = services
+                $0.ignorePushFailures = ignorePushFailures
+                $0.includeDependencies = includeDeps
+                $0.quiet = quiet
+            }
+        )
     }
 }
 

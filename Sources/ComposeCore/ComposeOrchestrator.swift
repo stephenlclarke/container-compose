@@ -199,6 +199,22 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Options for `compose push`.
+public struct ComposePushOptions {
+    public var services: [String] = []
+    public var ignorePushFailures = false
+    public var includeDependencies = false
+    public var quiet = false
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default push behavior.
+    }
+
+    public init(_ configure: (inout ComposePushOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose images`.
 public struct ComposeImagesOptions {
     public var quiet: Bool
@@ -641,14 +657,38 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Pushes images for selected services.
     public func push(project: ComposeProject, services selected: [String]) async throws {
-        let services = try selectedServices(project: project, selected: selected)
+        try await push(
+            project: project,
+            options: ComposePushOptions {
+                $0.services = selected
+            }
+        )
+    }
+
+    /// Pushes images for selected services with Docker Compose compatible options.
+    public func push(project: ComposeProject, options push: ComposePushOptions) async throws {
+        let services = try push.includeDependencies
+            ? orderedServices(project: project, selected: push.services)
+            : selectedServices(project: project, selected: push.services)
+        let emit: @Sendable (String) -> Void
+        if push.quiet {
+            emit = { _ in }
+        } else {
+            emit = options.emit
+        }
         for service in services {
             guard let image = service.image else { continue }
             let args = ["image", "push", image]
             if options.dryRun {
                 try await runContainer(args)
             } else {
-                try await imageManager.pushImage(image, emit: options.emit)
+                do {
+                    try await imageManager.pushImage(image, emit: emit)
+                } catch {
+                    guard push.ignorePushFailures else {
+                        throw error
+                    }
+                }
             }
         }
     }

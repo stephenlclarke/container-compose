@@ -3595,6 +3595,99 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["example/api:latest"])
     }
 
+    @Test("push include deps pushes dependency images first")
+    func pushIncludeDepsPushesDependencyImagesFirst() async throws {
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = [
+                        "db": ComposeDependency(condition: "service_started"),
+                    ]
+                },
+                "db": composeService(name: "db", image: "example/db:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).push(
+            project: project,
+            options: ComposePushOptions {
+                $0.services = ["api"]
+                $0.includeDependencies = true
+            }
+        )
+
+        #expect(await imageManager.requests == [
+            .push("example/db:latest"),
+            .push("example/api:latest"),
+        ])
+    }
+
+    @Test("push quiet suppresses emitted pushed references")
+    func pushQuietSuppressesEmittedPushedReferences() async throws {
+        let emitted = MessageRecorder()
+        let imageManager = RecordingContainerImageManager(pushOutputs: [
+            "example/api:latest": "registry.example.com/api@sha256:abc",
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        )
+
+        try await orchestrator.push(
+            project: project,
+            options: ComposePushOptions {
+                $0.quiet = true
+            }
+        )
+
+        #expect(await imageManager.requests == [.push("example/api:latest")])
+        #expect(emitted.messages.isEmpty)
+    }
+
+    @Test("push ignore failures continues with later services")
+    func pushIgnoreFailuresContinuesWithLaterServices() async throws {
+        let imageManager = RecordingContainerImageManager(pushFailures: ["example/api:latest"])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+                "worker": composeService(name: "worker", image: "example/worker:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).push(
+            project: project,
+            options: ComposePushOptions {
+                $0.ignorePushFailures = true
+            }
+        )
+
+        #expect(await imageManager.requests == [
+            .push("example/api:latest"),
+            .push("example/worker:latest"),
+        ])
+    }
+
     @Test("build applies Compose file no cache setting")
     func buildAppliesComposeFileNoCacheSetting() async throws {
         let runner = RecordingRunner()
@@ -9813,11 +9906,18 @@ private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
 private actor RecordingContainerImageManager: ContainerImageManaging {
     private var storage: [ContainerImageRequest] = []
     private var pushOutputs: [String: String]
+    private let pushFailures: Set<String>
     private var deleteOutputs: [String: String?]
     private let failure: ComposeError?
 
-    init(pushOutputs: [String: String] = [:], deleteOutputs: [String: String?] = [:], failure: ComposeError? = nil) {
+    init(
+        pushOutputs: [String: String] = [:],
+        pushFailures: Set<String> = [],
+        deleteOutputs: [String: String?] = [:],
+        failure: ComposeError? = nil
+    ) {
         self.pushOutputs = pushOutputs
+        self.pushFailures = pushFailures
         self.deleteOutputs = deleteOutputs
         self.failure = failure
     }
@@ -9845,6 +9945,9 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             throw failure
         }
         storage.append(.push(reference))
+        if pushFailures.contains(reference) {
+            throw ComposeError.invalidProject("push failed: \(reference)")
+        }
         emit(pushOutputs[reference] ?? reference)
     }
 
