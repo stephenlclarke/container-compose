@@ -8657,19 +8657,19 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("attach rejects unsupported stdin signal and detach options")
-    func attachRejectsUnsupportedStdinSignalAndDetachOptions() async throws {
+    @Test("attach reports Apple runtime gap for interactive options")
+    func attachReportsAppleRuntimeGapForInteractiveOptions() async throws {
         let cases: [(options: ComposeAttachOptions, error: ComposeError)] = [
             (
                 ComposeAttachOptions(),
-                .unsupported("attach: apple/container logs is output-only; use --no-stdin --sig-proxy=false")
+                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin --sig-proxy=false for output-only logs")
             ),
             (
                 ComposeAttachOptions {
                     $0.noStdin = true
                     $0.sigProxy = "true"
                 },
-                .unsupported("attach --sig-proxy=true: apple/container logs does not proxy signals to service processes; use --sig-proxy=false")
+                .unsupported("attach --sig-proxy=true: apple/container does not expose signal proxying for interactive attach; use --sig-proxy=false with --no-stdin")
             ),
             (
                 ComposeAttachOptions {
@@ -8677,13 +8677,13 @@ struct ComposeOrchestratorTests {
                     $0.sigProxy = "false"
                     $0.detachKeys = "ctrl-x"
                 },
-                .unsupported("attach --detach-keys: apple/container logs does not expose detach key handling")
+                .unsupported("attach --detach-keys: apple/container does not expose detach-key handling for interactive attach")
             ),
             (
                 ComposeAttachOptions {
                     $0.sigProxy = "false"
                 },
-                .unsupported("attach: apple/container logs is output-only; use --no-stdin --sig-proxy=false")
+                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin --sig-proxy=false for output-only logs")
             ),
         ]
         let project = ComposeProject(

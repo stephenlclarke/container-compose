@@ -147,6 +147,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Added indexed attach/log targets and accepted harmless log display flags.</td>
     </tr>
     <tr>
+      <td>Default attach blocker classification</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 14:12:23 BST</td>
+      <td>2026-06-18 14:18:53 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Inspected Apple/container init-process attach behavior and reclassified Docker Compose default interactive <code>attach</code> from a plugin design gap to an Apple/container runtime primitive gap. Output-only <code>attach --no-stdin --sig-proxy=false</code> remains supported through runtime log streaming.</td>
+    </tr>
+    <tr>
       <td>Stats no-trunc display option</td>
       <td>2026-06-18 11:12:17 BST</td>
       <td>2026-06-18 11:12:17 BST</td>
@@ -397,15 +406,6 @@ Apple/container API work is discovered during implementation.
   </thead>
   <tbody>
     <tr>
-      <td>Default <code>attach</code> stdin and signal proxy behavior</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Current support is output-only <code>attach --no-stdin --sig-proxy=false</code>; full support needs an interactive attach design.</td>
-    </tr>
-    <tr>
       <td><code>watch</code> and develop workflows</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 09:44:11 BST</td>
@@ -506,11 +506,13 @@ Suggested Apple/container PR batches:
    since/until filtering, prefix-friendly service/replica attribution, and
    durable closed-container log replay, plus service logging driver/option
    controls.
-9. Command-data parity: events, process listing, pause/unpause, and copy
+9. Interactive attach parity: reattach stdin/stdout/stderr to an already-running
+   init process, proxy signals, and support detach-key behavior.
+10. Command-data parity: events, process listing, pause/unpause, and copy
    archive/follow-link controls.
-10. Image and artifact parity: container commit image snapshots and Compose
+11. Image and artifact parity: container commit image snapshots and Compose
     application OCI artifact publish/consume support.
-11. Runtime API socket parity: a safe Compose-compatible equivalent for
+12. Runtime API socket parity: a safe Compose-compatible equivalent for
     `use_api_socket` that does not overexpose host control surfaces.
 
 <table>
@@ -657,6 +659,15 @@ Suggested Apple/container PR batches:
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>logs</code> needs runtime log records with timestamps, stdout/stderr stream metadata, since/until filtering, tailing handled by the runtime, service/replica attribution for prefix output, reliable replay for stopped containers, and service logging driver/option controls such as rotation policy. Current Apple/container APIs expose raw log handles, so container-compose can only approximate unprefixed local log output.</td>
+    </tr>
+    <tr>
+      <td>Interactive init-process attach and signal proxying</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 14:12:23 BST</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Docker Compose default <code>attach</code> needs stdin/stdout/stderr reattach to an already-running service init process, signal proxying, and detach-key handling. Apple/container currently wires stdio while bootstrapping a container or creating a new exec process, but does not expose a Compose-compatible reattach primitive for an already-running service container.</td>
     </tr>
     <tr>
       <td>Dynamic host-port allocation</td>

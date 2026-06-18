@@ -853,13 +853,13 @@ struct Scale: AsyncParsableCommand, ComposeProjectCommand {
 struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "attach", abstract: "Attach to a service container.")
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .customLong("no-stdin"), help: "Do not attach stdin. Required because apple/container logs are output-only.")
+    @Flag(name: .customLong("no-stdin"), help: "Do not attach stdin. Required for the supported output-only log attach path.")
     var noStdin = false
-    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Not supported by apple/container logs yet.")
+    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Requires interactive attach support.")
     var detachKeys: String?
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
-    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false for output-only attach.")
+    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false until apple/container exposes interactive attach.")
     var sigProxy = "true"
     @Argument(help: "Service name.")
     var service: String

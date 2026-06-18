@@ -215,6 +215,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A5](#a5-apple-gap-runtime-data-commands).
 
+#### Interactive init-process attach
+
+- **Compose surface:** Default stdin/signal-proxy `attach`, `attach --sig-proxy=true`, and `attach --detach-keys`.
+- **Missing Apple/container primitive:** Reattaching stdin/stdout/stderr to an already-running init process, signal proxying to that process, and detach-key handling. Apple/container can wire stdio while bootstrapping a container or creating a new exec process, but it does not expose a Compose-compatible reattach path for an already-running service container.
+- **container-compose status:** Output-only `attach --no-stdin --sig-proxy=false` is supported through log streaming. Default interactive attach rejects before side effects with a precise Apple/container runtime-gap message.
+- **Example:** [A9](#a9-apple-gap-interactive-attach).
+
 #### Image commit and Compose application publishing
 
 - **Compose surface:** `commit`, `publish`, and `oci://` Compose application references.
@@ -253,13 +260,6 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Apple/container path:** Not known to be the first blocker.
 - **Missing plugin work:** Security review and resource-control mapping.
 - **Example:** [C4](#c4-plugin-gap-metadata-storage-and-api-socket).
-
-#### Additional CLI command behavior
-
-- **Compose surface:** Default stdin/signal-proxy `attach`.
-- **Apple/container path:** Output-only logs are available today; an interactive attach path may later need runtime support depending on the final design.
-- **Missing plugin work:** Interactive command design, stdin forwarding, signal-proxy behavior, and detach-key compatibility.
-- **Example:** [C5](#c5-plugin-gap-additional-cli-commands).
 
 ### Config-Only Today
 
@@ -303,12 +303,13 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - `top`, `events`, `pause`, and `unpause`.
 - Already-stopped `wait` exit-code replay.
 - `cp --archive` and `cp --follow-link`.
+- Default interactive `attach`, including stdin forwarding, signal proxying, and detach-key handling.
 - `commit` container image snapshots.
 - `publish` Compose application OCI artifacts and `oci://` Compose file consumption.
 
 ### Commands Blocked By `container-compose` Design Gaps
 
-- Default stdin/signal-proxy `attach`.
+- No remaining command-level gaps are currently classified here. Plugin-owned model and orchestration gaps are tracked in the compatibility sections above.
 
 ## References
 
@@ -333,10 +334,10 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
 - [A8: Apple Gap, Volume Subpaths And Image Mounts](#a8-apple-gap-volume-subpaths-and-image-mounts): [`apple/container`][apple-container] gap. Demonstrates named-volume subpaths and image-backed service mounts.
+- [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): [`apple/container`][apple-container] gap. Demonstrates default interactive attach behavior that needs a runtime reattach primitive.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
 - [C4: Plugin Gap, Metadata, Storage, And API Socket](#c4-plugin-gap-metadata-storage-and-api-socket): `container-compose` gap. Demonstrates logging options, external inherited mounts, advanced service volume options, API socket, and block I/O.
-- [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands): `container-compose` gap. Demonstrates default interactive attach behavior that still needs command-level plugin design.
 - [O1: Config-Only Metadata](#o1-config-only-metadata): Config-only. Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
 ## Examples With Dockerfiles
@@ -1194,19 +1195,19 @@ FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 ```
 
-### C5: Plugin Gap, Additional CLI Commands
+### A9: Apple Gap, Interactive Attach
 
-Expected result: output-only `container compose attach --no-stdin --sig-proxy=false` works through the runtime log stream. Default Docker Compose attach semantics still reject because the plugin needs an interactive attach design for stdin forwarding, signal proxying, and detach-key behavior.
+Expected result: output-only `container compose attach --no-stdin --sig-proxy=false` works through the runtime log stream. Default Docker Compose attach semantics reject because [`apple/container`][apple-container] does not expose stdin/stdout/stderr reattach, signal proxying, or detach-key handling for an already-running service container.
 
 Status path:
 
 - Docker Compose v2: supports default interactive attach behavior.
-- [`apple/container`][apple-container]: log streaming is available for output-only attach; deeper runtime attach support may be needed after the plugin design is settled.
-- `container-compose`: supports output-only attach and reports the remaining design gap for default interactive attach. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
+- [`apple/container`][apple-container]: log streaming is available for output-only attach, and stdio can be wired while bootstrapping a container or creating a new exec process. It does not expose a Compose-compatible reattach path for an already-running init process.
+- `container-compose`: supports output-only attach and reports the Apple/container runtime gap for default interactive attach. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
 
 ```yaml
 # compose.yaml
-name: plugin-command-gap-demo
+name: apple-attach-gap-demo
 
 services:
   api:

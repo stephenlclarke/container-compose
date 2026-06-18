@@ -372,7 +372,7 @@ cli-smoke: build
 	attach_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false --index 2 api)"; \
 	[[ "$$attach_index_output" == *"container logs --follow demo-api-2"* ]]; \
 	attach_default_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach api 2>&1 || true)"; \
-	[[ "$$attach_default_output" == *"unsupported compose feature: attach: apple/container logs is output-only"* ]]; \
+	[[ "$$attach_default_output" == *"unsupported compose feature: attach: apple/container does not expose stdin/stdout/stderr reattach"* ]]; \
 	exec_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec api echo ok)"; \
 	[[ "$$exec_output" == *"container exec --interactive --tty demo-api-1 echo ok"* ]]; \
 	exec_no_tty_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec -T api echo ok)"; \

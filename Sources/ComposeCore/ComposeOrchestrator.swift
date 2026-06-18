@@ -4052,17 +4052,17 @@ private extension ComposeOrchestrator {
         return lines
     }
 
-    /// Validates that attach uses only the output stream Apple exposes through logs.
+    /// Validates that attach stays on the output-only log-follow path Apple exposes today.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
         if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
-            throw ComposeError.unsupported("attach --detach-keys: apple/container logs does not expose detach key handling")
+            throw ComposeError.unsupported("attach --detach-keys: apple/container does not expose detach-key handling for interactive attach")
         }
         if !attach.noStdin {
-            throw ComposeError.unsupported("attach: apple/container logs is output-only; use --no-stdin --sig-proxy=false")
+            throw ComposeError.unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin --sig-proxy=false for output-only logs")
         }
         let sigProxy = attach.sigProxy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if sigProxy != "false" {
-            throw ComposeError.unsupported("attach --sig-proxy=\(attach.sigProxy): apple/container logs does not proxy signals to service processes; use --sig-proxy=false")
+            throw ComposeError.unsupported("attach --sig-proxy=\(attach.sigProxy): apple/container does not expose signal proxying for interactive attach; use --sig-proxy=false with --no-stdin")
         }
     }
 
