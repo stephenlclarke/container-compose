@@ -456,13 +456,15 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var follow = false
     @Option(name: [.customShort("n"), .customLong("tail")], help: "Number of lines to show from the end of logs, or all.")
     var tail: String?
+    @Option(name: .customLong("index"), help: "Target service container index.")
+    var index = 1
     @Argument(help: "Optional services to show.")
     var services: [String] = []
 
     /// Streams or prints logs for selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().logs(project: loadedProject, services: services, follow: follow, tail: tail)
+        try await orchestrator().logs(project: loadedProject, services: services, follow: follow, tail: tail, index: index)
     }
 }
 

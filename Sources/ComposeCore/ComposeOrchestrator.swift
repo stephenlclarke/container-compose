@@ -911,7 +911,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Streams or prints logs for selected service containers.
-    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: String?) async throws {
+    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: String?, index: Int = 1) async throws {
         let services = try selectedServices(project: project, selected: selected)
         let runtimeTail = try runtimeLogTail(tail)
         for service in services {
@@ -922,7 +922,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if let runtimeTail {
                 args.append(contentsOf: ["-n", String(runtimeTail)])
             }
-            let id = containerName(project: project, service: service, oneOff: false)
+            let id = try await serviceContainerID(project: project, service: service, index: index)
             args.append(id)
             if options.dryRun {
                 try await runContainer(args)

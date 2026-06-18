@@ -6430,6 +6430,43 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["hello"])
     }
 
+    @Test("logs targets selected container index")
+    func logsTargetsSelectedContainerIndex() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["replica-log"])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.logManager = logManager
+            }
+        ).logs(project: project, services: ["api"], follow: false, tail: nil, index: 2)
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-2", tail: nil, follow: false),
+        ])
+        #expect(emitted.messages == ["replica-log"])
+    }
+
     @Test("logs dry run emits runtime command instead of direct API logs")
     func logsDryRunEmitsRuntimeCommandInsteadOfDirectAPILogs() async throws {
         let emitted = MessageRecorder()
@@ -6449,6 +6486,29 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == [
             "+ container logs --follow -n 10 demo-api-1",
+        ])
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("logs dry run emits indexed runtime command")
+    func logsDryRunEmitsIndexedRuntimeCommand() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["api"], follow: true, tail: "10", index: 2)
+
+        #expect(emitted.messages == [
+            "+ container logs --follow -n 10 demo-api-2",
         ])
         #expect(await logManager.requests.isEmpty)
     }
