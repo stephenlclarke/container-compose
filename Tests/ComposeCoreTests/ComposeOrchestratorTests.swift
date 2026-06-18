@@ -9928,6 +9928,60 @@ struct ComposeOrchestratorTests {
         #expect(!command.containsSequence(["--label", "com.example.file=override"]))
     }
 
+    @Test("up applies service annotations as runtime metadata labels")
+    func upAppliesServiceAnnotationsAsRuntimeMetadataLabels() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.annotations = [
+                        "example.com/owner": "platform",
+                        "example.com/purpose": "local-dev",
+                    ]
+                    $0.labels = ["com.example.role": "api"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--label", "com.example.role=api"]))
+        #expect(command.containsSequence(["--label", "example.com/owner=platform"]))
+        #expect(command.containsSequence(["--label", "example.com/purpose=local-dev"]))
+    }
+
+    @Test("up rejects service annotation label conflicts before creating resources")
+    func upRejectsServiceAnnotationLabelConflictsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.annotations = ["com.example.role": "metadata"]
+                    $0.labels = ["com.example.role": "api"]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected annotation conflict error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' annotation 'com.example.role' conflicts with a service label mapped to the same runtime metadata key"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests == [])
+    }
+
     @Test("up recreates containers when service label files change")
     func upRecreatesContainersWhenServiceLabelFilesChange() async throws {
         let directory = try temporaryDirectory()
@@ -10080,6 +10134,36 @@ struct ComposeOrchestratorTests {
         } catch let error as ComposeError {
             #expect(error == .invalidProject("run --label cannot override reserved Compose tracking label 'com.apple.container.compose.project'"))
         }
+    }
+
+    @Test("run rejects label overrides that conflict with service annotations")
+    func runRejectsLabelOverridesThatConflictWithServiceAnnotations() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.annotations = ["com.example.owner": "platform"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(
+                project: project,
+                serviceName: "job",
+                options: composeRunOptions(command: ["true"]) {
+                    $0.labels = ["com.example.owner=override"]
+                }
+            )
+            Issue.record("Expected annotation override conflict")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --label cannot override service 'job' annotation 'com.example.owner' because annotations map to runtime metadata labels"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("run applies one-off volume overrides")
@@ -10907,11 +10991,6 @@ private struct UnsupportedServiceMetadataAndLoggingFieldCase: Sendable {
 
 private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedServiceMetadataAndLoggingFieldCase] {
     [
-        UnsupportedServiceMetadataAndLoggingFieldCase(
-            composeName: "annotations",
-            reason: "service annotations are not implemented by container-compose yet",
-            configure: { $0.annotations = ["com.example.note": "runtime"] }
-        ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging configuration is not implemented by container-compose yet",

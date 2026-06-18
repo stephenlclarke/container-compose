@@ -1172,6 +1172,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         try validateProjectNetworks(runProject)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
+        try validateRunLabelOverridesAgainstAnnotations(labelOverrides, service: service)
         try validatePullPolicy(run.pullPolicy)
         let dependencyServices = try run.noDeps
             ? []
@@ -2034,9 +2035,6 @@ private extension ComposeOrchestrator {
     /// Returns unsupported service metadata, logging, and storage option fields.
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
-        if let annotations = service.annotations, !annotations.isEmpty {
-            fields.append(("annotations", "service annotations are not implemented by container-compose yet"))
-        }
         if service.logging != nil {
             fields.append(("logging", "service logging configuration is not implemented by container-compose yet"))
         }
@@ -2884,6 +2882,15 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Rejects one-off labels that would overwrite annotation metadata.
+    func validateRunLabelOverridesAgainstAnnotations(_ overrides: [ComposeLabelOverride], service: ComposeService) throws {
+        _ = try effectiveServiceAnnotations(
+            service: service,
+            conflictingLabelKeys: [],
+            conflictingOverrideKeys: Set(overrides.map(\.key))
+        )
+    }
+
     /// Pulls only service images not already present in the local image store.
     func pullMissingImages(services: [ComposeService], quiet: Bool = false) async throws {
         for service in services {
@@ -2974,7 +2981,15 @@ private extension ComposeOrchestrator {
         }
         let effectiveLabels = try effectiveServiceLabels(project: project, service: service)
         let overriddenLabelKeys = Set(run.labelOverrides.map(\.key))
+        let effectiveAnnotations = try effectiveServiceAnnotations(
+            service: service,
+            conflictingLabelKeys: Set(effectiveLabels.keys),
+            conflictingOverrideKeys: overriddenLabelKeys
+        )
         for (key, value) in effectiveLabels.sorted(by: { $0.key < $1.key }) where !overriddenLabelKeys.contains(key) {
+            args.append(contentsOf: ["--label", "\(key)=\(value)"])
+        }
+        for (key, value) in effectiveAnnotations.sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
         for label in run.labelOverrides {
@@ -3952,7 +3967,8 @@ private func configHash(project: ComposeProject, service: ComposeService) throws
 
 /// Validates user-supplied service labels and label files before side effects.
 private func validateServiceLabels(project: ComposeProject, service: ComposeService) throws {
-    _ = try effectiveServiceLabels(project: project, service: service)
+    let labels = try effectiveServiceLabels(project: project, service: service)
+    _ = try effectiveServiceAnnotations(service: service, conflictingLabelKeys: Set(labels.keys))
 }
 
 /// Returns the user labels applied to a service after processing label files.
@@ -3968,6 +3984,26 @@ private func effectiveServiceLabels(project: ComposeProject, service: ComposeSer
         labels[key] = value
     }
     return labels
+}
+
+/// Returns Compose service annotations mapped to Apple runtime metadata labels.
+private func effectiveServiceAnnotations(
+    service: ComposeService,
+    conflictingLabelKeys: Set<String>,
+    conflictingOverrideKeys: Set<String> = []
+) throws -> [String: String] {
+    var annotations: [String: String] = [:]
+    for (key, value) in service.annotations ?? [:] {
+        try validateUserLabelKey(key, source: "service '\(service.name)' annotation")
+        if conflictingLabelKeys.contains(key) {
+            throw ComposeError.invalidProject("service '\(service.name)' annotation '\(key)' conflicts with a service label mapped to the same runtime metadata key")
+        }
+        if conflictingOverrideKeys.contains(key) {
+            throw ComposeError.invalidProject("run --label cannot override service '\(service.name)' annotation '\(key)' because annotations map to runtime metadata labels")
+        }
+        annotations[key] = value
+    }
+    return annotations
 }
 
 /// Loads one Compose `label_file` using the env-file-like key-value syntax.
