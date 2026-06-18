@@ -486,10 +486,12 @@ cli-smoke: build
 	[[ "$$watch_output" == *"compose: watch prune disabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch quiet enabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
-	for unsupported_command in commit publish; do \
-		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
-		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
-	done
+	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot 2>&1 || true)"; \
+	[[ "$$commit_output" == *"unsupported compose feature: commit:"* ]]; \
+	[[ "$$commit_output" == *"apple/container does not expose a container commit image snapshot primitive yet"* ]]; \
+	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \
+	[[ "$$publish_output" == *"unsupported compose feature: publish:"* ]]; \
+	[[ "$$publish_output" == *"apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet"* ]]
 
 coverage: swift-coverage go-test
 

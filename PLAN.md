@@ -102,6 +102,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Inspected the normalized Compose build fields against <code>container build --help</code> and reclassified advanced BuildKit fields from plugin backlog to Apple/container upstream build parity. The runtime rejection now points to missing Docker Compose compatible Apple/container build primitives.</td>
     </tr>
     <tr>
+      <td><code>commit</code> and <code>publish</code> blocker classification</td>
+      <td>2026-06-18 11:45:20 BST</td>
+      <td>2026-06-18 11:45:20 BST</td>
+      <td>2026-06-18 11:45:20 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose v2 command behavior and the available Apple/container image/export APIs, then reclassified <code>compose commit</code> and <code>compose publish</code> from plugin backlog to Apple/container runtime parity. The CLI now reports precise missing runtime primitives for container image snapshots and Compose application OCI artifacts.</td>
+    </tr>
+    <tr>
       <td>Network and port feature expansion</td>
       <td>2026-06-17 19:57:49 BST</td>
       <td>2026-06-17 19:57:49 BST</td>
@@ -298,24 +307,6 @@ Apple/container API work is discovered during implementation.
       <td colspan="4"><strong>Notes:</strong> Model-boundary support now preserves and validates <code>develop.watch</code> triggers and <code>watch --dry-run</code> emits the planned settings/actions. Remaining work needs live file watching, sync/rebuild/restart policy, and clear interaction with Compose <code>develop</code>.</td>
     </tr>
     <tr>
-      <td><code>commit</code> command</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Design service-container target resolution and image naming/output compatibility.</td>
-    </tr>
-    <tr>
-      <td><code>publish</code> command</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Design how Compose project/service image publishing maps to Apple/container image APIs.</td>
-    </tr>
-    <tr>
       <td>Replica scaling edge cases</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 10:07:04 BST</td>
@@ -408,7 +399,9 @@ Suggested Apple/container PR batches:
    controls.
 9. Command-data parity: dynamic host ports, events, process listing,
    pause/unpause, and copy archive/follow-link controls.
-10. Runtime API socket parity: a safe Compose-compatible equivalent for
+10. Image and artifact parity: container commit image snapshots and Compose
+    application OCI artifact publish/consume support.
+11. Runtime API socket parity: a safe Compose-compatible equivalent for
     `use_api_socket` that does not overexpose host control surfaces.
 
 <table>
@@ -582,6 +575,24 @@ Suggested Apple/container PR batches:
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>cp --archive</code> and <code>cp --follow-link</code> need matching file copy controls.</td>
+    </tr>
+    <tr>
+      <td>Container commit image snapshots</td>
+      <td>2026-06-18 11:45:20 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>commit</code> needs an Apple/container primitive that creates an image from a service container's changed filesystem and accepts Docker-compatible image metadata such as author, message, pause behavior, target replica index, and config changes.</td>
+    </tr>
+    <tr>
+      <td>Compose application OCI artifacts</td>
+      <td>2026-06-18 11:45:20 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>publish</code> and <code>oci://</code> Compose file references need Apple/container image/registry primitives for publishing and consuming Compose application OCI artifacts, not only service image tag/push/save operations.</td>
     </tr>
     <tr>
       <td>Runtime API socket exposure</td>

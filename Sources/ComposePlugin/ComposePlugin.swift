@@ -879,14 +879,14 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose commit` until image snapshot mapping exists.
+/// Placeholder for `compose commit` until Apple/container can commit containers to images.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for committing service containers.
+    /// Reports the runtime gap for committing service containers.
     func run() throws {
-        try global.orchestrator().unsupported("commit", reason: "service container commit is not implemented by container-compose yet")
+        try global.orchestrator().unsupported("commit", reason: "apple/container does not expose a container commit image snapshot primitive yet")
     }
 }
 
@@ -921,14 +921,14 @@ struct Export: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose publish` until project publishing is designed.
+/// Placeholder for `compose publish` until Apple/container supports Compose OCI artifacts.
 struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "publish", abstract: "Publish the Compose application.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for project publishing.
+    /// Reports the runtime gap for Compose application publishing.
     func run() throws {
-        try global.orchestrator().unsupported("publish", reason: "Compose application publishing is not implemented by container-compose yet")
+        try global.orchestrator().unsupported("publish", reason: "apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet")
     }
 }
 

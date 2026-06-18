@@ -207,6 +207,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A5](#a5-apple-gap-runtime-data-commands).
 
+#### Image commit and Compose application publishing
+
+- **Compose surface:** `commit`, `publish`, and `oci://` Compose application references.
+- **Missing Apple/container primitive:** Container-to-image commit snapshots with image metadata, plus Compose application OCI artifact publishing and consumption.
+- **container-compose status:** Command names are exposed so Docker Compose v2 scripts get precise unsupported-feature errors instead of unknown-command failures.
+- **Example:** [A7](#a7-apple-gap-image-commit-and-compose-publish).
+
 ### Blocked By `container-compose`
 
 These are valid Docker Compose v2 surfaces where [`apple/container`][apple-container] is not known to be the first blocker. The missing design, orchestration, or safety policy belongs in this repository.
@@ -239,11 +246,11 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Missing plugin work:** Security review and resource-control mapping.
 - **Example:** [C4](#c4-plugin-gap-metadata-storage-and-api-socket).
 
-#### Additional CLI commands
+#### Additional CLI command behavior
 
-- **Compose surface:** Default stdin/signal-proxy `attach`, `commit`, and `publish`.
-- **Apple/container path:** Not known to be the first blocker for every command.
-- **Missing plugin work:** Command design, output compatibility, and runtime mapping.
+- **Compose surface:** Default stdin/signal-proxy `attach`.
+- **Apple/container path:** Output-only logs are available today; an interactive attach path may later need runtime support depending on the final design.
+- **Missing plugin work:** Interactive command design, stdin forwarding, signal-proxy behavior, and detach-key compatibility.
 - **Example:** [C5](#c5-plugin-gap-additional-cli-commands).
 
 ### Config-Only Today
@@ -288,13 +295,13 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - `top`, `events`, `pause`, and `unpause`.
 - Already-stopped `wait` exit-code replay.
 - `cp --archive` and `cp --follow-link`.
+- `commit` container image snapshots.
+- `publish` Compose application OCI artifacts and `oci://` Compose file consumption.
 
 ### Commands Blocked By `container-compose` Design Gaps
 
 - `watch` file-watch/action execution.
 - Default stdin/signal-proxy `attach`.
-- `commit`.
-- `publish`.
 
 ## References
 
@@ -317,10 +324,11 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): [`apple/container`][apple-container] gap. Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
 - [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, dynamic host-port allocation, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
 - [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
+- [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates scaled fixed-port collisions, fixed MAC addresses, DNS, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
 - [C4: Plugin Gap, Metadata, Storage, And API Socket](#c4-plugin-gap-metadata-storage-and-api-socket): `container-compose` gap. Demonstrates logging options, external inherited mounts, advanced service volume options, API socket, and block I/O.
-- [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands): `container-compose` gap. Demonstrates Compose v2 commands that still need command-level plugin design.
+- [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands): `container-compose` gap. Demonstrates default interactive attach behavior that still needs command-level plugin design.
 - [O1: Config-Only Metadata](#o1-config-only-metadata): Config-only. Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
 ## Examples With Dockerfiles
@@ -951,6 +959,55 @@ RUN mkdir -p /app
 CMD ["sh", "-c", "sleep 3600"]
 ```
 
+### A7: Apple Gap, Image Commit And Compose Publish
+
+Expected result: `container compose commit` and `container compose publish` are recognized command names, then reject with Apple/runtime-gap messages. Existing Apple/container image primitives such as image save, tag, push, and container export are useful adjacent operations, but they do not create a new image from a service container's changed filesystem or package a Compose application as an OCI artifact that can be consumed with `oci://`.
+
+Status path:
+
+- Docker Compose v2: supports service-container image commits and Compose application publishing.
+- [`apple/container`][apple-container]: missing a container commit image-snapshot primitive and Compose application OCI artifact publish/consume primitives.
+- `container-compose`: exposes the command names and reports the Apple runtime boundary precisely.
+
+```yaml
+# compose.yaml
+name: apple-image-artifact-gap-demo
+
+services:
+  api:
+    build:
+      context: ./api
+    image: example/api:dev
+
+  worker:
+    build:
+      context: ./worker
+    image: example/worker:dev
+```
+
+Compare the missing command behavior:
+
+```sh
+container compose commit api example/api:snapshot
+container compose publish example/app:latest
+docker compose -f oci://example/app:latest config
+```
+
+Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+RUN mkdir -p /app
+CMD ["sh", "-c", "sleep 3600"]
+```
+
+Dockerfile: `worker/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
+```
+
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
 Expected result: `container compose config` preserves the `develop.watch` trigger metadata, and `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions. Live `container compose watch api` still reports that file watching and develop actions are not implemented yet. `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
@@ -1068,13 +1125,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C5: Plugin Gap, Additional CLI Commands
 
-Expected result: these Docker Compose v2 commands and default attach semantics are recognized by `container-compose` and fail with command-specific design gap messages.
+Expected result: output-only `container compose attach --no-stdin --sig-proxy=false` works through the runtime log stream. Default Docker Compose attach semantics still reject because the plugin needs an interactive attach design for stdin forwarding, signal proxying, and detach-key behavior.
 
 Status path:
 
-- Docker Compose v2: supports these commands and default attach behavior.
-- [`apple/container`][apple-container]: command-specific runtime availability still needs to be assessed as each command is implemented.
-- `container-compose`: exposes these command names and reports design gaps instead of failing as unknown subcommands. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
+- Docker Compose v2: supports default interactive attach behavior.
+- [`apple/container`][apple-container]: log streaming is available for output-only attach; deeper runtime attach support may be needed after the plugin design is settled.
+- `container-compose`: supports output-only attach and reports the remaining design gap for default interactive attach. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
 
 ```yaml
 # compose.yaml
@@ -1091,12 +1148,11 @@ services:
       context: ./worker
 ```
 
-Compare the missing command behavior:
+Compare the supported and missing command behavior:
 
 ```sh
+container compose attach --no-stdin --sig-proxy=false api
 docker compose attach api
-docker compose commit api example/api:snapshot
-docker compose publish
 ```
 
 Dockerfile: `api/Dockerfile`
