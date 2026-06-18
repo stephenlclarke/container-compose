@@ -136,6 +136,9 @@ cli-smoke: build
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Optional service names."* ]]; \
+	wait_help_output="$$(".build/debug/compose" wait --help)"; \
+	[[ "$$wait_help_output" == *"Drop the project when the first selected service container stops."* ]]; \
+	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'enabled=true\n' > "$$tmpdir/api.conf"; \

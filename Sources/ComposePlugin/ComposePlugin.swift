@@ -978,7 +978,7 @@ struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
 struct Wait: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "wait", abstract: "Wait for service containers to exit.")
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .customLong("down-project"), help: "Drop the project when the first container stops. Not implemented yet.")
+    @Flag(name: .customLong("down-project"), help: "Drop the project when the first selected service container stops.")
     var downProject = false
     @Argument(help: "Service names.")
     var services: [String] = []
