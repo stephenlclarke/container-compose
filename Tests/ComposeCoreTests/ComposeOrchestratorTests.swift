@@ -8813,6 +8813,59 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("logs follow starts selected service replicas concurrently")
+    func logsFollowStartsSelectedServiceReplicasConcurrently() async throws {
+        let logManager = BlockingContainerLogManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.logManager = logManager
+            }
+        )
+        let followTask = Task {
+            try await orchestrator.logs(project: project, services: ["api"], follow: true, tail: "10")
+        }
+
+        let startedBothTargets = try await logManager.waitForRequestCount(2)
+        await logManager.releaseAll()
+        try await followTask.value
+
+        #expect(startedBothTargets)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await logManager.requests.sorted { $0.id < $1.id } == [
+            ContainerLogRequest(id: "demo-api-1", tail: 10, follow: true),
+            ContainerLogRequest(id: "demo-api-2", tail: 10, follow: true),
+        ])
+    }
+
     @Test("logs with no service targets all project service replicas")
     func logsWithNoServiceTargetsAllProjectServiceReplicas() async throws {
         let logManager = RecordingContainerLogManager(outputs: ["log"])
@@ -14135,6 +14188,61 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
         for output in outputs {
             emit(output)
         }
+    }
+}
+
+private actor BlockingContainerLogManager: ContainerLogManaging {
+    private var storage: [ContainerLogRequest] = []
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+
+    var requests: [ContainerLogRequest] {
+        storage
+    }
+
+    func logs(
+        id: String,
+        tail: Int?,
+        follow: Bool,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        storage.append(
+            ContainerLogRequest(
+                id: id,
+                tail: tail,
+                follow: follow,
+                since: since,
+                until: until,
+                timestamps: timestamps
+            )
+        )
+        guard follow, !released else {
+            return
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            releaseContinuations.append(continuation)
+        }
+    }
+
+    func waitForRequestCount(_ count: Int) async throws -> Bool {
+        for _ in 0..<100 {
+            if storage.count >= count {
+                return true
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return storage.count >= count
+    }
+
+    func releaseAll() {
+        released = true
+        for continuation in releaseContinuations {
+            continuation.resume()
+        }
+        releaseContinuations.removeAll()
     }
 }
 

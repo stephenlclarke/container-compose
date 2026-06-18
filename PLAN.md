@@ -57,8 +57,8 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
     </tr>
     <tr>
       <td>Multi-service follow</td>
-      <td><img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"></td>
-      <td>Docker Compose follows all selected services together. container-compose loops services sequentially, so the first followed stream can block later services.</td>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"></td>
+      <td>Docker Compose follows all selected services together. container-compose now starts all selected service and replica streams concurrently.</td>
     </tr>
     <tr>
       <td>Compose log presentation</td>
@@ -116,6 +116,8 @@ Docker Compose surface: `docker compose logs --follow [SERVICE...]`.
 Current `container-compose` behavior:
 
 - Supports `--follow` for resolved service container targets.
+- Starts multiple selected service and replica streams concurrently with a throwing task group.
+- Surfaces stream failures instead of letting one followed stream starve later targets.
 - Uses a file readability handler to emit appended UTF-8 log lines.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
@@ -123,16 +125,14 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 - `container logs --follow <container-id>` follows one container log file.
 - The direct API exposes the file handle that makes the current plugin implementation possible.
 
-Missing behavior:
+Remaining work:
 
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Follow all selected services and replicas concurrently instead of looping sequentially.
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Keep one failed stream from silently starving or hiding other selected streams.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Preserve blank log lines and partial trailing lines consistently while following.
 
-Implementation direction:
+Completed implementation:
 
-- Change `ComposeOrchestrator.logs` to resolve the full target set first, then fan in multiple `ContainerLogManaging.logs` streams with task-group cancellation.
-- Add tests for `logs --follow` with two services and a scaled service where both streams emit.
+- `ComposeOrchestrator.logs` resolves the full target set first, then fans out multiple `ContainerLogManaging.logs` streams with a task group.
+- Regression coverage proves a scaled service starts both followed replicas before either stream is released.
 
 ### L3. Tail Mode
 
@@ -304,7 +304,7 @@ Implementation direction:
 ## Suggested Work Order
 
 1. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement all-replica target resolution for `logs`.
-2. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
+2. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
 3. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
 5. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container timestamped structured log records.
@@ -315,7 +315,7 @@ Implementation direction:
 
 - `container compose logs` with no services prints logs for every Compose-managed service container in the project.
 - `container compose logs SERVICE` prints logs for every replica of that service unless `--index` narrows the target.
-- `container compose logs --follow` streams all selected containers concurrently and stops cleanly on cancellation.
+- `container compose logs --follow` streams all selected containers concurrently and surfaces stream failures.
 - Default output includes Compose-style service/replica prefixes and optional color; `--no-log-prefix` and `--no-color` alter real behavior.
 - `--tail` applies independently to each selected container.
 - Blank lines and trailing newline behavior match Docker Compose v2 fixtures.

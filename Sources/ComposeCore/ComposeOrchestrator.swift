@@ -1469,36 +1469,108 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let runtimeSince = try runtimeLogTimestamp(since)
         let runtimeUntil = try runtimeLogTimestamp(until)
         try validateRuntimeLogOptions(follow: follow, since: runtimeSince, until: runtimeUntil, timestamps: timestamps)
-        for target in try await logTargets(project: project, services: services, index: index) {
-            var args = ["logs"]
-            if follow {
-                args.append("--follow")
-            }
-            if let runtimeTail {
-                args.append(contentsOf: ["-n", String(runtimeTail)])
-            }
-            if let since {
-                args.append(contentsOf: ["--since", since])
-            }
-            if let until {
-                args.append(contentsOf: ["--until", until])
-            }
-            let id = target.name
-            args.append(id)
-            if options.dryRun {
-                try await runContainer(args)
-            } else {
-                try await logManager.logs(
-                    id: id,
-                    tail: runtimeTail,
+        let targets = try await logTargets(project: project, services: services, index: index)
+        if options.dryRun {
+            for target in targets {
+                let args = logRuntimeArguments(
+                    id: target.name,
                     follow: follow,
-                    since: runtimeSince,
-                    until: runtimeUntil,
-                    timestamps: timestamps,
-                    emit: options.emit
+                    tail: runtimeTail,
+                    since: since,
+                    until: until
                 )
+                try await runContainer(args)
             }
+            return
         }
+        if follow, targets.count > 1 {
+            try await followLogTargets(
+                targets,
+                tail: runtimeTail,
+                since: runtimeSince,
+                until: runtimeUntil,
+                timestamps: timestamps
+            )
+            return
+        }
+        for target in targets {
+            try await emitLogs(
+                for: target,
+                follow: follow,
+                tail: runtimeTail,
+                since: runtimeSince,
+                until: runtimeUntil,
+                timestamps: timestamps
+            )
+        }
+    }
+
+    /// Renders direct runtime arguments for log dry-run output.
+    private func logRuntimeArguments(id: String, follow: Bool, tail: Int?, since: String?, until: String?) -> [String] {
+        var args = ["logs"]
+        if follow {
+            args.append("--follow")
+        }
+        if let tail {
+            args.append(contentsOf: ["-n", String(tail)])
+        }
+        if let since {
+            args.append(contentsOf: ["--since", since])
+        }
+        if let until {
+            args.append(contentsOf: ["--until", until])
+        }
+        args.append(id)
+        return args
+    }
+
+    /// Follows all selected log targets concurrently.
+    private func followLogTargets(
+        _ targets: [ServiceContainerTarget],
+        tail: Int?,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool
+    ) async throws {
+        let emit = options.emit
+        let logManager = logManager
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for target in targets {
+                let containerID = target.name
+                group.addTask { [containerID, emit, logManager, since, tail, timestamps, until] in
+                    try await logManager.logs(
+                        id: containerID,
+                        tail: tail,
+                        follow: true,
+                        since: since,
+                        until: until,
+                        timestamps: timestamps,
+                        emit: emit
+                    )
+                }
+            }
+            while try await group.next() != nil {}
+        }
+    }
+
+    /// Emits static or single-target followed logs.
+    private func emitLogs(
+        for target: ServiceContainerTarget,
+        follow: Bool,
+        tail: Int?,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool
+    ) async throws {
+        try await logManager.logs(
+            id: target.name,
+            tail: tail,
+            follow: follow,
+            since: since,
+            until: until,
+            timestamps: timestamps,
+            emit: options.emit
+        )
     }
 
     /// Runs `compose watch` by applying initial syncs and polling watched paths
