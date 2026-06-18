@@ -7650,6 +7650,39 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run rejects unsupported service mount fields before creating resources")
+    func runRejectsUnsupportedServiceMountFieldsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            source: "cache",
+                            target: "/cache",
+                            unsupportedFields: ["volume.nocopy", "volume.subpath", "volume.nocopy"]
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported service mount error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses unsupported volume fields volume.nocopy, volume.subpath; advanced service volume options are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported API socket mounting before creating resources")
     func runRejectsUnsupportedAPISocketBeforeCreatingResources() async throws {
         let runner = RecordingRunner()

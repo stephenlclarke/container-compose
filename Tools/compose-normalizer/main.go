@@ -191,11 +191,12 @@ type normalizedBuildSecret struct {
 
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
 type normalizedMount struct {
-	Type     string `json:"type,omitempty"`
-	Source   string `json:"source,omitempty"`
-	Target   string `json:"target,omitempty"`
-	ReadOnly bool   `json:"readOnly,omitempty"`
-	Raw      string `json:"raw,omitempty"`
+	Type              string   `json:"type,omitempty"`
+	Source            string   `json:"source,omitempty"`
+	Target            string   `json:"target,omitempty"`
+	ReadOnly          bool     `json:"readOnly,omitempty"`
+	Raw               string   `json:"raw,omitempty"`
+	UnsupportedFields []string `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedNetwork contains project-level network metadata.
@@ -716,13 +717,62 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 	result := make([]normalizedMount, 0, len(volumes))
 	for _, volume := range volumes {
 		result = append(result, normalizedMount{
-			Type:     volume.Type,
-			Source:   volume.Source,
-			Target:   volume.Target,
-			ReadOnly: volume.ReadOnly,
+			Type:              volume.Type,
+			Source:            volume.Source,
+			Target:            volume.Target,
+			ReadOnly:          volume.ReadOnly,
+			UnsupportedFields: unsupportedMountFields(volume),
 		})
 	}
 	return result
+}
+
+// unsupportedMountFields reports mount options that the Apple runtime
+// argument shape used by this plugin cannot preserve yet.
+func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
+	fields := []string{}
+	if volume.Type != "" && volume.Type != "bind" && volume.Type != "volume" && volume.Type != "tmpfs" {
+		appendUnsupportedMountField(&fields, "type")
+	}
+	appendUnsupportedMountFieldWhen(&fields, "consistency", volume.Consistency != "")
+	if volume.Bind != nil {
+		appendUnsupportedMountFieldWhen(&fields, "bind.selinux", volume.Bind.SELinux != "")
+		appendUnsupportedMountFieldWhen(&fields, "bind.propagation", volume.Bind.Propagation != "")
+		appendUnsupportedMountFieldWhen(&fields, "bind.recursive", volume.Bind.Recursive != "")
+	}
+	if volume.Volume != nil {
+		appendUnsupportedMountFieldWhen(&fields, "volume.labels", len(volume.Volume.Labels) > 0)
+		appendUnsupportedMountFieldWhen(&fields, "volume.nocopy", volume.Volume.NoCopy)
+		appendUnsupportedMountFieldWhen(&fields, "volume.subpath", volume.Volume.Subpath != "")
+	}
+	if volume.Tmpfs != nil {
+		appendUnsupportedMountFieldWhen(&fields, "tmpfs.size", unitBytesValue(volume.Tmpfs.Size) != "")
+		appendUnsupportedMountFieldWhen(&fields, "tmpfs.mode", volume.Tmpfs.Mode != 0)
+	}
+	if volume.Image != nil {
+		appendUnsupportedMountFieldWhen(&fields, "image.subpath", volume.Image.SubPath != "")
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return fields
+}
+
+// appendUnsupportedMountField records one unsupported mount field once.
+func appendUnsupportedMountField(fields *[]string, name string) {
+	for _, field := range *fields {
+		if field == name {
+			return
+		}
+	}
+	*fields = append(*fields, name)
+}
+
+// appendUnsupportedMountFieldWhen records one unsupported mount field when present.
+func appendUnsupportedMountFieldWhen(fields *[]string, name string, present bool) {
+	if present {
+		appendUnsupportedMountField(fields, name)
+	}
 }
 
 // networkValues returns deterministic service network names.

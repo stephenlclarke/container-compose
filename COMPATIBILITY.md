@@ -68,7 +68,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | Replica scaling and local deploy handling | `scale`, `up --scale`, `deploy.replicas` values other than `1`, full multi-replica reconciliation, and `deploy` fields beyond local replica count and CPU/memory limits | Multi-replica creation, reconciliation, DNS behavior, logs, `ps`, lifecycle, removal, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources beyond indexed target lookup for existing containers | [C1](#c1-plugin-gap-replica-scaling-and-deploy) |
 | Advanced build configuration | `additional_contexts`, `dockerfile_inline`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, build secrets without top-level `file` or `environment` backing, build secret `uid`/`gid`/`mode`, build `shm_size`, `ssh`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
 | Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
-| Metadata, logging, storage shortcuts | `annotations`, service `attach`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver` | Runtime mapping, inherited mount behavior, logging behavior, storage option policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
+| Metadata, logging, storage shortcuts | `annotations`, service `attach`, `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from`, service-level `volume_driver`, advanced service volume options such as bind propagation/SELinux/recursive controls, volume labels/nocopy/subpath, tmpfs size/mode, image mounts, and mount consistency | Runtime mapping, inherited mount behavior, logging behavior, storage option and advanced mount policy | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | API socket, block I/O, pull windows | `use_api_socket`, `blkio_config`, service `pull_policy: build/daily/weekly/<duration>` | Security review, resource-control mapping, and time-window/build-trigger pull semantics | [C4](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) |
 | Additional CLI commands | `watch`, `scale`, default stdin/signal-proxy `attach`, `commit`, `publish` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
 
@@ -116,7 +116,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 | [C1: Plugin Gap, Replica Scaling And Deploy](#c1-plugin-gap-replica-scaling-and-deploy) | `container-compose` gap | Replica creation, reconciliation, lifecycle, logs, `ps`, `rm`, DNS, and deploy semantics |
 | [C2: Plugin Gap, Advanced Build Fields](#c2-plugin-gap-advanced-build-fields) | `container-compose` gap | Additional contexts, inline Dockerfile, unsupported secret forms and metadata, SSH, and provenance/SBOM fields |
 | [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks) | `container-compose` gap | Watch/develop, providers, model bindings, and lifecycle hooks |
-| [C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) | `container-compose` gap | Annotations, logging options, inherited mounts, API socket, block I/O, and time-window pull policy |
+| [C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows](#c4-plugin-gap-metadata-storage-api-socket-and-pull-windows) | `container-compose` gap | Annotations, logging options, inherited mounts, advanced service volume options, API socket, block I/O, and time-window pull policy |
 | [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands) | `container-compose` gap | Compose v2 commands that still need command-level plugin design |
 | [O1: Config-Only Metadata](#o1-config-only-metadata) | Config-only | Extension metadata, top-level models/secrets, and `expose` in normalized output |
 
@@ -753,13 +753,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C4: Plugin Gap, Metadata, Storage, API Socket, And Pull Windows
 
-Expected result: `container compose up` rejects this because annotations, logging/storage options, inherited mounts, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
+Expected result: `container compose up` rejects this because annotations, logging/storage options, inherited mounts, advanced service volume options, API socket exposure, block I/O controls, and time-window pull policy need plugin implementation and security review.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this grouped example.
-- `container-compose`: needs runtime mapping, inherited mount behavior, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
+- `container-compose`: needs runtime mapping, inherited mount behavior, advanced mount option policy, logging/storage policy, API socket security review, block I/O handling, and time-window pull semantics.
 
 ```yaml
 # compose.yaml
@@ -785,6 +785,18 @@ services:
     pull_policy: daily
     volumes_from:
       - base
+    volumes:
+      - type: volume
+        source: shared-data
+        target: /data
+        volume:
+          nocopy: true
+          subpath: worker
+      - type: tmpfs
+        target: /scratch
+        tmpfs:
+          size: 64m
+          mode: 1777
     use_api_socket: true
     blkio_config:
       weight: 300

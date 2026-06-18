@@ -1374,6 +1374,10 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
+        if let fields = unsupportedServiceMountFields(service: service) {
+            let fieldList = fields.joined(separator: ", ")
+            throw ComposeError.unsupported("service '\(service.name)' uses unsupported volume fields \(fieldList); advanced service volume options are not implemented by container-compose yet")
+        }
         if service.useAPISocket == true {
             throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; API socket mounting is not implemented by container-compose yet")
         }
@@ -1636,6 +1640,16 @@ private extension ComposeOrchestrator {
             fields.append(("volume_driver", "service-level volume driver support is not implemented by container-compose yet"))
         }
         return fields
+    }
+
+    /// Returns unsupported long-form service mount fields that cannot be
+    /// represented by the current Apple `container --volume/--tmpfs` mapping.
+    func unsupportedServiceMountFields(service: ComposeService) -> [String]? {
+        var seen = Set<String>()
+        let fields = (service.volumes ?? []).flatMap { $0.unsupportedFields ?? [] }.filter { field in
+            seen.insert(field).inserted
+        }
+        return fields.isEmpty ? nil : fields
     }
 
     /// Appends an unsupported string field only when Compose supplied a non-empty value.

@@ -260,6 +260,76 @@ secrets:
 	}
 }
 
+func TestLoadProjectMarksUnsupportedVolumeOptions(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "data"), "data\n")
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  bindy:
+    image: alpine
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+        consistency: delegated
+        bind:
+          propagation: rshared
+          selinux: z
+          recursive: readonly
+  named:
+    image: alpine
+    volumes:
+      - type: volume
+        source: cache
+        target: /cache
+        volume:
+          nocopy: true
+          subpath: nested
+          labels:
+            owner: platform
+  scratch:
+    image: alpine
+    volumes:
+      - type: tmpfs
+        target: /scratch
+        tmpfs:
+          size: 64m
+          mode: 1777
+  imagey:
+    image: alpine
+    volumes:
+      - type: image
+        source: alpine
+        target: /image
+        image:
+          subpath: etc
+volumes:
+  cache: {}
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	cases := map[string][]string{
+		"bindy":   {"consistency", "bind.selinux", "bind.propagation", "bind.recursive"},
+		"named":   {"volume.labels", "volume.nocopy", "volume.subpath"},
+		"scratch": {"tmpfs.size", "tmpfs.mode"},
+		"imagey":  {"type", "image.subpath"},
+	}
+	for serviceName, want := range cases {
+		mounts := project.Services[serviceName].Volumes
+		if len(mounts) != 1 {
+			t.Fatalf("%s mounts = %#v, want one mount", serviceName, mounts)
+		}
+		if got := mounts[0].UnsupportedFields; !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s unsupported volume fields = %#v, want %#v", serviceName, got, want)
+		}
+	}
+}
+
 func TestLoadProjectNormalizesComposeModel(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")

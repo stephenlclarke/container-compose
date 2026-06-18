@@ -490,13 +490,22 @@ public struct ComposeMount: Codable, Equatable {
     public var target: String?
     public var readOnly: Bool?
     public var raw: String?
+    public var unsupportedFields: [String]?
 
-    public init(type: String? = nil, source: String? = nil, target: String? = nil, readOnly: Bool? = nil, raw: String? = nil) {
+    public init(
+        type: String? = nil,
+        source: String? = nil,
+        target: String? = nil,
+        readOnly: Bool? = nil,
+        raw: String? = nil,
+        unsupportedFields: [String]? = nil
+    ) {
         self.type = type
         self.source = source
         self.target = target
         self.readOnly = readOnly
         self.raw = raw
+        self.unsupportedFields = unsupportedFields
     }
 }
 
