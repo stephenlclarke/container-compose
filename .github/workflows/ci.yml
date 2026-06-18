@@ -63,6 +63,7 @@ jobs:
           {
             swift --version 2>&1
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
+            shasum -a 256 container-compose/Makefile
             shasum -a 256 container/Package.swift container/Package.resolved
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
@@ -178,6 +179,19 @@ jobs:
           SONAR_QUALITYGATE_WAIT: "true"
         run: make sonar-scan
         working-directory: container-compose
+
+      - name: Cache SwiftPM release artifacts
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v5
+        with:
+          path: |
+            container-compose/.build/*-apple-macosx/release
+            container-compose/.build/release
+            container-compose/.build/release.yaml
+            container-compose/.build/build.db
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-release-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-release-v1-
 
       - name: Build plugin package
         if: github.event_name != 'pull_request'

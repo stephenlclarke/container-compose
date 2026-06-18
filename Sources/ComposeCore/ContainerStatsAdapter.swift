@@ -29,7 +29,7 @@ public struct ComposeStatsTarget: Sendable, Equatable {
     }
 }
 
-/// Low-level Apple container stats calls used by `ContainerClientStatsManager`.
+/// Low-level apple/container stats calls used by `ContainerClientStatsManager`.
 public protocol ContainerStatsAPIClienting: Sendable {
     /// Lists the requested containers before stats collection.
     func listStatsTargets(ids: [String]) async throws -> [ComposeStatsTarget]
@@ -38,7 +38,7 @@ public protocol ContainerStatsAPIClienting: Sendable {
     func stats(id: String) async throws -> ContainerStats
 }
 
-/// Direct Apple container API used for service container stats.
+/// Direct apple/container API used for service container stats.
 public protocol ContainerStatsManaging: Sendable {
     /// Emits stats for the requested service container ids.
     func stats(
@@ -50,7 +50,7 @@ public protocol ContainerStatsManaging: Sendable {
     ) async throws
 }
 
-/// Thin Apple `container` client wrapper around stats API calls.
+/// Thin apple/container client wrapper around stats API calls.
 public struct ContainerStatsAPIClient: ContainerStatsAPIClienting {
     public typealias List = @Sendable ([String]) async throws -> [ComposeStatsTarget]
     public typealias Stats = @Sendable (String) async throws -> ContainerStats
@@ -172,7 +172,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         )
     }
 
-    /// Mirrors the Apple CLI check that every named container exists.
+    /// Mirrors the apple/container CLI check that every named container exists.
     private func validatedTargets(ids: [String]) async throws -> [ComposeStatsTarget] {
         let targets = try await client.listStatsTargets(ids: ids)
         let foundIDs = Set(targets.map(\.id))
@@ -238,7 +238,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         return (Double(delta) / Double(sampleIntervalMicroseconds)) * 100.0
     }
 
-    /// Formats bytes like the Apple `container stats` command.
+    /// Formats bytes like the apple/container `container stats` command.
     private func formatBytes(_ bytes: UInt64) -> String {
         let kib = 1024.0
         let mib = kib * 1024.0

@@ -61,7 +61,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     }
 }
 
-/// Stable published-port data projected from Apple's container snapshot.
+/// Stable published-port data projected from apple/container snapshots.
 public struct ComposeContainerPublishedPort: Sendable, Equatable, Codable {
     public var hostAddress: String
     public var hostPort: UInt16
@@ -84,17 +84,17 @@ public struct ComposeContainerPublishedPort: Sendable, Equatable, Codable {
     }
 }
 
-/// Low-level Apple container discovery calls used by
+/// Low-level apple/container discovery calls used by
 /// `ContainerClientDiscoveryManager`.
 public protocol ContainerDiscoveryAPIClienting: Sendable {
-    /// Lists containers with fully resolved Apple container filters.
+    /// Lists containers with fully resolved apple/container filters.
     func listContainers(filters: ContainerListFilters) async throws -> [ContainerSnapshot]
 
     /// Returns a container snapshot when `id` exists.
     func getContainer(id: String) async throws -> ContainerSnapshot?
 }
 
-/// Direct Apple container APIs used for Compose project discovery.
+/// Direct apple/container APIs used for Compose project discovery.
 public protocol ContainerDiscoveryManaging: Sendable {
     /// Lists containers, including stopped containers when `all` is true.
     func listContainers(all: Bool) async throws -> [ComposeContainerSummary]
@@ -103,7 +103,7 @@ public protocol ContainerDiscoveryManaging: Sendable {
     func getContainer(id: String) async throws -> ComposeContainerSummary?
 }
 
-/// Thin Apple `container` client wrapper around discovery API calls.
+/// Thin apple/container client wrapper around discovery API calls.
 public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     public typealias List = @Sendable (ContainerListFilters) async throws -> [ContainerSnapshot]
     public typealias Get = @Sendable (String) async throws -> ContainerSnapshot
@@ -157,7 +157,7 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
         return Self.summary(from: snapshot)
     }
 
-    /// Projects Apple's container snapshot into the stable Compose model.
+    /// Projects an apple/container snapshot into the stable Compose model.
     private static func summary(from snapshot: ContainerSnapshot) -> ComposeContainerSummary {
         ComposeContainerSummary(
             id: snapshot.id,
@@ -181,7 +181,7 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
         )
     }
 
-    /// Projects an Apple filesystem mount into a runtime-ready Compose mount.
+    /// Projects an apple/container filesystem mount into a runtime-ready Compose mount.
     private static func mount(from filesystem: Filesystem) -> ComposeMount {
         let readOnly = filesystem.options.readonly ? true : nil
         switch filesystem.type {

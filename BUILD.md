@@ -168,7 +168,7 @@ Build the plugin archive consumed by the install guide:
 make package
 ```
 
-GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds.
+GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds. Main and manual runs restore a separate SwiftPM release-artifact cache before packaging so a pull-request debug/test cache hit does not prevent release build products from being reused on later package builds.
 
 `make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`.
 
@@ -228,11 +228,12 @@ operation or because the CLI is the available public compatibility surface.
 | --- | --- |
 | Build | `container build --pull --platform --cache-in --cache-out --tag --label --secret --file` |
 | Container create/run options not yet exposed through a focused adapter | `container create` and `container run` flags such as `--network none`, `--network <name>,mac=...,mtu=...`, `--publish`, `--volume`, `--tmpfs`, and `--mount type=tmpfs` |
+| Dynamic host-port allocation | `container-compose` allocates ephemeral host ports, then renders explicit `container create` or `container run --publish <host>:<target>` bindings because apple/container expects explicit host ports. |
 | Dry-run output | Renders equivalent `container` commands without mutating runtime state |
 
 Unsupported Docker Compose behavior is rejected before resources are created.
-For example, dynamic host-port allocation is not translated because
-apple/container currently requires explicit host ports for `--publish`.
+For example, multiple service networks and service logging drivers are rejected
+until apple/container exposes matching runtime primitives.
 
 Apple publishes public DocC documentation for
 [`container`](https://apple.github.io/container/documentation/) and

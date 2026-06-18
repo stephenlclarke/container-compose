@@ -71,7 +71,7 @@ public struct ContainerAttachedExecRequest: Sendable, Equatable {
     }
 }
 
-/// Low-level Apple process calls used by `ContainerClientExecManager`.
+/// Low-level apple/container process calls used by `ContainerClientExecManager`.
 public protocol ContainerExecAPIClienting: Sendable {
     /// Returns the current container snapshot for `id`.
     func getContainer(id: String) async throws -> ContainerSnapshot
@@ -94,7 +94,7 @@ public protocol ContainerExecAPIClienting: Sendable {
     ) async throws -> Int32
 }
 
-/// Direct Apple container APIs used for detached Compose exec.
+/// Direct apple/container APIs used for detached Compose exec.
 public protocol ContainerExecManaging: Sendable {
     /// Runs an attached process inside a service container and returns its status.
     func execAttached(request: ContainerAttachedExecRequest) async throws -> Int32
@@ -106,7 +106,7 @@ public protocol ContainerExecManaging: Sendable {
     ) async throws
 }
 
-/// Thin Apple `container` client wrapper around process APIs.
+/// Thin apple/container client wrapper around process APIs.
 public struct ContainerExecAPIClient: ContainerExecAPIClienting {
     public typealias Get = @Sendable (String) async throws -> ContainerSnapshot
     public typealias CreateAndStart = @Sendable (String, String, ProcessConfiguration, [FileHandle?]) async throws -> Void
@@ -166,7 +166,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
         self.processIdentifier = processIdentifier
     }
 
-    /// Creates and starts an attached process with Apple runtime process APIs.
+    /// Creates and starts an attached process with apple/container process APIs.
     public func execAttached(request: ContainerAttachedExecRequest) async throws -> Int32 {
         let (container, configuration) = try await processConfiguration(
             id: request.id,
@@ -186,7 +186,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
         )
     }
 
-    /// Creates and starts a detached process with Apple runtime process APIs.
+    /// Creates and starts a detached process with apple/container process APIs.
     public func execDetached(
         request: ContainerDetachedExecRequest,
         emit: @escaping @Sendable (String) -> Void

@@ -480,6 +480,15 @@ is blocked upstream, and gray is not started.
       <td colspan="4"><strong>Notes:</strong> Reused the debug <code>compose</code> executable emitted by the Swift coverage test build for <code>make ci</code> smoke tests, avoiding a second non-coverage SwiftPM product build on the CI path while keeping standalone <code>make cli-smoke</code> build-first behavior.</td>
     </tr>
     <tr>
+      <td>CI release package cache</td>
+      <td>2026-06-18 20:01:14 BST</td>
+      <td>2026-06-18 20:01:14 BST</td>
+      <td>2026-06-18 20:01:14 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added a main/manual workflow cache for SwiftPM release artifacts before <code>make package</code>, and included <code>Makefile</code> in the SwiftPM cache fingerprint so package-build behavior changes invalidate the relevant caches. This keeps pull-request debug/test cache hits from preventing reusable release products on later package builds.</td>
+    </tr>
+    <tr>
       <td>Sonar empty closure cleanup</td>
       <td>2026-06-18 19:20:02 BST</td>
       <td>2026-06-18 19:20:02 BST</td>
@@ -601,6 +610,42 @@ is blocked upstream, and gray is not started.
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Renamed the C3 compatibility example from a stale plugin-gap label to a partial support label, updated the matching anchors, and aligned this plan's watch/develop note with the current no-plugin-gap compatibility snapshot.</td>
+    </tr>
+    <tr>
+      <td><code>BUILD.md</code> dynamic port boundary wording</td>
+      <td>2026-06-18 20:12:53 BST</td>
+      <td>2026-06-18 20:12:53 BST</td>
+      <td>2026-06-18 20:12:53 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Corrected the runtime-boundary guide so it no longer describes dynamic host-port allocation as unsupported. The guide now matches the implementation and compatibility matrix: container-compose allocates ephemeral host ports before calling apple/container with explicit <code>--publish</code> bindings.</td>
+    </tr>
+    <tr>
+      <td><code>DESIGN.md</code> dynamic port boundary wording</td>
+      <td>2026-06-18 20:18:11 BST</td>
+      <td>2026-06-18 20:18:11 BST</td>
+      <td>2026-06-18 20:18:11 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Corrected the design boundary so it lists dynamic host-port allocation as a supported CLI compatibility path. Unsupported runtime behavior is now described generically as depending on missing apple/container primitives instead of using the completed dynamic-port feature as the example.</td>
+    </tr>
+    <tr>
+      <td>Test display upstream naming</td>
+      <td>2026-06-18 20:21:22 BST</td>
+      <td>2026-06-18 20:21:22 BST</td>
+      <td>2026-06-18 20:21:22 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Normalized Swift Testing display names for upstream runtime gap coverage so test output uses <code>apple/container</code> consistently with the documentation and unsupported-feature messages.</td>
+    </tr>
+    <tr>
+      <td>Source comment upstream naming</td>
+      <td>2026-06-18 20:30:59 BST</td>
+      <td>2026-06-18 20:30:59 BST</td>
+      <td>2026-06-18 20:30:59 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Normalized maintained Swift and Go source comments so direct runtime API notes use <code>apple/container</code> consistently with documentation, tests, and unsupported-feature messages.</td>
     </tr>
   </tbody>
 </table>

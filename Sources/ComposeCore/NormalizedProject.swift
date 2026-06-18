@@ -583,7 +583,7 @@ public struct ComposeBuild: Codable, Equatable {
     }
 }
 
-/// Build-time secret supported by Apple `container build --secret`.
+/// Build-time secret supported by apple/container `container build --secret`.
 public struct ComposeBuildSecret: Codable, Equatable {
     public var id: String
     public var file: String?
@@ -640,7 +640,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
 
 /// Network definition normalized from the Compose project.
 public struct ComposeNetwork: Codable, Equatable {
-    /// IPAM subnets supported by Apple `container` network creation.
+    /// IPAM subnets supported by apple/container network creation.
     public struct Subnets: Equatable {
         public var ipv4Subnet: String?
         public var ipv6Subnet: String?

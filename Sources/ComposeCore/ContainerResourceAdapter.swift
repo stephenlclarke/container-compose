@@ -41,7 +41,7 @@ public struct ComposeVolumeSummary: Codable, Equatable, Sendable {
         self.sizeInBytes = sizeInBytes
     }
 
-    /// Creates a Compose-facing summary from an Apple container volume.
+    /// Creates a Compose-facing summary from an apple/container volume.
     public init(configuration: VolumeConfiguration) {
         self.init(
             name: configuration.name,
@@ -95,7 +95,7 @@ public struct ComposeVolumeCreateRequest: Equatable, Sendable {
         self.labels = labels
     }
 
-    /// Returns the Apple container volume driver for direct API calls.
+    /// Returns the apple/container volume driver for direct API calls.
     public var resolvedDriver: String {
         guard let driver, !driver.isEmpty else {
             return "local"
@@ -104,35 +104,35 @@ public struct ComposeVolumeCreateRequest: Equatable, Sendable {
     }
 }
 
-/// Low-level Apple container resource calls used by
+/// Low-level apple/container resource calls used by
 /// `ContainerClientResourceManager`.
 public protocol ContainerResourceAPIClienting: Sendable {
-    /// Creates a network from a fully resolved Apple container configuration.
+    /// Creates a network from a fully resolved apple/container configuration.
     func createNetwork(configuration: NetworkConfiguration) async throws
 
     /// Deletes the runtime network named by `id`.
     func deleteNetwork(id: String) async throws
 
-    /// Creates a volume with resolved Apple runtime metadata.
+    /// Creates a volume with resolved apple/container runtime metadata.
     func createVolume(_ request: ComposeVolumeCreateRequest) async throws
 
-    /// Lists local volumes available through the Apple container API.
+    /// Lists local volumes available through the apple/container API.
     func listVolumes() async throws -> [ComposeVolumeSummary]
 
     /// Deletes the runtime volume named by `name`.
     func deleteVolume(name: String) async throws
 }
 
-/// Direct Apple container APIs used for Compose-scoped network and volume
+/// Direct apple/container APIs used for Compose-scoped network and volume
 /// resources.
 public protocol ContainerResourceManaging: Sendable {
-    /// Creates a project network with resolved Apple runtime metadata.
+    /// Creates a project network with resolved apple/container runtime metadata.
     func createNetwork(_ request: ComposeNetworkCreateRequest) async throws
 
     /// Deletes the runtime network named by `id`.
     func deleteNetwork(id: String) async throws
 
-    /// Creates a volume with resolved Apple runtime metadata.
+    /// Creates a volume with resolved apple/container runtime metadata.
     func createVolume(_ request: ComposeVolumeCreateRequest) async throws
 
     /// Lists local volumes available to Compose project commands.
@@ -156,7 +156,7 @@ public extension ContainerResourceManaging {
     }
 }
 
-/// Thin Apple `container` client wrapper around network and volume API calls.
+/// Thin apple/container client wrapper around network and volume API calls.
 public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     public typealias CreateNetwork = @Sendable (NetworkConfiguration) async throws -> Void
     public typealias DeleteNetwork = @Sendable (String) async throws -> Void
@@ -217,7 +217,7 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     }
 }
 
-/// Apple `container` client-backed resource manager for Compose project
+/// apple/container client-backed resource manager for Compose project
 /// networks and volumes.
 public struct ContainerClientResourceManager: ContainerResourceManaging {
     private let client: ContainerResourceAPIClienting

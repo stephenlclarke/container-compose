@@ -18,7 +18,7 @@ import ContainerAPIClient
 import ContainerPersistence
 import ContainerizationOCI
 
-/// Live Apple `container` image API bridge used by production orchestration.
+/// Live apple/container image API bridge used by production orchestration.
 public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
     public init() {
         // Stateless adapter; public initializer supports dependency injection.
@@ -31,7 +31,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         return result.error.isEmpty
     }
 
-    /// Pulls and unpacks using the same default platform resolution as Apple CLI.
+    /// Pulls and unpacks using the same default platform resolution as the apple/container CLI.
     public func pullImage(reference: String) async throws {
         let config = try await ConfigurationLoader.load()
         let platform = try Self.defaultPlatform()
@@ -54,7 +54,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         return image.reference
     }
 
-    /// Deletes the resolved local image and runs Apple's orphaned-blob cleanup.
+    /// Deletes the resolved local image and runs apple/container orphaned-blob cleanup.
     public func deleteImage(reference: String, force: Bool) async throws -> String? {
         let config = try await ConfigurationLoader.load()
         let result = try await ClientImage.get(names: [reference], containerSystemConfig: config)

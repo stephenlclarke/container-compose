@@ -225,12 +225,15 @@ CLI compatibility paths currently include:
   by a focused direct adapter in this repo, including service no-network mode,
   explicit host-published ports, network MAC/MTU options, and long-form tmpfs
   size/mode options.
+- Dynamic host-port allocation, where `container-compose` allocates ephemeral
+  host ports first and then passes explicit `--publish <host>:<target>`
+  bindings to apple/container.
 - `--dry-run` output, which renders the equivalent `container` commands without
   mutating runtime state.
 
-Docker Compose dynamic host-port allocation is rejected before resources are
-created because apple/container requires an explicit host port today. Apple
-publishes public DocC documentation for
+Unsupported Compose surfaces are rejected before resources are created when
+apple/container does not expose a matching runtime primitive. Apple publishes
+public DocC documentation for
 [`container`](https://apple.github.io/container/documentation/) and
 [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/)
 APIs; those docs should guide future direct Swift API adapter work whenever

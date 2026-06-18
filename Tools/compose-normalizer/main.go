@@ -198,7 +198,7 @@ type normalizedBuild struct {
 	UnsupportedFields []string                `json:"unsupportedFields,omitempty"`
 }
 
-// normalizedBuildSecret contains the Apple `container build --secret` fields
+// normalizedBuildSecret contains the apple/container `container build --secret` fields
 // that can be safely derived from a Compose top-level secret definition.
 type normalizedBuildSecret struct {
 	ID          string `json:"id"`
@@ -980,7 +980,7 @@ func tmpfsModeValue(volume types.ServiceVolumeConfig) string {
 	return fmt.Sprintf("%04o", volume.Tmpfs.Mode)
 }
 
-// unsupportedMountFields reports mount options that the Apple runtime
+// unsupportedMountFields reports mount options that the apple/container runtime
 // argument shape used by this plugin cannot preserve yet.
 func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
 	fields := []string{}
@@ -1036,7 +1036,7 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 	return result
 }
 
-// networkIPAMValues returns the one IPv4 and one IPv6 subnet Apple can create.
+// networkIPAMValues returns the one IPv4 and one IPv6 subnet apple/container can create.
 func networkIPAMValues(ipam types.IPAMConfig) (string, string, []string) {
 	fields := []string{}
 	appendUnsupportedNetworkField(&fields, "ipam.driver", ipam.Driver != "")
@@ -1242,7 +1242,7 @@ func buildArgs(args types.MappingWithEquals) map[string]string {
 	return result
 }
 
-// buildSecretValues converts supported Compose build secrets to Apple build
+// buildSecretValues converts supported Compose build secrets to apple/container build
 // secret arguments and reports whether any secret needs unsupported behavior.
 func buildSecretValues(build *types.BuildConfig, secrets map[string]types.SecretConfig) ([]normalizedBuildSecret, bool) {
 	if build == nil || len(build.Secrets) == 0 {

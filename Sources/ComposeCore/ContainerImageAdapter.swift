@@ -14,7 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-/// Low-level Apple image calls used by `ContainerClientImageManager`.
+/// Low-level apple/container image calls used by `ContainerClientImageManager`.
 public protocol ContainerImageAPIClienting: Sendable {
     /// Returns whether `reference` exists in the local image store.
     func imageExists(reference: String) async throws -> Bool
@@ -29,7 +29,7 @@ public protocol ContainerImageAPIClienting: Sendable {
     func deleteImage(reference: String, force: Bool) async throws -> String?
 }
 
-/// Direct Apple container image APIs used for Compose image workflows.
+/// Direct apple/container image APIs used for Compose image workflows.
 public protocol ContainerImageManaging: Sendable {
     /// Returns whether `reference` exists in the local image store.
     func imageExists(_ reference: String) async throws -> Bool
@@ -47,7 +47,7 @@ public protocol ContainerImageManaging: Sendable {
     func deleteImage(_ reference: String, force: Bool, emit: @escaping @Sendable (String) -> Void) async throws
 }
 
-/// Thin Apple `container` client wrapper around image API calls.
+/// Thin apple/container client wrapper around image API calls.
 public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public typealias Exists = @Sendable (String) async throws -> Bool
     public typealias Pull = @Sendable (String) async throws -> Void
@@ -82,7 +82,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         self.deleteOperation = delete
     }
 
-    /// Creates a facade around the live Apple `container` image API bridge.
+    /// Creates a facade around the live apple/container image API bridge.
     public init() {
         self.init(client: ContainerImageLiveAPIClient())
     }
@@ -116,12 +116,12 @@ public struct ContainerClientImageManager: ContainerImageManaging {
         self.client = client
     }
 
-    /// Checks the local image store through the direct Apple image API.
+    /// Checks the local image store through the direct apple/container image API.
     public func imageExists(_ reference: String) async throws -> Bool {
         try await client.imageExists(reference: reference)
     }
 
-    /// Pulls an image through the direct Apple image API.
+    /// Pulls an image through the direct apple/container image API.
     public func pullImage(_ reference: String) async throws {
         try await client.pullImage(reference: reference)
     }

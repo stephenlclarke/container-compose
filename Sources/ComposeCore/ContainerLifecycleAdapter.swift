@@ -17,7 +17,7 @@
 import ContainerAPIClient
 import ContainerResource
 
-/// Low-level Apple container lifecycle calls used by
+/// Low-level apple/container lifecycle calls used by
 /// `ContainerClientLifecycleManager`.
 public protocol ContainerLifecycleAPIClienting: Sendable {
     /// Starts container `id`.
@@ -36,7 +36,7 @@ public protocol ContainerLifecycleAPIClienting: Sendable {
     func deleteContainer(id: String, force: Bool) async throws
 }
 
-/// Direct Apple container APIs used for service container lifecycle
+/// Direct apple/container APIs used for service container lifecycle
 /// operations.
 public protocol ContainerLifecycleManaging: Sendable {
     /// Starts container `id`.
@@ -55,7 +55,7 @@ public protocol ContainerLifecycleManaging: Sendable {
     func deleteContainer(id: String, force: Bool) async throws
 }
 
-/// Thin Apple `container` client wrapper around lifecycle API calls.
+/// Thin apple/container client wrapper around lifecycle API calls.
 public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     public typealias Start = @Sendable (String) async throws -> Void
     public typealias Kill = @Sendable (String, String) async throws -> Void
@@ -147,7 +147,7 @@ public struct ContainerClientLifecycleManager: ContainerLifecycleManaging {
         try await client.deleteContainer(id: id, force: force)
     }
 
-    /// Converts Compose timeout values to the Apple API type.
+    /// Converts Compose timeout values to the apple/container API type.
     private func stopTimeout(_ timeoutInSeconds: Int?) throws -> Int32 {
         guard let timeoutInSeconds else {
             return ContainerStopOptions.default.timeoutInSeconds
