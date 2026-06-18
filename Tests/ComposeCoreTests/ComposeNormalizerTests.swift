@@ -168,8 +168,10 @@ struct ComposeNormalizerTests {
         #expect(project.networks["default"] == ComposeNetwork(
             name: "sample_default",
             isInternal: true,
-            ipv4Subnet: "10.10.0.0/24",
-            ipv6Subnet: "fd00:10::/64"
+            subnets: ComposeNetwork.Subnets(
+                ipv4Subnet: "10.10.0.0/24",
+                ipv6Subnet: "fd00:10::/64"
+            )
         ))
         #expect(project.volumes["data"] != nil)
     }
@@ -227,6 +229,57 @@ struct ComposeNormalizerTests {
         ])
         #expect(project.services["api"]?.build?.unsupportedFields == nil)
         #expect(project.services["worker"]?.build?.unsupportedFields == ["secrets"])
+    }
+
+    @Test("grouped model initializers preserve flat normalized fields")
+    func groupedModelInitializersPreserveFlatNormalizedFields() throws {
+        let build = ComposeBuild(
+            context: "api",
+            dockerfile: "Containerfile",
+            args: ["VERSION": "1"],
+            cache: ComposeBuild.Cache(
+                from: ["type=registry,ref=example/api:cache"],
+                to: ["type=local,dest=.cache"]
+            ),
+            metadata: ComposeBuild.Metadata(
+                labels: ["org.opencontainers.image.title": "api"],
+                secrets: [ComposeBuildSecret(id: "token", environment: "TOKEN")]
+            ),
+            options: ComposeBuild.Options(
+                target: "runtime",
+                noCache: true,
+                pull: true,
+                platforms: ["linux/arm64"],
+                tags: ["example/api:latest"],
+                unsupportedFields: ["ssh"]
+            )
+        )
+        let network = ComposeNetwork(
+            name: "backend",
+            isInternal: true,
+            subnets: ComposeNetwork.Subnets(
+                ipv4Subnet: "10.10.0.0/24",
+                ipv6Subnet: "fd00:10::/64"
+            )
+        )
+
+        #expect(build.cacheFrom == ["type=registry,ref=example/api:cache"])
+        #expect(build.cacheTo == ["type=local,dest=.cache"])
+        #expect(build.labels == ["org.opencontainers.image.title": "api"])
+        #expect(build.secrets == [ComposeBuildSecret(id: "token", environment: "TOKEN")])
+        #expect(build.target == "runtime")
+        #expect(build.noCache == true)
+        #expect(build.pull == true)
+        #expect(build.platforms == ["linux/arm64"])
+        #expect(build.tags == ["example/api:latest"])
+        #expect(build.unsupportedFields == ["ssh"])
+        #expect(network.ipv4Subnet == "10.10.0.0/24")
+        #expect(network.ipv6Subnet == "fd00:10::/64")
+
+        let encodedNetwork = String(data: try JSONEncoder().encode(network), encoding: .utf8) ?? ""
+        #expect(encodedNetwork.contains("\"ipv4Subnet\""))
+        #expect(encodedNetwork.contains("\"ipv6Subnet\""))
+        #expect(!encodedNetwork.contains("\"subnets\""))
     }
 
     @Test("normalizes network mode through compose-go")
