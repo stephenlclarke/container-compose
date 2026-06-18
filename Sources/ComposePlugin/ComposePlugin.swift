@@ -218,6 +218,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .shortAndLong, help: "Build images before starting services.")
     var build = false
+    @Flag(name: .customLong("no-build"), help: "Do not build images before starting services.")
+    var noBuild = false
     @Flag(name: .shortAndLong, help: "Run containers in the background.")
     var detach = false
     @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
@@ -245,6 +247,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeUpOptions {
                 $0.services = services
                 $0.build = build
+                $0.noBuild = noBuild
                 $0.detach = detach
                 $0.forceRecreate = forceRecreate
                 $0.noRecreate = noRecreate

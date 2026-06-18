@@ -1179,6 +1179,26 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up validates incompatible build options before side effects")
+    func upValidatesIncompatibleBuildOptionsBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions {
+                    $0.build = true
+                    $0.noBuild = true
+                }
+            )
+            Issue.record("Expected invalid up build option combination")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("--build and --no-build are incompatible"))
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up validates incompatible recreate options before side effects")
     func upValidatesIncompatibleRecreateOptionsBeforeSideEffects() async throws {
         let runner = RecordingRunner()
@@ -1537,6 +1557,36 @@ struct ComposeOrchestratorTests {
         #expect(buildCommands[1].containsSequence(["--tag", "demo_worker:latest"]))
         #expect(buildCommands[1].last == "worker")
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
+    }
+
+    @Test("up no-build skips auto build for build-only service")
+    func upNoBuildSkipsAutoBuildForBuildOnlyService() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.noBuild = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(!commands.contains { $0.containsSequence(["container", "build"]) })
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-worker-1"]))
+        #expect(commands[0].last == "demo_worker:latest")
+        #expect(await discoveryManager.getRequests == ["demo-worker-1"])
     }
 
     @Test("up pull missing pulls only absent images")

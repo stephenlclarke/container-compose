@@ -147,6 +147,7 @@ public struct ComposeOrchestratorDependencies: Sendable {
 public struct ComposeUpOptions {
     public var services: [String] = []
     public var build = false
+    public var noBuild = false
     public var detach = false
     public var forceRecreate = false
     public var noRecreate = false
@@ -527,7 +528,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let attachedForegroundServiceIndex = up.detach ? nil : services.indices.last
         var changedServices = Set<String>()
         for (index, service) in services.enumerated() {
-            if !up.build, service.image == nil, service.build != nil {
+            if shouldBuildServiceForUp(up, service: service) {
                 try await build(project: project, services: [service.name], noCache: false)
             }
 
@@ -643,6 +644,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         ComposeCreateOptions {
             $0.services = up.services
             $0.build = up.build
+            $0.noBuild = up.noBuild
             $0.forceRecreate = up.forceRecreate
             $0.noRecreate = up.noRecreate
             $0.removeOrphans = up.removeOrphans
@@ -1856,6 +1858,9 @@ private extension ComposeOrchestrator {
 
     /// Validates command-level `compose up` option combinations before runtime side effects.
     func validateUpOptions(_ options: ComposeUpOptions) throws {
+        if options.build, options.noBuild {
+            throw ComposeError.invalidProject("--build and --no-build are incompatible")
+        }
         if options.forceRecreate, options.noRecreate {
             throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
         }
@@ -2162,6 +2167,11 @@ private extension ComposeOrchestrator {
     /// Returns whether `create` should auto-build a service before container creation.
     func shouldBuildServiceForCreate(_ create: ComposeCreateOptions, service: ComposeService) -> Bool {
         !create.noBuild && !create.build && create.pullPolicy != "build" && service.image == nil && service.build != nil
+    }
+
+    /// Returns whether `up` should auto-build a build-only service before start.
+    func shouldBuildServiceForUp(_ up: ComposeUpOptions, service: ComposeService) -> Bool {
+        !up.noBuild && !up.build && service.image == nil && service.build != nil
     }
 
     /// Applies service-level `pull_policy` when no global pull override is set.
