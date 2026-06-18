@@ -185,7 +185,7 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
     var quietPull = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
-    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. May be repeated.")
     var scales: [String] = []
     @Flag(name: [.customShort("y"), .customLong("yes")], help: "Accepted for Docker Compose compatibility.")
     var yes = false
@@ -237,7 +237,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var pull: String?
     @Flag(name: .customLong("quiet-pull"), help: "Pull without printing progress output.")
     var quietPull = false
-    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
+    @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. May be repeated.")
     var scales: [String] = []
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
     var noDeps = false

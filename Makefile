@@ -133,6 +133,7 @@ cli-smoke: build
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes:\n      - /scratch\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\n' > "$$tmpdir/compose.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    attach: false\n' > "$$tmpdir/attach-false.yml"; \
+	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
 	mkdir -p "$$tmpdir/api"; \
 	printf 'FROM alpine:3.20\n' > "$$tmpdir/api/Dockerfile"; \
 	printf 'secret\n' > "$$tmpdir/build-token.txt"; \
@@ -274,8 +275,14 @@ cli-smoke: build
 	[[ "$$up_quiet_build_output" == *"container run"* ]]; \
 	up_build_no_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --build --no-build worker 2>&1 || true)"; \
 	[[ "$$up_build_no_build_output" == *"invalid compose project: --build and --no-build are incompatible"* ]]; \
-	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
-	[[ "$$up_scale_output" == *"unsupported compose feature: up --scale: service replica scaling is not implemented by container-compose yet"* ]]; \
+	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" up --scale worker=2 worker)"; \
+	[[ "$$up_scale_output" == *"--name demo-worker-1"* ]]; \
+	[[ "$$up_scale_output" == *"--name demo-worker-2 --detach"* ]]; \
+	up_scale_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
+	[[ "$$up_scale_ports_output" == *"unsupported compose feature: service 'api' publishes ports; scaled published ports are not implemented by container-compose yet"* ]]; \
+	create_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" create --scale worker=2 worker)"; \
+	[[ "$$create_scale_output" == *"--name demo-worker-1"* ]]; \
+	[[ "$$create_scale_output" == *"--name demo-worker-2"* ]]; \
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
 	[[ "$$create_output" == *"container create"* ]]; \
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \

@@ -1126,8 +1126,8 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("create validates incompatible options and unsupported scale before side effects")
-    func createValidatesIncompatibleOptionsAndUnsupportedScaleBeforeSideEffects() async throws {
+    @Test("create validates incompatible options and invalid scale before side effects")
+    func createValidatesIncompatibleOptionsAndInvalidScaleBeforeSideEffects() async throws {
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
         let incompatibleOptionCases: [(options: ComposeCreateOptions, message: String)] = [
@@ -1163,12 +1163,12 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: scaleRunner).create(
                 project: project,
                 options: ComposeCreateOptions {
-                    $0.scales = ["api=2"]
+                    $0.scales = ["api=two"]
                 }
             )
-            Issue.record("Expected unsupported create scale failure")
+            Issue.record("Expected invalid create scale failure")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("create --scale: service replica scaling is not implemented by container-compose yet"))
+            #expect(error == .invalidProject("--scale for service 'api' must be a non-negative integer"))
         }
         #expect(scaleRunner.commands.isEmpty)
 
@@ -1263,8 +1263,107 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("up rejects unsupported scale before side effects")
-    func upRejectsUnsupportedScaleBeforeSideEffects() async throws {
+    @Test("up creates scaled service replicas")
+    func upCreatesScaledServiceReplicas() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(!commands[0].contains("--detach"))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-2", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("create creates scaled service replicas")
+    func createCreatesScaledServiceReplicas() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).create(
+            project: project,
+            options: ComposeCreateOptions {
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-2"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("up prunes replicas above requested scale")
+    func upPrunesReplicasAboveRequestedScale() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.noRecreate = true
+                $0.scales = ["api=1"]
+            }
+        )
+
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-2", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-2", force: false),
+        ])
+    }
+
+    @Test("up rejects invalid and unsafe scale before side effects")
+    func upRejectsInvalidAndUnsafeScaleBeforeSideEffects() async throws {
         let runner = RecordingRunner()
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
@@ -1272,16 +1371,48 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(
                 project: project,
                 options: ComposeUpOptions {
-                    $0.scales = ["api=2"]
+                    $0.scales = ["api=-1"]
                 }
             )
-            Issue.record("Expected unsupported up scale failure")
+            Issue.record("Expected invalid up scale failure")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("up --scale: service replica scaling is not implemented by container-compose yet"))
+            #expect(error == .invalidProject("--scale for service 'api' must be a non-negative integer"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
         #expect(runner.commands.isEmpty)
+
+        let namedRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: namedRunner).up(
+                project: ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+                    $0.containerName = "fixed-api"
+                }]),
+                options: ComposeUpOptions {
+                    $0.scales = ["api=2"]
+                }
+            )
+            Issue.record("Expected container_name scale failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' uses container_name; scale greater than 1 requires Compose-managed replica names"))
+        }
+        #expect(namedRunner.commands.isEmpty)
+
+        let portRunner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: portRunner).up(
+                project: ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["8080:80"]
+                }]),
+                options: ComposeUpOptions {
+                    $0.scales = ["api=2"]
+                }
+            )
+            Issue.record("Expected published-port scale failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' publishes ports; scaled published ports are not implemented by container-compose yet"))
+        }
+        #expect(portRunner.commands.isEmpty)
     }
 
     @Test("up no-deps starts only selected services")
@@ -1633,6 +1764,67 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: 7),
+            .delete(id: "demo-worker-1", force: false),
+        ])
+    }
+
+    @Test("up remove orphans preserves declared service replicas without explicit scale")
+    func upRemoveOrphansPreservesDeclaredServiceReplicasWithoutExplicitScale() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-worker-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeConfigHashLabel: "worker-hash",
+                ]
+            ),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).up(project: project, options: ComposeUpOptions {
+            $0.noRecreate = true
+            $0.removeOrphans = true
+        })
+
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-worker-1", force: false),
         ])
     }
@@ -2766,33 +2958,30 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("up rejects unsupported service scale before creating resources")
-    func upRejectsUnsupportedServiceScaleBeforeCreatingResources() async throws {
-        for scale in [0, 2] {
-            let runner = RecordingRunner()
-            let project = composeProject(
-                name: "demo",
-                services: [
-                    "api": composeService(name: "api", image: "example/api") {
-                        $0.scale = scale
-                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                    },
-                ]
-            ) {
-                $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            }
+    @Test("up honors service scale before creating resources")
+    func upHonorsServiceScaleBeforeCreatingResources() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+            ]
+        )
 
-            do {
-                try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-                Issue.record("Expected unsupported scale error")
-            } catch let error as ComposeError {
-                #expect(error == .unsupported("service 'api' uses scale \(scale); service replica scaling is not implemented by container-compose yet"))
-            } catch {
-                Issue.record("Unexpected error: \(error)")
-            }
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
 
-            #expect(runner.commands.isEmpty)
-        }
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-2", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
     }
 
     @Test("up rejects unsupported metadata and logging fields before creating resources")
@@ -4528,7 +4717,7 @@ struct ComposeOrchestratorTests {
         try await orchestrator.down(project: project, options: ComposeDownOptions(removeOrphans: true))
 
         #expect(runner.commands.isEmpty)
-        #expect(await discoveryManager.listRequests == [true])
+        #expect(await discoveryManager.listRequests == [true, true])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-api-1", force: false),
@@ -4700,7 +4889,7 @@ struct ComposeOrchestratorTests {
         }
 
         #expect(runner.commands.isEmpty)
-        #expect(await discoveryManager.listRequests == [true])
+        #expect(await discoveryManager.listRequests == [true, true])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
         ])
@@ -8423,33 +8612,28 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("run rejects unsupported service scale before creating resources")
-    func runRejectsUnsupportedServiceScaleBeforeCreatingResources() async throws {
-        for scale in [0, 3] {
-            let runner = RecordingRunner()
-            let project = composeProject(
-                name: "demo",
-                services: [
-                    "job": composeService(name: "job", image: "alpine") {
-                        $0.scale = scale
-                        $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                    },
-                ]
-            ) {
-                $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            }
+    @Test("run rejects negative service scale before creating resources")
+    func runRejectsNegativeServiceScaleBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.scale = -1
+                },
+            ]
+        )
 
-            do {
-                try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-                Issue.record("Expected unsupported scale error")
-            } catch let error as ComposeError {
-                #expect(error == .unsupported("service 'job' uses scale \(scale); service replica scaling is not implemented by container-compose yet"))
-            } catch {
-                Issue.record("Unexpected error: \(error)")
-            }
-
-            #expect(runner.commands.isEmpty)
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected invalid scale error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'job' scale must be a non-negative integer"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("run rejects unsupported metadata and logging fields before creating resources")
