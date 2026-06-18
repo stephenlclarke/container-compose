@@ -190,7 +190,7 @@ The build produces two executables with separate responsibilities:
 
 | Component | Language | Responsibility |
 | --- | --- | --- |
-| `compose` | Swift | Parse Docker Compose style CLI arguments, validate normalized projects, plan orchestration, and call Apple/container runtime APIs or compatibility commands. |
+| `compose` | Swift | Parse Docker Compose style CLI arguments, validate normalized projects, plan orchestration, and call apple/container runtime APIs or compatibility commands. |
 | `compose-normalizer` | Go | Load Compose files with `compose-go` and emit canonical JSON. It does not create, start, stop, or inspect containers. |
 
 The installed plugin layout is:
@@ -203,10 +203,10 @@ The installed plugin layout is:
 
 ### Direct API Adapters
 
-The Swift layer uses direct Apple/container APIs wherever a stable API maps
+The Swift layer uses direct apple/container APIs wherever a stable API maps
 cleanly to a Compose operation.
 
-| Compose surface | Direct Apple/container path |
+| Compose surface | Direct apple/container path |
 | --- | --- |
 | Project discovery, `ps`, `images`, recreate checks, indexed service targets, `port`, and orphan cleanup | `ContainerClient.list(filters:)` and `ContainerClient.get(id:)` |
 | Project networks | `NetworkClient.create(configuration:)`, `NetworkConfiguration(mode:ipv4Subnet:ipv6Subnet:)`, and `NetworkClient.delete(id:)` |
@@ -232,13 +232,13 @@ operation or because the CLI is the available public compatibility surface.
 
 Unsupported Docker Compose behavior is rejected before resources are created.
 For example, dynamic host-port allocation is not translated because
-Apple/container currently requires explicit host ports for `--publish`.
+apple/container currently requires explicit host ports for `--publish`.
 
 Apple publishes public DocC documentation for
 [`container`](https://apple.github.io/container/documentation/) and
 [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/).
 Use those references when adding future direct Swift adapters or identifying
-Apple/container runtime gaps.
+apple/container runtime gaps.
 
 ## SonarQube
 

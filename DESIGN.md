@@ -25,24 +25,24 @@ orchestration layer close to the Swift code and runtime primitives used by
 ## Adoption Friction
 
 The architecture is intentionally conservative so this repository can be
-evaluated for possible Apple/container adoption with as little reshaping as
-possible. New work should prefer Apple/container naming, SwiftPM structure,
+evaluated for possible apple/container adoption with as little reshaping as
+possible. New work should prefer apple/container naming, SwiftPM structure,
 Hawkeye license-header expectations, direct Swift runtime APIs, and small
 reviewable boundaries. Compose compatibility gaps should be documented as either
-plugin work or Apple/container runtime primitive work instead of being hidden
+plugin work or apple/container runtime primitive work instead of being hidden
 behind partial behavior.
 
 This also affects implementation choices. The Go helper stays at the
 normalization boundary, Swift owns orchestration, and compatibility fallbacks to
-the `container` CLI should remain obvious until a direct Apple/container API
+the `container` CLI should remain obvious until a direct apple/container API
 adapter exists. Keeping those seams explicit makes future upstream PRs smaller:
-runtime primitives can be proposed against Apple/container first, then this
+runtime primitives can be proposed against apple/container first, then this
 plugin can map the newly available API in a focused follow-up.
 
 Adoption friction should be treated as a design constraint, not cleanup. A
 reviewer should be able to tell whether a change is Compose normalization,
 Swift orchestration, runtime API mapping, compatibility documentation, or an
-Apple/container primitive gap without first untangling local conventions. When a
+apple/container primitive gap without first untangling local conventions. When a
 feature cannot be upstreamed directly, the reason should be visible in the
 design notes, compatibility tables, or backlog so the eventual adoption path
 stays practical.
@@ -73,13 +73,13 @@ input model and performs all runtime decisions.
 
 ## Direct APIs And compose-go
 
-`compose-go` and the direct Apple/container APIs solve different problems.
+`compose-go` and the direct apple/container APIs solve different problems.
 `compose-go` answers "what does this Compose project mean after Docker Compose
 style loading, merging, interpolation, profiles, path handling, and defaults?"
-The Swift orchestration layer answers "which Apple/container runtime calls are
+The Swift orchestration layer answers "which apple/container runtime calls are
 needed to make that normalized project true?"
 
-Direct Apple/container APIs are preferred after normalization because they make
+Direct apple/container APIs are preferred after normalization because they make
 runtime behavior easier to test, avoid brittle command-output parsing, and keep
 the plugin close to the code shape that would be needed for future adoption by
 [`apple/container`](https://github.com/apple/container). The CLI compatibility
@@ -88,12 +88,12 @@ where this repository has not yet introduced a focused adapter.
 
 This boundary keeps Compose compatibility work honest:
 
-- If `compose-go` accepts a surface and Apple/container has a matching Swift
+- If `compose-go` accepts a surface and apple/container has a matching Swift
   API, `container-compose` should map it directly where possible.
-- If `compose-go` accepts a surface but Apple/container lacks the primitive,
+- If `compose-go` accepts a surface but apple/container lacks the primitive,
   `container-compose` should reject it clearly and track the missing primitive
-  in [PLAN.md](PLAN.md) as future Apple/container upstream work.
-- If Apple/container has the primitive but this plugin has not mapped it yet,
+  in [PLAN.md](PLAN.md) as future apple/container upstream work.
+- If apple/container has the primitive but this plugin has not mapped it yet,
   the gap belongs in this repository's backlog.
 
 The main design discussion is how much of the normalized `compose-go` JSON
@@ -181,7 +181,7 @@ The installed plugin layout is:
 options, invokes the normalizer, validates the resulting project, and translates
 Compose operations into `container` operations.
 
-Current orchestration uses direct Apple/container APIs where a stable API maps
+Current orchestration uses direct apple/container APIs where a stable API maps
 cleanly to a Compose operation, and keeps the installed `container` CLI as the
 compatibility adapter for command surfaces that are not yet represented by a
 focused direct adapter.
@@ -221,7 +221,7 @@ CLI compatibility paths currently include:
 - `compose build`, which uses `container build --pull --platform --cache-in
   --cache-out --tag --label --secret --file` because no focused build API
   adapter is available in this repo yet.
-- Create/run flags that are supported by Apple/container but not yet represented
+- Create/run flags that are supported by apple/container but not yet represented
   by a focused direct adapter in this repo, including service no-network mode,
   explicit host-published ports, network MAC/MTU options, and long-form tmpfs
   size/mode options.
@@ -229,7 +229,7 @@ CLI compatibility paths currently include:
   mutating runtime state.
 
 Docker Compose dynamic host-port allocation is rejected before resources are
-created because Apple/container requires an explicit host port today. Apple
+created because apple/container requires an explicit host port today. Apple
 publishes public DocC documentation for
 [`container`](https://apple.github.io/container/documentation/) and
 [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/)

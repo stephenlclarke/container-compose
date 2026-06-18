@@ -35,7 +35,7 @@ Maintainers review pull requests before merge. Direct pushes to protected
 branches should be limited to maintainers and automation that has passed the
 required checks.
 
-Apple/container uses squash-and-merge for upstream pull requests, so make the
+apple/container uses squash-and-merge for upstream pull requests, so make the
 pull request title and body clear enough to stand alone as the final change
 description. Use imperative wording, describe what changed, and include the
 reason for the change.
@@ -79,19 +79,19 @@ the stricter threshold documented in [BUILD.md](BUILD.md).
 
 ## Upstream Adoption Friction
 
-Keep every contribution easy for Apple/container maintainers to assess:
+Keep every contribution easy for apple/container maintainers to assess:
 
 - Prefer direct [`apple/container`](https://github.com/apple/container) APIs
   where available and keep CLI compatibility fallbacks explicit.
 - Preserve the Swift orchestration and Go `compose-go` normalization boundary
   described in [DESIGN.md](DESIGN.md).
 - Keep unsupported Compose surfaces explicit in [COMPATIBILITY.md](COMPATIBILITY.md)
-  and [PLAN.md](PLAN.md), separating plugin gaps from Apple/container runtime
+  and [PLAN.md](PLAN.md), separating plugin gaps from apple/container runtime
   primitive gaps.
 - Follow the Apache License, Version 2.0, and keep license headers current with
   `make update-licenses`.
 - Use `make fmt`, `make check`, and `make pre-commit` so formatting and license
-  checks stay close to Apple/container's Hawkeye-based workflow.
+  checks stay close to apple/container's Hawkeye-based workflow.
 - Avoid editor-specific root `.gitignore` entries. Use a global Git ignore file
   for personal editor or machine files.
 - Keep AI-assisted changes explainable. Contributors should understand and be
@@ -137,7 +137,7 @@ in pull requests, tests, examples, logs, or screenshots.
 
 Contributors are expected to follow Apple's
 [Code of Conduct](https://github.com/apple/.github/blob/main/CODE_OF_CONDUCT.md),
-matching the upstream community standard used by Apple/container and
+matching the upstream community standard used by apple/container and
 Containerization.
 
 ## Licensing

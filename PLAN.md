@@ -1,7 +1,7 @@
 # container-compose Plan
 
 This file tracks the remaining Compose compatibility work and the upstream
-Apple/container work that will be needed for stronger Docker Compose v2
+apple/container work that will be needed for stronger Docker Compose v2
 compatibility.
 
 ## Timestamp Policy
@@ -40,7 +40,7 @@ is blocked upstream, and gray is not started.
 - When choosing the next implementation target, select one functional topic
   such as replica scaling, advanced build configuration, storage, lifecycle, or
   watch/develop workflows. Work that topic until it is fully implemented or an
-  Apple/container blocker is discovered and documented, then move on to the
+  apple/container blocker is discovered and documented, then move on to the
   next topic.
 - SonarQube remediation can be batched to `main`, but SonarQube fixes should
   be pushed to `main` after each fix when formal SonarQube validation is the
@@ -68,9 +68,9 @@ is blocked upstream, and gray is not started.
       <td>No current runtime surface-level gaps are classified as repo-owned; newly discovered plugin gaps should move into the backlog with <img alt="ACTIVE" src="https://img.shields.io/badge/ACTIVE-B26A00?style=flat-square"> when implementation starts.</td>
     </tr>
     <tr>
-      <td>Apple/container runtime primitives</td>
+      <td>apple/container runtime primitives</td>
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-      <td>Remaining Docker Compose v2 parity gaps need Apple/container runtime, build, networking, storage, logging, or command-data work before this repo can finish the mapping.</td>
+      <td>Remaining Docker Compose v2 parity gaps need apple/container runtime, build, networking, storage, logging, or command-data work before this repo can finish the mapping.</td>
     </tr>
     <tr>
       <td>Future upstream fork and PR work</td>
@@ -99,7 +99,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-17 18:48:12 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Backfilled from commits <code>c4cabbb</code> through <code>ecec616</code>; moved file operations, kill, resources, lifecycle, discovery, logs, stats, images, start, exec, and copy paths toward direct Apple/container APIs.</td>
+      <td colspan="4"><strong>Notes:</strong> Backfilled from commits <code>c4cabbb</code> through <code>ecec616</code>; moved file operations, kill, resources, lifecycle, discovery, logs, stats, images, start, exec, and copy paths toward direct apple/container APIs.</td>
     </tr>
     <tr>
       <td>Runtime docs reference</td>
@@ -108,7 +108,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-17 15:00:34 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Added Apple/container API documentation references in <code>DESIGN.md</code>.</td>
+      <td colspan="4"><strong>Notes:</strong> Added apple/container API documentation references in <code>DESIGN.md</code>.</td>
     </tr>
     <tr>
       <td>Compact CLI option normalization</td>
@@ -144,7 +144,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 11:37:58 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected the normalized Compose build fields against <code>container build --help</code> and reclassified advanced BuildKit fields from plugin backlog to Apple/container upstream build parity. The runtime rejection now points to missing Docker Compose compatible Apple/container build primitives.</td>
+      <td colspan="4"><strong>Notes:</strong> Inspected the normalized Compose build fields against <code>container build --help</code> and reclassified advanced BuildKit fields from plugin backlog to apple/container upstream build parity. The runtime rejection now points to missing Docker Compose compatible apple/container build primitives.</td>
     </tr>
     <tr>
       <td><code>commit</code> and <code>publish</code> blocker classification</td>
@@ -153,7 +153,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 11:45:20 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose v2 command behavior and the available Apple/container image/export APIs, then reclassified <code>compose commit</code> and <code>compose publish</code> from plugin backlog to Apple/container runtime parity. The CLI now reports precise missing runtime primitives for container image snapshots and Compose application OCI artifacts.</td>
+      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose v2 command behavior and the available apple/container image/export APIs, then reclassified <code>compose commit</code> and <code>compose publish</code> from plugin backlog to apple/container runtime parity. The CLI now reports precise missing runtime primitives for container image snapshots and Compose application OCI artifacts.</td>
     </tr>
     <tr>
       <td>Network and port feature expansion</td>
@@ -180,7 +180,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 17:49:27 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Mapped file-backed service <code>configs</code> and <code>secrets</code> to read-only Apple/container bind mounts with Compose-compatible default and long-form targets. External, inline, and environment-backed runtime grants remain Apple/container config/secret store or materialization gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Mapped file-backed service <code>configs</code> and <code>secrets</code> to read-only apple/container bind mounts with Compose-compatible default and long-form targets. External, inline, and environment-backed runtime grants remain apple/container config/secret store or materialization gaps.</td>
     </tr>
     <tr>
       <td>Logging and storage blocker classification</td>
@@ -189,7 +189,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 14:28:22 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, advanced bind/volume mount options, unsupported external block-mount inheritance, API socket exposure, and block I/O controls as Apple/container runtime primitive gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, advanced bind/volume mount options, unsupported external block-mount inheritance, API socket exposure, and block I/O controls as apple/container runtime primitive gaps.</td>
     </tr>
     <tr>
       <td>External <code>volumes_from</code> inheritance</td>
@@ -198,7 +198,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 14:46:45 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Implemented external-container <code>volumes_from</code> inheritance by inspecting referenced Apple/container containers through the direct discovery API, translating supported volume, bind, and tmpfs mounts into runtime arguments, applying <code>ro</code>/<code>rw</code> overrides, and including inherited external mounts in recreate config hashes. Unsupported external block mounts reject before resources are created.</td>
+      <td colspan="4"><strong>Notes:</strong> Implemented external-container <code>volumes_from</code> inheritance by inspecting referenced apple/container containers through the direct discovery API, translating supported volume, bind, and tmpfs mounts into runtime arguments, applying <code>ro</code>/<code>rw</code> overrides, and including inherited external mounts in recreate config hashes. Unsupported external block mounts reject before resources are created.</td>
     </tr>
     <tr>
       <td>Lifecycle and <code>up</code> option expansion</td>
@@ -225,7 +225,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 14:18:53 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected Apple/container init-process attach behavior and reclassified Docker Compose default interactive <code>attach</code> from a plugin design gap to an Apple/container runtime primitive gap. Output-only <code>attach --no-stdin --sig-proxy=false</code> remains supported through runtime log streaming.</td>
+      <td colspan="4"><strong>Notes:</strong> Inspected apple/container init-process attach behavior and reclassified Docker Compose default interactive <code>attach</code> from a plugin design gap to an apple/container runtime primitive gap. Output-only <code>attach --no-stdin --sig-proxy=false</code> remains supported through runtime log streaming.</td>
     </tr>
     <tr>
       <td>Stats no-trunc display option</td>
@@ -234,7 +234,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 11:16:29 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accept Docker Compose <code>stats --no-trunc</code> because the direct stats renderer already emits full container IDs and does not need an Apple/container CLI truncation flag.</td>
+      <td colspan="4"><strong>Notes:</strong> Accept Docker Compose <code>stats --no-trunc</code> because the direct stats renderer already emits full container IDs and does not need an apple/container CLI truncation flag.</td>
     </tr>
     <tr>
       <td>Develop watch model boundary</td>
@@ -270,7 +270,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 13:27:44 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct Apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Foreground hook ordering now tracks under the Apple/container interactive attach and stop-boundary backlog.</td>
+      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Foreground hook ordering now tracks under the apple/container interactive attach and stop-boundary backlog.</td>
     </tr>
     <tr>
       <td>Detached one-off post-start hook execution</td>
@@ -279,7 +279,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 13:33:19 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Executed service <code>post_start</code> hooks after detached one-off <code>compose run</code> containers are created, reusing the generated or explicit one-off container name for direct Apple/container process exec. Foreground <code>run</code> post-start ordering now tracks under the Apple/container interactive attach backlog.</td>
+      <td colspan="4"><strong>Notes:</strong> Executed service <code>post_start</code> hooks after detached one-off <code>compose run</code> containers are created, reusing the generated or explicit one-off container name for direct apple/container process exec. Foreground <code>run</code> post-start ordering now tracks under the apple/container interactive attach backlog.</td>
     </tr>
     <tr>
       <td>Detached one-off pre-stop cleanup</td>
@@ -288,7 +288,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 15:10:06 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted detached one-off <code>compose run</code> services that declare <code>pre_stop</code> hooks and execute those hooks when container-compose later stops the one-off container through project cleanup, such as <code>up --remove-orphans</code> or <code>down --remove-orphans</code>. Foreground one-off <code>pre_stop</code> remains an Apple/container stop-boundary gap because the foreground init process has already exited before control returns to the plugin.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted detached one-off <code>compose run</code> services that declare <code>pre_stop</code> hooks and execute those hooks when container-compose later stops the one-off container through project cleanup, such as <code>up --remove-orphans</code> or <code>down --remove-orphans</code>. Foreground one-off <code>pre_stop</code> remains an apple/container stop-boundary gap because the foreground init process has already exited before control returns to the plugin.</td>
     </tr>
     <tr>
       <td>Dynamic host-port allocation</td>
@@ -297,7 +297,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 14:06:00 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Allocated ephemeral host ports inside container-compose for target-only, ranged, and host-bound Compose port mappings, then rendered explicit Apple/container <code>--publish</code> bindings for <code>create</code>, <code>up</code>, scaled service replicas, one-off <code>run --service-ports</code>, and manual <code>run --publish</code>. Host-bound IPv4 and bracketed IPv6 mappings are preserved through compose-go normalization. Config hashes remain based on the Compose model rather than the allocated host port.</td>
+      <td colspan="4"><strong>Notes:</strong> Allocated ephemeral host ports inside container-compose for target-only, ranged, and host-bound Compose port mappings, then rendered explicit apple/container <code>--publish</code> bindings for <code>create</code>, <code>up</code>, scaled service replicas, one-off <code>run --service-ports</code>, and manual <code>run --publish</code>. Host-bound IPv4 and bracketed IPv6 mappings are preserved through compose-go normalization. Config hashes remain based on the Compose model rather than the allocated host port.</td>
     </tr>
     <tr>
       <td>Scaled anonymous service volumes</td>
@@ -324,7 +324,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 11:56:51 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected Apple/container DNS and network services. Runtime DNS lookup returns one attachment per hostname and container creation rejects duplicate attachment hostnames, so Docker Compose service-name DNS for multiple replicas needs Apple/container alias and multi-record lookup primitives before container-compose can map it.</td>
+      <td colspan="4"><strong>Notes:</strong> Inspected apple/container DNS and network services. Runtime DNS lookup returns one attachment per hostname and container creation rejects duplicate attachment hostnames, so Docker Compose service-name DNS for multiple replicas needs apple/container alias and multi-record lookup primitives before container-compose can map it.</td>
     </tr>
     <tr>
       <td>Deploy replicated mode support</td>
@@ -342,7 +342,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 12:05:43 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.restart_policy</code> with service-level <code>restart</code> as an Apple/container runtime gap. Apple/container exposes lifecycle restart commands but no create/run restart policy primitive.</td>
+      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.restart_policy</code> with service-level <code>restart</code> as an apple/container runtime gap. apple/container exposes lifecycle restart commands but no create/run restart policy primitive.</td>
     </tr>
     <tr>
       <td>Deploy endpoint mode blocker classification</td>
@@ -351,7 +351,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 12:09:54 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.endpoint_mode</code> as an Apple/container networking gap. Compose endpoint modes such as <code>vip</code> and <code>dnsrr</code> need service-level discovery semantics that are not exposed by the current runtime.</td>
+      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.endpoint_mode</code> as an apple/container networking gap. Compose endpoint modes such as <code>vip</code> and <code>dnsrr</code> need service-level discovery semantics that are not exposed by the current runtime.</td>
     </tr>
     <tr>
       <td>Deploy label metadata preservation</td>
@@ -369,7 +369,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 15:22:32 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code> replacement was later classified as an Apple/container handoff gap, and update metadata such as <code>parallelism</code>, rollback metadata, and placement metadata were later accepted as Docker Compose local no-op metadata.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code> replacement was later classified as an apple/container handoff gap, and update metadata such as <code>parallelism</code>, rollback metadata, and placement metadata were later accepted as Docker Compose local no-op metadata.</td>
     </tr>
     <tr>
       <td>Deploy stop-first update delay</td>
@@ -387,7 +387,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 16:48:46 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.update_config.order: start-first</code> as an Apple/container runtime gap. Docker Compose creates a temporary replacement container, stops/removes the old stable container, then finalizes the replacement identity; Apple/container currently exposes create/stop/delete without a container rename or service hostname/alias handoff primitive.</td>
+      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.update_config.order: start-first</code> as an apple/container runtime gap. Docker Compose creates a temporary replacement container, stops/removes the old stable container, then finalizes the replacement identity; apple/container currently exposes create/stop/delete without a container rename or service hostname/alias handoff primitive.</td>
     </tr>
     <tr>
       <td>Deploy update metadata normalization</td>
@@ -423,7 +423,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 18:02:11 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Reclassified remaining normalized deploy fallback fields away from plugin-owned backlog language. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, and unknown update orders now fail as Apple/container job lifecycle, scheduler, or update-orchestration primitive gaps with focused normalizer and orchestrator coverage.</td>
+      <td colspan="4"><strong>Notes:</strong> Reclassified remaining normalized deploy fallback fields away from plugin-owned backlog language. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, and unknown update orders now fail as apple/container job lifecycle, scheduler, or update-orchestration primitive gaps with focused normalizer and orchestrator coverage.</td>
     </tr>
     <tr>
       <td>Deploy resource gap classification</td>
@@ -432,7 +432,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 15:33:36 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Reclassified <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> from local deploy plugin backlog to Apple/container resource parity. Docker Compose deploy reservations require platform guarantees, while the current Apple/container create/run surface exposes local hard CPU and memory limits but no deploy PID, deploy device, generic resource, or reservation primitive.</td>
+      <td colspan="4"><strong>Notes:</strong> Reclassified <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> from local deploy plugin backlog to apple/container resource parity. Docker Compose deploy reservations require platform guarantees, while the current apple/container create/run surface exposes local hard CPU and memory limits but no deploy PID, deploy device, generic resource, or reservation primitive.</td>
     </tr>
     <tr>
       <td>Volume nocopy support</td>
@@ -441,7 +441,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 12:25:21 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted long-form service volume <code>volume.nocopy</code> as supported no-copy metadata. The Apple/container volume mount path already matches the requested no-copy behavior, so no runtime flag mapping is required.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted long-form service volume <code>volume.nocopy</code> as supported no-copy metadata. The apple/container volume mount path already matches the requested no-copy behavior, so no runtime flag mapping is required.</td>
     </tr>
     <tr>
       <td>Volume subpath blocker classification</td>
@@ -450,7 +450,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 12:31:12 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified long-form service volume <code>volume.subpath</code> as an Apple/container mount primitive gap. Apple/container exposes named volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath selector for mounting only part of a named volume.</td>
+      <td colspan="4"><strong>Notes:</strong> Classified long-form service volume <code>volume.subpath</code> as an apple/container mount primitive gap. apple/container exposes named volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath selector for mounting only part of a named volume.</td>
     </tr>
     <tr>
       <td>Run capability overrides</td>
@@ -459,7 +459,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 10:20:55 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Added Docker Compose <code>run --cap-add</code> and <code>run --cap-drop</code> mapping to Apple/container one-off runtime capability flags.</td>
+      <td colspan="4"><strong>Notes:</strong> Added Docker Compose <code>run --cap-add</code> and <code>run --cap-drop</code> mapping to apple/container one-off runtime capability flags.</td>
     </tr>
     <tr>
       <td>Hawkeye workflow alignment</td>
@@ -468,7 +468,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 10:40:06 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Added Hawkeye license-header tooling, adopted Apple/container&#x27;s build-once Swift coverage pattern, cached repo-local tools in CI, documented Apple/container upstream Compose parity gaps, and reformatted planning and compatibility docs for readability.</td>
+      <td colspan="4"><strong>Notes:</strong> Added Hawkeye license-header tooling, adopted apple/container&#x27;s build-once Swift coverage pattern, cached repo-local tools in CI, documented apple/container upstream Compose parity gaps, and reformatted planning and compatibility docs for readability.</td>
     </tr>
   </tbody>
 </table>
@@ -492,7 +492,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 09:39:04 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Include plugin backlog and Apple/container upstream PR backlog.</td>
+      <td colspan="4"><strong>Notes:</strong> Include plugin backlog and apple/container upstream PR backlog.</td>
     </tr>
     <tr>
       <td>Reformat <code>BUILD.md</code> runtime boundary</td>
@@ -510,7 +510,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 09:39:04 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explain that direct Apple/container APIs are preferred wherever available and how that works with compose-go normalization.</td>
+      <td colspan="4"><strong>Notes:</strong> Explain that direct apple/container APIs are preferred wherever available and how that works with compose-go normalization.</td>
     </tr>
     <tr>
       <td>Contributor and compatibility readability pass</td>
@@ -519,7 +519,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 11:05:06 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Reformat dense plan and compatibility status surfaces, align contributor guidance with Apple/container and Containerization contributor expectations, and document the adoption-friction goal.</td>
+      <td colspan="4"><strong>Notes:</strong> Reformat dense plan and compatibility status surfaces, align contributor guidance with apple/container and Containerization contributor expectations, and document the adoption-friction goal.</td>
     </tr>
     <tr>
       <td>Adoption friction design note</td>
@@ -528,7 +528,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 11:18:08 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Make reducing friction for possible Apple/container adoption an explicit design constraint, with clear boundaries for Compose normalization, Swift orchestration, direct runtime API mapping, compatibility documentation, and upstream runtime primitive gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Make reducing friction for possible apple/container adoption an explicit design constraint, with clear boundaries for Compose normalization, Swift orchestration, direct runtime API mapping, compatibility documentation, and upstream runtime primitive gaps.</td>
     </tr>
     <tr>
       <td>Focused topic workflow note</td>
@@ -537,7 +537,7 @@ is blocked upstream, and gray is not started.
       <td>2026-06-18 11:33:56 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Capture the implementation workflow preference to choose one Compose functional topic, drive it to completion or to a documented Apple/container blocker, and only then move to another topic. The existing adoption-friction guidance in <code>DESIGN.md</code> and <code>CONTRIBUTING.md</code> remains the review standard for keeping future Apple/container adoption practical.</td>
+      <td colspan="4"><strong>Notes:</strong> Capture the implementation workflow preference to choose one Compose functional topic, drive it to completion or to a documented apple/container blocker, and only then move to another topic. The existing adoption-friction guidance in <code>DESIGN.md</code> and <code>CONTRIBUTING.md</code> remains the review standard for keeping future apple/container adoption practical.</td>
     </tr>
     <tr>
       <td>C3 compatibility status wording</td>
@@ -553,11 +553,11 @@ is blocked upstream, and gray is not started.
 
 ## <img alt="DONE" src="https://img.shields.io/badge/DONE-2E7D32?style=flat-square"> container-compose Backlog
 
-These tasks are valid Docker Compose v2 surfaces where Apple/container is not
+These tasks are valid Docker Compose v2 surfaces where apple/container is not
 known to be the first blocker. The fix belongs in this repository unless deeper
-Apple/container API work is discovered during implementation.
+apple/container API work is discovered during implementation.
 
-There are no current runtime surface-level gaps classified as repo-owned. The table remains as historical tracking for plugin-owned topics that were completed or reclassified to the Apple/container upstream backlog.
+There are no current runtime surface-level gaps classified as repo-owned. The table remains as historical tracking for plugin-owned topics that were completed or reclassified to the apple/container upstream backlog.
 
 <table>
   <thead>
@@ -576,7 +576,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 13:00:42 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. The C3 compatibility example now describes the completed watch/develop, provider, and detached lifecycle-hook paths together with the remaining Apple/container foreground hook boundaries. Service model runtime behavior moved to the Apple/container upstream backlog after the model-runner boundary was confirmed.</td>
+      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. The C3 compatibility example now describes the completed watch/develop, provider, and detached lifecycle-hook paths together with the remaining apple/container foreground hook boundaries. Service model runtime behavior moved to the apple/container upstream backlog after the model-runner boundary was confirmed.</td>
     </tr>
     <tr>
       <td>Replica scaling edge cases</td>
@@ -585,7 +585,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 18:02:11 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Local deploy behavior that container-compose can safely model is complete for the current boundary. Scaled service DNS, deploy job modes, and update-orchestration behavior beyond stop-first are Apple/container networking, completion, scheduler, or update primitive gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Local deploy behavior that container-compose can safely model is complete for the current boundary. Scaled service DNS, deploy job modes, and update-orchestration behavior beyond stop-first are apple/container networking, completion, scheduler, or update primitive gaps.</td>
     </tr>
     <tr>
       <td>Local deploy interpretation</td>
@@ -594,7 +594,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 17:12:16 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Standard Docker Compose local deploy interpretation is complete for the current model boundary. Explicit <code>deploy.mode: replicated</code> maps to existing replica orchestration; <code>deploy.mode: global</code>, <code>deploy.labels</code>, update metadata, rollback metadata, and placement metadata are accepted as Docker Compose local no-op metadata; CPU/memory deploy limits map to local runtime limits; and stop-first <code>deploy.update_config</code> including <code>delay</code> matches the existing recreate path. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, <code>deploy.resources.reservations</code>, <code>deploy.update_config.order: start-first</code>, and unknown update orders are tracked with Apple/container runtime parity.</td>
+      <td colspan="4"><strong>Notes:</strong> Standard Docker Compose local deploy interpretation is complete for the current model boundary. Explicit <code>deploy.mode: replicated</code> maps to existing replica orchestration; <code>deploy.mode: global</code>, <code>deploy.labels</code>, update metadata, rollback metadata, and placement metadata are accepted as Docker Compose local no-op metadata; CPU/memory deploy limits map to local runtime limits; and stop-first <code>deploy.update_config</code> including <code>delay</code> matches the existing recreate path. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, <code>deploy.resources.reservations</code>, <code>deploy.update_config.order: start-first</code>, and unknown update orders are tracked with apple/container runtime parity.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
@@ -603,7 +603,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 16:23:30 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Service <code>models</code> binding metadata is preserved for config output, but runtime model-runner behavior needs Apple/container model-runner parity. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Service <code>models</code> binding metadata is preserved for config output, but runtime model-runner behavior needs apple/container model-runner parity. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need apple/container foreground attach or stop-boundary primitives.</td>
     </tr>
     <tr>
       <td>Provider service lifecycle</td>
@@ -612,7 +612,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 16:03:27 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Provider services now preserve <code>provider.type</code> and <code>provider.options</code> from <code>compose-go</code>, run provider <code>compose metadata</code> plus <code>up</code>/<code>down</code>/advertised <code>stop</code>, validate required metadata parameters, filter unknown provider options when metadata is available, and inject provider <code>setenv</code> values into direct dependents for <code>up</code> and one-off <code>run</code> dependency startup. This is plugin-owned functionality; no Apple/container runtime PR is needed for provider process execution.</td>
+      <td colspan="4"><strong>Notes:</strong> Provider services now preserve <code>provider.type</code> and <code>provider.options</code> from <code>compose-go</code>, run provider <code>compose metadata</code> plus <code>up</code>/<code>down</code>/advertised <code>stop</code>, validate required metadata parameters, filter unknown provider options when metadata is available, and inject provider <code>setenv</code> values into direct dependents for <code>up</code> and one-off <code>run</code> dependency startup. This is plugin-owned functionality; no apple/container runtime PR is needed for provider process execution.</td>
     </tr>
     <tr>
       <td>Service model binding boundary</td>
@@ -621,7 +621,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 16:23:30 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved service <code>models</code> binding metadata from <code>compose-go</code> instead of a boolean marker, including explicit <code>endpoint_var</code>/<code>model_var</code> names and defaulted bindings. Docker Compose model runtime behavior shells out to the Docker Model plugin to pull/configure models and discover an endpoint. Apple/container does not expose a Compose-compatible model runner, endpoint discovery, or guaranteed service-container reachability primitive yet, so runtime service model bindings now reject as an Apple/container model-runner parity gap before resources are created.</td>
+      <td colspan="4"><strong>Notes:</strong> Preserved service <code>models</code> binding metadata from <code>compose-go</code> instead of a boolean marker, including explicit <code>endpoint_var</code>/<code>model_var</code> names and defaulted bindings. Docker Compose model runtime behavior shells out to the Docker Model plugin to pull/configure models and discover an endpoint. apple/container does not expose a Compose-compatible model runner, endpoint discovery, or guaranteed service-container reachability primitive yet, so runtime service model bindings now reject as an apple/container model-runner parity gap before resources are created.</td>
     </tr>
     <tr>
       <td>Logging and storage metadata</td>
@@ -630,7 +630,7 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 14:46:45 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>volume_driver: local</code> is supported. External-container <code>volumes_from</code> is supported for Apple/container volume, bind, and tmpfs mounts discovered through direct inspect. Logging driver/options, service <code>storage_opt</code>, non-local service volume drivers, image-declared inherited mounts, image mounts, external block mounts, and advanced bind/volume options are tracked as Apple/container runtime gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>volume_driver: local</code> is supported. External-container <code>volumes_from</code> is supported for apple/container volume, bind, and tmpfs mounts discovered through direct inspect. Logging driver/options, service <code>storage_opt</code>, non-local service volume drivers, image-declared inherited mounts, image mounts, external block mounts, and advanced bind/volume options are tracked as apple/container runtime gaps.</td>
     </tr>
     <tr>
       <td>API socket and block I/O support</td>
@@ -639,17 +639,17 @@ There are no current runtime surface-level gaps classified as repo-owned. The ta
       <td>2026-06-18 17:21:13 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified both fields as Apple/container runtime gaps after reviewing Docker Compose and Apple/container behavior. Docker Compose implements <code>use_api_socket</code> as a client-side Docker socket plus credential handoff, while Apple/container can mount Unix sockets but does not expose a safe Docker-compatible API socket or credential boundary. Docker Compose maps <code>blkio_config</code> to Docker resource controls, while Apple/container reports block I/O stats but does not expose create/run blkio weight or throttling controls.</td>
+      <td colspan="4"><strong>Notes:</strong> Classified both fields as apple/container runtime gaps after reviewing Docker Compose and apple/container behavior. Docker Compose implements <code>use_api_socket</code> as a client-side Docker socket plus credential handoff, while apple/container can mount Unix sockets but does not expose a safe Docker-compatible API socket or credential boundary. Docker Compose maps <code>blkio_config</code> to Docker resource controls, while apple/container reports block I/O stats but does not expose create/run blkio weight or throttling controls.</td>
     </tr>
   </tbody>
 </table>
 
-## <img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"> Apple/container Upstream Backlog
+## <img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"> apple/container Upstream Backlog
 
 These tasks are valid Docker Compose v2 surfaces where container-compose has
-hit, or is expected to hit, an Apple/container runtime primitive gap. These are
+hit, or is expected to hit, an apple/container runtime primitive gap. These are
 good candidates for later PRs against [`apple/container`](https://github.com/apple/container).
-It is probably worth creating a fork of Apple/container before starting this
+It is probably worth creating a fork of apple/container before starting this
 work so the runtime changes can be staged, tested, and proposed upstream in
 small reviewable PRs.
 
@@ -658,15 +658,15 @@ Recommended upstream workflow:
 - Fork [`apple/container`](https://github.com/apple/container) before starting
   runtime work, then create one branch per primitive family.
 - Keep each future PR small enough to review independently. The first PR should
-  add or expose the Apple/container primitive plus focused runtime tests; the
+  add or expose the apple/container primitive plus focused runtime tests; the
   matching container-compose mapping should follow in this repository.
 - Prefer direct `ContainerClient`, `NetworkClient`, image, volume, process, and
-  log APIs so the plugin can stay close to Apple/container's supported design.
-- Update Apple/container API documentation with every new public runtime
+  log APIs so the plugin can stay close to apple/container's supported design.
+- Update apple/container API documentation with every new public runtime
   primitive so container-compose can link to stable docs instead of inferred
   behavior.
 
-Suggested Apple/container PR batches:
+Suggested apple/container PR batches:
 
 1. Networking parity: multi-network attachment, aliases, service-name
    multi-record DNS for replicas, Compose endpoint modes, fixed addresses, and
@@ -721,7 +721,7 @@ Suggested Apple/container PR batches:
   </thead>
   <tbody>
     <tr>
-      <td>Fork Apple/container for Compose primitive work</td>
+      <td>Fork apple/container for Compose primitive work</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
@@ -745,7 +745,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases, endpoint modes such as <code>vip</code> and <code>dnsrr</code>, plus DNS lookup that can return multiple A/AAAA records for scaled service names. Apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases, endpoint modes such as <code>vip</code> and <code>dnsrr</code>, plus DNS lookup that can return multiple A/AAAA records for scaled service names. apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
     </tr>
     <tr>
       <td>Start-first service replacement handoff</td>
@@ -754,7 +754,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>deploy.update_config.order: start-first</code> needs a temporary replacement handoff. Docker Compose creates a replacement under a temporary name, stops/removes the old stable container, then renames the replacement. Apple/container needs either a container rename primitive or service hostname/alias movement that can preserve the Compose service identity without duplicate ID or duplicate hostname conflicts. Unknown update orders are treated as the same upstream update-orchestration family until Apple/container exposes a broader replacement/update primitive.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>deploy.update_config.order: start-first</code> needs a temporary replacement handoff. Docker Compose creates a replacement under a temporary name, stops/removes the old stable container, then renames the replacement. apple/container needs either a container rename primitive or service hostname/alias movement that can preserve the Compose service identity without duplicate ID or duplicate hostname conflicts. Unknown update orders are treated as the same upstream update-orchestration family until apple/container exposes a broader replacement/update primitive.</td>
     </tr>
     <tr>
       <td>Fixed addresses and richer IPAM</td>
@@ -772,7 +772,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose build parity needs additional contexts, build <code>extra_hosts</code>, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced secret metadata (<code>uid</code>, <code>gid</code>, <code>mode</code>), build <code>shm_size</code>, build <code>ulimits</code>, and provenance/SBOM attestations exposed through Apple/container build APIs. Current <code>container build</code> supports the common local subset but not the full Compose v2 build surface.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose build parity needs additional contexts, build <code>extra_hosts</code>, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced secret metadata (<code>uid</code>, <code>gid</code>, <code>mode</code>), build <code>shm_size</code>, build <code>ulimits</code>, and provenance/SBOM attestations exposed through apple/container build APIs. Current <code>container build</code> supports the common local subset but not the full Compose v2 build surface.</td>
     </tr>
     <tr>
       <td>Host identity and host entries</td>
@@ -799,7 +799,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> platform guarantees for CPU, memory, PIDs, devices, and generic resources. Current Apple/container create/run surfaces expose local hard CPU and memory limits but not those deploy resource primitives.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> platform guarantees for CPU, memory, PIDs, devices, and generic resources. Current apple/container create/run surfaces expose local hard CPU and memory limits but not those deploy resource primitives.</td>
     </tr>
     <tr>
       <td>User, security, device, GPU, and sysctl controls</td>
@@ -817,7 +817,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, non-local service volume drivers, service <code>storage_opt</code>, image-declared inherited mounts, and a safe Compose-compatible mapping for external inherited block mounts. Current Apple/container mount flags cover the common local subset only. External-container <code>volumes_from</code> is implemented for volume, bind, and tmpfs mounts that direct inspect can represent as Apple <code>container --volume</code> or <code>--mount type=tmpfs</code> arguments.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, non-local service volume drivers, service <code>storage_opt</code>, image-declared inherited mounts, and a safe Compose-compatible mapping for external inherited block mounts. Current apple/container mount flags cover the common local subset only. External-container <code>volumes_from</code> is implemented for volume, bind, and tmpfs mounts that direct inspect can represent as Apple <code>container --volume</code> or <code>--mount type=tmpfs</code> arguments.</td>
     </tr>
     <tr>
       <td>Health status and dependency gates</td>
@@ -844,7 +844,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> File-backed service <code>configs</code> and <code>secrets</code> are implemented in container-compose through read-only bind mounts. Compose still needs first-class Apple/container config/secret stores or materialization for external definitions, inline config content, environment-backed runtime grants, and strict ownership/mode behavior that cannot be represented as a simple bind mount.</td>
+      <td colspan="4"><strong>Notes:</strong> File-backed service <code>configs</code> and <code>secrets</code> are implemented in container-compose through read-only bind mounts. Compose still needs first-class apple/container config/secret stores or materialization for external definitions, inline config content, environment-backed runtime grants, and strict ownership/mode behavior that cannot be represented as a simple bind mount.</td>
     </tr>
     <tr>
       <td>Restart policies</td>
@@ -862,7 +862,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose service <code>models</code> need a model-runner backend that can pull/configure model artifacts, expose endpoint status, inject endpoint/model variables, and make those endpoints reachable from Apple/container service containers. Docker Compose currently delegates this to the Docker Model plugin; Apple/container does not expose an equivalent primitive.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose service <code>models</code> need a model-runner backend that can pull/configure model artifacts, expose endpoint status, inject endpoint/model variables, and make those endpoints reachable from apple/container service containers. Docker Compose currently delegates this to the Docker Model plugin; apple/container does not expose an equivalent primitive.</td>
     </tr>
     <tr>
       <td>Docker Compose log parity</td>
@@ -871,7 +871,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>logs</code> needs runtime log records with timestamps, stdout/stderr stream metadata, since/until filtering, tailing handled by the runtime, service/replica attribution for prefix output, reliable replay for stopped containers, and service logging driver/option controls such as rotation policy. Current Apple/container APIs expose raw log handles, so container-compose can only approximate unprefixed local log output.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>logs</code> needs runtime log records with timestamps, stdout/stderr stream metadata, since/until filtering, tailing handled by the runtime, service/replica attribution for prefix output, reliable replay for stopped containers, and service logging driver/option controls such as rotation policy. Current apple/container APIs expose raw log handles, so container-compose can only approximate unprefixed local log output.</td>
     </tr>
     <tr>
       <td>Interactive init-process attach and signal proxying</td>
@@ -880,7 +880,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Docker Compose default <code>attach</code> needs stdin/stdout/stderr reattach to an already-running service init process, signal proxying, and detach-key handling. Attached <code>up</code> with <code>post_start</code> and foreground one-off <code>run</code> with lifecycle hooks need the same start-hook-reattach shape, plus an interceptable foreground stop boundary for <code>pre_stop</code>. Apple/container currently wires stdio while bootstrapping a container or creating a new exec process, but does not expose a Compose-compatible reattach primitive for an already-running service container.</td>
+      <td colspan="4"><strong>Notes:</strong> Docker Compose default <code>attach</code> needs stdin/stdout/stderr reattach to an already-running service init process, signal proxying, and detach-key handling. Attached <code>up</code> with <code>post_start</code> and foreground one-off <code>run</code> with lifecycle hooks need the same start-hook-reattach shape, plus an interceptable foreground stop boundary for <code>pre_stop</code>. apple/container currently wires stdio while bootstrapping a container or creating a new exec process, but does not expose a Compose-compatible reattach primitive for an already-running service container.</td>
     </tr>
     <tr>
       <td>Dynamic host-port allocation</td>
@@ -889,7 +889,7 @@ Suggested Apple/container PR batches:
       <td>2026-06-18 14:06:00 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Completed in container-compose by allocating ephemeral host ports before invoking Apple/container with explicit <code>--publish</code> bindings. No Apple/container PR is needed for common local target-only, ranged, or host-bound published-port workflows.</td>
+      <td colspan="4"><strong>Notes:</strong> Completed in container-compose by allocating ephemeral host ports before invoking apple/container with explicit <code>--publish</code> bindings. No apple/container PR is needed for common local target-only, ranged, or host-bound published-port workflows.</td>
     </tr>
     <tr>
       <td>Runtime event stream and process listing</td>
@@ -925,7 +925,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>commit</code> needs an Apple/container primitive that creates an image from a service container's changed filesystem and accepts Docker-compatible image metadata such as author, message, pause behavior, target replica index, and config changes.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>commit</code> needs an apple/container primitive that creates an image from a service container's changed filesystem and accepts Docker-compatible image metadata such as author, message, pause behavior, target replica index, and config changes.</td>
     </tr>
     <tr>
       <td>Compose application OCI artifacts</td>
@@ -934,7 +934,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>publish</code> and <code>oci://</code> Compose file references need Apple/container image/registry primitives for publishing and consuming Compose application OCI artifacts, not only service image tag/push/save operations.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>publish</code> and <code>oci://</code> Compose file references need apple/container image/registry primitives for publishing and consuming Compose application OCI artifacts, not only service image tag/push/save operations.</td>
     </tr>
     <tr>
       <td>Runtime API socket exposure</td>
@@ -943,7 +943,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>use_api_socket</code> needs a safe Docker-compatible or Apple/container-compatible API socket exposure model, including credentials, least-privilege boundaries, and clear behavior when Docker API compatibility is unavailable.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>use_api_socket</code> needs a safe Docker-compatible or apple/container-compatible API socket exposure model, including credentials, least-privilege boundaries, and clear behavior when Docker API compatibility is unavailable.</td>
     </tr>
     <tr>
       <td>Block I/O resource controls</td>
@@ -952,7 +952,7 @@ Suggested Apple/container PR batches:
       <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>blkio_config</code> needs Apple/container create/run resource primitives for blkio weight, per-device weight, and read/write byte or IOPS throttling. Current Apple/container APIs expose block I/O stats but not blkio resource-control configuration.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>blkio_config</code> needs apple/container create/run resource primitives for blkio weight, per-device weight, and read/write byte or IOPS throttling. Current apple/container APIs expose block I/O stats but not blkio resource-control configuration.</td>
     </tr>
   </tbody>
 </table>
