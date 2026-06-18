@@ -189,7 +189,16 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 13:27:44 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct Apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Attached <code>up</code> post-start ordering and one-off <code>run</code> hook execution remain container-compose design gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct Apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and one-off <code>pre_stop</code> execution remain container-compose design gaps.</td>
+    </tr>
+    <tr>
+      <td>Detached one-off post-start hook execution</td>
+      <td>2026-06-18 13:33:19 BST</td>
+      <td>2026-06-18 13:33:19 BST</td>
+      <td>2026-06-18 13:33:19 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Executed service <code>post_start</code> hooks after detached one-off <code>compose run</code> containers are created, reusing the generated or explicit one-off container name for direct Apple/container process exec. Foreground <code>run</code> post-start ordering and one-off <code>pre_stop</code> remain container-compose design gaps.</td>
     </tr>
     <tr>
       <td>Scaled anonymous service volumes</td>
@@ -421,7 +430,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths. Remaining work covers service <code>provider</code>, service <code>models</code>, attached <code>up</code> post-start ordering before foreground attach, and one-off <code>run</code> lifecycle-hook execution.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, and <code>post_start</code> is implemented for detached one-off <code>run</code>. Remaining work covers service <code>provider</code>, service <code>models</code>, attached <code>up</code> post-start ordering before foreground attach, foreground <code>run</code> post-start ordering, and one-off <code>pre_stop</code> execution.</td>
     </tr>
     <tr>
       <td>Logging and storage metadata</td>

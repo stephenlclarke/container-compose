@@ -1307,13 +1307,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             ? []
             : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
         try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
-        try validateOneOffRunLifecycleHooks(service: service)
+        try validateOneOffRunLifecycleHooks(service: service, options: run)
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try validatePublishedPorts(publishedPorts, serviceName: service.name)
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
         try await startDependencyServices(project: runProject, services: dependencyServices)
+        let containerName = oneOffRunContainerName(project: runProject, service: service, requestedName: run.containerName)
         try await runContainer(
             try runArguments(
                 project: runProject,
@@ -1323,12 +1324,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     $0.remove = run.remove
                     $0.oneOff = true
                     $0.publishedPorts = publishedPorts
-                    $0.containerNameOverride = run.containerName
+                    $0.containerNameOverride = containerName
                     $0.labelOverrides = labelOverrides
                 }
             ),
             inheritedIO: !run.detach && (service.tty == true || service.stdinOpen == true)
         )
+        if run.detach {
+            try await runPostStartHooks(service: service, containerID: containerName)
+        }
     }
 
     /// Starts selected service containers.
@@ -1741,6 +1745,15 @@ private extension ComposeOrchestrator {
         return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
     }
 
+    /// Returns the one-off container name requested by the CLI or generated
+    /// from the configured identifier source.
+    func oneOffRunContainerName(project: ComposeProject, service: ComposeService, requestedName: String?) -> String {
+        guard let requestedName else {
+            return containerName(project: project, service: service, oneOff: true)
+        }
+        return slug(requestedName)
+    }
+
     /// Resolves the runtime ID for a service container index.
     func serviceContainerID(project: ComposeProject, service: ComposeService, index: Int) async throws -> String {
         let id = try serviceContainerName(project: project, service: service, index: index)
@@ -2105,13 +2118,15 @@ private extension ComposeOrchestrator {
         throw ComposeError.unsupported("service '\(service.name)' uses post_start; attached up cannot run lifecycle hooks before foreground attach returns, use --detach")
     }
 
-    /// Rejects lifecycle hooks on one-off containers until `run` has a stable
-    /// create/start boundary that can execute hooks immediately after start.
-    func validateOneOffRunLifecycleHooks(service: ComposeService) throws {
-        guard hasLifecycleHooks(service) else {
+    /// Validates lifecycle hooks for one-off containers.
+    func validateOneOffRunLifecycleHooks(service: ComposeService, options run: ComposeRunOptions) throws {
+        if hasPreStopHooks(service) {
+            throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; compose run pre_stop hook execution is not implemented by container-compose yet")
+        }
+        guard hasPostStartHooks(service), !run.detach else {
             return
         }
-        throw ComposeError.unsupported("service '\(service.name)' uses lifecycle hooks; compose run lifecycle hook execution is not implemented by container-compose yet")
+        throw ComposeError.unsupported("service '\(service.name)' uses post_start; compose run must use --detach before container-compose can execute post_start hooks")
     }
 
     /// Validates normalized develop.watch trigger metadata for command-level
