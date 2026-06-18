@@ -3509,7 +3509,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported deploy field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode, placement; Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode, placement; Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config with delay is not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -12479,6 +12479,79 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("up applies deploy update delay between recreated replicas")
+    func upAppliesDeployUpdateDelayBetweenRecreatedReplicas() async throws {
+        let sleeper = DurationRecorder()
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: "stale-1"]),
+            ComposeContainerSummary(id: "demo-api-2", status: "running", labels: [composeConfigHashLabel: "stale-2"]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                    $0.deployUpdateDelayNanoseconds = 2_000_000_000
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { try await sleeper.sleep($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands.map(\.arguments).count == 2)
+        #expect(await sleeper.durations == [.nanoseconds(2_000_000_000)])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+            .stop(id: "demo-api-2", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-2", force: false),
+        ])
+    }
+
+    @Test("up does not apply deploy update delay to new replicas")
+    func upDoesNotApplyDeployUpdateDelayToNewReplicas() async throws {
+        let sleeper = DurationRecorder()
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                    $0.deployUpdateDelayNanoseconds = 2_000_000_000
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { try await sleeper.sleep($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+            }
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands.map(\.arguments).count == 2)
+        #expect(await sleeper.durations.isEmpty)
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+    }
+
     @Test("up timeout overrides service stop grace period when recreating")
     func upTimeoutOverridesServiceStopGracePeriodWhenRecreating() async throws {
         let runner = RecordingRunner(responses: [
@@ -14138,6 +14211,18 @@ private actor RecordingContainerExporter: ContainerExporting {
 
     func exportContainer(id: String, output: String?) async throws {
         storage.append(ContainerExportRequest(id: id, output: output))
+    }
+}
+
+private actor DurationRecorder {
+    private var storage: [Duration] = []
+
+    var durations: [Duration] {
+        storage
+    }
+
+    func sleep(_ duration: Duration) async throws {
+        storage.append(duration)
     }
 }
 

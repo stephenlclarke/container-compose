@@ -681,6 +681,21 @@ private struct ServiceContainerReconcileRequest {
     var noRecreate: Bool
     var dependencyRecreateServices: Set<String>
     var recreateTimeout: Int?
+    var delayBeforeRecreate: Bool = false
+}
+
+private enum ServiceContainerReconcileOutcome {
+    case unchanged
+    case created
+    case recreated
+
+    var changed: Bool {
+        self != .unchanged
+    }
+
+    var recreated: Bool {
+        self == .recreated
+    }
 }
 
 private enum ComposeCopyEndpoint {
@@ -902,9 +917,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             var serviceChanged = false
             if replicaCount > 0 {
+                var priorReplicaRecreated = false
                 for replicaIndex in 1...replicaCount {
                     let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
-                    let changed = try await reconcileServiceContainer(
+                    let reconcileOutcome = try await reconcileServiceContainer(
                         project: workingProject,
                         service: service,
                         request: ServiceContainerReconcileRequest(
@@ -918,10 +934,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                             forceRecreate: up.forceRecreate,
                             noRecreate: up.noRecreate,
                             dependencyRecreateServices: dependencyRecreateServices,
-                            recreateTimeout: up.timeout
+                            recreateTimeout: up.timeout,
+                            delayBeforeRecreate: priorReplicaRecreated
                         )
                     )
-                    serviceChanged = serviceChanged || changed
+                    serviceChanged = serviceChanged || reconcileOutcome.changed
+                    if reconcileOutcome.recreated {
+                        priorReplicaRecreated = true
+                    }
                 }
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
@@ -960,13 +980,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         project: ComposeProject,
         service: ComposeService,
         request: ServiceContainerReconcileRequest
-    ) async throws -> Bool {
+    ) async throws -> ServiceContainerReconcileOutcome {
         let name = request.name
         let existing = try await inspectContainer(name)
+        var didRecreate = false
         if let existing {
             if request.noRecreate {
                 options.emit("compose: reusing existing container \(name)")
-                return false
+                return .unchanged
             }
             if !request.forceRecreate,
                !request.dependencyRecreateServices.contains(service.name),
@@ -976,10 +997,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                    externalVolumeMounts: request.externalVolumeMounts
                )) {
                 options.emit("compose: reusing existing container \(name)")
-                return false
+                return .unchanged
             }
+            try await sleepBeforeDeployUpdateIfNeeded(service: service, enabled: request.delayBeforeRecreate)
             try await stopContainer(service: service, containerName: name, timeout: request.recreateTimeout)
             try await deleteContainer(name)
+            didRecreate = true
         }
 
         try await runContainer(try runArguments(
@@ -991,7 +1014,18 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if request.runOptions.command == "run" {
             try await runPostStartHooks(service: service, containerID: name)
         }
-        return true
+        return didRecreate ? .recreated : .created
+    }
+
+    /// Applies a supported stop-first deploy update delay before the next local replica replacement.
+    private func sleepBeforeDeployUpdateIfNeeded(service: ComposeService, enabled: Bool) async throws {
+        guard enabled,
+              !options.dryRun,
+              let nanoseconds = service.deployUpdateDelayNanoseconds,
+              nanoseconds > 0 else {
+            return
+        }
+        try await options.sleep(.nanoseconds(nanoseconds))
     }
 
     /// Creates project resources and selected service containers without starting them.
@@ -1054,9 +1088,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             if replicaCount > 0 {
+                var priorReplicaRecreated = false
                 for replicaIndex in 1...replicaCount {
                     let name = try serviceContainerName(project: project, service: service, index: replicaIndex)
-                    _ = try await reconcileServiceContainer(
+                    let reconcileOutcome = try await reconcileServiceContainer(
                         project: project,
                         service: service,
                         request: ServiceContainerReconcileRequest(
@@ -1070,9 +1105,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                             forceRecreate: create.forceRecreate,
                             noRecreate: create.noRecreate,
                             dependencyRecreateServices: dependencyRecreateServices,
-                            recreateTimeout: recreateTimeout
+                            recreateTimeout: recreateTimeout,
+                            delayBeforeRecreate: priorReplicaRecreated
                         )
                     )
+                    if reconcileOutcome.recreated {
+                        priorReplicaRecreated = true
+                    }
                 }
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
@@ -2345,7 +2384,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); resource reservations need an apple/container scheduler/resource reservation gap PR")
         }
         let fieldList = fields.joined(separator: ", ")
-        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config is not implemented by container-compose yet")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config with delay is not implemented by container-compose yet")
     }
 
     /// Returns unsupported deploy resource limits that need Apple runtime support.

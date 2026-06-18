@@ -315,7 +315,16 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 15:22:32 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> and <code>deploy.update_config.parallelism: 1</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code>, all-at-once or multi-container update parallelism, update delays, rollback behavior, and placement rules remain broader deploy backlog.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> and <code>deploy.update_config.parallelism: 1</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code>, all-at-once or multi-container update parallelism, rollback behavior, and placement rules remain broader deploy backlog.</td>
+    </tr>
+    <tr>
+      <td>Deploy stop-first update delay</td>
+      <td>2026-06-18 16:36:37 BST</td>
+      <td>2026-06-18 16:36:37 BST</td>
+      <td>2026-06-18 16:36:37 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Preserved <code>deploy.update_config.delay</code> from compose-go normalization and applied it between local replica replacements only when the prior replica and current replica both need stop-first recreation. First-time service creation and scale-out do not sleep.</td>
     </tr>
     <tr>
       <td>Deploy resource gap classification</td>
@@ -475,7 +484,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, and stop-first single-parallel <code>deploy.update_config</code> is accepted because it matches the existing recreate path. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, and <code>deploy.resources.reservations</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, and stop-first single-parallel <code>deploy.update_config</code> including <code>delay</code> is accepted because it matches the existing recreate path. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, and <code>deploy.resources.reservations</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>

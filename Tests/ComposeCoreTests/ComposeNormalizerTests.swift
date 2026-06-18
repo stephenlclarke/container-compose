@@ -421,6 +421,7 @@ struct ComposeNormalizerTests {
               update_config:
                 parallelism: 1
                 order: stop-first
+                delay: 2s
               resources:
                 limits:
                   cpus: "1.5"
@@ -436,6 +437,7 @@ struct ComposeNormalizerTests {
         let api = try #require(project.services["api"])
         #expect(api.scale == 2)
         #expect(api.deployLabels == ["com.example.service": "api"])
+        #expect(api.deployUpdateDelayNanoseconds == 2_000_000_000)
         #expect(api.cpus == "1.5")
         #expect(api.memLimit?.isEmpty == false)
         #expect(api.unsupportedDeployFields == nil)

@@ -88,6 +88,7 @@ type normalizedService struct {
 	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
 	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
+	DeployUpdateDelayNanos  int64                               `json:"deployUpdateDelayNanoseconds,omitempty"`
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
 	Entrypoint              []string                            `json:"entrypoint,omitempty"`
@@ -480,6 +481,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Develop:                 developValues(service.Develop),
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
 		DeployLabels:            deployLabels(service.Deploy),
+		DeployUpdateDelayNanos:  deployUpdateDelayNanoseconds(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
 		Provider:                providerValue(service.Provider),
@@ -721,6 +723,15 @@ func deployLabels(deploy *types.DeployConfig) map[string]string {
 	return mapLabels(deploy.Labels)
 }
 
+// deployUpdateDelayNanoseconds returns the Compose stop-first update delay in
+// nanoseconds so Swift can apply it between recreated local replicas.
+func deployUpdateDelayNanoseconds(deploy *types.DeployConfig) int64 {
+	if deploy == nil || deploy.UpdateConfig == nil {
+		return 0
+	}
+	return int64(deploy.UpdateConfig.Delay)
+}
+
 // unsupportedDeployMode allows Compose's default replicated service mode. Other
 // modes, such as global, need scheduler semantics this local plugin does not
 // provide.
@@ -747,8 +758,7 @@ func updateConfigHasUnsupportedFields(config *types.UpdateConfig) bool {
 	if config.Parallelism != nil && *config.Parallelism != 1 {
 		return true
 	}
-	return config.Delay != 0 ||
-		config.FailureAction != "" ||
+	return config.FailureAction != "" ||
 		config.Monitor != 0 ||
 		config.MaxFailureRatio != 0 ||
 		updateConfigHasUnsupportedOrder(config.Order)
