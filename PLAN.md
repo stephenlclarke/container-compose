@@ -26,6 +26,11 @@ Use `not started` or `not completed` where the event has not happened yet.
 - Use local Makefile validation first because it is faster than waiting for
   GitHub runners.
 - Post to `xyzzy-tools.slack.com#codex` before and after each code slice.
+- When choosing the next implementation target, select one functional topic
+  such as replica scaling, advanced build configuration, storage, lifecycle, or
+  watch/develop workflows. Work that topic until it is fully implemented or an
+  Apple/container blocker is discovered and documented, then move on to the
+  next topic.
 - SonarQube remediation can be batched to `main`, but SonarQube fixes should
   be pushed to `main` after each fix when formal SonarQube validation is the
   active workflow.
@@ -236,6 +241,15 @@ Use `not started` or `not completed` where the event has not happened yet.
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Make reducing friction for possible Apple/container adoption an explicit design constraint, with clear boundaries for Compose normalization, Swift orchestration, direct runtime API mapping, compatibility documentation, and upstream runtime primitive gaps.</td>
+    </tr>
+    <tr>
+      <td>Focused topic workflow note</td>
+      <td>2026-06-18 11:33:56 BST</td>
+      <td>2026-06-18 11:33:56 BST</td>
+      <td>2026-06-18 11:33:56 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Capture the implementation workflow preference to choose one Compose functional topic, drive it to completion or to a documented Apple/container blocker, and only then move to another topic. The existing adoption-friction guidance in <code>DESIGN.md</code> and <code>CONTRIBUTING.md</code> remains the review standard for keeping future Apple/container adoption practical.</td>
     </tr>
   </tbody>
 </table>
