@@ -8917,6 +8917,57 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
     }
 
+    @Test("run applies one-off capability overrides")
+    func runAppliesOneOffCapabilityOverrides() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.capAdd = ["NET_ADMIN"]
+                    $0.capDrop = ["MKNOD"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"]) {
+                $0.capAdd = ["SYS_PTRACE"]
+                $0.capDrop = ["NET_RAW"]
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--cap-add", "NET_ADMIN"]))
+        #expect(command.containsSequence(["--cap-add", "SYS_PTRACE"]))
+        #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
+        #expect(command.containsSequence(["--cap-drop", "NET_RAW"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run rejects empty capability overrides")
+    func runRejectsEmptyCapabilityOverrides() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: ["job": ComposeService(name: "job", image: "alpine")]
+        )
+
+        do {
+            try await ComposeOrchestrator().run(
+                project: project,
+                serviceName: "job",
+                options: composeRunOptions(command: ["true"]) {
+                    $0.capAdd = [""]
+                }
+            )
+            Issue.record("Expected empty run capability override to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("run --cap-add requires a capability name"))
+        }
+    }
+
     @Test("run publishes service ports only when requested")
     func runPublishesServicePortsOnlyWhenRequested() async throws {
         let defaultRunner = RecordingRunner()

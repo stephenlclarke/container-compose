@@ -564,6 +564,10 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var labels: [String] = []
     @Option(name: [.customShort("v"), .customLong("volume")], help: "Bind mount a volume for the one-off container. May be repeated.")
     var volumes: [String] = []
+    @Option(name: .customLong("cap-add"), help: "Add a Linux capability to the one-off container. May be repeated.")
+    var capAdd: [String] = []
+    @Option(name: .customLong("cap-drop"), help: "Drop a Linux capability from the one-off container. May be repeated.")
+    var capDrop: [String] = []
     @Argument(help: "Service name.")
     var service: String
     @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
@@ -592,6 +596,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 $0.envFiles = envFiles
                 $0.labels = labels
                 $0.volumes = volumes
+                $0.capAdd = capAdd
+                $0.capDrop = capDrop
             }
         )
     }

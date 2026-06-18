@@ -445,6 +445,8 @@ public struct ComposeRunOptions {
     public var envFiles: [String] = []
     public var labels: [String] = []
     public var volumes: [String] = []
+    public var capAdd: [String] = []
+    public var capDrop: [String] = []
 
     public init() {
         // Stored property defaults represent Docker Compose's default run behavior.
@@ -1237,6 +1239,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             service.tty = false
         }
         try applyRunEnvironmentOverrides(run, service: &service)
+        try applyRunCapabilityOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
         try validateProjectNetworks(runProject)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
@@ -2897,6 +2900,26 @@ private extension ComposeOrchestrator {
 
         if !run.envFiles.isEmpty {
             service.envFiles = (service.envFiles ?? []) + run.envFiles
+        }
+    }
+
+    /// Applies `compose run` Linux capability overrides to the copied service
+    /// model.
+    func applyRunCapabilityOverrides(_ run: ComposeRunOptions, service: inout ComposeService) throws {
+        try validateRunCapabilities(run.capAdd, optionName: "--cap-add")
+        try validateRunCapabilities(run.capDrop, optionName: "--cap-drop")
+        if !run.capAdd.isEmpty {
+            service.capAdd = (service.capAdd ?? []) + run.capAdd
+        }
+        if !run.capDrop.isEmpty {
+            service.capDrop = (service.capDrop ?? []) + run.capDrop
+        }
+    }
+
+    /// Validates `compose run` capability override option values.
+    func validateRunCapabilities(_ capabilities: [String], optionName: String) throws {
+        if capabilities.contains(where: { $0.isEmpty }) {
+            throw ComposeError.invalidProject("run \(optionName) requires a capability name")
         }
     }
 

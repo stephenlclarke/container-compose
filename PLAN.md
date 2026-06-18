@@ -45,6 +45,7 @@ Use `not started` or `not completed` where the event has not happened yet.
 | Interaction command expansion | 2026-06-18 05:55:46 BST | 2026-06-18 05:55:46 BST | 2026-06-18 06:12:08 BST | Added indexed attach/log targets and accepted harmless log display flags. |
 | Develop watch model boundary | 2026-06-18 09:44:11 BST | 2026-06-18 09:44:11 BST | 2026-06-18 09:54:37 BST | Preserved `develop.watch` triggers from compose-go in the Swift model and added command-level `watch` validation. File-watch loops and action execution remain open plugin work. |
 | Scaled anonymous service volumes | 2026-06-18 10:07:04 BST | 2026-06-18 10:07:04 BST | 2026-06-18 10:11:26 BST | Mapped anonymous service volumes to deterministic per-replica runtime names when services are scaled and removed those volumes with `down --volumes`. |
+| Run capability overrides | 2026-06-18 10:16:25 BST | 2026-06-18 10:16:25 BST | 2026-06-18 10:20:55 BST | Added Docker Compose `run --cap-add` and `run --cap-drop` mapping to Apple/container one-off runtime capability flags. |
 
 ## Active Documentation Work
 
