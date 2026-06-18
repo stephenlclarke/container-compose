@@ -75,6 +75,8 @@ Build a release executable:
 make build-release
 ```
 
+Release builds default to `SWIFT_RELEASE_FLAGS="-Xswiftc -Osize"`. This keeps the package path on release optimization while avoiding a Swift 6.3.2 optimizer crash in the existing async watch loop on this project. To test a newer toolchain without the workaround, run `SWIFT_RELEASE_FLAGS= make build-release`.
+
 Build the Go normalizer helper:
 
 ```sh
@@ -167,6 +169,8 @@ make package
 ```
 
 GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds.
+
+`make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`.
 
 The package target writes the archive and staging directory:
 
