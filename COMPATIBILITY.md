@@ -416,7 +416,7 @@ Status: <img alt="NO PLUGIN GAP" src="https://img.shields.io/badge/NO%20PLUGIN%2
 - Docker Compose v2 implementation: [`docker/compose`](https://github.com/docker/compose).
 - Docker Compose v2 Go API package: [`github.com/docker/compose/v2/pkg/api`](https://pkg.go.dev/github.com/docker/compose/v2/pkg/api).
 - Compose model normalizer used here: [`compose-spec/compose-go`](https://github.com/compose-spec/compose-go).
-- Apple container public documentation: [apple.github.io/container/documentation](https://apple.github.io/container/documentation/).
+- apple/container public documentation: [apple.github.io/container/documentation](https://apple.github.io/container/documentation/).
 - Apple `ContainerClient` API documentation for direct Swift runtime adapter work: [apple.github.io/container/documentation/containerclient](https://apple.github.io/container/documentation/containerclient/).
 
 ## Example Index
@@ -877,7 +877,7 @@ Status path:
 
 - Docker Compose v2: accepts and normalizes host identity and legacy link fields.
 - [`apple/container`][apple-container]: missing hostname/domain controls, explicit host-entry support, and legacy link semantics.
-- `container-compose`: detects those fields and reports the Apple runtime gap.
+- `container-compose`: detects those fields and reports the apple/container runtime gap.
 
 ```yaml
 # compose.yaml
@@ -921,7 +921,7 @@ Status path:
 
 - Docker Compose v2: accepts and normalizes these runtime controls.
 - [`apple/container`][apple-container]: missing the required namespace, privileged/device, resource controls beyond supported `cpus`, `mem_limit`, `shm_size`, and `ulimits`, deploy PID-limit and reservation primitives, sysctl, and privileged exec primitives.
-- `container-compose`: detects those fields and reports the Apple runtime gap.
+- `container-compose`: detects those fields and reports the apple/container runtime gap.
 
 The related exec form is also rejected:
 
@@ -976,7 +976,7 @@ Status path:
 
 - Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, service restart policies, deploy restart policies, and deploy job modes.
 - [`apple/container`][apple-container]: missing health status, exit/completion metadata, job lifecycle/scheduler semantics, first-class config/secret store or materialization primitives, and restart policy support.
-- `container-compose`: detects those fields and reports the Apple runtime gap.
+- `container-compose`: detects those fields and reports the apple/container runtime gap.
 
 ```yaml
 # compose.yaml
@@ -1070,7 +1070,7 @@ Status path:
 
 - Docker Compose v2: supports these commands.
 - [`apple/container`][apple-container]: missing process listing, event streaming, pause/unpause, stored exit-code metadata for already-stopped containers, and copy archive/follow-link controls.
-- `container-compose`: exposes the command names, resolves published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports plugin-side dynamic host-port allocation, including `host_ip` bindings, before calling apple/container with explicit publish bindings, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `wait` and `wait --down-project` for running/stopping service containers, and reports the Apple runtime gap for requests that need unavailable runtime state.
+- `container-compose`: exposes the command names, resolves published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports plugin-side dynamic host-port allocation, including `host_ip` bindings, before calling apple/container with explicit publish bindings, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `wait` and `wait --down-project` for running/stopping service containers, and reports the apple/container runtime gap for requests that need unavailable runtime state.
 
 ```yaml
 # compose.yaml
@@ -1237,13 +1237,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### A7: Apple Gap, Image Commit And Compose Publish
 
-Expected result: `container compose commit` and `container compose publish` are recognized command names, then reject with Apple/runtime-gap messages. Existing apple/container image primitives such as image save, tag, push, and container export are useful adjacent operations, but they do not create a new image from a service container's changed filesystem or package a Compose application as an OCI artifact that can be consumed with `oci://`.
+Expected result: `container compose commit` and `container compose publish` are recognized command names, then reject with apple/container runtime-gap messages. Existing apple/container image primitives such as image save, tag, push, and container export are useful adjacent operations, but they do not create a new image from a service container's changed filesystem or package a Compose application as an OCI artifact that can be consumed with `oci://`.
 
 Status path:
 
 - Docker Compose v2: supports service-container image commits and Compose application publishing.
 - [`apple/container`][apple-container]: missing a container commit image-snapshot primitive and Compose application OCI artifact publish/consume primitives.
-- `container-compose`: exposes the command names and reports the Apple runtime boundary precisely.
+- `container-compose`: exposes the command names and reports the apple/container runtime boundary precisely.
 
 ```yaml
 # compose.yaml
@@ -1403,9 +1403,9 @@ Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
 - [`apple/container`][apple-container]: can mount Unix sockets and report block I/O stats, but it does not expose a Docker-compatible API socket and credential handoff for `use_api_socket` or create/run resource controls for `blkio_config` weight and throttling.
-- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, maps external `volumes_from` by inspecting the referenced container through direct apple/container APIs, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It rejects `use_api_socket` and `blkio_config` before resources are created with precise apple/container runtime-gap messages.
+- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to apple/container runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, maps external `volumes_from` by inspecting the referenced container through direct apple/container APIs, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the apple/container volume mount path, and maps long-form tmpfs `size`/`mode` through `container --mount type=tmpfs`. It rejects `use_api_socket` and `blkio_config` before resources are created with precise apple/container runtime-gap messages.
 
-The external container reference assumes an existing apple/container container named `legacy-worker` with volume, bind, or tmpfs mounts that can be represented as Apple `container --volume` or `--mount type=tmpfs` arguments.
+The external container reference assumes an existing apple/container container named `legacy-worker` with volume, bind, or tmpfs mounts that can be represented as `container --volume` or `--mount type=tmpfs` arguments.
 
 ```yaml
 # compose.yaml
