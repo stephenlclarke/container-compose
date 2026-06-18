@@ -510,6 +510,12 @@ private enum ComposeCopyEndpoint {
     }
 }
 
+/// Service-scoped `volumes_from` reference after parsing access mode.
+private struct ParsedVolumesFromReference {
+    var serviceName: String
+    var readOnly: Bool?
+}
+
 /// Converts a normalized Compose project into deterministic `container`
 /// commands.
 public final class ComposeOrchestrator: @unchecked Sendable {
@@ -581,7 +587,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
         try validatePublishedPorts(services: services)
-        try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
+        try validateReplicaSupport(project: project, services: services, scaleOverrides: scaleOverrides)
 
         try await ensureResources(project: project)
 
@@ -733,7 +739,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
         try validatePublishedPorts(services: services)
-        try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
+        try validateReplicaSupport(project: project, services: services, scaleOverrides: scaleOverrides)
 
         try await ensureResources(project: project)
 
@@ -1240,7 +1246,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await deleteContainer(target.name, force: force)
         }
         if volumes {
-            for volume in anonymousVolumeRuntimeNames(project: project, services: services) {
+            for volume in try anonymousVolumeRuntimeNames(project: project, services: services) {
                 let args = ["volume", "delete", volume]
                 if options.dryRun {
                     try await runContainer(args, check: false)
@@ -1532,7 +1538,7 @@ public extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("unknown service '\(name)'")
             }
             visiting.insert(name)
-            for (dependency, metadata) in (service.dependsOn ?? [:]).sorted(by: { $0.key < $1.key }) {
+            for (dependency, metadata) in serviceDependencies(service) {
                 if metadata.required == false, project.services[dependency] == nil {
                     continue
                 }
@@ -1797,10 +1803,11 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
         try validateServiceLabels(project: project, service: service)
+        try validateVolumesFromSupport(service: service, project: project)
         if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
-        if let fields = unsupportedServiceMountFields(service: service) {
+        if let fields = try unsupportedServiceMountFields(service: service, project: project) {
             let fieldList = fields.joined(separator: ", ")
             throw ComposeError.unsupported("service '\(service.name)' uses unsupported volume fields \(fieldList); advanced service volume options are not implemented by container-compose yet")
         }
@@ -2075,23 +2082,25 @@ private extension ComposeOrchestrator {
         )
     }
 
-    /// Returns unsupported service-level volume inheritance and driver fields.
+    /// Returns unsupported service-level volume driver fields.
     func unsupportedServiceVolumeShortcutFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
-        if let volumesFrom = service.volumesFrom, !volumesFrom.isEmpty {
-            fields.append(("volumes_from", "volume inheritance is not implemented by container-compose yet"))
-        }
         if let volumeDriver = service.volumeDriver, !volumeDriver.isEmpty {
             fields.append(("volume_driver", "service-level volume driver support is not implemented by container-compose yet"))
         }
         return fields
     }
 
+    /// Validates service-to-service volume inheritance before side effects.
+    func validateVolumesFromSupport(service: ComposeService, project: ComposeProject) throws {
+        _ = try volumesFromReferences(service: service, project: project)
+    }
+
     /// Returns unsupported long-form service mount fields that cannot be
     /// represented by the current Apple `container --volume/--tmpfs` mapping.
-    func unsupportedServiceMountFields(service: ComposeService) -> [String]? {
+    func unsupportedServiceMountFields(service: ComposeService, project: ComposeProject) throws -> [String]? {
         var seen = Set<String>()
-        let fields = (service.volumes ?? []).flatMap { $0.unsupportedFields ?? [] }.filter { field in
+        let fields = try effectiveServiceVolumes(project: project, service: service).flatMap { $0.unsupportedFields ?? [] }.filter { field in
             seen.insert(field).inserted
         }
         return fields.isEmpty ? nil : fields
@@ -2223,7 +2232,11 @@ private extension ComposeOrchestrator {
     }
 
     /// Validates scaled services that would collide under current local runtime primitives.
-    func validateReplicaSupport(services: [ComposeService], scaleOverrides: [String: Int]) throws {
+    func validateReplicaSupport(
+        project: ComposeProject,
+        services: [ComposeService],
+        scaleOverrides: [String: Int]
+    ) throws {
         for service in services {
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             guard replicaCount > 1 else {
@@ -2238,7 +2251,7 @@ private extension ComposeOrchestrator {
             if hasExplicitMACAddress(service) {
                 throw ComposeError.unsupported("service '\(service.name)' uses mac_address; scaled MAC addresses would collide across replicas")
             }
-            if hasAnonymousVolumes(service) {
+            if try hasAnonymousVolumes(service, project: project) {
                 throw ComposeError.unsupported("service '\(service.name)' uses anonymous volumes; per-replica anonymous volumes are not implemented by container-compose yet")
             }
         }
@@ -2253,8 +2266,8 @@ private extension ComposeOrchestrator {
     }
 
     /// Returns true when a service uses an anonymous runtime volume.
-    func hasAnonymousVolumes(_ service: ComposeService) -> Bool {
-        (service.volumes ?? []).contains { mount in
+    func hasAnonymousVolumes(_ service: ComposeService, project: ComposeProject) throws -> Bool {
+        try effectiveServiceVolumes(project: project, service: service).contains { mount in
             mount.type == "volume" && mount.source?.isEmpty != false
         }
     }
@@ -3014,7 +3027,7 @@ private extension ComposeOrchestrator {
         for port in publishedPorts {
             args.append(contentsOf: ["--publish", port])
         }
-        for mount in service.volumes ?? [] {
+        for mount in try effectiveServiceVolumes(project: project, service: service) {
             try appendMount(mount, project: project, args: &args)
         }
         for tmpfs in service.tmpfs ?? [] {
@@ -3431,9 +3444,9 @@ private extension ComposeOrchestrator {
     }
 
     /// Returns stable runtime names for anonymous volumes attached to services.
-    func anonymousVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) -> [String] {
-        let names = services.flatMap { service in
-            (service.volumes ?? []).compactMap { mount -> String? in
+    func anonymousVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) throws -> [String] {
+        let names = try services.flatMap { service in
+            try effectiveServiceVolumes(project: project, service: service).compactMap { mount -> String? in
                 guard mount.type == "volume", mount.source?.isEmpty != false, let target = mount.target else {
                     return nil
                 }
@@ -3587,7 +3600,7 @@ private extension ComposeOrchestrator {
         services: [ComposeService],
         restrictToSelectedServices: Bool
     ) async throws -> [ComposeVolumeRecord] {
-        let attachedVolumeNames = serviceAttachedVolumeRuntimeNames(project: project, services: services)
+        let attachedVolumeNames = try serviceAttachedVolumeRuntimeNames(project: project, services: services)
         let volumes = try await resourceManager.listVolumes()
         return volumes
             .filter { volume in
@@ -3601,10 +3614,10 @@ private extension ComposeOrchestrator {
     }
 
     /// Returns existing runtime volume names attached by the selected services.
-    func serviceAttachedVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) -> Set<String> {
+    func serviceAttachedVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) throws -> Set<String> {
         var names = Set<String>()
         for service in services {
-            for mount in service.volumes ?? [] where mount.type == "volume" {
+            for mount in try effectiveServiceVolumes(project: project, service: service) where mount.type == "volume" {
                 if let source = mount.source, !source.isEmpty {
                     names.insert(volumeRuntimeName(project: project, composeName: source))
                 } else if let target = mount.target {
@@ -3894,6 +3907,143 @@ private func volumeRuntimeName(project: ComposeProject, composeName: String, vol
     )
 }
 
+/// Returns Compose service dependencies, including service-scoped
+/// `volumes_from` references that Compose-go treats as implicit dependencies.
+private func serviceDependencies(
+    _ service: ComposeService
+) -> [(key: String, value: ComposeDependency)] {
+    var dependencies = service.dependsOn ?? [:]
+    for name in serviceVolumesFromDependencyNames(service) where dependencies[name] == nil {
+        dependencies[name] = ComposeDependency(condition: "service_started")
+    }
+    return dependencies.sorted(by: { $0.key < $1.key })
+}
+
+/// Returns service names referenced by `volumes_from`, ignoring external
+/// container references that should not affect project service ordering.
+private func serviceVolumesFromDependencyNames(_ service: ComposeService) -> [String] {
+    (service.volumesFrom ?? []).compactMap { reference in
+        let trimmed = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("container:") else {
+            return nil
+        }
+        return trimmed.split(separator: ":", omittingEmptySubsequences: false).first.map(String.init)
+    }
+}
+
+/// Expands same-project `volumes_from` service references into concrete mounts.
+private func effectiveServiceVolumes(project: ComposeProject, service: ComposeService) throws -> [ComposeMount] {
+    try effectiveServiceVolumes(project: project, service: service, stack: [])
+}
+
+/// Recursively resolves inherited service mounts while detecting cycles in
+/// hand-built test models that did not pass through Compose-go validation.
+private func effectiveServiceVolumes(
+    project: ComposeProject,
+    service: ComposeService,
+    stack: [String]
+) throws -> [ComposeMount] {
+    if stack.contains(service.name) {
+        let cycle = (stack + [service.name]).joined(separator: " -> ")
+        throw ComposeError.invalidProject("volume inheritance cycle involving \(cycle)")
+    }
+
+    var volumes: [ComposeMount] = []
+    for reference in try volumesFromReferences(service: service, project: project) {
+        guard let sourceService = project.services[reference.serviceName] else {
+            throw ComposeError.invalidProject("service '\(service.name)' volumes_from references unknown service '\(reference.serviceName)'")
+        }
+        let inherited = try effectiveServiceVolumes(
+            project: project,
+            service: sourceService,
+            stack: stack + [service.name]
+        )
+        volumes.append(contentsOf: inherited.map {
+            mount($0, applyingVolumesFromReadOnly: reference.readOnly)
+        })
+    }
+    volumes.append(contentsOf: service.volumes ?? [])
+    return volumes
+}
+
+/// Parses and validates the supported `volumes_from` service-reference subset.
+private func volumesFromReferences(
+    service: ComposeService,
+    project: ComposeProject
+) throws -> [ParsedVolumesFromReference] {
+    try (service.volumesFrom ?? []).map {
+        try parseVolumesFromReference($0, service: service, project: project)
+    }
+}
+
+/// Parses one `volumes_from` entry and rejects external containers clearly.
+private func parseVolumesFromReference(
+    _ rawValue: String,
+    service: ComposeService,
+    project: ComposeProject
+) throws -> ParsedVolumesFromReference {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' volumes_from contains an empty reference")
+    }
+
+    if trimmed.hasPrefix("container:") {
+        let containerReference = String(trimmed.dropFirst("container:".count))
+        let parts = containerReference.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        let containerName = parts.first ?? ""
+        guard parts.count <= 2 else {
+            throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' must use SERVICE[:ro|rw] or container:NAME[:ro|rw]")
+        }
+        _ = try volumesFromReadOnlyMode(parts.count == 2 ? parts[1] : nil, rawValue: rawValue, service: service)
+        guard !containerName.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' is missing an external container name")
+        }
+        throw ComposeError.unsupported("service '\(service.name)' uses volumes_from '\(rawValue)'; external container volume inheritance is not implemented by container-compose yet")
+    }
+
+    let parts = trimmed.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+    guard let sourceName = parts.first, !sourceName.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' is missing a source service")
+    }
+    guard parts.count <= 2 else {
+        throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' must use SERVICE[:ro|rw] or container:NAME[:ro|rw]")
+    }
+    guard project.services[sourceName] != nil else {
+        throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' references unknown service '\(sourceName)'")
+    }
+    let readOnly = try volumesFromReadOnlyMode(parts.count == 2 ? parts[1] : nil, rawValue: rawValue, service: service)
+    return ParsedVolumesFromReference(serviceName: sourceName, readOnly: readOnly)
+}
+
+/// Converts `volumes_from` access mode into the inherited mount readonly flag.
+private func volumesFromReadOnlyMode(
+    _ mode: String?,
+    rawValue: String,
+    service: ComposeService
+) throws -> Bool? {
+    guard let mode, !mode.isEmpty else {
+        return nil
+    }
+    switch mode {
+    case "ro", "readonly":
+        return true
+    case "rw":
+        return false
+    default:
+        throw ComposeError.invalidProject("service '\(service.name)' volumes_from '\(rawValue)' mode must be ro or rw")
+    }
+}
+
+/// Applies a `volumes_from` readonly override to an inherited mount.
+private func mount(_ mount: ComposeMount, applyingVolumesFromReadOnly readOnly: Bool?) -> ComposeMount {
+    guard let readOnly else {
+        return mount
+    }
+    var inherited = mount
+    inherited.readOnly = readOnly
+    return inherited
+}
+
 /// Uses normalized runtime resource names while falling back to generated
 /// project-scoped names for hand-built test models.
 private func declaredResourceName(projectName: String, composeName: String, declaredName: String, external: Bool) -> String {
@@ -3954,10 +4104,11 @@ private func configHash(project: ComposeProject, service: ComposeService) throws
     var effectiveService = service
     effectiveService.labels = try effectiveServiceLabels(project: project, service: service)
     effectiveService.labelFiles = nil
+    effectiveService.volumes = try effectiveServiceVolumes(project: project, service: service)
     let fingerprint = ServiceConfigFingerprint(
         service: effectiveService,
         networks: serviceNetworkRuntimeNames(project: project, service: service),
-        volumes: serviceVolumeRuntimeNames(project: project, service: service)
+        volumes: try serviceVolumeRuntimeNames(project: project, service: service)
     )
     guard let data = try? encoder.encode(fingerprint) else {
         return stableHash(service.name)
@@ -4079,9 +4230,9 @@ private func serviceNetworkRuntimeNames(project: ComposeProject, service: Compos
 }
 
 /// Returns runtime volume names that affect a service's run arguments.
-private func serviceVolumeRuntimeNames(project: ComposeProject, service: ComposeService) -> [String: String] {
+private func serviceVolumeRuntimeNames(project: ComposeProject, service: ComposeService) throws -> [String: String] {
     var names: [String: String] = [:]
-    for mount in service.volumes ?? [] where mount.type == "volume" {
+    for mount in try effectiveServiceVolumes(project: project, service: service) where mount.type == "volume" {
         guard let source = mount.source, !source.isEmpty else {
             continue
         }

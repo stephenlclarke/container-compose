@@ -130,7 +130,7 @@ cli-smoke: build
 	[[ "$$stats_help_output" == *"Optional service names."* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
-	printf 'services:\n  api:\n    image: alpine\n    annotations:\n      example.com/owner: platform\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes:\n      - /scratch\n      - cache:/cache\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\nvolumes:\n  cache:\n    driver: local\n    driver_opts:\n      journal: ordered\n      size: 64m\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    annotations:\n      example.com/owner: platform\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    volumes_from:\n      - db:ro\n    volumes:\n      - /scratch\n      - cache:/cache\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n    volumes:\n      - cache:/db-cache\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\nvolumes:\n  cache:\n    driver: local\n    driver_opts:\n      journal: ordered\n      size: 64m\n' > "$$tmpdir/compose.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    attach: false\n' > "$$tmpdir/attach-false.yml"; \
 	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
@@ -171,6 +171,7 @@ cli-smoke: build
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \
 	[[ "$$run_output" == *"container run"* ]]; \
 	[[ "$$run_output" == *"demo-db-1"* ]]; \
+	[[ "$$run_output" == *"--volume demo_cache:/db-cache:ro"* ]]; \
 	[[ "$$run_output" == *" alpine echo hello"* ]]; \
 	[[ "$$run_output" != *"--publish 8080:80"* ]]; \
 	run_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --service-ports api echo hello)"; \
@@ -253,6 +254,7 @@ cli-smoke: build
 	[[ "$$up_output" == *"container run"* ]]; \
 	[[ "$$up_output" == *"demo-db-1"* ]]; \
 	[[ "$$up_output" == *"--publish 8080:80"* ]]; \
+	[[ "$$up_output" == *"--volume demo_cache:/db-cache:ro"* ]]; \
 	[[ "$$up_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$up_output" == *"--network demo_default,mac=02:42:ac:11:00:03,mtu=1450"* ]]; \
 	[[ "$$up_output" == *"--label example.com/owner=platform"* ]]; \

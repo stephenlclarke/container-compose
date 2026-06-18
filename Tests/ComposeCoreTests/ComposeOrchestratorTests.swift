@@ -93,6 +93,22 @@ private func projectWithCacheVolume(serviceName: String, image: String) -> Compo
     }
 }
 
+private func composeProjectWithInheritedVolume(target: String) -> ComposeProject {
+    composeProject(
+        name: "demo",
+        services: [
+            "base": composeService(name: "base", image: "example/base") {
+                $0.volumes = [ComposeMount(type: "volume", source: "data", target: target)]
+            },
+            "worker": composeService(name: "worker", image: "example/worker") {
+                $0.volumesFrom = ["base"]
+            },
+        ]
+    ) {
+        $0.volumes = ["data": ComposeVolume(name: "data")]
+    }
+}
+
 private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -3491,6 +3507,124 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
+
+    @Test("up inherits declared volumes from same-project services")
+    func upInheritsDeclaredVolumesFromSameProjectServices() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "base": composeService(name: "base", image: "example/base") {
+                    $0.volumes = [
+                        ComposeMount(type: "volume", source: "data", target: "/data"),
+                        ComposeMount(type: "bind", source: "./seed", target: "/seed"),
+                    ]
+                },
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.volumesFrom = ["base:ro"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = [
+                "cache": ComposeVolume(name: "cache"),
+                "data": ComposeVolume(name: "data"),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["worker"]
+            })
+
+        let commands = runner.commands.map(\.arguments)
+        let baseRun = try #require(commands.first { $0.containsSequence(["--name", "demo-base-1"]) })
+        let workerRun = try #require(commands.first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        let baseIndex = try #require(commands.firstIndex(of: baseRun))
+        let workerIndex = try #require(commands.firstIndex(of: workerRun))
+        #expect(baseIndex < workerIndex)
+        #expect(baseRun.containsSequence(["--volume", "demo_data:/data"]))
+        #expect(baseRun.containsSequence(["--volume", "./seed:/seed"]))
+        #expect(workerRun.containsSequence(["--volume", "demo_data:/data:ro"]))
+        #expect(workerRun.containsSequence(["--volume", "./seed:/seed:ro"]))
+        #expect(workerRun.containsSequence(["--volume", "demo_cache:/cache"]))
+    }
+
+    @Test("up applies volumes_from read-write overrides")
+    func upAppliesVolumesFromReadWriteOverrides() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "base": composeService(name: "base", image: "example/base") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "data", target: "/data", readOnly: true)]
+                },
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.volumesFrom = ["base:rw"]
+                },
+            ]
+        ) {
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["worker"]
+            })
+
+        let workerRun = try #require(runner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        #expect(workerRun.containsSequence(["--volume", "demo_data:/data"]))
+        #expect(!workerRun.containsSequence(["--volume", "demo_data:/data:ro"]))
+    }
+
+    @Test("up config hash includes inherited volumes")
+    func upConfigHashIncludesInheritedVolumes() async throws {
+        let baselineRunner = RecordingRunner()
+        let baseline = composeProjectWithInheritedVolume(target: "/data")
+        try await ComposeOrchestrator(runner: baselineRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: baseline, options: ComposeUpOptions {
+                $0.services = ["worker"]
+                $0.noStart = true
+            })
+        let baselineWorkerCreate = try #require(baselineRunner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        let baselineHash = try #require(composeConfigHash(in: baselineWorkerCreate))
+
+        let changedRunner = RecordingRunner()
+        let changed = composeProjectWithInheritedVolume(target: "/state")
+        try await ComposeOrchestrator(runner: changedRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: changed, options: ComposeUpOptions {
+                $0.services = ["worker"]
+                $0.noStart = true
+            })
+        let changedWorkerCreate = try #require(changedRunner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        let changedHash = try #require(composeConfigHash(in: changedWorkerCreate))
+
+        #expect(baselineHash != changedHash)
+    }
+
+    @Test("up rejects external container volumes_from before creating resources")
+    func upRejectsExternalContainerVolumesFromBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.volumesFrom = ["container:legacy:ro"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported external volumes_from error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'worker' uses volumes_from 'container:legacy:ro'; external container volume inheritance is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects unsupported API socket mounting before creating resources")
@@ -9262,6 +9396,64 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run inherits declared volumes from dependency services")
+    func runInheritsDeclaredVolumesFromDependencyServices() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "base": composeService(name: "base", image: "example/base") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "data", target: "/data")]
+                },
+                "job": composeService(name: "job", image: "example/job") {
+                    $0.volumesFrom = ["base:ro"]
+                },
+            ]
+        ) {
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).run(project: project, serviceName: "job", command: ["echo", "hello"], remove: true)
+
+        let commands = runner.commands.map(\.arguments)
+        let baseRun = try #require(commands.first { $0.containsSequence(["--name", "demo-base-1"]) })
+        let jobRun = try #require(commands.first { $0.containsSequence(["--name", "demo-job-run-abc123"]) })
+        let baseIndex = try #require(commands.firstIndex(of: baseRun))
+        let jobIndex = try #require(commands.firstIndex(of: jobRun))
+        #expect(baseIndex < jobIndex)
+        #expect(baseRun.containsSequence(["--volume", "demo_data:/data"]))
+        #expect(jobRun.containsSequence(["--volume", "demo_data:/data:ro"]))
+        #expect(jobRun.containsSequence(["example/job", "echo", "hello"]))
+    }
+
+    @Test("run rejects external container volumes_from before creating resources")
+    func runRejectsExternalContainerVolumesFromBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "example/job") {
+                    $0.volumesFrom = ["container:legacy:ro"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported external volumes_from error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses volumes_from 'container:legacy:ro'; external container volume inheritance is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported volume shortcut fields before creating resources")
     func runRejectsUnsupportedVolumeShortcutFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedServiceVolumeShortcutFieldCases() {
@@ -11026,11 +11218,6 @@ private struct UnsupportedServiceVolumeShortcutFieldCase: Sendable {
 
 private func unsupportedServiceVolumeShortcutFieldCases() -> [UnsupportedServiceVolumeShortcutFieldCase] {
     [
-        UnsupportedServiceVolumeShortcutFieldCase(
-            composeName: "volumes_from",
-            reason: "volume inheritance is not implemented by container-compose yet",
-            configure: { $0.volumesFrom = ["db:ro"] }
-        ),
         UnsupportedServiceVolumeShortcutFieldCase(
             composeName: "volume_driver",
             reason: "service-level volume driver support is not implemented by container-compose yet",
