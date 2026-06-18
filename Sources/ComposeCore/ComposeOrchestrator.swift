@@ -199,6 +199,24 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Options for `compose build`.
+public struct ComposeBuildOptions {
+    public var services: [String] = []
+    public var noCache = false
+    public var pull = false
+    public var push = false
+    public var quiet = false
+    public var withDependencies = false
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default build behavior.
+    }
+
+    public init(_ configure: (inout ComposeBuildOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose pull`.
 public struct ComposePullOptions {
     public var services: [String] = []
@@ -653,9 +671,29 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Builds images for services that declare a build section.
     public func build(project: ComposeProject, services selected: [String], noCache: Bool) async throws {
-        let services = try selectedServices(project: project, selected: selected)
+        try await build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.services = selected
+                $0.noCache = noCache
+            }
+        )
+    }
+
+    /// Builds images for selected services with Docker Compose compatible options.
+    public func build(project: ComposeProject, options build: ComposeBuildOptions) async throws {
+        let services = try build.withDependencies
+            ? orderedServices(project: project, selected: build.services)
+            : selectedServices(project: project, selected: build.services)
         for service in services where service.build != nil {
-            try await buildService(project: project, service: service, noCache: noCache)
+            try await buildService(project: project, service: service, options: build)
+            if build.push, let image = service.image {
+                if options.dryRun {
+                    try await runContainer(["image", "push", image])
+                } else {
+                    try await imageManager.pushImage(image, emit: options.emit)
+                }
+            }
         }
     }
 
@@ -1991,7 +2029,7 @@ private extension ComposeOrchestrator {
     }
 
     /// Translates one Compose build section into a `container build` command.
-    func buildService(project: ComposeProject, service: ComposeService, noCache: Bool) async throws {
+    func buildService(project: ComposeProject, service: ComposeService, options buildOptions: ComposeBuildOptions) async throws {
         guard let build = service.build else {
             return
         }
@@ -2010,11 +2048,14 @@ private extension ComposeOrchestrator {
         if let target = build.target, !target.isEmpty {
             args.append(contentsOf: ["--target", target])
         }
-        if noCache || build.noCache == true {
+        if buildOptions.noCache || build.noCache == true {
             args.append("--no-cache")
         }
-        if build.pull == true {
+        if buildOptions.pull || build.pull == true {
             args.append("--pull")
+        }
+        if buildOptions.quiet {
+            args.append("--quiet")
         }
         for platform in build.platforms ?? [] where !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])

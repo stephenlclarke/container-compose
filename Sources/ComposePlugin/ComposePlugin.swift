@@ -286,13 +286,31 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("no-cache"), help: "Do not use cached image layers.")
     var noCache = false
+    @Flag(name: .customLong("pull"), help: "Always attempt to pull newer base images.")
+    var pull = false
+    @Flag(name: .customLong("push"), help: "Push service images after building.")
+    var push = false
+    @Flag(name: .shortAndLong, help: "Suppress build output.")
+    var quiet = false
+    @Flag(name: .customLong("with-dependencies"), help: "Also build service dependencies.")
+    var withDependencies = false
     @Argument(help: "Optional services to build.")
     var services: [String] = []
 
     /// Builds selected service images.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().build(project: loadedProject, services: services, noCache: noCache)
+        try await orchestrator().build(
+            project: loadedProject,
+            options: ComposeBuildOptions {
+                $0.services = services
+                $0.noCache = noCache
+                $0.pull = pull
+                $0.push = push
+                $0.quiet = quiet
+                $0.withDependencies = withDependencies
+            }
+        )
     }
 }
 

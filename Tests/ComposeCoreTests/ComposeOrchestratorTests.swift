@@ -3806,6 +3806,99 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("build options add pull quiet and push service image")
+    func buildOptionsAddPullQuietAndPushServiceImage() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { _ in }),
+            imageManager: imageManager
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.services = ["api"]
+                $0.pull = true
+                $0.push = true
+                $0.quiet = true
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.contains("--pull"))
+        #expect(command.contains("--quiet"))
+        #expect(command.last == "api")
+        #expect(await imageManager.requests == [.push("example/api:latest")])
+    }
+
+    @Test("build with dependencies builds dependency images first")
+    func buildWithDependenciesBuildsDependencyImagesFirst() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = [
+                        "db": ComposeDependency(condition: "service_started"),
+                    ]
+                    $0.build = ComposeBuild(context: "api")
+                },
+                "db": composeService(name: "db", image: "example/db:latest") {
+                    $0.build = ComposeBuild(context: "db")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.services = ["api"]
+                $0.withDependencies = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].containsSequence(["--tag", "example/db:latest"]))
+        #expect(commands[0].last == "db")
+        #expect(commands[1].containsSequence(["--tag", "example/api:latest"]))
+        #expect(commands[1].last == "api")
+    }
+
+    @Test("build push skips services without explicit image references")
+    func buildPushSkipsServicesWithoutExplicitImageReferences() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.push = true
+            }
+        )
+
+        #expect(runner.commands.count == 1)
+        #expect(runner.commands[0].arguments.containsSequence(["--tag", "demo_worker:latest"]))
+        #expect(await imageManager.requests.isEmpty)
+    }
+
     @Test("build applies Compose file no cache setting")
     func buildAppliesComposeFileNoCacheSetting() async throws {
         let runner = RecordingRunner()
