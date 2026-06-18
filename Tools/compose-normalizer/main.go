@@ -749,21 +749,13 @@ func appendUnsupportedDeployField(fields *[]string, name string, present bool) {
 	}
 }
 
-// unsupportedUpdateConfigFields reports update behavior outside the stop-first,
-// one-at-a-time recreation the local orchestrator already performs.
+// unsupportedUpdateConfigFields reports update behavior outside Docker Compose's
+// local mode and the stop-first recreation the local orchestrator performs.
 func unsupportedUpdateConfigFields(config *types.UpdateConfig) []string {
 	if config == nil {
 		return nil
 	}
-	fields := []string{}
-	if config.Parallelism != nil && *config.Parallelism != 1 {
-		fields = append(fields, "update_config.parallelism")
-	}
-	appendUnsupportedDeployField(&fields, "update_config.failure_action", config.FailureAction != "")
-	appendUnsupportedDeployField(&fields, "update_config.monitor", config.Monitor != 0)
-	appendUnsupportedDeployField(&fields, "update_config.max_failure_ratio", config.MaxFailureRatio != 0)
-	fields = append(fields, unsupportedUpdateOrderFields(config.Order)...)
-	return fields
+	return unsupportedUpdateOrderFields(config.Order)
 }
 
 // unsupportedUpdateOrderFields reports update orders that need a different

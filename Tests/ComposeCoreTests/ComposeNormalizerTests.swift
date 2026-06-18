@@ -398,8 +398,8 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.networkMode == "service:redis")
     }
 
-    @Test("normalizes supported deploy resource limits through compose-go")
-    func normalizesSupportedDeployResourceLimitsThroughComposeGo() async throws {
+    @Test("normalizes supported deploy local fields through compose-go")
+    func normalizesSupportedDeployLocalFieldsThroughComposeGo() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -419,9 +419,12 @@ struct ComposeNormalizerTests {
               labels:
                 com.example.service: api
               update_config:
-                parallelism: 1
+                parallelism: 2
                 order: stop-first
                 delay: 2s
+                failure_action: pause
+                monitor: 15s
+                max_failure_ratio: 0.3
               resources:
                 limits:
                   cpus: "1.5"

@@ -941,7 +941,6 @@ services:
 	}
 	want := []string{
 		"mode",
-		"update_config.parallelism",
 		"rollback_config",
 		"resources.limits.pids",
 		"resources.reservations.devices",
@@ -1342,8 +1341,17 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 		t.Fatalf("unsupportedDeployFields(start-first update) = %#v, want [update_config.order.start-first]", fields)
 	}
 	allAtOnce := uint64(0)
-	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &allAtOnce}}); !reflect.DeepEqual(fields, []string{"update_config.parallelism"}) {
-		t.Fatalf("unsupportedDeployFields(all-at-once update) = %#v, want [update_config.parallelism]", fields)
+	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &allAtOnce}}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(all-at-once update) = %#v, want empty", fields)
+	}
+	parallelism := uint64(2)
+	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{
+		Parallelism:     &parallelism,
+		FailureAction:   "pause",
+		Monitor:         10_000_000_000,
+		MaxFailureRatio: 0.5,
+	}}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(local update metadata) = %#v, want empty", fields)
 	}
 	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Order: "unknown"}}); !reflect.DeepEqual(fields, []string{"update_config.order"}) {
 		t.Fatalf("unsupportedDeployFields(unknown order update) = %#v, want [update_config.order]", fields)
@@ -1441,7 +1449,6 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	})
 	want := []string{
 		"mode",
-		"update_config.parallelism",
 		"rollback_config",
 		"resources.limits.pids",
 		"resources.reservations.generic_resources",
