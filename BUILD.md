@@ -121,7 +121,7 @@ Run the same validation used by GitHub Actions:
 make ci
 ```
 
-`make ci` runs required Markdown linting, Python coverage-tool tests, Go formatting checks, Hawkeye license-header checks, Swift and Go coverage, the coverage threshold gate, the Go helper build, and the CLI smoke test. Swift build and test targets use the checked-in `Package.resolved` by default so CI fails quickly if dependency versions need an intentional lockfile refresh. The smoke test builds the debug `compose` executable before exercising representative commands.
+`make ci` runs required Markdown linting, Python coverage-tool tests, Go formatting checks, Hawkeye license-header checks, Swift and Go coverage, the coverage threshold gate, the Go helper build, and the CLI smoke test. Swift build and test targets use the checked-in `Package.resolved` by default so CI fails quickly if dependency versions need an intentional lockfile refresh. The CI smoke test reuses the debug `compose` executable emitted by the Swift coverage test build, while standalone `make cli-smoke` still builds the debug executable before exercising representative commands.
 
 Run the faster non-coverage source checks with:
 
