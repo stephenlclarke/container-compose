@@ -7522,6 +7522,91 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == ["demo-api-1"])
     }
 
+    @Test("log manager renders timestamped records from direct API")
+    func logManagerRendersTimestampedRecordsFromDirectAPI() async throws {
+        let emitted = MessageRecorder()
+        let firstTimestamp = date("2026-06-18T10:00:00.123Z")
+        let secondTimestamp = date("2026-06-18T10:00:01.456Z")
+        let client = RecordingContainerLogAPIClient(records: [
+            ContainerLogRecord(timestamp: firstTimestamp, stream: .stdout, data: Data("one\npa".utf8)),
+            ContainerLogRecord(timestamp: secondTimestamp, stream: .stderr, data: Data("rt\n\n".utf8)),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(
+            id: "demo-api-1",
+            tail: nil,
+            follow: false,
+            since: nil,
+            until: nil,
+            timestamps: true,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == [
+            "2026-06-18T10:00:00.123Z one\n2026-06-18T10:00:00.123Z part\n2026-06-18T10:00:01.456Z "
+        ])
+        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordOptions == [
+            ContainerLogOptions(timestamps: true)
+        ])
+        #expect(await client.requests.isEmpty)
+    }
+
+    @Test("log manager applies tail after timestamped record splitting")
+    func logManagerAppliesTailAfterTimestampedRecordSplitting() async throws {
+        let emitted = MessageRecorder()
+        let timestamp = date("2026-06-18T10:00:00Z")
+        let client = RecordingContainerLogAPIClient(records: [
+            ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("one\ntwo\nthree\n".utf8)),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(
+            id: "demo-api-1",
+            tail: 2,
+            follow: false,
+            since: nil,
+            until: nil,
+            timestamps: true,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == [
+            "2026-06-18T10:00:00.000Z two\n2026-06-18T10:00:00.000Z three"
+        ])
+        #expect(await client.recordOptions == [
+            ContainerLogOptions(timestamps: true)
+        ])
+    }
+
+    @Test("log manager rejects invalid UTF-8 from timestamped records")
+    func logManagerRejectsInvalidUTF8FromTimestampedRecords() async throws {
+        let client = RecordingContainerLogAPIClient(records: [
+            ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data([0xFF])),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        do {
+            try await manager.logs(
+                id: "demo-api-1",
+                tail: nil,
+                follow: false,
+                since: nil,
+                until: nil,
+                timestamps: true,
+                emit: { _ in }
+            )
+            Issue.record("Expected invalid UTF-8 log error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("container logs for demo-api-1 are not valid UTF-8"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.recordRequests == ["demo-api-1"])
+    }
+
     @Test("log manager rejects missing direct API log handles")
     func logManagerRejectsMissingDirectAPILogHandles() async throws {
         let client = RecordingContainerLogAPIClient()
@@ -7649,6 +7734,55 @@ struct ComposeOrchestratorTests {
         #expect(handles.count == 1)
         #expect(await recorder.requests == ["demo-api-1"])
         #expect(await recorder.options == [options])
+    }
+
+    @Test("log API client forwards configured record operation")
+    func logAPIClientForwardsConfiguredRecordOperation() async throws {
+        let records = [
+            ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data("hello\n".utf8)),
+        ]
+        let recorder = RecordingContainerLogAPIClient(records: records)
+        let options = ContainerLogOptions(timestamps: true)
+        let client = ContainerLogAPIClient(
+            logs: { id, options in
+                try await recorder.logFileHandles(id: id, options: options)
+            },
+            logRecords: { id, options in
+                try await recorder.logRecords(id: id, options: options)
+            }
+        )
+
+        let response = try await client.logRecords(id: "demo-api-1", options: options)
+
+        #expect(response == records)
+        #expect(await recorder.recordRequests == ["demo-api-1"])
+        #expect(await recorder.recordOptions == [options])
+    }
+
+    @Test("log manager rejects timestamped follow until runtime exposes record streams")
+    func logManagerRejectsTimestampedFollowUntilRuntimeExposesRecordStreams() async throws {
+        let client = RecordingContainerLogAPIClient()
+        let manager = ContainerClientLogManager(client: client)
+
+        do {
+            try await manager.logs(
+                id: "demo-api-1",
+                tail: nil,
+                follow: true,
+                since: nil,
+                until: nil,
+                timestamps: true,
+                emit: { _ in }
+            )
+            Issue.record("Expected timestamped follow unsupported error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("logs --timestamps --follow: apple/container does not expose timestamped follow streams"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.requests.isEmpty)
+        #expect(await client.recordRequests.isEmpty)
     }
 
     @Test("stats manager renders static table from direct API stats")
@@ -9169,8 +9303,37 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["api-1 | filtered-log"])
     }
 
-    @Test("logs rejects timestamps until apple container exposes timestamped records")
-    func logsRejectsTimestampsUntilRuntimeSupportExists() async throws {
+    @Test("logs passes timestamps to log manager")
+    func logsPassesTimestampsToLogManager() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["timestamped-log"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.timestamps = true
+            }
+        )
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false, timestamps: true),
+        ])
+        #expect(emitted.messages == ["api-1 | timestamped-log"])
+    }
+
+    @Test("logs rejects timestamped follow until apple container exposes record streams")
+    func logsRejectsTimestampedFollowUntilRuntimeSupportExists() async throws {
         let logManager = RecordingContainerLogManager(outputs: ["ignored"])
         let project = ComposeProject(
             name: "demo",
@@ -9188,12 +9351,13 @@ struct ComposeOrchestratorTests {
                 project: project,
                 services: ["api"],
                 options: ComposeLogsOptions {
+                    $0.follow = true
                     $0.timestamps = true
                 }
             )
-            Issue.record("Expected timestamps unsupported error")
+            Issue.record("Expected timestamped follow unsupported error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("logs --timestamps: apple/container does not expose timestamped log records"))
+            #expect(error == .unsupported("logs --timestamps --follow: apple/container does not expose timestamped follow streams"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -14448,11 +14612,15 @@ private actor BlockingContainerLogManager: ContainerLogManaging {
 
 private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private let fileHandles: [FileHandle]
+    private let records: [ContainerLogRecord]
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
+    private var recordStorage: [String] = []
+    private var recordOptionsStorage: [ContainerLogOptions] = []
 
-    init(fileHandles: [FileHandle] = []) {
+    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = []) {
         self.fileHandles = fileHandles
+        self.records = records
     }
 
     var requests: [String] {
@@ -14463,10 +14631,24 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         optionsStorage
     }
 
+    var recordRequests: [String] {
+        recordStorage
+    }
+
+    var recordOptions: [ContainerLogOptions] {
+        recordOptionsStorage
+    }
+
     func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
         storage.append(id)
         optionsStorage.append(options)
         return fileHandles
+    }
+
+    func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
+        recordStorage.append(id)
+        recordOptionsStorage.append(options)
+        return records
     }
 }
 

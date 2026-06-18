@@ -22,6 +22,9 @@ import Foundation
 public protocol ContainerLogAPIClienting: Sendable {
     /// Returns the log file handles exposed by apple/container for `id`.
     func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle]
+
+    /// Returns the structured log records exposed by apple/container for `id`.
+    func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord]
 }
 
 public extension ContainerLogAPIClienting {
@@ -68,16 +71,27 @@ public extension ContainerLogManaging {
 /// Thin apple/container client wrapper around log API calls.
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     public typealias Logs = @Sendable (String, ContainerLogOptions) async throws -> [FileHandle]
+    public typealias LogRecords = @Sendable (String, ContainerLogOptions) async throws -> [ContainerLogRecord]
 
     private let logsOperation: Logs
+    private let logRecordsOperation: LogRecords
 
-    public init(logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1) }) {
+    public init(
+        logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1) },
+        logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1) }
+    ) {
         self.logsOperation = logs
+        self.logRecordsOperation = logRecords
     }
 
     /// Fetches log file handles through `ContainerClient`.
     public func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
         try await logsOperation(id, options)
+    }
+
+    /// Fetches structured log records through `ContainerClient`.
+    public func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
+        try await logRecordsOperation(id, options)
     }
 }
 
@@ -99,6 +113,14 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
+        if timestamps {
+            guard !follow else {
+                throw ComposeError.unsupported("logs --timestamps --follow: apple/container does not expose timestamped follow streams")
+            }
+            try await emitTimestampedLogs(id: id, tail: tail, since: since, until: until, emit: emit)
+            return
+        }
+
         let options = ContainerLogOptions(
             tail: follow ? nil : tail,
             since: since,
@@ -119,6 +141,46 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         if follow {
             try await followFile(id: id, fileHandle, emit: emit)
         }
+    }
+
+    /// Emits timestamped log records exposed by the structured log API.
+    private func emitTimestampedLogs(
+        id: String,
+        tail: Int?,
+        since: Date?,
+        until: Date?,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        guard tail.map({ $0 > 0 }) ?? true else {
+            return
+        }
+
+        let options = ContainerLogOptions(since: since, until: until, timestamps: true)
+        let records = try await client.logRecords(id: id, options: options)
+        let lines = try timestampedLogLines(id: id, records: records)
+        let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
+        emitLogLines(selectedLines, emit: emit)
+    }
+
+    /// Converts structured runtime chunks into Compose log lines with timestamps.
+    private func timestampedLogLines(id: String, records: [ContainerLogRecord]) throws -> [String] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var accumulator = TimestampedLogLineAccumulator()
+        var lines: [String] = []
+        for record in records {
+            guard let output = String(data: record.data, encoding: .utf8) else {
+                throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
+            }
+            for line in accumulator.append(output, timestamp: record.timestamp) {
+                lines.append("\(formatter.string(from: line.timestamp)) \(line.text)")
+            }
+        }
+        if let line = accumulator.flush() {
+            lines.append("\(formatter.string(from: line.timestamp)) \(line.text)")
+        }
+        return lines
     }
 
     /// Emits existing log contents before an optional follow loop starts.
@@ -282,6 +344,65 @@ private final class LogLineAccumulator: @unchecked Sendable {
 private struct LogRecordSplit {
     var records: [String]
     var remainder: String
+}
+
+/// One complete timestamped log line reconstructed from runtime chunks.
+private struct TimestampedLogLine {
+    var timestamp: Date
+    var text: String
+}
+
+/// Incrementally rebuilds timestamped lines from structured log chunks.
+private struct TimestampedLogLineAccumulator {
+    private var pending = ""
+    private var pendingTimestamp: Date?
+
+    /// Appends one runtime chunk and returns complete timestamped lines.
+    mutating func append(_ output: String, timestamp: Date) -> [TimestampedLogLine] {
+        var records: [TimestampedLogLine] = []
+        var index = output.startIndex
+
+        while index < output.endIndex {
+            let character = output[index]
+            if character == "\n" {
+                records.append(TimestampedLogLine(timestamp: pendingTimestamp ?? timestamp, text: pending))
+                resetPending()
+                index = output.index(after: index)
+            } else if character == "\r" {
+                records.append(TimestampedLogLine(timestamp: pendingTimestamp ?? timestamp, text: pending))
+                resetPending()
+                let next = output.index(after: index)
+                if next < output.endIndex, output[next] == "\n" {
+                    index = output.index(after: next)
+                } else {
+                    index = next
+                }
+            } else {
+                if pendingTimestamp == nil {
+                    pendingTimestamp = timestamp
+                }
+                pending.append(character)
+                index = output.index(after: index)
+            }
+        }
+
+        return records
+    }
+
+    /// Returns the final unterminated timestamped line, if one exists.
+    mutating func flush() -> TimestampedLogLine? {
+        guard !pending.isEmpty, let timestamp = pendingTimestamp else {
+            return nil
+        }
+        let line = TimestampedLogLine(timestamp: timestamp, text: pending)
+        resetPending()
+        return line
+    }
+
+    private mutating func resetPending() {
+        pending = ""
+        pendingTimestamp = nil
+    }
 }
 
 /// Splits text into complete lines while treating CRLF as one separator.

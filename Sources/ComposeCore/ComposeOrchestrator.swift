@@ -4815,8 +4815,8 @@ private extension ComposeOrchestrator {
 
     /// Validates log filters that depend on apple/container runtime behavior.
     func validateRuntimeLogOptions(follow: Bool, since: Date?, until: Date?, timestamps: Bool) throws {
-        if timestamps {
-            throw ComposeError.unsupported("logs --timestamps: apple/container does not expose timestamped log records")
+        if timestamps && follow {
+            throw ComposeError.unsupported("logs --timestamps --follow: apple/container does not expose timestamped follow streams")
         }
         if follow && (since != nil || until != nil) {
             throw ComposeError.unsupported("logs --follow with --since/--until: apple/container does not expose filtered follow streams")
