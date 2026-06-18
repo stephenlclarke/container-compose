@@ -4536,6 +4536,29 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == ["demo-api-1"])
     }
 
+    @Test("log manager rejects invalid UTF-8 while following direct API logs")
+    func logManagerRejectsInvalidUTF8WhileFollowingDirectAPILogs() async throws {
+        let pipe = Pipe()
+        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let manager = ContainerClientLogManager(client: client)
+
+        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { _ in })
+        try await Task.sleep(for: .milliseconds(50))
+        pipe.fileHandleForWriting.write(Data([0xFF]))
+        try pipe.fileHandleForWriting.close()
+
+        do {
+            try await followTask
+            Issue.record("Expected invalid UTF-8 follow log error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("container logs for demo-api-1 are not valid UTF-8"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.requests == ["demo-api-1"])
+    }
+
     @Test("log API client forwards configured operation")
     func logAPIClientForwardsConfiguredOperation() async throws {
         let fileHandle = try temporaryLogFileHandle(contents: "hello\n")
