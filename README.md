@@ -29,6 +29,8 @@ runtime orchestration.
 - [BUILD.md](BUILD.md)
 - [DESIGN.md](DESIGN.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
+- [SUPPORT.md](SUPPORT.md)
+- [SECURITY.md](SECURITY.md)
 
 ## License
 

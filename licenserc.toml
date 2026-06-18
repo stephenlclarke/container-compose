@@ -24,7 +24,7 @@ headerPath = "scripts/license-header.txt"
 useDefaultMapping = false
 
 includes = [
-    ".github/workflows/*.yml",
+    ".github/**/*.yml",
     "Makefile",
     "Package.swift",
     "Sources/**/*.swift",

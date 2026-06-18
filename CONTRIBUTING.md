@@ -35,6 +35,11 @@ Maintainers review pull requests before merge. Direct pushes to protected
 branches should be limited to maintainers and automation that has passed the
 required checks.
 
+Use the issue templates when reporting bugs, requesting features, or tracking a
+Compose compatibility gap. Use [SUPPORT.md](SUPPORT.md) for usage questions,
+security routing, and deciding whether a report belongs in an issue or a
+discussion.
+
 apple/container uses squash-and-merge for upstream pull requests, so make the
 pull request title and body clear enough to stand alone as the final change
 description. Use imperative wording, describe what changed, and include the
@@ -135,9 +140,8 @@ in pull requests, tests, examples, logs, or screenshots.
 
 ## Code Of Conduct
 
-Contributors are expected to follow Apple's
-[Code of Conduct](https://github.com/apple/.github/blob/main/CODE_OF_CONDUCT.md),
-matching the upstream community standard used by apple/container and
+Contributors are expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+which points to Apple's community standard used by apple/container and
 Containerization.
 
 ## Licensing

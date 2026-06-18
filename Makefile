@@ -52,7 +52,7 @@ SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
-MARKDOWN_FILES := README.md BUILD.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md
+MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md SUPPORT.md .github/pull_request_template.md
 
 # Some local toolchains can build Swift Testing targets without adding the
 # framework and interop library to SwiftPM's generated test runner. Derive

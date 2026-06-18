@@ -1,0 +1,53 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Feature request
+description: File a request for a feature or enhancement.
+title: "[Request]: "
+type: "Feature"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for contributing to the container-compose project!
+  - type: textarea
+    id: request
+    attributes:
+      label: Feature or enhancement request details
+      description: Describe your proposed feature or enhancement. Code samples that show what's missing, or what new capabilities will be possible, are very helpful. Provide links to existing issues or external references/discussions, if appropriate.
+    validations:
+      required: true
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Compose compatibility impact
+      options:
+        - Improves Docker Compose v2 compatibility
+        - Internal implementation improvement
+        - Documentation or contributor workflow
+        - Not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stephenlclarke/container-compose/blob/main/CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
+        - label: I checked existing issues before opening this request
+          required: true
