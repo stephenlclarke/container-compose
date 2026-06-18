@@ -20,6 +20,19 @@ import ContainerizationError
 
 /// Stable container data used by Compose project discovery and projections.
 public struct ComposeContainerSummary: Sendable, Equatable, Codable {
+    /// Image metadata discovered from the runtime snapshot.
+    public struct Image: Sendable, Equatable, Codable {
+        public var reference: String
+        public var digest: String?
+        public var platform: String
+
+        public init(reference: String = "", digest: String? = nil, platform: String = "") {
+            self.reference = reference
+            self.digest = digest
+            self.platform = platform
+        }
+    }
+
     public var id: String
     public var status: String
     public var labels: [String: String]
@@ -33,18 +46,16 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         id: String,
         status: String,
         labels: [String: String] = [:],
-        imageReference: String = "",
-        imageDigest: String? = nil,
-        platform: String = "",
+        image: Image = Image(),
         publishedPorts: [ComposeContainerPublishedPort] = [],
         mounts: [ComposeMount] = []
     ) {
         self.id = id
         self.status = status
         self.labels = labels
-        self.imageReference = imageReference
-        self.imageDigest = imageDigest
-        self.platform = platform
+        self.imageReference = image.reference
+        self.imageDigest = image.digest
+        self.platform = image.platform
         self.publishedPorts = publishedPorts
         self.mounts = mounts
     }
@@ -152,9 +163,11 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
             id: snapshot.id,
             status: snapshot.status.rawValue,
             labels: snapshot.configuration.labels,
-            imageReference: snapshot.configuration.image.reference,
-            imageDigest: snapshot.configuration.image.digest,
-            platform: snapshot.platform.description,
+            image: ComposeContainerSummary.Image(
+                reference: snapshot.configuration.image.reference,
+                digest: snapshot.configuration.image.digest,
+                platform: snapshot.platform.description
+            ),
             publishedPorts: snapshot.configuration.publishedPorts.map {
                 ComposeContainerPublishedPort(
                     hostAddress: String(describing: $0.hostAddress),

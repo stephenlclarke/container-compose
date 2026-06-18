@@ -497,6 +497,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Removed the unused <code>project</code> parameter from replica support validation and its call sites so the helper signature reflects the data it actually needs.</td>
     </tr>
+    <tr>
+      <td>Sonar container summary initializer grouping</td>
+      <td>2026-06-18 19:28:33 BST</td>
+      <td>2026-06-18 19:28:33 BST</td>
+      <td>2026-06-18 19:28:33 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Grouped discovered image metadata behind a typed <code>ComposeContainerSummary.Image</code> constructor value so the public summary initializer stays under the Sonar parameter threshold while preserving flat stored discovery fields.</td>
+    </tr>
   </tbody>
 </table>
 
