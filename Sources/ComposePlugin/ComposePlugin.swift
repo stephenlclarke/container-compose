@@ -879,7 +879,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose commit` until Apple/container can commit containers to images.
+/// Placeholder for `compose commit` until apple/container can commit containers to images.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
@@ -921,7 +921,7 @@ struct Export: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose publish` until Apple/container supports Compose OCI artifacts.
+/// Placeholder for `compose publish` until apple/container supports Compose OCI artifacts.
 struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "publish", abstract: "Publish the Compose application.")
     @OptionGroup var global: GlobalOptions

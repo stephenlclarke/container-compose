@@ -62,7 +62,7 @@ public struct ComposeExecutionOptions {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
     }
 
-    /// Allocates an ephemeral host port compatible with Apple/container's
+    /// Allocates an ephemeral host port compatible with apple/container's
     /// explicit `--publish` requirement.
     public static func defaultHostPortAllocator(hostAddress: String?, protocolName: String) throws -> UInt16 {
         try HostPortAllocator(hostAddress: hostAddress, protocolName: protocolName).allocate()
