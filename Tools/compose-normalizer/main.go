@@ -87,6 +87,7 @@ type normalizedService struct {
 	CPUShares               int64                               `json:"cpuShares,omitempty"`
 	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
+	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
 	Entrypoint              []string                            `json:"entrypoint,omitempty"`
@@ -455,6 +456,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CPUShares:               service.CPUShares,
 		Develop:                 developValues(service.Develop),
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
+		DeployLabels:            deployLabels(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
 		Provider:                service.Provider != nil,
@@ -647,7 +649,6 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	}
 	fields := []string{}
 	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
-	appendUnsupportedDeployField(&fields, "labels", len(deploy.Labels) > 0)
 	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasFields(deploy.UpdateConfig))
 	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
 	appendUnsupportedDeployField(&fields, "resources.limits", resourceHasUnsupportedLimitFields(deploy.Resources.Limits))
@@ -656,6 +657,15 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	appendUnsupportedDeployField(&fields, "placement", placementHasFields(deploy.Placement))
 	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
 	return fields
+}
+
+// deployLabels returns Compose deploy service metadata without treating it as
+// container labels.
+func deployLabels(deploy *types.DeployConfig) map[string]string {
+	if deploy == nil {
+		return nil
+	}
+	return mapLabels(deploy.Labels)
 }
 
 // unsupportedDeployMode allows Compose's default replicated service mode. Other

@@ -522,6 +522,7 @@ struct ComposeOrchestratorTests {
                     $0.networks = ["default"]
                     $0.platform = "linux/amd64"
                     $0.labels = ["com.example.role": "api"]
+                    $0.deployLabels = ["com.example.service": "api"]
                 },
             ]
         ) {
@@ -568,6 +569,7 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--label", "com.apple.container.compose.service=api"]))
         #expect(run.containsSequence(["--label", "com.apple.container.compose.oneoff=false"]))
         #expect(run.containsSequence(["--label", "com.example.role=api"]))
+        #expect(!run.containsSequence(["--label", "com.example.service=api"]))
         #expect(run.containsSequence(["--env", "LOG_LEVEL=debug"]))
         #expect(run.containsSequence(["--publish", "8080:80"]))
         #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
@@ -4747,6 +4749,7 @@ struct ComposeOrchestratorTests {
                     $0.healthcheck = .object(["disable": .bool(true)])
                     $0.configs = [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])]
                     $0.secrets = [.object(["source": .string("app_secret")])]
+                    $0.deployLabels = ["com.example.service": "web"]
                     $0.extensions = ["x-service": .object(["owner": .string("platform")])]
                 },
             ]
@@ -4767,6 +4770,7 @@ struct ComposeOrchestratorTests {
         #expect(decoded.services["web"]?.healthcheck == .object(["disable": .bool(true)]))
         #expect(decoded.services["web"]?.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
         #expect(decoded.services["web"]?.secrets == [.object(["source": .string("app_secret")])])
+        #expect(decoded.services["web"]?.deployLabels == ["com.example.service": "web"])
         #expect(decoded.services["web"]?.extensions?["x-service"] == .object(["owner": .string("platform")]))
     }
 
@@ -11096,6 +11100,44 @@ struct ComposeOrchestratorTests {
         )
 
         try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+    }
+
+    @Test("up ignores deploy labels when comparing runtime config hashes")
+    func upIgnoresDeployLabelsWhenComparingRuntimeConfigHashes() async throws {
+        let initialProject = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+        let createDiscovery = RecordingContainerDiscoveryManager()
+        let createRunner = RecordingRunner(responses: [.success])
+
+        try await ComposeOrchestrator(
+            runner: createRunner,
+            discoveryManager: createDiscovery
+        ).up(project: initialProject, options: ComposeUpOptions())
+
+        let run = try #require(createRunner.commands.last?.arguments)
+        let hash = try #require(composeConfigHash(in: run))
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: hash]),
+        ])
+        let projectWithDeployLabels = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deployLabels = ["com.example.service": "api"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        ).up(project: projectWithDeployLabels, options: ComposeUpOptions())
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.getRequests == ["demo-api-1"])

@@ -228,6 +228,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.endpoint_mode</code> as an Apple/container networking gap. Compose endpoint modes such as <code>vip</code> and <code>dnsrr</code> need service-level discovery semantics that are not exposed by the current runtime.</td>
     </tr>
     <tr>
+      <td>Deploy label metadata preservation</td>
+      <td>2026-06-18 12:16:03 BST</td>
+      <td>2026-06-18 12:16:03 BST</td>
+      <td>2026-06-18 12:16:03 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Preserved <code>deploy.labels</code> as service-level metadata without applying it to runtime container labels or including it in recreate config hashes.</td>
+    </tr>
+    <tr>
       <td>Run capability overrides</td>
       <td>2026-06-18 10:16:25 BST</td>
       <td>2026-06-18 10:16:25 BST</td>
@@ -367,7 +376,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration. <code>deploy.restart_policy</code> and <code>deploy.endpoint_mode</code> are tracked with Apple/container restart and networking parity. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, and <code>deploy.labels</code> are preserved as service metadata. <code>deploy.restart_policy</code> and <code>deploy.endpoint_mode</code> are tracked with Apple/container restart and networking parity. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>

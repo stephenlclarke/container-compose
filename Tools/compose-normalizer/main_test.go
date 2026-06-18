@@ -832,6 +832,32 @@ services:
 	}
 }
 
+func TestLoadProjectPreservesDeployLabelsAsServiceMetadata(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    deploy:
+      labels:
+        com.example.service: api
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if got, want := api.DeployLabels, map[string]string{"com.example.service": "api"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.DeployLabels = %#v, want %#v", got, want)
+	}
+	if len(api.UnsupportedDeployFields) != 0 {
+		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
 func TestLoadProjectNormalizesDeployResourceLimitsAsRuntimeOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
@@ -903,9 +929,11 @@ services:
 	if api.Scale == nil || *api.Scale != 1 {
 		t.Fatalf("api.Scale = %#v, want 1", api.Scale)
 	}
+	if got, want := api.DeployLabels, map[string]string{"com.example.role": "api"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.DeployLabels = %#v, want %#v", got, want)
+	}
 	want := []string{
 		"mode",
-		"labels",
 		"update_config",
 		"rollback_config",
 		"resources.limits",
@@ -1254,6 +1282,9 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(empty) = %#v, want empty", fields)
 	}
+	if labels := deployLabels(&types.DeployConfig{Labels: types.Labels{"com.example.service": "api"}}); !reflect.DeepEqual(labels, map[string]string{"com.example.service": "api"}) {
+		t.Fatalf("deployLabels() = %#v, want service label", labels)
+	}
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated"}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(replicated) = %#v, want empty", fields)
 	}
@@ -1346,7 +1377,6 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	})
 	want := []string{
 		"mode",
-		"labels",
 		"update_config",
 		"rollback_config",
 		"resources.limits",

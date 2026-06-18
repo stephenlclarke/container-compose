@@ -4395,6 +4395,7 @@ private func configHash(project: ComposeProject, service: ComposeService) throws
     var effectiveService = service
     effectiveService.labels = try effectiveServiceLabels(project: project, service: service)
     effectiveService.labelFiles = nil
+    effectiveService.deployLabels = nil
     effectiveService.volumes = try effectiveServiceVolumes(project: project, service: service)
     let fingerprint = ServiceConfigFingerprint(
         service: effectiveService,

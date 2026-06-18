@@ -142,9 +142,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Environment and metadata
 
-- **Compose surface:** Service `environment`, `env_file`, one-off env and label flags, service labels, service annotations, `label_file`, network labels, volume labels, and Compose project/service/config-hash labels.
+- **Compose surface:** Service `environment`, `env_file`, one-off env and label flags, service labels, service annotations, `deploy.labels` service metadata, `label_file`, network labels, volume labels, and Compose project/service/config-hash labels.
 - **Apple/container path:** Supported `container create/run --env`, `--env-file`, and resource/container labels.
-- **container-compose status:** Supported. Service annotations are mapped to runtime metadata labels.
+- **container-compose status:** Supported. Service annotations are mapped to runtime metadata labels. `deploy.labels` are preserved as service metadata but are not applied as container labels.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Simple ordering
@@ -884,13 +884,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Plugin Gap, Replica Scaling Edge Cases And Deploy
 
-Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. It rejects the `worker.deploy.update_config` field in this example because update orchestration needs Compose deploy semantics beyond local replica count and CPU/memory limits. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses.
+Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, `deploy.labels` service metadata, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. It rejects the `worker.deploy.update_config` field in this example because update orchestration needs Compose deploy semantics beyond local replica count and CPU/memory limits. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: supports the lifecycle and resource primitives needed for these local scale forms, while scaled service-name DNS is tracked in [A1](#a1-apple-gap-networking).
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources. It still needs broader deploy semantics.
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources. It still needs broader deploy semantics.
 
 The equivalent supported CLI scaling forms are:
 
@@ -910,6 +910,8 @@ services:
       context: ./worker
     deploy:
       mode: replicated
+      labels:
+        com.example.service: worker
       replicas: 3
       update_config:
         parallelism: 1
