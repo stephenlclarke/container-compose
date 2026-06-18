@@ -875,7 +875,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: project, services: services)
         try validatePublishedPorts(services: services)
-        try validateReplicaSupport(project: project, services: services, scaleOverrides: scaleOverrides)
+        try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
         let attachedForegroundService = try foregroundServiceTarget(project: project, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
         try validateAttachedPostStartSupport(target: attachedForegroundService)
 
@@ -1075,7 +1075,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: project, services: services)
         try validatePublishedPorts(services: services)
-        try validateReplicaSupport(project: project, services: services, scaleOverrides: scaleOverrides)
+        try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
 
         try await ensureResources(project: project)
 
@@ -3408,7 +3408,6 @@ private extension ComposeOrchestrator {
 
     /// Validates scaled services that would collide under current local runtime primitives.
     func validateReplicaSupport(
-        project: ComposeProject,
         services: [ComposeService],
         scaleOverrides: [String: Int]
     ) throws {

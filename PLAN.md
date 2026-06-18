@@ -488,6 +488,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Documented the intentionally empty <code>push --quiet</code> emission closure so the Swift source makes the quiet-mode behavior clear to reviewers and static analysis.</td>
     </tr>
+    <tr>
+      <td>Sonar unused replica validation parameter cleanup</td>
+      <td>2026-06-18 19:22:19 BST</td>
+      <td>2026-06-18 19:22:19 BST</td>
+      <td>2026-06-18 19:22:19 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Removed the unused <code>project</code> parameter from replica support validation and its call sites so the helper signature reflects the data it actually needs.</td>
+    </tr>
   </tbody>
 </table>
 
