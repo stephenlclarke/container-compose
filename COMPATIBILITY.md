@@ -148,7 +148,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
-  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, concurrent `logs --follow`, indexed `logs`, `logs --no-log-prefix`, static `logs --since` and `logs --until`, monochrome `logs --no-color`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
+  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, `logs --no-color`, `logs --no-log-prefix`, static `logs --since` and `logs --until`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
   - File movement: service-aware `cp`, service-to-service `cp`, indexed `cp`, `cp --all`, one-off copy target discovery, and `export`.
   - Runtime queries: published-port `port`, indexed `port`, dynamically allocated and host-bound port lookup after container creation, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
@@ -680,6 +680,7 @@ container compose logs api
 container compose logs
 container compose logs --index 2 api
 container compose logs --since 2026-06-18T10:00:00Z --until 30m api
+container compose --ansi always logs api
 container compose logs --no-color --no-log-prefix api
 container compose attach --no-stdin --sig-proxy=false api
 container compose attach --no-stdin --sig-proxy=false --index 2 api

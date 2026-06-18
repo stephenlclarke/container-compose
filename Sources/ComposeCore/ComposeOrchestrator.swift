@@ -447,6 +447,26 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Options for `compose logs`.
+public struct ComposeLogsOptions: Sendable {
+    public var follow = false
+    public var tail: String?
+    public var index: Int?
+    public var since: String?
+    public var until: String?
+    public var timestamps = false
+    public var noLogPrefix = false
+    public var colorPrefixes = false
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default logs behavior.
+    }
+
+    public init(_ configure: (inout ComposeLogsOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose build`.
 public struct ComposeBuildOptions {
     public var services: [String] = []
@@ -1457,53 +1477,54 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func logs(
         project: ComposeProject,
         services selected: [String],
-        follow: Bool,
-        tail: String?,
-        index: Int? = nil,
-        since: String? = nil,
-        until: String? = nil,
-        timestamps: Bool = false,
-        noLogPrefix: Bool = false
+        options logOptions: ComposeLogsOptions = ComposeLogsOptions()
     ) async throws {
         let services = try selectedServices(project: project, selected: selected)
-        let runtimeTail = try runtimeLogTail(tail)
-        let runtimeSince = try runtimeLogTimestamp(since)
-        let runtimeUntil = try runtimeLogTimestamp(until)
-        try validateRuntimeLogOptions(follow: follow, since: runtimeSince, until: runtimeUntil, timestamps: timestamps)
-        let targets = try await logTargets(project: project, services: services, index: index)
+        let runtimeTail = try runtimeLogTail(logOptions.tail)
+        let runtimeSince = try runtimeLogTimestamp(logOptions.since)
+        let runtimeUntil = try runtimeLogTimestamp(logOptions.until)
+        try validateRuntimeLogOptions(
+            follow: logOptions.follow,
+            since: runtimeSince,
+            until: runtimeUntil,
+            timestamps: logOptions.timestamps
+        )
+        let targets = try await logTargets(project: project, services: services, index: logOptions.index)
         if options.dryRun {
             for target in targets {
                 let args = logRuntimeArguments(
                     id: target.name,
-                    follow: follow,
+                    follow: logOptions.follow,
                     tail: runtimeTail,
-                    since: since,
-                    until: until
+                    since: logOptions.since,
+                    until: logOptions.until
                 )
                 try await runContainer(args)
             }
             return
         }
-        if follow, targets.count > 1 {
+        if logOptions.follow, targets.count > 1 {
             try await followLogTargets(
                 targets,
                 tail: runtimeTail,
                 since: runtimeSince,
                 until: runtimeUntil,
-                timestamps: timestamps,
-                noLogPrefix: noLogPrefix
+                timestamps: logOptions.timestamps,
+                noLogPrefix: logOptions.noLogPrefix,
+                colorPrefixes: logOptions.colorPrefixes
             )
             return
         }
         for target in targets {
             try await emitLogs(
                 for: target,
-                follow: follow,
+                follow: logOptions.follow,
                 tail: runtimeTail,
                 since: runtimeSince,
                 until: runtimeUntil,
-                timestamps: timestamps,
-                noLogPrefix: noLogPrefix
+                timestamps: logOptions.timestamps,
+                noLogPrefix: logOptions.noLogPrefix,
+                colorPrefixes: logOptions.colorPrefixes
             )
         }
     }
@@ -1534,13 +1555,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        noLogPrefix: Bool
+        noLogPrefix: Bool,
+        colorPrefixes: Bool
     ) async throws {
         let logManager = logManager
         try await withThrowingTaskGroup(of: Void.self) { group in
             for target in targets {
                 let containerID = target.name
-                let emit = logEmitter(for: target, noLogPrefix: noLogPrefix)
+                let emit = logEmitter(for: target, noLogPrefix: noLogPrefix, colorPrefixes: colorPrefixes)
                 group.addTask { [containerID, emit, logManager, since, tail, timestamps, until] in
                     try await logManager.logs(
                         id: containerID,
@@ -1565,7 +1587,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        noLogPrefix: Bool
+        noLogPrefix: Bool,
+        colorPrefixes: Bool
     ) async throws {
         try await logManager.logs(
             id: target.name,
@@ -1574,17 +1597,21 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             since: since,
             until: until,
             timestamps: timestamps,
-            emit: logEmitter(for: target, noLogPrefix: noLogPrefix)
+            emit: logEmitter(for: target, noLogPrefix: noLogPrefix, colorPrefixes: colorPrefixes)
         )
     }
 
     /// Returns the user-facing log emitter for a selected service target.
-    private func logEmitter(for target: ServiceContainerTarget, noLogPrefix: Bool) -> @Sendable (String) -> Void {
+    private func logEmitter(
+        for target: ServiceContainerTarget,
+        noLogPrefix: Bool,
+        colorPrefixes: Bool
+    ) -> @Sendable (String) -> Void {
         let emit = options.emit
         guard !noLogPrefix else {
             return emit
         }
-        let prefix = logPrefix(for: target)
+        let prefix = colorPrefixes ? colorizedLogPrefix(for: target) : logPrefix(for: target)
         return { output in
             let prefixed = output
                 .components(separatedBy: .newlines)
@@ -1592,6 +1619,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 .joined(separator: "\n")
             emit(prefixed)
         }
+    }
+
+    /// Returns the ANSI-colored Compose log prefix for a selected service target.
+    private func colorizedLogPrefix(for target: ServiceContainerTarget) -> String {
+        let prefix = logPrefix(for: target)
+        let code = logColorCode(for: target)
+        return "\u{001B}[\(code)m\(prefix)\u{001B}[0m"
     }
 
     /// Returns the Compose log prefix for a selected service target.
@@ -1603,6 +1637,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return target.name
         }
         return "\(target.service.name)-\(target.index)"
+    }
+
+    /// Returns a deterministic ANSI foreground color code for a log target.
+    private func logColorCode(for target: ServiceContainerTarget) -> String {
+        let palette = ["36", "32", "33", "35", "34", "31"]
+        let replicaSeed = target.index == Int.max ? 0 : target.index
+        let seed = target.service.name.unicodeScalars.reduce(replicaSeed) { partial, scalar in
+            partial + Int(scalar.value)
+        }
+        return palette[seed % palette.count]
     }
 
     /// Runs `compose watch` by applying initial syncs and polling watched paths

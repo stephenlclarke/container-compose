@@ -16,6 +16,11 @@
 
 import ArgumentParser
 import ComposeCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 
 private let composePluginVersionNumber = "0.1.0"
@@ -129,6 +134,30 @@ struct GlobalOptions: ParsableArguments {
     func orchestrator() -> ComposeOrchestrator {
         ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: dryRun))
     }
+
+    /// Returns whether log prefix color should be enabled for this invocation.
+    func shouldColorLogs(noColor: Bool) -> Bool {
+        guard !noColor else {
+            return false
+        }
+        switch ansi?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "always":
+            return true
+        case "never":
+            return false
+        default:
+            return stdoutSupportsANSI()
+        }
+    }
+}
+
+/// Returns whether stdout is an interactive terminal that can display ANSI color.
+private func stdoutSupportsANSI() -> Bool {
+#if canImport(Darwin) || canImport(Glibc)
+    isatty(STDOUT_FILENO) == 1
+#else
+    false
+#endif
 }
 
 /// Shared contract for subcommands that operate on a Compose project.
@@ -464,7 +493,7 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var timestamps = false
     @Option(name: .customLong("index"), help: "Target one service container index instead of all matching replicas.")
     var index: Int?
-    @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Current container-compose log output is monochrome.")
+    @Flag(name: .customLong("no-color"), help: "Produce monochrome log output.")
     var noColor = false
     @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes.")
     var noLogPrefix = false
@@ -477,13 +506,16 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
         try await orchestrator().logs(
             project: loadedProject,
             services: services,
-            follow: follow,
-            tail: tail,
-            index: index,
-            since: since,
-            until: until,
-            timestamps: timestamps,
-            noLogPrefix: noLogPrefix
+            options: ComposeLogsOptions {
+                $0.follow = follow
+                $0.tail = tail
+                $0.index = index
+                $0.since = since
+                $0.until = until
+                $0.timestamps = timestamps
+                $0.noLogPrefix = noLogPrefix
+                $0.colorPrefixes = global.shouldColorLogs(noColor: noColor)
+            }
         )
     }
 }

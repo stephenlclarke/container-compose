@@ -6488,7 +6488,14 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.logs(project: project, services: ["api"], follow: true, tail: "10")
+        try await orchestrator.logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.follow = true
+                $0.tail = "10"
+            }
+        )
         try await orchestrator.exec(project: project, serviceName: "api", command: ["echo", "ok"])
         try await orchestrator.start(project: project, services: ["api"])
         try await orchestrator.stop(project: project, services: ["api"])
@@ -8721,7 +8728,13 @@ struct ComposeOrchestratorTests {
             runner: runner,
             options: ComposeExecutionOptions(emit: { emitted.append($0) }),
             logManager: logManager
-        ).logs(project: project, services: ["api"], follow: false, tail: "all")
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.tail = "all"
+            }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await logManager.requests == [
@@ -8746,7 +8759,14 @@ struct ComposeOrchestratorTests {
             runner: runner,
             options: ComposeExecutionOptions(emit: { emitted.append($0) }),
             logManager: logManager
-        ).logs(project: project, services: ["api"], follow: false, tail: nil, noLogPrefix: true)
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.noLogPrefix = true
+                $0.colorPrefixes = true
+            }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await logManager.requests == [
@@ -8770,9 +8790,35 @@ struct ComposeOrchestratorTests {
             runner: RecordingRunner(),
             options: ComposeExecutionOptions(emit: { emitted.append($0) }),
             logManager: logManager
-        ).logs(project: project, services: ["api"], follow: false, tail: nil)
+        ).logs(project: project, services: ["api"])
 
         #expect(emitted.messages == ["api-1 | one\napi-1 | two"])
+    }
+
+    @Test("logs colorizes prefixes when requested")
+    func logsColorizesPrefixesWhenRequested() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["hello"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.colorPrefixes = true
+            }
+        )
+
+        #expect(emitted.messages == ["\u{001B}[35mapi-1\u{001B}[0m | hello"])
     }
 
     @Test("logs targets selected container index")
@@ -8803,7 +8849,13 @@ struct ComposeOrchestratorTests {
                 $0.discoveryManager = discoveryManager
                 $0.logManager = logManager
             }
-        ).logs(project: project, services: ["api"], follow: false, tail: nil, index: 2)
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.index = 2
+            }
+        )
 
         #expect(await discoveryManager.listRequests == [true])
         #expect(await logManager.requests == [
@@ -8849,7 +8901,7 @@ struct ComposeOrchestratorTests {
                 $0.discoveryManager = discoveryManager
                 $0.logManager = logManager
             }
-        ).logs(project: project, services: ["api"], follow: false, tail: nil)
+        ).logs(project: project, services: ["api"])
 
         #expect(await discoveryManager.listRequests == [true])
         #expect(await logManager.requests == [
@@ -8896,7 +8948,14 @@ struct ComposeOrchestratorTests {
             }
         )
         let followTask = Task {
-            try await orchestrator.logs(project: project, services: ["api"], follow: true, tail: "10")
+            try await orchestrator.logs(
+                project: project,
+                services: ["api"],
+                options: ComposeLogsOptions {
+                    $0.follow = true
+                    $0.tail = "10"
+                }
+            )
         }
 
         let startedBothTargets = try await logManager.waitForRequestCount(2)
@@ -8957,7 +9016,7 @@ struct ComposeOrchestratorTests {
                 $0.discoveryManager = discoveryManager
                 $0.logManager = logManager
             }
-        ).logs(project: project, services: [], follow: false, tail: nil)
+        ).logs(project: project, services: [])
 
         #expect(await discoveryManager.listRequests == [true])
         #expect(await logManager.requests == [
@@ -9004,7 +9063,13 @@ struct ComposeOrchestratorTests {
                 $0.discoveryManager = discoveryManager
                 $0.logManager = logManager
             }
-        ).logs(project: project, services: ["api"], follow: false, tail: nil, index: 1)
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.index = 1
+            }
+        )
 
         #expect(await discoveryManager.listRequests == [])
         #expect(await logManager.requests == [
@@ -9037,10 +9102,11 @@ struct ComposeOrchestratorTests {
         ).logs(
             project: project,
             services: ["api"],
-            follow: false,
-            tail: "10",
-            since: "2026-06-18T10:00:00Z",
-            until: "30m"
+            options: ComposeLogsOptions {
+                $0.tail = "10"
+                $0.since = "2026-06-18T10:00:00Z"
+                $0.until = "30m"
+            }
         )
 
         #expect(await logManager.requests == [
@@ -9070,7 +9136,13 @@ struct ComposeOrchestratorTests {
                 runner: RecordingRunner(),
                 options: ComposeExecutionOptions(),
                 logManager: logManager
-            ).logs(project: project, services: ["api"], follow: false, tail: nil, timestamps: true)
+            ).logs(
+                project: project,
+                services: ["api"],
+                options: ComposeLogsOptions {
+                    $0.timestamps = true
+                }
+            )
             Issue.record("Expected timestamps unsupported error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("logs --timestamps: apple/container does not expose timestamped log records"))
@@ -9096,7 +9168,14 @@ struct ComposeOrchestratorTests {
                 runner: RecordingRunner(),
                 options: ComposeExecutionOptions(),
                 logManager: logManager
-            ).logs(project: project, services: ["api"], follow: true, tail: nil, since: "2026-06-18T10:00:00Z")
+            ).logs(
+                project: project,
+                services: ["api"],
+                options: ComposeLogsOptions {
+                    $0.follow = true
+                    $0.since = "2026-06-18T10:00:00Z"
+                }
+            )
             Issue.record("Expected filtered follow unsupported error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("logs --follow with --since/--until: apple/container does not expose filtered follow streams"))
@@ -9120,9 +9199,9 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: RecordingRunner()).logs(
                 project: project,
                 services: ["api"],
-                follow: false,
-                tail: nil,
-                since: "soon"
+                options: ComposeLogsOptions {
+                    $0.since = "soon"
+                }
             )
             Issue.record("Expected invalid time filter error")
         } catch let error as ComposeError {
@@ -9147,7 +9226,14 @@ struct ComposeOrchestratorTests {
             runner: RecordingRunner(),
             options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
             logManager: logManager
-        ).logs(project: project, services: ["api"], follow: true, tail: "10")
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.follow = true
+                $0.tail = "10"
+            }
+        )
 
         #expect(emitted.messages == [
             "+ container logs --follow -n 10 demo-api-1",
@@ -9172,7 +9258,14 @@ struct ComposeOrchestratorTests {
             runner: RecordingRunner(),
             options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
             logManager: logManager
-        ).logs(project: project, services: ["api"], follow: true, tail: "10")
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.follow = true
+                $0.tail = "10"
+            }
+        )
 
         #expect(emitted.messages == [
             "+ container logs --follow -n 10 demo-api-1",
@@ -9196,7 +9289,15 @@ struct ComposeOrchestratorTests {
             runner: RecordingRunner(),
             options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
             logManager: logManager
-        ).logs(project: project, services: ["api"], follow: true, tail: "10", index: 2)
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.follow = true
+                $0.tail = "10"
+                $0.index = 2
+            }
+        )
 
         #expect(emitted.messages == [
             "+ container logs --follow -n 10 demo-api-2",
@@ -9754,7 +9855,13 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await ComposeOrchestrator(runner: runner).logs(project: project, services: ["api"], follow: false, tail: "latest")
+            try await ComposeOrchestrator(runner: runner).logs(
+                project: project,
+                services: ["api"],
+                options: ComposeLogsOptions {
+                    $0.tail = "latest"
+                }
+            )
             Issue.record("Expected invalid tail error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("logs --tail must be 'all' or a non-negative integer"))

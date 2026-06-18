@@ -62,8 +62,8 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
     </tr>
     <tr>
       <td>Compose log presentation</td>
-      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>Default output prefixes each line with service/index identity, and <code>--no-log-prefix</code> emits raw output. Color remains intentionally monochrome.</td>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"></td>
+      <td>Default output prefixes each line with service/index identity, ANSI color is applied when terminal policy allows it, and <code>--no-log-prefix</code> emits raw output.</td>
     </tr>
     <tr>
       <td>Timestamp and time-window filtering</td>
@@ -180,7 +180,7 @@ Remaining work:
 
 ### L5. Prefixes, Colors, and `--no-log-prefix`
 
-Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
+Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 
 Docker Compose surface: default prefixed output, `--no-log-prefix`, and `--no-color`.
 
@@ -189,7 +189,8 @@ Current `container-compose` behavior:
 - Prefixes default log output as <code>service-index | line</code>.
 - Prefixes each line of a multiline emitted log chunk.
 - Supports `--no-log-prefix` to emit raw log output.
-- Accepts `--no-color`; current output remains monochrome in all modes.
+- Applies deterministic ANSI color to log prefixes when stdout is interactive or `--ansi always` is set.
+- Disables ANSI color with `--no-color` or `--ansi never`.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
@@ -198,17 +199,18 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Missing behavior:
 
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Color should be enabled only when appropriate for terminal output and disabled by `--no-color`, `--ansi never`, or non-interactive output.
+- None currently known for prefix/color presentation.
 
 Completed implementation:
 
 - `ComposeOrchestrator.logs` wraps the per-target emitter with a service/index prefix policy before handing it to `ContainerLogManaging`.
 - `--no-log-prefix` bypasses that wrapper and preserves raw log output.
-- Tests cover prefixed output, multiline prefixing, raw output, and scaled replica prefixes.
+- CLI log color policy honors `--no-color`, `--ansi never`, `--ansi always`, and stdout terminal detection before enabling ANSI prefix colors.
+- Tests cover prefixed output, multiline prefixing, colored prefixes, raw output, and scaled replica prefixes.
 
 Remaining plugin work:
 
-- Add color policy that honors `--no-color`, `--ansi never`, and non-interactive output.
+- None.
 
 ### L6. Timestamps, `--since`, and `--until`
 
@@ -307,7 +309,7 @@ Implementation direction:
 
 1. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement all-replica target resolution for `logs`.
 2. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
-3. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
+3. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
 5. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container timestamped structured log records.
 6. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container service logging policy primitives.
