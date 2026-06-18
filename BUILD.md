@@ -106,8 +106,11 @@ make test
 Use the Makefile targets for local Swift tests instead of invoking
 `swift test` directly. The Makefile derives the Swift Testing framework and
 runtime library paths from the active `swift` executable and fails if SwiftPM
-builds the test bundle without actually running tests. Swift coverage export
-uses the `llvm-cov` binary from that same toolchain when available; set
+builds the test bundle without actually running tests. It follows the
+[`apple/container`](https://github.com/apple/container) pattern of building
+test products once with coverage instrumentation, then running tests with
+`--skip-build` to avoid an extra SwiftPM build pass. Swift coverage export uses
+the `llvm-cov` binary from that same toolchain when available; set
 `SWIFT_LLVM_COV=/absolute/path/to/llvm-cov` to override it.
 
 Run the same validation used by GitHub Actions:
@@ -116,7 +119,23 @@ Run the same validation used by GitHub Actions:
 make ci
 ```
 
-`make ci` runs required Markdown linting, Python coverage-tool tests, and Go formatting checks, runs Swift and Go coverage, checks the coverage threshold, builds the Go helper, and runs the CLI smoke test. Swift build and test targets use the checked-in `Package.resolved` by default so CI fails quickly if dependency versions need an intentional lockfile refresh. The smoke test builds the debug `compose` executable before exercising representative commands.
+`make ci` runs required Markdown linting, Python coverage-tool tests, Go formatting checks, Hawkeye license-header checks, Swift and Go coverage, the coverage threshold gate, the Go helper build, and the CLI smoke test. Swift build and test targets use the checked-in `Package.resolved` by default so CI fails quickly if dependency versions need an intentional lockfile refresh. The smoke test builds the debug `compose` executable before exercising representative commands.
+
+Run the faster non-coverage source checks with:
+
+```sh
+make check
+```
+
+`make check` runs the same lint and license-header checks used at the start of `make ci`.
+
+Apply supported source formatting and license-header updates with:
+
+```sh
+make fmt
+```
+
+This installs the pinned Hawkeye binary into `.local/bin` when needed, updates license headers, and runs Go formatting. In non-interactive CI, set `HAWKEYE_AUTO_INSTALL=1` so the local installer can run without a prompt.
 
 The default minimum coverage is 85 percent for both Swift and Go:
 
@@ -253,6 +272,20 @@ access:
 ```sh
 SONAR_QUALITYGATE_WAIT=true make sonar
 ```
+
+## License Header Tooling
+
+The project follows the [`apple/container`](https://github.com/apple/container) workflow for license headers by using [Hawkeye](https://github.com/korandoru/hawkeye). The pinned installer lives in `scripts/install-hawkeye.sh`, and `scripts/ensure-hawkeye-exists.sh` protects local runs from silently executing a downloaded installer unless the user opts in or `HAWKEYE_AUTO_INSTALL=1` is set.
+
+Useful targets:
+
+```sh
+make check-licenses
+make update-licenses
+make pre-commit
+```
+
+`make pre-commit` installs a local hook that runs `make check` before commits. Set `PRECOMMIT_NOFMT=1` for the rare case where the hook must be skipped locally.
 
 ## Cleanup
 

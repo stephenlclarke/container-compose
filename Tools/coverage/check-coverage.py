@@ -14,6 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
+
 """Check Swift and Go coverage reports against the required minimum."""
 
 import argparse

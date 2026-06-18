@@ -14,6 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
+
 """Convert LCOV line coverage into SonarQube generic coverage XML."""
 
 import sys

@@ -62,13 +62,13 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package coverage-tools-test lint format
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
 workflow: ci package
 
-ci: lint coverage-check go-build cli-smoke
+ci: check coverage-check go-build cli-smoke
 
 resolve:
 	$(SWIFT) package resolve
@@ -84,9 +84,12 @@ run:
 
 test: swift-test go-test
 
-swift-test:
+swift-test-build:
+	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --build-tests --enable-code-coverage $(SWIFT_TEST_FLAGS)
+
+swift-test: swift-test-build
 	@mkdir -p .build
-	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --enable-code-coverage $(SWIFT_TEST_FLAGS) 2>&1 | tee "$(SWIFT_TEST_RESULT_LOG)"
+	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_FLAGS) 2>&1 | tee "$(SWIFT_TEST_RESULT_LOG)"
 	@if ! grep -Eq 'Test run with [1-9][0-9]* tests .* passed|Executed [1-9][0-9]* tests' "$(SWIFT_TEST_RESULT_LOG)"; then \
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \
@@ -529,7 +532,12 @@ coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py
 	$(PYTHON) -m unittest discover Tools/coverage
 
+check: lint check-licenses
+
 lint: coverage-tools-test
+	@while IFS= read -r -d '' script; do \
+		bash -n "$$script"; \
+	done < <(find scripts -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)
 	@if command -v "$(MARKDOWNLINT)" >/dev/null 2>&1; then \
 		"$(MARKDOWNLINT)" $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \
@@ -544,8 +552,28 @@ lint: coverage-tools-test
 		exit 1; \
 	fi
 
-format:
+fmt: format
+
+format: update-licenses
 	cd Tools/compose-normalizer && $(GO) fmt ./...
+
+check-licenses:
+	@./scripts/ensure-hawkeye-exists.sh
+	@.local/bin/hawkeye check --fail-if-unknown
+
+update-licenses:
+	@./scripts/ensure-hawkeye-exists.sh
+	@.local/bin/hawkeye format --fail-if-unknown --fail-if-updated false
+
+pre-commit:
+	$(eval HOOKS_DIR := $(shell git rev-parse --git-path hooks))
+	cp scripts/pre-commit.fmt "$(HOOKS_DIR)/"
+	touch "$(HOOKS_DIR)/pre-commit"
+	grep -v 'hooks/pre-commit\.fmt' "$(HOOKS_DIR)/pre-commit" > /tmp/container-compose-pre-commit.new || true
+	printf 'PRECOMMIT_NOFMT=$${PRECOMMIT_NOFMT} "$$(git rev-parse --git-path hooks/pre-commit.fmt)"\n' >> /tmp/container-compose-pre-commit.new
+	mv /tmp/container-compose-pre-commit.new "$(HOOKS_DIR)/pre-commit"
+	chmod +x "$(HOOKS_DIR)/pre-commit"
+	@./scripts/ensure-hawkeye-exists.sh
 
 clean:
 	$(SWIFT) package clean

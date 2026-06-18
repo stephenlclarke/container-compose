@@ -68,6 +68,8 @@ the stricter threshold documented in [BUILD.md](BUILD.md).
 - Keep unsupported Compose features explicit and actionable.
 - Keep [COMPATIBILITY.md](COMPATIBILITY.md) aligned with supported runtime
   primitives.
+- Run `make check` for fast lint and license-header validation before larger
+  test runs.
 - Use deterministic names, labels, and output ordering where possible.
 - Match [`apple/container`](https://github.com/apple/container) naming,
   formatting, and error-reporting conventions when the equivalent pattern
