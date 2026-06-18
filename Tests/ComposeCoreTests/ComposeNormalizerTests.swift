@@ -527,6 +527,13 @@ struct ComposeNormalizerTests {
         services:
           api:
             image: alpine
+            provider:
+              type: example
+              options:
+                endpoint: local
+                tag:
+                  - one
+                  - two
             restart: unless-stopped
             healthcheck:
               disable: true
@@ -553,6 +560,7 @@ struct ComposeNormalizerTests {
         #expect(project.models?["llm"] == .object(["model": .string("example/local-llm")]))
         #expect(project.extensions?["x-project"] == .object(["enabled": .bool(true)]))
         #expect(api.restart == "unless-stopped")
+        #expect(api.provider == ComposeProvider(type: "example", options: ["endpoint": ["local"], "tag": ["one", "two"]]))
         #expect(api.healthcheck == .object(["disable": .bool(true)]))
         #expect(api.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
         #expect(api.secrets == [.object(["source": .string("app_secret"), "target": .string("/run/secrets/app_secret")])])

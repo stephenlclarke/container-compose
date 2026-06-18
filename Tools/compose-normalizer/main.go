@@ -91,7 +91,7 @@ type normalizedService struct {
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
 	Entrypoint              []string                            `json:"entrypoint,omitempty"`
-	Provider                bool                                `json:"provider,omitempty"`
+	Provider                *normalizedProvider                 `json:"provider,omitempty"`
 	CredentialSpec          *types.CredentialSpecConfig         `json:"credentialSpec,omitempty"`
 	DeviceCgroupRules       []string                            `json:"deviceCgroupRules,omitempty"`
 	Devices                 []types.DeviceMapping               `json:"devices,omitempty"`
@@ -163,6 +163,13 @@ type normalizedService struct {
 	Configs                 any                                 `json:"configs,omitempty"`
 	Secrets                 any                                 `json:"secrets,omitempty"`
 	Extensions              map[string]any                      `json:"extensions,omitempty"`
+}
+
+// normalizedProvider records the provider executable and options used by a
+// non-container service lifecycle.
+type normalizedProvider struct {
+	Type    string              `json:"type"`
+	Options map[string][]string `json:"options,omitempty"`
 }
 
 // normalizedBuild keeps the build fields needed to call `container build`.
@@ -468,7 +475,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		DeployLabels:            deployLabels(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
-		Provider:                service.Provider != nil,
+		Provider:                providerValue(service.Provider),
 		CredentialSpec:          service.CredentialSpec,
 		DeviceCgroupRules:       append([]string(nil), service.DeviceCgroupRules...),
 		Devices:                 append([]types.DeviceMapping(nil), service.Devices...),
@@ -569,6 +576,17 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		result.Extensions = service.Extensions
 	}
 	return result
+}
+
+// providerValue copies provider metadata into stable JSON for Swift.
+func providerValue(provider *types.ServiceProviderConfig) *normalizedProvider {
+	if provider == nil {
+		return nil
+	}
+	return &normalizedProvider{
+		Type:    provider.Type,
+		Options: mapMultiOptions(provider.Options),
+	}
 }
 
 // developValues preserves Compose Develop Specification watch triggers for
@@ -1144,6 +1162,18 @@ func mapOptions(options types.Options) map[string]string {
 	result := map[string]string{}
 	for key, value := range options {
 		result[key] = value
+	}
+	return result
+}
+
+// mapMultiOptions copies provider options while preserving repeated values.
+func mapMultiOptions(options types.MultiOptions) map[string][]string {
+	if len(options) == 0 {
+		return nil
+	}
+	result := map[string][]string{}
+	for key, values := range options {
+		result[key] = append([]string(nil), values...)
 	}
 	return result
 }

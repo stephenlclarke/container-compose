@@ -699,6 +699,59 @@ private enum ComposeCopyEndpoint {
 
 private typealias ExternalVolumeMounts = [String: [ComposeMount]]
 
+/// Compose provider lifecycle command.
+private enum ComposeProviderAction: String {
+    case up
+    case down
+    case stop
+}
+
+/// JSON message emitted by a Compose provider command.
+private struct ComposeProviderMessage: Decodable {
+    var type: String
+    var message: String
+}
+
+/// Optional provider command metadata emitted by `compose metadata`.
+private struct ComposeProviderMetadata: Decodable {
+    var description: String? = nil
+    var up: ComposeProviderCommandMetadata? = nil
+    var down: ComposeProviderCommandMetadata? = nil
+    var stop: ComposeProviderCommandMetadata? = nil
+
+    var isEmpty: Bool {
+        (description?.isEmpty ?? true) &&
+            up?.parameters == nil &&
+            down?.parameters == nil
+    }
+
+    func commandMetadata(for action: ComposeProviderAction) -> ComposeProviderCommandMetadata? {
+        switch action {
+        case .up:
+            up
+        case .down:
+            down
+        case .stop:
+            stop
+        }
+    }
+}
+
+/// Parameter metadata for one provider lifecycle command.
+private struct ComposeProviderCommandMetadata: Decodable {
+    var parameters: [ComposeProviderParameterMetadata]?
+
+    func parameter(named name: String) -> ComposeProviderParameterMetadata? {
+        (parameters ?? []).first { $0.name == name }
+    }
+}
+
+/// One provider command parameter advertised by provider metadata.
+private struct ComposeProviderParameterMetadata: Decodable {
+    var name: String
+    var required: Bool?
+}
+
 /// Source of a parsed service-scoped `volumes_from` reference.
 private enum ParsedVolumesFromSource {
     case service(String)
@@ -790,6 +843,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             )
             return
         }
+        var workingProject = project
         let services = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
@@ -826,18 +880,32 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         var changedServices = Set<String>()
-        for service in services {
+        for serviceReference in services {
+            let service = workingProject.services[serviceReference.name] ?? serviceReference
+            if service.provider != nil {
+                let variables = try await runProvider(project: workingProject, service: service, action: .up)
+                if !variables.isEmpty {
+                    workingProject = projectByInjectingProviderEnvironment(
+                        project: workingProject,
+                        providerServiceName: service.name,
+                        variables: variables
+                    )
+                }
+                changedServices.insert(service.name)
+                continue
+            }
+
             if shouldBuildServiceForUp(up, service: service) {
-                try await build(project: project, services: [service.name], noCache: false, quiet: up.quietBuild)
+                try await build(project: workingProject, services: [service.name], noCache: false, quiet: up.quietBuild)
             }
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             var serviceChanged = false
             if replicaCount > 0 {
                 for replicaIndex in 1...replicaCount {
-                    let name = try serviceContainerName(project: project, service: service, index: replicaIndex)
+                    let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
                     let changed = try await reconcileServiceContainer(
-                        project: project,
+                        project: workingProject,
                         service: service,
                         request: ServiceContainerReconcileRequest(
                             name: name,
@@ -1049,6 +1117,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
         let targets = try await serviceContainerTargets(project: project, services: services)
         for service in services.reversed() {
+            if service.provider != nil {
+                _ = try await runProvider(project: project, service: service, action: .down)
+                continue
+            }
             for target in targets.filter({ $0.service.name == service.name }).reversed() {
                 try await stopContainer(service: service, containerName: target.name, timeout: down.timeout)
                 try await deleteContainer(target.name)
@@ -1470,6 +1542,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunCapabilityOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
+        runProject.services[serviceName] = service
         try validateProjectNetworks(runProject)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validateRunLabelOverridesAgainstAnnotations(labelOverrides, service: service)
@@ -1488,11 +1561,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
-        try await startDependencyServices(
+        runProject = try await startDependencyServices(
             project: runProject,
             services: dependencyServices,
             externalVolumeMounts: externalVolumeMounts
         )
+        service = runProject.services[serviceName] ?? service
         let containerName = oneOffRunContainerName(project: runProject, service: service, requestedName: run.containerName)
         try await runContainer(
             try runArguments(
@@ -1527,6 +1601,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func stop(project: ComposeProject, services selected: [String], timeout: Int? = nil) async throws {
         try validateTimeoutSeconds(timeout, command: "stop")
         let services = try selectedServices(project: project, selected: selected)
+        for service in services.reversed() where service.provider != nil {
+            _ = try await runProvider(project: project, service: service, action: .stop)
+        }
         for target in try await serviceContainerTargets(project: project, services: services) {
             try await stopContainer(service: target.service, containerName: target.name, timeout: timeout)
         }
@@ -1989,6 +2066,9 @@ private extension ComposeOrchestrator {
                 .filter { $0.serviceName == service.name && !$0.isOneOff }
                 .sorted(by: serviceContainerSummaryOrder(project: project, service: service))
             guard !matches.isEmpty else {
+                guard service.provider == nil else {
+                    return [ServiceContainerTarget]()
+                }
                 return [
                     ServiceContainerTarget(
                         service: service,
@@ -2280,12 +2360,233 @@ private extension ComposeOrchestrator {
 
     /// Rejects service extension points that need explicit orchestration design.
     func validateProviderAndModelSupport(service: ComposeService) throws {
-        if service.provider == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses provider; service providers are not implemented by container-compose yet")
+        if let provider = service.provider {
+            let type = provider.type.trimmingCharacters(in: .whitespacesAndNewlines)
+            if type.isEmpty {
+                throw ComposeError.invalidProject("service '\(service.name)' provider.type must not be empty")
+            }
+            if type == "compose" {
+                throw ComposeError.invalidProject("service '\(service.name)' provider.type 'compose' is reserved")
+            }
         }
         if service.models == true {
             throw ComposeError.unsupported("service '\(service.name)' uses models; service model bindings are not implemented by container-compose yet")
         }
+    }
+
+    /// Runs a provider-backed service lifecycle command.
+    func runProvider(
+        project: ComposeProject,
+        service: ComposeService,
+        action: ComposeProviderAction
+    ) async throws -> [String: String] {
+        guard let provider = service.provider else {
+            return [:]
+        }
+        let executable = options.dryRun
+            ? provider.type
+            : try providerExecutablePath(provider.type, project: project)
+
+        let metadata = options.dryRun
+            ? ComposeProviderMetadata()
+            : await providerMetadata(executable: executable, project: project)
+        if action == .stop && metadata.commandMetadata(for: .stop) == nil && !options.dryRun {
+            return [:]
+        }
+        if !metadata.isEmpty {
+            try validateProviderOptions(provider: provider, metadata: metadata, action: action)
+        }
+
+        let arguments = providerArguments(
+            project: project,
+            service: service,
+            provider: provider,
+            action: action,
+            metadata: metadata
+        )
+        if options.dryRun {
+            options.emit("+ " + shellQuoted([executable] + arguments))
+            return [:]
+        }
+
+        let result = try await runner.run(
+            executable,
+            arguments,
+            workingDirectory: URL(fileURLWithPath: project.workingDirectory, isDirectory: true),
+            environment: nil,
+            io: .captured(input: nil)
+        )
+        let variables = try parseProviderOutput(result.stdout, service: service, action: action)
+        if !result.succeeded {
+            throw ComposeError.commandFailed(
+                command: shellQuoted([executable] + arguments),
+                status: result.status,
+                stderr: result.stderr
+            )
+        }
+        return action == .stop ? [:] : variables
+    }
+
+    /// Reads optional provider metadata. Metadata failures intentionally fall
+    /// back to the protocol's no-metadata behavior for backward compatibility.
+    func providerMetadata(executable: String, project: ComposeProject) async -> ComposeProviderMetadata {
+        do {
+            let result = try await runner.run(
+                executable,
+                ["compose", "metadata"],
+                workingDirectory: URL(fileURLWithPath: project.workingDirectory, isDirectory: true),
+                environment: nil,
+                io: .captured(input: nil)
+            )
+            guard result.succeeded,
+                  let data = result.stdout.data(using: .utf8),
+                  !data.isEmpty else {
+                return ComposeProviderMetadata()
+            }
+            return (try? JSONDecoder().decode(ComposeProviderMetadata.self, from: data)) ?? ComposeProviderMetadata()
+        } catch {
+            return ComposeProviderMetadata()
+        }
+    }
+
+    /// Builds the provider command arguments for one lifecycle action.
+    func providerArguments(
+        project: ComposeProject,
+        service: ComposeService,
+        provider: ComposeProvider,
+        action: ComposeProviderAction,
+        metadata: ComposeProviderMetadata
+    ) -> [String] {
+        let commandMetadata = metadata.commandMetadata(for: action)
+        let hasMetadata = !metadata.isEmpty
+        var arguments = ["compose", "--project-name=\(project.name)", action.rawValue]
+        for (key, values) in (provider.options ?? [:]).sorted(by: { $0.key < $1.key }) {
+            guard !hasMetadata || commandMetadata?.parameter(named: key) != nil else {
+                continue
+            }
+            for value in values {
+                arguments.append("--\(key)=\(value)")
+            }
+        }
+        arguments.append(service.name)
+        return arguments
+    }
+
+    /// Validates required provider options declared by metadata.
+    func validateProviderOptions(
+        provider: ComposeProvider,
+        metadata: ComposeProviderMetadata,
+        action: ComposeProviderAction
+    ) throws {
+        guard let commandMetadata = metadata.commandMetadata(for: action) else {
+            return
+        }
+        for parameter in commandMetadata.parameters ?? [] where parameter.required == true {
+            if (provider.options?[parameter.name] ?? []).isEmpty {
+                throw ComposeError.invalidProject("required parameter '\(parameter.name)' is missing from provider '\(provider.type)' definition")
+            }
+        }
+    }
+
+    /// Decodes newline-delimited provider JSON messages.
+    func parseProviderOutput(
+        _ output: String,
+        service: ComposeService,
+        action: ComposeProviderAction
+    ) throws -> [String: String] {
+        var variables: [String: String] = [:]
+        for line in output.split(whereSeparator: \.isNewline) {
+            let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                continue
+            }
+            guard let data = text.data(using: .utf8),
+                  let message = try? JSONDecoder().decode(ComposeProviderMessage.self, from: data) else {
+                throw ComposeError.invalidProject("invalid response from provider service '\(service.name)': \(text)")
+            }
+            switch message.type {
+            case "info":
+                options.emit("compose: provider \(service.name): \(message.message)")
+            case "debug":
+                continue
+            case "error":
+                throw ComposeError.invalidProject("provider service '\(service.name)' failed during \(action.rawValue): \(message.message)")
+            case "setenv":
+                let parts = message.message.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                guard parts.count == 2, !parts[0].isEmpty else {
+                    throw ComposeError.invalidProject("invalid setenv response from provider service '\(service.name)': \(message.message)")
+                }
+                variables[String(parts[0])] = String(parts[1])
+            default:
+                throw ComposeError.invalidProject("invalid response type '\(message.type)' from provider service '\(service.name)'")
+            }
+        }
+        return variables
+    }
+
+    /// Injects provider variables into services that directly depend on it.
+    func projectByInjectingProviderEnvironment(
+        project: ComposeProject,
+        providerServiceName: String,
+        variables: [String: String]
+    ) -> ComposeProject {
+        var updatedProject = project
+        let prefix = providerServiceName.uppercased() + "_"
+        for entry in project.services.sorted(by: { $0.key < $1.key }) {
+            let name = entry.key
+            var service = entry.value
+            guard service.dependsOn?[providerServiceName] != nil else {
+                continue
+            }
+            var environment = service.environment ?? [:]
+            for (key, value) in variables.sorted(by: { $0.key < $1.key }) {
+                environment[prefix + key] = value
+            }
+            service.environment = environment
+            updatedProject.services[name] = service
+        }
+        return updatedProject
+    }
+
+    /// Resolves the provider executable path using Compose-compatible rules.
+    func providerExecutablePath(_ rawType: String, project: ComposeProject) throws -> String {
+        let type = rawType.trimmingCharacters(in: .whitespacesAndNewlines)
+        if type == "compose" {
+            throw ComposeError.invalidProject("provider.type 'compose' is reserved")
+        }
+        if type.contains("/") {
+            let url = type.hasPrefix("/")
+                ? URL(fileURLWithPath: type)
+                : URL(fileURLWithPath: project.workingDirectory, isDirectory: true)
+                    .appendingPathComponent(type)
+                    .standardizedFileURL
+            guard FileManager.default.isExecutableFile(atPath: url.path) else {
+                throw ComposeError.invalidProject("provider executable '\(type)' was not found or is not executable")
+            }
+            return url.path
+        }
+        let candidates = type.hasPrefix("docker-") ? [type] : ["docker-\(type)", type]
+        for candidate in candidates {
+            if let path = findExecutable(named: candidate) {
+                return path
+            }
+        }
+        throw ComposeError.invalidProject("provider executable '\(type)' was not found in PATH")
+    }
+
+    /// Finds an executable in PATH.
+    func findExecutable(named name: String) -> String? {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        for directory in path.split(separator: ":", omittingEmptySubsequences: false) {
+            let directoryPath = directory.isEmpty ? "." : String(directory)
+            let candidate = URL(fileURLWithPath: directoryPath, isDirectory: true)
+                .appendingPathComponent(name)
+                .path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     /// Validates lifecycle hook metadata before runtime side effects.
@@ -3030,6 +3331,9 @@ private extension ComposeOrchestrator {
 
     /// Returns the desired replica count for a service after CLI overrides.
     func serviceReplicaCount(_ service: ComposeService, scaleOverrides: [String: Int]) throws -> Int {
+        if service.provider != nil {
+            return 0
+        }
         let count = scaleOverrides[service.name] ?? service.scale ?? 1
         guard count >= 0 else {
             throw ComposeError.invalidProject("service '\(service.name)' scale must be a non-negative integer")
@@ -4064,17 +4368,31 @@ private extension ComposeOrchestrator {
         project: ComposeProject,
         services: [ComposeService],
         externalVolumeMounts: ExternalVolumeMounts = [:]
-    ) async throws {
-        try await applyServicePullPolicies(project: project, services: services)
-        for service in services {
-            if service.image == nil, service.pullPolicy != "build", service.build != nil {
-                try await build(project: project, services: [service.name], noCache: false)
+    ) async throws -> ComposeProject {
+        var workingProject = project
+        try await applyServicePullPolicies(project: workingProject, services: services)
+        for serviceReference in services {
+            let service = workingProject.services[serviceReference.name] ?? serviceReference
+            if service.provider != nil {
+                let variables = try await runProvider(project: workingProject, service: service, action: .up)
+                if !variables.isEmpty {
+                    workingProject = projectByInjectingProviderEnvironment(
+                        project: workingProject,
+                        providerServiceName: service.name,
+                        variables: variables
+                    )
+                }
+                continue
             }
 
-            let name = containerName(project: project, service: service, oneOff: false)
+            if service.image == nil, service.pullPolicy != "build", service.build != nil {
+                try await build(project: workingProject, services: [service.name], noCache: false)
+            }
+
+            let name = containerName(project: workingProject, service: service, oneOff: false)
             let existing = try await inspectContainer(name)
             if let existing, existing.configHash == (try configHash(
-                project: project,
+                project: workingProject,
                 service: service,
                 externalVolumeMounts: externalVolumeMounts
             )) {
@@ -4088,7 +4406,7 @@ private extension ComposeOrchestrator {
 
             try await runContainer(
                 try runArguments(
-                    project: project,
+                    project: workingProject,
                     service: service,
                     options: RunArgumentOptions {
                         $0.detach = true
@@ -4098,6 +4416,7 @@ private extension ComposeOrchestrator {
             )
             try await runPostStartHooks(service: service, containerID: name)
         }
+        return workingProject
     }
 
     /// Removes images referenced by services according to `down --rmi`.

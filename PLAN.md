@@ -484,7 +484,16 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Remaining plugin work covers service <code>provider</code> and service <code>models</code>. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Remaining plugin work covers service <code>models</code>. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
+    </tr>
+    <tr>
+      <td>Provider service lifecycle</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 15:45:14 BST</td>
+      <td>2026-06-18 16:03:27 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Provider services now preserve <code>provider.type</code> and <code>provider.options</code> from <code>compose-go</code>, run provider <code>compose metadata</code> plus <code>up</code>/<code>down</code>/advertised <code>stop</code>, validate required metadata parameters, filter unknown provider options when metadata is available, and inject provider <code>setenv</code> values into direct dependents for <code>up</code> and one-off <code>run</code> dependency startup. This is plugin-owned functionality; no Apple/container runtime PR is needed for provider process execution.</td>
     </tr>
     <tr>
       <td>Logging and storage metadata</td>

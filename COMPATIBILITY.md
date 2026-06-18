@@ -109,6 +109,13 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **container-compose status:** Supported for polling-based local file watching, initial sync, changed-file sync, deleted-file cleanup, sync exec hooks, restarts, rebuilds, and rebuild pruning. `develop.watch` metadata is harmless for ordinary `up` and `run`.
 - **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
+#### Provider services
+
+- **Compose surface:** Service `provider.type`, `provider.options`, provider `compose metadata`, provider `compose up`, provider `compose down`, optional provider `compose stop`, provider `info`/`debug`/`error`/`setenv` messages, and provider environment injection into direct dependents.
+- **Apple/container path:** Provider services are non-container lifecycle hooks. No Apple/container runtime primitive is needed until a provider's returned values are injected into dependent service container environment variables.
+- **container-compose status:** Supported for local `up`, dependency startup for one-off `run`, `down`, and advertised `stop`. Providers are resolved as an executable path, `docker-<type>` in `PATH`, or `<type>` in `PATH`; required metadata parameters are validated before invoking provider `up`/`down`; unknown provider options are filtered when metadata is available.
+- **Example:** [S2](#s2-supported-provider-service).
+
 #### Default networking
 
 - **Compose surface:**
@@ -249,11 +256,11 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Missing plugin work:** A local interpretation of broader deploy semantics, including start-first updates, all-at-once or multi-container update parallelism, update delays, rollback behavior, and placement rules.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
-#### Providers and models
+#### Service model bindings
 
-- **Compose surface:** Service `provider` and service `models`.
+- **Compose surface:** Service `models`.
 - **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** Provider/model wiring.
+- **Missing plugin work:** Model binding orchestration and the resulting environment-variable contract for dependent services.
 - **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
 #### API socket and block I/O
@@ -298,6 +305,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - Build and image: `build`, `pull`, `push`, `images`, and `down --rmi`.
 - Interaction: `ps`, `logs`, output-only `attach --no-stdin --sig-proxy=false`, `exec`, `cp`, `export`, published-port `port`, `stats`, `stats --no-trunc`, and `version`.
 - Develop: `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, and `watch --quiet`.
+- Provider services: provider-backed `up`, one-off `run` dependency startup, `down`, and advertised `stop`.
 - Supported option families include indexed service targets, quiet/json/table output where listed above, explicit, target-only dynamically allocated, and host-bound published ports, `--scale`, `--timeout`, `--no-build`, `--quiet-build`, `--quiet-pull`, `--no-start`, `--always-recreate-deps`, `--include-deps`, `--ignore-buildable`, `--ignore-pull-failures`, `--ignore-push-failures`, and `--down-project` for running/stopping service containers.
 
 ### Commands Blocked By [`apple/container`][apple-container] Runtime Gaps
@@ -328,6 +336,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 Every example includes a Compose file or commands plus the matching Dockerfile snippets needed to try the surface in an isolated scratch directory.
 
 - [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Supported. Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
+- [S2: Supported Provider Service](#s2-supported-provider-service): Supported. Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
 - [A1: Apple Gap, Networking](#a1-apple-gap-networking): [`apple/container`][apple-container] gap. Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 - [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): [`apple/container`][apple-container] gap. Demonstrates hostname, domain name, explicit host entries, and legacy links.
 - [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): [`apple/container`][apple-container] gap. Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
@@ -339,7 +348,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): [`apple/container`][apple-container] gap. Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
 - [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): [`apple/container`][apple-container] gap. Demonstrates service logging drivers and logging options.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
-- [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
+- [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): Mixed status. Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, remaining model-binding plugin gaps, and foreground hook Apple/container gaps.
 - [C4: Plugin Gap, API Socket And Block I/O](#c4-plugin-gap-api-socket-and-block-io): `container-compose` gap. Demonstrates API socket exposure and block I/O controls after supported volume inheritance is accepted.
 - [O1: Config-Only Metadata](#o1-config-only-metadata): Config-only. Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
@@ -587,6 +596,82 @@ container compose wait worker
 container compose wait --down-project worker
 container compose down --timeout 12 --volumes
 container compose down --rmi local --timeout 12 --volumes
+```
+
+### S2: Supported Provider Service
+
+Expected result: `container compose up api` runs the provider `compose metadata` and `compose up` commands for `database`, injects returned `setenv` values into the dependent `api` service as `DATABASE_<KEY>` environment variables, and then starts `api` through [`apple/container`][apple-container]. `container compose run api env` starts provider dependencies before the one-off service and injects the same variables into the one-off environment. `container compose stop database` invokes provider `compose stop` only when metadata advertises it. `container compose down` invokes provider `compose down` for provider-backed services.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes provider services and the provider JSON-message protocol.
+- [`apple/container`][apple-container]: no runtime primitive is needed for the provider process itself; dependent service containers use ordinary environment-variable support.
+- `container-compose`: maps provider lifecycle commands, metadata validation, option filtering, and provider `setenv` injection for direct dependents.
+
+```yaml
+# compose.yaml
+name: provider-demo
+
+services:
+  api:
+    build:
+      context: ./api
+    depends_on:
+      database:
+        condition: service_started
+    command: ["sh", "-c", "printf '%s\n' \"$DATABASE_URL\" && sleep 3600"]
+
+  database:
+    provider:
+      type: ./providers/example-db
+      options:
+        name: local-db
+        size: small
+```
+
+Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "env | sort && sleep 3600"]
+```
+
+File: `providers/example-db`
+
+```sh
+#!/bin/sh
+if [ "$1" != "compose" ]; then
+    printf '{"type":"error","message":"expected compose subcommand"}\n'
+    exit 1
+fi
+
+case "$2" in
+metadata)
+    printf '{"description":"example provider","up":{"parameters":[{"name":"name","required":true},{"name":"size"}]},"down":{"parameters":[{"name":"name","required":true}]},"stop":{"parameters":[{"name":"name","required":true}]}}\n'
+    ;;
+up)
+    printf '{"type":"info","message":"database ready"}\n'
+    printf '{"type":"setenv","message":"URL=postgres://local-db.example/provider"}\n'
+    ;;
+down|stop)
+    printf '{"type":"info","message":"database %s complete"}\n' "$2"
+    ;;
+*)
+    printf '{"type":"error","message":"unsupported provider command"}\n'
+    exit 1
+    ;;
+esac
+```
+
+Useful supported commands against this project:
+
+```sh
+chmod +x providers/example-db
+container compose config
+container compose up api
+container compose run api env
+container compose stop database
+container compose down
 ```
 
 ### A1: Apple Gap, Networking
@@ -1113,13 +1198,13 @@ local config placeholder
 
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
-Expected result: `container compose config` preserves the `develop.watch`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata. Detached service lifecycle paths and detached one-off `run` execute supported `post_start` hooks through direct exec, and service-aware stops execute supported `pre_stop` hooks before stopping containers. Detached one-off containers also execute `pre_stop` when `container-compose` later stops them through project cleanup. The `provider` and `models` fields still reject before runtime side effects because they need plugin orchestration. Attached `up` or foreground `run` with lifecycle hooks reject clearly until Apple/container exposes the foreground attach and stop-boundary primitives tracked in [A9](#a9-apple-gap-interactive-attach).
+Expected result: `container compose config` preserves the `develop.watch`, `provider`, service `models`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata and supports provider-backed dependencies as shown in [S2](#s2-supported-provider-service). Detached service lifecycle paths and detached one-off `run` execute supported `post_start` hooks through direct exec, and service-aware stops execute supported `pre_stop` hooks before stopping containers. Detached one-off containers also execute `pre_stop` when `container-compose` later stops them through project cleanup. Service `models` still reject before runtime side effects because model binding orchestration is not implemented. Attached `up` or foreground `run` with lifecycle hooks reject clearly until Apple/container exposes the foreground attach and stop-boundary primitives tracked in [A9](#a9-apple-gap-interactive-attach).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
 - [`apple/container`][apple-container]: direct exec supports the detached hook paths; foreground hook ordering needs the reattach or stop-boundary primitive tracked in [A9](#a9-apple-gap-interactive-attach).
-- `container-compose`: preserves normalized `develop.watch`, `post_start`, and `pre_stop` metadata; validates `watch` command selections; emits a dry-run watch plan; supports live polling watch execution through direct copy, exec, restart, build, and image prune paths; executes service lifecycle hooks for detached service starts, `start`, `stop`, `restart`, `down`, recreation, and replica pruning; executes `post_start` for detached one-off `run`; and executes `pre_stop` before detached one-off cleanup. It still needs service providers and model bindings.
+- `container-compose`: preserves normalized `develop.watch`, `provider`, `post_start`, and `pre_stop` metadata; validates `watch` command selections; emits a dry-run watch plan; supports live polling watch execution through direct copy, exec, restart, build, and image prune paths; executes provider service `up`, `down`, and advertised `stop`; executes service lifecycle hooks for detached service starts, `start`, `stop`, `restart`, `down`, recreation, and replica pruning; executes `post_start` for detached one-off `run`; and executes `pre_stop` before detached one-off cleanup. It still needs service model bindings.
 
 ```yaml
 # compose.yaml
@@ -1133,8 +1218,9 @@ services:
   api:
     build:
       context: ./api
-    provider:
-      type: example
+    depends_on:
+      database:
+        condition: service_started
     models:
       llm:
         endpoint_var: MODEL_ENDPOINT
@@ -1147,6 +1233,10 @@ services:
         - path: ./api/src
           target: /app/src
           action: sync
+
+  database:
+    provider:
+      type: ./providers/example-db
 ```
 
 Dockerfile: `api/Dockerfile`

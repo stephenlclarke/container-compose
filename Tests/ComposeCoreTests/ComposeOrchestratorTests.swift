@@ -116,6 +116,14 @@ private func temporaryDirectory() throws -> URL {
     return url
 }
 
+private func temporaryExecutable(name: String = "provider") throws -> URL {
+    let directory = try temporaryDirectory()
+    let executable = directory.appendingPathComponent(name)
+    try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    return executable
+}
+
 private final class InlineDockerfileRunner: CommandRunning, @unchecked Sendable {
     private(set) var commands: [[String]] = []
     private(set) var dockerfileContents: [String] = []
@@ -3563,9 +3571,9 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported provider and model fields before creating resources")
-    func upRejectsUnsupportedProviderAndModelFieldsBeforeCreatingResources() async throws {
-        for testCase in unsupportedProviderAndModelFieldCases() {
+    @Test("up rejects unsupported model fields before creating resources")
+    func upRejectsUnsupportedModelFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedModelFieldCases() {
             let runner = RecordingRunner()
             let project = composeProject(
                 name: "demo",
@@ -3590,6 +3598,196 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
+
+    @Test("up runs provider services and injects setenv into dependents")
+    func upRunsProviderServicesAndInjectsSetenvIntoDependents() async throws {
+        let provider = try temporaryExecutable(name: "example-provider")
+        defer {
+            try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
+        }
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: """
+            {"description":"example","up":{"parameters":[{"name":"name","required":true},{"name":"size"}]},"down":{"parameters":[{"name":"name","required":true}]}}
+            """, stderr: ""),
+            CommandResult(status: 0, stdout: """
+            {"type":"info","message":"provisioned database"}
+            {"type":"setenv","message":"URL=https://magic.cloud/database"}
+            """, stderr: ""),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "database": composeService(name: "database") {
+                    $0.provider = ComposeProvider(
+                        type: provider.path,
+                        options: [
+                            "ignored": ["not-forwarded"],
+                            "name": ["db"],
+                            "size": ["small"],
+                        ]
+                    )
+                },
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.dependsOn = ["database": ComposeDependency()]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies { _ in }
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages == ["compose: provider database: provisioned database"])
+        #expect(runner.commands.map(\.executable) == [
+            provider.path,
+            provider.path,
+            ComposeExecutionOptions.defaultEnvironmentLauncher,
+        ])
+        #expect(runner.commands[0].arguments == ["compose", "metadata"])
+        #expect(runner.commands[1].arguments == [
+            "compose",
+            "--project-name=demo",
+            "up",
+            "--name=db",
+            "--size=small",
+            "database",
+        ])
+        #expect(!runner.commands[1].arguments.contains("--ignored=not-forwarded"))
+        let runArguments = runner.commands[2].arguments
+        #expect(runArguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(runArguments.contains("--env"))
+        #expect(runArguments.contains("DATABASE_URL=https://magic.cloud/database"))
+    }
+
+    @Test("down runs provider service down lifecycle")
+    func downRunsProviderServiceDownLifecycle() async throws {
+        let provider = try temporaryExecutable(name: "example-provider")
+        defer {
+            try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
+        }
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: """
+            {"description":"example","up":{"parameters":[]},"down":{"parameters":[{"name":"name","required":true}]}}
+            """, stderr: ""),
+            CommandResult(status: 0, stdout: "", stderr: ""),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "database": composeService(name: "database") {
+                    $0.provider = ComposeProvider(type: provider.path, options: ["name": ["db"]])
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).down(project: project, options: ComposeDownOptions())
+
+        #expect(runner.commands.map(\.executable) == [provider.path, provider.path])
+        #expect(runner.commands[0].arguments == ["compose", "metadata"])
+        #expect(runner.commands[1].arguments == [
+            "compose",
+            "--project-name=demo",
+            "down",
+            "--name=db",
+            "database",
+        ])
+    }
+
+    @Test("stop runs advertised provider stop lifecycle")
+    func stopRunsAdvertisedProviderStopLifecycle() async throws {
+        let provider = try temporaryExecutable(name: "example-provider")
+        defer {
+            try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
+        }
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: """
+            {"description":"example","up":{"parameters":[]},"down":{"parameters":[]},"stop":{"parameters":[{"name":"name","required":true}]}}
+            """, stderr: ""),
+            CommandResult(status: 0, stdout: "", stderr: ""),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "database": composeService(name: "database") {
+                    $0.provider = ComposeProvider(type: provider.path, options: ["name": ["db"]])
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).stop(project: project, services: [])
+
+        #expect(runner.commands.map(\.executable) == [provider.path, provider.path])
+        #expect(runner.commands[0].arguments == ["compose", "metadata"])
+        #expect(runner.commands[1].arguments == [
+            "compose",
+            "--project-name=demo",
+            "stop",
+            "--name=db",
+            "database",
+        ])
+    }
+
+    @Test("stop skips provider service without advertised stop lifecycle")
+    func stopSkipsProviderServiceWithoutAdvertisedStopLifecycle() async throws {
+        let provider = try temporaryExecutable(name: "example-provider")
+        defer {
+            try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
+        }
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: """
+            {"description":"example","up":{"parameters":[]},"down":{"parameters":[]}}
+            """, stderr: ""),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "database": composeService(name: "database") {
+                    $0.provider = ComposeProvider(type: provider.path)
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).stop(project: project, services: [])
+
+        #expect(runner.commands.map(\.executable) == [provider.path])
+        #expect(runner.commands[0].arguments == ["compose", "metadata"])
+    }
+
+    @Test("up rejects provider missing required metadata option")
+    func upRejectsProviderMissingRequiredMetadataOption() async throws {
+        let provider = try temporaryExecutable(name: "example-provider")
+        defer {
+            try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
+        }
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: """
+            {"description":"example","up":{"parameters":[{"name":"name","required":true}]}}
+            """, stderr: ""),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "database": composeService(name: "database") {
+                    $0.provider = ComposeProvider(type: provider.path)
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected required provider option failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("required parameter 'name' is missing from provider '\(provider.path)' definition"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.map(\.executable) == [provider.path])
+        #expect(runner.commands[0].arguments == ["compose", "metadata"])
     }
 
     @Test("up rejects unsupported user and security option fields before creating resources")
@@ -10133,6 +10331,58 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-db-1"])
     }
 
+    @Test("run starts provider dependencies and injects setenv into one-off service")
+    func runStartsProviderDependenciesAndInjectsSetenvIntoOneOffService() async throws {
+        let provider = try temporaryExecutable(name: "example-provider")
+        defer {
+            try? FileManager.default.removeItem(at: provider.deletingLastPathComponent())
+        }
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: """
+            {"description":"example","up":{"parameters":[]}}
+            """, stderr: ""),
+            CommandResult(status: 0, stdout: """
+            {"type":"setenv","message":"URL=https://magic.cloud/database"}
+            """, stderr: ""),
+            .success,
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.dependsOn = ["database": ComposeDependency(condition: "service_started")]
+                },
+                "database": composeService(name: "database") {
+                    $0.provider = ComposeProvider(type: provider.path)
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies { _ in }).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"])
+        )
+
+        #expect(runner.commands.map(\.executable) == [
+            provider.path,
+            provider.path,
+            ComposeExecutionOptions.defaultEnvironmentLauncher,
+        ])
+        #expect(runner.commands[0].arguments == ["compose", "metadata"])
+        #expect(runner.commands[1].arguments == [
+            "compose",
+            "--project-name=demo",
+            "up",
+            "database",
+        ])
+        let runArguments = runner.commands[2].arguments
+        #expect(runArguments.starts(with: ["container", "run", "--name"]))
+        #expect(runArguments[3].hasPrefix("demo-job-run-"))
+        #expect(runArguments.containsSequence(["--env", "DATABASE_URL=https://magic.cloud/database"]))
+        #expect(Array(runArguments.suffix(2)) == ["alpine", "true"])
+    }
+
     @Test("run creates project resources before one-off containers")
     func runCreatesProjectResourcesBeforeOneOffContainers() async throws {
         let runner = RecordingRunner(responses: [
@@ -10757,9 +11007,9 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported provider and model fields before creating resources")
-    func runRejectsUnsupportedProviderAndModelFieldsBeforeCreatingResources() async throws {
-        for testCase in unsupportedProviderAndModelFieldCases() {
+    @Test("run rejects unsupported model fields before creating resources")
+    func runRejectsUnsupportedModelFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedModelFieldCases() {
             let runner = RecordingRunner()
             let project = composeProject(
                 name: "demo",
@@ -12805,7 +13055,7 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
     ]
 }
 
-private struct UnsupportedProviderAndModelFieldCase: Sendable {
+private struct UnsupportedModelFieldCase: Sendable {
     let composeName: String
     let reason: String
     let configure: @Sendable (inout ComposeService) -> Void
@@ -12815,14 +13065,9 @@ private struct UnsupportedProviderAndModelFieldCase: Sendable {
     }
 }
 
-private func unsupportedProviderAndModelFieldCases() -> [UnsupportedProviderAndModelFieldCase] {
+private func unsupportedModelFieldCases() -> [UnsupportedModelFieldCase] {
     [
-        UnsupportedProviderAndModelFieldCase(
-            composeName: "provider",
-            reason: "service providers are not implemented by container-compose yet",
-            configure: { $0.provider = true }
-        ),
-        UnsupportedProviderAndModelFieldCase(
+        UnsupportedModelFieldCase(
             composeName: "models",
             reason: "service model bindings are not implemented by container-compose yet",
             configure: { $0.models = true }

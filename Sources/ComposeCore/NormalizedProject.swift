@@ -111,7 +111,7 @@ public struct ComposeService: Codable, Equatable {
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
-    public var provider: Bool? = nil
+    public var provider: ComposeProvider? = nil
     public var credentialSpec: ComposeValue? = nil
     public var deviceCgroupRules: [String]? = nil
     public var devices: [ComposeValue]? = nil
@@ -348,6 +348,17 @@ public struct ComposeDevelopWatchExec: Codable, Equatable {
         self.privileged = privileged
         self.workingDir = workingDir
         self.environment = environment
+    }
+}
+
+/// Provider-service metadata used to delegate non-container lifecycle work.
+public struct ComposeProvider: Codable, Equatable, Sendable {
+    public var type: String
+    public var options: [String: [String]]?
+
+    public init(type: String, options: [String: [String]]? = nil) {
+        self.type = type
+        self.options = options
     }
 }
 

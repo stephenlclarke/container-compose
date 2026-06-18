@@ -1070,8 +1070,14 @@ services:
 	}
 
 	api := project.Services["api"]
-	if !api.Provider {
-		t.Fatal("api.Provider = false, want true")
+	if api.Provider == nil {
+		t.Fatal("api.Provider = nil, want provider config")
+	}
+	if api.Provider.Type != "example" {
+		t.Fatalf("api.Provider.Type = %q, want example", api.Provider.Type)
+	}
+	if got, want := api.Provider.Options["endpoint"], []string{"local"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Provider.Options[endpoint] = %#v, want %#v", got, want)
 	}
 	if !api.Models {
 		t.Fatal("api.Models = false, want true")
