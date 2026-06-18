@@ -160,8 +160,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Rich network attachment and IPAM controls
 
-- **Compose surface:** Multiple service networks, aliases, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
-- **Missing Apple/container primitive:** Multi-network attach/connect, per-network aliases/options beyond MAC and MTU, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
+- **Compose surface:** Multiple service networks, aliases, service-name DNS for replicas, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
+- **Missing Apple/container primitive:** Multi-network attach/connect, per-network aliases/options beyond MAC and MTU, multi-record DNS lookup for scaled service names, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A1](#a1-apple-gap-networking).
 
@@ -218,11 +218,11 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 These are valid Docker Compose v2 surfaces where [`apple/container`][apple-container] is not known to be the first blocker. The missing design, orchestration, or safety policy belongs in this repository.
 
-#### Replica scaling service discovery and local deploy handling
+#### Local deploy handling
 
-- **Compose surface:** Replica service-discovery semantics and deploy fields beyond local replica count and CPU/memory limits.
+- **Compose surface:** Deploy fields beyond local replica count and CPU/memory limits.
 - **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** DNS/service-name behavior for multiple replicas and a local interpretation of broader deploy semantics.
+- **Missing plugin work:** A local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
 #### Develop, providers, models, hooks
@@ -318,14 +318,14 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 Every example includes a Compose file or commands plus the matching Dockerfile snippets needed to try the surface in an isolated scratch directory.
 
 - [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Supported. Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
-- [A1: Apple Gap, Networking](#a1-apple-gap-networking): [`apple/container`][apple-container] gap. Demonstrates multiple networks, aliases, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+- [A1: Apple Gap, Networking](#a1-apple-gap-networking): [`apple/container`][apple-container] gap. Demonstrates multiple networks, aliases, service-name DNS for replicas, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 - [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): [`apple/container`][apple-container] gap. Demonstrates hostname, domain name, explicit host entries, and legacy links.
 - [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): [`apple/container`][apple-container] gap. Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
 - [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): [`apple/container`][apple-container] gap. Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
 - [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, dynamic host-port allocation, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
 - [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
-- [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, DNS, and deploy semantics.
+- [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
 - [C4: Plugin Gap, Metadata, Storage, And API Socket](#c4-plugin-gap-metadata-storage-and-api-socket): `container-compose` gap. Demonstrates logging options, external inherited mounts, advanced service volume options, API socket, and block I/O.
 - [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands): `container-compose` gap. Demonstrates default interactive attach behavior that still needs command-level plugin design.
@@ -578,12 +578,12 @@ container compose down --rmi local --timeout 12 --volumes
 
 ### A1: Apple Gap, Networking
 
-Expected result: `container compose up` rejects this before creating resources because [`apple/container`][apple-container] needs multi-network attach/connect, per-network aliases/options beyond MAC and MTU, fixed addresses, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+Expected result: `container compose up` rejects this before creating resources because [`apple/container`][apple-container] needs multi-network attach/connect, per-network aliases/options beyond MAC and MTU, service-name DNS that can return multiple replica addresses, fixed addresses, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these network attachments.
-- [`apple/container`][apple-container]: missing multi-network attach/connect, per-network aliases/options beyond MAC and MTU, fixed addresses, Docker-compatible namespace modes other than no-network, IPAM gateway/range/auxiliary-address controls, custom IPAM drivers, and multiple same-family IPAM subnets.
+- [`apple/container`][apple-container]: missing multi-network attach/connect, per-network aliases/options beyond MAC and MTU, service-name aliases and multi-record DNS lookup for scaled replicas, fixed addresses, Docker-compatible namespace modes other than no-network, IPAM gateway/range/auxiliary-address controls, custom IPAM drivers, and multiple same-family IPAM subnets.
 - `container-compose`: detects those fields and fails before creating resources.
 
 ```yaml
@@ -611,6 +611,12 @@ services:
       context: ./gateway
     networks:
       - app
+
+  worker:
+    build:
+      context: ./worker
+    deploy:
+      replicas: 2
 
 networks:
   app:
@@ -642,6 +648,13 @@ Dockerfile: `gateway/Dockerfile`
 ```dockerfile
 FROM alpine:3.20
 CMD ["sh", "-c", "sleep 3600"]
+```
+
+Dockerfile: `worker/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 ```
 
 ### A2: Apple Gap, Host Identity And Links
@@ -871,8 +884,8 @@ Expected result: `container compose up` accepts simple local replica counts for 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
-- [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, and local `deploy.replicas` to indexed containers; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources. It still needs DNS semantics for scaled service names and broader deploy semantics.
+- [`apple/container`][apple-container]: supports the lifecycle and resource primitives needed for these local scale forms, while scaled service-name DNS is tracked in [A1](#a1-apple-gap-networking).
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, and local `deploy.replicas` to indexed containers; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources. It still needs broader deploy semantics.
 
 The equivalent supported CLI scaling forms are:
 

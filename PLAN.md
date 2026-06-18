@@ -189,7 +189,16 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 11:52:13 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Confirmed scaled services reject duplicate runtime names from <code>container_name</code>, too-small fixed published-port ranges, and service-level or per-network fixed MAC addresses before creating resources. Added explicit fixed MAC regression coverage and updated compatibility docs so the remaining replica backlog is service-discovery/deploy work.</td>
+      <td colspan="4"><strong>Notes:</strong> Confirmed scaled services reject duplicate runtime names from <code>container_name</code>, too-small fixed published-port ranges, and service-level or per-network fixed MAC addresses before creating resources. Added explicit fixed MAC regression coverage and updated compatibility docs so the remaining plugin-side replica backlog is deploy behavior.</td>
+    </tr>
+    <tr>
+      <td>Replica service discovery blocker classification</td>
+      <td>2026-06-18 11:56:51 BST</td>
+      <td>2026-06-18 11:56:51 BST</td>
+      <td>2026-06-18 11:56:51 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Inspected Apple/container DNS and network services. Runtime DNS lookup returns one attachment per hostname and container creation rejects duplicate attachment hostnames, so Docker Compose service-name DNS for multiple replicas needs Apple/container alias and multi-record lookup primitives before container-compose can map it.</td>
     </tr>
     <tr>
       <td>Run capability overrides</td>
@@ -322,7 +331,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Remaining edge cases cover scaled service DNS/service-discovery semantics and broader deploy behavior.</td>
+      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Scaled service DNS is an Apple/container networking gap. Remaining plugin work covers broader deploy behavior.</td>
     </tr>
     <tr>
       <td>Local deploy interpretation</td>
@@ -387,8 +396,8 @@ Recommended upstream workflow:
 
 Suggested Apple/container PR batches:
 
-1. Networking parity: multi-network attachment, aliases, fixed addresses, and
-   richer IPAM.
+1. Networking parity: multi-network attachment, aliases, service-name
+   multi-record DNS for replicas, fixed addresses, and richer IPAM.
 2. Build parity: BuildKit-compatible inputs that Docker Compose v2 can express,
    including additional contexts, build networking, SSH, attestations, and
    advanced build secret metadata.
@@ -440,6 +449,15 @@ Suggested Apple/container PR batches:
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs multiple service networks, network aliases, richer per-network options, and attach/connect semantics.</td>
+    </tr>
+    <tr>
+      <td>Compose service DNS aliases and replica lookups</td>
+      <td>2026-06-18 11:56:51 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases plus DNS lookup that can return multiple A/AAAA records for scaled service names. Apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
     </tr>
     <tr>
       <td>Fixed addresses and richer IPAM</td>
