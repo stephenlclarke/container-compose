@@ -237,6 +237,12 @@ cli-smoke: build
 	up_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --pull always --quiet-pull api)"; \
 	[[ "$$up_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
 	[[ "$$up_quiet_pull_output" == *"container run"* ]]; \
+	up_always_recreate_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --always-recreate-deps api)"; \
+	[[ "$$up_always_recreate_deps_output" == *"container run"* ]]; \
+	[[ "$$up_always_recreate_deps_output" == *"demo-db-1"* ]]; \
+	[[ "$$up_always_recreate_deps_output" == *"demo-api-1"* ]]; \
+	up_always_recreate_no_recreate_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --always-recreate-deps --no-recreate api 2>&1 || true)"; \
+	[[ "$$up_always_recreate_no_recreate_output" == *"invalid compose project: --always-recreate-deps and --no-recreate are incompatible"* ]]; \
 	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
 	[[ "$$up_no_deps_output" == *"container run"* ]]; \
 	[[ "$$up_no_deps_output" != *"demo-db-1"* ]]; \

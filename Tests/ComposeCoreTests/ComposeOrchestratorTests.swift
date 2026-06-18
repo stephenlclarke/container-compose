@@ -1130,22 +1130,30 @@ struct ComposeOrchestratorTests {
     func createValidatesIncompatibleOptionsAndUnsupportedScaleBeforeSideEffects() async throws {
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
-        for options in [
-            ComposeCreateOptions {
-                $0.build = true
-                $0.noBuild = true
-            },
-            ComposeCreateOptions {
-                $0.forceRecreate = true
-                $0.noRecreate = true
-            },
-        ] {
+        let incompatibleOptionCases: [(options: ComposeCreateOptions, message: String)] = [
+            (
+                ComposeCreateOptions {
+                    $0.build = true
+                    $0.noBuild = true
+                },
+                "--build and --no-build are incompatible"
+            ),
+            (
+                ComposeCreateOptions {
+                    $0.forceRecreate = true
+                    $0.noRecreate = true
+                },
+                "--force-recreate and --no-recreate are incompatible"
+            ),
+        ]
+
+        for testCase in incompatibleOptionCases {
             let runner = RecordingRunner()
             do {
-                try await ComposeOrchestrator(runner: runner).create(project: project, options: options)
+                try await ComposeOrchestrator(runner: runner).create(project: project, options: testCase.options)
                 Issue.record("Expected invalid create option combination")
             } catch let error as ComposeError {
-                #expect(error == .invalidProject(options.build ? "--build and --no-build are incompatible" : "--force-recreate and --no-recreate are incompatible"))
+                #expect(error == .invalidProject(testCase.message))
             }
             #expect(runner.commands.isEmpty)
         }
@@ -1225,22 +1233,34 @@ struct ComposeOrchestratorTests {
 
     @Test("up validates incompatible recreate options before side effects")
     func upValidatesIncompatibleRecreateOptionsBeforeSideEffects() async throws {
-        let runner = RecordingRunner()
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
-
-        do {
-            try await ComposeOrchestrator(runner: runner).up(
-                project: project,
-                options: ComposeUpOptions {
+        let incompatibleOptionCases: [(options: ComposeUpOptions, message: String)] = [
+            (
+                ComposeUpOptions {
                     $0.forceRecreate = true
                     $0.noRecreate = true
-                }
-            )
-            Issue.record("Expected invalid up option combination")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("--force-recreate and --no-recreate are incompatible"))
+                },
+                "--force-recreate and --no-recreate are incompatible"
+            ),
+            (
+                ComposeUpOptions {
+                    $0.alwaysRecreateDeps = true
+                    $0.noRecreate = true
+                },
+                "--always-recreate-deps and --no-recreate are incompatible"
+            ),
+        ]
+
+        for testCase in incompatibleOptionCases {
+            let runner = RecordingRunner()
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: testCase.options)
+                Issue.record("Expected invalid up option combination")
+            } catch let error as ComposeError {
+                #expect(error == .invalidProject(testCase.message))
+            }
+            #expect(runner.commands.isEmpty)
         }
-        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects unsupported scale before side effects")
@@ -1390,6 +1410,62 @@ struct ComposeOrchestratorTests {
         #expect(commands[0].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(!commands.contains { $0.contains("demo-db-1") })
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("up no-start always-recreate-deps recreates matching dependency containers")
+    func upNoStartAlwaysRecreateDepsRecreatesMatchingDependencyContainers() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+        let baselineRunner = RecordingRunner()
+        try await ComposeOrchestrator(runner: baselineRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+                $0.noStart = true
+            })
+
+        let dbCreate = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiCreate = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        let dbHash = try #require(composeConfigHash(in: dbCreate))
+        let apiHash = try #require(composeConfigHash(in: apiCreate))
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-db-1", status: "running", labels: [composeConfigHashLabel: dbHash]),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: apiHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.noStart = true
+            $0.alwaysRecreateDeps = true
+        })
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands[0].starts(with: ["container", "create", "--name", "demo-db-1"]))
+        #expect(!commands.contains { $0.contains("demo-api-1") })
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-db-1", force: false),
+        ])
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
     }
 
     @Test("up no-start quiet build passes quiet through create")
@@ -9228,6 +9304,61 @@ struct ComposeOrchestratorTests {
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-api-1", force: false),
         ])
+    }
+
+    @Test("up always-recreate-deps recreates matching dependency containers")
+    func upAlwaysRecreateDepsRecreatesMatchingDependencyContainers() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+        let baselineRunner = RecordingRunner()
+        try await ComposeOrchestrator(runner: baselineRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
+
+        let dbRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(baselineRunner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        let dbHash = try #require(composeConfigHash(in: dbRun))
+        let apiHash = try #require(composeConfigHash(in: apiRun))
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-db-1", status: "running", labels: [composeConfigHashLabel: dbHash]),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: apiHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.alwaysRecreateDeps = true
+        })
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--name", "demo-db-1"]))
+        #expect(commands[0].contains("--detach"))
+        #expect(!commands.contains { $0.contains("demo-api-1") })
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-db-1", force: false),
+        ])
+        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
     }
 
     @Test("dry run emits quoted commands")

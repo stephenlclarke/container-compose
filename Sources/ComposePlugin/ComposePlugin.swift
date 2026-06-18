@@ -227,6 +227,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var detach = false
     @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
     var forceRecreate = false
+    @Flag(name: .customLong("always-recreate-deps"), help: "Recreate dependent containers.")
+    var alwaysRecreateDeps = false
     @Flag(name: .customLong("no-recreate"), help: "Reuse existing containers.")
     var noRecreate = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
@@ -256,6 +258,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 $0.noBuild = noBuild
                 $0.detach = detach
                 $0.forceRecreate = forceRecreate
+                $0.alwaysRecreateDeps = alwaysRecreateDeps
                 $0.noRecreate = noRecreate
                 $0.removeOrphans = removeOrphans
                 $0.pullPolicy = pull

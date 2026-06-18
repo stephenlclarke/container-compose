@@ -150,6 +150,7 @@ public struct ComposeUpOptions {
     public var noBuild = false
     public var detach = false
     public var forceRecreate = false
+    public var alwaysRecreateDeps = false
     public var noRecreate = false
     public var removeOrphans = false
     public var pullPolicy: String?
@@ -510,12 +511,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validate(project: project)
         try validateUpOptions(up)
         if up.noStart {
-            try await create(project: project, options: createOptions(from: up))
+            try await create(project: project, options: createOptions(from: up), alwaysRecreateDeps: up.alwaysRecreateDeps)
             return
         }
         let services = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
+        let dependencyRecreateServices = try servicesToRecreateBecauseDependencies(
+            project: project,
+            selected: up.services,
+            noDeps: up.noDeps,
+            alwaysRecreateDeps: up.alwaysRecreateDeps,
+            services: services
+        )
         let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
@@ -545,7 +553,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 // policy.
                 if up.noRecreate {
                     options.emit("compose: reusing existing container \(name)")
-                } else if !up.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
+                } else if !up.forceRecreate,
+                          !dependencyRecreateServices.contains(service.name),
+                          existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
                 } else {
                     try await stopContainer(service: service, containerName: name)
@@ -591,12 +601,24 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Creates project resources and selected service containers without starting them.
-    public func create(project: ComposeProject, options create: ComposeCreateOptions) async throws {
+    public func create(project: ComposeProject, options createOptions: ComposeCreateOptions) async throws {
+        try await create(project: project, options: createOptions, alwaysRecreateDeps: false)
+    }
+
+    /// Creates project resources and selected service containers without starting them.
+    private func create(project: ComposeProject, options create: ComposeCreateOptions, alwaysRecreateDeps: Bool) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
         let services = try create.noDeps && !create.services.isEmpty
             ? selectedServices(project: project, selected: create.services)
             : orderedServices(project: project, selected: create.services)
+        let dependencyRecreateServices = try servicesToRecreateBecauseDependencies(
+            project: project,
+            selected: create.services,
+            noDeps: create.noDeps,
+            alwaysRecreateDeps: alwaysRecreateDeps,
+            services: services
+        )
         let validateDependencies = !(create.noDeps && !create.services.isEmpty)
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
@@ -618,7 +640,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                if !create.forceRecreate, existing.configHash == (try configHash(project: project, service: service)) {
+                if !create.forceRecreate,
+                   !dependencyRecreateServices.contains(service.name),
+                   existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
@@ -1417,6 +1441,22 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Returns services that are dependencies of explicitly selected services
+    /// and should be recreated even when their config hash still matches.
+    func servicesToRecreateBecauseDependencies(
+        project: ComposeProject,
+        selected: [String],
+        noDeps: Bool,
+        alwaysRecreateDeps: Bool,
+        services: [ComposeService]
+    ) throws -> Set<String> {
+        guard alwaysRecreateDeps, !noDeps, !selected.isEmpty else {
+            return []
+        }
+        let selectedNames = Set(try selectedServices(project: project, selected: selected).map(\.name))
+        return Set(services.map(\.name)).subtracting(selectedNames)
+    }
+
     /// Returns the deterministic container name for a service or one-off run.
     func containerName(project: ComposeProject, service: ComposeService, oneOff: Bool) -> String {
         if !oneOff, let containerName = service.containerName, !containerName.isEmpty {
@@ -1870,6 +1910,9 @@ private extension ComposeOrchestrator {
         }
         if options.forceRecreate, options.noRecreate {
             throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
+        }
+        if options.alwaysRecreateDeps, options.noRecreate {
+            throw ComposeError.invalidProject("--always-recreate-deps and --no-recreate are incompatible")
         }
         if !options.scales.isEmpty {
             throw ComposeError.unsupported("up --scale: service replica scaling is not implemented by container-compose yet")
