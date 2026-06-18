@@ -1822,7 +1822,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await resourceManager.createNetwork(ComposeNetworkCreateRequest(
+            try await resourceManager.createNetwork(ComposeNetworkCreateRequest(
                 name: runtimeName,
                 isInternal: network.isInternal == true,
                 ipv4Subnet: network.ipv4Subnet,

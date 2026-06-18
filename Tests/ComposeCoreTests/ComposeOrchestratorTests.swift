@@ -67,6 +67,19 @@ private func projectWithRuntimeResources(networkName: String, volumeName: String
     }
 }
 
+private func projectWithBackendNetwork(serviceName: String, image: String) -> ComposeProject {
+    composeProject(
+        name: "demo",
+        services: [
+            serviceName: composeService(name: serviceName, image: image) {
+                $0.networks = ["backend"]
+            },
+        ]
+    ) {
+        $0.networks = ["backend": ComposeNetwork(name: "backend")]
+    }
+}
+
 private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -598,6 +611,28 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up surfaces network create failures before starting containers")
+    func upSurfacesNetworkCreateFailuresBeforeStartingContainers() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager(
+            networkCreateError: ComposeError.invalidProject("network create failed")
+        )
+        let project = projectWithBackendNetwork(serviceName: "api", image: "example/api")
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected network create failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("network create failed"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+    }
+
     @Test("up maps network mode none to no network attachment")
     func upMapsNetworkModeNoneToNoNetworkAttachment() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -738,6 +773,28 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
         #expect(create.containsSequence(["--dns-option", "use-vc"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
+    }
+
+    @Test("create surfaces network create failures before creating containers")
+    func createSurfacesNetworkCreateFailuresBeforeCreatingContainers() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager(
+            networkCreateError: ComposeError.invalidProject("network create failed")
+        )
+        let project = projectWithBackendNetwork(serviceName: "api", image: "example/api")
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .create(project: project, options: ComposeCreateOptions())
+            Issue.record("Expected network create failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("network create failed"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
     }
 
     @Test("create maps network mode none to no network attachment")
@@ -6178,6 +6235,28 @@ struct ComposeOrchestratorTests {
         #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
 
+    @Test("run surfaces network create failures before one-off containers")
+    func runSurfacesNetworkCreateFailuresBeforeOneOffContainers() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager(
+            networkCreateError: ComposeError.invalidProject("network create failed")
+        )
+        let project = projectWithBackendNetwork(serviceName: "job", image: "alpine")
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected network create failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("network create failed"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+    }
+
     @Test("run maps network mode none to no network attachment")
     func runMapsNetworkModeNoneToNoNetworkAttachment() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -9134,10 +9213,12 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
 
 private actor RecordingContainerResourceManager: ContainerResourceManaging {
     private let volumes: [ComposeVolumeSummary]
+    private let networkCreateError: (any Error)?
     private var storage: [ContainerResourceRequest] = []
 
-    init(volumes: [ComposeVolumeSummary] = []) {
+    init(volumes: [ComposeVolumeSummary] = [], networkCreateError: (any Error)? = nil) {
         self.volumes = volumes
+        self.networkCreateError = networkCreateError
     }
 
     var requests: [ContainerResourceRequest] {
@@ -9146,6 +9227,9 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
 
     func createNetwork(_ request: ComposeNetworkCreateRequest) async throws {
         storage.append(.createNetwork(request))
+        if let networkCreateError {
+            throw networkCreateError
+        }
     }
 
     func deleteNetwork(id: String) async throws {
