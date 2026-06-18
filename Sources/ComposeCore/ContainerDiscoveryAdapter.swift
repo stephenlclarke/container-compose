@@ -26,6 +26,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     public var imageReference: String
     public var imageDigest: String?
     public var platform: String
+    public var publishedPorts: [ComposeContainerPublishedPort]
 
     public init(
         id: String,
@@ -33,7 +34,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         labels: [String: String] = [:],
         imageReference: String = "",
         imageDigest: String? = nil,
-        platform: String = ""
+        platform: String = "",
+        publishedPorts: [ComposeContainerPublishedPort] = []
     ) {
         self.id = id
         self.status = status
@@ -41,6 +43,30 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         self.imageReference = imageReference
         self.imageDigest = imageDigest
         self.platform = platform
+        self.publishedPorts = publishedPorts
+    }
+}
+
+/// Stable published-port data projected from Apple's container snapshot.
+public struct ComposeContainerPublishedPort: Sendable, Equatable, Codable {
+    public var hostAddress: String
+    public var hostPort: UInt16
+    public var containerPort: UInt16
+    public var protocolName: String
+    public var count: UInt16
+
+    public init(
+        hostAddress: String,
+        hostPort: UInt16,
+        containerPort: UInt16,
+        protocolName: String,
+        count: UInt16 = 1
+    ) {
+        self.hostAddress = hostAddress
+        self.hostPort = hostPort
+        self.containerPort = containerPort
+        self.protocolName = protocolName
+        self.count = count
     }
 }
 
@@ -125,7 +151,16 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
             labels: snapshot.configuration.labels,
             imageReference: snapshot.configuration.image.reference,
             imageDigest: snapshot.configuration.image.digest,
-            platform: snapshot.platform.description
+            platform: snapshot.platform.description,
+            publishedPorts: snapshot.configuration.publishedPorts.map {
+                ComposeContainerPublishedPort(
+                    hostAddress: String(describing: $0.hostAddress),
+                    hostPort: $0.hostPort,
+                    containerPort: $0.containerPort,
+                    protocolName: $0.proto.rawValue,
+                    count: $0.count
+                )
+            }
         )
     }
 }

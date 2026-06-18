@@ -231,6 +231,14 @@ private extension ComposeOrchestrator {
         self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.discoveryManager = discoveryManager })
     }
 
+    convenience init(options: ComposeExecutionOptions, discoveryManager: ContainerDiscoveryManaging) {
+        self.init(options: options, dependencies: orchestratorDependencies { $0.discoveryManager = discoveryManager })
+    }
+
+    convenience init(discoveryManager: ContainerDiscoveryManaging) {
+        self.init(dependencies: orchestratorDependencies { $0.discoveryManager = discoveryManager })
+    }
+
     convenience init(
         runner: CommandRunning,
         options: ComposeExecutionOptions,
@@ -4322,7 +4330,16 @@ struct ComposeOrchestratorTests {
                 ],
                 imageReference: "example/api:latest",
                 imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                platform: "linux/arm64"
+                platform: "linux/arm64",
+                publishedPorts: [
+                    try PublishPort(
+                        hostAddress: try IPAddress("127.0.0.1"),
+                        hostPort: 8080,
+                        containerPort: 80,
+                        proto: .tcp,
+                        count: 2
+                    ),
+                ]
             ),
             containerSnapshot(
                 id: "demo-worker-1",
@@ -4358,7 +4375,10 @@ struct ComposeOrchestratorTests {
             ],
             imageReference: "example/api:latest",
             imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            platform: "linux/arm64"
+            platform: "linux/arm64",
+            publishedPorts: [
+                ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 2),
+            ]
         ))
         #expect(all.map(\.status) == ["running", "stopped"])
         #expect(worker?.id == "demo-worker-1")
@@ -6222,11 +6242,23 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("port prints static published bindings")
-    func portPrintsStaticPublishedBindings() throws {
+    @Test("port prints runtime published bindings")
+    func portPrintsRuntimePublishedBindings() async throws {
         let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                publishedPorts: [
+                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
+                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8443, containerPort: 443, protocolName: "tcp"),
+                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 5353, containerPort: 53, protocolName: "udp"),
+                ]
+            ),
+        ])
         let orchestrator = ComposeOrchestrator(
-            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
         )
         let project = ComposeProject(
             name: "demo",
@@ -6241,19 +6273,20 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
-        try orchestrator.port(project: project, serviceName: "api", privatePort: "443", protocolName: "tcp", index: 1)
-        try orchestrator.port(project: project, serviceName: "api", privatePort: "53/udp", protocolName: "udp", index: 1)
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "443", protocolName: "tcp", index: 1)
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "53/udp", protocolName: "udp", index: 1)
 
         #expect(emitted.messages == [
             "0.0.0.0:8080",
             "127.0.0.1:8443",
             "0.0.0.0:5353",
         ])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
     }
 
     @Test("port rejects dynamic bindings that need explicit host ports")
-    func portRejectsDynamicBindingsThatNeedExplicitHostPorts() throws {
+    func portRejectsDynamicBindingsThatNeedExplicitHostPorts() async throws {
         let orchestrator = ComposeOrchestrator()
         let project = ComposeProject(
             name: "demo",
@@ -6265,7 +6298,7 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
             Issue.record("Expected unsupported dynamic port lookup")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
@@ -6274,29 +6307,22 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("port prefers static bindings when dynamic bindings also exist")
-    func portPrefersStaticBindingsWhenDynamicBindingsAlsoExist() throws {
+    @Test("port resolves explicit ranges from runtime published ports")
+    func portResolvesExplicitRangesFromRuntimePublishedPorts() async throws {
         let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                publishedPorts: [
+                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 3),
+                ]
+            ),
+        ])
         let orchestrator = ComposeOrchestrator(
-            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
         )
-        let project = ComposeProject(
-            name: "demo",
-            services: [
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.ports = ["80", "8080:80"]
-                },
-            ]
-        )
-
-        try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
-
-        #expect(emitted.messages == ["0.0.0.0:8080"])
-    }
-
-    @Test("port rejects explicit ranges that need runtime inspect output")
-    func portRejectsExplicitRangesThatNeedRuntimeInspectOutput() throws {
-        let orchestrator = ComposeOrchestrator()
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -6306,19 +6332,49 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
-            Issue.record("Expected unsupported explicit port range lookup")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses port range '8080-8082:80-82'; port range lookup needs richer inspect output"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "82", protocolName: "tcp", index: 1)
+
+        #expect(emitted.messages == ["0.0.0.0:8080", "0.0.0.0:8081", "0.0.0.0:8082"])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
+    }
+
+    @Test("port dry run expands explicit ranges without runtime discovery")
+    func portDryRunExpandsExplicitRangesWithoutRuntimeDiscovery() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["127.0.0.1:8080-8082:80-82"]
+                },
+            ]
+        )
+
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
+
+        #expect(emitted.messages == ["127.0.0.1:8081"])
+        #expect(await discoveryManager.getRequests.isEmpty)
     }
 
     @Test("port validates lookup options")
-    func portValidatesLookupOptions() throws {
-        let orchestrator = ComposeOrchestrator()
+    func portValidatesLookupOptions() async throws {
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                publishedPorts: [
+                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(discoveryManager: discoveryManager)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -6329,7 +6385,7 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
+            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
             Issue.record("Expected unsupported index error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("port --index 2: replica-aware published port lookup needs richer inspect output"))
@@ -6338,7 +6394,7 @@ struct ComposeOrchestratorTests {
         }
 
         do {
-            try orchestrator.port(project: project, serviceName: "api", privatePort: "80/udp", protocolName: "tcp", index: 1)
+            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80/udp", protocolName: "tcp", index: 1)
             Issue.record("Expected protocol conflict")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("port protocol 'udp' conflicts with --protocol tcp"))
@@ -6347,7 +6403,7 @@ struct ComposeOrchestratorTests {
         }
 
         do {
-            try orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
+            try await orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
             Issue.record("Expected missing port error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("service 'api' does not publish target port 81/tcp"))
@@ -8928,7 +8984,8 @@ private func containerSnapshot(
     labels: [String: String] = [:],
     imageReference: String,
     imageDigest: String,
-    platform: String
+    platform: String,
+    publishedPorts: [PublishPort] = []
 ) throws -> ContainerSnapshot {
     var configuration = ContainerConfiguration(
         id: id,
@@ -8944,6 +9001,7 @@ private func containerSnapshot(
     )
     configuration.labels = labels
     configuration.platform = try ociPlatform(platform)
+    configuration.publishedPorts = publishedPorts
     return ContainerSnapshot(configuration: configuration, status: status, networks: [])
 }
 

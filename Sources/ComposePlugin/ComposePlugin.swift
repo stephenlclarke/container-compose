@@ -702,10 +702,10 @@ struct Port: AsyncParsableCommand, ComposeProjectCommand {
     var service: String
     @Argument(help: "Private container port.")
     var privatePort: String
-    /// Prints the host address and published port for a static service binding.
+    /// Prints the host address and published port for a service binding.
     func run() async throws {
         let loadedProject = try await project()
-        try orchestrator().port(
+        try await orchestrator().port(
             project: loadedProject,
             serviceName: service,
             privatePort: privatePort,

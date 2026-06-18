@@ -1154,14 +1154,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await exporter.exportContainer(id: containerID, output: export.output)
     }
 
-    /// Prints the public address for a statically published service port.
+    /// Prints the public address for a published service port from runtime state.
     public func port(
         project: ComposeProject,
         serviceName: String,
         privatePort: String,
         protocolName: String,
         index: Int
-    ) throws {
+    ) async throws {
         guard index == 1 else {
             throw ComposeError.unsupported("port --index \(index): replica-aware published port lookup needs richer inspect output")
         }
@@ -1170,17 +1170,25 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         let requested = try parsePortLookup(privatePort: privatePort, protocolName: protocolName)
-        let mappings = try (service.ports ?? []).map { try parsePublishedPort($0, serviceName: service.name) }
+        try validatePublishedPorts(service.ports ?? [], serviceName: service.name)
+        if options.dryRun {
+            try emitDryRunPort(service: service, requested: requested)
+            return
+        }
 
-        guard let mapping = mappings.first(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published != nil }),
-              let published = mapping.published
-        else {
-            if mappings.contains(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published == nil }) {
-                throw dynamicPortUnsupported(serviceName: service.name, target: requested.target, protocolName: requested.protocolName)
-            }
+        let containerID = containerName(project: project, service: service, oneOff: false)
+        guard let container = try await discoveryManager.getContainer(id: containerID) else {
+            throw ComposeError.invalidProject("service '\(service.name)' container '\(containerID)' does not exist")
+        }
+
+        guard let mapping = publishedPort(
+            in: container.publishedPorts,
+            target: requested.target,
+            protocolName: requested.protocolName
+        ) else {
             throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
         }
-        options.emit("\(mapping.hostIP ?? "0.0.0.0"):\(published)")
+        options.emit("\(mapping.hostAddress):\(mapping.hostPort)")
     }
 
     /// Throws a consistently formatted unsupported-feature error.
@@ -2401,7 +2409,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("port requires a private container port")
         }
         guard !target.contains("-") else {
-            throw ComposeError.unsupported("port ranges need richer inspect output")
+            throw ComposeError.invalidProject("port requires a single private container port")
         }
         if parts.count == 2 {
             let requestedProtocol = try normalizedPortProtocol(parts[1])
@@ -2412,36 +2420,103 @@ private extension ComposeOrchestrator {
         return (target, normalizedProtocol)
     }
 
-    /// Parses one normalized Compose port mapping.
-    func parsePublishedPort(_ value: String, serviceName: String) throws -> ComposePublishedPort {
+    /// Finds the host port mapped to the requested single container port.
+    func publishedPort(
+        in ports: [ComposeContainerPublishedPort],
+        target: String,
+        protocolName: String
+    ) -> ComposeContainerPublishedPort? {
+        guard let targetPort = UInt16(target) else {
+            return nil
+        }
+        for port in ports where port.protocolName == protocolName {
+            let lowerBound = Int(port.containerPort)
+            let upperBound = lowerBound + Int(port.count) - 1
+            guard Int(targetPort) >= lowerBound, Int(targetPort) <= upperBound else {
+                continue
+            }
+            let offset = Int(targetPort) - Int(port.containerPort)
+            guard let hostPort = UInt16(exactly: Int(port.hostPort) + offset) else {
+                return nil
+            }
+            return ComposeContainerPublishedPort(
+                hostAddress: port.hostAddress,
+                hostPort: hostPort,
+                containerPort: targetPort,
+                protocolName: port.protocolName,
+                count: 1
+            )
+        }
+        return nil
+    }
+
+    /// Emits a dry-run `port` answer from normalized Compose metadata.
+    func emitDryRunPort(
+        service: ComposeService,
+        requested: (target: String, protocolName: String)
+    ) throws {
+        let ports = try (service.ports ?? []).flatMap {
+            try dryRunPublishedPorts(from: $0, serviceName: service.name)
+        }
+        guard let mapping = publishedPort(in: ports, target: requested.target, protocolName: requested.protocolName) else {
+            throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
+        }
+        options.emit("\(mapping.hostAddress):\(mapping.hostPort)")
+    }
+
+    /// Expands one explicit Compose port mapping for dry-run `port` previews.
+    func dryRunPublishedPorts(from value: String, serviceName: String) throws -> [ComposeContainerPublishedPort] {
         let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
             throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
         }
         let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
         let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-
-        switch parts.count {
-        case 1:
-            guard !parts[0].contains("-") else {
-                throw dynamicPortUnsupported(serviceName: serviceName, target: parts[0], protocolName: protocolName)
-            }
-            return ComposePublishedPort(hostIP: nil, published: nil, target: parts[0], protocolName: protocolName)
-        case 2...:
-            let target = parts[parts.count - 1]
-            let published = parts[parts.count - 2]
-            let hostParts = parts.dropLast(2)
-            let hostIP = hostParts.isEmpty ? nil : hostParts.joined(separator: ":")
-            guard !target.isEmpty, !published.isEmpty else {
-                throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
-            }
-            guard !target.contains("-"), !published.contains("-") else {
-                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
-            }
-            return ComposePublishedPort(hostIP: hostIP?.isEmpty == true ? nil : hostIP, published: published, target: target, protocolName: protocolName)
-        default:
-            throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
+        guard parts.count >= 2 else {
+            throw dynamicPortUnsupported(serviceName: serviceName, target: rawBinding, protocolName: protocolName)
         }
+
+        let target = parts[parts.count - 1]
+        let published = parts[parts.count - 2]
+        let hostParts = parts.dropLast(2)
+        let hostAddress = hostParts.isEmpty ? "0.0.0.0" : hostParts.joined(separator: ":")
+        let hostRange = try portRange(published, field: "host", mapping: value, serviceName: serviceName)
+        let targetRange = try portRange(target, field: "container", mapping: value, serviceName: serviceName)
+        guard hostRange.count == targetRange.count else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has mismatched port ranges '\(value)'")
+        }
+
+        return (0..<hostRange.count).map { offset in
+            ComposeContainerPublishedPort(
+                hostAddress: hostAddress,
+                hostPort: UInt16(hostRange.start + offset),
+                containerPort: UInt16(targetRange.start + offset),
+                protocolName: protocolName
+            )
+        }
+    }
+
+    /// Parses a single port or inclusive port range in a Compose mapping.
+    func portRange(
+        _ value: String,
+        field: String,
+        mapping: String,
+        serviceName: String
+    ) throws -> (start: Int, count: Int) {
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard [1, 2].contains(parts.count),
+              let start = parts.first.flatMap({ UInt16($0) }),
+              start > 1
+        else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has invalid \(field) port range '\(mapping)'")
+        }
+        if parts.count == 1 {
+            return (Int(start), 1)
+        }
+        guard let end = UInt16(parts[1]), end >= start else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has invalid \(field) port range '\(mapping)'")
+        }
+        return (Int(start), Int(end - start + 1))
     }
 
     /// Normalizes Docker Compose port protocols accepted by `compose port`.
@@ -2693,14 +2768,6 @@ private extension ComposeOrchestrator {
 /// container can be reused.
 private struct ExistingContainer {
     var configHash: String?
-}
-
-/// Parsed representation of a Compose port mapping for static `port` lookups.
-private struct ComposePublishedPort {
-    var hostIP: String?
-    var published: String?
-    var target: String
-    var protocolName: String
 }
 
 private extension ComposeNetworkOptions {
