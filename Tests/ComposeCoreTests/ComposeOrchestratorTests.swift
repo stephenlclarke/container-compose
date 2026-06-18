@@ -1368,6 +1368,39 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
+    @Test("up no-start quiet build passes quiet through create")
+    func upNoStartQuietBuildPassesQuietThroughCreate() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.build = true
+                $0.noStart = true
+                $0.quietBuild = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "build"]))
+        #expect(commands[0].contains("--quiet"))
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-worker-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-worker-1"])
+    }
+
     @Test("up uses external resource names without creating project resources")
     func upUsesExternalResourceNamesWithoutCreatingProjectResources() async throws {
         let runner = RecordingRunner(responses: [
@@ -1559,6 +1592,37 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
     }
 
+    @Test("up quiet-build suppresses explicit build output")
+    func upQuietBuildSuppressesExplicitBuildOutput() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.build = true
+                $0.quietBuild = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].starts(with: ["container", "build"]))
+        #expect(commands[0].contains("--quiet"))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
     @Test("up no-build skips auto build for build-only service")
     func upNoBuildSkipsAutoBuildForBuildOnlyService() async throws {
         let runner = RecordingRunner(responses: [
@@ -1586,6 +1650,36 @@ struct ComposeOrchestratorTests {
         #expect(!commands.contains { $0.containsSequence(["container", "build"]) })
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-worker-1"]))
         #expect(commands[0].last == "demo_worker:latest")
+        #expect(await discoveryManager.getRequests == ["demo-worker-1"])
+    }
+
+    @Test("up quiet-build suppresses auto build-only output")
+    func upQuietBuildSuppressesAutoBuildOnlyOutput() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(context: "worker")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.quietBuild = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].starts(with: ["container", "build"]))
+        #expect(commands[0].contains("--quiet"))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-worker-1"]))
         #expect(await discoveryManager.getRequests == ["demo-worker-1"])
     }
 

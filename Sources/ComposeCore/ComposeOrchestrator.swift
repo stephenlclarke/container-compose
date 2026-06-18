@@ -156,6 +156,7 @@ public struct ComposeUpOptions {
     public var scales: [String] = []
     public var noDeps = false
     public var noStart = false
+    public var quietBuild = false
 
     public init() {
         // Stored property defaults represent Docker Compose's default up behavior.
@@ -177,6 +178,7 @@ public struct ComposeCreateOptions {
     public var pullPolicy: String?
     public var scales: [String] = []
     public var noDeps = false
+    public var quietBuild = false
 
     public init() {
         // Stored property defaults represent Docker Compose's default create behavior.
@@ -522,14 +524,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await applyPullPolicy(up.pullPolicy, project: project, services: services)
 
         if up.build {
-            try await build(project: project, services: services.map(\.name), noCache: false)
+            try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
         }
 
         let attachedForegroundServiceIndex = up.detach ? nil : services.indices.last
         var changedServices = Set<String>()
         for (index, service) in services.enumerated() {
             if shouldBuildServiceForUp(up, service: service) {
-                try await build(project: project, services: [service.name], noCache: false)
+                try await build(project: project, services: [service.name], noCache: false, quiet: up.quietBuild)
             }
 
             let name = containerName(project: project, service: service, oneOff: false)
@@ -604,7 +606,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         for service in services {
             if shouldBuildServiceForCreate(create, service: service) {
-                try await build(project: project, services: [service.name], noCache: false)
+                try await build(project: project, services: [service.name], noCache: false, quiet: create.quietBuild)
             }
 
             let name = containerName(project: project, service: service, oneOff: false)
@@ -651,6 +653,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             $0.pullPolicy = up.pullPolicy
             $0.scales = up.scales
             $0.noDeps = up.noDeps
+            $0.quietBuild = up.quietBuild
         }
     }
 
@@ -695,12 +698,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Builds images for services that declare a build section.
-    public func build(project: ComposeProject, services selected: [String], noCache: Bool) async throws {
+    public func build(project: ComposeProject, services selected: [String], noCache: Bool, quiet: Bool = false) async throws {
         try await build(
             project: project,
             options: ComposeBuildOptions {
                 $0.services = selected
                 $0.noCache = noCache
+                $0.quiet = quiet
             }
         )
     }
@@ -2152,7 +2156,7 @@ private extension ComposeOrchestrator {
             guard !create.noBuild else {
                 return
             }
-            try await build(project: project, services: services.map(\.name), noCache: false)
+            try await build(project: project, services: services.map(\.name), noCache: false, quiet: create.quietBuild)
             return
         }
 
@@ -2161,7 +2165,7 @@ private extension ComposeOrchestrator {
         guard create.build, !create.noBuild else {
             return
         }
-        try await build(project: project, services: services.map(\.name), noCache: false)
+        try await build(project: project, services: services.map(\.name), noCache: false, quiet: create.quietBuild)
     }
 
     /// Returns whether `create` should auto-build a service before container creation.

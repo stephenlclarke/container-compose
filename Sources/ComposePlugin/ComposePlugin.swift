@@ -218,6 +218,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .shortAndLong, help: "Build images before starting services.")
     var build = false
+    @Flag(name: .customLong("quiet-build"), help: "Suppress build output.")
+    var quietBuild = false
     @Flag(name: .customLong("no-build"), help: "Do not build images before starting services.")
     var noBuild = false
     @Flag(name: .shortAndLong, help: "Run containers in the background.")
@@ -247,6 +249,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeUpOptions {
                 $0.services = services
                 $0.build = build
+                $0.quietBuild = quietBuild
                 $0.noBuild = noBuild
                 $0.detach = detach
                 $0.forceRecreate = forceRecreate

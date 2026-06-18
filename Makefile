@@ -250,6 +250,10 @@ cli-smoke: build
 	[[ "$$up_no_build_output" == *"container run"* ]]; \
 	[[ "$$up_no_build_output" != *"container build"* ]]; \
 	[[ "$$up_no_build_output" == *"demo_worker:latest"* ]]; \
+	up_quiet_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --quiet-build worker)"; \
+	[[ "$$up_quiet_build_output" == *"container build"* ]]; \
+	[[ "$$up_quiet_build_output" == *"--quiet"* ]]; \
+	[[ "$$up_quiet_build_output" == *"container run"* ]]; \
 	up_build_no_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --build --no-build worker 2>&1 || true)"; \
 	[[ "$$up_build_no_build_output" == *"invalid compose project: --build and --no-build are incompatible"* ]]; \
 	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
