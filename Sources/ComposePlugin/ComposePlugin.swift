@@ -464,9 +464,9 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var timestamps = false
     @Option(name: .customLong("index"), help: "Target one service container index instead of all matching replicas.")
     var index: Int?
-    @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Accepted because container-compose log output is already monochrome.")
+    @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Current container-compose log output is monochrome.")
     var noColor = false
-    @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes. Accepted because container-compose log output is already prefix-free.")
+    @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes.")
     var noLogPrefix = false
     @Argument(help: "Optional services to show.")
     var services: [String] = []
@@ -482,7 +482,8 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
             index: index,
             since: since,
             until: until,
-            timestamps: timestamps
+            timestamps: timestamps,
+            noLogPrefix: noLogPrefix
         )
     }
 }

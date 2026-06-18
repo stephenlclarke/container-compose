@@ -1462,7 +1462,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         index: Int? = nil,
         since: String? = nil,
         until: String? = nil,
-        timestamps: Bool = false
+        timestamps: Bool = false,
+        noLogPrefix: Bool = false
     ) async throws {
         let services = try selectedServices(project: project, selected: selected)
         let runtimeTail = try runtimeLogTail(tail)
@@ -1489,7 +1490,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 tail: runtimeTail,
                 since: runtimeSince,
                 until: runtimeUntil,
-                timestamps: timestamps
+                timestamps: timestamps,
+                noLogPrefix: noLogPrefix
             )
             return
         }
@@ -1500,7 +1502,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 tail: runtimeTail,
                 since: runtimeSince,
                 until: runtimeUntil,
-                timestamps: timestamps
+                timestamps: timestamps,
+                noLogPrefix: noLogPrefix
             )
         }
     }
@@ -1530,13 +1533,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         tail: Int?,
         since: Date?,
         until: Date?,
-        timestamps: Bool
+        timestamps: Bool,
+        noLogPrefix: Bool
     ) async throws {
-        let emit = options.emit
         let logManager = logManager
         try await withThrowingTaskGroup(of: Void.self) { group in
             for target in targets {
                 let containerID = target.name
+                let emit = logEmitter(for: target, noLogPrefix: noLogPrefix)
                 group.addTask { [containerID, emit, logManager, since, tail, timestamps, until] in
                     try await logManager.logs(
                         id: containerID,
@@ -1560,7 +1564,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         tail: Int?,
         since: Date?,
         until: Date?,
-        timestamps: Bool
+        timestamps: Bool,
+        noLogPrefix: Bool
     ) async throws {
         try await logManager.logs(
             id: target.name,
@@ -1569,8 +1574,35 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             since: since,
             until: until,
             timestamps: timestamps,
-            emit: options.emit
+            emit: logEmitter(for: target, noLogPrefix: noLogPrefix)
         )
+    }
+
+    /// Returns the user-facing log emitter for a selected service target.
+    private func logEmitter(for target: ServiceContainerTarget, noLogPrefix: Bool) -> @Sendable (String) -> Void {
+        let emit = options.emit
+        guard !noLogPrefix else {
+            return emit
+        }
+        let prefix = logPrefix(for: target)
+        return { output in
+            let prefixed = output
+                .components(separatedBy: .newlines)
+                .map { "\(prefix) | \($0)" }
+                .joined(separator: "\n")
+            emit(prefixed)
+        }
+    }
+
+    /// Returns the Compose log prefix for a selected service target.
+    private func logPrefix(for target: ServiceContainerTarget) -> String {
+        if let containerName = target.service.containerName, !containerName.isEmpty {
+            return containerName
+        }
+        guard target.index != Int.max else {
+            return target.name
+        }
+        return "\(target.service.name)-\(target.index)"
     }
 
     /// Runs `compose watch` by applying initial syncs and polling watched paths

@@ -63,7 +63,7 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
     <tr>
       <td>Compose log presentation</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><code>--no-color</code> and <code>--no-log-prefix</code> are accepted, but default Docker Compose service/index prefixes and colors are not implemented.</td>
+      <td>Default output prefixes each line with service/index identity, and <code>--no-log-prefix</code> emits raw output. Color remains intentionally monochrome.</td>
     </tr>
     <tr>
       <td>Timestamp and time-window filtering</td>
@@ -186,9 +186,10 @@ Docker Compose surface: default prefixed output, `--no-log-prefix`, and `--no-co
 
 Current `container-compose` behavior:
 
-- Accepts `--no-color`.
-- Accepts `--no-log-prefix`.
-- Emits raw log lines without service prefixes or color in all modes.
+- Prefixes default log output as <code>service-index | line</code>.
+- Prefixes each line of a multiline emitted log chunk.
+- Supports `--no-log-prefix` to emit raw log output.
+- Accepts `--no-color`; current output remains monochrome in all modes.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
@@ -197,16 +198,17 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Missing behavior:
 
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Default output should prefix each line with the Compose service/container identity.
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Prefixes should distinguish scaled replicas in the same way Docker Compose users expect.
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> `--no-log-prefix` should suppress an otherwise-present prefix instead of being an accepted no-op.
 - <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Color should be enabled only when appropriate for terminal output and disabled by `--no-color`, `--ansi never`, or non-interactive output.
 
-Implementation direction:
+Completed implementation:
 
-- Add a `ComposeLogFormatter` that receives `(service, index, line)` records and applies prefix/color policy.
-- Keep raw mode available for `--no-log-prefix`.
-- Add tests for prefixed default output, `--no-log-prefix`, `--no-color`, and scaled replica prefixes.
+- `ComposeOrchestrator.logs` wraps the per-target emitter with a service/index prefix policy before handing it to `ContainerLogManaging`.
+- `--no-log-prefix` bypasses that wrapper and preserves raw log output.
+- Tests cover prefixed output, multiline prefixing, raw output, and scaled replica prefixes.
+
+Remaining plugin work:
+
+- Add color policy that honors `--no-color`, `--ansi never`, and non-interactive output.
 
 ### L6. Timestamps, `--since`, and `--until`
 

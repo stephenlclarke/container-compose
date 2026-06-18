@@ -8727,7 +8727,52 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests == [
             ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
         ])
+        #expect(emitted.messages == ["api-1 | hello"])
+    }
+
+    @Test("logs no log prefix emits raw output")
+    func logsNoLogPrefixEmitsRawOutput() async throws {
+        let runner = RecordingRunner()
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["hello"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["api"], follow: false, tail: nil, noLogPrefix: true)
+
+        #expect(runner.commands.isEmpty)
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
+        ])
         #expect(emitted.messages == ["hello"])
+    }
+
+    @Test("logs prefixes every emitted line")
+    func logsPrefixesEveryEmittedLine() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["one\ntwo"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["api"], follow: false, tail: nil)
+
+        #expect(emitted.messages == ["api-1 | one\napi-1 | two"])
     }
 
     @Test("logs targets selected container index")
@@ -8764,7 +8809,7 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests == [
             ContainerLogRequest(id: "demo-api-2", tail: nil, follow: false),
         ])
-        #expect(emitted.messages == ["replica-log"])
+        #expect(emitted.messages == ["api-2 | replica-log"])
     }
 
     @Test("logs targets all existing replicas for selected services by default")
@@ -9007,7 +9052,7 @@ struct ComposeOrchestratorTests {
                 until: date("2026-06-18T11:30:00Z")
             ),
         ])
-        #expect(emitted.messages == ["filtered-log"])
+        #expect(emitted.messages == ["api-1 | filtered-log"])
     }
 
     @Test("logs rejects timestamps until apple container exposes timestamped records")
