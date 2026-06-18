@@ -1846,7 +1846,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await resourceManager.createVolume(name: runtimeName, labels: resourceLabels(project: project, labels: volume.labels))
+            try await resourceManager.createVolume(name: runtimeName, labels: resourceLabels(project: project, labels: volume.labels))
         }
     }
 
