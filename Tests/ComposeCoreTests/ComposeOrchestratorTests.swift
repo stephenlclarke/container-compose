@@ -22,6 +22,14 @@ import ContainerizationOCI
 import Foundation
 import Testing
 
+private func date(_ value: String) -> Date {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = value.contains(".")
+        ? [.withInternetDateTime, .withFractionalSeconds]
+        : [.withInternetDateTime]
+    return formatter.date(from: value)!
+}
+
 private func composeService(
     name: String,
     image: String? = nil,
@@ -7435,8 +7443,8 @@ struct ComposeOrchestratorTests {
         #expect(await client.getRequests == ["demo-api-1"])
     }
 
-    @Test("log manager reads tailed logs from direct API handles")
-    func logManagerReadsTailedLogsFromDirectAPIHandles() async throws {
+    @Test("log manager passes tail to direct API for static logs")
+    func logManagerPassesTailToDirectAPIForStaticLogs() async throws {
         let emitted = MessageRecorder()
         let client = RecordingContainerLogAPIClient(fileHandles: [
             try temporaryLogFileHandle(contents: "one\ntwo\nthree\n"),
@@ -7445,8 +7453,38 @@ struct ComposeOrchestratorTests {
 
         try await manager.logs(id: "demo-api-1", tail: 2, follow: false, emit: { emitted.append($0) })
 
-        #expect(emitted.messages == ["two\nthree"])
+        #expect(emitted.messages == ["one\ntwo\nthree"])
         #expect(await client.requests == ["demo-api-1"])
+        #expect(await client.options == [
+            ContainerLogOptions(tail: 2)
+        ])
+    }
+
+    @Test("log manager passes static filters to direct API")
+    func logManagerPassesStaticFiltersToDirectAPI() async throws {
+        let emitted = MessageRecorder()
+        let since = Date(timeIntervalSince1970: 100)
+        let until = Date(timeIntervalSince1970: 200)
+        let client = RecordingContainerLogAPIClient(fileHandles: [
+            try temporaryLogFileHandle(contents: "filtered\n"),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(
+            id: "demo-api-1",
+            tail: 5,
+            follow: false,
+            since: since,
+            until: until,
+            timestamps: false,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == ["filtered"])
+        #expect(await client.requests == ["demo-api-1"])
+        #expect(await client.options == [
+            ContainerLogOptions(tail: 5, since: since, until: until)
+        ])
     }
 
     @Test("log manager reads all logs from direct API handles")
@@ -7514,6 +7552,9 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == ["live"])
         #expect(await client.requests == ["demo-api-1"])
+        #expect(await client.options == [
+            ContainerLogOptions()
+        ])
     }
 
     @Test("log manager rejects invalid UTF-8 while following direct API logs")
@@ -7543,14 +7584,16 @@ struct ComposeOrchestratorTests {
     func logAPIClientForwardsConfiguredOperation() async throws {
         let fileHandle = try temporaryLogFileHandle(contents: "hello\n")
         let recorder = RecordingContainerLogAPIClient(fileHandles: [fileHandle])
-        let client = ContainerLogAPIClient { id in
-            try await recorder.logFileHandles(id: id)
+        let options = ContainerLogOptions(tail: 1)
+        let client = ContainerLogAPIClient { id, options in
+            try await recorder.logFileHandles(id: id, options: options)
         }
 
-        let handles = try await client.logFileHandles(id: "demo-api-1")
+        let handles = try await client.logFileHandles(id: "demo-api-1", options: options)
 
         #expect(handles.count == 1)
         #expect(await recorder.requests == ["demo-api-1"])
+        #expect(await recorder.options == [options])
     }
 
     @Test("stats manager renders static table from direct API stats")
@@ -8722,6 +8765,126 @@ struct ComposeOrchestratorTests {
             ContainerLogRequest(id: "demo-api-2", tail: nil, follow: false),
         ])
         #expect(emitted.messages == ["replica-log"])
+    }
+
+    @Test("logs passes timestamp filters to log manager")
+    func logsPassesTimestampFiltersToLogManager() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["filtered-log"])
+        let now = date("2026-06-18T12:00:00Z")
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(
+                dryRun: false,
+                runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
+                    currentDate: { now },
+                    emit: { emitted.append($0) }
+                )
+            ),
+            logManager: logManager
+        ).logs(
+            project: project,
+            services: ["api"],
+            follow: false,
+            tail: "10",
+            since: "2026-06-18T10:00:00Z",
+            until: "30m"
+        )
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(
+                id: "demo-api-1",
+                tail: 10,
+                follow: false,
+                since: date("2026-06-18T10:00:00Z"),
+                until: date("2026-06-18T11:30:00Z")
+            ),
+        ])
+        #expect(emitted.messages == ["filtered-log"])
+    }
+
+    @Test("logs rejects timestamps until apple container exposes timestamped records")
+    func logsRejectsTimestampsUntilRuntimeSupportExists() async throws {
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: RecordingRunner(),
+                options: ComposeExecutionOptions(),
+                logManager: logManager
+            ).logs(project: project, services: ["api"], follow: false, tail: nil, timestamps: true)
+            Issue.record("Expected timestamps unsupported error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("logs --timestamps: apple/container does not expose timestamped log records"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("logs rejects filtered follow until apple container exposes streaming filters")
+    func logsRejectsFilteredFollowUntilRuntimeSupportExists() async throws {
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: RecordingRunner(),
+                options: ComposeExecutionOptions(),
+                logManager: logManager
+            ).logs(project: project, services: ["api"], follow: true, tail: nil, since: "2026-06-18T10:00:00Z")
+            Issue.record("Expected filtered follow unsupported error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("logs --follow with --since/--until: apple/container does not expose filtered follow streams"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("logs rejects invalid time filters")
+    func logsRejectsInvalidTimeFilters() async throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: RecordingRunner()).logs(
+                project: project,
+                services: ["api"],
+                follow: false,
+                tail: nil,
+                since: "soon"
+            )
+            Issue.record("Expected invalid time filter error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("logs time filters must be RFC 3339 timestamps or relative durations"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 
     @Test("logs dry run emits runtime command instead of direct API logs")
@@ -13513,6 +13676,9 @@ private struct ContainerLogRequest: Equatable {
     var id: String
     var tail: Int?
     var follow: Bool
+    var since: Date? = nil
+    var until: Date? = nil
+    var timestamps = false
 }
 
 private struct ContainerExecProcessRequest: Equatable {
@@ -13778,9 +13944,21 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
         id: String,
         tail: Int?,
         follow: Bool,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        storage.append(ContainerLogRequest(id: id, tail: tail, follow: follow))
+        storage.append(
+            ContainerLogRequest(
+                id: id,
+                tail: tail,
+                follow: follow,
+                since: since,
+                until: until,
+                timestamps: timestamps
+            )
+        )
         for output in outputs {
             emit(output)
         }
@@ -13790,6 +13968,7 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
 private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private let fileHandles: [FileHandle]
     private var storage: [String] = []
+    private var optionsStorage: [ContainerLogOptions] = []
 
     init(fileHandles: [FileHandle] = []) {
         self.fileHandles = fileHandles
@@ -13799,8 +13978,13 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         storage
     }
 
-    func logFileHandles(id: String) async throws -> [FileHandle] {
+    var options: [ContainerLogOptions] {
+        optionsStorage
+    }
+
+    func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
         storage.append(id)
+        optionsStorage.append(options)
         return fileHandles
     }
 }

@@ -389,6 +389,12 @@ cli-smoke-built:
 	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
 	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
 	[[ "$$logs_all_output" != *" -n "* ]]; \
+	logs_filter_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --since 2026-06-18T10:00:00Z --until 30m api)"; \
+	[[ "$$logs_filter_output" == *"container logs --since 2026-06-18T10:00:00Z --until 30m demo-api-1"* ]]; \
+	logs_timestamp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --timestamps api 2>&1 || true)"; \
+	[[ "$$logs_timestamp_output" == *"unsupported compose feature: logs --timestamps: apple/container does not expose timestamped log records"* ]]; \
+	logs_filtered_follow_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --follow --since 2026-06-18T10:00:00Z api 2>&1 || true)"; \
+	[[ "$$logs_filtered_follow_output" == *"unsupported compose feature: logs --follow with --since/--until: apple/container does not expose filtered follow streams"* ]]; \
 	logs_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --index 2 api)"; \
 	[[ "$$logs_index_output" == *"container logs demo-api-2"* ]]; \
 	logs_display_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --no-color --no-log-prefix api)"; \

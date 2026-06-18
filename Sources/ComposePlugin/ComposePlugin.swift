@@ -456,6 +456,12 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var follow = false
     @Option(name: [.customShort("n"), .customLong("tail")], help: "Number of lines to show from the end of logs, or all.")
     var tail: String?
+    @Option(name: .customLong("since"), help: "Show logs after an RFC 3339 timestamp or relative duration.")
+    var since: String?
+    @Option(name: .customLong("until"), help: "Show logs before an RFC 3339 timestamp or relative duration.")
+    var until: String?
+    @Flag(name: [.customShort("t"), .customLong("timestamps")], help: "Show timestamps. Not supported until apple/container exposes timestamped log records.")
+    var timestamps = false
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
     @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Accepted because container-compose log output is already monochrome.")
@@ -468,7 +474,16 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     /// Streams or prints logs for selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().logs(project: loadedProject, services: services, follow: follow, tail: tail, index: index)
+        try await orchestrator().logs(
+            project: loadedProject,
+            services: services,
+            follow: follow,
+            tail: tail,
+            index: index,
+            since: since,
+            until: until,
+            timestamps: timestamps
+        )
     }
 }
 

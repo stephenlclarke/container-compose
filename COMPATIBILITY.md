@@ -148,12 +148,12 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
-  - Discovery and output: `ps`, filtered `ps`, `logs`, indexed `logs`, harmless `logs --no-color` and `logs --no-log-prefix`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
+  - Discovery and output: `ps`, filtered `ps`, `logs`, indexed `logs`, static `logs --since` and `logs --until`, harmless `logs --no-color` and `logs --no-log-prefix`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
   - File movement: service-aware `cp`, service-to-service `cp`, indexed `cp`, `cp --all`, one-off copy target discovery, and `export`.
   - Runtime queries: published-port `port`, indexed `port`, dynamically allocated and host-bound port lookup after container creation, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
-- **apple/container path:** Direct `ContainerClient` list/get/logs/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`.
-- **container-compose status:** Supported for the listed direct API paths. Rich log filtering and runtime process/event controls remain apple/container gaps.
+- **apple/container path:** Direct `ContainerClient` list/get/logs/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`. Static `logs --since` and `logs --until` use the local apple/container log-options API work.
+- **container-compose status:** Supported for the listed direct API paths. `logs --timestamps`, filtered log follow streams, structured stdout/stderr log identity, and runtime process/event controls remain apple/container gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Develop watch workflows
@@ -678,6 +678,7 @@ container compose ps --status running
 container compose ps --filter status=exited
 container compose logs api
 container compose logs --index 2 api
+container compose logs --since 2026-06-18T10:00:00Z --until 30m api
 container compose logs --no-color --no-log-prefix api
 container compose attach --no-stdin --sig-proxy=false api
 container compose attach --no-stdin --sig-proxy=false --index 2 api

@@ -1454,9 +1454,21 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Streams or prints logs for selected service containers.
-    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: String?, index: Int = 1) async throws {
+    public func logs(
+        project: ComposeProject,
+        services selected: [String],
+        follow: Bool,
+        tail: String?,
+        index: Int = 1,
+        since: String? = nil,
+        until: String? = nil,
+        timestamps: Bool = false
+    ) async throws {
         let services = try selectedServices(project: project, selected: selected)
         let runtimeTail = try runtimeLogTail(tail)
+        let runtimeSince = try runtimeLogTimestamp(since)
+        let runtimeUntil = try runtimeLogTimestamp(until)
+        try validateRuntimeLogOptions(follow: follow, since: runtimeSince, until: runtimeUntil, timestamps: timestamps)
         for service in services {
             var args = ["logs"]
             if follow {
@@ -1465,12 +1477,26 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if let runtimeTail {
                 args.append(contentsOf: ["-n", String(runtimeTail)])
             }
+            if let since {
+                args.append(contentsOf: ["--since", since])
+            }
+            if let until {
+                args.append(contentsOf: ["--until", until])
+            }
             let id = try await serviceContainerID(project: project, service: service, index: index)
             args.append(id)
             if options.dryRun {
                 try await runContainer(args)
             } else {
-                try await logManager.logs(id: id, tail: runtimeTail, follow: follow, emit: options.emit)
+                try await logManager.logs(
+                    id: id,
+                    tail: runtimeTail,
+                    follow: follow,
+                    since: runtimeSince,
+                    until: runtimeUntil,
+                    timestamps: timestamps,
+                    emit: options.emit
+                )
             }
         }
     }
@@ -1536,7 +1562,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if options.dryRun {
             try await runContainer(args)
         } else {
-            try await logManager.logs(id: id, tail: nil, follow: true, emit: options.emit)
+            try await logManager.logs(
+                id: id,
+                tail: nil,
+                follow: true,
+                since: nil,
+                until: nil,
+                timestamps: false,
+                emit: options.emit
+            )
         }
     }
 
@@ -4598,6 +4632,80 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("logs --tail must be 'all' or a non-negative integer")
         }
         return lines
+    }
+
+    /// Converts Compose log timestamp filters to absolute dates.
+    func runtimeLogTimestamp(_ value: String?) throws -> Date? {
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+        if let date = Self.parseRFC3339LogTimestamp(value) {
+            return date
+        }
+        if let interval = Self.parseRelativeLogDuration(value) {
+            return options.currentDate().addingTimeInterval(-interval)
+        }
+        throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps or relative durations")
+    }
+
+    /// Validates log filters that depend on apple/container runtime behavior.
+    func validateRuntimeLogOptions(follow: Bool, since: Date?, until: Date?, timestamps: Bool) throws {
+        if timestamps {
+            throw ComposeError.unsupported("logs --timestamps: apple/container does not expose timestamped log records")
+        }
+        if follow && (since != nil || until != nil) {
+            throw ComposeError.unsupported("logs --follow with --since/--until: apple/container does not expose filtered follow streams")
+        }
+    }
+
+    private static func parseRFC3339LogTimestamp(_ value: String) -> Date? {
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return fractionalFormatter.date(from: value) ?? formatter.date(from: value)
+    }
+
+    private static func parseRelativeLogDuration(_ value: String) -> TimeInterval? {
+        var total: TimeInterval = 0
+        var index = value.startIndex
+        var parsedComponent = false
+        while index < value.endIndex {
+            let numberStart = index
+            while index < value.endIndex, value[index].isNumber {
+                index = value.index(after: index)
+            }
+            guard numberStart < index, let amount = TimeInterval(value[numberStart..<index]) else {
+                return nil
+            }
+
+            let unitStart = index
+            while index < value.endIndex, value[index].isLetter {
+                index = value.index(after: index)
+            }
+            let unit = String(value[unitStart..<index])
+            guard let multiplier = relativeLogDurationMultiplier(unit) else {
+                return nil
+            }
+            total += amount * multiplier
+            parsedComponent = true
+        }
+        return parsedComponent ? total : nil
+    }
+
+    private static func relativeLogDurationMultiplier(_ unit: String) -> TimeInterval? {
+        switch unit {
+        case "", "s", "sec", "secs", "second", "seconds":
+            return 1
+        case "m", "min", "mins", "minute", "minutes":
+            return 60
+        case "h", "hr", "hrs", "hour", "hours":
+            return 60 * 60
+        case "d", "day", "days":
+            return 24 * 60 * 60
+        default:
+            return nil
+        }
     }
 
     /// Validates that attach stays on the output-only log-follow path apple/container exposes today.

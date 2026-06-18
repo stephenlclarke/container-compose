@@ -25,7 +25,7 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:)` through `ContainerClientLogManager`. It reads the first returned file handle as the container stdio log, supports plugin-side `tail`, and follows appended lines with a file readability handler.
+`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when static replay filters are present, while retaining `ContainerClient.logs(id:)` compatibility for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended lines with a file readability handler.
 
 [`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)`. The server opens two file handles for an existing container bundle: stdio logs and boot logs. The runtime comment says logs only require the container bundle and files to exist, not that the container is currently running.
 
@@ -94,7 +94,7 @@ Docker Compose surface: `docker compose logs SERVICE`, `docker compose logs` for
 Current `container-compose` behavior:
 
 - Resolves a Compose service container to the deterministic apple/container runtime ID.
-- Calls `ContainerClient.logs(id:)` through `ContainerClientLogManager`.
+- Calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager`.
 - Reads the stdio file handle and emits existing UTF-8 log data.
 - Supports stopped-container replay when the apple/container bundle and log files still exist.
 
@@ -217,30 +217,37 @@ Implementation direction:
 
 ### L6. Timestamps, `--since`, and `--until`
 
-Status: <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
 Docker Compose surface: `docker compose logs --timestamps`, `docker compose logs --since VALUE`, and `docker compose logs --until VALUE`.
 
 Current `container-compose` behavior:
 
-- Does not expose these options on `compose logs`.
+- Exposes `--since` and `--until` on `compose logs`.
+- Accepts RFC 3339 timestamps and relative durations such as `30m`, `2h`, or `1h30m`.
+- Passes static timestamp filters through the direct apple/container log API.
+- Rejects `--timestamps` because historical raw stdio logs do not contain capture timestamps.
+- Rejects `--follow` combined with `--since` or `--until` because the current direct API returns filtered snapshots, not filtered follow streams.
 - Cannot reconstruct historical capture timestamps from the current raw stdio file.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Exposes raw stdio and boot log file handles.
-- Does not expose timestamped log records, a log cursor, or server-side since/until filtering.
+- The local log-options work-in-progress exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`.
+- Does not expose timestamped log records, a log cursor, filtered follow streams, or stdout/stderr stream identity.
 
 Missing behavior:
 
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Per-record log timestamps at capture time.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Runtime or API support for filtering logs by absolute timestamp and relative duration.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Static timestamp filtering is available through the local apple/container direct API work, but only for log lines with parseable timestamp prefixes.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Runtime or API support for filtered follow streams.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> A stable record format that can preserve timestamps without corrupting raw application output.
 
 Implementation direction:
 
 - Open an [`apple/container`](https://github.com/apple/container) runtime PR for timestamped log records or a second structured log stream.
-- After the runtime exposes timestamps, add CLI parsing for `--timestamps`, `--since`, and `--until` in `container-compose`.
+- After the runtime exposes timestamps, implement `--timestamps` in `container-compose`.
+- After the runtime exposes filtered streaming, allow `--follow` together with `--since` and `--until`.
 - Add golden behavior tests using absolute timestamps, relative durations, and combined `--since`/`--until` windows.
 
 ### L7. Service Logging Driver and Options
@@ -309,7 +316,7 @@ Implementation direction:
 4. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
 5. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container timestamped structured log records.
 6. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container service logging policy primitives.
-7. <img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Revisit `--timestamps`, `--since`, `--until`, and service `logging` mappings after upstream runtime APIs exist.
+7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Revisit `--timestamps`, filtered follow, and service `logging` mappings after upstream runtime APIs exist.
 
 ## Acceptance Criteria
 

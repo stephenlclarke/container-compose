@@ -15,12 +15,20 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerAPIClient
+import ContainerResource
 import Foundation
 
 /// Low-level apple/container log call used by `ContainerClientLogManager`.
 public protocol ContainerLogAPIClienting: Sendable {
     /// Returns the log file handles exposed by apple/container for `id`.
-    func logFileHandles(id: String) async throws -> [FileHandle]
+    func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle]
+}
+
+public extension ContainerLogAPIClienting {
+    /// Returns unfiltered log file handles exposed by apple/container for `id`.
+    func logFileHandles(id: String) async throws -> [FileHandle] {
+        try await logFileHandles(id: id, options: .default)
+    }
 }
 
 /// Direct apple/container API used for service container logs.
@@ -30,23 +38,46 @@ public protocol ContainerLogManaging: Sendable {
         id: String,
         tail: Int?,
         follow: Bool,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws
 }
 
+public extension ContainerLogManaging {
+    /// Emits logs without timestamp filters.
+    func logs(
+        id: String,
+        tail: Int?,
+        follow: Bool,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        try await logs(
+            id: id,
+            tail: tail,
+            follow: follow,
+            since: nil,
+            until: nil,
+            timestamps: false,
+            emit: emit
+        )
+    }
+}
+
 /// Thin apple/container client wrapper around log API calls.
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
-    public typealias Logs = @Sendable (String) async throws -> [FileHandle]
+    public typealias Logs = @Sendable (String, ContainerLogOptions) async throws -> [FileHandle]
 
     private let logsOperation: Logs
 
-    public init(logs: @escaping Logs = { try await ContainerClient().logs(id: $0) }) {
+    public init(logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1) }) {
         self.logsOperation = logs
     }
 
     /// Fetches log file handles through `ContainerClient`.
-    public func logFileHandles(id: String) async throws -> [FileHandle] {
-        try await logsOperation(id)
+    public func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
+        try await logsOperation(id, options)
     }
 }
 
@@ -63,9 +94,18 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         id: String,
         tail: Int?,
         follow: Bool,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        let fileHandles = try await client.logFileHandles(id: id)
+        let options = ContainerLogOptions(
+            tail: follow ? nil : tail,
+            since: since,
+            until: until,
+            timestamps: timestamps
+        )
+        let fileHandles = try await client.logFileHandles(id: id, options: options)
         guard let fileHandle = fileHandles.first else {
             throw ComposeError.invalidProject("container logs returned no stdio handle for \(id)")
         }
@@ -75,7 +115,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             }
         }
 
-        try emitExistingLogs(id: id, from: fileHandle, tail: tail, emit: emit)
+        try emitExistingLogs(id: id, from: fileHandle, tail: follow ? tail : nil, emit: emit)
         if follow {
             try await followFile(id: id, fileHandle, emit: emit)
         }
