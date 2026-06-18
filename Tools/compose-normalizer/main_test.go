@@ -939,8 +939,8 @@ services:
 		"mode",
 		"update_config",
 		"rollback_config",
-		"resources.limits",
-		"resources.reservations",
+		"resources.limits.pids",
+		"resources.reservations.devices",
 		"restart_policy",
 		"placement",
 		"endpoint_mode",
@@ -1329,6 +1329,13 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &allAtOnce}}); !reflect.DeepEqual(fields, []string{"update_config"}) {
 		t.Fatalf("unsupportedDeployFields(all-at-once update) = %#v, want [update_config]", fields)
 	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Resources: types.Resources{Reservations: &types.Resource{
+		NanoCPUs:    types.NanoCPUs(0.5),
+		MemoryBytes: types.UnitBytes(128),
+		Pids:        32,
+	}}}); !reflect.DeepEqual(fields, []string{"resources.reservations.cpus", "resources.reservations.memory", "resources.reservations.pids"}) {
+		t.Fatalf("unsupportedDeployFields(resource reservations) = %#v, want granular reservation fields", fields)
+	}
 	if got := unitBytesValue(0); got != "" {
 		t.Fatalf("unitBytesValue(0) = %q, want empty", got)
 	}
@@ -1417,8 +1424,8 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 		"mode",
 		"update_config",
 		"rollback_config",
-		"resources.limits",
-		"resources.reservations",
+		"resources.limits.pids",
+		"resources.reservations.generic_resources",
 		"restart_policy",
 		"placement",
 		"endpoint_mode",

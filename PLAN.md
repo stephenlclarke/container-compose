@@ -315,7 +315,16 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 15:22:32 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> and <code>deploy.update_config.parallelism: 1</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code>, all-at-once or multi-container update parallelism, update delays, rollback behavior, placement rules, and reservations remain broader deploy backlog.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> and <code>deploy.update_config.parallelism: 1</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code>, all-at-once or multi-container update parallelism, update delays, rollback behavior, and placement rules remain broader deploy backlog.</td>
+    </tr>
+    <tr>
+      <td>Deploy resource gap classification</td>
+      <td>2026-06-18 15:33:36 BST</td>
+      <td>2026-06-18 15:33:36 BST</td>
+      <td>2026-06-18 15:33:36 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Reclassified <code>deploy.resources.limits.pids</code> and <code>deploy.resources.reservations</code> from local deploy plugin backlog to Apple/container resource parity. Docker Compose deploy reservations require platform guarantees, while the current Apple/container create/run surface exposes local hard CPU and memory limits but no deploy PID limit or reservation primitive.</td>
     </tr>
     <tr>
       <td>Volume nocopy support</td>
@@ -466,7 +475,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, and stop-first single-parallel <code>deploy.update_config</code> is accepted because it matches the existing recreate path. <code>deploy.restart_policy</code> and <code>deploy.endpoint_mode</code> are tracked with Apple/container restart and networking parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, and stop-first single-parallel <code>deploy.update_config</code> is accepted because it matches the existing recreate path. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, and <code>deploy.resources.reservations</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
@@ -531,7 +540,8 @@ Suggested Apple/container PR batches:
 3. Container identity parity: hostname, domain name, host entries, and legacy
    link aliases.
 4. Runtime-control parity: namespace modes, cgroups, privileged/device/GPU
-   controls, sysctls, and supplemental groups.
+   controls, sysctls, supplemental groups, deploy PID limits, and deploy
+   resource reservations.
 5. Mount and storage parity: advanced bind/volume/image mounts, storage
    options, non-local service volume drivers, and inherited image volumes.
 6. Health and completion parity: health status, health-aware waits, stored exit
@@ -629,11 +639,11 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Expanded resource controls</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
+      <td>2026-06-18 15:33:36 BST</td>
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code> and memory/swap/OOM/PID limits beyond current supported local limits.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, <code>deploy.resources.limits.pids</code>, and <code>deploy.resources.reservations</code> platform guarantees for CPU, memory, PIDs, devices, and generic resources. Current Apple/container create/run surfaces expose local hard CPU and memory limits but not those deploy resource primitives.</td>
     </tr>
     <tr>
       <td>User, security, device, GPU, and sysctl controls</td>

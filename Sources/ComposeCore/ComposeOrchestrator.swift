@@ -2258,8 +2258,24 @@ private extension ComposeOrchestrator {
         if fields.contains("endpoint_mode") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR")
         }
+        if let field = unsupportedDeployResourceLimitField(in: fields) {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); apple/container exposes local deploy CPU and memory limits but not this deploy resource limit yet")
+        }
+        if let field = unsupportedDeployResourceReservationField(in: fields) {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); resource reservations need an apple/container scheduler/resource reservation gap PR")
+        }
         let fieldList = fields.joined(separator: ", ")
         throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config is not implemented by container-compose yet")
+    }
+
+    /// Returns unsupported deploy resource limits that need Apple runtime support.
+    func unsupportedDeployResourceLimitField(in fields: [String]) -> String? {
+        fields.first { $0.hasPrefix("resources.limits.") }
+    }
+
+    /// Returns unsupported deploy resource reservations that need scheduler support.
+    func unsupportedDeployResourceReservationField(in fields: [String]) -> String? {
+        fields.first { $0.hasPrefix("resources.reservations.") }
     }
 
     /// Rejects service extension points that need explicit orchestration design.

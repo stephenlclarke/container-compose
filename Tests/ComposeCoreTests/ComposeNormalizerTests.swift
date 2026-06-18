@@ -441,6 +441,48 @@ struct ComposeNormalizerTests {
         #expect(api.unsupportedDeployFields == nil)
     }
 
+    @Test("normalizes unsupported deploy resource fields through compose-go")
+    func normalizesUnsupportedDeployResourceFieldsThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            deploy:
+              resources:
+                limits:
+                  cpus: "1.5"
+                  memory: 256m
+                  pids: 64
+                reservations:
+                  cpus: "0.5"
+                  memory: 128m
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        #expect(api.cpus == "1.5")
+        #expect(api.memLimit?.isEmpty == false)
+        #expect(api.unsupportedDeployFields == [
+            "resources.limits.pids",
+            "resources.reservations.cpus",
+            "resources.reservations.memory",
+        ])
+    }
+
     @Test("normalizer infers project directory from the first compose file")
     func normalizerInfersProjectDirectoryFromFirstComposeFile() async throws {
         let fileManager = FileManager.default

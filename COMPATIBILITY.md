@@ -177,8 +177,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Namespace and resource controls
 
-- **Compose surface:** `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`, CPU scheduler controls beyond supported `cpus`, and memory/OOM/PID controls beyond supported `mem_limit`.
-- **Missing Apple/container primitive:** Namespace selection, parent cgroups, CPU scheduler controls beyond `cpus`, memory controls beyond `mem_limit`, and swap/OOM/PID controls.
+- **Compose surface:** `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`, CPU scheduler controls beyond supported `cpus`, memory/OOM/PID controls beyond supported `mem_limit`, `deploy.resources.limits.pids`, and `deploy.resources.reservations`.
+- **Missing Apple/container primitive:** Namespace selection, parent cgroups, CPU scheduler controls beyond `cpus`, memory controls beyond `mem_limit`, swap/OOM/PID controls, deploy PID limits, and platform resource reservation guarantees.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A3](#a3-apple-gap-runtime-controls).
 
@@ -245,8 +245,8 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 #### Local deploy handling
 
 - **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config.
-- **Apple/container path:** Not known to be the first blocker after excluding `deploy.restart_policy` and `deploy.endpoint_mode`, which are tracked as Apple/container gaps.
-- **Missing plugin work:** A local interpretation of broader deploy semantics, including start-first updates, all-at-once or multi-container update parallelism, update delays, rollback behavior, placement rules, and reservations.
+- **Apple/container path:** Not known to be the first blocker after excluding `deploy.restart_policy`, `deploy.endpoint_mode`, `deploy.resources.limits.pids`, and `deploy.resources.reservations`, which are tracked as Apple/container gaps.
+- **Missing plugin work:** A local interpretation of broader deploy semantics, including start-first updates, all-at-once or multi-container update parallelism, update delays, rollback behavior, and placement rules.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
 #### Providers and models
@@ -717,12 +717,12 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### A3: Apple Gap, Runtime Controls
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs namespace, resource controls beyond the supported local CPU/memory/ulimit subset, privileged/device, and sysctl primitives. `container compose exec --privileged` is rejected because privileged exec processes need an [`apple/container`][apple-container] primitive.
+Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs namespace, resource controls beyond the supported local CPU/memory/ulimit subset, deploy resource reservation guarantees, privileged/device, and sysctl primitives. `container compose exec --privileged` is rejected because privileged exec processes need an [`apple/container`][apple-container] primitive.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these runtime controls.
-- [`apple/container`][apple-container]: missing the required namespace, privileged/device, resource controls beyond supported `cpus`, `mem_limit`, `shm_size`, and `ulimits`, sysctl, and privileged exec primitives.
+- [`apple/container`][apple-container]: missing the required namespace, privileged/device, resource controls beyond supported `cpus`, `mem_limit`, `shm_size`, and `ulimits`, deploy PID-limit and reservation primitives, sysctl, and privileged exec primitives.
 - `container-compose`: detects those fields and reports the Apple runtime gap.
 
 The related exec form is also rejected:
@@ -752,6 +752,13 @@ services:
     cpu_quota: 50000
     memswap_limit: 512m
     pids_limit: 128
+    deploy:
+      resources:
+        limits:
+          pids: 128
+        reservations:
+          cpus: "0.5"
+          memory: 128m
     sysctls:
       net.ipv4.ip_local_port_range: "1024 65000"
 ```
@@ -901,7 +908,7 @@ Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: supports the lifecycle and resource primitives needed for these local scale forms, while scaled service-name DNS is tracked in [A1](#a1-apple-gap-networking).
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first` and `deploy.update_config.parallelism: 1` because the orchestrator already recreates local replicas one at a time with a stop-before-start boundary; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, fixed MAC addresses, and broader deploy update options before creating resources. It still needs broader deploy semantics.
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first` and `deploy.update_config.parallelism: 1` because the orchestrator already recreates local replicas one at a time with a stop-before-start boundary; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; reports Apple/container resource gaps for `deploy.resources.limits.pids` and `deploy.resources.reservations`; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, fixed MAC addresses, and broader deploy update options before creating resources. It still needs broader deploy semantics.
 
 The equivalent supported CLI scaling forms are:
 

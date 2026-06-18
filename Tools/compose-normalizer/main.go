@@ -679,8 +679,8 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
 	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasUnsupportedFields(deploy.UpdateConfig))
 	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
-	appendUnsupportedDeployField(&fields, "resources.limits", resourceHasUnsupportedLimitFields(deploy.Resources.Limits))
-	appendUnsupportedDeployField(&fields, "resources.reservations", resourceHasFields(deploy.Resources.Reservations))
+	fields = append(fields, unsupportedDeployLimitFields(deploy.Resources.Limits)...)
+	fields = append(fields, unsupportedDeployReservationFields(deploy.Resources.Reservations)...)
 	appendUnsupportedDeployField(&fields, "restart_policy", restartPolicyHasFields(deploy.RestartPolicy))
 	appendUnsupportedDeployField(&fields, "placement", placementHasFields(deploy.Placement))
 	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
@@ -751,27 +751,32 @@ func updateConfigHasFields(config *types.UpdateConfig) bool {
 		config.Order != ""
 }
 
-// resourceHasFields reports whether a deploy resource limit or reservation was configured.
-func resourceHasFields(resource *types.Resource) bool {
+// unsupportedDeployLimitFields reports deploy resource limits that are not
+// backed by the local container runtime flags this plugin already maps.
+func unsupportedDeployLimitFields(resource *types.Resource) []string {
 	if resource == nil {
-		return false
+		return nil
 	}
-	return resource.NanoCPUs != 0 ||
-		resource.MemoryBytes != 0 ||
-		resource.Pids != 0 ||
-		len(resource.Devices) > 0 ||
-		len(resource.GenericResources) > 0
+	fields := []string{}
+	appendUnsupportedDeployField(&fields, "resources.limits.pids", resource.Pids != 0)
+	appendUnsupportedDeployField(&fields, "resources.limits.devices", len(resource.Devices) > 0)
+	appendUnsupportedDeployField(&fields, "resources.limits.generic_resources", len(resource.GenericResources) > 0)
+	return fields
 }
 
-// resourceHasUnsupportedLimitFields reports deploy resource limits that are not
-// backed by the local container runtime flags this plugin already maps.
-func resourceHasUnsupportedLimitFields(resource *types.Resource) bool {
+// unsupportedDeployReservationFields reports deploy resource reservations that
+// need a platform guarantee primitive rather than an ordinary hard limit.
+func unsupportedDeployReservationFields(resource *types.Resource) []string {
 	if resource == nil {
-		return false
+		return nil
 	}
-	return resource.Pids != 0 ||
-		len(resource.Devices) > 0 ||
-		len(resource.GenericResources) > 0
+	fields := []string{}
+	appendUnsupportedDeployField(&fields, "resources.reservations.cpus", resource.NanoCPUs != 0)
+	appendUnsupportedDeployField(&fields, "resources.reservations.memory", resource.MemoryBytes != 0)
+	appendUnsupportedDeployField(&fields, "resources.reservations.pids", resource.Pids != 0)
+	appendUnsupportedDeployField(&fields, "resources.reservations.devices", len(resource.Devices) > 0)
+	appendUnsupportedDeployField(&fields, "resources.reservations.generic_resources", len(resource.GenericResources) > 0)
+	return fields
 }
 
 // restartPolicyHasFields reports whether a deploy restart policy was configured.
