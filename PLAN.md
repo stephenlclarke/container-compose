@@ -44,6 +44,7 @@ Use `not started` or `not completed` where the event has not happened yet.
 | Lifecycle and `up` option expansion | 2026-06-18 04:41:20 BST | 2026-06-18 04:41:20 BST | 2026-06-18 09:35:51 BST | Added `up --no-start`, `--no-build`, `--quiet-build`, `--quiet-pull`, `--always-recreate-deps`, `--timeout`, scaling, `wait`, and `wait --down-project`. |
 | Interaction command expansion | 2026-06-18 05:55:46 BST | 2026-06-18 05:55:46 BST | 2026-06-18 06:12:08 BST | Added indexed attach/log targets and accepted harmless log display flags. |
 | Develop watch model boundary | 2026-06-18 09:44:11 BST | 2026-06-18 09:44:11 BST | 2026-06-18 09:54:37 BST | Preserved `develop.watch` triggers from compose-go in the Swift model and added command-level `watch` validation. File-watch loops and action execution remain open plugin work. |
+| Scaled anonymous service volumes | 2026-06-18 10:07:04 BST | 2026-06-18 10:07:04 BST | 2026-06-18 10:11:26 BST | Mapped anonymous service volumes to deterministic per-replica runtime names when services are scaled and removed those volumes with `down --volumes`. |
 
 ## Active Documentation Work
 
@@ -65,7 +66,7 @@ Apple/container API work is discovered during implementation.
 | `watch` and develop workflows | 2026-06-18 09:36:35 BST | 2026-06-18 09:44:11 BST | not completed | Model-boundary support now preserves and validates `develop.watch` triggers. Remaining work needs file watching, sync/rebuild/restart policy, and clear interaction with Compose `develop`. |
 | `commit` command | 2026-06-18 09:36:35 BST | not started | not completed | Design service-container target resolution and image naming/output compatibility. |
 | `publish` command | 2026-06-18 09:36:35 BST | not started | not completed | Design how Compose project/service image publishing maps to Apple/container image APIs. |
-| Replica scaling edge cases | 2026-06-18 09:36:35 BST | not started | not completed | Covers fixed single host-port conflicts, too-small ranges, fixed MAC addresses, `container_name`, and per-replica anonymous volume naming. |
+| Replica scaling edge cases | 2026-06-18 09:36:35 BST | 2026-06-18 10:07:04 BST | not completed | Per-replica anonymous volume naming is complete. Remaining edge cases cover fixed single host-port conflicts, too-small ranges, fixed MAC addresses, `container_name`, and broader deploy semantics. |
 | Local deploy interpretation | 2026-06-18 09:36:35 BST | not started | not completed | Extend beyond local `deploy.replicas` and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible. |
 | Advanced build fields | 2026-06-18 09:36:35 BST | not started | not completed | Covers additional contexts, entitlements, build network/isolation/privileged settings, provenance, SBOM, SSH, advanced secrets, shm size, and build ulimits. |
 | Providers, models, and lifecycle hooks | 2026-06-18 09:36:35 BST | not started | not completed | Covers service `provider`, `models`, `post_start`, and `pre_stop`. |

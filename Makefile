@@ -138,6 +138,7 @@ cli-smoke: build
 	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n  db:\n    image: alpine\n' > "$$tmpdir/scale-deps.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080-8081:80"\n' > "$$tmpdir/scale-ports.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    volumes:\n      - /scratch\n' > "$$tmpdir/scale-volumes.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    pull_policy: daily\n' > "$$tmpdir/pull-window.yml"; \
 	printf 'services:\n  api:\n    image: example/api:build\n    build:\n      context: ./api\n    pull_policy: build\n' > "$$tmpdir/pull-build.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    volumes:\n      - type: tmpfs\n        target: /scratch\n        tmpfs:\n          size: 64m\n          mode: 1777\n' > "$$tmpdir/tmpfs-options.yml"; \
@@ -311,6 +312,9 @@ cli-smoke: build
 	[[ "$$up_scale_port_range_output" == *"--publish 8080:80"* ]]; \
 	[[ "$$up_scale_port_range_output" == *"--name demo-api-2 --detach"* ]]; \
 	[[ "$$up_scale_port_range_output" == *"--publish 8081:80"* ]]; \
+	up_scale_volume_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-volumes.yml" up --scale api=2 api)"; \
+	[[ "$$up_scale_volume_output" == *"--volume demo_anon-api-1-"*":/scratch"* ]]; \
+	[[ "$$up_scale_volume_output" == *"--volume demo_anon-api-2-"*":/scratch"* ]]; \
 	create_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" create --scale worker=2 worker)"; \
 	[[ "$$create_scale_output" == *"--name demo-worker-1"* ]]; \
 	[[ "$$create_scale_output" == *"--name demo-worker-2"* ]]; \

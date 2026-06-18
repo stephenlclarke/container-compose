@@ -1504,6 +1504,36 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true])
     }
 
+    @Test("up maps anonymous volumes per service replica")
+    func upMapsAnonymousVolumesPerServiceReplica() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+            $0.volumes = [
+                ComposeMount(type: "volume", target: "/scratch"),
+            ]
+        }])
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].contains { $0.hasPrefix("demo_anon-api-1-") && $0.hasSuffix(":/scratch") })
+        #expect(commands[1].contains { $0.hasPrefix("demo_anon-api-2-") && $0.hasSuffix(":/scratch") })
+        #expect(!commands[0].contains { $0.hasPrefix("demo_anon-api-2-") })
+        #expect(!commands[1].contains { $0.hasPrefix("demo_anon-api-1-") })
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
     @Test("create allocates multi port ranges per service replica")
     func createAllocatesMultiPortRangesPerServiceReplica() async throws {
         let runner = RecordingRunner(responses: [
@@ -5286,6 +5316,54 @@ struct ComposeOrchestratorTests {
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_data"),
         ])
+    }
+
+    @Test("down volumes removes anonymous service replica volumes")
+    func downVolumesRemovesAnonymousServiceReplicaVolumes() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [composeProjectLabel: "demo", composeServiceLabel: "api"]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [composeProjectLabel: "demo", composeServiceLabel: "api"]
+            ),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(type: "volume", target: "/scratch"),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager,
+            resourceManager: resourceManager
+        ).down(project: project, options: ComposeDownOptions(volumes: true))
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-2", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-2", force: false),
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+        let resources = await resourceManager.requests
+        #expect(resources.count == 2)
+        #expect(resources.contains { $0.name.hasPrefix("demo_anon-api-1-") })
+        #expect(resources.contains { $0.name.hasPrefix("demo_anon-api-2-") })
     }
 
     @Test("down skips missing optional dependencies while cleaning resources")

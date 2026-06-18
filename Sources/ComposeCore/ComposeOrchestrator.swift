@@ -475,6 +475,13 @@ private struct RunArgumentOptions {
     }
 }
 
+private struct MountRenderContext {
+    var project: ComposeProject
+    var service: ComposeService
+    var containerIndex: Int?
+    var replicaCount: Int?
+}
+
 private enum DownImageRemovalPolicy {
     case none
     case local
@@ -864,6 +871,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         if down.volumes {
+            for volume in try anonymousVolumeRuntimeNames(project: project, targets: targets) {
+                let args = ["volume", "delete", volume]
+                if options.dryRun {
+                    try await runContainer(args, check: false)
+                } else {
+                    try await resourceManager.deleteVolume(name: volume)
+                }
+            }
             for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
                 let runtimeName = volumeRuntimeName(project: project, composeName: name, volume: volume)
                 let args = ["volume", "delete", runtimeName]
@@ -1289,11 +1304,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if stopFirst {
             try await stop(project: project, services: services.map(\.name))
         }
-        for target in try await serviceContainerTargets(project: project, services: services) {
+        let targets = try await serviceContainerTargets(project: project, services: services)
+        for target in targets {
             try await deleteContainer(target.name, force: force)
         }
         if volumes {
-            for volume in try anonymousVolumeRuntimeNames(project: project, services: services) {
+            for volume in try anonymousVolumeRuntimeNames(project: project, targets: targets) {
                 let args = ["volume", "delete", volume]
                 if options.dryRun {
                     try await runContainer(args, check: false)
@@ -2355,9 +2371,6 @@ private extension ComposeOrchestrator {
             if hasExplicitMACAddress(service) {
                 throw ComposeError.unsupported("service '\(service.name)' uses mac_address; scaled MAC addresses would collide across replicas")
             }
-            if try hasAnonymousVolumes(service, project: project) {
-                throw ComposeError.unsupported("service '\(service.name)' uses anonymous volumes; per-replica anonymous volumes are not implemented by container-compose yet")
-            }
         }
     }
 
@@ -2367,13 +2380,6 @@ private extension ComposeOrchestrator {
             return true
         }
         return (service.networkOptions ?? [:]).values.contains { nonEmpty($0.macAddress) != nil }
-    }
-
-    /// Returns true when a service uses an anonymous runtime volume.
-    func hasAnonymousVolumes(_ service: ComposeService, project: ComposeProject) throws -> Bool {
-        try effectiveServiceVolumes(project: project, service: service).contains { mount in
-            mount.type == "volume" && mount.source?.isEmpty != false
-        }
     }
 
     /// Validates `create --pull`, including Docker Compose's build policy.
@@ -3131,8 +3137,14 @@ private extension ComposeOrchestrator {
         for port in publishedPorts {
             args.append(contentsOf: ["--publish", port])
         }
+        let mountContext = MountRenderContext(
+            project: project,
+            service: service,
+            containerIndex: run.containerIndex,
+            replicaCount: run.replicaCount
+        )
         for mount in try effectiveServiceVolumes(project: project, service: service) {
-            try appendMount(mount, project: project, args: &args)
+            try appendMount(mount, context: mountContext, args: &args)
         }
         for tmpfs in service.tmpfs ?? [] {
             args.append(contentsOf: ["--tmpfs", tmpfs])
@@ -3551,7 +3563,7 @@ private extension ComposeOrchestrator {
     }
 
     /// Appends a Compose mount in the form accepted by `container run`.
-    func appendMount(_ mount: ComposeMount, project: ComposeProject, args: inout [String]) throws {
+    func appendMount(_ mount: ComposeMount, context: MountRenderContext, args: inout [String]) throws {
         if mount.type == "tmpfs" {
             guard let target = mount.target else {
                 throw ComposeError.invalidProject("tmpfs mount is missing target")
@@ -3569,11 +3581,9 @@ private extension ComposeOrchestrator {
         let source = mount.source ?? ""
         let mappedSource: String
         if mount.type == "volume", !source.isEmpty {
-            mappedSource = volumeRuntimeName(project: project, composeName: source)
+            mappedSource = volumeRuntimeName(project: context.project, composeName: source)
         } else if source.isEmpty {
-            // Anonymous Compose volumes still need stable names so repeated
-            // runs reconcile the same project-scoped container arguments.
-            mappedSource = anonymousVolumeRuntimeName(project: project, target: target)
+            mappedSource = anonymousVolumeRuntimeName(context: context, target: target)
         } else {
             mappedSource = source
         }
@@ -3608,17 +3618,53 @@ private extension ComposeOrchestrator {
         return fields.joined(separator: ",")
     }
 
-    /// Returns stable runtime names for anonymous volumes attached to services.
-    func anonymousVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) throws -> [String] {
-        let names = try services.flatMap { service in
-            try effectiveServiceVolumes(project: project, service: service).compactMap { mount -> String? in
-                guard mount.type == "volume", mount.source?.isEmpty != false, let target = mount.target else {
+    /// Returns stable runtime names for anonymous volumes attached to service
+    /// container targets.
+    func anonymousVolumeRuntimeNames(project: ComposeProject, targets: [ServiceContainerTarget]) throws -> [String] {
+        let targetCounts = Dictionary(grouping: targets, by: { $0.service.name }).mapValues(\.count)
+        let names = try targets.flatMap { serviceTarget in
+            try effectiveServiceVolumes(project: project, service: serviceTarget.service).compactMap { mount -> String? in
+                guard mount.type == "volume", mount.source?.isEmpty != false, let mountTarget = mount.target else {
                     return nil
                 }
-                return anonymousVolumeRuntimeName(project: project, target: target)
+                let replicaCount = targetCounts[serviceTarget.service.name] ?? 1
+                return anonymousVolumeRuntimeName(
+                    project: project,
+                    service: serviceTarget.service,
+                    target: mountTarget,
+                    containerIndex: serviceTarget.index,
+                    replicaCount: replicaCount
+                )
             }
         }
         return Array(Set(names)).sorted()
+    }
+
+    /// Returns the project-scoped name used for an anonymous Compose service
+    /// volume.
+    func anonymousVolumeRuntimeName(context: MountRenderContext, target: String) -> String {
+        anonymousVolumeRuntimeName(
+            project: context.project,
+            service: context.service,
+            target: target,
+            containerIndex: context.containerIndex,
+            replicaCount: context.replicaCount
+        )
+    }
+
+    /// Returns the project-scoped name used for an anonymous Compose service
+    /// volume.
+    func anonymousVolumeRuntimeName(
+        project: ComposeProject,
+        service: ComposeService,
+        target: String,
+        containerIndex: Int?,
+        replicaCount: Int?
+    ) -> String {
+        guard let containerIndex, containerIndex >= 1, (replicaCount ?? 1) > 1 else {
+            return anonymousVolumeRuntimeName(project: project, target: target)
+        }
+        return resourceName(project: project.name, name: "anon-\(slug(service.name))-\(containerIndex)-\(stableHash(target).prefix(12))")
     }
 
     /// Returns the project-scoped name used for an anonymous Compose volume.
@@ -3787,6 +3833,20 @@ private extension ComposeOrchestrator {
                     names.insert(volumeRuntimeName(project: project, composeName: source))
                 } else if let target = mount.target {
                     names.insert(anonymousVolumeRuntimeName(project: project, target: target))
+                    let replicaCount = try serviceReplicaCount(service, scaleOverrides: [:])
+                    if replicaCount > 1 {
+                        for index in 1...replicaCount {
+                            names.insert(
+                                anonymousVolumeRuntimeName(
+                                    project: project,
+                                    service: service,
+                                    target: target,
+                                    containerIndex: index,
+                                    replicaCount: replicaCount
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }
