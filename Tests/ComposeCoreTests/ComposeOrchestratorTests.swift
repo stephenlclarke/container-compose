@@ -3759,7 +3759,10 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).down(project: project, options: ComposeDownOptions())
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).down(project: project, options: ComposeDownOptions())
 
         #expect(runner.commands.map(\.executable) == [provider.path, provider.path])
         #expect(runner.commands[0].arguments == ["compose", "metadata"])
@@ -3793,7 +3796,10 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).stop(project: project, services: [])
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).stop(project: project, services: [])
 
         #expect(runner.commands.map(\.executable) == [provider.path, provider.path])
         #expect(runner.commands[0].arguments == ["compose", "metadata"])
@@ -3826,7 +3832,10 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).stop(project: project, services: [])
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).stop(project: project, services: [])
 
         #expect(runner.commands.map(\.executable) == [provider.path])
         #expect(runner.commands[0].arguments == ["compose", "metadata"])
@@ -4608,7 +4617,10 @@ struct ComposeOrchestratorTests {
             ]
         }
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--volume", "\(config.path):/app_config:ro"]))
