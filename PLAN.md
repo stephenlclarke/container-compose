@@ -309,6 +309,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Preserved <code>deploy.labels</code> as service-level metadata without applying it to runtime container labels or including it in recreate config hashes.</td>
     </tr>
     <tr>
+      <td>Deploy stop-first update config</td>
+      <td>2026-06-18 15:22:32 BST</td>
+      <td>2026-06-18 15:22:32 BST</td>
+      <td>2026-06-18 15:22:32 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> and <code>deploy.update_config.parallelism: 1</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code>, all-at-once or multi-container update parallelism, update delays, rollback behavior, placement rules, and reservations remain broader deploy backlog.</td>
+    </tr>
+    <tr>
       <td>Volume nocopy support</td>
       <td>2026-06-18 12:25:21 BST</td>
       <td>2026-06-18 12:25:21 BST</td>
@@ -457,7 +466,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, and <code>deploy.labels</code> are preserved as service metadata. <code>deploy.restart_policy</code> and <code>deploy.endpoint_mode</code> are tracked with Apple/container restart and networking parity. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, and stop-first single-parallel <code>deploy.update_config</code> is accepted because it matches the existing recreate path. <code>deploy.restart_policy</code> and <code>deploy.endpoint_mode</code> are tracked with Apple/container restart and networking parity. Continue extending broader deploy fields only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>

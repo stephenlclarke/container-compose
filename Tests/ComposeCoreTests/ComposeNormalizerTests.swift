@@ -418,6 +418,9 @@ struct ComposeNormalizerTests {
               replicas: 2
               labels:
                 com.example.service: api
+              update_config:
+                parallelism: 1
+                order: stop-first
               resources:
                 limits:
                   cpus: "1.5"

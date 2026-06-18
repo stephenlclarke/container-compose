@@ -669,15 +669,15 @@ func serviceScale(service types.ServiceConfig) *int {
 	return nil
 }
 
-// unsupportedDeployFields reports deploy fields beyond local replica count and
-// the ordinary replicated service mode the local orchestrator already models.
+// unsupportedDeployFields reports deploy fields beyond the local deploy subset
+// the orchestrator already models.
 func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	if deploy == nil {
 		return nil
 	}
 	fields := []string{}
 	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
-	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasFields(deploy.UpdateConfig))
+	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasUnsupportedFields(deploy.UpdateConfig))
 	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
 	appendUnsupportedDeployField(&fields, "resources.limits", resourceHasUnsupportedLimitFields(deploy.Resources.Limits))
 	appendUnsupportedDeployField(&fields, "resources.reservations", resourceHasFields(deploy.Resources.Reservations))
@@ -713,7 +713,32 @@ func appendUnsupportedDeployField(fields *[]string, name string, present bool) {
 	}
 }
 
-// updateConfigHasFields reports whether update or rollback behavior was configured.
+// updateConfigHasUnsupportedFields reports update behavior outside the
+// stop-first, one-at-a-time recreation the local orchestrator already performs.
+func updateConfigHasUnsupportedFields(config *types.UpdateConfig) bool {
+	if config == nil {
+		return false
+	}
+	if config.Parallelism != nil && *config.Parallelism != 1 {
+		return true
+	}
+	return config.Delay != 0 ||
+		config.FailureAction != "" ||
+		config.Monitor != 0 ||
+		config.MaxFailureRatio != 0 ||
+		updateConfigHasUnsupportedOrder(config.Order)
+}
+
+// updateConfigHasUnsupportedOrder reports update orders that need a different
+// recreate boundary from the existing local stop-before-start path.
+func updateConfigHasUnsupportedOrder(order string) bool {
+	if order == "" {
+		return false
+	}
+	return !strings.EqualFold(order, "stop-first")
+}
+
+// updateConfigHasFields reports whether rollback behavior was configured.
 func updateConfigHasFields(config *types.UpdateConfig) bool {
 	if config == nil {
 		return false

@@ -866,6 +866,9 @@ services:
   api:
     image: nginx:alpine
     deploy:
+      update_config:
+        parallelism: 1
+        order: stop-first
       resources:
         limits:
           cpus: "1.5"
@@ -1314,6 +1317,17 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	}
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); !reflect.DeepEqual(fields, []string{"mode"}) {
 		t.Fatalf("unsupportedDeployFields(global) = %#v, want [mode]", fields)
+	}
+	oneAtATime := uint64(1)
+	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &oneAtATime, Order: "stop-first"}}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(stop-first update) = %#v, want empty", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Order: "start-first"}}); !reflect.DeepEqual(fields, []string{"update_config"}) {
+		t.Fatalf("unsupportedDeployFields(start-first update) = %#v, want [update_config]", fields)
+	}
+	allAtOnce := uint64(0)
+	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &allAtOnce}}); !reflect.DeepEqual(fields, []string{"update_config"}) {
+		t.Fatalf("unsupportedDeployFields(all-at-once update) = %#v, want [update_config]", fields)
 	}
 	if got := unitBytesValue(0); got != "" {
 		t.Fatalf("unitBytesValue(0) = %q, want empty", got)

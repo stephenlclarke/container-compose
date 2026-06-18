@@ -2259,7 +2259,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR")
         }
         let fieldList = fields.joined(separator: ", ")
-        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, and memory limits is not implemented by container-compose yet")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config is not implemented by container-compose yet")
     }
 
     /// Rejects service extension points that need explicit orchestration design.

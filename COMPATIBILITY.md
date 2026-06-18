@@ -77,7 +77,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **Compose surface:**
   - Project lifecycle: `create`, `up`, `down`, `start`, `stop`, `restart`, `rm`, `kill`, and `wait`.
   - Reconciliation: deterministic names, indexed replicas, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, and `down --rmi local/all`.
-  - Scaling: `up --scale`, `create --scale`, standalone `scale`, `scale --no-deps`, service `scale`, and local `deploy.replicas`.
+  - Scaling: `up --scale`, `create --scale`, standalone `scale`, `scale --no-deps`, service `scale`, local `deploy.replicas`, and local `deploy.update_config` values that match stop-first single-parallel recreation.
   - Options: `up --no-start`, `up --always-recreate-deps`, timeouts, service `attach: false`, `rm --force/-f`, `wait --down-project`, `run --rm`, `run --detach/-d`, and `run --name`.
   - Lifecycle hooks: service `post_start` and `pre_stop` for detached service starts, `start`, `stop`, `restart`, `down`, service recreation, and replica pruning; service `post_start` for detached one-off `run`; service `pre_stop` for detached one-off cleanup when `container-compose` later stops the one-off container through project cleanup.
 - **Apple/container path:** `container create`, `container run`, `ContainerClient.bootstrap`, `ClientProcess.start`, `ClientProcess.wait`, `ContainerClient.get`, `ContainerClient.list`, `ContainerClient.stop`, `ContainerClient.delete`, `ContainerClient.kill`, and direct process exec through `ContainerClient.createProcess` / `ClientProcess.start`.
@@ -244,9 +244,9 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 
 #### Local deploy handling
 
-- **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, and memory limits.
+- **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, memory limits, and stop-first single-parallel update config.
 - **Apple/container path:** Not known to be the first blocker after excluding `deploy.restart_policy` and `deploy.endpoint_mode`, which are tracked as Apple/container gaps.
-- **Missing plugin work:** A local interpretation of broader deploy semantics.
+- **Missing plugin work:** A local interpretation of broader deploy semantics, including start-first updates, all-at-once or multi-container update parallelism, update delays, rollback behavior, placement rules, and reservations.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
 #### Providers and models
@@ -895,13 +895,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Plugin Gap, Replica Scaling Edge Cases And Deploy
 
-Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, `deploy.labels` service metadata, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. It rejects the `worker.deploy.update_config` field in this example because update orchestration needs Compose deploy semantics beyond local replica count and CPU/memory limits. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses.
+Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `parallelism: 1`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. It rejects the `canary.deploy.update_config` field in this example because start-first update orchestration needs Compose deploy semantics beyond the local stop-before-start recreate path. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: supports the lifecycle and resource primitives needed for these local scale forms, while scaled service-name DNS is tracked in [A1](#a1-apple-gap-networking).
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources. It still needs broader deploy semantics.
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first` and `deploy.update_config.parallelism: 1` because the orchestrator already recreates local replicas one at a time with a stop-before-start boundary; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, fixed MAC addresses, and broader deploy update options before creating resources. It still needs broader deploy semantics.
 
 The equivalent supported CLI scaling forms are:
 
@@ -926,6 +926,7 @@ services:
       replicas: 3
       update_config:
         parallelism: 1
+        order: stop-first
 
   api:
     build:
@@ -934,6 +935,13 @@ services:
       - "8080-8081:80"
     volumes:
       - /scratch
+
+  canary:
+    build:
+      context: ./worker
+    deploy:
+      update_config:
+        order: start-first
 ```
 
 Dockerfile: `api/Dockerfile`
