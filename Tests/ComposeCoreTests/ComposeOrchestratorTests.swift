@@ -3894,6 +3894,95 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down surfaces service stop failures")
+    func downSurfacesServiceStopFailures() async throws {
+        let runner = RecordingRunner()
+        let expected = ComposeError.invalidProject("stop failed")
+        let lifecycleManager = RecordingContainerLifecycleManager(stopError: expected)
+        let orchestrator = ComposeOrchestrator(runner: runner, lifecycleManager: lifecycleManager)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+            ]
+        )
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions())
+            Issue.record("Expected service stop failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
+        ])
+    }
+
+    @Test("down surfaces orphan stop failures")
+    func downSurfacesOrphanStopFailures() async throws {
+        let runner = RecordingRunner()
+        let expected = ComposeError.invalidProject("orphan stop failed")
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let lifecycleManager = RecordingContainerLifecycleManager(stopError: expected)
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = ComposeProject(name: "demo", services: [:])
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions(removeOrphans: true))
+            Issue.record("Expected orphan stop failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+        ])
+    }
+
+    @Test("down surfaces service delete failures")
+    func downSurfacesServiceDeleteFailures() async throws {
+        let runner = RecordingRunner()
+        let expected = ComposeError.invalidProject("delete failed")
+        let lifecycleManager = RecordingContainerLifecycleManager(deleteError: expected)
+        let orchestrator = ComposeOrchestrator(runner: runner, lifecycleManager: lifecycleManager)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions())
+            Issue.record("Expected service delete failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
     @Test("down surfaces network removal failures")
     func downSurfacesNetworkRemovalFailures() async throws {
         let runner = RecordingRunner()
@@ -8943,7 +9032,14 @@ private actor RecordingContainerCopyOperations {
 }
 
 private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
+    private let stopError: (any Error)?
+    private let deleteError: (any Error)?
     private var storage: [ContainerLifecycleRequest] = []
+
+    init(stopError: (any Error)? = nil, deleteError: (any Error)? = nil) {
+        self.stopError = stopError
+        self.deleteError = deleteError
+    }
 
     var requests: [ContainerLifecycleRequest] {
         storage
@@ -8959,10 +9055,16 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
 
     func stopContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws {
         storage.append(.stop(id: id, signal: signal, timeoutInSeconds: timeoutInSeconds))
+        if let stopError {
+            throw stopError
+        }
     }
 
     func deleteContainer(id: String, force: Bool) async throws {
         storage.append(.delete(id: id, force: force))
+        if let deleteError {
+            throw deleteError
+        }
     }
 }
 

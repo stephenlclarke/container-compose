@@ -2521,7 +2521,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await lifecycleManager.stopContainer(
+            try await lifecycleManager.stopContainer(
                 id: containerName,
                 signal: service.stopSignal,
                 timeoutInSeconds: timeout ?? service.stopGracePeriodSeconds
@@ -2542,7 +2542,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: nil)
+            try await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: nil)
         }
     }
 
@@ -2557,7 +2557,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await lifecycleManager.deleteContainer(id: id, force: force)
+            try await lifecycleManager.deleteContainer(id: id, force: force)
         }
     }
 
