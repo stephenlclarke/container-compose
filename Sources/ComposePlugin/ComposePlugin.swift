@@ -462,8 +462,8 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var until: String?
     @Flag(name: [.customShort("t"), .customLong("timestamps")], help: "Show timestamps. Not supported until apple/container exposes timestamped log records.")
     var timestamps = false
-    @Option(name: .customLong("index"), help: "Target service container index.")
-    var index = 1
+    @Option(name: .customLong("index"), help: "Target one service container index instead of all matching replicas.")
+    var index: Int?
     @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Accepted because container-compose log output is already monochrome.")
     var noColor = false
     @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes. Accepted because container-compose log output is already prefix-free.")

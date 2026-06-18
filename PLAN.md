@@ -48,12 +48,12 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
     <tr>
       <td>Basic follow and tail</td>
       <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"></td>
-      <td><code>--follow</code>, <code>--tail N</code>, <code>-n N</code>, and <code>--tail all</code> are wired for one selected runtime container.</td>
+      <td><code>--follow</code>, <code>--tail N</code>, <code>-n N</code>, and <code>--tail all</code> are wired for resolved runtime containers.</td>
     </tr>
     <tr>
       <td>Replica and service aggregation</td>
-      <td><img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"></td>
-      <td>Docker Compose shows all selected service containers by default. container-compose currently targets one index unless <code>--index</code> is supplied.</td>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"></td>
+      <td><code>logs</code> now includes all selected service replicas by default. Explicit <code>--index</code> narrows to one replica.</td>
     </tr>
     <tr>
       <td>Multi-service follow</td>
@@ -115,7 +115,7 @@ Docker Compose surface: `docker compose logs --follow [SERVICE...]`.
 
 Current `container-compose` behavior:
 
-- Supports `--follow` for a single resolved service container.
+- Supports `--follow` for resolved service container targets.
 - Uses a file readability handler to emit appended UTF-8 log lines.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
@@ -153,37 +153,30 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Remaining work:
 
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Tail should apply independently to every selected container once all-replica and multi-service aggregation is implemented.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Empty-line fidelity should be checked against Docker Compose before this is called fully compliant.
 
 ### L4. Service and Replica Selection
 
-Status: <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square">
+Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 
 Docker Compose surface: `docker compose logs [SERVICE...]` and `docker compose logs --index N SERVICE`.
 
 Current `container-compose` behavior:
 
 - Supports service name filtering.
-- Supports `--index N` for one selected replica.
-- Defaults to index `1` for every selected service.
+- Includes every existing Compose-managed replica for selected services when `--index` is omitted.
+- Includes every existing Compose-managed service container in the project when no service is selected.
+- Supports `--index N` to narrow each selected service to one replica.
+- Falls back to deterministic configured replica names during dry-run.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Supports direct lookup by container ID through existing list/get APIs and direct log handles by ID.
 - Does not need a special multi-replica primitive for plugin-side enumeration because Compose labels and deterministic names already identify service replicas.
 
-Missing behavior:
+Remaining work:
 
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Without `--index`, Docker Compose should include every existing replica for each selected service.
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> No-service selection should include all project services and their replicas, not only index `1`.
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Selection should include existing Compose-managed service containers even when scale was changed outside the current file, matching the rest of the project discovery behavior where safe.
-
-Implementation direction:
-
-- Reuse the existing project-scoped container discovery and replica-index helpers already used by `ps`, `exec`, `cp`, `port`, and `wait`.
-- Make `--index` mutually narrow the target set only for selected services.
-- Add regression tests for scaled services, multiple selected services, and no-service selection.
+- None for service and replica target resolution.
 
 ### L5. Prefixes, Colors, and `--no-log-prefix`
 
@@ -310,7 +303,7 @@ Implementation direction:
 
 ## Suggested Work Order
 
-1. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Implement all-replica target resolution for `logs`.
+1. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement all-replica target resolution for `logs`.
 2. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
 3. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.

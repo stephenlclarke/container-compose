@@ -1459,7 +1459,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         services selected: [String],
         follow: Bool,
         tail: String?,
-        index: Int = 1,
+        index: Int? = nil,
         since: String? = nil,
         until: String? = nil,
         timestamps: Bool = false
@@ -1469,7 +1469,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let runtimeSince = try runtimeLogTimestamp(since)
         let runtimeUntil = try runtimeLogTimestamp(until)
         try validateRuntimeLogOptions(follow: follow, since: runtimeSince, until: runtimeUntil, timestamps: timestamps)
-        for service in services {
+        for target in try await logTargets(project: project, services: services, index: index) {
             var args = ["logs"]
             if follow {
                 args.append("--follow")
@@ -1483,7 +1483,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if let until {
                 args.append(contentsOf: ["--until", until])
             }
-            let id = try await serviceContainerID(project: project, service: service, index: index)
+            let id = target.name
             args.append(id)
             if options.dryRun {
                 try await runContainer(args)
@@ -2236,6 +2236,23 @@ private extension ComposeOrchestrator {
                 )
             }
         }
+    }
+
+    /// Resolves service container targets for `compose logs`.
+    func logTargets(project: ComposeProject, services: [ComposeService], index: Int?) async throws -> [ServiceContainerTarget] {
+        guard let index else {
+            return try await serviceContainerTargets(project: project, services: services)
+        }
+        var targets: [ServiceContainerTarget] = []
+        for service in services {
+            let name = try await serviceContainerID(project: project, service: service, index: index)
+            targets.append(ServiceContainerTarget(
+                service: service,
+                index: index,
+                name: name
+            ))
+        }
+        return targets
     }
 
     /// Returns configured service targets for dry-run rendering.

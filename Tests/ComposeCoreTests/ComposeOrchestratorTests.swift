@@ -8767,6 +8767,153 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["replica-log"])
     }
 
+    @Test("logs targets all existing replicas for selected services by default")
+    func logsTargetsAllExistingReplicasForSelectedServicesByDefault() async throws {
+        let logManager = RecordingContainerLogManager(outputs: ["log"])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.logManager = logManager
+            }
+        ).logs(project: project, services: ["api"], follow: false, tail: nil)
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
+            ContainerLogRequest(id: "demo-api-2", tail: nil, follow: false),
+        ])
+    }
+
+    @Test("logs with no service targets all project service replicas")
+    func logsWithNoServiceTargetsAllProjectServiceReplicas() async throws {
+        let logManager = RecordingContainerLogManager(outputs: ["log"])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-worker-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.logManager = logManager
+            }
+        ).logs(project: project, services: [], follow: false, tail: nil)
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
+            ContainerLogRequest(id: "demo-api-2", tail: nil, follow: false),
+            ContainerLogRequest(id: "demo-worker-1", tail: nil, follow: false),
+        ])
+    }
+
+    @Test("logs explicit index narrows selected services")
+    func logsExplicitIndexNarrowsSelectedServices() async throws {
+        let logManager = RecordingContainerLogManager(outputs: ["log"])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.logManager = logManager
+            }
+        ).logs(project: project, services: ["api"], follow: false, tail: nil, index: 1)
+
+        #expect(await discoveryManager.listRequests == [])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: false),
+        ])
+    }
+
     @Test("logs passes timestamp filters to log manager")
     func logsPassesTimestampFiltersToLogManager() async throws {
         let emitted = MessageRecorder()
@@ -8906,6 +9053,32 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == [
             "+ container logs --follow -n 10 demo-api-1",
+        ])
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("logs dry run emits configured service replicas")
+    func logsDryRunEmitsConfiguredServiceReplicas() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["api"], follow: true, tail: "10")
+
+        #expect(emitted.messages == [
+            "+ container logs --follow -n 10 demo-api-1",
+            "+ container logs --follow -n 10 demo-api-2",
         ])
         #expect(await logManager.requests.isEmpty)
     }

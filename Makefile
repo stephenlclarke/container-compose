@@ -161,6 +161,7 @@ cli-smoke-built:
 	mkdir -p "$$tmpdir/src"; \
 	printf 'services:\n  api:\n    image: alpine\n    develop:\n      watch:\n        - path: ./src\n          action: rebuild\n' > "$$tmpdir/watch.yml"; \
 	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
+	printf 'services:\n  worker:\n    image: alpine\n    scale: 2\n' > "$$tmpdir/logs-scale.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n  db:\n    image: alpine\n' > "$$tmpdir/scale-deps.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080-8081:80"\n' > "$$tmpdir/scale-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    volumes:\n      - /scratch\n' > "$$tmpdir/scale-volumes.yml"; \
@@ -382,6 +383,9 @@ cli-smoke-built:
 	[[ "$$detached_output" == *"--name demo-api-1 --detach"* ]]; \
 	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
+	logs_scaled_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/logs-scale.yml" logs worker)"; \
+	[[ "$$logs_scaled_output" == *"container logs demo-worker-1"* ]]; \
+	[[ "$$logs_scaled_output" == *"container logs demo-worker-2"* ]]; \
 	logs_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n 5 api)"; \
 	[[ "$$logs_tail_output" == *"container logs -n 5 demo-api-1"* ]]; \
 	logs_compact_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n5 api)"; \
