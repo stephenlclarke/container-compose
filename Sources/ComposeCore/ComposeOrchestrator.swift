@@ -1898,6 +1898,9 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }
         if let fields = try unsupportedServiceMountFields(service: service, project: project) {
+            if fields == ["volume.subpath"] {
+                throw ComposeError.unsupported("service '\(service.name)' uses volume.subpath; volume subpath mounts need an apple/container mount primitive gap PR")
+            }
             let fieldList = fields.joined(separator: ", ")
             throw ComposeError.unsupported("service '\(service.name)' uses unsupported volume fields \(fieldList); advanced service volume options are not implemented by container-compose yet")
         }

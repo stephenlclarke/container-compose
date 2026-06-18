@@ -3619,6 +3619,39 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
     }
 
+    @Test("up rejects volume subpath as apple container mount gap")
+    func upRejectsVolumeSubpathAsAppleContainerMountGap() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            source: "cache",
+                            target: "/cache",
+                            unsupportedFields: ["volume.subpath"]
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported volume subpath error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses volume.subpath; volume subpath mounts need an apple/container mount primitive gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up inherits declared volumes from same-project services")
     func upInheritsDeclaredVolumesFromSameProjectServices() async throws {
         let runner = RecordingRunner()
@@ -10150,7 +10183,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported service mount error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported volume fields volume.subpath; advanced service volume options are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses volume.subpath; volume subpath mounts need an apple/container mount primitive gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

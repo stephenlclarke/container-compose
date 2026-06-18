@@ -246,6 +246,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Accepted long-form service volume <code>volume.nocopy</code> as supported no-copy metadata. The Apple/container volume mount path already matches the requested no-copy behavior, so no runtime flag mapping is required.</td>
     </tr>
     <tr>
+      <td>Volume subpath blocker classification</td>
+      <td>2026-06-18 12:31:12 BST</td>
+      <td>2026-06-18 12:31:12 BST</td>
+      <td>2026-06-18 12:31:12 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Classified long-form service volume <code>volume.subpath</code> as an Apple/container mount primitive gap. Apple/container exposes named volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath selector for mounting only part of a named volume.</td>
+    </tr>
+    <tr>
       <td>Run capability overrides</td>
       <td>2026-06-18 10:16:25 BST</td>
       <td>2026-06-18 10:16:25 BST</td>
@@ -566,7 +575,7 @@ Suggested Apple/container PR batches:
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume <code>nocopy</code>, volume subpaths, image mounts, mount consistency controls, service <code>storage_opt</code>, image-declared inherited mounts, and safe external-container <code>volumes_from</code> behavior. Current Apple/container mount flags cover the common local subset only.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, service <code>storage_opt</code>, image-declared inherited mounts, and safe external-container <code>volumes_from</code> behavior. Current Apple/container mount flags cover the common local subset only.</td>
     </tr>
     <tr>
       <td>Health status and dependency gates</td>

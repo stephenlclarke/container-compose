@@ -200,6 +200,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before `container build` is invoked.
 - **Example:** [A6](#a6-apple-gap-advanced-build-fields).
 
+#### Volume subpaths and image mounts
+
+- **Compose surface:** Long-form service `volume.subpath`, image-backed service mounts, and `image.subpath`.
+- **Missing Apple/container primitive:** Named-volume subpath mounts and image-backed service mounts. The current Apple/container CLI/API mount surface exposes volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath or image mount source selector.
+- **container-compose status:** Rejected before resources are created.
+- **Example:** [A8](#a8-apple-gap-volume-subpaths-and-image-mounts).
+
 #### Runtime data and dynamic port commands
 
 - **Compose surface:** Target-only `ports` such as `"80"` or `"8080"`, `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
@@ -234,9 +241,9 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 
 #### Metadata, logging, storage shortcuts
 
-- **Compose surface:** `logging`, `log_driver`, `log_opt`, `storage_opt`, external `volumes_from`, image-declared inherited mounts, service-level `volume_driver`, advanced service volume options beyond `volume.nocopy`, image mounts, and mount consistency.
+- **Compose surface:** `logging`, `log_driver`, `log_opt`, `storage_opt`, external `volumes_from`, image-declared inherited mounts, service-level `volume_driver`, advanced service volume options beyond `volume.nocopy` and Apple-blocked subpaths, and mount consistency.
 - **Apple/container path:** Not known to be the first blocker for every field, though richer log/storage runtime APIs may later be needed upstream.
-- **Missing plugin work:** Runtime mapping, external/inferred inherited mount behavior, logging behavior, storage option handling, and advanced mount policy beyond supported `volume.nocopy`.
+- **Missing plugin work:** Runtime mapping, external/inferred inherited mount behavior, logging behavior, storage option handling, and advanced mount policy beyond supported `volume.nocopy` and Apple-blocked subpaths.
 - **Example:** [C4](#c4-plugin-gap-metadata-storage-and-api-socket).
 
 #### API socket and block I/O
@@ -325,6 +332,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, dynamic host-port allocation, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
 - [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
+- [A8: Apple Gap, Volume Subpaths And Image Mounts](#a8-apple-gap-volume-subpaths-and-image-mounts): [`apple/container`][apple-container] gap. Demonstrates named-volume subpaths and image-backed service mounts.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
 - [C4: Plugin Gap, Metadata, Storage, And API Socket](#c4-plugin-gap-metadata-storage-and-api-socket): `container-compose` gap. Demonstrates logging options, external inherited mounts, advanced service volume options, API socket, and block I/O.
@@ -1029,6 +1037,48 @@ FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 ```
 
+### A8: Apple Gap, Volume Subpaths And Image Mounts
+
+Expected result: `container compose up` rejects this before creating resources because Apple/container does not expose a mount primitive for selecting a subpath inside a named volume or mounting filesystem content from an image.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes service volume `subpath` and image mount metadata.
+- [`apple/container`][apple-container]: supports named volume mounts, bind mounts, tmpfs mounts, readonly mounts, tmpfs `size`, and tmpfs `mode`, but not named-volume subpath mounts or image-backed service mounts.
+- `container-compose`: reports the Apple/container mount primitive gap before resources are created.
+
+```yaml
+# compose.yaml
+name: apple-volume-subpath-gap-demo
+
+services:
+  api:
+    build:
+      context: ./api
+    volumes:
+      - type: volume
+        source: shared-data
+        target: /data
+        volume:
+          subpath: api
+      - type: image
+        source: alpine:3.20
+        target: /image-root
+        image:
+          subpath: etc
+
+volumes:
+  shared-data: {}
+```
+
+Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+RUN mkdir -p /app
+CMD ["sh", "-c", "sleep 3600"]
+```
+
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
 Expected result: `container compose config` preserves the `develop.watch` trigger metadata, and `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions. Live `container compose watch api` still reports that file watching and develop actions are not implemented yet. `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
@@ -1085,13 +1135,13 @@ container compose watch --no-up --no-prune --quiet api
 
 ### C4: Plugin Gap, Metadata, Storage, And API Socket
 
-Expected result: `container compose up` accepts `volume.nocopy` as no-copy volume metadata and rejects this example because `volume.subpath`, logging/storage options, external inherited mounts, API socket exposure, and block I/O controls need plugin implementation and security review.
+Expected result: `container compose up` accepts `volume.nocopy` as no-copy volume metadata and rejects this example because logging/storage options, external inherited mounts, API socket exposure, and block I/O controls need plugin implementation and security review. `volume.subpath` is tracked separately in [A8](#a8-apple-gap-volume-subpaths-and-image-mounts).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this grouped example.
-- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It still needs runtime mapping, external-container and image-declared volume inheritance, advanced volume option policy beyond `volume.nocopy` and tmpfs size/mode, logging/storage policy, API socket security review, and block I/O handling.
+- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It still needs runtime mapping, external-container volume inheritance, advanced volume option policy beyond `volume.nocopy` and tmpfs size/mode, logging/storage policy, API socket security review, and block I/O handling. Image-declared mounts are tracked as an Apple/container gap in [A8](#a8-apple-gap-volume-subpaths-and-image-mounts).
 
 ```yaml
 # compose.yaml
@@ -1120,7 +1170,6 @@ services:
         target: /data
         volume:
           nocopy: true
-          subpath: worker
     use_api_socket: true
     blkio_config:
       weight: 300
