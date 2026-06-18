@@ -43,6 +43,8 @@ body:
         Explain how to reproduce the incorrect behavior.
 
         A minimal Compose file and command sequence are very helpful.
+
+        Need help? See our guide: [How to write effective reproduction steps](https://github.com/stephenlclarke/container-compose/blob/main/docs/bug-report-how-to.md#steps-to-reproduce).
       placeholder: |
         ```yaml
         services:
@@ -59,7 +61,10 @@ body:
     id: what-happened
     attributes:
       label: Problem description
-      description: Briefly describe your problem, and what you believe the correct behavior should be.
+      description: |
+        Briefly describe your problem, and what you believe the correct behavior should be.
+
+        Need help? See our guide: [Problem description](https://github.com/stephenlclarke/container-compose/blob/main/docs/bug-report-how-to.md#problem-description).
     validations:
       required: true
   - type: textarea
@@ -71,6 +76,8 @@ body:
           - **Xcode**: Version 26.0 (17A324)
           - **Container**: Container CLI version 0.1.0
           - **container-compose**: 0.1.0
+
+        Need help gathering this info? See our guide: [Environment information](https://github.com/stephenlclarke/container-compose/blob/main/docs/bug-report-how-to.md#environment-information).
       value: |
         - OS:
         - Xcode:

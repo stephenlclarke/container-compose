@@ -6,7 +6,9 @@ triage:
 - Use [GitHub Discussions](https://github.com/stephenlclarke/container-compose/discussions)
   for usage questions, design ideas, and early Compose compatibility planning.
 - Use [issues](https://github.com/stephenlclarke/container-compose/issues) for
-  reproducible bugs and focused feature requests.
+  reproducible bugs and focused feature requests. The
+  [bug report guide](docs/bug-report-how-to.md) explains the information that
+  makes reports easier to reproduce.
 - Use [security reporting](SECURITY.md) for vulnerabilities or anything that
   might expose credentials, private registry information, or sensitive runtime
   details.
