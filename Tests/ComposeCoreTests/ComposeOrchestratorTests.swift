@@ -4699,6 +4699,57 @@ struct ComposeOrchestratorTests {
         #expect(await client.statsRequests.isEmpty)
     }
 
+    @Test("stats manager surfaces initial stats failures")
+    func statsManagerSurfacesInitialStatsFailures() async throws {
+        let expected = ComposeError.invalidProject("initial stats failed")
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsError: expected,
+            statsErrorRequestIndex: 1
+        )
+        let manager = ContainerClientStatsManager(client: client, sleep: { _ in })
+
+        do {
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { _ in })
+            Issue.record("Expected initial stats failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.listRequests == [["demo-api-1"]])
+        #expect(await client.statsRequests == ["demo-api-1"])
+    }
+
+    @Test("stats manager surfaces follow-up stats failures")
+    func statsManagerSurfacesFollowUpStatsFailures() async throws {
+        let expected = ComposeError.invalidProject("follow-up stats failed")
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                ],
+            ],
+            statsError: expected,
+            statsErrorRequestIndex: 2
+        )
+        let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
+
+        do {
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, emit: { _ in })
+            Issue.record("Expected follow-up stats failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.listRequests == [["demo-api-1"]])
+        #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
+    }
+
     @Test("stats API client forwards configured operations")
     func statsAPIClientForwardsConfiguredOperations() async throws {
         let recorder = RecordingContainerStatsAPIClient(
@@ -9369,12 +9420,21 @@ private actor RecordingContainerStatsManager: ContainerStatsManaging {
 private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
     private let targets: [ComposeStatsTarget]
     private var statsResponses: [String: [ContainerStats]]
+    private let statsError: (any Error)?
+    private let statsErrorRequestIndex: Int
     private var lists: [[String]] = []
     private var statsStorage: [String] = []
 
-    init(targets: [ComposeStatsTarget] = [], statsResponses: [String: [ContainerStats]] = [:]) {
+    init(
+        targets: [ComposeStatsTarget] = [],
+        statsResponses: [String: [ContainerStats]] = [:],
+        statsError: (any Error)? = nil,
+        statsErrorRequestIndex: Int = 1
+    ) {
         self.targets = targets
         self.statsResponses = statsResponses
+        self.statsError = statsError
+        self.statsErrorRequestIndex = statsErrorRequestIndex
     }
 
     var listRequests: [[String]] {
@@ -9392,6 +9452,9 @@ private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
 
     func stats(id: String) async throws -> ContainerStats {
         statsStorage.append(id)
+        if let statsError, statsStorage.filter({ $0 == id }).count == statsErrorRequestIndex {
+            throw statsError
+        }
         guard var responses = statsResponses[id], let response = responses.first else {
             throw ComposeError.invalidProject("missing stats fixture for \(id)")
         }

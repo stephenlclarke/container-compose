@@ -132,22 +132,14 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         var snapshots: [StatsSnapshot] = []
 
         for target in targets where target.status == "running" {
-            do {
-                let stats = try await client.stats(id: target.id)
-                snapshots.append(StatsSnapshot(first: stats, second: stats))
-            } catch {
-                continue
-            }
+            let stats = try await client.stats(id: target.id)
+            snapshots.append(StatsSnapshot(first: stats, second: stats))
         }
 
         if !snapshots.isEmpty {
             try await sleep(sampleInterval)
             for index in snapshots.indices {
-                do {
-                    snapshots[index].second = try await client.stats(id: snapshots[index].second.id)
-                } catch {
-                    continue
-                }
+                snapshots[index].second = try await client.stats(id: snapshots[index].second.id)
             }
         }
 
