@@ -598,6 +598,32 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up maps network mode none to no network attachment")
+    func upMapsNetworkModeNoneToNoNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "none"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "none"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up starts present optional dependencies in dependency order")
     func upStartsPresentOptionalDependenciesInDependencyOrder() async throws {
         let runner = RecordingRunner(responses: [
@@ -712,6 +738,33 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
         #expect(create.containsSequence(["--dns-option", "use-vc"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
+    }
+
+    @Test("create maps network mode none to no network attachment")
+    func createMapsNetworkModeNoneToNoNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "none"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--network", "none"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("create skips missing optional dependencies")
@@ -6123,6 +6176,29 @@ struct ComposeOrchestratorTests {
         #expect(commands[0].containsSequence(["--network", "demo_backend"]))
         #expect(commands[0].containsSequence(["--volume", "demo_cache:/cache"]))
         #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run maps network mode none to no network attachment")
+    func runMapsNetworkModeNoneToNoNetworkAttachment() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networkMode = "none"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "run", "--name"]))
+        #expect(command.containsSequence(["--network", "none"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("run applies service pull policy before creating resources")

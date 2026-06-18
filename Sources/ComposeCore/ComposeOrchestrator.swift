@@ -1289,7 +1289,7 @@ private extension ComposeOrchestrator {
                 }
             }
         }
-        if let networkMode = service.networkMode, !networkMode.isEmpty {
+        if let networkMode = service.networkMode, !networkMode.isEmpty, !isNoNetworkMode(networkMode) {
             throw ComposeError.unsupported("service '\(service.name)' uses network_mode '\(networkMode)'; network mode support needs an apple/container runtime gap PR")
         }
         if let gap = unsupportedRuntimeStringFields(service: service).first {
@@ -1383,6 +1383,11 @@ private extension ComposeOrchestrator {
             let fieldList = fields.joined(separator: ", ")
             throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); only internal and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks")
         }
+    }
+
+    /// Returns whether the service explicitly disables container networking.
+    func isNoNetworkMode(_ networkMode: String?) -> Bool {
+        networkMode == "none"
     }
 
     /// Allows MAC addresses only for the single-network attachment that Apple
@@ -2175,7 +2180,9 @@ private extension ComposeOrchestrator {
         for tmpfs in service.tmpfs ?? [] {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
-        if let network = (service.networks ?? []).first {
+        if isNoNetworkMode(service.networkMode) {
+            args.append(contentsOf: ["--network", "none"])
+        } else if let network = (service.networks ?? []).first {
             let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
             args.append(contentsOf: ["--network", networkArgument])
         }

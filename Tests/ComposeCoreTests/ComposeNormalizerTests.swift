@@ -97,6 +97,9 @@ struct ComposeNormalizerTests {
                 required: false
           redis:
             image: redis:7
+          isolated:
+            image: alpine:3.20
+            network_mode: none
         volumes:
           data: {}
         networks:
@@ -161,6 +164,7 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.dependsOn == ["redis": ComposeDependency(condition: "service_started", restart: true, required: false)])
         #expect(project.services["api"]?.ports == ["8080:80"])
+        #expect(project.services["isolated"]?.networkMode == "none")
         #expect(project.networks["default"] == ComposeNetwork(
             name: "sample_default",
             isInternal: true,
