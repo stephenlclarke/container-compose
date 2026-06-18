@@ -46,28 +46,100 @@ public struct ComposeExecutionOptions {
     }
 }
 
-/// Runtime collaborators used by the Compose orchestrator.
-public struct ComposeOrchestratorDependencies: Sendable {
+/// Container command collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorCommandDependencies: Sendable {
     public var copier: ContainerCopying
-    public var discoveryManager: ContainerDiscoveryManaging
     public var execManager: ContainerExecManaging
     public var exporter: ContainerExporting
-    public var imageManager: ContainerImageManaging
-    public var lifecycleManager: ContainerLifecycleManaging
     public var logManager: ContainerLogManaging
+
+    public init(
+        copier: ContainerCopying = ContainerClientCopier(),
+        execManager: ContainerExecManaging = ContainerClientExecManager(),
+        exporter: ContainerExporting = ContainerClientExporter(),
+        logManager: ContainerLogManaging = ContainerClientLogManager()
+    ) {
+        self.copier = copier
+        self.execManager = execManager
+        self.exporter = exporter
+        self.logManager = logManager
+    }
+}
+
+/// Container lifecycle collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorRuntimeDependencies: Sendable {
+    public var discoveryManager: ContainerDiscoveryManaging
+    public var lifecycleManager: ContainerLifecycleManaging
     public var resourceManager: ContainerResourceManaging
     public var statsManager: ContainerStatsManaging
 
-    public init() {
-        copier = ContainerClientCopier()
-        discoveryManager = ContainerClientDiscoveryManager()
-        execManager = ContainerClientExecManager()
-        exporter = ContainerClientExporter()
-        imageManager = ContainerClientImageManager()
-        lifecycleManager = ContainerClientLifecycleManager()
-        logManager = ContainerClientLogManager()
-        resourceManager = ContainerClientResourceManager()
-        statsManager = ContainerClientStatsManager()
+    public init(
+        discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
+        lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
+        resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
+        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
+    ) {
+        self.discoveryManager = discoveryManager
+        self.lifecycleManager = lifecycleManager
+        self.resourceManager = resourceManager
+        self.statsManager = statsManager
+    }
+}
+
+/// Runtime collaborators used by the Compose orchestrator.
+public struct ComposeOrchestratorDependencies: Sendable {
+    public var commands: ComposeOrchestratorCommandDependencies
+    public var runtime: ComposeOrchestratorRuntimeDependencies
+    public var imageManager: ContainerImageManaging
+
+    public init(
+        commands: ComposeOrchestratorCommandDependencies = ComposeOrchestratorCommandDependencies(),
+        runtime: ComposeOrchestratorRuntimeDependencies = ComposeOrchestratorRuntimeDependencies(),
+        imageManager: ContainerImageManaging = ContainerClientImageManager()
+    ) {
+        self.commands = commands
+        self.runtime = runtime
+        self.imageManager = imageManager
+    }
+
+    public var copier: ContainerCopying {
+        get { commands.copier }
+        set { commands.copier = newValue }
+    }
+
+    public var discoveryManager: ContainerDiscoveryManaging {
+        get { runtime.discoveryManager }
+        set { runtime.discoveryManager = newValue }
+    }
+
+    public var execManager: ContainerExecManaging {
+        get { commands.execManager }
+        set { commands.execManager = newValue }
+    }
+
+    public var exporter: ContainerExporting {
+        get { commands.exporter }
+        set { commands.exporter = newValue }
+    }
+
+    public var lifecycleManager: ContainerLifecycleManaging {
+        get { runtime.lifecycleManager }
+        set { runtime.lifecycleManager = newValue }
+    }
+
+    public var logManager: ContainerLogManaging {
+        get { commands.logManager }
+        set { commands.logManager = newValue }
+    }
+
+    public var resourceManager: ContainerResourceManaging {
+        get { runtime.resourceManager }
+        set { runtime.resourceManager = newValue }
+    }
+
+    public var statsManager: ContainerStatsManaging {
+        get { runtime.statsManager }
+        set { runtime.statsManager = newValue }
     }
 }
 
@@ -138,6 +210,19 @@ public struct ComposeImagesOptions {
     }
 }
 
+/// Options for `compose volumes`.
+public struct ComposeVolumesOptions {
+    public var services: [String]
+    public var quiet: Bool
+    public var format: String
+
+    public init(services: [String] = [], quiet: Bool = false, format: String = "table") {
+        self.services = services
+        self.quiet = quiet
+        self.format = format
+    }
+}
+
 /// Options for `compose stats`.
 public struct ComposeStatsOptions {
     public var services: [String]
@@ -152,6 +237,22 @@ public struct ComposeStatsOptions {
         self.format = format
         self.noStream = noStream
         self.noTrunc = noTrunc
+    }
+}
+
+/// Options for `compose attach` commands.
+public struct ComposeAttachOptions {
+    public var noStdin = false
+    public var detachKeys: String?
+    public var index = 1
+    public var sigProxy = "true"
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default attach behavior.
+    }
+
+    public init(_ configure: (inout ComposeAttachOptions) -> Void) {
+        configure(&self)
     }
 }
 
@@ -276,16 +377,30 @@ private enum ComposeImagesFormat {
     case json
 }
 
+private enum ComposeVolumesFormat {
+    case table
+    case json
+}
+
+private struct ComposeCopyContainerTarget {
+    var id: String
+    var path: String
+
+    var runtimeArgument: String {
+        "\(id):\(path)"
+    }
+}
+
 private enum ComposeCopyEndpoint {
     case local(String)
-    case container(id: String, path: String)
+    case containers([ComposeCopyContainerTarget])
 
     var runtimeArgument: String {
         switch self {
         case .local(let path):
             path
-        case .container(let id, let path):
-            "\(id):\(path)"
+        case .containers(let containers):
+            containers.first?.runtimeArgument ?? ""
         }
     }
 }
@@ -341,6 +456,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
+        try validatePublishedPorts(services: services)
 
         try await ensureResources(project: project)
 
@@ -418,6 +534,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try orderedServices(project: project, selected: create.services)
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services, project: project)
+        try validatePublishedPorts(services: services)
 
         try await ensureResources(project: project)
 
@@ -629,6 +746,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Attaches to service output using the Apple log stream.
+    public func attach(project: ComposeProject, serviceName: String, options attach: ComposeAttachOptions) async throws {
+        try validateAttachOptions(attach)
+        try await logs(project: project, services: [serviceName], follow: true, tail: nil)
+    }
+
     /// Executes a command in an existing service container.
     public func exec(
         project: ComposeProject,
@@ -747,16 +870,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
+        try validateProjectNetworks(runProject)
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validatePullPolicy(run.pullPolicy)
         let dependencyServices = try run.noDeps
             ? []
             : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
         try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
+        try validatePublishedPorts(services: dependencyServices)
+        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
+        try validatePublishedPorts(publishedPorts, serviceName: service.name)
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
         try await ensureResources(project: runProject)
         try await startDependencyServices(project: runProject, services: dependencyServices)
-        let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try await runContainer(
             try runArguments(
                 project: runProject,
@@ -859,6 +985,40 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Lists volumes that belong to the Compose project or selected services.
+    public func volumes(project: ComposeProject, options volumes: ComposeVolumesOptions) async throws {
+        let services = try selectedServices(project: project, selected: volumes.services)
+        let format = try composeVolumesFormat(volumes.format)
+        let args = ["volume", "list", "--format", "json"]
+        if options.dryRun {
+            try await runContainer(args)
+            return
+        }
+
+        let records = try await composeVolumeRecords(
+            project: project,
+            services: services,
+            restrictToSelectedServices: !volumes.services.isEmpty
+        )
+        if volumes.quiet {
+            let names = records.map(\.name)
+            if !names.isEmpty {
+                options.emit(names.joined(separator: "\n"))
+            }
+            return
+        }
+
+        switch format {
+        case .table:
+            let table = renderComposeVolumeTable(records)
+            if !table.isEmpty {
+                options.emit(table)
+            }
+        case .json:
+            options.emit(try renderComposeVolumeJSON(records))
+        }
+    }
+
     /// Displays resource usage statistics for selected service containers.
     public func stats(project: ComposeProject, options stats: ComposeStatsOptions) async throws {
         try validate(project: project)
@@ -914,28 +1074,63 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
 
-        let source = try copyEndpoint(copy.arguments[0], project: project)
-        let destination = try copyEndpoint(copy.arguments[1], project: project)
-        let mappedArguments = [source.runtimeArgument, destination.runtimeArgument]
+        let source = try await copyEndpoint(copy.arguments[0], project: project, includeOneOff: copy.all && !options.dryRun)
+        let destination = try await copyEndpoint(copy.arguments[1], project: project, includeOneOff: copy.all && !options.dryRun)
+        switch (source, destination) {
+        case (.containers(let sources), .local(let localPath)):
+            guard let source = sources.first else {
+                throw ComposeError.invalidProject("no source container found for cp")
+            }
+            if options.dryRun {
+                try await runContainer(["cp", source.runtimeArgument, localPath])
+                return
+            }
+            try await copier.copyFromContainer(id: source.id, source: source.path, destination: localPath)
+        case (.local(let localPath), .containers(let destinations)):
+            if options.dryRun {
+                for destination in destinations {
+                    try await runContainer(["cp", localPath, destination.runtimeArgument])
+                }
+                return
+            }
+            for destination in destinations {
+                try await copier.copyIntoContainer(id: destination.id, source: localPath, destination: destination.path)
+            }
+        case (.containers(let sources), .containers(let destinations)):
+            try await copyBetweenContainerTargets(sources: sources, destinations: destinations, allDestinations: copy.all)
+        case (.local, .local):
+            try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+        }
+    }
+
+    /// Stages copies from one source service container into selected destination containers.
+    private func copyBetweenContainerTargets(
+        sources: [ComposeCopyContainerTarget],
+        destinations: [ComposeCopyContainerTarget],
+        allDestinations: Bool
+    ) async throws {
+        guard let source = sources.first else {
+            throw ComposeError.invalidProject("no source or destination container found for cp")
+        }
+        let selectedDestinations = allDestinations ? destinations : Array(destinations.prefix(1))
+        guard !selectedDestinations.isEmpty else {
+            throw ComposeError.invalidProject("no source or destination container found for cp")
+        }
+
         if options.dryRun {
-            try await runContainer(["cp"] + mappedArguments)
+            for destination in selectedDestinations {
+                try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+            }
             return
         }
 
-        switch (source, destination) {
-        case (.container(let id, let sourcePath), .local(let localPath)):
-            try await copier.copyFromContainer(id: id, source: sourcePath, destination: localPath)
-        case (.local(let localPath), .container(let id, let destinationPath)):
-            try await copier.copyIntoContainer(id: id, source: localPath, destination: destinationPath)
-        case (.container(let sourceID, let sourcePath), .container(let destinationID, let destinationPath)):
+        for destination in selectedDestinations {
             try await copier.copyBetweenContainers(
-                sourceID: sourceID,
-                source: sourcePath,
-                destinationID: destinationID,
-                destination: destinationPath
+                sourceID: source.id,
+                source: source.path,
+                destinationID: destination.id,
+                destination: destination.path
             )
-        case (.local, .local):
-            try await runContainer(["cp"] + mappedArguments)
         }
     }
 
@@ -981,7 +1176,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
               let published = mapping.published
         else {
             if mappings.contains(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published == nil }) {
-                throw ComposeError.unsupported("service '\(service.name)' publishes target port \(requested.target)/\(requested.protocolName) dynamically; published port lookup needs richer inspect output")
+                throw dynamicPortUnsupported(serviceName: service.name, target: requested.target, protocolName: requested.protocolName)
             }
             throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
         }
@@ -1065,6 +1260,7 @@ private extension ComposeOrchestrator {
         guard !project.services.isEmpty else {
             throw ComposeError.invalidProject("no services defined")
         }
+        try validateProjectNetworks(project)
     }
 
     /// Rejects Compose features that need runtime support not available yet.
@@ -1086,14 +1282,14 @@ private extension ComposeOrchestrator {
         }
         if let networkOptions = service.networkOptions {
             for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {
-                let fields = options.unsupportedFieldNames()
+                let fields = try options.unsupportedFieldNames()
                 if !fields.isEmpty {
                     let fieldList = fields.joined(separator: ", ")
                     throw ComposeError.unsupported("service '\(service.name)' uses network attachment options \(fieldList) on network '\(network)'; network attachment options need an apple/container runtime gap PR")
                 }
             }
         }
-        if let networkMode = service.networkMode, !networkMode.isEmpty {
+        if let networkMode = service.networkMode, !networkMode.isEmpty, !isNoNetworkMode(networkMode) {
             throw ComposeError.unsupported("service '\(service.name)' uses network_mode '\(networkMode)'; network mode support needs an apple/container runtime gap PR")
         }
         if let gap = unsupportedRuntimeStringFields(service: service).first {
@@ -1176,6 +1372,22 @@ private extension ComposeOrchestrator {
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
         }
+    }
+
+    /// Rejects project network fields that are not mapped to Apple network creation.
+    func validateProjectNetworks(_ project: ComposeProject) throws {
+        for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) {
+            guard let fields = network.unsupportedFields, !fields.isEmpty else {
+                continue
+            }
+            let fieldList = fields.joined(separator: ", ")
+            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); only internal and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks")
+        }
+    }
+
+    /// Returns whether the service explicitly disables container networking.
+    func isNoNetworkMode(_ networkMode: String?) -> Bool {
+        networkMode == "none"
     }
 
     /// Allows MAC addresses only for the single-network attachment that Apple
@@ -1471,6 +1683,57 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Validates service port mappings before resource creation.
+    func validatePublishedPorts(services: [ComposeService]) throws {
+        for service in services {
+            try validatePublishedPorts(service.ports ?? [], serviceName: service.name)
+        }
+    }
+
+    /// Validates one service's port mappings before they reach Apple `container`.
+    func validatePublishedPorts(_ ports: [String], serviceName: String) throws {
+        for port in ports {
+            try validatePublishedPort(port, serviceName: serviceName)
+        }
+    }
+
+    /// Rejects Docker Compose dynamic host-port allocation because Apple
+    /// `container --publish` currently requires an explicit host port.
+    func validatePublishedPort(_ value: String, serviceName: String) throws {
+        let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
+        }
+        let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
+        let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2 else {
+            throw dynamicPortUnsupported(serviceName: serviceName, target: rawBinding, protocolName: protocolName)
+        }
+
+        let published = parts[parts.count - 2]
+        guard isExplicitHostPort(published) else {
+            throw dynamicPortUnsupported(serviceName: serviceName, target: parts.last ?? rawBinding, protocolName: protocolName)
+        }
+    }
+
+    /// Returns true when a publish field names concrete Apple host ports.
+    func isExplicitHostPort(_ value: String) -> Bool {
+        let bounds = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard [1, 2].contains(bounds.count) else {
+            return false
+        }
+        let ports = bounds.compactMap { UInt16($0) }
+        guard ports.count == bounds.count, ports.allSatisfy({ $0 > 1 }) else {
+            return false
+        }
+        return ports.count == 1 || ports[0] <= ports[1]
+    }
+
+    /// Creates the unsupported-feature error for dynamic host-port allocation.
+    func dynamicPortUnsupported(serviceName: String, target: String, protocolName: String) -> ComposeError {
+        .unsupported("service '\(serviceName)' publishes target port \(target)/\(protocolName) dynamically; apple/container publish requires explicit host ports")
+    }
+
     /// Validates `compose exec` options before invoking runtime exec.
     func validateExecOptions(_ options: ComposeExecOptions) throws {
         if options.index != 1 {
@@ -1483,9 +1746,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose cp` options before invoking runtime copy.
     func validateCopyOptions(_ options: ComposeCopyOptions) throws {
-        if options.all {
-            throw ComposeError.unsupported("cp --all: copying from one-off run containers is not implemented by container-compose yet")
-        }
         if options.archive {
             throw ComposeError.unsupported("cp --archive: apple/container cp does not expose archive mode")
         }
@@ -1542,6 +1802,15 @@ private extension ComposeOrchestrator {
     /// Creates a project network unless it already exists.
     func ensureNetwork(project: ComposeProject, composeName: String, network: ComposeNetwork) async throws {
         var args = ["network", "create"]
+        if network.isInternal == true {
+            args.append("--internal")
+        }
+        if let ipv4Subnet = network.ipv4Subnet, !ipv4Subnet.isEmpty {
+            args.append(contentsOf: ["--subnet", ipv4Subnet])
+        }
+        if let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
+            args.append(contentsOf: ["--subnet-v6", ipv6Subnet])
+        }
         for label in resourceLabels(project: project) {
             args.append(contentsOf: ["--label", label])
         }
@@ -1553,7 +1822,13 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await resourceManager.createNetwork(name: runtimeName, labels: resourceLabels(project: project, labels: network.labels))
+            try await resourceManager.createNetwork(ComposeNetworkCreateRequest(
+                name: runtimeName,
+                isInternal: network.isInternal == true,
+                ipv4Subnet: network.ipv4Subnet,
+                ipv6Subnet: network.ipv6Subnet,
+                labels: resourceLabels(project: project, labels: network.labels)
+            ))
         }
     }
 
@@ -1571,7 +1846,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await resourceManager.createVolume(name: runtimeName, labels: resourceLabels(project: project, labels: volume.labels))
+            try await resourceManager.createVolume(name: runtimeName, labels: resourceLabels(project: project, labels: volume.labels))
         }
     }
 
@@ -1613,11 +1888,34 @@ private extension ComposeOrchestrator {
         for (key, value) in (build.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
+        for secret in build.secrets ?? [] {
+            args.append(contentsOf: ["--secret", try buildSecretArgument(secret)])
+        }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
         }
         args.append(build.context ?? ".")
         try await runContainer(args)
+    }
+
+    /// Encodes one Compose build secret for Apple `container build --secret`.
+    func buildSecretArgument(_ secret: ComposeBuildSecret) throws -> String {
+        let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            throw ComposeError.invalidProject("build secret id must not be empty")
+        }
+        let file = secret.file?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let environment = secret.environment?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let file, !file.isEmpty, let environment, !environment.isEmpty {
+            throw ComposeError.invalidProject("build secret '\(id)' cannot define both file and environment")
+        }
+        if let file, !file.isEmpty {
+            return "id=\(id),src=\(file)"
+        }
+        if let environment, !environment.isEmpty {
+            return "id=\(id),env=\(environment)"
+        }
+        throw ComposeError.invalidProject("build secret '\(id)' must define file or environment")
     }
 
     /// Applies the Compose `up --pull` policy before starting services.
@@ -1873,6 +2171,7 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--env-file", envFile])
         }
         for port in run.publishedPorts ?? service.ports ?? [] {
+            try validatePublishedPort(port, serviceName: service.name)
             args.append(contentsOf: ["--publish", port])
         }
         for mount in service.volumes ?? [] {
@@ -1881,8 +2180,10 @@ private extension ComposeOrchestrator {
         for tmpfs in service.tmpfs ?? [] {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
-        if let network = (service.networks ?? []).first {
-            let networkArgument = networkAttachmentArgument(project: project, service: service, network: network)
+        if isNoNetworkMode(service.networkMode) {
+            args.append(contentsOf: ["--network", "none"])
+        } else if let network = (service.networks ?? []).first {
+            let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
             args.append(contentsOf: ["--network", networkArgument])
         }
         if let platform = service.platform, !platform.isEmpty {
@@ -1949,7 +2250,11 @@ private extension ComposeOrchestrator {
     }
 
     /// Rewrites `SERVICE:/path` copy operands to the matching service container.
-    private func copyEndpoint(_ argument: String, project: ComposeProject) throws -> ComposeCopyEndpoint {
+    private func copyEndpoint(
+        _ argument: String,
+        project: ComposeProject,
+        includeOneOff: Bool
+    ) async throws -> ComposeCopyEndpoint {
         guard let delimiter = argument.firstIndex(of: ":") else {
             return .local(argument)
         }
@@ -1964,7 +2269,22 @@ private extension ComposeOrchestrator {
         guard path.hasPrefix("/") else {
             throw ComposeError.invalidProject("container copy path for service '\(serviceName)' must be absolute")
         }
-        return .container(id: containerName(project: project, service: service, oneOff: false), path: path)
+        if includeOneOff {
+            let containers = try await copyTargets(project: project, service: service, path: path)
+            guard !containers.isEmpty else {
+                throw ComposeError.invalidProject("no container found for service '\(serviceName)'")
+            }
+            return .containers(containers)
+        }
+        return .containers([ComposeCopyContainerTarget(id: containerName(project: project, service: service, oneOff: false), path: path)])
+    }
+
+    /// Returns service and one-off containers that can be targeted by `cp --all`.
+    private func copyTargets(project: ComposeProject, service: ComposeService, path: String) async throws -> [ComposeCopyContainerTarget] {
+        try await projectContainers(projectName: project.name, all: true)
+            .filter { $0.serviceName == service.name }
+            .sorted(by: compareCopyTargetContainers)
+            .map { ComposeCopyContainerTarget(id: $0.id, path: path) }
     }
 
     /// Returns whether a copy operand prefix has Compose service-reference shape.
@@ -2010,7 +2330,7 @@ private extension ComposeOrchestrator {
             if options.dryRun {
                 try await runContainer(args, check: false)
             } else {
-                try? await imageManager.deleteImage(image, force: true, emit: options.emit)
+                try await imageManager.deleteImage(image, force: true, emit: options.emit)
             }
         }
     }
@@ -2056,6 +2376,23 @@ private extension ComposeOrchestrator {
         return lines
     }
 
+    /// Validates that attach uses only the output stream Apple exposes through logs.
+    func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
+        if attach.index != 1 {
+            throw ComposeError.unsupported("attach --index \(attach.index): service replica attach needs replica-aware log lookup")
+        }
+        if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
+            throw ComposeError.unsupported("attach --detach-keys: apple/container logs does not expose detach key handling")
+        }
+        if !attach.noStdin {
+            throw ComposeError.unsupported("attach: apple/container logs is output-only; use --no-stdin --sig-proxy=false")
+        }
+        let sigProxy = attach.sigProxy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if sigProxy != "false" {
+            throw ComposeError.unsupported("attach --sig-proxy=\(attach.sigProxy): apple/container logs does not proxy signals to service processes; use --sig-proxy=false")
+        }
+    }
+
     /// Parses the `compose port` lookup target and protocol.
     func parsePortLookup(privatePort: String, protocolName: String) throws -> (target: String, protocolName: String) {
         let normalizedProtocol = try normalizedPortProtocol(protocolName)
@@ -2087,7 +2424,7 @@ private extension ComposeOrchestrator {
         switch parts.count {
         case 1:
             guard !parts[0].contains("-") else {
-                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
+                throw dynamicPortUnsupported(serviceName: serviceName, target: parts[0], protocolName: protocolName)
             }
             return ComposePublishedPort(hostIP: nil, published: nil, target: parts[0], protocolName: protocolName)
         case 2...:
@@ -2284,6 +2621,40 @@ private extension ComposeOrchestrator {
         return filterProjectContainers(projectName: projectName, containers: containers)
     }
 
+    /// Lists project volume records through the direct resource API.
+    func composeVolumeRecords(
+        project: ComposeProject,
+        services: [ComposeService],
+        restrictToSelectedServices: Bool
+    ) async throws -> [ComposeVolumeRecord] {
+        let attachedVolumeNames = serviceAttachedVolumeRuntimeNames(project: project, services: services)
+        let volumes = try await resourceManager.listVolumes()
+        return volumes
+            .filter { volume in
+                if restrictToSelectedServices {
+                    return attachedVolumeNames.contains(volume.name)
+                }
+                return volume.labels[projectLabel] == project.name || attachedVolumeNames.contains(volume.name)
+            }
+            .map { ComposeVolumeRecord(driver: $0.driver, name: $0.name) }
+            .sorted { $0.name < $1.name }
+    }
+
+    /// Returns existing runtime volume names attached by the selected services.
+    func serviceAttachedVolumeRuntimeNames(project: ComposeProject, services: [ComposeService]) -> Set<String> {
+        var names = Set<String>()
+        for service in services {
+            for mount in service.volumes ?? [] where mount.type == "volume" {
+                if let source = mount.source, !source.isEmpty {
+                    names.insert(volumeRuntimeName(project: project, composeName: source))
+                } else if let target = mount.target {
+                    names.insert(anonymousVolumeRuntimeName(project: project, target: target))
+                }
+            }
+        }
+        return names
+    }
+
     /// Executes one `container` command or prints it in dry-run mode.
     @discardableResult
     func runContainer(
@@ -2334,11 +2705,12 @@ private struct ComposePublishedPort {
 
 private extension ComposeNetworkOptions {
     /// Names the Compose fields that need runtime attachment support.
-    func unsupportedFieldNames() -> [String] {
+    func unsupportedFieldNames() throws -> [String] {
         var fields: [String] = []
-        if let driverOpts, !driverOpts.isEmpty {
+        if let driverOpts, driverOpts.contains(where: { !networkMTUDriverOptionKeys.contains($0.key) }) {
             fields.append("driver_opts")
         }
+        _ = try networkMTU()
         if let gatewayPriority, gatewayPriority != 0 {
             fields.append("gw_priority")
         }
@@ -2358,6 +2730,26 @@ private extension ComposeNetworkOptions {
             fields.append("priority")
         }
         return fields
+    }
+
+    /// Returns the supported MTU driver option value accepted by Apple `container`.
+    func networkMTU() throws -> String? {
+        let values = networkMTUDriverOptionKeys.compactMap { key -> (key: String, value: String)? in
+            guard let value = driverOpts?[key] else {
+                return nil
+            }
+            return (key, value)
+        }
+        guard let first = values.first else {
+            return nil
+        }
+        if values.contains(where: { $0.value != first.value }) {
+            throw ComposeError.invalidProject("network MTU driver options must not conflict")
+        }
+        guard let mtu = Int(first.value), mtu > 0 else {
+            throw ComposeError.invalidProject("network MTU driver option '\(first.key)' must be a positive integer")
+        }
+        return String(mtu)
     }
 }
 
@@ -2383,6 +2775,7 @@ private struct ComposeLabelOverride {
 
 private let projectLabel = "com.apple.container.compose.project"
 private let serviceLabel = "com.apple.container.compose.service"
+private let oneOffLabel = "com.apple.container.compose.oneoff"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesLabel = "com.apple.container.compose.project.config-files"
@@ -2390,6 +2783,10 @@ private let configFilesHashLabel = "com.apple.container.compose.project.config-f
 private let reservedComposeLabelPrefix = "com.apple.container.compose."
 private let reservedDockerComposeLabelPrefix = "com.docker.compose."
 private let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
+private let networkMTUDriverOptionKeys = [
+    "com.docker.network.driver.mtu",
+    "mtu",
+]
 
 private extension ComposeContainerSummary {
     /// Compose project label attached to a runtime container.
@@ -2400,6 +2797,11 @@ private extension ComposeContainerSummary {
     /// Compose service label attached to a runtime container.
     var serviceName: String? {
         labels[serviceLabel]
+    }
+
+    /// Whether this container was created by `compose run`.
+    var isOneOff: Bool {
+        labels[oneOffLabel] == "true"
     }
 
     /// Compose config hash label used for recreate decisions.
@@ -2427,10 +2829,17 @@ private func networkRuntimeName(project: ComposeProject, composeName: String) ->
 }
 
 /// Builds the single network attachment value accepted by Apple `container`.
-private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) -> String {
+private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
     var argument = networkRuntimeName(project: project, composeName: network)
+    var options: [String] = []
     if let macAddress = networkMACAddress(service: service, network: network) {
-        argument += ",mac=\(macAddress)"
+        options.append("mac=\(macAddress)")
+    }
+    if let mtu = try service.networkOptions?[network]?.networkMTU() {
+        options.append("mtu=\(mtu)")
+    }
+    if !options.isEmpty {
+        argument += "," + options.joined(separator: ",")
     }
     return argument
 }
@@ -2516,7 +2925,7 @@ private func resourceLabels(project: ComposeProject, labels: [String: String]?) 
 private func serviceLabels(project: ComposeProject, service: ComposeService, oneOff: Bool) throws -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("\(serviceLabel)=\(service.name)")
-    labels.append("com.apple.container.compose.oneoff=\(oneOff)")
+    labels.append("\(oneOffLabel)=\(oneOff)")
     labels.append("\(configHashLabel)=\(try configHash(project: project, service: service))")
     if let firstFile = project.composeFiles.first {
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
@@ -2806,6 +3215,14 @@ private func filterProjectContainers(projectName: String, containers: [ComposeCo
     containers.filter { $0.projectName == projectName }
 }
 
+/// Orders normal service containers before one-off `run` containers for `cp --all`.
+private func compareCopyTargetContainers(_ lhs: ComposeContainerSummary, _ rhs: ComposeContainerSummary) -> Bool {
+    if lhs.isOneOff != rhs.isOneOff {
+        return !lhs.isOneOff
+    }
+    return lhs.id < rhs.id
+}
+
 /// Validates the `compose ls --format` value.
 private func composeLsFormat(_ value: String) throws -> ComposeLsFormat {
     switch value.lowercased() {
@@ -2911,6 +3328,12 @@ private struct ComposeImageRecord: Encodable, Equatable {
     let imageID: String
 }
 
+/// One Docker Compose-style volume row derived from Apple container volumes.
+private struct ComposeVolumeRecord: Encodable, Equatable {
+    let driver: String
+    let name: String
+}
+
 /// Renders image rows as a compact table.
 private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String {
     guard !records.isEmpty else {
@@ -2933,6 +3356,44 @@ private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String 
 
 /// Renders image rows as deterministic JSON.
 private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(records)
+    return String(decoding: data, as: UTF8.self)
+}
+
+/// Validates the `compose volumes --format` value.
+private func composeVolumesFormat(_ value: String) throws -> ComposeVolumesFormat {
+    switch value.lowercased() {
+    case "table":
+        return .table
+    case "json":
+        return .json
+    default:
+        throw ComposeError.unsupported("volumes --format '\(value)'; supported formats are table and json")
+    }
+}
+
+/// Renders volume rows as a compact table.
+private func renderComposeVolumeTable(_ records: [ComposeVolumeRecord]) -> String {
+    guard !records.isEmpty else {
+        return ""
+    }
+    let rows = [
+        ["DRIVER", "VOLUME NAME"],
+    ] + records.map { [$0.driver, $0.name] }
+    let widths = rows.reduce(Array(repeating: 0, count: rows[0].count)) { current, row in
+        zip(current, row).map { max($0, $1.count) }
+    }
+    return rows.map { row in
+        row.enumerated().map { index, value in
+            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
+        }.joined(separator: "  ")
+    }.joined(separator: "\n")
+}
+
+/// Renders volume rows as deterministic JSON.
+private func renderComposeVolumeJSON(_ records: [ComposeVolumeRecord]) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(records)

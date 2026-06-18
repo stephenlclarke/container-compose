@@ -146,6 +146,12 @@ extension ComposeProjectCommand {
     func orchestrator() -> ComposeOrchestrator {
         global.orchestrator()
     }
+
+    /// Prints the canonical normalized project JSON.
+    func printCanonicalProject() async throws {
+        let loadedProject = try await project()
+        print(try orchestrator().config(project: loadedProject))
+    }
 }
 
 /// Implements `compose config`.
@@ -156,8 +162,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Prints the canonical project JSON emitted by the orchestrator.
     func run() async throws {
-        let project = try await project()
-        print(try orchestrator().config(project: project))
+        try await printCanonicalProject()
     }
 }
 
@@ -638,7 +643,7 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
 struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "cp", abstract: "Copy files between service containers and local paths.")
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .customLong("all"), help: "Include containers created by the run command. Not implemented yet.")
+    @Flag(name: .customLong("all"), help: "Include containers created by the run command.")
     var all = false
     @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Not supported by apple/container cp yet.")
     var archive = false
@@ -732,14 +737,33 @@ struct Scale: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose attach` until attach streaming is designed.
+/// Implements output-only `compose attach` through the runtime log stream.
 struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "attach", abstract: "Attach to a service container.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for attach streaming.
-    func run() throws {
-        try global.orchestrator().unsupported("attach", reason: "service attach streaming is not implemented by container-compose yet")
+    @Flag(name: .customLong("no-stdin"), help: "Do not attach stdin. Required because apple/container logs are output-only.")
+    var noStdin = false
+    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Not supported by apple/container logs yet.")
+    var detachKeys: String?
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    var index = 1
+    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false for output-only attach.")
+    var sigProxy = "true"
+    @Argument(help: "Service name.")
+    var service: String
+    /// Streams the selected service container output.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().attach(
+            project: loadedProject,
+            serviceName: service,
+            options: ComposeAttachOptions {
+                $0.noStdin = noStdin
+                $0.detachKeys = detachKeys
+                $0.index = index
+                $0.sigProxy = sigProxy
+            }
+        )
     }
 }
 
@@ -754,14 +778,13 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose convert` until alternate output conversion exists.
+/// Implements `compose convert` as the canonical config renderer.
 struct Convert: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert the Compose model.")
+    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert the Compose model to canonical JSON.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for Compose model conversion.
-    func run() throws {
-        try global.orchestrator().unsupported("convert", reason: "Compose model conversion is not implemented by container-compose yet")
+    /// Prints the canonical project JSON emitted by the orchestrator.
+    func run() async throws {
+        try await printCanonicalProject()
     }
 }
 
@@ -797,14 +820,23 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose volumes` until volume subcommands are designed.
+/// Implements `compose volumes`.
 struct Volumes: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "volumes", abstract: "Manage Compose volumes.")
+    static let configuration = CommandConfiguration(commandName: "volumes", abstract: "List Compose volumes.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for the Compose volumes command group.
-    func run() throws {
-        try global.orchestrator().unsupported("volumes", reason: "Compose volume command group is not implemented by container-compose yet")
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Flag(name: .shortAndLong, help: "Only display volume names.")
+    var quiet = false
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Lists existing project-scoped volumes through the resource API.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().volumes(
+            project: loadedProject,
+            options: ComposeVolumesOptions(services: services, quiet: quiet, format: format)
+        )
     }
 }
 

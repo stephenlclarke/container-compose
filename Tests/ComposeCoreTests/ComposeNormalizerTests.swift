@@ -59,6 +59,8 @@ struct ComposeNormalizerTests {
               default:
                 aliases:
                   - api.internal
+                driver_opts:
+                  com.docker.network.driver.mtu: "1450"
                 ipv4_address: 10.10.0.5
             ports:
               - "8080:80"
@@ -95,8 +97,18 @@ struct ComposeNormalizerTests {
                 required: false
           redis:
             image: redis:7
+          isolated:
+            image: alpine:3.20
+            network_mode: none
         volumes:
           data: {}
+        networks:
+          default:
+            internal: true
+            ipam:
+              config:
+                - subnet: 10.10.0.0/24
+                - subnet: fd00:10::/64
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -128,7 +140,12 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.domainName == "example.test")
         #expect(project.services["api"]?.command == ["nginx", "-g", "daemon off;"])
         #expect(project.services["api"]?.networkAliases == ["default": ["api.internal"]])
-        #expect(project.services["api"]?.networkOptions == ["default": ComposeNetworkOptions(addressing: .init(ipv4Address: "10.10.0.5"))])
+        #expect(project.services["api"]?.networkOptions == [
+            "default": ComposeNetworkOptions(
+                driverOpts: ["com.docker.network.driver.mtu": "1450"],
+                addressing: .init(ipv4Address: "10.10.0.5")
+            ),
+        ])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])
@@ -147,7 +164,69 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.externalLinks == ["legacy_db:db"])
         #expect(project.services["api"]?.dependsOn == ["redis": ComposeDependency(condition: "service_started", restart: true, required: false)])
         #expect(project.services["api"]?.ports == ["8080:80"])
+        #expect(project.services["isolated"]?.networkMode == "none")
+        #expect(project.networks["default"] == ComposeNetwork(
+            name: "sample_default",
+            isInternal: true,
+            ipv4Subnet: "10.10.0.0/24",
+            ipv6Subnet: "fd00:10::/64"
+        ))
         #expect(project.volumes["data"] != nil)
+    }
+
+    @Test("normalizes supported build secrets through compose-go")
+    func normalizesSupportedBuildSecretsThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        let tokenFile = directory.appendingPathComponent("token.txt")
+        let tokenVariable = "BUILD_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        setenv(tokenVariable, "secret", 1)
+        defer {
+            unsetenv(tokenVariable)
+        }
+        try Data("token\n".utf8).write(to: tokenFile)
+        try """
+        services:
+          api:
+            build:
+              context: .
+              secrets:
+                - source: file_token
+                - source: env_token
+                  target: npm_token
+          worker:
+            build:
+              context: .
+              secrets:
+                - external_token
+        secrets:
+          file_token:
+            file: ./token.txt
+          env_token:
+            environment: \(tokenVariable)
+          external_token:
+            external: true
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.services["api"]?.build?.secrets == [
+            ComposeBuildSecret(id: "file_token", file: tokenFile.path),
+            ComposeBuildSecret(id: "npm_token", environment: tokenVariable),
+        ])
+        #expect(project.services["api"]?.build?.unsupportedFields == nil)
+        #expect(project.services["worker"]?.build?.unsupportedFields == ["secrets"])
     }
 
     @Test("normalizes network mode through compose-go")

@@ -211,6 +211,55 @@ services:
 	}
 }
 
+func TestLoadProjectNormalizesBuildSecrets(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("NPM_TOKEN", "secret")
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, filepath.Join(dir, "token.txt"), "token\n")
+	writeFile(t, composeFile, `
+services:
+  api:
+    build:
+      context: .
+      secrets:
+        - source: token
+        - source: npm
+          target: npm_token
+  worker:
+    build:
+      context: .
+      secrets:
+        - external_secret
+secrets:
+  token:
+    file: ./token.txt
+  npm:
+    environment: NPM_TOKEN
+  external_secret:
+    external: true
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	apiSecrets := project.Services["api"].Build.Secrets
+	want := []normalizedBuildSecret{
+		{ID: "token", File: filepath.Join(dir, "token.txt")},
+		{ID: "npm_token", Environment: "NPM_TOKEN"},
+	}
+	if !reflect.DeepEqual(apiSecrets, want) {
+		t.Fatalf("api build secrets = %#v, want %#v", apiSecrets, want)
+	}
+	if fields := project.Services["api"].Build.UnsupportedFields; len(fields) != 0 {
+		t.Fatalf("api unsupported build fields = %#v, want none", fields)
+	}
+	if fields := project.Services["worker"].Build.UnsupportedFields; !reflect.DeepEqual(fields, []string{"secrets"}) {
+		t.Fatalf("worker unsupported build fields = %#v, want secrets", fields)
+	}
+}
+
 func TestLoadProjectNormalizesComposeModel(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")
@@ -555,7 +604,7 @@ func TestNormalizeServicePreservesCPUPercent(t *testing.T) {
 	service := normalizeService(types.ServiceConfig{
 		Name:       "api",
 		CPUPercent: 12.5,
-	})
+	}, nil)
 
 	if service.CPUPercent != 12.5 {
 		t.Fatalf("service.CPUPercent = %f, want 12.5", service.CPUPercent)
@@ -570,7 +619,7 @@ func TestNormalizeServicePreservesLegacyLoggingFields(t *testing.T) {
 		LogOpt: map[string]string{
 			"mode": "non-blocking",
 		},
-	})
+	}, nil)
 
 	if service.LogDriver != "local" {
 		t.Fatalf("service.LogDriver = %q, want local", service.LogDriver)
@@ -585,7 +634,7 @@ func TestNormalizeServicePreservesLegacyVolumeDriver(t *testing.T) {
 		Name:         "api",
 		Image:        "nginx:alpine",
 		VolumeDriver: "local",
-	})
+	}, nil)
 
 	if service.VolumeDriver != "local" {
 		t.Fatalf("service.VolumeDriver = %q, want local", service.VolumeDriver)
@@ -1008,10 +1057,10 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if buildArgs(nil) != nil {
 		t.Fatal("buildArgs(nil) returned non-nil")
 	}
-	if unsupportedBuildFields(nil) != nil {
+	if unsupportedBuildFields(nil, false) != nil {
 		t.Fatal("unsupportedBuildFields(nil) returned non-nil")
 	}
-	if fields := unsupportedBuildFields(&types.BuildConfig{}); len(fields) != 0 {
+	if fields := unsupportedBuildFields(&types.BuildConfig{}, false); len(fields) != 0 {
 		t.Fatalf("unsupportedBuildFields(empty) = %#v, want empty", fields)
 	}
 	if unsupportedDeployFields(nil) != nil {
@@ -1120,6 +1169,41 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	}
 }
 
+func TestNetworkIPAMValues(t *testing.T) {
+	gotIPv4, gotIPv6, gotUnsupported := networkIPAMValues(types.IPAMConfig{
+		Config: []*types.IPAMPool{
+			{Subnet: "10.77.0.0/24"},
+			{Subnet: "fd77::/64"},
+		},
+	})
+	if gotIPv4 != "10.77.0.0/24" || gotIPv6 != "fd77::/64" || gotUnsupported != nil {
+		t.Fatalf("networkIPAMValues supported = %q, %q, %#v", gotIPv4, gotIPv6, gotUnsupported)
+	}
+
+	gotIPv4, gotIPv6, gotUnsupported = networkIPAMValues(types.IPAMConfig{
+		Driver: "custom",
+		Config: []*types.IPAMPool{
+			{
+				Subnet:             "10.77.0.0/24",
+				Gateway:            "10.77.0.1",
+				IPRange:            "10.77.0.128/25",
+				AuxiliaryAddresses: types.Mapping{"api": "10.77.0.10"},
+			},
+			{Subnet: "10.78.0.0/24"},
+		},
+	})
+	wantUnsupported := []string{
+		"ipam.driver",
+		"ipam.config.gateway",
+		"ipam.config.ip_range",
+		"ipam.config.aux_addresses",
+		"ipam.config.subnet",
+	}
+	if gotIPv4 != "10.77.0.0/24" || gotIPv6 != "" || !reflect.DeepEqual(gotUnsupported, wantUnsupported) {
+		t.Fatalf("networkIPAMValues unsupported = %q, %q, %#v; want %#v", gotIPv4, gotIPv6, gotUnsupported, wantUnsupported)
+	}
+}
+
 func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 	got := unsupportedBuildFields(&types.BuildConfig{
 		AdditionalContexts: types.Mapping{"shared": "./shared"},
@@ -1141,7 +1225,7 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		SSH:                types.SSHConfig{{ID: "default"}},
 		Tags:               types.StringList{"example/api:extra"},
 		Ulimits:            map[string]*types.UlimitsConfig{"nofile": {Single: 1024}},
-	})
+	}, true)
 	want := []string{
 		"additional_contexts",
 		"dockerfile_inline",

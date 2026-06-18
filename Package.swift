@@ -26,6 +26,7 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "container", path: "../container"),
+        .package(url: "https://github.com/apple/containerization.git", exact: "0.33.4"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
     ],
@@ -49,6 +50,7 @@ let package = Package(
                 .product(name: "ContainerAPIClient", package: "container"),
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
+                .product(name: "ContainerizationExtras", package: "containerization"),
                 .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/ComposeCore"
@@ -58,6 +60,7 @@ let package = Package(
             dependencies: [
                 "ComposeCore",
                 .product(name: "ContainerResource", package: "container"),
+                .product(name: "ContainerizationExtras", package: "containerization"),
             ],
             path: "Tests/ComposeCoreTests"
         ),

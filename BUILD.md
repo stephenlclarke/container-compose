@@ -6,9 +6,9 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
 
 ## Requirements
 
-- macOS with Xcode installed. The package targets macOS 15 and requires the
-  Swift 6.2 toolchain supplied by Xcode. Install Xcode from the Mac App Store or
-  <https://developer.apple.com/download/>.
+- macOS with an Apple Swift 6.2 or newer toolchain. Xcode from the Mac App Store,
+  Xcode from <https://developer.apple.com/download/>, or the Apple Command Line
+  Tools can provide the required Swift compiler.
 - Go 1.23 or newer for the Compose normalizer helper. Install Go from
   <https://go.dev/dl/> or with Homebrew:
 
@@ -31,11 +31,16 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
 - Optional: `sonar-scanner` and either `SONAR_TOKEN` or `SONAR_TOKEN_PERSONAL`
   for local SonarQube scans.
 
-If `swift` resolves to the Command Line Tools toolchain instead of Xcode, set:
+If you need to force a specific Apple developer directory, set:
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 ```
+
+The Makefile uses the active `swift` executable to locate Swift Testing
+frameworks and runtime libraries, so Command Line Tools and full Xcode
+toolchains are both supported as long as their Swift version satisfies the
+package requirement.
 
 ## Checkout Layout
 
@@ -99,9 +104,11 @@ make test
 ```
 
 Use the Makefile targets for local Swift tests instead of invoking
-`swift test` directly. The Makefile adds the Swift Testing framework search
-paths needed by Command Line Tools installs that do not place `Testing.framework`
-on SwiftPM's default test runtime path.
+`swift test` directly. The Makefile derives the Swift Testing framework and
+runtime library paths from the active `swift` executable and fails if SwiftPM
+builds the test bundle without actually running tests. Swift coverage export
+uses the `llvm-cov` binary from that same toolchain when available; set
+`SWIFT_LLVM_COV=/absolute/path/to/llvm-cov` to override it.
 
 Run the same validation used by GitHub Actions:
 
