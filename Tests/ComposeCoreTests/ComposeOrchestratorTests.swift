@@ -3864,6 +3864,36 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down surfaces image removal failures")
+    func downSurfacesImageRemovalFailures() async throws {
+        let runner = RecordingRunner()
+        let expected = ComposeError.invalidProject("image delete failed")
+        let imageManager = RecordingContainerImageManager(failure: expected)
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, imageManager: imageManager, lifecycleManager: lifecycleManager)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:dev"),
+            ]
+        )
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions(rmi: "all"))
+            Issue.record("Expected image delete failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
     @Test("down rejects unsupported rmi policy before runtime commands")
     func downRejectsUnsupportedRMIPolicyBeforeRuntimeCommands() async throws {
         let runner = RecordingRunner()

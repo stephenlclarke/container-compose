@@ -2330,7 +2330,7 @@ private extension ComposeOrchestrator {
             if options.dryRun {
                 try await runContainer(args, check: false)
             } else {
-                try? await imageManager.deleteImage(image, force: true, emit: options.emit)
+                try await imageManager.deleteImage(image, force: true, emit: options.emit)
             }
         }
     }
