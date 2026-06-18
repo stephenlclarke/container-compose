@@ -1,52 +1,35 @@
-# container-compose Plan
+# container-compose Log Compliance Plan
 
-This file tracks the remaining Compose compatibility work and the upstream
-apple/container work that will be needed for stronger Docker Compose v2
-compatibility.
+This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-## Timestamp Policy
+Assessment timestamp: `2026-06-18 21:05:51 BST`.
 
-Timestamps use the local development timezone, Europe/London. Historical
-entries that existed before this file was created are backfilled from signed Git
-commit timestamps. New tasks should record:
+## Scope
 
-- Added: when the task entered this plan.
-- Started: when implementation or design work begins.
-- Completed: when the tested commit lands on `develop`.
+This file is intentionally narrower than the earlier whole-project backlog. It covers Docker Compose v2 log behavior across:
 
-Use the status lozenges below where the event has not happened yet.
+- `docker compose logs [OPTIONS] [SERVICE...]`
+- `docker compose attach` behavior that is implemented through log streaming in this repository
+- Compose service `logging` configuration
+- Runtime log data exposed by [`apple/container`](https://github.com/apple/container)
+
+Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-color`, `--no-log-prefix`, `--since`, `--tail/-n`, `--timestamps/-t`, and `--until`. The Compose file reference documents service-level `logging.driver` and `logging.options`.
 
 ## Status Lozenges
 
-The lozenges use static flat badge images so the traffic-light colours render
-inside GitHub Markdown and HTML tables: green is complete, yellow is active, red
-is blocked upstream, and gray is not started.
+- <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">: supported by both [`apple/container`](https://github.com/apple/container) and `container-compose` for the Compose behavior described.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">: one side has a useful primitive or partial mapping, but Docker Compose v2 behavior is not complete yet.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square">: [`apple/container`](https://github.com/apple/container) appears to expose enough runtime data, but `container-compose` still needs implementation work.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">: the first missing piece is an [`apple/container`](https://github.com/apple/container) runtime, log-storage, or logging-policy primitive.
+- <img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square">: not started or not yet broken down into a concrete implementation path.
 
-- <img alt="DONE" src="https://img.shields.io/badge/DONE-2E7D32?style=flat-square">: tested work has landed on `develop`, or the item needs no further repo work.
-- <img alt="ACTIVE" src="https://img.shields.io/badge/ACTIVE-B26A00?style=flat-square">: work has started and still has repo-owned follow-up.
-- <img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square">: Docker Compose v2 compatibility needs [`apple/container`](https://github.com/apple/container) runtime work before this repo can finish the mapping.
-- <img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square">: work is tracked but has not started yet.
+## Current Runtime Evidence
 
-## Development Cycle
+`container-compose` currently calls `ContainerClient.logs(id:)` through `ContainerClientLogManager`. It reads the first returned file handle as the container stdio log, supports plugin-side `tail`, and follows appended lines with a file readability handler.
 
-- Work happens on `develop`.
-- Each issue is fixed as one tested Conventional Commit on `develop`.
-- Push `develop` after each completed issue.
-- Squash only on `develop` when a single issue needs multiple local commits.
-- Batch `develop` to `main`; do not leave it too long before the batch merge.
-- Use local Makefile validation first because it is faster than waiting for
-  GitHub runners.
-- Post to `xyzzy-tools.slack.com#codex` before and after each code slice.
-- When choosing the next implementation target, select one functional topic
-  such as replica scaling, advanced build configuration, storage, lifecycle, or
-  watch/develop workflows. Work that topic until it is fully implemented or an
-  apple/container blocker is discovered and documented, then move on to the
-  next topic.
-- SonarQube remediation can be batched to `main`, but SonarQube fixes should
-  be pushed to `main` after each fix when formal SonarQube validation is the
-  active workflow.
+[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)`. The server opens two file handles for an existing container bundle: stdio logs and boot logs. The runtime comment says logs only require the container bundle and files to exist, not that the container is currently running.
 
-## Current Snapshot
+## Compatibility Snapshot
 
 <table>
   <thead>
@@ -58,1010 +41,290 @@ is blocked upstream, and gray is not started.
   </thead>
   <tbody>
     <tr>
-      <td>Completed repo work</td>
-      <td><img alt="DONE" src="https://img.shields.io/badge/DONE-2E7D32?style=flat-square"></td>
-      <td>Tracked items in the completed sections have tested commits on <code>develop</code>.</td>
+      <td>Raw stdio log replay</td>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"></td>
+      <td>Existing Compose-managed containers can have their stdio log file read through the direct apple/container API.</td>
     </tr>
     <tr>
-      <td>container-compose owned runtime backlog</td>
-      <td><img alt="DONE" src="https://img.shields.io/badge/DONE-2E7D32?style=flat-square"></td>
-      <td>No current runtime surface-level gaps are classified as repo-owned; newly discovered plugin gaps should move into the backlog with <img alt="ACTIVE" src="https://img.shields.io/badge/ACTIVE-B26A00?style=flat-square"> when implementation starts.</td>
+      <td>Basic follow and tail</td>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"></td>
+      <td><code>--follow</code>, <code>--tail N</code>, <code>-n N</code>, and <code>--tail all</code> are wired for one selected runtime container.</td>
     </tr>
     <tr>
-      <td>apple/container runtime primitives</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-      <td>Remaining Docker Compose v2 parity gaps need apple/container runtime, build, networking, storage, logging, or command-data work before this repo can finish the mapping.</td>
+      <td>Replica and service aggregation</td>
+      <td><img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"></td>
+      <td>Docker Compose shows all selected service containers by default. container-compose currently targets one index unless <code>--index</code> is supplied.</td>
     </tr>
     <tr>
-      <td>Future upstream fork and PR work</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td>Tracked upstream work has not started unless the row carries a start timestamp.</td>
+      <td>Multi-service follow</td>
+      <td><img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"></td>
+      <td>Docker Compose follows all selected services together. container-compose loops services sequentially, so the first followed stream can block later services.</td>
+    </tr>
+    <tr>
+      <td>Compose log presentation</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
+      <td><code>--no-color</code> and <code>--no-log-prefix</code> are accepted, but default Docker Compose service/index prefixes and colors are not implemented.</td>
+    </tr>
+    <tr>
+      <td>Timestamp and time-window filtering</td>
+      <td><img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"></td>
+      <td>Docker Compose supports <code>--timestamps</code>, <code>--since</code>, and <code>--until</code>. apple/container exposes raw log files without per-record timestamps.</td>
+    </tr>
+    <tr>
+      <td>Service logging drivers/options</td>
+      <td><img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"></td>
+      <td>Compose service <code>logging.driver</code> and <code>logging.options</code> need runtime logging policy primitives that apple/container does not currently expose.</td>
+    </tr>
+    <tr>
+      <td>Exact byte/line fidelity</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
+      <td>container-compose emits UTF-8 text and drops empty split lines in tail/follow paths. Docker Compose should preserve log event boundaries and blank output more faithfully.</td>
     </tr>
   </tbody>
 </table>
 
-## <img alt="DONE" src="https://img.shields.io/badge/DONE-2E7D32?style=flat-square"> Completed Work
+## Detailed Work Items
 
-<table>
-  <thead>
-    <tr>
-      <th>Task</th>
-      <th>Added</th>
-      <th>Started</th>
-      <th>Completed</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Direct API adapter foundation</td>
-      <td>2026-06-17 16:12:21 BST</td>
-      <td>2026-06-17 16:12:21 BST</td>
-      <td>2026-06-17 18:48:12 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Backfilled from commits <code>c4cabbb</code> through <code>ecec616</code>; moved file operations, kill, resources, lifecycle, discovery, logs, stats, images, start, exec, and copy paths toward direct apple/container APIs.</td>
-    </tr>
-    <tr>
-      <td>Runtime docs reference</td>
-      <td>2026-06-17 15:00:34 BST</td>
-      <td>2026-06-17 15:00:34 BST</td>
-      <td>2026-06-17 15:00:34 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added apple/container API documentation references in <code>DESIGN.md</code>.</td>
-    </tr>
-    <tr>
-      <td>Compact CLI option normalization</td>
-      <td>2026-06-17 14:09:37 BST</td>
-      <td>2026-06-17 14:09:37 BST</td>
-      <td>2026-06-17 14:30:13 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Backfilled from commits <code>e730f76</code> through <code>da680fa</code>; aligned short/compact Docker Compose CLI forms.</td>
-    </tr>
-    <tr>
-      <td>Service labels, direct exec, and generated type design notes</td>
-      <td>2026-06-17 18:26:58 BST</td>
-      <td>2026-06-17 18:26:58 BST</td>
-      <td>2026-06-17 19:39:13 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Backfilled from direct exec, label file, deploy resource limit, and design-decision commits.</td>
-    </tr>
-    <tr>
-      <td>Build feature expansion</td>
-      <td>2026-06-17 20:26:51 BST</td>
-      <td>2026-06-17 20:26:51 BST</td>
-      <td>2026-06-18 08:35:36 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added supported build tags, pull, labels, platforms, cache hints, file/env secrets, inline Dockerfiles, build command options, and service build pull policy.</td>
-    </tr>
-    <tr>
-      <td>Advanced build blocker classification</td>
-      <td>2026-06-18 11:37:58 BST</td>
-      <td>2026-06-18 11:37:58 BST</td>
-      <td>2026-06-18 11:37:58 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected the normalized Compose build fields against <code>container build --help</code> and reclassified advanced BuildKit fields from plugin backlog to apple/container upstream build parity. The runtime rejection now points to missing Docker Compose compatible apple/container build primitives.</td>
-    </tr>
-    <tr>
-      <td><code>commit</code> and <code>publish</code> blocker classification</td>
-      <td>2026-06-18 11:45:20 BST</td>
-      <td>2026-06-18 11:45:20 BST</td>
-      <td>2026-06-18 11:45:20 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose v2 command behavior and the available apple/container image/export APIs, then reclassified <code>compose commit</code> and <code>compose publish</code> from plugin backlog to apple/container runtime parity. The CLI now reports precise missing runtime primitives for container image snapshots and Compose application OCI artifacts.</td>
-    </tr>
-    <tr>
-      <td>Network and port feature expansion</td>
-      <td>2026-06-17 19:57:49 BST</td>
-      <td>2026-06-17 19:57:49 BST</td>
-      <td>2026-06-18 07:26:56 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added single-network MAC addresses, MTU driver option, no-network mode, internal IPAM subnets, runtime port lookup, and scaled explicit port ranges. Dynamic host-port allocation was completed later by the dynamic host-port allocation task.</td>
-    </tr>
-    <tr>
-      <td>Storage feature expansion</td>
-      <td>2026-06-18 08:09:21 BST</td>
-      <td>2026-06-18 08:09:21 BST</td>
-      <td>2026-06-18 09:04:41 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added tmpfs options, volume driver options, and same-project service volume inheritance.</td>
-    </tr>
-    <tr>
-      <td>File-backed service configs and secrets</td>
-      <td>2026-06-18 17:49:27 BST</td>
-      <td>2026-06-18 17:49:27 BST</td>
-      <td>2026-06-18 17:49:27 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Mapped file-backed service <code>configs</code> and <code>secrets</code> to read-only apple/container bind mounts with Compose-compatible default and long-form targets. External, inline, and environment-backed runtime grants remain apple/container config/secret store or materialization gaps.</td>
-    </tr>
-    <tr>
-      <td>Logging and storage blocker classification</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 14:20:37 BST</td>
-      <td>2026-06-18 14:28:22 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, advanced bind/volume mount options, unsupported external block-mount inheritance, API socket exposure, and block I/O controls as apple/container runtime primitive gaps.</td>
-    </tr>
-    <tr>
-      <td>External <code>volumes_from</code> inheritance</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 14:36:43 BST</td>
-      <td>2026-06-18 14:46:45 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Implemented external-container <code>volumes_from</code> inheritance by inspecting referenced apple/container containers through the direct discovery API, translating supported volume, bind, and tmpfs mounts into runtime arguments, applying <code>ro</code>/<code>rw</code> overrides, and including inherited external mounts in recreate config hashes. Unsupported external block mounts reject before resources are created.</td>
-    </tr>
-    <tr>
-      <td>Lifecycle and <code>up</code> option expansion</td>
-      <td>2026-06-18 04:41:20 BST</td>
-      <td>2026-06-18 04:41:20 BST</td>
-      <td>2026-06-18 09:35:51 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added <code>up --no-start</code>, <code>--no-build</code>, <code>--quiet-build</code>, <code>--quiet-pull</code>, <code>--always-recreate-deps</code>, <code>--timeout</code>, scaling, <code>wait</code>, and <code>wait --down-project</code>.</td>
-    </tr>
-    <tr>
-      <td>Interaction command expansion</td>
-      <td>2026-06-18 05:55:46 BST</td>
-      <td>2026-06-18 05:55:46 BST</td>
-      <td>2026-06-18 06:12:08 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added indexed attach/log targets and accepted harmless log display flags.</td>
-    </tr>
-    <tr>
-      <td>Default attach blocker classification</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 14:12:23 BST</td>
-      <td>2026-06-18 14:18:53 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected apple/container init-process attach behavior and reclassified Docker Compose default interactive <code>attach</code> from a plugin design gap to an apple/container runtime primitive gap. Output-only <code>attach --no-stdin --sig-proxy=false</code> remains supported through runtime log streaming.</td>
-    </tr>
-    <tr>
-      <td>Stats no-trunc display option</td>
-      <td>2026-06-18 11:12:17 BST</td>
-      <td>2026-06-18 11:12:17 BST</td>
-      <td>2026-06-18 11:16:29 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Accept Docker Compose <code>stats --no-trunc</code> because the direct stats renderer already emits full container IDs and does not need an apple/container CLI truncation flag.</td>
-    </tr>
-    <tr>
-      <td>Develop watch model boundary</td>
-      <td>2026-06-18 09:44:11 BST</td>
-      <td>2026-06-18 09:44:11 BST</td>
-      <td>2026-06-18 09:54:37 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved <code>develop.watch</code> triggers from compose-go in the Swift model and added command-level <code>watch</code> validation. Live action execution was completed later by the watch live action execution task.</td>
-    </tr>
-    <tr>
-      <td>Watch dry-run plan</td>
-      <td>2026-06-18 11:22:43 BST</td>
-      <td>2026-06-18 11:22:43 BST</td>
-      <td>2026-06-18 11:23:47 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Emit a deterministic <code>watch --dry-run</code> plan after validating selected services and <code>develop.watch</code> triggers. Live action execution was completed later by the watch live action execution task.</td>
-    </tr>
-    <tr>
-      <td>Watch live action execution</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 12:43:00 BST</td>
-      <td>2026-06-18 13:00:42 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Implemented polling-based <code>compose watch</code> execution for <code>develop.watch</code> actions: initial sync, changed-file sync, deleted-file cleanup, <code>sync+exec</code>, service restart, rebuild, and image pruning. Ordinary <code>up</code> and <code>run</code> now treat <code>develop.watch</code> as harmless metadata.</td>
-    </tr>
-    <tr>
-      <td>Service lifecycle hook execution</td>
-      <td>2026-06-18 13:23:28 BST</td>
-      <td>2026-06-18 13:23:28 BST</td>
-      <td>2026-06-18 13:27:44 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Foreground hook ordering now tracks under the apple/container interactive attach and stop-boundary backlog.</td>
-    </tr>
-    <tr>
-      <td>Detached one-off post-start hook execution</td>
-      <td>2026-06-18 13:33:19 BST</td>
-      <td>2026-06-18 13:33:19 BST</td>
-      <td>2026-06-18 13:33:19 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Executed service <code>post_start</code> hooks after detached one-off <code>compose run</code> containers are created, reusing the generated or explicit one-off container name for direct apple/container process exec. Foreground <code>run</code> post-start ordering now tracks under the apple/container interactive attach backlog.</td>
-    </tr>
-    <tr>
-      <td>Detached one-off pre-stop cleanup</td>
-      <td>2026-06-18 15:10:06 BST</td>
-      <td>2026-06-18 15:10:06 BST</td>
-      <td>2026-06-18 15:10:06 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted detached one-off <code>compose run</code> services that declare <code>pre_stop</code> hooks and execute those hooks when container-compose later stops the one-off container through project cleanup, such as <code>up --remove-orphans</code> or <code>down --remove-orphans</code>. Foreground one-off <code>pre_stop</code> remains an apple/container stop-boundary gap because the foreground init process has already exited before control returns to the plugin.</td>
-    </tr>
-    <tr>
-      <td>Dynamic host-port allocation</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 13:56:09 BST</td>
-      <td>2026-06-18 14:06:00 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Allocated ephemeral host ports inside container-compose for target-only, ranged, and host-bound Compose port mappings, then rendered explicit apple/container <code>--publish</code> bindings for <code>create</code>, <code>up</code>, scaled service replicas, one-off <code>run --service-ports</code>, and manual <code>run --publish</code>. Host-bound IPv4 and bracketed IPv6 mappings are preserved through compose-go normalization. Config hashes remain based on the Compose model rather than the allocated host port.</td>
-    </tr>
-    <tr>
-      <td>Scaled anonymous service volumes</td>
-      <td>2026-06-18 10:07:04 BST</td>
-      <td>2026-06-18 10:07:04 BST</td>
-      <td>2026-06-18 10:11:26 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Mapped anonymous service volumes to deterministic per-replica runtime names when services are scaled and removed those volumes with <code>down --volumes</code>.</td>
-    </tr>
-    <tr>
-      <td>Replica collision safeguards</td>
-      <td>2026-06-18 11:52:13 BST</td>
-      <td>2026-06-18 11:52:13 BST</td>
-      <td>2026-06-18 11:52:13 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Confirmed scaled services reject duplicate runtime names from <code>container_name</code>, too-small fixed published-port ranges, and service-level or per-network fixed MAC addresses before creating resources. Added explicit fixed MAC regression coverage and updated compatibility docs so the remaining plugin-side replica backlog is deploy behavior.</td>
-    </tr>
-    <tr>
-      <td>Replica service discovery blocker classification</td>
-      <td>2026-06-18 11:56:51 BST</td>
-      <td>2026-06-18 11:56:51 BST</td>
-      <td>2026-06-18 11:56:51 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected apple/container DNS and network services. Runtime DNS lookup returns one attachment per hostname and container creation rejects duplicate attachment hostnames, so Docker Compose service-name DNS for multiple replicas needs apple/container alias and multi-record lookup primitives before container-compose can map it.</td>
-    </tr>
-    <tr>
-      <td>Deploy replicated mode support</td>
-      <td>2026-06-18 12:02:15 BST</td>
-      <td>2026-06-18 12:02:15 BST</td>
-      <td>2026-06-18 12:02:15 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is accepted as the local mode that matches existing replica orchestration. <code>deploy.mode: global</code> was later accepted as Docker Compose local no-op metadata after confirming Docker Compose local convergence uses <code>scale</code> / <code>deploy.replicas</code> and does not read deployment mode.</td>
-    </tr>
-    <tr>
-      <td>Deploy restart policy blocker classification</td>
-      <td>2026-06-18 12:05:43 BST</td>
-      <td>2026-06-18 12:05:43 BST</td>
-      <td>2026-06-18 12:05:43 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.restart_policy</code> with service-level <code>restart</code> as an apple/container runtime gap. apple/container exposes lifecycle restart commands but no create/run restart policy primitive.</td>
-    </tr>
-    <tr>
-      <td>Deploy endpoint mode blocker classification</td>
-      <td>2026-06-18 12:09:54 BST</td>
-      <td>2026-06-18 12:09:54 BST</td>
-      <td>2026-06-18 12:09:54 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.endpoint_mode</code> as an apple/container networking gap. Compose endpoint modes such as <code>vip</code> and <code>dnsrr</code> need service-level discovery semantics that are not exposed by the current runtime.</td>
-    </tr>
-    <tr>
-      <td>Deploy label metadata preservation</td>
-      <td>2026-06-18 12:16:03 BST</td>
-      <td>2026-06-18 12:16:03 BST</td>
-      <td>2026-06-18 12:16:03 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved <code>deploy.labels</code> as service-level metadata without applying it to runtime container labels or including it in recreate config hashes.</td>
-    </tr>
-    <tr>
-      <td>Deploy stop-first update config</td>
-      <td>2026-06-18 15:22:32 BST</td>
-      <td>2026-06-18 15:22:32 BST</td>
-      <td>2026-06-18 15:22:32 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted <code>deploy.update_config.order: stop-first</code> because the local orchestrator already recreates service containers one at a time with a stop-before-start boundary. <code>start-first</code> replacement was later classified as an apple/container handoff gap, and update metadata such as <code>parallelism</code>, rollback metadata, and placement metadata were later accepted as Docker Compose local no-op metadata.</td>
-    </tr>
-    <tr>
-      <td>Deploy stop-first update delay</td>
-      <td>2026-06-18 16:36:37 BST</td>
-      <td>2026-06-18 16:36:37 BST</td>
-      <td>2026-06-18 16:36:37 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved <code>deploy.update_config.delay</code> from compose-go normalization and applied it between local replica replacements only when the prior replica and current replica both need stop-first recreation. First-time service creation and scale-out do not sleep.</td>
-    </tr>
-    <tr>
-      <td>Deploy start-first update boundary</td>
-      <td>2026-06-18 16:48:46 BST</td>
-      <td>2026-06-18 16:48:46 BST</td>
-      <td>2026-06-18 16:48:46 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.update_config.order: start-first</code> as an apple/container runtime gap. Docker Compose creates a temporary replacement container, stops/removes the old stable container, then finalizes the replacement identity; apple/container currently exposes create/stop/delete without a container rename or service hostname/alias handoff primitive.</td>
-    </tr>
-    <tr>
-      <td>Deploy update metadata normalization</td>
-      <td>2026-06-18 16:56:12 BST</td>
-      <td>2026-06-18 16:56:12 BST</td>
-      <td>2026-06-18 16:56:12 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local orchestration and confirmed <code>deploy.update_config.parallelism</code>, <code>failure_action</code>, <code>monitor</code>, and <code>max_failure_ratio</code> are not applied to local container replacement. These fields are now accepted as Docker Compose local no-op metadata instead of rejected as plugin-owned missing update batching.</td>
-    </tr>
-    <tr>
-      <td>Deploy rollback and placement metadata</td>
-      <td>2026-06-18 17:05:01 BST</td>
-      <td>2026-06-18 17:05:01 BST</td>
-      <td>2026-06-18 17:05:01 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local orchestration and found no local application of <code>deploy.rollback_config</code> or <code>deploy.placement</code>. The normalizer now accepts rollback and placement sections, including placement constraints, preferences, and <code>max_replicas_per_node</code>, as Docker Compose local no-op metadata.</td>
-    </tr>
-    <tr>
-      <td>Deploy global mode metadata</td>
-      <td>2026-06-18 17:12:16 BST</td>
-      <td>2026-06-18 17:12:16 BST</td>
-      <td>2026-06-18 17:12:16 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local convergence and compose-go. Local convergence calls <code>GetScale()</code>, which reads <code>scale</code> and <code>deploy.replicas</code>, while no local Compose orchestration path reads <code>deploy.mode</code>. The normalizer now accepts <code>deploy.mode: global</code> as Docker Compose local no-op metadata and still rejects unknown deployment mode strings.</td>
-    </tr>
-    <tr>
-      <td>Deploy fallback gap classification</td>
-      <td>2026-06-18 18:02:11 BST</td>
-      <td>2026-06-18 18:02:11 BST</td>
-      <td>2026-06-18 18:02:11 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Reclassified remaining normalized deploy fallback fields away from plugin-owned backlog language. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, and unknown update orders now fail as apple/container job lifecycle, scheduler, or update-orchestration primitive gaps with focused normalizer and orchestrator coverage.</td>
-    </tr>
-    <tr>
-      <td>Deploy resource gap classification</td>
-      <td>2026-06-18 15:33:36 BST</td>
-      <td>2026-06-18 15:33:36 BST</td>
-      <td>2026-06-18 15:33:36 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Reclassified <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> from local deploy plugin backlog to apple/container resource parity. Docker Compose deploy reservations require platform guarantees, while the current apple/container create/run surface exposes local hard CPU and memory limits but no deploy PID, deploy device, generic resource, or reservation primitive.</td>
-    </tr>
-    <tr>
-      <td>Volume nocopy support</td>
-      <td>2026-06-18 12:25:21 BST</td>
-      <td>2026-06-18 12:25:21 BST</td>
-      <td>2026-06-18 12:25:21 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted long-form service volume <code>volume.nocopy</code> as supported no-copy metadata. The apple/container volume mount path already matches the requested no-copy behavior, so no runtime flag mapping is required.</td>
-    </tr>
-    <tr>
-      <td>Volume subpath blocker classification</td>
-      <td>2026-06-18 12:31:12 BST</td>
-      <td>2026-06-18 12:31:12 BST</td>
-      <td>2026-06-18 12:31:12 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified long-form service volume <code>volume.subpath</code> as an apple/container mount primitive gap. apple/container exposes named volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath selector for mounting only part of a named volume.</td>
-    </tr>
-    <tr>
-      <td>Run capability overrides</td>
-      <td>2026-06-18 10:16:25 BST</td>
-      <td>2026-06-18 10:16:25 BST</td>
-      <td>2026-06-18 10:20:55 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added Docker Compose <code>run --cap-add</code> and <code>run --cap-drop</code> mapping to apple/container one-off runtime capability flags.</td>
-    </tr>
-    <tr>
-      <td>Hawkeye workflow alignment</td>
-      <td>2026-06-18 10:23:56 BST</td>
-      <td>2026-06-18 10:23:56 BST</td>
-      <td>2026-06-18 10:40:06 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added Hawkeye license-header tooling, adopted apple/container&#x27;s build-once Swift coverage pattern, cached repo-local tools in CI, documented apple/container upstream Compose parity gaps, and reformatted planning and compatibility docs for readability.</td>
-    </tr>
-    <tr>
-      <td>CI smoke build reuse</td>
-      <td>2026-06-18 19:16:00 BST</td>
-      <td>2026-06-18 19:16:00 BST</td>
-      <td>2026-06-18 19:16:00 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Reused the debug <code>compose</code> executable emitted by the Swift coverage test build for <code>make ci</code> smoke tests, avoiding a second non-coverage SwiftPM product build on the CI path while keeping standalone <code>make cli-smoke</code> build-first behavior.</td>
-    </tr>
-    <tr>
-      <td>CI release package cache</td>
-      <td>2026-06-18 20:01:14 BST</td>
-      <td>2026-06-18 20:01:14 BST</td>
-      <td>2026-06-18 20:01:14 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Added a main/manual workflow cache for SwiftPM release artifacts before <code>make package</code>, and included <code>Makefile</code> in the SwiftPM cache fingerprint so package-build behavior changes invalidate the relevant caches. This keeps pull-request debug/test cache hits from preventing reusable release products on later package builds.</td>
-    </tr>
-    <tr>
-      <td>Sonar empty closure cleanup</td>
-      <td>2026-06-18 19:20:02 BST</td>
-      <td>2026-06-18 19:20:02 BST</td>
-      <td>2026-06-18 19:20:02 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Documented the intentionally empty <code>push --quiet</code> emission closure so the Swift source makes the quiet-mode behavior clear to reviewers and static analysis.</td>
-    </tr>
-    <tr>
-      <td>Sonar unused replica validation parameter cleanup</td>
-      <td>2026-06-18 19:22:19 BST</td>
-      <td>2026-06-18 19:22:19 BST</td>
-      <td>2026-06-18 19:22:19 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Removed the unused <code>project</code> parameter from replica support validation and its call sites so the helper signature reflects the data it actually needs.</td>
-    </tr>
-    <tr>
-      <td>Sonar container summary initializer grouping</td>
-      <td>2026-06-18 19:28:33 BST</td>
-      <td>2026-06-18 19:28:33 BST</td>
-      <td>2026-06-18 19:28:33 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Grouped discovered image metadata behind a typed <code>ComposeContainerSummary.Image</code> constructor value so the public summary initializer stays under the Sonar parameter threshold while preserving flat stored discovery fields.</td>
-    </tr>
-    <tr>
-      <td>Sonar mount initializer tmpfs grouping</td>
-      <td>2026-06-18 19:31:44 BST</td>
-      <td>2026-06-18 19:31:44 BST</td>
-      <td>2026-06-18 19:31:44 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Grouped tmpfs constructor fields behind <code>ComposeMount.TmpfsOptions</code> so normalized mount construction stays under the Sonar parameter threshold while keeping flat decoded mount fields for orchestration.</td>
-    </tr>
-    <tr>
-      <td>Sonar execution options runtime hook grouping</td>
-      <td>2026-06-18 19:37:47 BST</td>
-      <td>2026-06-18 19:37:47 BST</td>
-      <td>2026-06-18 19:37:47 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Grouped runtime injection callbacks behind <code>ComposeExecutionOptions.RuntimeHooks</code> and retained small convenience initializers for existing CLI and test configuration paths.</td>
-    </tr>
-  </tbody>
-</table>
+### L1. Raw Stdio Log Replay
 
-## <img alt="DONE" src="https://img.shields.io/badge/DONE-2E7D32?style=flat-square"> Documentation Work
+Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 
-<table>
-  <thead>
-    <tr>
-      <th>Task</th>
-      <th>Added</th>
-      <th>Started</th>
-      <th>Completed</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Add backlog tracking to <code>PLAN.md</code></td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 09:39:04 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Include plugin backlog and apple/container upstream PR backlog.</td>
-    </tr>
-    <tr>
-      <td>Reformat <code>BUILD.md</code> runtime boundary</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 09:39:04 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Split the dense runtime-boundary paragraph into readable responsibilities and adapter tables.</td>
-    </tr>
-    <tr>
-      <td>Update <code>DESIGN.md</code> direct API discussion</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 09:39:04 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Explain that direct apple/container APIs are preferred wherever available and how that works with compose-go normalization.</td>
-    </tr>
-    <tr>
-      <td>Contributor and compatibility readability pass</td>
-      <td>2026-06-18 10:57:58 BST</td>
-      <td>2026-06-18 10:57:58 BST</td>
-      <td>2026-06-18 11:05:06 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Reformat dense plan and compatibility status surfaces, align contributor guidance with apple/container and Containerization contributor expectations, and document the adoption-friction goal.</td>
-    </tr>
-    <tr>
-      <td>Adoption friction design note</td>
-      <td>2026-06-18 11:17:32 BST</td>
-      <td>2026-06-18 11:17:32 BST</td>
-      <td>2026-06-18 11:18:08 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Make reducing friction for possible apple/container adoption an explicit design constraint, with clear boundaries for Compose normalization, Swift orchestration, direct runtime API mapping, compatibility documentation, and upstream runtime primitive gaps.</td>
-    </tr>
-    <tr>
-      <td>Focused topic workflow note</td>
-      <td>2026-06-18 11:33:56 BST</td>
-      <td>2026-06-18 11:33:56 BST</td>
-      <td>2026-06-18 11:33:56 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Capture the implementation workflow preference to choose one Compose functional topic, drive it to completion or to a documented apple/container blocker, and only then move to another topic. The existing adoption-friction guidance in <code>DESIGN.md</code> and <code>CONTRIBUTING.md</code> remains the review standard for keeping future apple/container adoption practical.</td>
-    </tr>
-    <tr>
-      <td>C3 compatibility status wording</td>
-      <td>2026-06-18 18:14:47 BST</td>
-      <td>2026-06-18 18:14:47 BST</td>
-      <td>2026-06-18 18:14:47 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Renamed the C3 compatibility example from a stale plugin-gap label to a partial support label, updated the matching anchors, and aligned this plan's watch/develop note with the current no-plugin-gap compatibility snapshot.</td>
-    </tr>
-    <tr>
-      <td><code>BUILD.md</code> dynamic port boundary wording</td>
-      <td>2026-06-18 20:12:53 BST</td>
-      <td>2026-06-18 20:12:53 BST</td>
-      <td>2026-06-18 20:12:53 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Corrected the runtime-boundary guide so it no longer describes dynamic host-port allocation as unsupported. The guide now matches the implementation and compatibility matrix: container-compose allocates ephemeral host ports before calling apple/container with explicit <code>--publish</code> bindings.</td>
-    </tr>
-    <tr>
-      <td><code>DESIGN.md</code> dynamic port boundary wording</td>
-      <td>2026-06-18 20:18:11 BST</td>
-      <td>2026-06-18 20:18:11 BST</td>
-      <td>2026-06-18 20:18:11 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Corrected the design boundary so it lists dynamic host-port allocation as a supported CLI compatibility path. Unsupported runtime behavior is now described generically as depending on missing apple/container primitives instead of using the completed dynamic-port feature as the example.</td>
-    </tr>
-    <tr>
-      <td>Test display upstream naming</td>
-      <td>2026-06-18 20:21:22 BST</td>
-      <td>2026-06-18 20:21:22 BST</td>
-      <td>2026-06-18 20:21:22 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Normalized Swift Testing display names for upstream runtime gap coverage so test output uses <code>apple/container</code> consistently with the documentation and unsupported-feature messages.</td>
-    </tr>
-    <tr>
-      <td>Source comment upstream naming</td>
-      <td>2026-06-18 20:30:59 BST</td>
-      <td>2026-06-18 20:30:59 BST</td>
-      <td>2026-06-18 20:30:59 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Normalized maintained Swift and Go source comments so direct runtime API notes use <code>apple/container</code> consistently with documentation, tests, and unsupported-feature messages.</td>
-    </tr>
-  </tbody>
-</table>
+Docker Compose surface: `docker compose logs SERVICE`, `docker compose logs` for existing service containers.
 
-## <img alt="DONE" src="https://img.shields.io/badge/DONE-2E7D32?style=flat-square"> container-compose Backlog
+Current `container-compose` behavior:
 
-These tasks are valid Docker Compose v2 surfaces where apple/container is not
-known to be the first blocker. The fix belongs in this repository unless deeper
-apple/container API work is discovered during implementation.
+- Resolves a Compose service container to the deterministic apple/container runtime ID.
+- Calls `ContainerClient.logs(id:)` through `ContainerClientLogManager`.
+- Reads the stdio file handle and emits existing UTF-8 log data.
+- Supports stopped-container replay when the apple/container bundle and log files still exist.
 
-There are no current runtime surface-level gaps classified as repo-owned. The table remains as historical tracking for plugin-owned topics that were completed or reclassified to the apple/container upstream backlog.
+Current [`apple/container`](https://github.com/apple/container) behavior:
 
-<table>
-  <thead>
-    <tr>
-      <th>Task</th>
-      <th>Added</th>
-      <th>Started</th>
-      <th>Completed</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>watch</code> and develop workflows</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 09:44:11 BST</td>
-      <td>2026-06-18 13:00:42 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. The C3 compatibility example now describes the completed watch/develop, provider, and detached lifecycle-hook paths together with the remaining apple/container foreground hook boundaries. Service model runtime behavior moved to the apple/container upstream backlog after the model-runner boundary was confirmed.</td>
-    </tr>
-    <tr>
-      <td>Replica scaling edge cases</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 10:07:04 BST</td>
-      <td>2026-06-18 18:02:11 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Local deploy behavior that container-compose can safely model is complete for the current boundary. Scaled service DNS, deploy job modes, and update-orchestration behavior beyond stop-first are apple/container networking, completion, scheduler, or update primitive gaps.</td>
-    </tr>
-    <tr>
-      <td>Local deploy interpretation</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 12:02:15 BST</td>
-      <td>2026-06-18 17:12:16 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Standard Docker Compose local deploy interpretation is complete for the current model boundary. Explicit <code>deploy.mode: replicated</code> maps to existing replica orchestration; <code>deploy.mode: global</code>, <code>deploy.labels</code>, update metadata, rollback metadata, and placement metadata are accepted as Docker Compose local no-op metadata; CPU/memory deploy limits map to local runtime limits; and stop-first <code>deploy.update_config</code> including <code>delay</code> matches the existing recreate path. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, <code>deploy.resources.reservations</code>, <code>deploy.update_config.order: start-first</code>, and unknown update orders are tracked with apple/container runtime parity.</td>
-    </tr>
-    <tr>
-      <td>Providers, models, and lifecycle hooks</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 13:23:28 BST</td>
-      <td>2026-06-18 16:23:30 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Service <code>models</code> binding metadata is preserved for config output, but runtime model-runner behavior needs apple/container model-runner parity. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need apple/container foreground attach or stop-boundary primitives.</td>
-    </tr>
-    <tr>
-      <td>Provider service lifecycle</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 15:45:14 BST</td>
-      <td>2026-06-18 16:03:27 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Provider services now preserve <code>provider.type</code> and <code>provider.options</code> from <code>compose-go</code>, run provider <code>compose metadata</code> plus <code>up</code>/<code>down</code>/advertised <code>stop</code>, validate required metadata parameters, filter unknown provider options when metadata is available, and inject provider <code>setenv</code> values into direct dependents for <code>up</code> and one-off <code>run</code> dependency startup. This is plugin-owned functionality; no apple/container runtime PR is needed for provider process execution.</td>
-    </tr>
-    <tr>
-      <td>Service model binding boundary</td>
-      <td>2026-06-18 16:23:30 BST</td>
-      <td>2026-06-18 16:23:30 BST</td>
-      <td>2026-06-18 16:23:30 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved service <code>models</code> binding metadata from <code>compose-go</code> instead of a boolean marker, including explicit <code>endpoint_var</code>/<code>model_var</code> names and defaulted bindings. Docker Compose model runtime behavior shells out to the Docker Model plugin to pull/configure models and discover an endpoint. apple/container does not expose a Compose-compatible model runner, endpoint discovery, or guaranteed service-container reachability primitive yet, so runtime service model bindings now reject as an apple/container model-runner parity gap before resources are created.</td>
-    </tr>
-    <tr>
-      <td>Logging and storage metadata</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 14:20:37 BST</td>
-      <td>2026-06-18 14:46:45 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>volume_driver: local</code> is supported. External-container <code>volumes_from</code> is supported for apple/container volume, bind, and tmpfs mounts discovered through direct inspect. Logging driver/options, service <code>storage_opt</code>, non-local service volume drivers, image-declared inherited mounts, image mounts, external block mounts, and advanced bind/volume options are tracked as apple/container runtime gaps.</td>
-    </tr>
-    <tr>
-      <td>API socket and block I/O support</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 17:21:13 BST</td>
-      <td>2026-06-18 17:21:13 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Classified both fields as apple/container runtime gaps after reviewing Docker Compose and apple/container behavior. Docker Compose implements <code>use_api_socket</code> as a client-side Docker socket plus credential handoff, while apple/container can mount Unix sockets but does not expose a safe Docker-compatible API socket or credential boundary. Docker Compose maps <code>blkio_config</code> to Docker resource controls, while apple/container reports block I/O stats but does not expose create/run blkio weight or throttling controls.</td>
-    </tr>
-  </tbody>
-</table>
+- `container logs <container-id>` reads the same stdio log file handle.
+- `ContainerClient.logs(id:)` returns stdio and boot log handles.
 
-## <img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"> apple/container Upstream Backlog
+Remaining work:
 
-These tasks are valid Docker Compose v2 surfaces where container-compose has
-hit, or is expected to hit, an apple/container runtime primitive gap. These are
-good candidates for later PRs against [`apple/container`](https://github.com/apple/container).
-It is probably worth creating a fork of apple/container before starting this
-work so the runtime changes can be staged, tested, and proposed upstream in
-small reviewable PRs.
+- None for the basic one-container raw replay path.
 
-Recommended upstream workflow:
+### L2. Follow Mode
 
-- Fork [`apple/container`](https://github.com/apple/container) before starting
-  runtime work, then create one branch per primitive family.
-- Keep each future PR small enough to review independently. The first PR should
-  add or expose the apple/container primitive plus focused runtime tests; the
-  matching container-compose mapping should follow in this repository.
-- Prefer direct `ContainerClient`, `NetworkClient`, image, volume, process, and
-  log APIs so the plugin can stay close to apple/container's supported design.
-- Update apple/container API documentation with every new public runtime
-  primitive so container-compose can link to stable docs instead of inferred
-  behavior.
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Suggested apple/container PR batches:
+Docker Compose surface: `docker compose logs --follow [SERVICE...]`.
 
-1. Networking parity: multi-network attachment, aliases, service-name
-   multi-record DNS for replicas, Compose endpoint modes, fixed addresses, and
-   richer IPAM.
-2. Build parity: BuildKit-compatible inputs that Docker Compose v2 can express,
-   including additional contexts, build networking, SSH, attestations, and
-   advanced build secret metadata.
-3. Container identity parity: hostname, domain name, host entries, and legacy
-   link aliases.
-4. Runtime-control parity: namespace modes, cgroups, privileged/device/GPU
-   controls, sysctls, supplemental groups, deploy PID limits, and deploy
-   resource reservations.
-5. Mount and storage parity: advanced bind/volume/image mounts, storage
-   options, non-local service volume drivers, and inherited image volumes.
-6. Health, completion, and job-mode parity: health status, health-aware waits,
-   stored exit code, completion timestamps, and Compose deploy job lifecycle
-   semantics for <code>replicated-job</code> and <code>global-job</code>.
-7. Start-first replacement parity: container rename or service alias handoff for
-   Docker Compose compatible temporary replacement finalization, plus update
-   orchestration primitives for any future update order beyond local
-   <code>stop-first</code>.
-8. Mount and policy parity: first-class config/secret stores or materialization,
-   ownership/mode controls for non-file-backed grants, and restart policies.
-9. Log-data parity: timestamped log records, stream/source metadata, tail and
-   since/until filtering, prefix-friendly service/replica attribution, and
-   durable closed-container log replay, plus service logging driver/option
-   controls.
-10. Interactive attach parity: reattach stdin/stdout/stderr to an already-running
-   init process, proxy signals, support detach-key behavior, and expose the
-   start-hook-reattach or stop-boundary primitives needed for foreground
-   lifecycle hooks.
-11. Command-data parity: events, process listing, pause/unpause, and copy
-   archive/follow-link controls.
-12. Image and artifact parity: container commit image snapshots and Compose
-    application OCI artifact publish/consume support.
-13. Model-runner parity: a Compose-compatible model runner backend, model
-    pull/configure lifecycle, endpoint discovery, and service-container
-    reachability for model endpoints.
-14. Runtime API socket parity: a safe Compose-compatible equivalent for
-    `use_api_socket` that does not overexpose host control surfaces.
-15. Block I/O parity: create/run resource controls for `blkio_config` weight,
-    per-device weight, and read/write byte or IOPS throttling.
+Current `container-compose` behavior:
 
-<table>
-  <thead>
-    <tr>
-      <th>Task</th>
-      <th>Added</th>
-      <th>Started</th>
-      <th>Completed</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Fork apple/container for Compose primitive work</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Use the fork to stage small upstream PRs that unblock Compose compatibility.</td>
-    </tr>
-    <tr>
-      <td>Multi-network attachment and aliases</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs multiple service networks, network aliases, richer per-network options, and attach/connect semantics.</td>
-    </tr>
-    <tr>
-      <td>Compose service DNS aliases and replica lookups</td>
-      <td>2026-06-18 11:56:51 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases, endpoint modes such as <code>vip</code> and <code>dnsrr</code>, plus DNS lookup that can return multiple A/AAAA records for scaled service names. apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
-    </tr>
-    <tr>
-      <td>Start-first service replacement handoff</td>
-      <td>2026-06-18 16:48:46 BST</td>
-      <td>2026-06-18 18:02:11 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>deploy.update_config.order: start-first</code> needs a temporary replacement handoff. Docker Compose creates a replacement under a temporary name, stops/removes the old stable container, then renames the replacement. apple/container needs either a container rename primitive or service hostname/alias movement that can preserve the Compose service identity without duplicate ID or duplicate hostname conflicts. Unknown update orders are treated as the same upstream update-orchestration family until apple/container exposes a broader replacement/update primitive.</td>
-    </tr>
-    <tr>
-      <td>Fixed addresses and richer IPAM</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs fixed IPv4/IPv6 addresses, gateways, IP ranges, aux addresses, custom IPAM drivers, and multiple same-family subnets.</td>
-    </tr>
-    <tr>
-      <td>BuildKit-compatible build inputs</td>
-      <td>2026-06-18 10:34:11 BST</td>
-      <td>2026-06-18 11:37:58 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose build parity needs additional contexts, build <code>extra_hosts</code>, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced secret metadata (<code>uid</code>, <code>gid</code>, <code>mode</code>), build <code>shm_size</code>, build <code>ulimits</code>, and provenance/SBOM attestations exposed through apple/container build APIs. Current <code>container build</code> supports the common local subset but not the full Compose v2 build surface.</td>
-    </tr>
-    <tr>
-      <td>Host identity and host entries</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs hostname, domainname, extra host entries, and legacy link alias behavior.</td>
-    </tr>
-    <tr>
-      <td>Namespace and cgroup controls</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs compatible <code>cgroup</code>, <code>cgroup_parent</code>, <code>ipc</code>, <code>pid</code>, <code>userns_mode</code>, <code>uts</code>, and isolation modes.</td>
-    </tr>
-    <tr>
-      <td>Expanded resource controls</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 15:33:36 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> platform guarantees for CPU, memory, PIDs, devices, and generic resources. Current apple/container create/run surfaces expose local hard CPU and memory limits but not those deploy resource primitives.</td>
-    </tr>
-    <tr>
-      <td>User, security, device, GPU, and sysctl controls</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs supplemental groups, security profiles, privileged containers and exec, host devices, GPUs, and per-container sysctls.</td>
-    </tr>
-    <tr>
-      <td>Advanced mount and storage options</td>
-      <td>2026-06-18 10:34:11 BST</td>
-      <td>2026-06-18 14:20:37 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, non-local service volume drivers, service <code>storage_opt</code>, image-declared inherited mounts, and a safe Compose-compatible mapping for external inherited block mounts. Current apple/container mount flags cover the common local subset only. External-container <code>volumes_from</code> is implemented for volume, bind, and tmpfs mounts that direct inspect can represent as Apple <code>container --volume</code> or <code>--mount type=tmpfs</code> arguments.</td>
-    </tr>
-    <tr>
-      <td>Health status and dependency gates</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs health status and health-aware dependency waits for <code>service_healthy</code>.</td>
-    </tr>
-    <tr>
-      <td>Container completion metadata</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 18:02:11 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs stored exit code and completion time so <code>service_completed_successfully</code> and already-stopped <code>wait</code> replay can work. Deploy job modes such as <code>replicated-job</code> and <code>global-job</code> also need completion-aware job lifecycle semantics and scheduler behavior before container-compose can map them faithfully.</td>
-    </tr>
-    <tr>
-      <td>Config and secret stores/materialization</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 17:49:27 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> File-backed service <code>configs</code> and <code>secrets</code> are implemented in container-compose through read-only bind mounts. Compose still needs first-class apple/container config/secret stores or materialization for external definitions, inline config content, environment-backed runtime grants, and strict ownership/mode behavior that cannot be represented as a simple bind mount.</td>
-    </tr>
-    <tr>
-      <td>Restart policies</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs service <code>restart</code> and <code>deploy.restart_policy</code> support compatible with local Docker Compose behavior.</td>
-    </tr>
-    <tr>
-      <td>Compose model runner parity</td>
-      <td>2026-06-18 16:23:30 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose service <code>models</code> need a model-runner backend that can pull/configure model artifacts, expose endpoint status, inject endpoint/model variables, and make those endpoints reachable from apple/container service containers. Docker Compose currently delegates this to the Docker Model plugin; apple/container does not expose an equivalent primitive.</td>
-    </tr>
-    <tr>
-      <td>Docker Compose log parity</td>
-      <td>2026-06-18 10:29:02 BST</td>
-      <td>2026-06-18 14:20:37 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>logs</code> needs runtime log records with timestamps, stdout/stderr stream metadata, since/until filtering, tailing handled by the runtime, service/replica attribution for prefix output, reliable replay for stopped containers, and service logging driver/option controls such as rotation policy. Current apple/container APIs expose raw log handles, so container-compose can only approximate unprefixed local log output.</td>
-    </tr>
-    <tr>
-      <td>Interactive init-process attach and signal proxying</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 14:12:23 BST</td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Docker Compose default <code>attach</code> needs stdin/stdout/stderr reattach to an already-running service init process, signal proxying, and detach-key handling. Attached <code>up</code> with <code>post_start</code> and foreground one-off <code>run</code> with lifecycle hooks need the same start-hook-reattach shape, plus an interceptable foreground stop boundary for <code>pre_stop</code>. apple/container currently wires stdio while bootstrapping a container or creating a new exec process, but does not expose a Compose-compatible reattach primitive for an already-running service container.</td>
-    </tr>
-    <tr>
-      <td>Dynamic host-port allocation</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>2026-06-18 13:56:09 BST</td>
-      <td>2026-06-18 14:06:00 BST</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Completed in container-compose by allocating ephemeral host ports before invoking apple/container with explicit <code>--publish</code> bindings. No apple/container PR is needed for common local target-only, ranged, or host-bound published-port workflows.</td>
-    </tr>
-    <tr>
-      <td>Runtime event stream and process listing</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>events</code> and <code>top</code> need corresponding runtime APIs.</td>
-    </tr>
-    <tr>
-      <td>Pause and unpause</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>pause</code> and <code>unpause</code> need container pause primitives.</td>
-    </tr>
-    <tr>
-      <td>Copy archive and follow-link controls</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>cp --archive</code> and <code>cp --follow-link</code> need matching file copy controls.</td>
-    </tr>
-    <tr>
-      <td>Container commit image snapshots</td>
-      <td>2026-06-18 11:45:20 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>commit</code> needs an apple/container primitive that creates an image from a service container's changed filesystem and accepts Docker-compatible image metadata such as author, message, pause behavior, target replica index, and config changes.</td>
-    </tr>
-    <tr>
-      <td>Compose application OCI artifacts</td>
-      <td>2026-06-18 11:45:20 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>publish</code> and <code>oci://</code> Compose file references need apple/container image/registry primitives for publishing and consuming Compose application OCI artifacts, not only service image tag/push/save operations.</td>
-    </tr>
-    <tr>
-      <td>Runtime API socket exposure</td>
-      <td>2026-06-18 10:34:11 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>use_api_socket</code> needs a safe Docker-compatible or apple/container-compatible API socket exposure model, including credentials, least-privilege boundaries, and clear behavior when Docker API compatibility is unavailable.</td>
-    </tr>
-    <tr>
-      <td>Block I/O resource controls</td>
-      <td>2026-06-18 17:21:13 BST</td>
-      <td><img alt="OPEN" src="https://img.shields.io/badge/OPEN-6B7280?style=flat-square"></td>
-      <td><img alt="UPSTREAM GAP" src="https://img.shields.io/badge/UPSTREAM%20GAP-C62828?style=flat-square"></td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>blkio_config</code> needs apple/container create/run resource primitives for blkio weight, per-device weight, and read/write byte or IOPS throttling. Current apple/container APIs expose block I/O stats but not blkio resource-control configuration.</td>
-    </tr>
-  </tbody>
-</table>
+- Supports `--follow` for a single resolved service container.
+- Uses a file readability handler to emit appended UTF-8 log lines.
 
-## Keeping This File Current
+Current [`apple/container`](https://github.com/apple/container) behavior:
 
-When a task moves:
+- `container logs --follow <container-id>` follows one container log file.
+- The direct API exposes the file handle that makes the current plugin implementation possible.
 
-1. Update the timestamp in this file.
-2. Update [COMPATIBILITY.md](COMPATIBILITY.md) if the supported or blocked
-   surface changes.
-3. Add or update tests for the behavior.
-4. Validate locally with the appropriate Makefile target before committing.
+Missing behavior:
+
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Follow all selected services and replicas concurrently instead of looping sequentially.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Keep one failed stream from silently starving or hiding other selected streams.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Preserve blank log lines and partial trailing lines consistently while following.
+
+Implementation direction:
+
+- Change `ComposeOrchestrator.logs` to resolve the full target set first, then fan in multiple `ContainerLogManaging.logs` streams with task-group cancellation.
+- Add tests for `logs --follow` with two services and a scaled service where both streams emit.
+
+### L3. Tail Mode
+
+Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
+
+Docker Compose surface: `docker compose logs --tail N`, `docker compose logs -n N`, and `docker compose logs --tail all`.
+
+Current `container-compose` behavior:
+
+- Accepts `--tail`, `-n`, compact `-n5`, and `all`.
+- Validates that numeric tail values are non-negative.
+- Implements tailing locally against the apple/container stdio log file.
+
+Current [`apple/container`](https://github.com/apple/container) behavior:
+
+- `container logs -n <n>` implements the same basic one-container tail path.
+- The direct API exposes the file handle needed for plugin-side tailing.
+
+Remaining work:
+
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Tail should apply independently to every selected container once all-replica and multi-service aggregation is implemented.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Empty-line fidelity should be checked against Docker Compose before this is called fully compliant.
+
+### L4. Service and Replica Selection
+
+Status: <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square">
+
+Docker Compose surface: `docker compose logs [SERVICE...]` and `docker compose logs --index N SERVICE`.
+
+Current `container-compose` behavior:
+
+- Supports service name filtering.
+- Supports `--index N` for one selected replica.
+- Defaults to index `1` for every selected service.
+
+Current [`apple/container`](https://github.com/apple/container) behavior:
+
+- Supports direct lookup by container ID through existing list/get APIs and direct log handles by ID.
+- Does not need a special multi-replica primitive for plugin-side enumeration because Compose labels and deterministic names already identify service replicas.
+
+Missing behavior:
+
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Without `--index`, Docker Compose should include every existing replica for each selected service.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> No-service selection should include all project services and their replicas, not only index `1`.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Selection should include existing Compose-managed service containers even when scale was changed outside the current file, matching the rest of the project discovery behavior where safe.
+
+Implementation direction:
+
+- Reuse the existing project-scoped container discovery and replica-index helpers already used by `ps`, `exec`, `cp`, `port`, and `wait`.
+- Make `--index` mutually narrow the target set only for selected services.
+- Add regression tests for scaled services, multiple selected services, and no-service selection.
+
+### L5. Prefixes, Colors, and `--no-log-prefix`
+
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
+
+Docker Compose surface: default prefixed output, `--no-log-prefix`, and `--no-color`.
+
+Current `container-compose` behavior:
+
+- Accepts `--no-color`.
+- Accepts `--no-log-prefix`.
+- Emits raw log lines without service prefixes or color in all modes.
+
+Current [`apple/container`](https://github.com/apple/container) behavior:
+
+- Exposes raw container stdio logs.
+- Does not attach Compose service names, replica indexes, or color metadata to log records.
+
+Missing behavior:
+
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Default output should prefix each line with the Compose service/container identity.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Prefixes should distinguish scaled replicas in the same way Docker Compose users expect.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> `--no-log-prefix` should suppress an otherwise-present prefix instead of being an accepted no-op.
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Color should be enabled only when appropriate for terminal output and disabled by `--no-color`, `--ansi never`, or non-interactive output.
+
+Implementation direction:
+
+- Add a `ComposeLogFormatter` that receives `(service, index, line)` records and applies prefix/color policy.
+- Keep raw mode available for `--no-log-prefix`.
+- Add tests for prefixed default output, `--no-log-prefix`, `--no-color`, and scaled replica prefixes.
+
+### L6. Timestamps, `--since`, and `--until`
+
+Status: <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
+
+Docker Compose surface: `docker compose logs --timestamps`, `docker compose logs --since VALUE`, and `docker compose logs --until VALUE`.
+
+Current `container-compose` behavior:
+
+- Does not expose these options on `compose logs`.
+- Cannot reconstruct historical capture timestamps from the current raw stdio file.
+
+Current [`apple/container`](https://github.com/apple/container) behavior:
+
+- Exposes raw stdio and boot log file handles.
+- Does not expose timestamped log records, a log cursor, or server-side since/until filtering.
+
+Missing behavior:
+
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Per-record log timestamps at capture time.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Runtime or API support for filtering logs by absolute timestamp and relative duration.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> A stable record format that can preserve timestamps without corrupting raw application output.
+
+Implementation direction:
+
+- Open an [`apple/container`](https://github.com/apple/container) runtime PR for timestamped log records or a second structured log stream.
+- After the runtime exposes timestamps, add CLI parsing for `--timestamps`, `--since`, and `--until` in `container-compose`.
+- Add golden behavior tests using absolute timestamps, relative durations, and combined `--since`/`--until` windows.
+
+### L7. Service Logging Driver and Options
+
+Status: <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
+
+Docker Compose surface: service `logging.driver`, `logging.options`, legacy `log_driver`, and legacy `log_opt`.
+
+Current `container-compose` behavior:
+
+- Rejects service logging driver/options before creating resources.
+- Preserves the compatibility boundary in tests and `COMPATIBILITY.md`.
+
+Current [`apple/container`](https://github.com/apple/container) behavior:
+
+- Captures container stdio to local runtime files.
+- Does not expose Docker-compatible logging driver selection, logging options, rotation policy, or remote logging backends.
+
+Missing behavior:
+
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Runtime logging driver selection per container.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Driver-specific options such as rotation, max size, syslog endpoint, labels, or env inclusion.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Clear policy for unsupported Docker logging drivers on macOS.
+
+Implementation direction:
+
+- Open an [`apple/container`](https://github.com/apple/container) design discussion before mapping Compose logging policies, because this changes runtime storage and forwarding behavior.
+- Keep `container-compose` rejection behavior until a real runtime policy exists.
+- Add mapping tests only after the runtime API shape is known.
+
+### L8. Exact Log Fidelity
+
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
+
+Docker Compose surface: raw application stdout/stderr content displayed through `docker compose logs`.
+
+Current `container-compose` behavior:
+
+- Requires UTF-8 log data.
+- Trims trailing newlines in full replay.
+- Filters empty lines in tail and follow paths.
+- Emits log chunks as complete strings rather than structured log records.
+
+Current [`apple/container`](https://github.com/apple/container) behavior:
+
+- Stores a merged stdio file and returns a file handle.
+- Does not expose stdout/stderr stream metadata or per-record boundaries.
+
+Missing behavior:
+
+- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Preserve intentional blank log lines when reading and following.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Decide whether non-UTF-8 logs should fail, pass bytes through, or match Docker's replacement behavior.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Preserve stdout/stderr stream identity if future Compose behavior requires it for formatting or filtering.
+
+Implementation direction:
+
+- Add Docker Compose comparison fixtures for blank lines, trailing newline behavior, and non-UTF-8 bytes.
+- Fix plugin-side blank-line handling where raw file handles already contain enough information.
+- Track stream identity as upstream runtime work unless apple/container adds structured log records.
+
+## Suggested Work Order
+
+1. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Implement all-replica target resolution for `logs`.
+2. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
+3. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
+4. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
+5. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container timestamped structured log records.
+6. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container service logging policy primitives.
+7. <img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Revisit `--timestamps`, `--since`, `--until`, and service `logging` mappings after upstream runtime APIs exist.
+
+## Acceptance Criteria
+
+- `container compose logs` with no services prints logs for every Compose-managed service container in the project.
+- `container compose logs SERVICE` prints logs for every replica of that service unless `--index` narrows the target.
+- `container compose logs --follow` streams all selected containers concurrently and stops cleanly on cancellation.
+- Default output includes Compose-style service/replica prefixes and optional color; `--no-log-prefix` and `--no-color` alter real behavior.
+- `--tail` applies independently to each selected container.
+- Blank lines and trailing newline behavior match Docker Compose v2 fixtures.
+- `--timestamps`, `--since`, and `--until` either match Docker Compose v2 or reject with precise apple/container runtime-gap messages until timestamped runtime records exist.
+- Service `logging.driver` and `logging.options` either map to apple/container logging policy primitives or reject before side effects with precise apple/container runtime-gap messages.
+
+## References
+
+- Docker Compose logs CLI reference: [docs.docker.com/reference/cli/docker/compose/logs](https://docs.docker.com/reference/cli/docker/compose/logs/).
+- Docker Compose service `logging` reference: [docs.docker.com/reference/compose-file/services/#logging](https://docs.docker.com/reference/compose-file/services/#logging).
+- apple/container repository: [github.com/apple/container](https://github.com/apple/container).
+- apple/container public API docs: [apple.github.io/container/documentation](https://apple.github.io/container/documentation/).
