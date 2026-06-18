@@ -629,6 +629,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Corrected the design boundary so it lists dynamic host-port allocation as a supported CLI compatibility path. Unsupported runtime behavior is now described generically as depending on missing apple/container primitives instead of using the completed dynamic-port feature as the example.</td>
     </tr>
+    <tr>
+      <td>Test display upstream naming</td>
+      <td>2026-06-18 20:21:22 BST</td>
+      <td>2026-06-18 20:21:22 BST</td>
+      <td>2026-06-18 20:21:22 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Normalized Swift Testing display names for upstream runtime gap coverage so test output uses <code>apple/container</code> consistently with the documentation and unsupported-feature messages.</td>
+    </tr>
   </tbody>
 </table>
 

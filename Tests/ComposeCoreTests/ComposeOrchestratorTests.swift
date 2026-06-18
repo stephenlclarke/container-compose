@@ -3490,8 +3490,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported deploy modes as Apple runtime gaps")
-    func upRejectsUnsupportedDeployModesAsAppleRuntimeGaps() async throws {
+    @Test("up rejects unsupported deploy modes as apple/container runtime gaps")
+    func upRejectsUnsupportedDeployModesAsAppleContainerRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -3517,8 +3517,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects deploy job modes as Apple completion gaps")
-    func upRejectsDeployJobModesAsAppleCompletionGaps() async throws {
+    @Test("up rejects deploy job modes as apple/container completion gaps")
+    func upRejectsDeployJobModesAsAppleContainerCompletionGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -3541,8 +3541,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported deploy update order as Apple orchestration gap")
-    func upRejectsUnsupportedDeployUpdateOrderAsAppleOrchestrationGap() async throws {
+    @Test("up rejects unsupported deploy update order as apple/container orchestration gap")
+    func upRejectsUnsupportedDeployUpdateOrderAsAppleContainerOrchestrationGap() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -3565,8 +3565,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported deploy resource limits as Apple runtime gaps")
-    func upRejectsUnsupportedDeployResourceLimitsAsAppleRuntimeGaps() async throws {
+    @Test("up rejects unsupported deploy resource limits as apple/container runtime gaps")
+    func upRejectsUnsupportedDeployResourceLimitsAsAppleContainerRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -3592,8 +3592,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects start-first deploy updates as an Apple runtime gap")
-    func upRejectsStartFirstDeployUpdatesAsAppleRuntimeGaps() async throws {
+    @Test("up rejects start-first deploy updates as an apple/container runtime gap")
+    func upRejectsStartFirstDeployUpdatesAsAppleContainerRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -3619,8 +3619,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects deploy resource reservations as Apple runtime gaps")
-    func upRejectsDeployResourceReservationsAsAppleRuntimeGaps() async throws {
+    @Test("up rejects deploy resource reservations as apple/container runtime gaps")
+    func upRejectsDeployResourceReservationsAsAppleContainerRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -4081,7 +4081,7 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
     }
 
-    @Test("up rejects volume subpath as apple container mount gap")
+    @Test("up rejects volume subpath as apple/container mount gap")
     func upRejectsVolumeSubpathAsAppleContainerMountGap() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
@@ -7202,8 +7202,8 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("lifecycle manager rejects stop timeouts outside Apple API range")
-    func lifecycleManagerRejectsStopTimeoutsOutsideAppleAPIRange() async throws {
+    @Test("lifecycle manager rejects stop timeouts outside apple/container API range")
+    func lifecycleManagerRejectsStopTimeoutsOutsideAppleContainerAPIRange() async throws {
         let client = RecordingContainerLifecycleAPIClient()
         let manager = ContainerClientLifecycleManager(client: client)
 
@@ -9248,8 +9248,8 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("attach reports Apple runtime gap for interactive options")
-    func attachReportsAppleRuntimeGapForInteractiveOptions() async throws {
+    @Test("attach reports apple/container runtime gap for interactive options")
+    func attachReportsAppleContainerRuntimeGapForInteractiveOptions() async throws {
         let cases: [(options: ComposeAttachOptions, error: ComposeError)] = [
             (
                 ComposeAttachOptions(),
@@ -11089,8 +11089,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects start-first deploy updates as an Apple runtime gap")
-    func runRejectsStartFirstDeployUpdatesAsAppleRuntimeGaps() async throws {
+    @Test("run rejects start-first deploy updates as an apple/container runtime gap")
+    func runRejectsStartFirstDeployUpdatesAsAppleContainerRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -11415,7 +11415,7 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects advanced mount fields as apple container gap")
+    @Test("run rejects advanced mount fields as apple/container gap")
     func runRejectsAdvancedMountFieldsAsAppleContainerGap() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
