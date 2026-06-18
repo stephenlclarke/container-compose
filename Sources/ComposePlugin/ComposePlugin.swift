@@ -418,7 +418,7 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     var detach = false
     @Option(name: [.customShort("e"), .customLong("env")], help: "Set an environment variable for the exec process. May be repeated.")
     var environment: [String] = []
-    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
     @Flag(name: .customLong("privileged"), help: "Give extended privileges to the process. Not supported by apple/container exec yet.")
     var privileged = false
@@ -649,7 +649,7 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     var archive = false
     @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path. Not supported by apple/container cp yet.")
     var followLink = false
-    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
     @Argument(parsing: .allUnrecognized) var arguments: [String]
     /// Resolves Compose service references before delegating to the runtime.
@@ -696,7 +696,7 @@ struct Port: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Option(name: .customLong("protocol"), help: "Port protocol: tcp or udp.")
     var portProtocol = "tcp"
-    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
     @Argument(help: "Service name.")
     var service: String
@@ -745,7 +745,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     var noStdin = false
     @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Not supported by apple/container logs yet.")
     var detachKeys: String?
-    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware log lookup is available.")
     var index = 1
     @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false for output-only attach.")
     var sigProxy = "true"
@@ -792,7 +792,7 @@ struct Convert: AsyncParsableCommand, ComposeProjectCommand {
 struct Export: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "export", abstract: "Export a service container filesystem.")
     @OptionGroup var global: GlobalOptions
-    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware runtime lookup is available.")
+    @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
     @Option(name: .shortAndLong, help: "Write the archive to a file instead of stdout.")
     var output: String?

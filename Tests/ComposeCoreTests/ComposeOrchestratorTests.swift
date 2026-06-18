@@ -5506,10 +5506,94 @@ struct ComposeOrchestratorTests {
         #expect(await execManager.requests.isEmpty)
     }
 
-    @Test("exec rejects unsupported replica indexes before runtime commands")
-    func execRejectsUnsupportedReplicaIndexesBeforeRuntimeCommands() async throws {
+    @Test("exec resolves selected service container indexes")
+    func execResolvesSelectedServiceContainerIndexes() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let execManager = RecordingContainerExecManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.execManager = execManager
+        })
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            options: ComposeExecOptions {
+                $0.command = ["true"]
+                $0.index = 2
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-2",
+                command: ["true"],
+                interactive: true,
+                tty: true
+            ),
+        ])
+    }
+
+    @Test("exec dry run renders selected service container indexes")
+    func execDryRunRendersSelectedServiceContainerIndexes() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            options: ComposeExecOptions {
+                $0.command = ["true"]
+                $0.index = 2
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(emitted.messages == ["+ container exec --interactive --tty demo-api-2 true"])
+        #expect(await discoveryManager.listRequests.isEmpty)
+    }
+
+    @Test("exec reports missing selected service container indexes")
+    func execReportsMissingSelectedServiceContainerIndexes() async throws {
+        let runner = RecordingRunner()
+        let execManager = RecordingContainerExecManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.execManager = execManager
+        })
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -5526,14 +5610,16 @@ struct ComposeOrchestratorTests {
                     $0.index = 2
                 }
             )
-            Issue.record("Expected unsupported exec index error")
+            Issue.record("Expected missing indexed container error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("exec --index: service replica exec needs replica-aware container lookup"))
+            #expect(error == .invalidProject("service 'api' container 'demo-api-2' does not exist"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await execManager.attachedRequests.isEmpty)
     }
 
     @Test("exec rejects privileged mode before runtime commands")
@@ -5843,6 +5929,48 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("cp resolves selected service container indexes")
+    func cpResolvesSelectedServiceContainerIndexes() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies {
+            $0.copier = copier
+            $0.discoveryManager = discoveryManager
+        })
+
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                $0.index = 2
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await copier.requests == [
+            .from(id: "demo-api-2", source: "/tmp/report.txt", destination: "./report.txt"),
+        ])
+    }
+
     @Test("cp all includes one-off containers when copying into a service")
     func cpAllIncludesOneOffContainersWhenCopyingIntoAService() async throws {
         let runner = RecordingRunner()
@@ -6077,14 +6205,6 @@ struct ComposeOrchestratorTests {
                 },
                 expected: .unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
             ),
-            (
-                name: "--index",
-                options: ComposeCopyOptions {
-                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
-                    $0.index = 2
-                },
-                expected: .unsupported("cp --index 2: service replica copy needs replica-aware container lookup")
-            ),
         ]
 
         for testCase in cases {
@@ -6251,9 +6371,22 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("export rejects unsupported replica indexes before runtime export")
-    func exportRejectsUnsupportedReplicaIndexesBeforeRuntimeExport() async throws {
+    @Test("export resolves selected service container indexes")
+    func exportResolvesSelectedServiceContainerIndexes() async throws {
         let runner = RecordingRunner()
+        let exporter = RecordingContainerExporter()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -6261,20 +6394,20 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).export(
-                project: project,
-                serviceName: "api",
-                options: ComposeExportOptions(index: 2)
-            )
-            Issue.record("Expected unsupported export index error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("export --index 2: service replica export needs replica-aware container lookup"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+        }).export(
+            project: project,
+            serviceName: "api",
+            options: ComposeExportOptions(output: "api.tar", index: 2)
+        )
 
         #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await exporter.requests == [
+            ContainerExportRequest(id: "demo-api-2", output: "api.tar"),
+        ])
     }
 
     @Test("port prints runtime published bindings")
@@ -6375,6 +6508,44 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
     }
 
+    @Test("port resolves selected service container indexes")
+    func portResolvesSelectedServiceContainerIndexes() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    composeConfigHashLabel: "api-hash",
+                ],
+                publishedPorts: [
+                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 9080, containerPort: 80, protocolName: "tcp"),
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.ports = ["8080:80"]
+                },
+            ]
+        )
+
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
+
+        #expect(emitted.messages == ["127.0.0.1:9080"])
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await discoveryManager.getRequests == ["demo-api-2"])
+    }
+
     @Test("port dry run expands explicit ranges without runtime discovery")
     func portDryRunExpandsExplicitRangesWithoutRuntimeDiscovery() async throws {
         let emitted = MessageRecorder()
@@ -6420,10 +6591,10 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
-            Issue.record("Expected unsupported index error")
+            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 0)
+            Issue.record("Expected invalid index error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("port --index 2: replica-aware published port lookup needs richer inspect output"))
+            #expect(error == .invalidProject("container index must be greater than zero"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

@@ -799,10 +799,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if exec.tty, !exec.detach {
             args.append("--tty")
         }
-        args.append(containerName(project: project, service: service, oneOff: false))
+        let containerID = try await serviceContainerID(project: project, service: service, index: exec.index)
+        args.append(containerID)
         args.append(contentsOf: exec.command)
         if !options.dryRun {
-            let containerID = containerName(project: project, service: service, oneOff: false)
             if exec.detach {
                 try await execManager.execDetached(
                     request: ContainerDetachedExecRequest(
@@ -1083,8 +1083,18 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
 
-        let source = try await copyEndpoint(copy.arguments[0], project: project, includeOneOff: copy.all && !options.dryRun)
-        let destination = try await copyEndpoint(copy.arguments[1], project: project, includeOneOff: copy.all && !options.dryRun)
+        let source = try await copyEndpoint(
+            copy.arguments[0],
+            project: project,
+            index: copy.index,
+            includeOneOff: copy.all && !options.dryRun
+        )
+        let destination = try await copyEndpoint(
+            copy.arguments[1],
+            project: project,
+            index: copy.index,
+            includeOneOff: copy.all && !options.dryRun
+        )
         switch (source, destination) {
         case (.containers(let sources), .local(let localPath)):
             guard let source = sources.first else {
@@ -1145,7 +1155,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Exports an existing service container filesystem as a tar archive.
     public func export(project: ComposeProject, serviceName: String, options export: ComposeExportOptions = ComposeExportOptions()) async throws {
-        try validateExportOptions(export)
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
@@ -1154,7 +1163,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if let output = export.output {
             args.append(contentsOf: ["--output", output])
         }
-        let containerID = containerName(project: project, service: service, oneOff: false)
+        let containerID = try await serviceContainerID(project: project, service: service, index: export.index)
         args.append(containerID)
         if options.dryRun {
             try await runContainer(args, inheritedIO: export.output == nil)
@@ -1171,9 +1180,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         protocolName: String,
         index: Int
     ) async throws {
-        guard index == 1 else {
-            throw ComposeError.unsupported("port --index \(index): replica-aware published port lookup needs richer inspect output")
-        }
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
@@ -1185,7 +1191,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
 
-        let containerID = containerName(project: project, service: service, oneOff: false)
+        let containerID = try await serviceContainerID(project: project, service: service, index: index)
         guard let container = try await discoveryManager.getContainer(id: containerID) else {
             throw ComposeError.invalidProject("service '\(service.name)' container '\(containerID)' does not exist")
         }
@@ -1267,6 +1273,34 @@ private extension ComposeOrchestrator {
         }
         let suffix = oneOff ? "run-\(slug(options.oneOffIdentifier()))" : "1"
         return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
+    }
+
+    /// Resolves the runtime ID for a service container index.
+    func serviceContainerID(project: ComposeProject, service: ComposeService, index: Int) async throws -> String {
+        let id = try serviceContainerName(project: project, service: service, index: index)
+        guard index != 1, !options.dryRun else {
+            return id
+        }
+
+        let containers = try await projectContainers(projectName: project.name, all: true)
+        guard serviceContainerExists(containers, service: service, id: id) else {
+            throw ComposeError.invalidProject("service '\(service.name)' container '\(id)' does not exist")
+        }
+        return id
+    }
+
+    /// Returns the deterministic runtime name for a service container index.
+    func serviceContainerName(project: ComposeProject, service: ComposeService, index: Int) throws -> String {
+        guard index >= 1 else {
+            throw ComposeError.invalidProject("container index must be greater than zero")
+        }
+        if index == 1 {
+            return containerName(project: project, service: service, oneOff: false)
+        }
+        if let containerName = service.containerName, !containerName.isEmpty {
+            throw ComposeError.invalidProject("service '\(service.name)' uses container_name; --index \(index) requires Compose-managed replica names")
+        }
+        return "\(slug(project.name))-\(slug(service.name))-\(index)"
     }
 
     /// Validates project-level invariants before runtime orchestration starts.
@@ -1750,9 +1784,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose exec` options before invoking runtime exec.
     func validateExecOptions(_ options: ComposeExecOptions) throws {
-        if options.index != 1 {
-            throw ComposeError.unsupported("exec --index: service replica exec needs replica-aware container lookup")
-        }
         if options.privileged {
             throw ComposeError.unsupported("exec --privileged: apple/container exec does not expose privileged process execution")
         }
@@ -1765,16 +1796,6 @@ private extension ComposeOrchestrator {
         }
         if options.followLink {
             throw ComposeError.unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
-        }
-        if options.index != 1 {
-            throw ComposeError.unsupported("cp --index \(options.index): service replica copy needs replica-aware container lookup")
-        }
-    }
-
-    /// Validates `compose export` options before invoking runtime export.
-    func validateExportOptions(_ options: ComposeExportOptions) throws {
-        if options.index != 1 {
-            throw ComposeError.unsupported("export --index \(options.index): service replica export needs replica-aware container lookup")
         }
     }
 
@@ -2267,6 +2288,7 @@ private extension ComposeOrchestrator {
     private func copyEndpoint(
         _ argument: String,
         project: ComposeProject,
+        index: Int,
         includeOneOff: Bool
     ) async throws -> ComposeCopyEndpoint {
         guard let delimiter = argument.firstIndex(of: ":") else {
@@ -2284,20 +2306,32 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("container copy path for service '\(serviceName)' must be absolute")
         }
         if includeOneOff {
-            let containers = try await copyTargets(project: project, service: service, path: path)
+            let containers = try await copyTargets(project: project, service: service, path: path, index: index)
             guard !containers.isEmpty else {
                 throw ComposeError.invalidProject("no container found for service '\(serviceName)'")
             }
             return .containers(containers)
         }
-        return .containers([ComposeCopyContainerTarget(id: containerName(project: project, service: service, oneOff: false), path: path)])
+        let id = try await serviceContainerID(project: project, service: service, index: index)
+        return .containers([ComposeCopyContainerTarget(id: id, path: path)])
     }
 
     /// Returns service and one-off containers that can be targeted by `cp --all`.
-    private func copyTargets(project: ComposeProject, service: ComposeService, path: String) async throws -> [ComposeCopyContainerTarget] {
-        try await projectContainers(projectName: project.name, all: true)
+    private func copyTargets(project: ComposeProject, service: ComposeService, path: String, index: Int) async throws -> [ComposeCopyContainerTarget] {
+        let containers = try await projectContainers(projectName: project.name, all: true)
             .filter { $0.serviceName == service.name }
             .sorted(by: compareCopyTargetContainers)
+
+        if index == 1 {
+            return containers.map { ComposeCopyContainerTarget(id: $0.id, path: path) }
+        }
+
+        let indexedID = try serviceContainerName(project: project, service: service, index: index)
+        guard serviceContainerExists(containers, service: service, id: indexedID) else {
+            throw ComposeError.invalidProject("service '\(service.name)' container '\(indexedID)' does not exist")
+        }
+        return containers
+            .filter { $0.id == indexedID || $0.isOneOff }
             .map { ComposeCopyContainerTarget(id: $0.id, path: path) }
     }
 
@@ -3286,6 +3320,13 @@ private func filterContainersByStatus(_ containers: [ComposeContainerSummary], s
 /// Filters direct API containers by Compose project label.
 private func filterProjectContainers(projectName: String, containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
     containers.filter { $0.projectName == projectName }
+}
+
+/// Returns true when a discovered normal service container matches an ID.
+private func serviceContainerExists(_ containers: [ComposeContainerSummary], service: ComposeService, id: String) -> Bool {
+    containers.contains { container in
+        container.id == id && container.serviceName == service.name && !container.isOneOff
+    }
 }
 
 /// Orders normal service containers before one-off `run` containers for `cp --all`.
