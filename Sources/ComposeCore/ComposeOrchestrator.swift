@@ -585,7 +585,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         try await ensureResources(project: project)
 
-        try await applyPullPolicy(up.pullPolicy, project: project, services: services, quiet: up.quietPull)
+        try await applyPullPolicy(
+            up.pullPolicy,
+            project: project,
+            services: services,
+            quiet: up.quietPull,
+            quietBuild: up.quietBuild,
+            allowBuild: !up.noBuild && !up.build
+        )
 
         if up.build {
             try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
@@ -1840,7 +1847,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses secrets; secret mount support needs an apple/container runtime gap PR")
         }
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
-            throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, daily, weekly, and every_<duration>")
+            throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>")
         }
         if let restart = service.restart, !restart.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
@@ -2626,9 +2633,22 @@ private extension ComposeOrchestrator {
     }
 
     /// Applies the Compose `up --pull` policy before starting services.
-    func applyPullPolicy(_ policy: String?, project: ComposeProject, services: [ComposeService], quiet: Bool = false) async throws {
+    func applyPullPolicy(
+        _ policy: String?,
+        project: ComposeProject,
+        services: [ComposeService],
+        quiet: Bool = false,
+        quietBuild: Bool = false,
+        allowBuild: Bool = true
+    ) async throws {
         guard let policy, !policy.isEmpty else {
-            try await applyServicePullPolicies(services: services, quiet: quiet)
+            try await applyServicePullPolicies(
+                project: project,
+                services: services,
+                quiet: quiet,
+                quietBuild: quietBuild,
+                allowBuild: allowBuild
+            )
             return
         }
 
@@ -2660,7 +2680,14 @@ private extension ComposeOrchestrator {
             return
         }
 
-        try await applyPullPolicy(create.pullPolicy, project: project, services: services, quiet: create.quietPull)
+        try await applyPullPolicy(
+            create.pullPolicy,
+            project: project,
+            services: services,
+            quiet: create.quietPull,
+            quietBuild: create.quietBuild,
+            allowBuild: !create.noBuild && !create.build
+        )
 
         guard create.build, !create.noBuild else {
             return
@@ -2670,27 +2697,50 @@ private extension ComposeOrchestrator {
 
     /// Returns whether `create` should auto-build a service before container creation.
     func shouldBuildServiceForCreate(_ create: ComposeCreateOptions, service: ComposeService) -> Bool {
-        !create.noBuild && !create.build && create.pullPolicy != "build" && service.image == nil && service.build != nil
+        !create.noBuild && !create.build && create.pullPolicy != "build" && service.pullPolicy != "build" && service.image == nil && service.build != nil
     }
 
     /// Returns whether `up` should auto-build a build-only service before start.
     func shouldBuildServiceForUp(_ up: ComposeUpOptions, service: ComposeService) -> Bool {
-        !up.noBuild && !up.build && service.image == nil && service.build != nil
+        !up.noBuild && !up.build && service.pullPolicy != "build" && service.image == nil && service.build != nil
     }
 
     /// Applies service-level `pull_policy` when no global pull override is set.
-    func applyServicePullPolicies(services: [ComposeService], quiet: Bool = false) async throws {
+    func applyServicePullPolicies(
+        project: ComposeProject,
+        services: [ComposeService],
+        quiet: Bool = false,
+        quietBuild: Bool = false,
+        allowBuild: Bool = true
+    ) async throws {
         for service in services {
             guard let policy = service.pullPolicy, !policy.isEmpty else {
                 continue
             }
-            try await applyServicePullPolicy(policy, service: service, quiet: quiet)
+            try await applyServicePullPolicy(
+                policy,
+                project: project,
+                service: service,
+                quiet: quiet,
+                quietBuild: quietBuild,
+                allowBuild: allowBuild
+            )
         }
     }
 
     /// Applies the local-runtime-backed subset of Compose service pull policies.
-    func applyServicePullPolicy(_ policy: String, service: ComposeService, quiet: Bool = false) async throws {
+    func applyServicePullPolicy(
+        _ policy: String,
+        project: ComposeProject,
+        service: ComposeService,
+        quiet: Bool = false,
+        quietBuild: Bool = false,
+        allowBuild: Bool = true
+    ) async throws {
         guard let image = service.image else {
+            if policy == "build", allowBuild, service.build != nil {
+                try await build(project: project, services: [service.name], noCache: false, quiet: quietBuild)
+            }
             return
         }
         switch policy {
@@ -2700,6 +2750,10 @@ private extension ComposeOrchestrator {
             try await pullMissingImage(image, quiet: quiet)
         case "never":
             return
+        case "build":
+            if allowBuild, service.build != nil {
+                try await build(project: project, services: [service.name], noCache: false, quiet: quietBuild)
+            }
         default:
             if let interval = stalePullPolicyInterval(policy) {
                 try await pullImageIfStale(image, interval: interval, quiet: quiet)
@@ -3078,9 +3132,9 @@ private extension ComposeOrchestrator {
 
     /// Starts dependency services for `compose run` before the one-off container.
     func startDependencyServices(project: ComposeProject, services: [ComposeService]) async throws {
-        try await applyServicePullPolicies(services: services)
+        try await applyServicePullPolicies(project: project, services: services)
         for service in services {
-            if service.image == nil, service.build != nil {
+            if service.image == nil, service.pullPolicy != "build", service.build != nil {
                 try await build(project: project, services: [service.name], noCache: false)
             }
 
@@ -3695,7 +3749,7 @@ private extension ComposeContainerSummary {
 
 /// Returns whether a service pull policy can be implemented with local runtime primitives.
 private func isSupportedServicePullPolicy(_ policy: String) -> Bool {
-    ["always", "missing", "if_not_present", "never"].contains(policy) || stalePullPolicyInterval(policy) != nil
+    ["always", "missing", "if_not_present", "never", "build"].contains(policy) || stalePullPolicyInterval(policy) != nil
 }
 
 /// Returns the refresh interval for Compose time-window pull policies.

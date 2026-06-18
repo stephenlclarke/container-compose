@@ -1079,6 +1079,35 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
     }
 
+    @Test("create applies service build pull policy before creating containers")
+    func createAppliesServiceBuildPullPolicyBeforeCreatingContainers() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                    $0.pullPolicy = "build"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).create(
+            project: project,
+            options: ComposeCreateOptions()
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
+        #expect(commands[0].last == "api")
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
     @Test("create pull if not present pulls only absent images")
     func createPullIfNotPresentPullsOnlyAbsentImages() async throws {
         let runner = RecordingRunner(responses: [
@@ -2225,6 +2254,65 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
+    @Test("up applies service build pull policy before starting containers")
+    func upAppliesServiceBuildPullPolicyBeforeStartingContainers() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                    $0.pullPolicy = "build"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions()
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
+        #expect(commands[0].last == "api")
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("up no-build skips service build pull policy")
+    func upNoBuildSkipsServiceBuildPullPolicy() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                    $0.pullPolicy = "build"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.noBuild = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(!commands.contains { $0.containsSequence(["container", "build"]) })
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
     @Test("up no-build skips auto build for build-only service")
     func upNoBuildSkipsAutoBuildForBuildOnlyService() async throws {
         let runner = RecordingRunner(responses: [
@@ -2545,7 +2633,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.pullPolicy = "build"
+                    $0.pullPolicy = "sometimes"
                     $0.networks = ["backend"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -2559,7 +2647,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported service pull policy error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses pull_policy 'build'; supported values are always, missing, if_not_present, never, daily, weekly, and every_<duration>"))
+            #expect(error == .unsupported("service 'api' uses pull_policy 'sometimes'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -8563,6 +8651,31 @@ struct ComposeOrchestratorTests {
         #expect(commands[0].starts(with: ["container", "run", "--name"]))
     }
 
+    @Test("run applies service build pull policy before one-off container")
+    func runAppliesServiceBuildPullPolicyBeforeOneOffContainer() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "example/job") {
+                    $0.build = ComposeBuild(context: "job")
+                    $0.pullPolicy = "build"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "build", "--tag", "example/job"]))
+        #expect(commands[0].last == "job")
+        #expect(commands[1].starts(with: ["container", "run", "--name"]))
+        #expect(Array(commands[1].suffix(2)) == ["example/job", "true"])
+    }
+
     @Test("run rejects unsupported service pull policies before creating resources")
     func runRejectsUnsupportedServicePullPoliciesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -8584,7 +8697,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported service pull policy error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses pull_policy 'sometimes'; supported values are always, missing, if_not_present, never, daily, weekly, and every_<duration>"))
+            #expect(error == .unsupported("service 'job' uses pull_policy 'sometimes'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
