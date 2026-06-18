@@ -36,10 +36,20 @@ Docker Compose v2 accepts the surface and [`apple/container`][apple-container] i
 
 Docker Compose v2 accepts the surface and runtime support is not needed for normalized `config` output. `container-compose` preserves the data for `config` and `convert`; runtime commands either ignore harmless metadata or reject service-level use when runtime behavior is requested.
 
+## Status Lozenges
+
+- 🟢 SUPPORTED: Docker Compose v2 accepts the surface, [`apple/container`][apple-container] has the required primitive, and `container-compose` maps it.
+- 🟢 NO PLUGIN GAP: no current runtime or command surface is blocked first by this repository.
+- 🟡 PARTIAL: the common local workflow is supported, but adjacent Compose behavior still depends on an [`apple/container`][apple-container] runtime gap.
+- 🔴 APPLE GAP: the first missing piece is an [`apple/container`][apple-container] runtime primitive.
+- 🟠 PLUGIN GAP: [`apple/container`][apple-container] is not known to be the blocker and this repository still needs implementation work.
+- ⚪ CONFIG ONLY: normalized output is preserved, but runtime behavior is not applied.
+
 ## Support Matrix
 
 Each entry below is written as a compact status card:
 
+- **Status:** Whether the surface is supported, partial, blocked upstream, blocked in this plugin, or config-only.
 - **Compose surface:** The Compose v2 fields or CLI commands covered by the row.
 - **Apple/container path:** The runtime API or CLI primitive that can implement it, or the missing primitive that blocks it.
 - **container-compose status:** What this plugin does today.
@@ -51,6 +61,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Config normalization
 
+- **Status:** 🟢 SUPPORTED
 - **Compose surface:**
   - File discovery, repeated `-f`, `.env`, `--env-file`, interpolation, merge, profiles, `--project-directory`, and `-p/--project-name`.
   - Canonical `config` and `convert` JSON.
@@ -60,6 +71,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Build and images
 
+- **Status:** 🟢 SUPPORTED
 - **Compose surface:**
   - Build inputs: `build.context`, `build.dockerfile`, `build.dockerfile_inline`, `build.args`, `build.cache_from`, `build.cache_to`, `build.labels`, `build.platforms`, `build.target`, `build.no_cache`, `build.pull`, `build.tags`, and file-backed or environment-backed `build.secrets`.
   - Build commands: `build --no-cache`, `build --pull`, `build --push`, `build --quiet/-q`, and `build --with-dependencies`.
@@ -74,6 +86,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Container lifecycle
 
+- **Status:** 🟡 PARTIAL
 - **Compose surface:**
   - Project lifecycle: `create`, `up`, `down`, `start`, `stop`, `restart`, `rm`, `kill`, and `wait`.
   - Reconciliation: deterministic names, indexed replicas, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, and `down --rmi local/all`.
@@ -86,6 +99,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Project discovery
 
+- **Status:** 🟢 SUPPORTED
 - **Compose surface:** `ls`, `ls --all/-a`, `ls --format table/json`, `ls --quiet/-q`, and `ls --filter name=...`.
 - **Apple/container path:** `ContainerClient.list(filters:)` and Compose project/config-hash labels.
 - **container-compose status:** Supported from labels on created containers.
@@ -93,6 +107,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Container interaction
 
+- **Status:** 🟡 PARTIAL
 - **Compose surface:**
   - Discovery and output: `ps`, filtered `ps`, `logs`, indexed `logs`, harmless `logs --no-color` and `logs --no-log-prefix`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
@@ -104,6 +119,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Develop watch workflows
 
+- **Status:** 🟢 SUPPORTED
 - **Compose surface:** `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, `watch --quiet`, selected services, and normalized `develop.watch` triggers for `sync`, `sync+restart`, `sync+exec`, `restart`, and `rebuild`.
 - **Apple/container path:** Dry-run validation does not mutate runtime state. Live watch uses direct copy, exec, lifecycle restart, build, and image prune paths where Apple/container exposes them.
 - **container-compose status:** Supported for polling-based local file watching, initial sync, changed-file sync, deleted-file cleanup, sync exec hooks, restarts, rebuilds, and rebuild pruning. `develop.watch` metadata is harmless for ordinary `up` and `run`.
@@ -111,6 +127,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Provider services
 
+- **Status:** 🟢 SUPPORTED
 - **Compose surface:** Service `provider.type`, `provider.options`, provider `compose metadata`, provider `compose up`, provider `compose down`, optional provider `compose stop`, provider `info`/`debug`/`error`/`setenv` messages, and provider environment injection into direct dependents.
 - **Apple/container path:** Provider services are non-container lifecycle hooks. No Apple/container runtime primitive is needed until a provider's returned values are injected into dependent service container environment variables.
 - **container-compose status:** Supported for local `up`, dependency startup for one-off `run`, `down`, and advertised `stop`. Providers are resolved as an executable path, `docker-<type>` in `PATH`, or `<type>` in `PATH`; required metadata parameters are validated before invoking provider `up`/`down`; unknown provider options are filtered when metadata is available.
@@ -118,6 +135,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Default networking
 
+- **Status:** 🟡 PARTIAL
 - **Compose surface:**
   - One service network, default project networks, external networks, `network_mode: none`, project network `internal`, and one IPv4 plus one IPv6 project network IPAM `subnet`.
   - Explicit host-published ports, target-only dynamically allocated host ports, and host-bound dynamic ports for `create`, `up`, and one-off `run`.
@@ -129,6 +147,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Default storage
 
+- **Status:** 🟡 PARTIAL
 - **Compose surface:**
   - Named volumes, external volumes, bind mounts, read-only mounts, anonymous volumes, and deterministic per-replica anonymous volume names.
   - Top-level volume `driver`, `driver_opts`, and `labels`.
@@ -143,6 +162,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Common runtime options
 
+- **Status:** 🟡 PARTIAL
 - **Compose surface:**
   - Process options: `command`, `entrypoint`, one-off `run --entrypoint`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, and `stdin_open`.
   - Runtime options: `container_name`, `read_only`, `init`, `platform`, `runtime`, DNS settings, capabilities, CPU/memory local limits, `shm_size`, `ulimits`, `stop_signal`, and `stop_grace_period`.
@@ -152,6 +172,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Environment and metadata
 
+- **Status:** 🟢 SUPPORTED
 - **Compose surface:** Service `environment`, `env_file`, one-off env and label flags, service labels, service annotations, `deploy.labels` service metadata, `label_file`, network labels, volume labels, and Compose project/service/config-hash labels.
 - **Apple/container path:** Supported `container create/run --env`, `--env-file`, and resource/container labels.
 - **container-compose status:** Supported. Service annotations are mapped to runtime metadata labels. `deploy.labels` are preserved as service metadata but are not applied as container labels.
@@ -159,6 +180,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 #### Simple ordering
 
+- **Status:** 🟡 PARTIAL
 - **Compose surface:** `depends_on` with no condition or `condition: service_started`, same-project `volumes_from` implicit dependencies, optional dependencies, `depends_on.<service>.restart: true` for single-replica restarts, `up --always-recreate-deps`, `up --no-deps`, and `run --no-deps`.
 - **Apple/container path:** Plugin dependency ordering, dependency-change tracking, `ContainerClient.stop(id:opts:)`, and `ContainerClient.start(id:)`.
 - **container-compose status:** Supported for service-started ordering and selected dependency traversal behavior.
@@ -170,6 +192,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Rich network attachment and IPAM controls
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** Multiple service networks, aliases, service-name DNS for replicas, `deploy.endpoint_mode`, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
 - **Missing Apple/container primitive:** Multi-network attach/connect, per-network aliases/options beyond MAC and MTU, VIP/DNSRR service endpoint discovery, multi-record DNS lookup for scaled service names, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
 - **container-compose status:** Rejected before resources are created.
@@ -177,6 +200,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Host identity and legacy links
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `hostname`, `domainname`, `extra_hosts`, `links`, and `external_links`.
 - **Missing Apple/container primitive:** Hostname/domain controls, explicit host entries, and legacy link/alias semantics.
 - **container-compose status:** Rejected before resources are created.
@@ -184,6 +208,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Namespace and resource controls
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, `isolation`, CPU scheduler controls beyond supported `cpus`, memory/OOM/PID controls beyond supported `mem_limit`, `deploy.resources.limits.pids`, `deploy.resources.limits.devices`, `deploy.resources.limits.generic_resources`, and `deploy.resources.reservations`.
 - **Missing Apple/container primitive:** Namespace selection, parent cgroups, CPU scheduler controls beyond `cpus`, memory controls beyond `mem_limit`, swap/OOM/PID controls, deploy PID/device/generic-resource limits, and platform resource reservation guarantees.
 - **container-compose status:** Rejected before resources are created.
@@ -191,6 +216,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### User, security, devices, and kernel tuning
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `group_add`, `security_opt`, service `privileged`, `exec --privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`, and `sysctls`.
 - **Missing Apple/container primitive:** Supplemental groups, security profiles beyond supported `cap_add`/`cap_drop`, privileged mode, host devices, GPUs, per-container sysctls, and privileged exec processes.
 - **container-compose status:** Rejected before resources are created.
@@ -198,6 +224,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Health, completion, configs, secrets, service restart
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, service `restart`, and `deploy.restart_policy`.
 - **Missing Apple/container primitive:** Health status, exit code/completion-time metadata, config/secret mount primitives, and restart policy support.
 - **container-compose status:** Rejected before resources are created.
@@ -205,6 +232,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Compose model runner
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** Top-level `models`, service `models`, `endpoint_var`, `model_var`, `context_size`, and `runtime_flags`.
 - **Missing Apple/container primitive:** Compose-compatible model runner lifecycle, model pull/configure operations, endpoint discovery, and an endpoint URL that is reachable from Apple/container service containers. Docker Compose implements this through the Docker Model plugin; Apple/container does not expose an equivalent primitive yet.
 - **container-compose status:** `config` and `convert` preserve top-level model definitions and service model binding metadata. Runtime commands reject service model bindings before resources are created.
@@ -212,6 +240,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Start-first service replacement
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `deploy.update_config.order: start-first`.
 - **Missing Apple/container primitive:** A Docker Compose compatible replacement handoff: create a temporary replacement while the old service container is still running, then either rename the replacement to the stable Compose container identity or move the service hostname/alias to it after the old container is removed. Current Apple/container APIs expose create, stop, and delete, but no container rename or service-alias handoff, and container creation rejects duplicate container IDs and duplicate attachment hostnames.
 - **container-compose status:** Rejected before resources are created with a precise Apple/container runtime-gap message.
@@ -219,6 +248,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Advanced build configuration
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `additional_contexts`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, unsupported build secret forms and metadata, build `shm_size`, `ssh`, and build `ulimits`.
 - **Missing Apple/container primitive:** Docker Compose compatible BuildKit inputs for additional contexts, build host entries, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced build secret metadata, build shared memory, build ulimits, and provenance/SBOM attestations.
 - **container-compose status:** Rejected before `container build` is invoked.
@@ -226,6 +256,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Advanced mounts and storage controls
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** Long-form service `volume.subpath`, image-backed service mounts, `image.subpath`, advanced bind/volume options such as bind propagation, SELinux flags, recursive bind behavior, mount consistency, non-local service `volume_driver`, service `storage_opt`, and external inherited block mounts.
 - **Missing Apple/container primitive:** Named-volume subpath mounts, image-backed service mounts, advanced bind/volume controls, non-local service volume drivers, per-container root filesystem storage options, and a Compose-compatible way to inherit external block mounts. The current Apple/container CLI/API mount surface exposes volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath, image mount source selector, propagation/SELinux/consistency controls, block-mount inheritance mapping, or service storage option mapping.
 - **container-compose status:** Rejected before resources are created.
@@ -233,6 +264,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Service logging controls
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** Service `logging`, `log_driver`, and `log_opt`.
 - **Missing Apple/container primitive:** Compose-compatible service logging drivers, logging options, rotation policy, and log metadata controls. Current Apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration.
 - **container-compose status:** Rejected before resources are created.
@@ -240,6 +272,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### API socket and block I/O controls
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `use_api_socket` and `blkio_config`.
 - **Missing Apple/container primitive:** A safe Docker-compatible or Apple/container-compatible API socket boundary with credential handoff and least-privilege controls, plus block I/O resource controls for blkio weight and read/write throttling. Apple/container can mount Unix sockets and report block I/O stats, but it does not expose the Docker Compose API-socket or blkio resource-control behavior that these fields require.
 - **container-compose status:** Rejected before resources are created.
@@ -247,6 +280,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Runtime data commands
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
 - **Missing Apple/container primitive:** Process listing, event stream, pause/unpause, stored process exit codes after container stop, and copy archive/follow-link controls.
 - **container-compose status:** Rejected before resources are created.
@@ -254,6 +288,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Interactive init-process attach and foreground hook boundaries
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** Default stdin/signal-proxy `attach`, `attach --sig-proxy=true`, `attach --detach-keys`, attached `up` with service `post_start`, foreground one-off `run` with service `post_start`, and foreground one-off `run` with service `pre_stop`.
 - **Missing Apple/container primitive:** Reattaching stdin/stdout/stderr to an already-running init process, signal proxying to that process, detach-key handling, and an interceptable foreground one-off stop boundary. Apple/container can wire stdio while bootstrapping a container or creating a new exec process, but it does not expose a Compose-compatible path that starts the init process, lets `container-compose` run lifecycle hooks, then reattaches to the same init process before it exits.
 - **container-compose status:** Output-only `attach --no-stdin --sig-proxy=false` is supported through log streaming. Default interactive attach rejects before side effects with a precise Apple/container runtime-gap message.
@@ -261,12 +296,15 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Image commit and Compose application publishing
 
+- **Status:** 🔴 APPLE GAP
 - **Compose surface:** `commit`, `publish`, and `oci://` Compose application references.
 - **Missing Apple/container primitive:** Container-to-image commit snapshots with image metadata, plus Compose application OCI artifact publishing and consumption.
 - **container-compose status:** Command names are exposed so Docker Compose v2 scripts get precise unsupported-feature errors instead of unknown-command failures.
 - **Example:** [A7](#a7-apple-gap-image-commit-and-compose-publish).
 
 ### Blocked By `container-compose`
+
+Status: 🟢 NO PLUGIN GAP
 
 No remaining runtime surface-level gaps are currently classified here. Mixed examples below still capture areas where plugin work was completed alongside Apple/container runtime boundaries, but the open unsupported runtime surfaces are now tracked under the first missing Apple/container primitive.
 
@@ -276,22 +314,26 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 #### Top-level and service `x-*` extensions
 
+- **Status:** ⚪ CONFIG ONLY
 - **Current behavior:** Preserved by `container compose config` and `container compose convert`; no runtime behavior by itself.
 - **Example:** [O1](#o1-config-only-metadata).
 
 #### Service `expose`
 
+- **Status:** ⚪ CONFIG ONLY
 - **Current behavior:** Preserved by `config` and `convert`; it does not publish host ports. Use `ports` for host publishing.
 - **Example:** [O1](#o1-config-only-metadata).
 
 #### Top-level `configs` and `secrets` definitions
 
+- **Status:** ⚪ CONFIG ONLY
 - **Current behavior:** Preserved by `config` and `convert`. File-backed and environment-backed secrets can feed supported `build.secrets`.
 - **Runtime boundary:** Service-level consumption is an [`apple/container`][apple-container] gap because mounts need runtime support.
 - **Examples:** [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-secrets-and-restart).
 
 #### Top-level `models` definitions
 
+- **Status:** ⚪ CONFIG ONLY
 - **Current behavior:** Preserved by `config` and `convert`.
 - **Runtime boundary:** Service-level model bindings are an [`apple/container`][apple-container] model-runner gap.
 - **Examples:** [O1](#o1-config-only-metadata), [A11](#a11-apple-gap-compose-model-runner).
@@ -299,6 +341,8 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 ## CLI Command Status
 
 ### Supported Commands
+
+Status: 🟢 SUPPORTED
 
 - Config and project: `config`, `convert`, and `ls`.
 - Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, and running/stopping-container `wait`.
@@ -310,6 +354,8 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 ### Commands Blocked By [`apple/container`][apple-container] Runtime Gaps
 
+Status: 🔴 APPLE GAP
+
 - `top`, `events`, `pause`, and `unpause`.
 - Already-stopped `wait` exit-code replay.
 - `cp --archive` and `cp --follow-link`.
@@ -318,6 +364,8 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - `publish` Compose application OCI artifacts and `oci://` Compose file consumption.
 
 ### Commands Blocked By `container-compose` Design Gaps
+
+Status: 🟢 NO PLUGIN GAP
 
 - No remaining command-level gaps are currently classified here. Plugin-owned orchestration gaps are tracked in the compatibility sections above.
 
@@ -335,24 +383,24 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 Every example includes a Compose file or commands plus the matching Dockerfile snippets needed to try the surface in an isolated scratch directory.
 
-- [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Supported. Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
-- [S2: Supported Provider Service](#s2-supported-provider-service): Supported. Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
-- [A1: Apple Gap, Networking](#a1-apple-gap-networking): [`apple/container`][apple-container] gap. Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
-- [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): [`apple/container`][apple-container] gap. Demonstrates hostname, domain name, explicit host entries, and legacy links.
-- [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): [`apple/container`][apple-container] gap. Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
-- [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): [`apple/container`][apple-container] gap. Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
-- [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
-- [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
-- [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
-- [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): [`apple/container`][apple-container] gap. Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
-- [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): [`apple/container`][apple-container] gap. Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
-- [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): [`apple/container`][apple-container] gap. Demonstrates service logging drivers and logging options.
-- [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): [`apple/container`][apple-container] gap. Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
-- [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): [`apple/container`][apple-container] gap. Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
-- [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): [`apple/container`][apple-container] gap. Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
-- [C1: Replica Scaling And Deploy Metadata](#c1-replica-scaling-and-deploy-metadata): Mixed status. Demonstrates supported scale forms, collision safeguards, local deploy metadata, and remaining [`apple/container`][apple-container] deploy/runtime gaps.
-- [C3: Plugin Gap, Develop, Providers, And Hooks](#c3-plugin-gap-develop-providers-and-hooks): Mixed status. Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
-- [O1: Config-Only Metadata](#o1-config-only-metadata): Config-only. Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
+- 🟢 SUPPORTED [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
+- 🟢 SUPPORTED [S2: Supported Provider Service](#s2-supported-provider-service): Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
+- 🔴 APPLE GAP [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+- 🔴 APPLE GAP [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates hostname, domain name, explicit host entries, and legacy links.
+- 🔴 APPLE GAP [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
+- 🔴 APPLE GAP [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
+- 🔴 APPLE GAP [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
+- 🔴 APPLE GAP [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
+- 🔴 APPLE GAP [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
+- 🔴 APPLE GAP [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
+- 🔴 APPLE GAP [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
+- 🔴 APPLE GAP [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): Demonstrates service logging drivers and logging options.
+- 🔴 APPLE GAP [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
+- 🔴 APPLE GAP [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
+- 🔴 APPLE GAP [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
+- 🟡 PARTIAL [C1: Replica Scaling And Deploy Metadata](#c1-replica-scaling-and-deploy-metadata): Demonstrates supported scale forms, collision safeguards, local deploy metadata, and remaining [`apple/container`][apple-container] deploy/runtime gaps.
+- 🟡 PARTIAL [C3: Plugin Gap, Develop, Providers, And Hooks](#c3-plugin-gap-develop-providers-and-hooks): Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
+- ⚪ CONFIG ONLY [O1: Config-Only Metadata](#o1-config-only-metadata): Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
 ## Examples With Dockerfiles
 

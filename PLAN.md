@@ -14,7 +14,14 @@ commit timestamps. New tasks should record:
 - Started: when implementation or design work begins.
 - Completed: when the tested commit lands on `develop`.
 
-Use `not started` or `not completed` where the event has not happened yet.
+Use the status lozenges below where the event has not happened yet.
+
+## Status Lozenges
+
+- 🟢 DONE: tested work has landed on `develop`, or the item needs no further repo work.
+- 🟡 ACTIVE: work has started and still has repo-owned follow-up.
+- 🔴 UPSTREAM GAP: Docker Compose v2 compatibility needs [`apple/container`](https://github.com/apple/container) runtime work before this repo can finish the mapping.
+- ⚪ OPEN: work is tracked but has not started yet.
 
 ## Development Cycle
 
@@ -35,7 +42,7 @@ Use `not started` or `not completed` where the event has not happened yet.
   be pushed to `main` after each fix when formal SonarQube validation is the
   active workflow.
 
-## Completed Work
+## 🟢 DONE Completed Work
 
 <table>
   <thead>
@@ -479,7 +486,7 @@ Use `not started` or `not completed` where the event has not happened yet.
   </tbody>
 </table>
 
-## container-compose Backlog
+## 🟡 ACTIVE container-compose Backlog
 
 These tasks are valid Docker Compose v2 surfaces where Apple/container is not
 known to be the first blocker. The fix belongs in this repository unless deeper
@@ -508,7 +515,7 @@ Apple/container API work is discovered during implementation.
       <td>Replica scaling edge cases</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 10:07:04 BST</td>
-      <td>not completed</td>
+      <td>🟡 ACTIVE</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Scaled service DNS is an Apple/container networking gap. Remaining plugin work covers broader deploy behavior.</td>
@@ -526,7 +533,7 @@ Apple/container API work is discovered during implementation.
       <td>Providers, models, and lifecycle hooks</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 13:23:28 BST</td>
-      <td>not completed</td>
+      <td>🟡 ACTIVE</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Service <code>models</code> binding metadata is preserved for config output, but runtime model-runner behavior needs Apple/container model-runner parity. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
@@ -570,7 +577,7 @@ Apple/container API work is discovered during implementation.
   </tbody>
 </table>
 
-## Apple/container Upstream Backlog
+## 🔴 UPSTREAM GAP Apple/container Upstream Backlog
 
 These tasks are valid Docker Compose v2 surfaces where container-compose has
 hit, or is expected to hit, an Apple/container runtime primitive gap. These are
@@ -646,8 +653,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Fork Apple/container for Compose primitive work</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Use the fork to stage small upstream PRs that unblock Compose compatibility.</td>
@@ -655,8 +662,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Multi-network attachment and aliases</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs multiple service networks, network aliases, richer per-network options, and attach/connect semantics.</td>
@@ -664,8 +671,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Compose service DNS aliases and replica lookups</td>
       <td>2026-06-18 11:56:51 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases, endpoint modes such as <code>vip</code> and <code>dnsrr</code>, plus DNS lookup that can return multiple A/AAAA records for scaled service names. Apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
@@ -673,8 +680,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Start-first service replacement handoff</td>
       <td>2026-06-18 16:48:46 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>deploy.update_config.order: start-first</code> needs a temporary replacement handoff. Docker Compose creates a replacement under a temporary name, stops/removes the old stable container, then renames the replacement. Apple/container needs either a container rename primitive or service hostname/alias movement that can preserve the Compose service identity without duplicate ID or duplicate hostname conflicts.</td>
@@ -682,8 +689,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Fixed addresses and richer IPAM</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs fixed IPv4/IPv6 addresses, gateways, IP ranges, aux addresses, custom IPAM drivers, and multiple same-family subnets.</td>
@@ -692,7 +699,7 @@ Suggested Apple/container PR batches:
       <td>BuildKit-compatible build inputs</td>
       <td>2026-06-18 10:34:11 BST</td>
       <td>2026-06-18 11:37:58 BST</td>
-      <td>not completed</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose build parity needs additional contexts, build <code>extra_hosts</code>, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced secret metadata (<code>uid</code>, <code>gid</code>, <code>mode</code>), build <code>shm_size</code>, build <code>ulimits</code>, and provenance/SBOM attestations exposed through Apple/container build APIs. Current <code>container build</code> supports the common local subset but not the full Compose v2 build surface.</td>
@@ -700,8 +707,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Host identity and host entries</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs hostname, domainname, extra host entries, and legacy link alias behavior.</td>
@@ -709,8 +716,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Namespace and cgroup controls</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs compatible <code>cgroup</code>, <code>cgroup_parent</code>, <code>ipc</code>, <code>pid</code>, <code>userns_mode</code>, <code>uts</code>, and isolation modes.</td>
@@ -719,7 +726,7 @@ Suggested Apple/container PR batches:
       <td>Expanded resource controls</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 15:33:36 BST</td>
-      <td>not completed</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> platform guarantees for CPU, memory, PIDs, devices, and generic resources. Current Apple/container create/run surfaces expose local hard CPU and memory limits but not those deploy resource primitives.</td>
@@ -727,8 +734,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>User, security, device, GPU, and sysctl controls</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs supplemental groups, security profiles, privileged containers and exec, host devices, GPUs, and per-container sysctls.</td>
@@ -737,7 +744,7 @@ Suggested Apple/container PR batches:
       <td>Advanced mount and storage options</td>
       <td>2026-06-18 10:34:11 BST</td>
       <td>2026-06-18 14:20:37 BST</td>
-      <td>not completed</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, non-local service volume drivers, service <code>storage_opt</code>, image-declared inherited mounts, and a safe Compose-compatible mapping for external inherited block mounts. Current Apple/container mount flags cover the common local subset only. External-container <code>volumes_from</code> is implemented for volume, bind, and tmpfs mounts that direct inspect can represent as Apple <code>container --volume</code> or <code>--mount type=tmpfs</code> arguments.</td>
@@ -745,8 +752,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Health status and dependency gates</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs health status and health-aware dependency waits for <code>service_healthy</code>.</td>
@@ -754,8 +761,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Container completion metadata</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs stored exit code and completion time so <code>service_completed_successfully</code> and already-stopped <code>wait</code> replay can work.</td>
@@ -763,8 +770,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Service config and secret mounts</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs first-class runtime config/secret mount primitives.</td>
@@ -772,8 +779,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Restart policies</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs service <code>restart</code> and <code>deploy.restart_policy</code> support compatible with local Docker Compose behavior.</td>
@@ -781,8 +788,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Compose model runner parity</td>
       <td>2026-06-18 16:23:30 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose service <code>models</code> need a model-runner backend that can pull/configure model artifacts, expose endpoint status, inject endpoint/model variables, and make those endpoints reachable from Apple/container service containers. Docker Compose currently delegates this to the Docker Model plugin; Apple/container does not expose an equivalent primitive.</td>
@@ -791,7 +798,7 @@ Suggested Apple/container PR batches:
       <td>Docker Compose log parity</td>
       <td>2026-06-18 10:29:02 BST</td>
       <td>2026-06-18 14:20:37 BST</td>
-      <td>not completed</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>logs</code> needs runtime log records with timestamps, stdout/stderr stream metadata, since/until filtering, tailing handled by the runtime, service/replica attribution for prefix output, reliable replay for stopped containers, and service logging driver/option controls such as rotation policy. Current Apple/container APIs expose raw log handles, so container-compose can only approximate unprefixed local log output.</td>
@@ -800,7 +807,7 @@ Suggested Apple/container PR batches:
       <td>Interactive init-process attach and signal proxying</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 14:12:23 BST</td>
-      <td>not completed</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Docker Compose default <code>attach</code> needs stdin/stdout/stderr reattach to an already-running service init process, signal proxying, and detach-key handling. Attached <code>up</code> with <code>post_start</code> and foreground one-off <code>run</code> with lifecycle hooks need the same start-hook-reattach shape, plus an interceptable foreground stop boundary for <code>pre_stop</code>. Apple/container currently wires stdio while bootstrapping a container or creating a new exec process, but does not expose a Compose-compatible reattach primitive for an already-running service container.</td>
@@ -817,8 +824,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Runtime event stream and process listing</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>events</code> and <code>top</code> need corresponding runtime APIs.</td>
@@ -826,8 +833,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Pause and unpause</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>pause</code> and <code>unpause</code> need container pause primitives.</td>
@@ -835,8 +842,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Copy archive and follow-link controls</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>cp --archive</code> and <code>cp --follow-link</code> need matching file copy controls.</td>
@@ -844,8 +851,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Container commit image snapshots</td>
       <td>2026-06-18 11:45:20 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>commit</code> needs an Apple/container primitive that creates an image from a service container's changed filesystem and accepts Docker-compatible image metadata such as author, message, pause behavior, target replica index, and config changes.</td>
@@ -853,8 +860,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Compose application OCI artifacts</td>
       <td>2026-06-18 11:45:20 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>publish</code> and <code>oci://</code> Compose file references need Apple/container image/registry primitives for publishing and consuming Compose application OCI artifacts, not only service image tag/push/save operations.</td>
@@ -862,8 +869,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Runtime API socket exposure</td>
       <td>2026-06-18 10:34:11 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>use_api_socket</code> needs a safe Docker-compatible or Apple/container-compatible API socket exposure model, including credentials, least-privilege boundaries, and clear behavior when Docker API compatibility is unavailable.</td>
@@ -871,8 +878,8 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Block I/O resource controls</td>
       <td>2026-06-18 17:21:13 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>⚪ OPEN</td>
+      <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>blkio_config</code> needs Apple/container create/run resource primitives for blkio weight, per-device weight, and read/write byte or IOPS throttling. Current Apple/container APIs expose block I/O stats but not blkio resource-control configuration.</td>
