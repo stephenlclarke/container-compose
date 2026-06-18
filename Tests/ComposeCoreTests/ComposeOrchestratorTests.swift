@@ -1312,6 +1312,81 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true])
     }
 
+    @Test("scale creates detached service replicas")
+    func scaleCreatesDetachedServiceReplicas() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).scale(
+            project: project,
+            options: ComposeScaleOptions {
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-2", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("scale no-deps starts only selected services")
+    func scaleNoDepsStartsOnlySelectedServices() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).scale(
+            project: project,
+            options: ComposeScaleOptions {
+                $0.noDeps = true
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-2", "--detach"]))
+        #expect(!commands.contains { $0.contains("demo-db-1") })
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("scale requires assignment before side effects")
+    func scaleRequiresAssignmentBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).scale(project: project, options: ComposeScaleOptions())
+            Issue.record("Expected missing scale assignment failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("scale requires at least one SERVICE=REPLICAS argument"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up prunes replicas above requested scale")
     func upPrunesReplicasAboveRequestedScale() async throws {
         let emitted = MessageRecorder()

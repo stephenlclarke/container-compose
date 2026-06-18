@@ -134,6 +134,7 @@ cli-smoke: build
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    attach: false\n' > "$$tmpdir/attach-false.yml"; \
 	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n  db:\n    image: alpine\n' > "$$tmpdir/scale-deps.yml"; \
 	mkdir -p "$$tmpdir/api"; \
 	printf 'FROM alpine:3.20\n' > "$$tmpdir/api/Dockerfile"; \
 	printf 'secret\n' > "$$tmpdir/build-token.txt"; \
@@ -283,6 +284,21 @@ cli-smoke: build
 	create_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" create --scale worker=2 worker)"; \
 	[[ "$$create_scale_output" == *"--name demo-worker-1"* ]]; \
 	[[ "$$create_scale_output" == *"--name demo-worker-2"* ]]; \
+	scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" scale worker=2)"; \
+	[[ "$$scale_output" == *"--name demo-worker-1 --detach"* ]]; \
+	[[ "$$scale_output" == *"--name demo-worker-2 --detach"* ]]; \
+	scale_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-deps.yml" scale api=2)"; \
+	[[ "$$scale_deps_output" == *"--name demo-db-1 --detach"* ]]; \
+	[[ "$$scale_deps_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$scale_deps_output" == *"--name demo-api-2 --detach"* ]]; \
+	scale_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-deps.yml" scale --no-deps api=2)"; \
+	[[ "$$scale_no_deps_output" != *"demo-db-1"* ]]; \
+	[[ "$$scale_no_deps_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$scale_no_deps_output" == *"--name demo-api-2 --detach"* ]]; \
+	scale_missing_output="$$(".build/debug/compose" --dry-run scale 2>&1 || true)"; \
+	[[ "$$scale_missing_output" == *"invalid compose project: scale requires at least one SERVICE=REPLICAS argument"* ]]; \
+	scale_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" scale api=2 2>&1 || true)"; \
+	[[ "$$scale_ports_output" == *"unsupported compose feature: service 'api' publishes ports; scaled published ports are not implemented by container-compose yet"* ]]; \
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \
 	[[ "$$create_output" == *"container create"* ]]; \
 	[[ "$$create_output" == *"--publish 8080:80"* ]]; \
@@ -421,7 +437,7 @@ cli-smoke: build
 	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api 2>&1 || true)"; \
 	[[ "$$wait_output" == *"unsupported compose feature: wait:"* ]]; \
-	for unsupported_command in watch scale commit publish; do \
+	for unsupported_command in watch commit publish; do \
 		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
 		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \
 	done

@@ -193,6 +193,20 @@ public struct ComposeCreateOptions {
     }
 }
 
+/// Options for `compose scale`.
+public struct ComposeScaleOptions {
+    public var scales: [String] = []
+    public var noDeps = false
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default scale behavior.
+    }
+
+    public init(_ configure: (inout ComposeScaleOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose down`.
 public struct ComposeDownOptions {
     public var volumes: Bool
@@ -652,6 +666,23 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Creates project resources and selected service containers without starting them.
     public func create(project: ComposeProject, options createOptions: ComposeCreateOptions) async throws {
         try await create(project: project, options: createOptions, alwaysRecreateDeps: false, recreateTimeout: nil)
+    }
+
+    /// Scales selected services through the detached `up` reconciliation path.
+    public func scale(project: ComposeProject, options scale: ComposeScaleOptions) async throws {
+        guard !scale.scales.isEmpty else {
+            throw ComposeError.invalidProject("scale requires at least one SERVICE=REPLICAS argument")
+        }
+        let scaleOverrides = try parseScaleOverrides(project: project, scales: scale.scales)
+        try await up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.services = scaleOverrides.keys.sorted()
+                $0.scales = scale.scales
+                $0.detach = true
+                $0.noDeps = scale.noDeps
+            }
+        )
     }
 
     /// Creates project resources and selected service containers without starting them.

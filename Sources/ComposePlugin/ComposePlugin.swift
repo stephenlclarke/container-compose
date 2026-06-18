@@ -803,14 +803,27 @@ struct Watch: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose scale` until replica orchestration exists.
+/// Implements `compose scale`.
 struct Scale: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "scale", abstract: "Scale services.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for service replica scaling.
-    func run() throws {
-        try global.orchestrator().unsupported("scale", reason: "service replica scaling is not implemented by container-compose yet")
+    @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
+    var noDeps = false
+    @Argument(help: "Service scale assignments as SERVICE=REPLICAS.")
+    var scales: [String] = []
+    /// Scales selected services using Compose-compatible replica assignments.
+    func run() async throws {
+        guard !scales.isEmpty else {
+            throw ComposeError.invalidProject("scale requires at least one SERVICE=REPLICAS argument")
+        }
+        let loadedProject = try await project()
+        try await orchestrator().scale(
+            project: loadedProject,
+            options: ComposeScaleOptions {
+                $0.scales = scales
+                $0.noDeps = noDeps
+            }
+        )
     }
 }
 
