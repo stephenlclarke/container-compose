@@ -840,21 +840,36 @@ func formatPort(port types.ServicePortConfig) string {
 
 	published := port.Published
 	if published == "" {
+		if port.HostIP != "" {
+			value := formatPortHostPrefix(port.HostIP) + ":" + target
+			if protocol != "tcp" {
+				value += "/" + protocol
+			}
+			return value
+		}
 		if protocol == "tcp" {
 			return target
 		}
 		return target + "/" + protocol
 	}
 
-	hostPrefix := ""
-	if port.HostIP != "" {
-		hostPrefix = port.HostIP + ":"
-	}
-	value := hostPrefix + published + ":" + target
+	value := formatPortHostPrefix(port.HostIP) + published + ":" + target
 	if protocol != "tcp" {
 		value += "/" + protocol
 	}
 	return value
+}
+
+// formatPortHostPrefix returns the Docker-style host portion for a publish
+// string, bracketing IPv6 literals so colon-delimited ports stay parseable.
+func formatPortHostPrefix(hostIP string) string {
+	if hostIP == "" {
+		return ""
+	}
+	if strings.Contains(hostIP, ":") && !strings.HasPrefix(hostIP, "[") {
+		return "[" + hostIP + "]:"
+	}
+	return hostIP + ":"
 }
 
 // mountValues converts compose-go volume configs to normalized mount records.

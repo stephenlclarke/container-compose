@@ -1511,6 +1511,26 @@ func TestFormatPort(t *testing.T) {
 			port: types.ServicePortConfig{HostIP: "127.0.0.1", Published: "8080", Target: 80},
 			want: "127.0.0.1:8080:80",
 		},
+		{
+			name: "host ip target only",
+			port: types.ServicePortConfig{HostIP: "127.0.0.1", Target: 80},
+			want: "127.0.0.1::80",
+		},
+		{
+			name: "host ip target only udp",
+			port: types.ServicePortConfig{HostIP: "127.0.0.1", Target: 53, Protocol: "udp"},
+			want: "127.0.0.1::53/udp",
+		},
+		{
+			name: "ipv6 host ip target only",
+			port: types.ServicePortConfig{HostIP: "::1", Target: 80},
+			want: "[::1]::80",
+		},
+		{
+			name: "ipv6 host ip published",
+			port: types.ServicePortConfig{HostIP: "::1", Published: "8080", Target: 80},
+			want: "[::1]:8080:80",
+		},
 	}
 
 	for _, tc := range cases {

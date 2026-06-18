@@ -1353,28 +1353,56 @@ struct ComposeOrchestratorTests {
         #expect(pullRunner.commands.isEmpty)
     }
 
-    @Test("create rejects dynamic published ports before side effects")
-    func createRejectsDynamicPublishedPortsBeforeSideEffects() async throws {
+    @Test("create allocates dynamic published ports before creating containers")
+    func createAllocatesDynamicPublishedPortsBeforeCreatingContainers() async throws {
+        let ports = HostPortSource([49153, 49154])
         let runner = RecordingRunner()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.ports = ["80"]
+                    $0.ports = ["80-81/udp"]
                 },
             ]
         )
 
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) })
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--publish", "49153:80/udp"]))
+        #expect(command.containsSequence(["--publish", "49154:81/udp"]))
+        #expect(ports.requests == [
+            HostPortAllocationRequest(hostAddress: nil, protocolName: "udp"),
+            HostPortAllocationRequest(hostAddress: nil, protocolName: "udp"),
+        ])
+    }
+
+    @Test("default dynamic host port allocator allocates local tcp ports")
+    func defaultDynamicHostPortAllocatorAllocatesLocalTCPPorts() throws {
+        let port = try ComposeExecutionOptions.defaultHostPortAllocator(
+            hostAddress: "127.0.0.1",
+            protocolName: "tcp"
+        )
+
+        #expect(port > 0)
+    }
+
+    @Test("default dynamic host port allocator rejects unknown protocols")
+    func defaultDynamicHostPortAllocatorRejectsUnknownProtocols() throws {
         do {
-            try await ComposeOrchestrator(runner: runner).create(project: project, options: ComposeCreateOptions())
-            Issue.record("Expected unsupported dynamic port failure")
+            _ = try ComposeExecutionOptions.defaultHostPortAllocator(
+                hostAddress: nil,
+                protocolName: "sctp"
+            )
+            Issue.record("Expected invalid protocol failure")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
+            #expect(error == .invalidProject("dynamic host-port allocation supports tcp and udp protocols, got 'sctp'"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
-
-        #expect(runner.commands.isEmpty)
     }
 
     @Test("up validates incompatible build options before side effects")
@@ -1504,6 +1532,67 @@ struct ComposeOrchestratorTests {
         #expect(!commands[1].containsSequence(["--publish", "8080:80"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
         #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("up allocates dynamic published ports per service replica")
+    func upAllocatesDynamicPublishedPortsPerServiceReplica() async throws {
+        let ports = HostPortSource([49154, 49155])
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+            $0.ports = ["80"]
+        }])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) }),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.scales = ["api=2"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].containsSequence(["--publish", "49154:80"]))
+        #expect(commands[1].containsSequence(["--publish", "49155:80"]))
+        #expect(ports.requests == [
+            HostPortAllocationRequest(hostAddress: nil, protocolName: "tcp"),
+            HostPortAllocationRequest(hostAddress: nil, protocolName: "tcp"),
+        ])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
+        #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("up allocates dynamic published ports with host addresses and protocols")
+    func upAllocatesDynamicPublishedPortsWithHostAddressesAndProtocols() async throws {
+        let ports = HostPortSource([49156, 49157])
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+            $0.ports = ["127.0.0.1::80/udp", "[::1]::81"]
+        }])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) }),
+            discoveryManager: discoveryManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--publish", "127.0.0.1:49156:80/udp"]))
+        #expect(command.containsSequence(["--publish", "[::1]:49157:81"]))
+        #expect(ports.requests == [
+            HostPortAllocationRequest(hostAddress: "127.0.0.1", protocolName: "udp"),
+            HostPortAllocationRequest(hostAddress: "[::1]", protocolName: "tcp"),
+        ])
     }
 
     @Test("up maps anonymous volumes per service replica")
@@ -9253,9 +9342,15 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
     }
 
-    @Test("port rejects dynamic bindings that need explicit host ports")
-    func portRejectsDynamicBindingsThatNeedExplicitHostPorts() async throws {
-        let orchestrator = ComposeOrchestrator()
+    @Test("port dry run previews dynamically allocated bindings")
+    func portDryRunPreviewsDynamicallyAllocatedBindings() async throws {
+        let ports = HostPortSource([49160])
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(options: ComposeExecutionOptions(
+            dryRun: true,
+            hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) },
+            emit: { emitted.append($0) }
+        ))
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -9265,14 +9360,10 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
-            Issue.record("Expected unsupported dynamic port lookup")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+
+        #expect(emitted.messages == ["0.0.0.0:49160"])
+        #expect(ports.requests == [HostPortAllocationRequest(hostAddress: nil, protocolName: "tcp")])
     }
 
     @Test("port resolves explicit ranges from runtime published ports")
@@ -9598,8 +9689,9 @@ struct ComposeOrchestratorTests {
         #expect(servicePortsCommand.containsSequence(["--publish", "8080:80"]))
     }
 
-    @Test("run rejects dynamic published ports only when publishing them")
-    func runRejectsDynamicPublishedPortsOnlyWhenPublishingThem() async throws {
+    @Test("run allocates dynamic published ports only when publishing them")
+    func runAllocatesDynamicPublishedPortsOnlyWhenPublishingThem() async throws {
+        let ports = HostPortSource([49157, 49158, 49159])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -9610,7 +9702,10 @@ struct ComposeOrchestratorTests {
         )
 
         let defaultRunner = RecordingRunner()
-        try await ComposeOrchestrator(runner: defaultRunner).run(
+        try await ComposeOrchestrator(
+            runner: defaultRunner,
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) })
+        ).run(
             project: project,
             serviceName: "api",
             options: composeRunOptions(command: ["true"])
@@ -9619,55 +9714,51 @@ struct ComposeOrchestratorTests {
         #expect(!defaultCommand.contains("--publish"))
 
         let servicePortsRunner = RecordingRunner()
-        do {
-            try await ComposeOrchestrator(runner: servicePortsRunner).run(
-                project: project,
-                serviceName: "api",
-                options: composeRunOptions(command: ["true"]) {
-                    $0.servicePorts = true
-                }
-            )
-            Issue.record("Expected unsupported dynamic service port failure")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-        #expect(servicePortsRunner.commands.isEmpty)
+        try await ComposeOrchestrator(
+            runner: servicePortsRunner,
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) })
+        ).run(
+            project: project,
+            serviceName: "api",
+            options: composeRunOptions(command: ["true"]) {
+                $0.servicePorts = true
+            }
+        )
+        let servicePortsCommand = try #require(servicePortsRunner.commands.first?.arguments)
+        #expect(servicePortsCommand.containsSequence(["--publish", "49157:80"]))
 
         let hostIPRunner = RecordingRunner()
-        do {
-            try await ComposeOrchestrator(runner: hostIPRunner).run(
-                project: project,
-                serviceName: "api",
-                options: composeRunOptions(command: ["true"]) {
-                    $0.publish = ["127.0.0.1:80"]
-                }
-            )
-            Issue.record("Expected unsupported host IP dynamic publish failure")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-        #expect(hostIPRunner.commands.isEmpty)
+        try await ComposeOrchestrator(
+            runner: hostIPRunner,
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) })
+        ).run(
+            project: project,
+            serviceName: "api",
+            options: composeRunOptions(command: ["true"]) {
+                $0.publish = ["127.0.0.1::80"]
+            }
+        )
+        let hostIPCommand = try #require(hostIPRunner.commands.first?.arguments)
+        #expect(hostIPCommand.containsSequence(["--publish", "127.0.0.1:49158:80"]))
 
         let publishRunner = RecordingRunner()
-        do {
-            try await ComposeOrchestrator(runner: publishRunner).run(
-                project: project,
-                serviceName: "api",
-                options: composeRunOptions(command: ["true"]) {
-                    $0.publish = ["80/udp"]
-                }
-            )
-            Issue.record("Expected unsupported dynamic run publish failure")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' publishes target port 80/udp dynamically; apple/container publish requires explicit host ports"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-        #expect(publishRunner.commands.isEmpty)
+        try await ComposeOrchestrator(
+            runner: publishRunner,
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) })
+        ).run(
+            project: project,
+            serviceName: "api",
+            options: composeRunOptions(command: ["true"]) {
+                $0.publish = ["80/udp"]
+            }
+        )
+        let publishCommand = try #require(publishRunner.commands.first?.arguments)
+        #expect(publishCommand.containsSequence(["--publish", "49159:80/udp"]))
+        #expect(ports.requests == [
+            HostPortAllocationRequest(hostAddress: nil, protocolName: "tcp"),
+            HostPortAllocationRequest(hostAddress: "127.0.0.1", protocolName: "tcp"),
+            HostPortAllocationRequest(hostAddress: nil, protocolName: "udp"),
+        ])
     }
 
     @Test("run publishes manual ports without service ports")
@@ -13469,6 +13560,34 @@ private final class OneOffIdentifierSource: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return values.isEmpty ? "fallback" : values.removeFirst()
+    }
+}
+
+private struct HostPortAllocationRequest: Equatable {
+    var hostAddress: String?
+    var protocolName: String
+}
+
+private final class HostPortSource: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [UInt16]
+    private var storage: [HostPortAllocationRequest] = []
+
+    init(_ values: [UInt16]) {
+        self.values = values
+    }
+
+    var requests: [HostPortAllocationRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func next(hostAddress: String?, protocolName: String) throws -> UInt16 {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(HostPortAllocationRequest(hostAddress: hostAddress, protocolName: protocolName))
+        return values.isEmpty ? 49152 : values.removeFirst()
     }
 }
 

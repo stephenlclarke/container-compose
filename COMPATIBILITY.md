@@ -97,7 +97,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - Discovery and output: `ps`, filtered `ps`, `logs`, indexed `logs`, harmless `logs --no-color` and `logs --no-log-prefix`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
   - File movement: service-aware `cp`, service-to-service `cp`, indexed `cp`, `cp --all`, one-off copy target discovery, and `export`.
-  - Runtime queries: explicit published-port `port`, indexed `port`, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
+  - Runtime queries: published-port `port`, indexed `port`, dynamically allocated and host-bound port lookup after container creation, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
 - **Apple/container path:** Direct `ContainerClient` list/get/logs/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`.
 - **container-compose status:** Supported for the listed direct API paths. Rich log filtering and runtime process/event controls remain Apple/container gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
@@ -113,10 +113,10 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 - **Compose surface:**
   - One service network, default project networks, external networks, `network_mode: none`, project network `internal`, and one IPv4 plus one IPv6 project network IPAM `subnet`.
-  - Explicit host-published ports for `create`, `up`, and one-off `run`.
-  - Scaled published-port ranges with enough explicit host ports for every replica.
+  - Explicit host-published ports, target-only dynamically allocated host ports, and host-bound dynamic ports for `create`, `up`, and one-off `run`.
+  - Scaled published-port ranges with enough explicit host ports for every replica, plus target-only and host-bound dynamic allocation per service replica.
   - Single-network `mac_address` and MTU through `driver_opts.com.docker.network.driver.mtu`.
-- **Apple/container path:** Direct `NetworkClient.create`, `NetworkConfiguration`, `NetworkClient.delete`, plus supported `container create/run --network` and `--publish` flags where a direct adapter is not available yet.
+- **Apple/container path:** Direct `NetworkClient.create`, `NetworkConfiguration`, `NetworkClient.delete`, plus supported `container create/run --network` and explicit `--publish` flags where a direct adapter is not available yet. Target-only and host-bound Compose ports are allocated by the plugin before invoking Apple/container.
 - **container-compose status:** Supported for the listed single-network local subset.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
@@ -208,10 +208,10 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A8](#a8-apple-gap-volume-subpaths-and-image-mounts).
 
-#### Runtime data and dynamic port commands
+#### Runtime data commands
 
-- **Compose surface:** Target-only `ports` such as `"80"` or `"8080"`, `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
-- **Missing Apple/container primitive:** Dynamic host-port allocation, process listing, event stream, pause/unpause, stored process exit codes after container stop, and copy archive/follow-link controls.
+- **Compose surface:** `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
+- **Missing Apple/container primitive:** Process listing, event stream, pause/unpause, stored process exit codes after container stop, and copy archive/follow-link controls.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A5](#a5-apple-gap-runtime-data-commands).
 
@@ -294,13 +294,12 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - Config and project: `config`, `convert`, and `ls`.
 - Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, and running/stopping-container `wait`.
 - Build and image: `build`, `pull`, `push`, `images`, and `down --rmi`.
-- Interaction: `ps`, `logs`, output-only `attach --no-stdin --sig-proxy=false`, `exec`, `cp`, `export`, explicit published-port `port`, `stats`, `stats --no-trunc`, and `version`.
+- Interaction: `ps`, `logs`, output-only `attach --no-stdin --sig-proxy=false`, `exec`, `cp`, `export`, published-port `port`, `stats`, `stats --no-trunc`, and `version`.
 - Develop: `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, and `watch --quiet`.
-- Supported option families include indexed service targets, quiet/json/table output where listed above, explicit published ports, `--scale`, `--timeout`, `--no-build`, `--quiet-build`, `--quiet-pull`, `--no-start`, `--always-recreate-deps`, `--include-deps`, `--ignore-buildable`, `--ignore-pull-failures`, `--ignore-push-failures`, and `--down-project` for running/stopping service containers.
+- Supported option families include indexed service targets, quiet/json/table output where listed above, explicit, target-only dynamically allocated, and host-bound published ports, `--scale`, `--timeout`, `--no-build`, `--quiet-build`, `--quiet-pull`, `--no-start`, `--always-recreate-deps`, `--include-deps`, `--ignore-buildable`, `--ignore-pull-failures`, `--ignore-push-failures`, and `--down-project` for running/stopping service containers.
 
 ### Commands Blocked By [`apple/container`][apple-container] Runtime Gaps
 
-- Dynamic host-port allocation.
 - `top`, `events`, `pause`, and `unpause`.
 - Already-stopped `wait` exit-code replay.
 - `cp --archive` and `cp --follow-link`.
@@ -330,7 +329,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): [`apple/container`][apple-container] gap. Demonstrates hostname, domain name, explicit host entries, and legacy links.
 - [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): [`apple/container`][apple-container] gap. Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
 - [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): [`apple/container`][apple-container] gap. Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
-- [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, dynamic host-port allocation, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
+- [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
 - [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
 - [A8: Apple Gap, Volume Subpaths And Image Mounts](#a8-apple-gap-volume-subpaths-and-image-mounts): [`apple/container`][apple-container] gap. Demonstrates named-volume subpaths and image-backed service mounts.
@@ -839,13 +838,13 @@ CMD ["sh", "-c", "echo worker-ready && sleep 3600"]
 
 ### A5: Apple Gap, Runtime Data Commands
 
-Expected result: these commands and options reject because [`apple/container`][apple-container] needs richer runtime data and state controls. `container compose port` supports explicit published bindings from runtime container snapshots, including explicit ranges and indexed existing service containers, but Docker Compose dynamic host-port allocation needs runtime behavior that [`apple/container`][apple-container] does not expose yet. Plain service-aware `container compose cp` is supported, but `cp --archive` and `cp --follow-link` reject until [`apple/container`][apple-container] exposes copy archive and symlink-follow controls. `container compose wait` and `container compose wait --down-project` can wait for running or stopping service containers, but replaying exit codes for containers that were already stopped before the command starts still needs stored exit-code metadata from [`apple/container`][apple-container].
+Expected result: these commands and options reject because [`apple/container`][apple-container] needs richer runtime data and state controls. `container compose port` supports published bindings from runtime container snapshots, including explicit ranges, dynamically allocated ports after container creation, and indexed existing service containers. Plain service-aware `container compose cp` is supported, but `cp --archive` and `cp --follow-link` reject until [`apple/container`][apple-container] exposes copy archive and symlink-follow controls. `container compose wait` and `container compose wait --down-project` can wait for running or stopping service containers, but replaying exit codes for containers that were already stopped before the command starts still needs stored exit-code metadata from [`apple/container`][apple-container].
 
 Status path:
 
 - Docker Compose v2: supports these commands.
-- [`apple/container`][apple-container]: missing dynamic host-port allocation, process listing, event streaming, pause/unpause, stored exit-code metadata for already-stopped containers, and copy archive/follow-link controls.
-- `container-compose`: exposes the command names, resolves explicit published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `wait` and `wait --down-project` for running/stopping service containers, and reports the Apple runtime gap for requests that need unavailable runtime state.
+- [`apple/container`][apple-container]: missing process listing, event streaming, pause/unpause, stored exit-code metadata for already-stopped containers, and copy archive/follow-link controls.
+- `container-compose`: exposes the command names, resolves published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports plugin-side dynamic host-port allocation, including `host_ip` bindings, before calling Apple/container with explicit publish bindings, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `wait` and `wait --down-project` for running/stopping service containers, and reports the Apple runtime gap for requests that need unavailable runtime state.
 
 ```yaml
 # compose.yaml
@@ -856,7 +855,7 @@ services:
     build:
       context: ./api
     ports:
-      - "8080"
+      - "8080:8080"
 
   worker:
     build:
@@ -868,8 +867,6 @@ Run:
 ```sh
 container compose top api
 container compose events --json
-container compose up api
-container compose port api 8080
 container compose pause api
 container compose unpause api
 container compose cp --archive api:/tmp/report.txt ./report.txt

@@ -117,7 +117,7 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 07:26:56 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Added single-network MAC addresses, MTU driver option, no-network mode, internal IPAM subnets, dynamic port rejection, runtime port lookup, and scaled explicit port ranges.</td>
+      <td colspan="4"><strong>Notes:</strong> Added single-network MAC addresses, MTU driver option, no-network mode, internal IPAM subnets, runtime port lookup, and scaled explicit port ranges. Dynamic host-port allocation was completed later by the dynamic host-port allocation task.</td>
     </tr>
     <tr>
       <td>Storage feature expansion</td>
@@ -199,6 +199,15 @@ Use `not started` or `not completed` where the event has not happened yet.
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Executed service <code>post_start</code> hooks after detached one-off <code>compose run</code> containers are created, reusing the generated or explicit one-off container name for direct Apple/container process exec. Foreground <code>run</code> post-start ordering and one-off <code>pre_stop</code> remain container-compose design gaps.</td>
+    </tr>
+    <tr>
+      <td>Dynamic host-port allocation</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 13:56:09 BST</td>
+      <td>2026-06-18 14:06:00 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Allocated ephemeral host ports inside container-compose for target-only, ranged, and host-bound Compose port mappings, then rendered explicit Apple/container <code>--publish</code> bindings for <code>create</code>, <code>up</code>, scaled service replicas, one-off <code>run --service-ports</code>, and manual <code>run --publish</code>. Host-bound IPv4 and bracketed IPv6 mappings are preserved through compose-go normalization. Config hashes remain based on the Compose model rather than the allocated host port.</td>
     </tr>
     <tr>
       <td>Scaled anonymous service volumes</td>
@@ -497,8 +506,8 @@ Suggested Apple/container PR batches:
    since/until filtering, prefix-friendly service/replica attribution, and
    durable closed-container log replay, plus service logging driver/option
    controls.
-9. Command-data parity: dynamic host ports, events, process listing,
-   pause/unpause, and copy archive/follow-link controls.
+9. Command-data parity: events, process listing, pause/unpause, and copy
+   archive/follow-link controls.
 10. Image and artifact parity: container commit image snapshots and Compose
     application OCI artifact publish/consume support.
 11. Runtime API socket parity: a safe Compose-compatible equivalent for
@@ -652,11 +661,11 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Dynamic host-port allocation</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>2026-06-18 13:56:09 BST</td>
+      <td>2026-06-18 14:06:00 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose accepts target-only ports such as <code>&quot;80&quot;</code>; Apple/container currently requires explicit host ports.</td>
+      <td colspan="4"><strong>Notes:</strong> Completed in container-compose by allocating ephemeral host ports before invoking Apple/container with explicit <code>--publish</code> bindings. No Apple/container PR is needed for common local target-only, ranged, or host-bound published-port workflows.</td>
     </tr>
     <tr>
       <td>Runtime event stream and process listing</td>

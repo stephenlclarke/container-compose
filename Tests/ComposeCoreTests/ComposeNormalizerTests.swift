@@ -190,6 +190,38 @@ struct ComposeNormalizerTests {
         ))
     }
 
+    @Test("normalizes dynamic host-bound ports through compose-go")
+    func normalizesDynamicHostBoundPortsThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            ports:
+              - target: 80
+                host_ip: 127.0.0.1
+              - target: 53
+                host_ip: "::1"
+                protocol: udp
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.services["api"]?.ports == ["127.0.0.1::80", "[::1]::53/udp"])
+    }
+
     @Test("normalizes supported build secrets through compose-go")
     func normalizesSupportedBuildSecretsThroughComposeGo() async throws {
         let fileManager = FileManager.default

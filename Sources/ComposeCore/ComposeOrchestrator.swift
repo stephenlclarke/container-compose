@@ -15,6 +15,11 @@
 //===----------------------------------------------------------------------===//
 
 import CryptoKit
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 
 /// Runtime settings used while translating Compose operations to `container`.
@@ -26,6 +31,7 @@ public struct ComposeExecutionOptions {
     public var environmentLauncher: String
     public var oneOffIdentifier: @Sendable () -> String
     public var currentDate: @Sendable () -> Date
+    public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
     public var watchPollInterval: Duration
     public var sleep: @Sendable (Duration) async throws -> Void
     public var emit: @Sendable (String) -> Void
@@ -36,6 +42,7 @@ public struct ComposeExecutionOptions {
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
         currentDate: @escaping @Sendable () -> Date = Date.init,
+        hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
         watchPollInterval: Duration = .seconds(1),
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         emit: @escaping @Sendable (String) -> Void = { print($0) }
@@ -45,6 +52,7 @@ public struct ComposeExecutionOptions {
         self.environmentLauncher = environmentLauncher
         self.oneOffIdentifier = oneOffIdentifier
         self.currentDate = currentDate
+        self.hostPortAllocator = hostPortAllocator
         self.watchPollInterval = watchPollInterval
         self.sleep = sleep
         self.emit = emit
@@ -52,6 +60,135 @@ public struct ComposeExecutionOptions {
 
     public static func defaultOneOffIdentifier() -> String {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+    }
+
+    /// Allocates an ephemeral host port compatible with Apple/container's
+    /// explicit `--publish` requirement.
+    public static func defaultHostPortAllocator(hostAddress: String?, protocolName: String) throws -> UInt16 {
+        try HostPortAllocator(hostAddress: hostAddress, protocolName: protocolName).allocate()
+    }
+}
+
+/// Allocates ephemeral host ports for Compose target-only published ports.
+private struct HostPortAllocator {
+    var hostAddress: String?
+    var protocolName: String
+
+    func allocate() throws -> UInt16 {
+        let socketKind = try socketKind()
+        if normalizedHostAddress.contains(":") {
+            return try allocateIPv6(socketKind: socketKind)
+        }
+        return try allocateIPv4(socketKind: socketKind)
+    }
+
+    private var normalizedHostAddress: String {
+        let value = hostAddress?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard value.hasPrefix("["), value.hasSuffix("]") else {
+            return value
+        }
+        return String(value.dropFirst().dropLast())
+    }
+
+    private func socketKind() throws -> Int32 {
+        switch protocolName.lowercased() {
+        case "tcp":
+            return SOCK_STREAM
+        case "udp":
+            return SOCK_DGRAM
+        default:
+            throw ComposeError.invalidProject("dynamic host-port allocation supports tcp and udp protocols, got '\(protocolName)'")
+        }
+    }
+
+    private func allocateIPv4(socketKind: Int32) throws -> UInt16 {
+        let descriptor = socket(AF_INET, socketKind, 0)
+        guard descriptor >= 0 else {
+            throw allocationError("socket")
+        }
+        defer {
+            close(descriptor)
+        }
+
+        var address = sockaddr_in()
+#if canImport(Darwin)
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+#endif
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = 0
+        if normalizedHostAddress.isEmpty {
+            address.sin_addr = in_addr(s_addr: INADDR_ANY.bigEndian)
+        } else {
+            guard inet_pton(AF_INET, normalizedHostAddress, &address.sin_addr) == 1 else {
+                throw ComposeError.invalidProject("dynamic host-port allocation requires an IPv4 or IPv6 literal host address, got '\(normalizedHostAddress)'")
+            }
+        }
+
+        try withUnsafePointer(to: &address) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { rebound in
+                guard bind(descriptor, rebound, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 else {
+                    throw allocationError("bind")
+                }
+            }
+        }
+
+        var bound = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        try withUnsafeMutablePointer(to: &bound) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { rebound in
+                guard getsockname(descriptor, rebound, &length) == 0 else {
+                    throw allocationError("getsockname")
+                }
+            }
+        }
+        return UInt16(bigEndian: bound.sin_port)
+    }
+
+    private func allocateIPv6(socketKind: Int32) throws -> UInt16 {
+        let descriptor = socket(AF_INET6, socketKind, 0)
+        guard descriptor >= 0 else {
+            throw allocationError("socket")
+        }
+        defer {
+            close(descriptor)
+        }
+
+        var address = sockaddr_in6()
+#if canImport(Darwin)
+        address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+#endif
+        address.sin6_family = sa_family_t(AF_INET6)
+        address.sin6_port = 0
+        if normalizedHostAddress.isEmpty {
+            address.sin6_addr = in6addr_any
+        } else {
+            guard inet_pton(AF_INET6, normalizedHostAddress, &address.sin6_addr) == 1 else {
+                throw ComposeError.invalidProject("dynamic host-port allocation requires an IPv4 or IPv6 literal host address, got '\(normalizedHostAddress)'")
+            }
+        }
+
+        try withUnsafePointer(to: &address) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { rebound in
+                guard bind(descriptor, rebound, socklen_t(MemoryLayout<sockaddr_in6>.size)) == 0 else {
+                    throw allocationError("bind")
+                }
+            }
+        }
+
+        var bound = sockaddr_in6()
+        var length = socklen_t(MemoryLayout<sockaddr_in6>.size)
+        try withUnsafeMutablePointer(to: &bound) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { rebound in
+                guard getsockname(descriptor, rebound, &length) == 0 else {
+                    throw allocationError("getsockname")
+                }
+            }
+        }
+        return UInt16(bigEndian: bound.sin6_port)
+    }
+
+    private func allocationError(_ operation: String) -> ComposeError {
+        ComposeError.invalidProject("failed to allocate dynamic host port during \(operation): \(String(cString: strerror(errno)))")
     }
 }
 
@@ -503,9 +640,13 @@ private enum ComposeImagesFormat {
 
 private struct ParsedPublishedPortMapping {
     var hostAddress: String?
-    var hostRange: (start: Int, count: Int)
+    var hostRange: (start: Int, count: Int)?
     var targetRange: (start: Int, count: Int)
     var protocolName: String
+
+    var usesDynamicHostPorts: Bool {
+        hostRange == nil
+    }
 }
 
 private enum ComposeVolumesFormat {
@@ -2888,8 +3029,7 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Rejects Docker Compose dynamic host-port allocation because Apple
-    /// `container --publish` currently requires an explicit host port.
+    /// Validates one Docker Compose published port mapping.
     func validatePublishedPort(_ value: String, serviceName: String) throws {
         _ = try parsePublishedPortMapping(value, serviceName: serviceName)
     }
@@ -2901,14 +3041,17 @@ private extension ComposeOrchestrator {
         }
         for port in ports {
             let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
+            guard let hostRange = mapping.hostRange else {
+                continue
+            }
             let requiredHostPorts = mapping.targetRange.count * replicaCount
-            guard mapping.hostRange.count >= requiredHostPorts else {
+            guard hostRange.count >= requiredHostPorts else {
                 throw ComposeError.unsupported("service '\(serviceName)' publishes '\(port)'; scaled published ports require at least \(requiredHostPorts) explicit host ports for \(replicaCount) replicas")
             }
         }
     }
 
-    /// Parses one Compose port mapping with an explicit host port or host range.
+    /// Parses one Compose port mapping with explicit or dynamic host ports.
     func parsePublishedPortMapping(_ value: String, serviceName: String) throws -> ParsedPublishedPortMapping {
         let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
@@ -2916,21 +3059,38 @@ private extension ComposeOrchestrator {
         }
         let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
         let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count <= 1 || parts.last?.isEmpty == false else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has invalid port mapping '\(value)'")
+        }
+        let target = parts[parts.count - 1]
+        let targetRange = try portRange(target, field: "container", mapping: value, serviceName: serviceName)
         guard parts.count >= 2 else {
-            throw dynamicPortUnsupported(serviceName: serviceName, target: rawBinding, protocolName: protocolName)
+            return ParsedPublishedPortMapping(
+                hostAddress: nil,
+                hostRange: nil,
+                targetRange: targetRange,
+                protocolName: protocolName
+            )
         }
 
         let published = parts[parts.count - 2]
-        guard isExplicitHostPort(published) else {
-            throw dynamicPortUnsupported(serviceName: serviceName, target: parts.last ?? rawBinding, protocolName: protocolName)
-        }
-        let target = parts[parts.count - 1]
         let hostParts = parts.dropLast(2)
         let hostAddress = hostParts.isEmpty ? nil : hostParts.joined(separator: ":")
+        guard !published.isEmpty else {
+            return ParsedPublishedPortMapping(
+                hostAddress: hostAddress,
+                hostRange: nil,
+                targetRange: targetRange,
+                protocolName: protocolName
+            )
+        }
+        guard isExplicitHostPort(published) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has invalid host port range '\(value)'")
+        }
         return ParsedPublishedPortMapping(
             hostAddress: hostAddress,
             hostRange: try portRange(published, field: "host", mapping: value, serviceName: serviceName),
-            targetRange: try portRange(target, field: "container", mapping: value, serviceName: serviceName),
+            targetRange: targetRange,
             protocolName: protocolName
         )
     }
@@ -2949,7 +3109,9 @@ private extension ComposeOrchestrator {
             for port in ports {
                 try validatePublishedPort(port, serviceName: serviceName)
             }
-            return ports
+            return try ports.flatMap {
+                try publishedPortArguments(port: $0, serviceName: serviceName)
+            }
         }
         guard replicaIndex >= 1, replicaIndex <= replicaCount else {
             throw ComposeError.invalidProject("container index must be between 1 and \(replicaCount)")
@@ -2964,6 +3126,25 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Expands one Compose port mapping into concrete Apple `--publish` values.
+    func publishedPortArguments(port: String, serviceName: String) throws -> [String] {
+        let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
+        guard let hostRange = mapping.hostRange else {
+            return try dynamicPublishedPortArguments(mapping)
+        }
+        guard hostRange.count == mapping.targetRange.count else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has mismatched port ranges '\(port)'")
+        }
+        return (0..<mapping.targetRange.count).map { offset in
+            formatPublishedPort(
+                hostAddress: mapping.hostAddress,
+                hostPort: hostRange.start + offset,
+                targetPort: mapping.targetRange.start + offset,
+                protocolName: mapping.protocolName
+            )
+        }
+    }
+
     /// Splits one scaled Compose port range into this replica's concrete mappings.
     func publishedPortArguments(
         port: String,
@@ -2972,9 +3153,12 @@ private extension ComposeOrchestrator {
         replicaCount: Int
     ) throws -> [String] {
         let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
+        guard let hostRange = mapping.hostRange else {
+            return try dynamicPublishedPortArguments(mapping)
+        }
         let targetCount = mapping.targetRange.count
         let requiredHostPorts = targetCount * replicaCount
-        guard mapping.hostRange.count >= requiredHostPorts else {
+        guard hostRange.count >= requiredHostPorts else {
             throw ComposeError.unsupported("service '\(serviceName)' publishes '\(port)'; scaled published ports require at least \(requiredHostPorts) explicit host ports for \(replicaCount) replicas")
         }
 
@@ -2982,7 +3166,20 @@ private extension ComposeOrchestrator {
         return (0..<targetCount).map { offset in
             formatPublishedPort(
                 hostAddress: mapping.hostAddress,
-                hostPort: mapping.hostRange.start + replicaOffset + offset,
+                hostPort: hostRange.start + replicaOffset + offset,
+                targetPort: mapping.targetRange.start + offset,
+                protocolName: mapping.protocolName
+            )
+        }
+    }
+
+    /// Allocates concrete host ports for a dynamic Compose port mapping.
+    func dynamicPublishedPortArguments(_ mapping: ParsedPublishedPortMapping) throws -> [String] {
+        try (0..<mapping.targetRange.count).map { offset in
+            let hostPort = try options.hostPortAllocator(mapping.hostAddress, mapping.protocolName)
+            return formatPublishedPort(
+                hostAddress: mapping.hostAddress,
+                hostPort: Int(hostPort),
                 targetPort: mapping.targetRange.start + offset,
                 protocolName: mapping.protocolName
             )
@@ -2993,12 +3190,21 @@ private extension ComposeOrchestrator {
     func formatPublishedPort(hostAddress: String?, hostPort: Int, targetPort: Int, protocolName: String) -> String {
         var value = "\(hostPort):\(targetPort)"
         if let hostAddress, !hostAddress.isEmpty {
-            value = "\(hostAddress):\(value)"
+            value = "\(formatPublishedPortHostAddress(hostAddress)):\(value)"
         }
         if protocolName != "tcp" {
             value += "/\(protocolName)"
         }
         return value
+    }
+
+    /// Brackets IPv6 host literals so colon-delimited publish strings remain parseable.
+    func formatPublishedPortHostAddress(_ hostAddress: String) -> String {
+        let value = hostAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.contains(":"), !value.hasPrefix("[") else {
+            return value
+        }
+        return "[\(value)]"
     }
 
     /// Returns true when a publish field names concrete Apple host ports.
@@ -3012,11 +3218,6 @@ private extension ComposeOrchestrator {
             return false
         }
         return ports.count == 1 || ports[0] <= ports[1]
-    }
-
-    /// Creates the unsupported-feature error for dynamic host-port allocation.
-    func dynamicPortUnsupported(serviceName: String, target: String, protocolName: String) -> ComposeError {
-        .unsupported("service '\(serviceName)' publishes target port \(target)/\(protocolName) dynamically; apple/container publish requires explicit host ports")
     }
 
     /// Validates `compose exec` options before invoking runtime exec.
@@ -4008,14 +4209,21 @@ private extension ComposeOrchestrator {
     /// Expands one explicit Compose port mapping for dry-run `port` previews.
     func dryRunPublishedPorts(from value: String, serviceName: String) throws -> [ComposeContainerPublishedPort] {
         let mapping = try parsePublishedPortMapping(value, serviceName: serviceName)
-        guard mapping.hostRange.count == mapping.targetRange.count else {
+        if mapping.usesDynamicHostPorts {
+            return try dynamicPublishedPortArguments(mapping).flatMap {
+                try dryRunPublishedPorts(from: $0, serviceName: serviceName)
+            }
+        }
+        guard let hostRange = mapping.hostRange,
+              hostRange.count == mapping.targetRange.count
+        else {
             throw ComposeError.invalidProject("service '\(serviceName)' has mismatched port ranges '\(value)'")
         }
 
-        return (0..<mapping.hostRange.count).map { offset in
+        return (0..<hostRange.count).map { offset in
             ComposeContainerPublishedPort(
                 hostAddress: mapping.hostAddress ?? "0.0.0.0",
-                hostPort: UInt16(mapping.hostRange.start + offset),
+                hostPort: UInt16(hostRange.start + offset),
                 containerPort: UInt16(mapping.targetRange.start + offset),
                 protocolName: mapping.protocolName
             )

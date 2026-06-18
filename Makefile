@@ -182,8 +182,8 @@ cli-smoke: build
 	[[ "$$run_output" != *"--publish 8080:80"* ]]; \
 	run_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --service-ports api echo hello)"; \
 	[[ "$$run_service_ports_output" == *"--publish 8080:80"* ]]; \
-	run_dynamic_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" run --service-ports api echo hello 2>&1 || true)"; \
-	[[ "$$run_dynamic_service_ports_output" == *"unsupported compose feature: service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"* ]]; \
+	run_dynamic_service_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" run --service-ports api echo hello)"; \
+	[[ "$$run_dynamic_service_ports_output" == *"--publish "*":80"* ]]; \
 	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
 	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
 	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
@@ -348,8 +348,8 @@ cli-smoke: build
 	create_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --pull always --quiet-pull api)"; \
 	[[ "$$create_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
 	[[ "$$create_quiet_pull_output" == *"container create"* ]]; \
-	create_dynamic_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" create api 2>&1 || true)"; \
-	[[ "$$create_dynamic_ports_output" == *"unsupported compose feature: service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"* ]]; \
+	create_dynamic_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" create api)"; \
+	[[ "$$create_dynamic_ports_output" == *"--publish "*":80"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \
 	[[ "$$detached_output" == *"container run"* ]]; \
 	[[ "$$detached_output" == *"--detach"* ]]; \
