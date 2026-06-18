@@ -14,6 +14,8 @@ orchestration layer close to the Swift code and runtime primitives used by
 - Keep runtime orchestration in Swift so the plugin can use the same language,
   package manager, and container-related products as
   [`apple/container`](https://github.com/apple/container).
+- Use direct [`apple/container`](https://github.com/apple/container) Swift APIs
+  wherever they map cleanly to Docker Compose behavior.
 - Make generated container, volume, and network names deterministic.
 - Label every project resource with Compose metadata so lifecycle commands are
   project scoped and repeatable.
@@ -43,6 +45,38 @@ Compose compatibility or integration with SwiftPM.
 The Go boundary is intentionally small. The helper accepts Compose CLI-shaped
 normalization options and emits canonical JSON. Swift treats that JSON as an
 input model and performs all runtime decisions.
+
+## Direct APIs And compose-go
+
+`compose-go` and the direct Apple/container APIs solve different problems.
+`compose-go` answers "what does this Compose project mean after Docker Compose
+style loading, merging, interpolation, profiles, path handling, and defaults?"
+The Swift orchestration layer answers "which Apple/container runtime calls are
+needed to make that normalized project true?"
+
+Direct Apple/container APIs are preferred after normalization because they make
+runtime behavior easier to test, avoid brittle command-output parsing, and keep
+the plugin close to the code shape that would be needed for future adoption by
+[`apple/container`](https://github.com/apple/container). The CLI compatibility
+adapter remains useful where the CLI is currently the stable public surface or
+where this repository has not yet introduced a focused adapter.
+
+This boundary keeps Compose compatibility work honest:
+
+- If `compose-go` accepts a surface and Apple/container has a matching Swift
+  API, `container-compose` should map it directly where possible.
+- If `compose-go` accepts a surface but Apple/container lacks the primitive,
+  `container-compose` should reject it clearly and track the missing primitive
+  in [PLAN.md](PLAN.md) as future Apple/container upstream work.
+- If Apple/container has the primitive but this plugin has not mapped it yet,
+  the gap belongs in this repository's backlog.
+
+The main design discussion is how much of the normalized `compose-go` JSON
+should become stable Swift model surface over time. A generated Swift schema
+model could reduce boilerplate at the boundary, but it should not replace
+`compose-go` unless it can also preserve Docker Compose v2 loader behavior. For
+now, `compose-go` remains the Compose semantics boundary and Swift remains the
+runtime orchestration boundary.
 
 ## Generated Swift Compose Types
 
@@ -122,7 +156,60 @@ The installed plugin layout is:
 options, invokes the normalizer, validates the resulting project, and translates
 Compose operations into `container` operations.
 
-Current orchestration uses direct Apple `container` APIs where a stable API maps cleanly to a Compose operation, and keeps the installed `container` CLI as the compatibility adapter for command surfaces that are not yet represented by a focused direct adapter. For example, project discovery, `ps`, `images`, recreate checks, indexed service-container target lookup, `port` published-port lookup, and orphan cleanup use `ContainerClient.list(filters:)` and `ContainerClient.get(id:)`; project networks use `NetworkClient.create(configuration:)` with NAT or host-only mode plus one IPv4 and one IPv6 IPAM subnet, and `NetworkClient.delete(id:)`; service no-network mode is passed through the CLI adapter as `container create/run --network none`; project volumes use `ClientVolume.create(name:driver:driverOpts:labels:)` and `ClientVolume.delete(name:)`; long-form tmpfs size and mode options are passed through the CLI adapter as `container create/run --mount type=tmpfs`; image pull, missing-image checks, push, and delete use `ClientImage.pull`, `ClientImage.get`, `ClientImage.push`, `ClientImage.delete`, and `ClientImage.cleanUpOrphanedBlobs`, with container-compose pull timestamp metadata used for service-level time-window `pull_policy` values; service lifecycle start and cleanup use `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and `ContainerClient.kill(id:signal:)`; `compose logs` and output-only `compose attach --no-stdin --sig-proxy=false` use `ContainerClient.logs(id:)`; attached `compose exec` uses `ProcessIO.create(tty:interactive:detach:)`, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)`, and `ProcessIO.handleProcess(process:log:)`; detached `compose exec -d` uses `ContainerClient.createProcess(containerId:processId:configuration:stdio:)` and `ClientProcess.start()` without attached stdio; `compose stats` uses `ContainerClient.stats(id:)` for running containers and `ContainerClient.list(filters:)` metadata for stopped containers included by `--all`; `compose cp` uses `ContainerClient.copyIn(id:source:destination:)` and `ContainerClient.copyOut(id:source:destination:)` for service-aware local-to-container, container-to-local, staged container-to-container copies, and `ContainerClient.list(filters:)` to discover indexed service containers and one-off `run` containers for local/service `cp --all` plus service-to-service `cp --all` destinations; and `compose export` uses `ContainerClient.export(id:archive:)` for real execution. `compose build` still uses the Apple CLI compatibility adapter for `container build --pull --platform --cache-in --cache-out --tag --label --secret` because no focused build API adapter is available in this repo yet. Explicit host-published ports are passed through the Apple CLI compatibility adapter during create/run, while `compose port` reads the runtime `publishedPorts` projection from direct container snapshots so explicit ranges resolve consistently. Docker Compose dynamic host-port allocation is rejected before resources are created because Apple `container --publish` requires a host port today. These commands render the equivalent `container` command only for `--dry-run` output. Apple publishes public DocC documentation for [`container`](https://apple.github.io/container/documentation/) and [`ContainerClient`](https://apple.github.io/container/documentation/containerclient/) APIs; those docs should guide future direct Swift API adapter work whenever Compose compatibility needs primitives that are available in the API.
+Current orchestration uses direct Apple/container APIs where a stable API maps
+cleanly to a Compose operation, and keeps the installed `container` CLI as the
+compatibility adapter for command surfaces that are not yet represented by a
+focused direct adapter.
+
+Direct API paths currently include:
+
+- Project discovery, `ps`, `images`, recreate checks, indexed service-container
+  target lookup, `port` published-port lookup, and orphan cleanup through
+  `ContainerClient.list(filters:)` and `ContainerClient.get(id:)`.
+- Project networks through `NetworkClient.create(configuration:)` with NAT or
+  host-only mode plus one IPv4 and one IPv6 IPAM subnet, and
+  `NetworkClient.delete(id:)`.
+- Project volumes through `ClientVolume.create(name:driver:driverOpts:labels:)`,
+  `ClientVolume.list()`, and `ClientVolume.delete(name:)`.
+- Image pull, missing-image checks, push, and delete through
+  `ClientImage.pull`, `ClientImage.get`, `ClientImage.push`,
+  `ClientImage.delete`, and `ClientImage.cleanUpOrphanedBlobs()`.
+- Service lifecycle through `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`,
+  `ClientProcess.start()`, `ClientProcess.wait()`,
+  `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and
+  `ContainerClient.kill(id:signal:)`.
+- `compose logs` and output-only `compose attach --no-stdin --sig-proxy=false`
+  through `ContainerClient.logs(id:)`.
+- Attached and detached `compose exec` through `ProcessIO`,
+  `ContainerClient.createProcess`, `ProcessIO.handleProcess`, and
+  `ClientProcess.start()`.
+- `compose stats` through `ContainerClient.stats(id:)` for running containers
+  and `ContainerClient.list(filters:)` metadata for stopped containers included
+  by `--all`.
+- `compose cp` through `ContainerClient.copyIn(id:source:destination:)` and
+  `ContainerClient.copyOut(id:source:destination:)`, including staged
+  service-to-service copies.
+- `compose export` through `ContainerClient.export(id:archive:)`.
+
+CLI compatibility paths currently include:
+
+- `compose build`, which uses `container build --pull --platform --cache-in
+  --cache-out --tag --label --secret --file` because no focused build API
+  adapter is available in this repo yet.
+- Create/run flags that are supported by Apple/container but not yet represented
+  by a focused direct adapter in this repo, including service no-network mode,
+  explicit host-published ports, network MAC/MTU options, and long-form tmpfs
+  size/mode options.
+- `--dry-run` output, which renders the equivalent `container` commands without
+  mutating runtime state.
+
+Docker Compose dynamic host-port allocation is rejected before resources are
+created because Apple/container requires an explicit host port today. Apple
+publishes public DocC documentation for
+[`container`](https://apple.github.io/container/documentation/) and
+[`ContainerClient`](https://apple.github.io/container/documentation/containerclient/)
+APIs; those docs should guide future direct Swift API adapter work whenever
+Compose compatibility needs primitives that are available in the API.
 
 `compose-normalizer` is a Go executable. It has no orchestration behavior. Its
 only job is to load Compose files with `compose-go` and emit the normalized

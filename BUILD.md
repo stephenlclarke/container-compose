@@ -161,6 +161,62 @@ dist/compose/resources/compose-normalizer
 Use [INSTALL.md](INSTALL.md) to install, upgrade, verify, or remove the packaged
 plugin on a target machine.
 
+## Runtime Boundary
+
+The build produces two executables with separate responsibilities:
+
+| Component | Language | Responsibility |
+| --- | --- | --- |
+| `compose` | Swift | Parse Docker Compose style CLI arguments, validate normalized projects, plan orchestration, and call Apple/container runtime APIs or compatibility commands. |
+| `compose-normalizer` | Go | Load Compose files with `compose-go` and emit canonical JSON. It does not create, start, stop, or inspect containers. |
+
+The installed plugin layout is:
+
+```text
+/usr/local/libexec/container-plugins/compose/bin/compose
+/usr/local/libexec/container-plugins/compose/config.toml
+/usr/local/libexec/container-plugins/compose/resources/compose-normalizer
+```
+
+### Direct API Adapters
+
+The Swift layer uses direct Apple/container APIs wherever a stable API maps
+cleanly to a Compose operation.
+
+| Compose surface | Direct Apple/container path |
+| --- | --- |
+| Project discovery, `ps`, `images`, recreate checks, indexed service targets, `port`, and orphan cleanup | `ContainerClient.list(filters:)` and `ContainerClient.get(id:)` |
+| Project networks | `NetworkClient.create(configuration:)`, `NetworkConfiguration(mode:ipv4Subnet:ipv6Subnet:)`, and `NetworkClient.delete(id:)` |
+| Project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.list()`, and `ClientVolume.delete(name:)` |
+| Image pull, inspect, push, and delete | `ClientImage.pull`, `ClientImage.get`, `ClientImage.push`, `ClientImage.delete`, and `ClientImage.cleanUpOrphanedBlobs()` |
+| Service lifecycle | `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ClientProcess.wait()`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and `ContainerClient.kill(id:signal:)` |
+| Logs and output-only attach | `ContainerClient.logs(id:)` |
+| Attached and detached exec | `ProcessIO.create(tty:interactive:detach:)`, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)`, `ProcessIO.handleProcess(process:log:)`, and `ClientProcess.start()` |
+| Stats | `ContainerClient.stats(id:)` with stopped-container metadata from `ContainerClient.list(filters:)` |
+| Copy and export | `ContainerClient.copyIn`, `ContainerClient.copyOut`, and `ContainerClient.export(id:archive:)` |
+
+### CLI Compatibility Adapter
+
+Some supported surfaces still route through the installed `container` CLI
+because this repository does not yet have a focused direct adapter for that
+operation or because the CLI is the available public compatibility surface.
+
+| Compose surface | CLI path |
+| --- | --- |
+| Build | `container build --pull --platform --cache-in --cache-out --tag --label --secret --file` |
+| Container create/run options not yet exposed through a focused adapter | `container create` and `container run` flags such as `--network none`, `--network <name>,mac=...,mtu=...`, `--publish`, `--volume`, `--tmpfs`, and `--mount type=tmpfs` |
+| Dry-run output | Renders equivalent `container` commands without mutating runtime state |
+
+Unsupported Docker Compose behavior is rejected before resources are created.
+For example, dynamic host-port allocation is not translated because
+Apple/container currently requires explicit host ports for `--publish`.
+
+Apple publishes public DocC documentation for
+[`container`](https://apple.github.io/container/documentation/) and
+[`ContainerClient`](https://apple.github.io/container/documentation/containerclient/).
+Use those references when adding future direct Swift adapters or identifying
+Apple/container runtime gaps.
+
 ## SonarQube
 
 GitHub Actions publishes coverage to SonarCloud for `main` and eligible pull
