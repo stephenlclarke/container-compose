@@ -135,7 +135,7 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 14:28:22 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, advanced bind/volume mount options, and unsupported external block-mount inheritance as Apple/container runtime primitive gaps. API socket exposure and block I/O remain container-compose design/security-review work.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, advanced bind/volume mount options, unsupported external block-mount inheritance, API socket exposure, and block I/O controls as Apple/container runtime primitive gaps.</td>
     </tr>
     <tr>
       <td>External <code>volumes_from</code> inheritance</td>
@@ -561,11 +561,11 @@ Apple/container API work is discovered during implementation.
     <tr>
       <td>API socket and block I/O support</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
+      <td>2026-06-18 17:21:13 BST</td>
+      <td>2026-06-18 17:21:13 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Needs a security review before exposing <code>use_api_socket</code> and <code>blkio_config</code> behavior.</td>
+      <td colspan="4"><strong>Notes:</strong> Classified both fields as Apple/container runtime gaps after reviewing Docker Compose and Apple/container behavior. Docker Compose implements <code>use_api_socket</code> as a client-side Docker socket plus credential handoff, while Apple/container can mount Unix sockets but does not expose a safe Docker-compatible API socket or credential boundary. Docker Compose maps <code>blkio_config</code> to Docker resource controls, while Apple/container reports block I/O stats but does not expose create/run blkio weight or throttling controls.</td>
     </tr>
   </tbody>
 </table>
@@ -630,6 +630,8 @@ Suggested Apple/container PR batches:
     reachability for model endpoints.
 14. Runtime API socket parity: a safe Compose-compatible equivalent for
     `use_api_socket` that does not overexpose host control surfaces.
+15. Block I/O parity: create/run resource controls for `blkio_config` weight,
+    per-device weight, and read/write byte or IOPS throttling.
 
 <table>
   <thead>
@@ -865,6 +867,15 @@ Suggested Apple/container PR batches:
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose <code>use_api_socket</code> needs a safe Docker-compatible or Apple/container-compatible API socket exposure model, including credentials, least-privilege boundaries, and clear behavior when Docker API compatibility is unavailable.</td>
+    </tr>
+    <tr>
+      <td>Block I/O resource controls</td>
+      <td>2026-06-18 17:21:13 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>blkio_config</code> needs Apple/container create/run resource primitives for blkio weight, per-device weight, and read/write byte or IOPS throttling. Current Apple/container APIs expose block I/O stats but not blkio resource-control configuration.</td>
     </tr>
   </tbody>
 </table>

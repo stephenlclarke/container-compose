@@ -3426,7 +3426,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported block IO config error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses blkio_config; block I/O controls are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses blkio_config; block I/O controls need apple/container runtime resource primitives for blkio weight and throttling"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -4316,7 +4316,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported API socket error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses use_api_socket; API socket mounting is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses use_api_socket; Docker-compatible API socket and credential handoff need an apple/container runtime boundary"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -10915,7 +10915,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported block IO config error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses blkio_config; block I/O controls are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses blkio_config; block I/O controls need apple/container runtime resource primitives for blkio weight and throttling"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -11417,7 +11417,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported API socket error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses use_api_socket; API socket mounting is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses use_api_socket; Docker-compatible API socket and credential handoff need an apple/container runtime boundary"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

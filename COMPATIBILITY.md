@@ -238,6 +238,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A10](#a10-apple-gap-service-logging-controls).
 
+#### API socket and block I/O controls
+
+- **Compose surface:** `use_api_socket` and `blkio_config`.
+- **Missing Apple/container primitive:** A safe Docker-compatible or Apple/container-compatible API socket boundary with credential handoff and least-privilege controls, plus block I/O resource controls for blkio weight and read/write throttling. Apple/container can mount Unix sockets and report block I/O stats, but it does not expose the Docker Compose API-socket or blkio resource-control behavior that these fields require.
+- **container-compose status:** Rejected before resources are created.
+- **Example:** [A13](#a13-apple-gap-api-socket-and-block-io).
+
 #### Runtime data commands
 
 - **Compose surface:** `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
@@ -261,14 +268,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 ### Blocked By `container-compose`
 
-These are valid Docker Compose v2 surfaces where [`apple/container`][apple-container] is not known to be the first blocker. The missing design, orchestration, or safety policy belongs in this repository.
-
-#### API socket and block I/O
-
-- **Compose surface:** `use_api_socket` and `blkio_config`.
-- **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** Security review and resource-control mapping.
-- **Example:** [C4](#c4-plugin-gap-api-socket-and-block-io).
+No remaining runtime surface-level gaps are currently classified here. Mixed examples below still capture areas where plugin work was completed alongside Apple/container runtime boundaries, but the open unsupported runtime surfaces are now tracked under the first missing Apple/container primitive.
 
 ### Config-Only Today
 
@@ -349,9 +349,9 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): [`apple/container`][apple-container] gap. Demonstrates service logging drivers and logging options.
 - [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): [`apple/container`][apple-container] gap. Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
 - [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): [`apple/container`][apple-container] gap. Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
+- [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): [`apple/container`][apple-container] gap. Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
 - [C1: Replica Scaling And Deploy Metadata](#c1-replica-scaling-and-deploy-metadata): Mixed status. Demonstrates supported scale forms, collision safeguards, local deploy metadata, and remaining [`apple/container`][apple-container] deploy/runtime gaps.
 - [C3: Plugin Gap, Develop, Providers, And Hooks](#c3-plugin-gap-develop-providers-and-hooks): Mixed status. Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
-- [C4: Plugin Gap, API Socket And Block I/O](#c4-plugin-gap-api-socket-and-block-io): `container-compose` gap. Demonstrates API socket exposure and block I/O controls after supported volume inheritance is accepted.
 - [O1: Config-Only Metadata](#o1-config-only-metadata): Config-only. Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
 ## Examples With Dockerfiles
@@ -1268,15 +1268,15 @@ container compose --dry-run watch --no-up --no-prune --quiet api
 container compose watch --no-up --no-prune --quiet api
 ```
 
-### C4: Plugin Gap, API Socket And Block I/O
+### A13: Apple Gap, API Socket And Block I/O
 
-Expected result: `container compose up` accepts same-project `volumes_from`, external `volumes_from` backed by Apple/container volume/bind/tmpfs mount metadata, `volume_driver: local`, and `volume.nocopy` as supported storage behavior. This example then rejects because API socket exposure and block I/O controls need plugin implementation and security review. Logging driver/options are tracked in [A10](#a10-apple-gap-service-logging-controls), while advanced mount and storage controls are tracked in [A8](#a8-apple-gap-advanced-mounts-and-storage-controls).
+Expected result: `container compose up` accepts same-project `volumes_from`, external `volumes_from` backed by Apple/container volume/bind/tmpfs mount metadata, `volume_driver: local`, and `volume.nocopy` as supported storage behavior. This example then rejects because Docker-compatible API socket exposure and block I/O resource controls need Apple/container runtime primitives. Logging driver/options are tracked in [A10](#a10-apple-gap-service-logging-controls), while advanced mount and storage controls are tracked in [A8](#a8-apple-gap-advanced-mounts-and-storage-controls).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
-- [`apple/container`][apple-container]: not known to be the first blocker for API socket exposure or block I/O policy.
-- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, maps external `volumes_from` by inspecting the referenced container through direct Apple/container APIs, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It still needs API socket security review and block I/O handling.
+- [`apple/container`][apple-container]: can mount Unix sockets and report block I/O stats, but it does not expose a Docker-compatible API socket and credential handoff for `use_api_socket` or create/run resource controls for `blkio_config` weight and throttling.
+- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, maps external `volumes_from` by inspecting the referenced container through direct Apple/container APIs, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It rejects `use_api_socket` and `blkio_config` before resources are created with precise Apple/container runtime-gap messages.
 
 The external container reference assumes an existing Apple/container container named `legacy-worker` with volume, bind, or tmpfs mounts that can be represented as Apple `container --volume` or `--mount type=tmpfs` arguments.
 

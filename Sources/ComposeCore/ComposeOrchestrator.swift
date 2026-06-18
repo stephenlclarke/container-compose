@@ -2243,7 +2243,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
         if service.blkioConfig == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls are not implemented by container-compose yet")
+            throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls need apple/container runtime resource primitives for blkio weight and throttling")
         }
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
@@ -2270,7 +2270,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses unsupported volume fields \(fieldList); advanced service volume options need an apple/container mount primitive gap PR")
         }
         if service.useAPISocket == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; API socket mounting is not implemented by container-compose yet")
+            throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; Docker-compatible API socket and credential handoff need an apple/container runtime boundary")
         }
         try validateNetworkMACAddressSupport(service: service, networks: networks)
         if validateDependencies, let dependsOn = service.dependsOn {
