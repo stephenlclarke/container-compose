@@ -155,8 +155,8 @@ type normalizedService struct {
 	Sysctls                 map[string]string                   `json:"sysctls,omitempty"`
 	StopSignal              string                              `json:"stopSignal,omitempty"`
 	StopGracePeriodSeconds  *int64                              `json:"stopGracePeriodSeconds,omitempty"`
-	PostStart               bool                                `json:"postStart,omitempty"`
-	PreStop                 bool                                `json:"preStop,omitempty"`
+	PostStart               []normalizedServiceHook             `json:"postStart,omitempty"`
+	PreStop                 []normalizedServiceHook             `json:"preStop,omitempty"`
 	UserNSMode              string                              `json:"usernsMode,omitempty"`
 	Uts                     string                              `json:"uts,omitempty"`
 	Healthcheck             any                                 `json:"healthcheck,omitempty"`
@@ -210,6 +210,15 @@ type normalizedWatchTrigger struct {
 
 // normalizedWatchExecHook records sync+exec metadata without executing it.
 type normalizedWatchExecHook struct {
+	Command     []string           `json:"command,omitempty"`
+	User        string             `json:"user,omitempty"`
+	Privileged  bool               `json:"privileged,omitempty"`
+	WorkingDir  string             `json:"workingDir,omitempty"`
+	Environment map[string]*string `json:"environment,omitempty"`
+}
+
+// normalizedServiceHook records lifecycle hook metadata for Swift execution.
+type normalizedServiceHook struct {
 	Command     []string           `json:"command,omitempty"`
 	User        string             `json:"user,omitempty"`
 	Privileged  bool               `json:"privileged,omitempty"`
@@ -523,8 +532,8 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Sysctls:                 mapMapping(service.Sysctls),
 		StopSignal:              service.StopSignal,
 		StopGracePeriodSeconds:  durationSeconds(service.StopGracePeriod),
-		PostStart:               len(service.PostStart) > 0,
-		PreStop:                 len(service.PreStop) > 0,
+		PostStart:               serviceHookValues(service.PostStart),
+		PreStop:                 serviceHookValues(service.PreStop),
 		UserNSMode:              service.UserNSMode,
 		Uts:                     service.Uts,
 	}
@@ -610,6 +619,25 @@ func watchExecHookValue(hook types.ServiceHook) *normalizedWatchExecHook {
 		WorkingDir:  hook.WorkingDir,
 		Environment: mappingWithEqualsValues(hook.Environment),
 	}
+}
+
+// serviceHookValues copies compose-go lifecycle hooks into the stable JSON
+// shape consumed by Swift.
+func serviceHookValues(hooks []types.ServiceHook) []normalizedServiceHook {
+	if len(hooks) == 0 {
+		return nil
+	}
+	result := make([]normalizedServiceHook, 0, len(hooks))
+	for _, hook := range hooks {
+		result = append(result, normalizedServiceHook{
+			Command:     append([]string(nil), hook.Command...),
+			User:        hook.User,
+			Privileged:  hook.Privileged,
+			WorkingDir:  hook.WorkingDir,
+			Environment: mappingWithEqualsValues(hook.Environment),
+		})
+	}
+	return result
 }
 
 // mappingWithEqualsValues preserves keys with omitted values.

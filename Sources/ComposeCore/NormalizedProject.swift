@@ -175,8 +175,8 @@ public struct ComposeService: Codable, Equatable {
     public var sysctls: [String: String]? = nil
     public var stopSignal: String? = nil
     public var stopGracePeriodSeconds: Int? = nil
-    public var postStart: Bool? = nil
-    public var preStop: Bool? = nil
+    public var postStart: [ComposeServiceHook]? = nil
+    public var preStop: [ComposeServiceHook]? = nil
     public var usernsMode: String? = nil
     public var uts: String? = nil
     public var healthcheck: ComposeValue? = nil
@@ -330,6 +330,29 @@ public struct ComposeDevelopWatch: Codable, Equatable {
 
 /// Optional command metadata for `develop.watch` `sync+exec` triggers.
 public struct ComposeDevelopWatchExec: Codable, Equatable {
+    public var command: [String]?
+    public var user: String?
+    public var privileged: Bool?
+    public var workingDir: String?
+    public var environment: [String: String?]?
+
+    public init(
+        command: [String]? = nil,
+        user: String? = nil,
+        privileged: Bool? = nil,
+        workingDir: String? = nil,
+        environment: [String: String?]? = nil
+    ) {
+        self.command = command
+        self.user = user
+        self.privileged = privileged
+        self.workingDir = workingDir
+        self.environment = environment
+    }
+}
+
+/// One Compose service lifecycle hook.
+public struct ComposeServiceHook: Codable, Equatable {
     public var command: [String]?
     public var user: String?
     public var privileged: Bool?

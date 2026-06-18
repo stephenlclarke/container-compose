@@ -1047,8 +1047,14 @@ services:
         model_var: MODEL_ID
     post_start:
       - command: ["sh", "-c", "echo started"]
+        user: app
+        working_dir: /srv
+        environment:
+          READY: "1"
+          FROM_HOST:
     pre_stop:
       - command: ["sh", "-c", "echo stopping"]
+        privileged: true
 `)
 
 	project, err := loadProject([]string{composeFile}, nil, nil, "sample", dir)
@@ -1067,11 +1073,29 @@ services:
 	if !api.Models {
 		t.Fatal("api.Models = false, want true")
 	}
-	if !api.PostStart {
-		t.Fatal("api.PostStart = false, want true")
+	if got, want := len(api.PostStart), 1; got != want {
+		t.Fatalf("len(api.PostStart) = %d, want %d", got, want)
 	}
-	if !api.PreStop {
-		t.Fatal("api.PreStop = false, want true")
+	if got, want := api.PostStart[0].Command, []string{"sh", "-c", "echo started"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.PostStart[0].Command = %#v, want %#v", got, want)
+	}
+	if api.PostStart[0].User != "app" {
+		t.Fatalf("api.PostStart[0].User = %q, want app", api.PostStart[0].User)
+	}
+	if api.PostStart[0].WorkingDir != "/srv" {
+		t.Fatalf("api.PostStart[0].WorkingDir = %q, want /srv", api.PostStart[0].WorkingDir)
+	}
+	if got, want := api.PostStart[0].Environment, map[string]*string{"READY": stringPointer("1"), "FROM_HOST": nil}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.PostStart[0].Environment = %#v, want %#v", got, want)
+	}
+	if got, want := len(api.PreStop), 1; got != want {
+		t.Fatalf("len(api.PreStop) = %d, want %d", got, want)
+	}
+	if got, want := api.PreStop[0].Command, []string{"sh", "-c", "echo stopping"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.PreStop[0].Command = %#v, want %#v", got, want)
+	}
+	if !api.PreStop[0].Privileged {
+		t.Fatal("api.PreStop[0].Privileged = false, want true")
 	}
 }
 

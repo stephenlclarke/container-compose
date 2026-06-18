@@ -3419,9 +3419,9 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported provider model and hook fields before creating resources")
-    func upRejectsUnsupportedProviderModelAndHookFieldsBeforeCreatingResources() async throws {
-        for testCase in unsupportedProviderModelAndHookFieldCases() {
+    @Test("up rejects unsupported provider and model fields before creating resources")
+    func upRejectsUnsupportedProviderAndModelFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedProviderAndModelFieldCases() {
             let runner = RecordingRunner()
             let project = composeProject(
                 name: "demo",
@@ -5905,6 +5905,221 @@ struct ComposeOrchestratorTests {
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/file", destination: "."),
         ])
+    }
+
+    @Test("up detached runs post start hooks through direct exec")
+    func upDetachedRunsPostStartHooksThroughDirectExec() async throws {
+        let runner = RecordingRunner()
+        let execManager = RecordingContainerExecManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.postStart = [
+                        ComposeServiceHook(
+                            command: ["sh", "-c", "touch /tmp/ready"],
+                            user: "1000",
+                            workingDir: "/srv",
+                            environment: ["A": "1", "B": nil]
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, execManager: execManager)
+            .up(project: project, options: ComposeUpOptions { $0.detach = true })
+
+        #expect(runner.commands.map(\.arguments).first?.contains("--detach") == true)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh", "-c", "touch /tmp/ready"],
+                environment: ["A=1", "B"],
+                user: "1000",
+                workingDirectory: "/srv",
+                interactive: false,
+                tty: false
+            ),
+        ])
+    }
+
+    @Test("restart runs pre stop and post start hooks around lifecycle calls")
+    func restartRunsPreStopAndPostStartHooksAroundLifecycleCalls() async throws {
+        let execManager = RecordingContainerExecManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.postStart = [ComposeServiceHook(command: ["sh", "-c", "touch /tmp/ready"])]
+                    $0.preStop = [ComposeServiceHook(command: ["sh", "-c", "rm -f /tmp/ready"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            dependencies: orchestratorDependencies {
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).restart(project: project, services: ["api"])
+
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh", "-c", "rm -f /tmp/ready"],
+                interactive: false,
+                tty: false
+            ),
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh", "-c", "touch /tmp/ready"],
+                interactive: false,
+                tty: false
+            ),
+        ])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .start(id: "demo-api-1"),
+        ])
+    }
+
+    @Test("lifecycle hooks render exec commands in dry run")
+    func lifecycleHooksRenderExecCommandsInDryRun() async throws {
+        let emitted = MessageRecorder()
+        let execManager = RecordingContainerExecManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.preStop = [
+                        ComposeServiceHook(
+                            command: ["sh", "-c", "echo stopping"],
+                            user: "app",
+                            workingDir: "/srv",
+                            environment: ["MODE": "test"]
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).stop(project: project, services: ["api"], timeout: 3)
+
+        #expect(emitted.messages == [
+            "+ container exec --env MODE=test --user app --workdir /srv demo-api-1 sh -c 'echo stopping'",
+            "+ container stop --time 3 demo-api-1",
+        ])
+        #expect(await execManager.attachedRequests.isEmpty)
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("lifecycle hooks reject unsupported forms before side effects")
+    func lifecycleHooksRejectUnsupportedFormsBeforeSideEffects() async throws {
+        let cases: [(service: ComposeService, options: ComposeUpOptions, error: ComposeError)] = [
+            (
+                composeService(name: "api", image: "example/api") {
+                    $0.postStart = [ComposeServiceHook()]
+                },
+                ComposeUpOptions { $0.detach = true },
+                .invalidProject("service 'api' post_start[0] requires a command")
+            ),
+            (
+                composeService(name: "api", image: "example/api") {
+                    $0.preStop = [ComposeServiceHook(command: ["true"], privileged: true)]
+                },
+                ComposeUpOptions { $0.detach = true },
+                .unsupported("service 'api' uses pre_stop[0].privileged; apple/container exec does not expose privileged process execution")
+            ),
+            (
+                composeService(name: "api", image: "example/api") {
+                    $0.postStart = [ComposeServiceHook(command: ["true"])]
+                },
+                ComposeUpOptions(),
+                .unsupported("service 'api' uses post_start; attached up cannot run lifecycle hooks before foreground attach returns, use --detach")
+            ),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let project = ComposeProject(name: "demo", services: ["api": testCase.service])
+
+            do {
+                try await ComposeOrchestrator(runner: runner).up(project: project, options: testCase.options)
+                Issue.record("Expected lifecycle hook validation error")
+            } catch let error as ComposeError {
+                #expect(error == testCase.error)
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
+    @Test("run rejects service lifecycle hooks before creating one off containers")
+    func runRejectsServiceLifecycleHooksBeforeCreatingOneOffContainers() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.postStart = [ComposeServiceHook(command: ["true"])]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected one-off lifecycle hook error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses lifecycle hooks; compose run lifecycle hook execution is not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("pre stop hook failure prevents lifecycle stop")
+    func preStopHookFailurePreventsLifecycleStop() async throws {
+        let execManager = RecordingContainerExecManager(attachedStatus: 7)
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.preStop = [ComposeServiceHook(command: ["false"])]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: RecordingRunner(),
+                dependencies: orchestratorDependencies {
+                    $0.execManager = execManager
+                    $0.lifecycleManager = lifecycleManager
+                }
+            ).stop(project: project, services: ["api"])
+            Issue.record("Expected pre_stop failure")
+        } catch let error as ComposeError {
+            #expect(error == .commandFailed(command: "container exec demo-api-1 false", status: 7, stderr: "pre_stop hook failed for service 'api'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("start uses direct runtime API and dry run preserves command output")
@@ -10137,9 +10352,9 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported provider model and hook fields before creating resources")
-    func runRejectsUnsupportedProviderModelAndHookFieldsBeforeCreatingResources() async throws {
-        for testCase in unsupportedProviderModelAndHookFieldCases() {
+    @Test("run rejects unsupported provider and model fields before creating resources")
+    func runRejectsUnsupportedProviderAndModelFieldsBeforeCreatingResources() async throws {
+        for testCase in unsupportedProviderAndModelFieldCases() {
             let runner = RecordingRunner()
             let project = composeProject(
                 name: "demo",
@@ -12058,7 +12273,7 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
     ]
 }
 
-private struct UnsupportedProviderModelAndHookFieldCase: Sendable {
+private struct UnsupportedProviderAndModelFieldCase: Sendable {
     let composeName: String
     let reason: String
     let configure: @Sendable (inout ComposeService) -> Void
@@ -12068,27 +12283,17 @@ private struct UnsupportedProviderModelAndHookFieldCase: Sendable {
     }
 }
 
-private func unsupportedProviderModelAndHookFieldCases() -> [UnsupportedProviderModelAndHookFieldCase] {
+private func unsupportedProviderAndModelFieldCases() -> [UnsupportedProviderAndModelFieldCase] {
     [
-        UnsupportedProviderModelAndHookFieldCase(
+        UnsupportedProviderAndModelFieldCase(
             composeName: "provider",
             reason: "service providers are not implemented by container-compose yet",
             configure: { $0.provider = true }
         ),
-        UnsupportedProviderModelAndHookFieldCase(
+        UnsupportedProviderAndModelFieldCase(
             composeName: "models",
             reason: "service model bindings are not implemented by container-compose yet",
             configure: { $0.models = true }
-        ),
-        UnsupportedProviderModelAndHookFieldCase(
-            composeName: "post_start",
-            reason: "lifecycle hooks are not implemented by container-compose yet",
-            configure: { $0.postStart = true }
-        ),
-        UnsupportedProviderModelAndHookFieldCase(
-            composeName: "pre_stop",
-            reason: "lifecycle hooks are not implemented by container-compose yet",
-            configure: { $0.preStop = true }
         ),
     ]
 }

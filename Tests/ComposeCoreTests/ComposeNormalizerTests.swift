@@ -538,6 +538,52 @@ struct ComposeNormalizerTests {
         ))
     }
 
+    @Test("normalizer preserves service lifecycle hooks")
+    func normalizerPreservesServiceLifecycleHooks() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine
+            post_start:
+              - command: ["sh", "-c", "touch /tmp/ready"]
+                user: app
+                working_dir: /srv
+                environment:
+                  READY: "1"
+                  FROM_HOST:
+            pre_stop:
+              - command: ["sh", "-c", "echo stopping"]
+                privileged: true
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+        let api = try #require(project.services["api"])
+
+        #expect(api.postStart == [
+            ComposeServiceHook(
+                command: ["sh", "-c", "touch /tmp/ready"],
+                user: "app",
+                workingDir: "/srv",
+                environment: ["FROM_HOST": nil, "READY": "1"]
+            ),
+        ])
+        #expect(api.preStop == [
+            ComposeServiceHook(
+                command: ["sh", "-c", "echo stopping"],
+                privileged: true
+            ),
+        ])
+    }
+
     @Test("normalizer decodes JSON and forwards compose options")
     func normalizerDecodesJSONAndForwardsOptions() async throws {
         let runner = RecordingRunner(responses: [

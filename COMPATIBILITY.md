@@ -79,8 +79,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - Reconciliation: deterministic names, indexed replicas, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, and `down --rmi local/all`.
   - Scaling: `up --scale`, `create --scale`, standalone `scale`, `scale --no-deps`, service `scale`, and local `deploy.replicas`.
   - Options: `up --no-start`, `up --always-recreate-deps`, timeouts, service `attach: false`, `rm --force/-f`, `wait --down-project`, `run --rm`, `run --detach/-d`, and `run --name`.
-- **Apple/container path:** `container create`, `container run`, `ContainerClient.bootstrap`, `ClientProcess.start`, `ClientProcess.wait`, `ContainerClient.get`, `ContainerClient.list`, `ContainerClient.stop`, `ContainerClient.delete`, and `ContainerClient.kill`.
-- **container-compose status:** Supported for running or stopping service containers. Already-stopped wait replay remains an Apple/container runtime gap.
+  - Lifecycle hooks: service `post_start` and `pre_stop` for detached service starts, `start`, `stop`, `restart`, `down`, service recreation, and replica pruning.
+- **Apple/container path:** `container create`, `container run`, `ContainerClient.bootstrap`, `ClientProcess.start`, `ClientProcess.wait`, `ContainerClient.get`, `ContainerClient.list`, `ContainerClient.stop`, `ContainerClient.delete`, `ContainerClient.kill`, and direct process exec through `ContainerClient.createProcess` / `ClientProcess.start`.
+- **container-compose status:** Supported for running or stopping service containers. `post_start` runs after service containers are started through a detached service lifecycle path, and `pre_stop` runs before service-aware stops. Already-stopped wait replay remains an Apple/container runtime gap. Attached `up` with `post_start` and one-off `run` lifecycle hooks remain container-compose design gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Project discovery
@@ -232,11 +233,11 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Missing plugin work:** A local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
-#### Providers, models, and lifecycle hooks
+#### Providers, models, and lifecycle-hook gaps
 
-- **Compose surface:** Service `provider`, service `models`, `post_start`, and `pre_stop`.
+- **Compose surface:** Service `provider`, service `models`, attached `up` with service `post_start`, and one-off `run` lifecycle-hook execution.
 - **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** Provider/model wiring and lifecycle hook safety and ordering.
+- **Missing plugin work:** Provider/model wiring, foreground attach ordering for `post_start`, and a one-off run lifecycle boundary.
 - **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
 #### Metadata, logging, storage shortcuts
@@ -1081,13 +1082,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
-Expected result: `container compose config` preserves the `develop.watch` trigger metadata, `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata. The `provider`, `models`, `post_start`, and `pre_stop` fields still reject before runtime side effects because they need plugin orchestration.
+Expected result: `container compose config` preserves the `develop.watch`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata. Detached service lifecycle paths execute supported `post_start` and `pre_stop` hooks through direct exec. The `provider` and `models` fields still reject before runtime side effects because they need plugin orchestration. Attached `up` with `post_start` and one-off `run` lifecycle hooks also reject clearly until those container-compose design gaps are closed.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: preserves normalized `develop.watch` trigger metadata, validates `watch` command selections, emits a dry-run watch plan, and supports live polling watch execution through direct copy, exec, restart, build, and image prune paths. It still needs service providers, model bindings, and hook execution.
+- `container-compose`: preserves normalized `develop.watch`, `post_start`, and `pre_stop` metadata; validates `watch` command selections; emits a dry-run watch plan; supports live polling watch execution through direct copy, exec, restart, build, and image prune paths; and executes service lifecycle hooks for detached service starts, `start`, `stop`, `restart`, `down`, recreation, and replica pruning. It still needs service providers, model bindings, attached `up` hook ordering, and one-off `run` hook execution.
 
 ```yaml
 # compose.yaml
@@ -1129,6 +1130,8 @@ Current command boundary:
 
 ```sh
 container compose config
+container compose up --detach api
+container compose restart api
 container compose --dry-run watch --no-up --no-prune --quiet api
 container compose watch --no-up --no-prune --quiet api
 ```

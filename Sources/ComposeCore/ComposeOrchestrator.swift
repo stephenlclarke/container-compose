@@ -596,6 +596,21 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.statsManager = dependencies.statsManager
     }
 
+    /// Returns whether a service declares `post_start` hooks.
+    func hasPostStartHooks(_ service: ComposeService) -> Bool {
+        !(service.postStart ?? []).isEmpty
+    }
+
+    /// Returns whether a service declares `pre_stop` hooks.
+    func hasPreStopHooks(_ service: ComposeService) -> Bool {
+        !(service.preStop ?? []).isEmpty
+    }
+
+    /// Returns whether a service declares any lifecycle hooks.
+    func hasLifecycleHooks(_ service: ComposeService) -> Bool {
+        hasPostStartHooks(service) || hasPreStopHooks(service)
+    }
+
     /// Returns canonical project JSON for `compose config`.
     public func config(project: ComposeProject) throws -> String {
         let encoder = JSONEncoder()
@@ -633,6 +648,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(project: project, services: services, scaleOverrides: scaleOverrides)
+        let attachedForegroundService = try foregroundServiceTarget(project: project, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
+        try validateAttachedPostStartSupport(target: attachedForegroundService)
 
         try await ensureResources(project: project)
 
@@ -649,7 +666,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
         }
 
-        let attachedForegroundService = try foregroundServiceTarget(project: project, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
         var changedServices = Set<String>()
         for service in services {
             if shouldBuildServiceForUp(up, service: service) {
@@ -735,6 +751,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         try await runContainer(try runArguments(project: project, service: service, options: request.runOptions))
+        if request.runOptions.command == "run" {
+            try await runPostStartHooks(service: service, containerID: name)
+        }
         return true
     }
 
@@ -1288,6 +1307,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             ? []
             : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
         try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
+        try validateOneOffRunLifecycleHooks(service: service)
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try validatePublishedPorts(publishedPorts, serviceName: service.name)
@@ -1315,7 +1335,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func start(project: ComposeProject, services selected: [String]) async throws {
         let services = try selectedServices(project: project, selected: selected)
         for target in try await serviceContainerTargets(project: project, services: services) {
-            try await startContainer(containerName: target.name)
+            try await startContainer(service: target.service, containerName: target.name)
         }
     }
 
@@ -1879,7 +1899,8 @@ private extension ComposeOrchestrator {
     ) throws {
         try validateBuildSupport(service: service)
         try validateDeploySupport(service: service)
-        try validateProviderModelAndHookSupport(service: service)
+        try validateProviderAndModelSupport(service: service)
+        try validateLifecycleHookSupport(service: service)
         let networks = service.networks ?? []
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; apple/container does not expose network connect yet")
@@ -2049,19 +2070,48 @@ private extension ComposeOrchestrator {
     }
 
     /// Rejects service extension points that need explicit orchestration design.
-    func validateProviderModelAndHookSupport(service: ComposeService) throws {
+    func validateProviderAndModelSupport(service: ComposeService) throws {
         if service.provider == true {
             throw ComposeError.unsupported("service '\(service.name)' uses provider; service providers are not implemented by container-compose yet")
         }
         if service.models == true {
             throw ComposeError.unsupported("service '\(service.name)' uses models; service model bindings are not implemented by container-compose yet")
         }
-        if service.postStart == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses post_start; lifecycle hooks are not implemented by container-compose yet")
+    }
+
+    /// Validates lifecycle hook metadata before runtime side effects.
+    func validateLifecycleHookSupport(service: ComposeService) throws {
+        let hookSets: [(composeName: String, hooks: [ComposeServiceHook]?)] = [
+            ("post_start", service.postStart),
+            ("pre_stop", service.preStop),
+        ]
+        for hookSet in hookSets {
+            for (index, hook) in (hookSet.hooks ?? []).enumerated() {
+                if hook.privileged == true {
+                    throw ComposeError.unsupported("service '\(service.name)' uses \(hookSet.composeName)[\(index)].privileged; apple/container exec does not expose privileged process execution")
+                }
+                guard let command = hook.command, !command.isEmpty else {
+                    throw ComposeError.invalidProject("service '\(service.name)' \(hookSet.composeName)[\(index)] requires a command")
+                }
+            }
         }
-        if service.preStop == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; lifecycle hooks are not implemented by container-compose yet")
+    }
+
+    /// Rejects foreground `up` when `post_start` would otherwise run too late.
+    func validateAttachedPostStartSupport(target: ServiceContainerTarget?) throws {
+        guard let service = target?.service, hasPostStartHooks(service) else {
+            return
         }
+        throw ComposeError.unsupported("service '\(service.name)' uses post_start; attached up cannot run lifecycle hooks before foreground attach returns, use --detach")
+    }
+
+    /// Rejects lifecycle hooks on one-off containers until `run` has a stable
+    /// create/start boundary that can execute hooks immediately after start.
+    func validateOneOffRunLifecycleHooks(service: ComposeService) throws {
+        guard hasLifecycleHooks(service) else {
+            return
+        }
+        throw ComposeError.unsupported("service '\(service.name)' uses lifecycle hooks; compose run lifecycle hook execution is not implemented by container-compose yet")
     }
 
     /// Validates normalized develop.watch trigger metadata for command-level
@@ -2378,6 +2428,86 @@ private extension ComposeOrchestrator {
                 stderr: "watch exec failed for service '\(service.name)'"
             )
         }
+    }
+
+    /// Runs all `post_start` hooks for a service container.
+    func runPostStartHooks(service: ComposeService, containerID: String) async throws {
+        try await runLifecycleHooks(service: service, containerID: containerID, hooks: service.postStart ?? [], composeName: "post_start")
+    }
+
+    /// Runs all `pre_stop` hooks for a service container.
+    func runPreStopHooks(service: ComposeService, containerID: String) async throws {
+        try await runLifecycleHooks(service: service, containerID: containerID, hooks: service.preStop ?? [], composeName: "pre_stop")
+    }
+
+    /// Executes Compose service lifecycle hooks with the direct exec API.
+    func runLifecycleHooks(
+        service: ComposeService,
+        containerID: String,
+        hooks: [ComposeServiceHook],
+        composeName: String
+    ) async throws {
+        for (index, hook) in hooks.enumerated() {
+            if hook.privileged == true {
+                throw ComposeError.unsupported("service '\(service.name)' uses \(composeName)[\(index)].privileged; apple/container exec does not expose privileged process execution")
+            }
+            guard let command = hook.command, !command.isEmpty else {
+                throw ComposeError.invalidProject("service '\(service.name)' \(composeName)[\(index)] requires a command")
+            }
+            let environment = environmentArguments(hook.environment ?? [:])
+            let args = lifecycleHookExecArguments(
+                containerID: containerID,
+                command: command,
+                user: nonEmpty(hook.user),
+                workingDirectory: nonEmpty(hook.workingDir),
+                environment: environment
+            )
+            if options.dryRun {
+                try await runContainer(args)
+                continue
+            }
+            let status = try await execManager.execAttached(
+                request: ContainerAttachedExecRequest(
+                    id: containerID,
+                    command: command,
+                    environment: environment,
+                    user: nonEmpty(hook.user),
+                    workingDirectory: nonEmpty(hook.workingDir),
+                    interactive: false,
+                    tty: false
+                )
+            )
+            if status != 0 {
+                throw ComposeError.commandFailed(
+                    command: shellQuoted([options.containerBinary] + args),
+                    status: status,
+                    stderr: "\(composeName) hook failed for service '\(service.name)'"
+                )
+            }
+        }
+    }
+
+    /// Builds a dry-run `container exec` command for service lifecycle hooks.
+    func lifecycleHookExecArguments(
+        containerID: String,
+        command: [String],
+        user: String?,
+        workingDirectory: String?,
+        environment: [String]
+    ) -> [String] {
+        var args = ["exec"]
+        for value in environment {
+            args.append(contentsOf: ["--env", value])
+        }
+        if let user {
+            args.append(contentsOf: ["--user", user])
+        }
+        if let workingDirectory {
+            args.append(contentsOf: ["--workdir", workingDirectory])
+        }
+        args.append(containerID)
+        args.append(contentsOf: command)
+        return args
     }
 
     /// Validates all selected services before any runtime side effects occur.
@@ -3649,6 +3779,7 @@ private extension ComposeOrchestrator {
                     }
                 )
             )
+            try await runPostStartHooks(service: service, containerID: name)
         }
     }
 
@@ -4019,20 +4150,24 @@ private extension ComposeOrchestrator {
         resourceName(project: project.name, name: "anon-\(stableHash(target).prefix(12))")
     }
 
-    /// Starts a service container through the direct API while preserving
+    /// Starts a service container and runs `post_start` hooks while preserving
     /// dry-run command rendering.
-    func startContainer(containerName: String) async throws {
+    func startContainer(service: ComposeService, containerName: String) async throws {
+        try validateLifecycleHookSupport(service: service)
         let args = ["start", containerName]
         if options.dryRun {
             try await runContainer(args)
         } else {
             try await lifecycleManager.startContainer(id: containerName)
         }
+        try await runPostStartHooks(service: service, containerID: containerName)
     }
 
     /// Stops a service container through the direct API while preserving
     /// dry-run command rendering.
     func stopContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
+        try validateLifecycleHookSupport(service: service)
+        try await runPreStopHooks(service: service, containerID: containerName)
         let args = stopArguments(service: service, containerName: containerName, timeout: timeout)
         if options.dryRun {
             try await runContainer(args, check: false)
@@ -4048,7 +4183,7 @@ private extension ComposeOrchestrator {
     /// Restarts a service container through the direct API.
     func restartContainer(service: ComposeService, containerName: String, timeout: Int? = nil) async throws {
         try await stopContainer(service: service, containerName: containerName, timeout: timeout)
-        try await startContainer(containerName: containerName)
+        try await startContainer(service: service, containerName: containerName)
     }
 
     /// Stops a container that may not map to a declared service, such as an

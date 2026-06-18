@@ -183,6 +183,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Implemented polling-based <code>compose watch</code> execution for <code>develop.watch</code> actions: initial sync, changed-file sync, deleted-file cleanup, <code>sync+exec</code>, service restart, rebuild, and image pruning. Ordinary <code>up</code> and <code>run</code> now treat <code>develop.watch</code> as harmless metadata.</td>
     </tr>
     <tr>
+      <td>Service lifecycle hook execution</td>
+      <td>2026-06-18 13:23:28 BST</td>
+      <td>2026-06-18 13:23:28 BST</td>
+      <td>2026-06-18 13:27:44 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct Apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Attached <code>up</code> post-start ordering and one-off <code>run</code> hook execution remain container-compose design gaps.</td>
+    </tr>
+    <tr>
       <td>Scaled anonymous service volumes</td>
       <td>2026-06-18 10:07:04 BST</td>
       <td>2026-06-18 10:07:04 BST</td>
@@ -408,11 +417,11 @@ Apple/container API work is discovered during implementation.
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
+      <td>2026-06-18 13:23:28 BST</td>
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Covers service <code>provider</code>, <code>models</code>, <code>post_start</code>, and <code>pre_stop</code>.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths. Remaining work covers service <code>provider</code>, service <code>models</code>, attached <code>up</code> post-start ordering before foreground attach, and one-off <code>run</code> lifecycle-hook execution.</td>
     </tr>
     <tr>
       <td>Logging and storage metadata</td>
