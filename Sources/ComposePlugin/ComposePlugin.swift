@@ -792,14 +792,30 @@ struct Port: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose watch` until develop/watch orchestration exists.
+/// Validates `compose watch` service selections and develop.watch metadata.
 struct Watch: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "watch", abstract: "Watch build context and service files.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the plugin gap for watch orchestration.
-    func run() throws {
-        try global.orchestrator().unsupported("watch", reason: "develop/watch workflows are not implemented by container-compose yet")
+    @Flag(name: .customLong("no-up"), help: "Do not build and start services before watching.")
+    var noUp = false
+    @Flag(name: .customLong("prune"), inversion: .prefixedNo, help: "Prune dangling images after rebuilds.")
+    var prune = true
+    @Flag(name: .customLong("quiet"), help: "Hide build output.")
+    var quiet = false
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Validates watch inputs before file watching is implemented.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().watch(
+            project: loadedProject,
+            options: ComposeWatchOptions(
+                services: services,
+                noUp: noUp,
+                prune: prune,
+                quiet: quiet
+            )
+        )
     }
 }
 

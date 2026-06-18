@@ -387,6 +387,20 @@ services:
       watch:
         - path: ./src
           action: rebuild
+          include:
+            - "*.swift"
+          ignore:
+            - .build/
+        - path: ./assets
+          action: sync+exec
+          target: /app/assets
+          initial_sync: true
+          exec:
+            command: ["sh", "-c", "touch /tmp/reloaded"]
+            user: app
+            working_dir: /app
+            environment:
+              MODE: dev
     domainname: example.test
     credential_spec:
       file: credential-spec.json
@@ -551,8 +565,31 @@ volumes:
 	if api.CPUShares != 512 {
 		t.Fatalf("api.CPUShares = %d, want 512", api.CPUShares)
 	}
-	if !api.Develop {
-		t.Fatal("api.Develop = false, want true")
+	canonicalDir := canonicalPath(t, dir)
+	wantDevelop := &normalizedDevelop{
+		Watch: []normalizedWatchTrigger{
+			{
+				Path:    filepath.Join(canonicalDir, "src"),
+				Action:  "rebuild",
+				Ignore:  []string{".build/"},
+				Include: []string{"*.swift"},
+			},
+			{
+				Path:        filepath.Join(canonicalDir, "assets"),
+				Action:      "sync+exec",
+				Target:      "/app/assets",
+				InitialSync: true,
+				Exec: &normalizedWatchExecHook{
+					Command:     []string{"sh", "-c", "touch /tmp/reloaded"},
+					User:        "app",
+					WorkingDir:  "/app",
+					Environment: map[string]*string{"MODE": stringPointer("dev")},
+				},
+			},
+		},
+	}
+	if !reflect.DeepEqual(api.Develop, wantDevelop) {
+		t.Fatalf("api.Develop = %#v, want %#v", api.Develop, wantDevelop)
 	}
 	if api.Ipc != "host" {
 		t.Fatalf("api.Ipc = %q, want host", api.Ipc)
@@ -1431,5 +1468,9 @@ func unsetEnv(t *testing.T, name string) {
 }
 
 func boolPointer(value bool) *bool {
+	return &value
+}
+
+func stringPointer(value string) *string {
 	return &value
 }

@@ -43,6 +43,7 @@ Use `not started` or `not completed` where the event has not happened yet.
 | Storage feature expansion | 2026-06-18 08:09:21 BST | 2026-06-18 08:09:21 BST | 2026-06-18 09:04:41 BST | Added tmpfs options, volume driver options, and same-project service volume inheritance. |
 | Lifecycle and `up` option expansion | 2026-06-18 04:41:20 BST | 2026-06-18 04:41:20 BST | 2026-06-18 09:35:51 BST | Added `up --no-start`, `--no-build`, `--quiet-build`, `--quiet-pull`, `--always-recreate-deps`, `--timeout`, scaling, `wait`, and `wait --down-project`. |
 | Interaction command expansion | 2026-06-18 05:55:46 BST | 2026-06-18 05:55:46 BST | 2026-06-18 06:12:08 BST | Added indexed attach/log targets and accepted harmless log display flags. |
+| Develop watch model boundary | 2026-06-18 09:44:11 BST | 2026-06-18 09:44:11 BST | 2026-06-18 09:54:37 BST | Preserved `develop.watch` triggers from compose-go in the Swift model and added command-level `watch` validation. File-watch loops and action execution remain open plugin work. |
 
 ## Active Documentation Work
 
@@ -61,7 +62,7 @@ Apple/container API work is discovered during implementation.
 | Task | Added | Started | Completed | Notes |
 | --- | --- | --- | --- | --- |
 | Default `attach` stdin and signal proxy behavior | 2026-06-18 09:36:35 BST | not started | not completed | Current support is output-only `attach --no-stdin --sig-proxy=false`; full support needs an interactive attach design. |
-| `watch` and develop workflows | 2026-06-18 09:36:35 BST | not started | not completed | Needs file watching, sync/rebuild/restart policy, and clear interaction with Compose `develop`. |
+| `watch` and develop workflows | 2026-06-18 09:36:35 BST | 2026-06-18 09:44:11 BST | not completed | Model-boundary support now preserves and validates `develop.watch` triggers. Remaining work needs file watching, sync/rebuild/restart policy, and clear interaction with Compose `develop`. |
 | `commit` command | 2026-06-18 09:36:35 BST | not started | not completed | Design service-container target resolution and image naming/output compatibility. |
 | `publish` command | 2026-06-18 09:36:35 BST | not started | not completed | Design how Compose project/service image publishing maps to Apple/container image APIs. |
 | Replica scaling edge cases | 2026-06-18 09:36:35 BST | not started | not completed | Covers fixed single host-port conflicts, too-small ranges, fixed MAC addresses, `container_name`, and per-replica anonymous volume naming. |
@@ -79,6 +80,35 @@ good candidates for later PRs against [`apple/container`](https://github.com/app
 It is probably worth creating a fork of Apple/container before starting this
 work so the runtime changes can be staged, tested, and proposed upstream in
 small reviewable PRs.
+
+Recommended upstream workflow:
+
+- Fork [`apple/container`](https://github.com/apple/container) before starting
+  runtime work, then create one branch per primitive family.
+- Keep each future PR small enough to review independently. The first PR should
+  add or expose the Apple/container primitive plus focused runtime tests; the
+  matching container-compose mapping should follow in this repository.
+- Prefer direct `ContainerClient`, `NetworkClient`, image, volume, process, and
+  log APIs so the plugin can stay close to Apple/container's supported design.
+- Update Apple/container API documentation with every new public runtime
+  primitive so container-compose can link to stable docs instead of inferred
+  behavior.
+
+Suggested Apple/container PR batches:
+
+1. Networking parity: multi-network attachment, aliases, fixed addresses, and
+   richer IPAM.
+2. Container identity parity: hostname, domain name, host entries, and legacy
+   link aliases.
+3. Runtime-control parity: namespace modes, cgroups, privileged/device/GPU
+   controls, sysctls, and supplemental groups.
+4. Health and completion parity: health status, health-aware waits, stored exit
+   code, and completion timestamps.
+5. Mount and policy parity: first-class config/secret mounts and restart
+   policies.
+6. Command-data parity: dynamic host ports, events, process listing,
+   pause/unpause, stats truncation control, and copy archive/follow-link
+   controls.
 
 | Task | Added | Started | Completed | Notes |
 | --- | --- | --- | --- | --- |

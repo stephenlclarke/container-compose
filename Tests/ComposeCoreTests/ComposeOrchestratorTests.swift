@@ -3261,7 +3261,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.develop = true
+                    $0.develop = ComposeDevelop()
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -7663,6 +7663,99 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
+    @Test("watch validates develop triggers before runtime loop")
+    func watchValidatesDevelopTriggersBeforeRuntimeLoop() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: "src", action: "rebuild"),
+                        ComposeDevelopWatch(path: "assets", action: "sync", target: "/app/assets"),
+                    ])
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).watch(
+                project: project,
+                options: ComposeWatchOptions(services: ["api"], noUp: true, prune: false, quiet: true)
+            )
+            Issue.record("Expected watch runtime-loop gap")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("watch: file watching and develop actions are not implemented by container-compose yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("watch rejects services without develop triggers")
+    func watchRejectsServicesWithoutDevelopTriggers() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).watch(project: project, options: ComposeWatchOptions(services: ["api"]))
+            Issue.record("Expected missing watch trigger error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("selected services does not declare develop.watch triggers"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("watch rejects malformed develop triggers")
+    func watchRejectsMalformedDevelopTriggers() async throws {
+        let cases: [(trigger: ComposeDevelopWatch, error: ComposeError)] = [
+            (
+                ComposeDevelopWatch(path: "", action: "rebuild"),
+                .invalidProject("service 'api' has a develop.watch trigger without a path")
+            ),
+            (
+                ComposeDevelopWatch(path: "src", action: "sync"),
+                .invalidProject("service 'api' develop.watch action 'sync' requires a target")
+            ),
+            (
+                ComposeDevelopWatch(path: "src", action: "sync+exec", target: "/app/src"),
+                .invalidProject("service 'api' develop.watch action 'sync+exec' requires exec metadata")
+            ),
+        ]
+
+        for testCase in cases {
+            let runner = RecordingRunner()
+            let project = ComposeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        $0.develop = ComposeDevelop(watch: [testCase.trigger])
+                    },
+                ]
+            )
+
+            do {
+                try await ComposeOrchestrator(runner: runner).watch(project: project)
+                Issue.record("Expected malformed watch trigger error")
+            } catch let error as ComposeError {
+                #expect(error == testCase.error)
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+
+            #expect(runner.commands.isEmpty)
+        }
+    }
+
     @Test("attach output-only mode follows direct logs")
     func attachOutputOnlyModeFollowsDirectLogs() async throws {
         let emitted = MessageRecorder()
@@ -9458,7 +9551,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.develop = true
+                    $0.develop = ComposeDevelop()
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]

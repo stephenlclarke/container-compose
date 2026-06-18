@@ -437,6 +437,62 @@ struct ComposeNormalizerTests {
         #expect(api.extensions?["x-service"] == .object(["owner": .string("platform")]))
     }
 
+    @Test("normalizer preserves develop watch triggers")
+    func normalizerPreservesDevelopWatchTriggers() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine
+            develop:
+              watch:
+                - path: ./src
+                  action: rebuild
+                  include:
+                    - "*.swift"
+                  ignore:
+                    - .build/
+                - path: ./assets
+                  action: sync+exec
+                  target: /app/assets
+                  initial_sync: true
+                  exec:
+                    command: ["sh", "-c", "touch /tmp/reloaded"]
+                    user: app
+                    working_dir: /app
+                    environment:
+                      MODE: dev
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+        let api = try #require(project.services["api"])
+        let watch = try #require(api.develop?.watch)
+
+        #expect(watch.count == 2)
+        #expect(watch[0].path.hasSuffix("/src"))
+        #expect(watch[0].action == "rebuild")
+        #expect(watch[0].ignore == [".build/"])
+        #expect(watch[0].include == ["*.swift"])
+        #expect(watch[1].path.hasSuffix("/assets"))
+        #expect(watch[1].action == "sync+exec")
+        #expect(watch[1].target == "/app/assets")
+        #expect(watch[1].initialSync == true)
+        #expect(watch[1].exec == ComposeDevelopWatchExec(
+            command: ["sh", "-c", "touch /tmp/reloaded"],
+            user: "app",
+            workingDir: "/app",
+            environment: ["MODE": "dev"]
+        ))
+    }
+
     @Test("normalizer decodes JSON and forwards compose options")
     func normalizerDecodesJSONAndForwardsOptions() async throws {
         let runner = RecordingRunner(responses: [

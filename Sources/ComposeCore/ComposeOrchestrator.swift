@@ -332,6 +332,21 @@ public struct ComposeWaitOptions {
     }
 }
 
+/// Options for `compose watch` commands.
+public struct ComposeWatchOptions {
+    public var services: [String]
+    public var noUp: Bool
+    public var prune: Bool
+    public var quiet: Bool
+
+    public init(services: [String] = [], noUp: Bool = false, prune: Bool = true, quiet: Bool = false) {
+        self.services = services
+        self.noUp = noUp
+        self.prune = prune
+        self.quiet = quiet
+    }
+}
+
 /// Options for `compose attach` commands.
 public struct ComposeAttachOptions {
     public var noStdin = false
@@ -1056,6 +1071,23 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await logManager.logs(id: id, tail: runtimeTail, follow: follow, emit: options.emit)
             }
         }
+    }
+
+    /// Validates watch service selections against normalized develop metadata.
+    public func watch(project: ComposeProject, options watch: ComposeWatchOptions = ComposeWatchOptions()) async throws {
+        let services = try selectedServices(project: project, selected: watch.services)
+        let watchServices = services.filter { service in
+            guard let triggers = service.develop?.watch else {
+                return false
+            }
+            return !triggers.isEmpty
+        }
+        guard !watchServices.isEmpty else {
+            let selected = watch.services.isEmpty ? "project" : "selected services"
+            throw ComposeError.invalidProject("\(selected) does not declare develop.watch triggers")
+        }
+        try validateWatchTriggers(services: watchServices)
+        throw ComposeError.unsupported("watch: file watching and develop actions are not implemented by container-compose yet")
     }
 
     /// Attaches to service output using the Apple log stream.
@@ -1822,7 +1854,7 @@ private extension ComposeOrchestrator {
         if service.blkioConfig == true {
             throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls are not implemented by container-compose yet")
         }
-        if service.develop == true {
+        if service.develop != nil {
             throw ComposeError.unsupported("service '\(service.name)' uses develop; develop/watch workflows are not implemented by container-compose yet")
         }
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
@@ -1965,6 +1997,43 @@ private extension ComposeOrchestrator {
         }
         if service.preStop == true {
             throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; lifecycle hooks are not implemented by container-compose yet")
+        }
+    }
+
+    /// Validates normalized develop.watch trigger metadata for command-level
+    /// `watch` execution.
+    func validateWatchTriggers(services: [ComposeService]) throws {
+        for service in services {
+            guard let triggers = service.develop?.watch else {
+                continue
+            }
+            for trigger in triggers {
+                try validateWatchTrigger(trigger, service: service)
+            }
+        }
+    }
+
+    /// Validates one develop.watch trigger before runtime watch execution.
+    func validateWatchTrigger(_ trigger: ComposeDevelopWatch, service: ComposeService) throws {
+        guard nonEmpty(trigger.path) != nil else {
+            throw ComposeError.invalidProject("service '\(service.name)' has a develop.watch trigger without a path")
+        }
+        let action = trigger.action.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !action.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' has a develop.watch trigger without an action")
+        }
+        let supportedActions = ["rebuild", "restart", "sync", "sync+restart", "sync+exec"]
+        guard supportedActions.contains(action) else {
+            let supportedActionList = supportedActions.joined(separator: ", ")
+            throw ComposeError.unsupported(
+                "service '\(service.name)' uses develop.watch action '\(trigger.action)'; supported Compose watch actions are \(supportedActionList)"
+            )
+        }
+        if action.contains("sync"), nonEmpty(trigger.target) == nil {
+            throw ComposeError.invalidProject("service '\(service.name)' develop.watch action '\(action)' requires a target")
+        }
+        if action == "sync+exec", trigger.exec == nil {
+            throw ComposeError.invalidProject("service '\(service.name)' develop.watch action 'sync+exec' requires exec metadata")
         }
     }
 

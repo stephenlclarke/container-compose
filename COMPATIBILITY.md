@@ -67,10 +67,10 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 | --- | --- | --- | --- |
 | Replica scaling edge cases and local deploy handling | Scaled services that publish a single fixed host port, publish too-small host ranges, set fixed MAC addresses, use `container_name`, or use anonymous volumes, and `deploy` fields beyond local replica count and CPU/memory limits | Dynamic allocation for fixed/single host ports, per-replica MAC policy, per-replica anonymous volume naming, and a local interpretation of deploy mode/placement/update/rollback/endpoint/labels/restart/resources beyond local replica count and CPU/memory limits | [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy) |
 | Advanced build configuration | `additional_contexts`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, build secrets without top-level `file` or `environment` backing, build secret `uid`/`gid`/`mode`, build `shm_size`, `ssh`, build `ulimits` | Safe translation to `container build` behavior and tests | [C2](#c2-plugin-gap-advanced-build-fields) |
-| Develop, providers, models, hooks | `develop`, watch settings, service `provider`, service `models`, `post_start`, `pre_stop` | Watch/sync/rebuild orchestration, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
+| Develop, providers, models, hooks | `develop.watch`, service `provider`, service `models`, `post_start`, `pre_stop` | File-watch loops, sync/rebuild/restart action execution, provider/model wiring, lifecycle hook safety and ordering | [C3](#c3-plugin-gap-develop-providers-models-and-hooks) |
 | Metadata, logging, storage shortcuts | `logging`, `log_driver`, `log_opt`, `storage_opt`, `volumes_from` external-container references, image-declared volume inheritance through `volumes_from`, service-level `volume_driver`, advanced service volume options such as bind propagation/SELinux/recursive controls, volume labels/nocopy/subpath, image mounts, and mount consistency | Runtime mapping, external/inferred inherited mount behavior, logging behavior, storage option and advanced mount policy | [C4](#c4-plugin-gap-metadata-storage-and-api-socket) |
 | API socket and block I/O | `use_api_socket`, `blkio_config` | Security review and resource-control mapping | [C4](#c4-plugin-gap-metadata-storage-and-api-socket) |
-| Additional CLI commands | `watch`, default stdin/signal-proxy `attach`, `commit`, `publish` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
+| Additional CLI commands | default stdin/signal-proxy `attach`, `commit`, `publish` | Command design, output compatibility, and runtime mapping | [C5](#c5-plugin-gap-additional-cli-commands) |
 
 ### Config-Only Today
 
@@ -89,7 +89,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 | --- | --- |
 | Supported | `config`, `convert`, `create`, `create --scale`, `create --quiet-pull`, `up`, `up --scale`, `up --no-build`, `up --quiet-build`, `up --quiet-pull`, `up --no-start`, `up --always-recreate-deps`, `up --timeout`, `scale`, `scale --no-deps`, `down`, `build`, `build --pull`, `build --push`, `build --quiet/-q`, `build --with-dependencies`, `pull`, `pull --include-deps`, `pull --ignore-buildable`, `pull --ignore-pull-failures`, `pull --policy always/missing`, `pull --quiet/-q`, `push`, `push --include-deps`, `push --ignore-push-failures`, `push --quiet/-q`, `ls`, `ps`, `logs`, `logs --index`, `logs --no-color`, `logs --no-log-prefix`, output-only `attach --no-stdin --sig-proxy=false`, `attach --index`, `exec`, `exec --index`, `run`, `start`, `stop`, `restart`, `rm`, `images`, `volumes`, `stats`, `stats --all`, `cp`, `cp --index`, `export`, `export --index`, explicit published-port `port`, `port --index`, `kill`, `wait` for running/stopping service containers, `wait --down-project` for running/stopping service containers, `version` |
 | Present but blocked by [`apple/container`][apple-container] runtime gaps | dynamic host-port allocation, `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `stats --no-trunc`, `cp --archive`, `cp --follow-link` |
-| Present but blocked by `container-compose` design gaps | default stdin/signal-proxy `attach`, `watch`, `commit`, `publish` |
+| Present but blocked by `container-compose` design gaps | `watch` file-watch/action execution, default stdin/signal-proxy `attach`, `commit`, `publish` |
 
 ## References
 
@@ -748,13 +748,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
-Expected result: `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
+Expected result: `container compose config` preserves the `develop.watch` trigger metadata, and `container compose watch api` validates service selection and trigger shape before reporting that file watching and develop actions are not implemented yet. `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: needs orchestration design for watch/sync/rebuild flows, service providers, model bindings, and hook execution.
+- `container-compose`: preserves normalized `develop.watch` trigger metadata and validates `watch` command selections. It still needs file watching, sync/rebuild/restart action execution, service providers, model bindings, and hook execution.
 
 ```yaml
 # compose.yaml
@@ -790,6 +790,13 @@ Dockerfile: `api/Dockerfile`
 FROM alpine:3.20
 WORKDIR /app
 CMD ["sh", "-c", "sleep 3600"]
+```
+
+Current command boundary:
+
+```sh
+container compose config
+container compose watch --no-up --no-prune --quiet api
 ```
 
 ### C4: Plugin Gap, Metadata, Storage, And API Socket
@@ -855,13 +862,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C5: Plugin Gap, Additional CLI Commands
 
-Expected result: these Docker Compose v2 commands and default attach semantics are recognized by `container-compose` and fail with command-specific `container-compose` design gap messages.
+Expected result: these Docker Compose v2 commands and default attach semantics are recognized by `container-compose` and fail with command-specific design gap messages.
 
 Status path:
 
-- Docker Compose v2: supports these commands.
+- Docker Compose v2: supports these commands and default attach behavior.
 - [`apple/container`][apple-container]: command-specific runtime availability still needs to be assessed as each command is implemented.
-- `container-compose`: exposes these command names and reports the plugin design gap instead of failing as an unknown subcommand.
+- `container-compose`: exposes these command names and reports design gaps instead of failing as unknown subcommands. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
 ```yaml
 # compose.yaml
@@ -881,7 +888,6 @@ services:
 Compare the missing command behavior:
 
 ```sh
-docker compose watch
 docker compose attach api
 docker compose commit api example/api:snapshot
 docker compose publish

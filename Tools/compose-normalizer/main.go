@@ -85,7 +85,7 @@ type normalizedService struct {
 	CPURealtimeRuntime      int64                               `json:"cpuRealtimeRuntime,omitempty"`
 	CPUSet                  string                              `json:"cpuset,omitempty"`
 	CPUShares               int64                               `json:"cpuShares,omitempty"`
-	Develop                 bool                                `json:"develop,omitempty"`
+	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
@@ -188,6 +188,32 @@ type normalizedBuildSecret struct {
 	ID          string `json:"id"`
 	File        string `json:"file,omitempty"`
 	Environment string `json:"environment,omitempty"`
+}
+
+// normalizedDevelop preserves Compose Develop Specification data needed by
+// future watch orchestration.
+type normalizedDevelop struct {
+	Watch []normalizedWatchTrigger `json:"watch,omitempty"`
+}
+
+// normalizedWatchTrigger records one compose-go develop.watch trigger.
+type normalizedWatchTrigger struct {
+	Path        string                   `json:"path"`
+	Action      string                   `json:"action"`
+	Target      string                   `json:"target,omitempty"`
+	Ignore      []string                 `json:"ignore,omitempty"`
+	Include     []string                 `json:"include,omitempty"`
+	InitialSync bool                     `json:"initialSync,omitempty"`
+	Exec        *normalizedWatchExecHook `json:"exec,omitempty"`
+}
+
+// normalizedWatchExecHook records sync+exec metadata without executing it.
+type normalizedWatchExecHook struct {
+	Command     []string           `json:"command,omitempty"`
+	User        string             `json:"user,omitempty"`
+	Privileged  bool               `json:"privileged,omitempty"`
+	WorkingDir  string             `json:"workingDir,omitempty"`
+	Environment map[string]*string `json:"environment,omitempty"`
 }
 
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
@@ -427,7 +453,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CPURealtimeRuntime:      service.CPURTRuntime,
 		CPUSet:                  service.CPUSet,
 		CPUShares:               service.CPUShares,
-		Develop:                 service.Develop != nil,
+		Develop:                 developValues(service.Develop),
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
@@ -530,6 +556,73 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 	}
 	if len(service.Extensions) > 0 {
 		result.Extensions = service.Extensions
+	}
+	return result
+}
+
+// developValues preserves Compose Develop Specification watch triggers for
+// Swift command validation and future watch orchestration.
+func developValues(develop *types.DevelopConfig) *normalizedDevelop {
+	if develop == nil {
+		return nil
+	}
+	return &normalizedDevelop{
+		Watch: watchTriggerValues(develop.Watch),
+	}
+}
+
+// watchTriggerValues copies compose-go watch triggers into the stable JSON
+// shape consumed by Swift.
+func watchTriggerValues(triggers []types.Trigger) []normalizedWatchTrigger {
+	if len(triggers) == 0 {
+		return nil
+	}
+	result := make([]normalizedWatchTrigger, 0, len(triggers))
+	for _, trigger := range triggers {
+		result = append(result, normalizedWatchTrigger{
+			Path:        trigger.Path,
+			Action:      string(trigger.Action),
+			Target:      trigger.Target,
+			Ignore:      append([]string(nil), trigger.Ignore...),
+			Include:     append([]string(nil), trigger.Include...),
+			InitialSync: trigger.InitialSync,
+			Exec:        watchExecHookValue(trigger.Exec),
+		})
+	}
+	return result
+}
+
+// watchExecHookValue copies sync+exec hook data when a trigger declares it.
+func watchExecHookValue(hook types.ServiceHook) *normalizedWatchExecHook {
+	if len(hook.Command) == 0 &&
+		hook.User == "" &&
+		!hook.Privileged &&
+		hook.WorkingDir == "" &&
+		len(hook.Environment) == 0 {
+		return nil
+	}
+	return &normalizedWatchExecHook{
+		Command:     append([]string(nil), hook.Command...),
+		User:        hook.User,
+		Privileged:  hook.Privileged,
+		WorkingDir:  hook.WorkingDir,
+		Environment: mappingWithEqualsValues(hook.Environment),
+	}
+}
+
+// mappingWithEqualsValues preserves keys with omitted values.
+func mappingWithEqualsValues(values types.MappingWithEquals) map[string]*string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := map[string]*string{}
+	for key, value := range values {
+		if value == nil {
+			result[key] = nil
+			continue
+		}
+		copied := *value
+		result[key] = &copied
 	}
 	return result
 }
