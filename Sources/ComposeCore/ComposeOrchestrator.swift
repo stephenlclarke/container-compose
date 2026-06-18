@@ -2295,18 +2295,18 @@ private extension ComposeOrchestrator {
         guard let service = target?.service, hasPostStartHooks(service) else {
             return
         }
-        throw ComposeError.unsupported("service '\(service.name)' uses post_start; attached up cannot run lifecycle hooks before foreground attach returns, use --detach")
+        throw ComposeError.unsupported("service '\(service.name)' uses post_start; attached up cannot run lifecycle hooks before foreground attach because apple/container does not expose reattaching to the init process after a hookable detached start, use --detach")
     }
 
     /// Validates lifecycle hooks for one-off containers.
     func validateOneOffRunLifecycleHooks(service: ComposeService, options run: ComposeRunOptions) throws {
-        if hasPreStopHooks(service) {
-            throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; compose run pre_stop hook execution is not implemented by container-compose yet")
+        if hasPreStopHooks(service), !run.detach {
+            throw ComposeError.unsupported("service '\(service.name)' uses pre_stop; foreground compose run cannot execute pre_stop before the one-off init process exits because apple/container does not expose an interceptable foreground stop boundary")
         }
         guard hasPostStartHooks(service), !run.detach else {
             return
         }
-        throw ComposeError.unsupported("service '\(service.name)' uses post_start; compose run must use --detach before container-compose can execute post_start hooks")
+        throw ComposeError.unsupported("service '\(service.name)' uses post_start; foreground compose run cannot execute post_start before attach because apple/container does not expose reattaching to the init process after a hookable detached start, use --detach")
     }
 
     /// Validates normalized develop.watch trigger metadata for command-level
@@ -4581,12 +4581,26 @@ private extension ComposeOrchestrator {
                 let isPreservedService = container.serviceName.map { serviceNames.contains($0) } ?? false
                 return container.isOneOff || !isPreservedService
             }
-            .map(\.id)
-            .sorted()
+            .sorted { $0.id < $1.id }
         for container in remainingContainers {
-            try await stopContainer(id: container, timeout: timeout)
-            try await deleteContainer(container)
+            try await stopRemainingProjectContainer(project: project, container: container, timeout: timeout)
+            try await deleteContainer(container.id)
         }
+    }
+
+    /// Stops a project-scoped cleanup target with service hooks when its
+    /// Compose service still exists in the current model.
+    func stopRemainingProjectContainer(
+        project: ComposeProject,
+        container: ComposeContainerSummary,
+        timeout: Int? = nil
+    ) async throws {
+        guard let serviceName = container.serviceName,
+              let service = project.services[serviceName] else {
+            try await stopContainer(id: container.id, timeout: timeout)
+            return
+        }
+        try await stopContainer(service: service, containerName: container.id, timeout: timeout)
     }
 
     /// Lists containers scoped to a Compose project through the direct API.

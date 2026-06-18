@@ -216,7 +216,7 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 13:27:44 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct Apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and one-off <code>pre_stop</code> execution remain container-compose design gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Preserved normalized service <code>post_start</code> and <code>pre_stop</code> hook metadata, validated unsupported hook forms before side effects, and executed supported hooks through direct Apple/container process exec for detached service starts, <code>start</code>, <code>stop</code>, <code>restart</code>, <code>down</code>, service recreation, and replica pruning. Foreground hook ordering now tracks under the Apple/container interactive attach and stop-boundary backlog.</td>
     </tr>
     <tr>
       <td>Detached one-off post-start hook execution</td>
@@ -225,7 +225,16 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 13:33:19 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Executed service <code>post_start</code> hooks after detached one-off <code>compose run</code> containers are created, reusing the generated or explicit one-off container name for direct Apple/container process exec. Foreground <code>run</code> post-start ordering and one-off <code>pre_stop</code> remain container-compose design gaps.</td>
+      <td colspan="4"><strong>Notes:</strong> Executed service <code>post_start</code> hooks after detached one-off <code>compose run</code> containers are created, reusing the generated or explicit one-off container name for direct Apple/container process exec. Foreground <code>run</code> post-start ordering now tracks under the Apple/container interactive attach backlog.</td>
+    </tr>
+    <tr>
+      <td>Detached one-off pre-stop cleanup</td>
+      <td>2026-06-18 15:10:06 BST</td>
+      <td>2026-06-18 15:10:06 BST</td>
+      <td>2026-06-18 15:10:06 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Accepted detached one-off <code>compose run</code> services that declare <code>pre_stop</code> hooks and execute those hooks when container-compose later stops the one-off container through project cleanup, such as <code>up --remove-orphans</code> or <code>down --remove-orphans</code>. Foreground one-off <code>pre_stop</code> remains an Apple/container stop-boundary gap because the foreground init process has already exited before control returns to the plugin.</td>
     </tr>
     <tr>
       <td>Dynamic host-port allocation</td>
@@ -457,7 +466,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, and <code>post_start</code> is implemented for detached one-off <code>run</code>. Remaining work covers service <code>provider</code>, service <code>models</code>, attached <code>up</code> post-start ordering before foreground attach, foreground <code>run</code> post-start ordering, and one-off <code>pre_stop</code> execution.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Remaining plugin work covers service <code>provider</code> and service <code>models</code>. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
     </tr>
     <tr>
       <td>Logging and storage metadata</td>
@@ -525,7 +534,9 @@ Suggested Apple/container PR batches:
    durable closed-container log replay, plus service logging driver/option
    controls.
 9. Interactive attach parity: reattach stdin/stdout/stderr to an already-running
-   init process, proxy signals, and support detach-key behavior.
+   init process, proxy signals, support detach-key behavior, and expose the
+   start-hook-reattach or stop-boundary primitives needed for foreground
+   lifecycle hooks.
 10. Command-data parity: events, process listing, pause/unpause, and copy
    archive/follow-link controls.
 11. Image and artifact parity: container commit image snapshots and Compose
@@ -685,7 +696,7 @@ Suggested Apple/container PR batches:
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Docker Compose default <code>attach</code> needs stdin/stdout/stderr reattach to an already-running service init process, signal proxying, and detach-key handling. Apple/container currently wires stdio while bootstrapping a container or creating a new exec process, but does not expose a Compose-compatible reattach primitive for an already-running service container.</td>
+      <td colspan="4"><strong>Notes:</strong> Docker Compose default <code>attach</code> needs stdin/stdout/stderr reattach to an already-running service init process, signal proxying, and detach-key handling. Attached <code>up</code> with <code>post_start</code> and foreground one-off <code>run</code> with lifecycle hooks need the same start-hook-reattach shape, plus an interceptable foreground stop boundary for <code>pre_stop</code>. Apple/container currently wires stdio while bootstrapping a container or creating a new exec process, but does not expose a Compose-compatible reattach primitive for an already-running service container.</td>
     </tr>
     <tr>
       <td>Dynamic host-port allocation</td>

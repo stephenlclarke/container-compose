@@ -79,9 +79,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - Reconciliation: deterministic names, indexed replicas, one-off names, config-hash recreate, `--force-recreate`, `--no-recreate`, `--remove-orphans`, and `down --rmi local/all`.
   - Scaling: `up --scale`, `create --scale`, standalone `scale`, `scale --no-deps`, service `scale`, and local `deploy.replicas`.
   - Options: `up --no-start`, `up --always-recreate-deps`, timeouts, service `attach: false`, `rm --force/-f`, `wait --down-project`, `run --rm`, `run --detach/-d`, and `run --name`.
-  - Lifecycle hooks: service `post_start` and `pre_stop` for detached service starts, `start`, `stop`, `restart`, `down`, service recreation, and replica pruning; service `post_start` for detached one-off `run`.
+  - Lifecycle hooks: service `post_start` and `pre_stop` for detached service starts, `start`, `stop`, `restart`, `down`, service recreation, and replica pruning; service `post_start` for detached one-off `run`; service `pre_stop` for detached one-off cleanup when `container-compose` later stops the one-off container through project cleanup.
 - **Apple/container path:** `container create`, `container run`, `ContainerClient.bootstrap`, `ClientProcess.start`, `ClientProcess.wait`, `ContainerClient.get`, `ContainerClient.list`, `ContainerClient.stop`, `ContainerClient.delete`, `ContainerClient.kill`, and direct process exec through `ContainerClient.createProcess` / `ClientProcess.start`.
-- **container-compose status:** Supported for running or stopping service containers. `post_start` runs after service containers are started through a detached service lifecycle path and after detached one-off `run`; `pre_stop` runs before service-aware stops. Already-stopped wait replay remains an Apple/container runtime gap. Attached `up` with `post_start`, foreground one-off `run` with `post_start`, and one-off `run` with `pre_stop` remain container-compose design gaps.
+- **container-compose status:** Supported for running or stopping service containers. `post_start` runs after service containers are started through a detached service lifecycle path and after detached one-off `run`; `pre_stop` runs before service-aware stops and before detached one-off containers are stopped through cleanup such as `up --remove-orphans` or `down --remove-orphans`. Already-stopped wait replay remains an Apple/container runtime gap. Attached `up` with `post_start`, foreground one-off `run` with `post_start`, and foreground one-off `run` with `pre_stop` remain Apple/container attach or stop-boundary gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Project discovery
@@ -224,10 +224,10 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A5](#a5-apple-gap-runtime-data-commands).
 
-#### Interactive init-process attach
+#### Interactive init-process attach and foreground hook boundaries
 
-- **Compose surface:** Default stdin/signal-proxy `attach`, `attach --sig-proxy=true`, and `attach --detach-keys`.
-- **Missing Apple/container primitive:** Reattaching stdin/stdout/stderr to an already-running init process, signal proxying to that process, and detach-key handling. Apple/container can wire stdio while bootstrapping a container or creating a new exec process, but it does not expose a Compose-compatible reattach path for an already-running service container.
+- **Compose surface:** Default stdin/signal-proxy `attach`, `attach --sig-proxy=true`, `attach --detach-keys`, attached `up` with service `post_start`, foreground one-off `run` with service `post_start`, and foreground one-off `run` with service `pre_stop`.
+- **Missing Apple/container primitive:** Reattaching stdin/stdout/stderr to an already-running init process, signal proxying to that process, detach-key handling, and an interceptable foreground one-off stop boundary. Apple/container can wire stdio while bootstrapping a container or creating a new exec process, but it does not expose a Compose-compatible path that starts the init process, lets `container-compose` run lifecycle hooks, then reattaches to the same init process before it exits.
 - **container-compose status:** Output-only `attach --no-stdin --sig-proxy=false` is supported through log streaming. Default interactive attach rejects before side effects with a precise Apple/container runtime-gap message.
 - **Example:** [A9](#a9-apple-gap-interactive-attach).
 
@@ -249,11 +249,11 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Missing plugin work:** A local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
-#### Providers, models, and lifecycle-hook gaps
+#### Providers and models
 
-- **Compose surface:** Service `provider`, service `models`, attached `up` with service `post_start`, foreground one-off `run` with service `post_start`, and one-off `run` with service `pre_stop`.
+- **Compose surface:** Service `provider` and service `models`.
 - **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** Provider/model wiring, foreground attach ordering for `post_start`, and a one-off stop boundary for `pre_stop`.
+- **Missing plugin work:** Provider/model wiring.
 - **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
 #### API socket and block I/O
@@ -336,7 +336,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): [`apple/container`][apple-container] gap. Demonstrates service-container image commit and Compose application OCI artifact publishing.
 - [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): [`apple/container`][apple-container] gap. Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
-- [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): [`apple/container`][apple-container] gap. Demonstrates default interactive attach behavior that needs a runtime reattach primitive.
+- [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): [`apple/container`][apple-container] gap. Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
 - [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): [`apple/container`][apple-container] gap. Demonstrates service logging drivers and logging options.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
@@ -1098,13 +1098,13 @@ local config placeholder
 
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
-Expected result: `container compose config` preserves the `develop.watch`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata. Detached service lifecycle paths and detached one-off `run` execute supported `post_start` hooks through direct exec, and service-aware stops execute supported `pre_stop` hooks before stopping containers. The `provider` and `models` fields still reject before runtime side effects because they need plugin orchestration. Attached `up` or foreground `run` with `post_start`, plus one-off `run` with `pre_stop`, also reject clearly until those container-compose design gaps are closed.
+Expected result: `container compose config` preserves the `develop.watch`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata. Detached service lifecycle paths and detached one-off `run` execute supported `post_start` hooks through direct exec, and service-aware stops execute supported `pre_stop` hooks before stopping containers. Detached one-off containers also execute `pre_stop` when `container-compose` later stops them through project cleanup. The `provider` and `models` fields still reject before runtime side effects because they need plugin orchestration. Attached `up` or foreground `run` with lifecycle hooks reject clearly until Apple/container exposes the foreground attach and stop-boundary primitives tracked in [A9](#a9-apple-gap-interactive-attach).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
-- [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: preserves normalized `develop.watch`, `post_start`, and `pre_stop` metadata; validates `watch` command selections; emits a dry-run watch plan; supports live polling watch execution through direct copy, exec, restart, build, and image prune paths; executes service lifecycle hooks for detached service starts, `start`, `stop`, `restart`, `down`, recreation, and replica pruning; and executes `post_start` for detached one-off `run`. It still needs service providers, model bindings, attached `up` hook ordering, foreground `run` hook ordering, and one-off `pre_stop` execution.
+- [`apple/container`][apple-container]: direct exec supports the detached hook paths; foreground hook ordering needs the reattach or stop-boundary primitive tracked in [A9](#a9-apple-gap-interactive-attach).
+- `container-compose`: preserves normalized `develop.watch`, `post_start`, and `pre_stop` metadata; validates `watch` command selections; emits a dry-run watch plan; supports live polling watch execution through direct copy, exec, restart, build, and image prune paths; executes service lifecycle hooks for detached service starts, `start`, `stop`, `restart`, `down`, recreation, and replica pruning; executes `post_start` for detached one-off `run`; and executes `pre_stop` before detached one-off cleanup. It still needs service providers and model bindings.
 
 ```yaml
 # compose.yaml
@@ -1217,13 +1217,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### A9: Apple Gap, Interactive Attach
 
-Expected result: output-only `container compose attach --no-stdin --sig-proxy=false` works through the runtime log stream. Default Docker Compose attach semantics reject because [`apple/container`][apple-container] does not expose stdin/stdout/stderr reattach, signal proxying, or detach-key handling for an already-running service container.
+Expected result: output-only `container compose attach --no-stdin --sig-proxy=false` works through the runtime log stream. Default Docker Compose attach semantics reject because [`apple/container`][apple-container] does not expose stdin/stdout/stderr reattach, signal proxying, or detach-key handling for an already-running service container. Attached `up` or foreground one-off `run` with lifecycle hooks also reject clearly because the runtime cannot start the init process, let `container-compose` run hooks, and then reattach to that foreground process.
 
 Status path:
 
-- Docker Compose v2: supports default interactive attach behavior.
-- [`apple/container`][apple-container]: log streaming is available for output-only attach, and stdio can be wired while bootstrapping a container or creating a new exec process. It does not expose a Compose-compatible reattach path for an already-running init process.
-- `container-compose`: supports output-only attach and reports the Apple/container runtime gap for default interactive attach. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
+- Docker Compose v2: supports default interactive attach behavior and foreground lifecycle hook ordering.
+- [`apple/container`][apple-container]: log streaming is available for output-only attach, and stdio can be wired while bootstrapping a container or creating a new exec process. It does not expose a Compose-compatible reattach path for an already-running init process or an interceptable stop boundary for foreground one-off containers.
+- `container-compose`: supports output-only attach and detached lifecycle-hook paths, then reports the Apple/container runtime gap for default interactive attach and foreground hook ordering. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
 
 ```yaml
 # compose.yaml
@@ -1234,6 +1234,10 @@ services:
     build:
       context: ./api
     image: example/api:dev
+    post_start:
+      - command: ["sh", "-c", "touch /tmp/ready"]
+    pre_stop:
+      - command: ["sh", "-c", "rm -f /tmp/ready"]
 
   worker:
     build:
@@ -1245,6 +1249,8 @@ Compare the supported and missing command behavior:
 ```sh
 container compose attach --no-stdin --sig-proxy=false api
 docker compose attach api
+container compose up api
+container compose run api sh -c 'echo foreground'
 ```
 
 Dockerfile: `api/Dockerfile`
