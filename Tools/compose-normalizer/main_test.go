@@ -1037,6 +1037,8 @@ func TestLoadProjectPreservesModelsAndFlagsProviderModelHooks(t *testing.T) {
 models:
   llm:
     model: example/local-llm
+  embed:
+    model: example/local-embed
 services:
   api:
     image: alpine
@@ -1048,6 +1050,7 @@ services:
       llm:
         endpoint_var: MODEL_ENDPOINT
         model_var: MODEL_ID
+      embed: {}
     post_start:
       - command: ["sh", "-c", "echo started"]
         user: app
@@ -1079,8 +1082,11 @@ services:
 	if got, want := api.Provider.Options["endpoint"], []string{"local"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.Provider.Options[endpoint] = %#v, want %#v", got, want)
 	}
-	if !api.Models {
-		t.Fatal("api.Models = false, want true")
+	if got, want := api.Models["llm"], (normalizedServiceModel{EndpointVariable: "MODEL_ENDPOINT", ModelVariable: "MODEL_ID"}); got != want {
+		t.Fatalf("api.Models[llm] = %#v, want %#v", got, want)
+	}
+	if got, want := api.Models["embed"], (normalizedServiceModel{}); got != want {
+		t.Fatalf("api.Models[embed] = %#v, want %#v", got, want)
 	}
 	if got, want := len(api.PostStart), 1; got != want {
 		t.Fatalf("len(api.PostStart) = %d, want %d", got, want)

@@ -524,6 +524,8 @@ struct ComposeNormalizerTests {
         models:
           llm:
             model: example/local-llm
+          embedding-model:
+            model: example/local-embed
         services:
           api:
             image: alpine
@@ -534,6 +536,11 @@ struct ComposeNormalizerTests {
                 tag:
                   - one
                   - two
+            models:
+              llm:
+                endpoint_var: MODEL_ENDPOINT
+                model_var: MODEL_ID
+              embedding-model: {}
             restart: unless-stopped
             healthcheck:
               disable: true
@@ -561,6 +568,8 @@ struct ComposeNormalizerTests {
         #expect(project.extensions?["x-project"] == .object(["enabled": .bool(true)]))
         #expect(api.restart == "unless-stopped")
         #expect(api.provider == ComposeProvider(type: "example", options: ["endpoint": ["local"], "tag": ["one", "two"]]))
+        #expect(api.models?["llm"] == ComposeServiceModelBinding(endpointVariable: "MODEL_ENDPOINT", modelVariable: "MODEL_ID"))
+        #expect(api.models?["embedding-model"] == ComposeServiceModelBinding())
         #expect(api.healthcheck == .object(["disable": .bool(true)]))
         #expect(api.configs == [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])])
         #expect(api.secrets == [.object(["source": .string("app_secret"), "target": .string("/run/secrets/app_secret")])])

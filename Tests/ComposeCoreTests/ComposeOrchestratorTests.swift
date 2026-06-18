@@ -13069,8 +13069,8 @@ private func unsupportedModelFieldCases() -> [UnsupportedModelFieldCase] {
     [
         UnsupportedModelFieldCase(
             composeName: "models",
-            reason: "service model bindings are not implemented by container-compose yet",
-            configure: { $0.models = true }
+            reason: "Compose model bindings need a model-runner backend and endpoint injection primitive that is not available through apple/container yet",
+            configure: { $0.models = ["llm": ComposeServiceModelBinding(endpointVariable: "MODEL_URL", modelVariable: "MODEL")] }
         ),
     ]
 }

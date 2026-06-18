@@ -107,7 +107,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **Compose surface:** `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, `watch --quiet`, selected services, and normalized `develop.watch` triggers for `sync`, `sync+restart`, `sync+exec`, `restart`, and `rebuild`.
 - **Apple/container path:** Dry-run validation does not mutate runtime state. Live watch uses direct copy, exec, lifecycle restart, build, and image prune paths where Apple/container exposes them.
 - **container-compose status:** Supported for polling-based local file watching, initial sync, changed-file sync, deleted-file cleanup, sync exec hooks, restarts, rebuilds, and rebuild pruning. `develop.watch` metadata is harmless for ordinary `up` and `run`.
-- **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
+- **Example:** [C3](#c3-plugin-gap-develop-providers-and-hooks).
 
 #### Provider services
 
@@ -203,6 +203,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A4](#a4-apple-gap-health-secrets-and-restart).
 
+#### Compose model runner
+
+- **Compose surface:** Top-level `models`, service `models`, `endpoint_var`, `model_var`, `context_size`, and `runtime_flags`.
+- **Missing Apple/container primitive:** Compose-compatible model runner lifecycle, model pull/configure operations, endpoint discovery, and an endpoint URL that is reachable from Apple/container service containers. Docker Compose implements this through the Docker Model plugin; Apple/container does not expose an equivalent primitive yet.
+- **container-compose status:** `config` and `convert` preserve top-level model definitions and service model binding metadata. Runtime commands reject service model bindings before resources are created.
+- **Example:** [A11](#a11-apple-gap-compose-model-runner).
+
 #### Advanced build configuration
 
 - **Compose surface:** `additional_contexts`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, unsupported build secret forms and metadata, build `shm_size`, `ssh`, and build `ulimits`.
@@ -256,13 +263,6 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Missing plugin work:** A local interpretation of broader deploy semantics, including start-first updates, all-at-once or multi-container update parallelism, update delays, rollback behavior, and placement rules.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
-#### Service model bindings
-
-- **Compose surface:** Service `models`.
-- **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** Model binding orchestration and the resulting environment-variable contract for dependent services.
-- **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
-
 #### API socket and block I/O
 
 - **Compose surface:** `use_api_socket` and `blkio_config`.
@@ -293,8 +293,8 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 #### Top-level `models` definitions
 
 - **Current behavior:** Preserved by `config` and `convert`.
-- **Runtime boundary:** Service-level model bindings are a plugin gap.
-- **Examples:** [O1](#o1-config-only-metadata), [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
+- **Runtime boundary:** Service-level model bindings are an [`apple/container`][apple-container] model-runner gap.
+- **Examples:** [O1](#o1-config-only-metadata), [A11](#a11-apple-gap-compose-model-runner).
 
 ## CLI Command Status
 
@@ -319,7 +319,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 ### Commands Blocked By `container-compose` Design Gaps
 
-- No remaining command-level gaps are currently classified here. Plugin-owned model and orchestration gaps are tracked in the compatibility sections above.
+- No remaining command-level gaps are currently classified here. Plugin-owned orchestration gaps are tracked in the compatibility sections above.
 
 ## References
 
@@ -347,8 +347,9 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): [`apple/container`][apple-container] gap. Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
 - [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): [`apple/container`][apple-container] gap. Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
 - [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): [`apple/container`][apple-container] gap. Demonstrates service logging drivers and logging options.
+- [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): [`apple/container`][apple-container] gap. Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
-- [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): Mixed status. Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, remaining model-binding plugin gaps, and foreground hook Apple/container gaps.
+- [C3: Plugin Gap, Develop, Providers, And Hooks](#c3-plugin-gap-develop-providers-and-hooks): Mixed status. Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook Apple/container gaps.
 - [C4: Plugin Gap, API Socket And Block I/O](#c4-plugin-gap-api-socket-and-block-io): `container-compose` gap. Demonstrates API socket exposure and block I/O controls after supported volume inheritance is accepted.
 - [O1: Config-Only Metadata](#o1-config-only-metadata): Config-only. Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
@@ -1196,23 +1197,19 @@ File: `config/example.txt`
 local config placeholder
 ```
 
-### C3: Plugin Gap, Develop, Providers, Models, And Hooks
+### C3: Plugin Gap, Develop, Providers, And Hooks
 
-Expected result: `container compose config` preserves the `develop.watch`, `provider`, service `models`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata and supports provider-backed dependencies as shown in [S2](#s2-supported-provider-service). Detached service lifecycle paths and detached one-off `run` execute supported `post_start` hooks through direct exec, and service-aware stops execute supported `pre_stop` hooks before stopping containers. Detached one-off containers also execute `pre_stop` when `container-compose` later stops them through project cleanup. Service `models` still reject before runtime side effects because model binding orchestration is not implemented. Attached `up` or foreground `run` with lifecycle hooks reject clearly until Apple/container exposes the foreground attach and stop-boundary primitives tracked in [A9](#a9-apple-gap-interactive-attach).
+Expected result: `container compose config` preserves the `develop.watch`, `provider`, `post_start`, and `pre_stop` metadata. `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata and supports provider-backed dependencies as shown in [S2](#s2-supported-provider-service). Detached service lifecycle paths and detached one-off `run` execute supported `post_start` hooks through direct exec, and service-aware stops execute supported `pre_stop` hooks before stopping containers. Detached one-off containers also execute `pre_stop` when `container-compose` later stops them through project cleanup. Attached `up` or foreground `run` with lifecycle hooks reject clearly until Apple/container exposes the foreground attach and stop-boundary primitives tracked in [A9](#a9-apple-gap-interactive-attach).
 
 Status path:
 
-- Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
+- Docker Compose v2: accepts and normalizes develop, provider, and hook fields.
 - [`apple/container`][apple-container]: direct exec supports the detached hook paths; foreground hook ordering needs the reattach or stop-boundary primitive tracked in [A9](#a9-apple-gap-interactive-attach).
-- `container-compose`: preserves normalized `develop.watch`, `provider`, `post_start`, and `pre_stop` metadata; validates `watch` command selections; emits a dry-run watch plan; supports live polling watch execution through direct copy, exec, restart, build, and image prune paths; executes provider service `up`, `down`, and advertised `stop`; executes service lifecycle hooks for detached service starts, `start`, `stop`, `restart`, `down`, recreation, and replica pruning; executes `post_start` for detached one-off `run`; and executes `pre_stop` before detached one-off cleanup. It still needs service model bindings.
+- `container-compose`: preserves normalized `develop.watch`, `provider`, `post_start`, and `pre_stop` metadata; validates `watch` command selections; emits a dry-run watch plan; supports live polling watch execution through direct copy, exec, restart, build, and image prune paths; executes provider service `up`, `down`, and advertised `stop`; executes service lifecycle hooks for detached service starts, `start`, `stop`, `restart`, `down`, recreation, and replica pruning; executes `post_start` for detached one-off `run`; and executes `pre_stop` before detached one-off cleanup.
 
 ```yaml
 # compose.yaml
 name: plugin-extension-gap-demo
-
-models:
-  llm:
-    model: example/local-llm
 
 services:
   api:
@@ -1221,9 +1218,6 @@ services:
     depends_on:
       database:
         condition: service_started
-    models:
-      llm:
-        endpoint_var: MODEL_ENDPOINT
     post_start:
       - command: ["sh", "-c", "echo started"]
     pre_stop:
@@ -1328,7 +1322,7 @@ Status path:
 
 - Docker Compose v2: supports default interactive attach behavior and foreground lifecycle hook ordering.
 - [`apple/container`][apple-container]: log streaming is available for output-only attach, and stdio can be wired while bootstrapping a container or creating a new exec process. It does not expose a Compose-compatible reattach path for an already-running init process or an interceptable stop boundary for foreground one-off containers.
-- `container-compose`: supports output-only attach and detached lifecycle-hook paths, then reports the Apple/container runtime gap for default interactive attach and foreground hook ordering. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-models-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
+- `container-compose`: supports output-only attach and detached lifecycle-hook paths, then reports the Apple/container runtime gap for default interactive attach and foreground hook ordering. `watch` command validation is tracked in [C3](#c3-plugin-gap-develop-providers-and-hooks), and `commit`/`publish` runtime gaps are tracked in [A7](#a7-apple-gap-image-commit-and-compose-publish).
 
 ```yaml
 # compose.yaml
@@ -1417,6 +1411,44 @@ Dockerfile: `worker/Dockerfile`
 ```dockerfile
 FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
+```
+
+### A11: Apple Gap, Compose Model Runner
+
+Expected result: `container compose config` preserves the top-level model definitions and service model binding metadata. Runtime commands such as `container compose up api` reject before creating resources because Docker Compose model support requires a model-runner backend that can pull/configure the model, report the model endpoint, and expose that endpoint to the service container.
+
+Status path:
+
+- Docker Compose v2: accepts and normalizes top-level `models`, service `models`, `endpoint_var`, `model_var`, `context_size`, and `runtime_flags`.
+- [`apple/container`][apple-container]: does not expose a Compose-compatible model runner, model pull/configure lifecycle, endpoint discovery, or guaranteed service-container reachability for model-runner endpoints.
+- `container-compose`: preserves normalized model definitions and service binding metadata for `config` and `convert`, then reports the Apple/container runtime gap before resources are created.
+
+```yaml
+# compose.yaml
+name: apple-model-runner-gap-demo
+
+models:
+  llm:
+    model: ai/smollm2
+    context_size: 4096
+    runtime_flags:
+      - "--no-prefill-assistant"
+
+services:
+  api:
+    build:
+      context: ./api
+    models:
+      llm:
+        endpoint_var: MODEL_ENDPOINT
+        model_var: MODEL_ID
+```
+
+Dockerfile: `api/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "env | sort && sleep 3600"]
 ```
 
 ### O1: Config-Only Metadata

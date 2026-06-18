@@ -144,7 +144,7 @@ type normalizedService struct {
 	MemReservation          string                              `json:"memReservation,omitempty"`
 	MemSwapLimit            string                              `json:"memSwapLimit,omitempty"`
 	MemSwappiness           string                              `json:"memSwappiness,omitempty"`
-	Models                  bool                                `json:"models,omitempty"`
+	Models                  map[string]normalizedServiceModel   `json:"models,omitempty"`
 	OomKillDisable          bool                                `json:"oomKillDisable,omitempty"`
 	OomScoreAdj             int64                               `json:"oomScoreAdj,omitempty"`
 	PidsLimit               int64                               `json:"pidsLimit,omitempty"`
@@ -170,6 +170,13 @@ type normalizedService struct {
 type normalizedProvider struct {
 	Type    string              `json:"type"`
 	Options map[string][]string `json:"options,omitempty"`
+}
+
+// normalizedServiceModel records the environment-variable binding requested by
+// a service for one top-level Compose model.
+type normalizedServiceModel struct {
+	EndpointVariable string `json:"endpointVariable,omitempty"`
+	ModelVariable    string `json:"modelVariable,omitempty"`
 }
 
 // normalizedBuild keeps the build fields needed to call `container build`.
@@ -528,7 +535,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		MemReservation:          unitBytesValue(service.MemReservation),
 		MemSwapLimit:            unitBytesValue(service.MemSwapLimit),
 		MemSwappiness:           unitBytesValue(service.MemSwappiness),
-		Models:                  len(service.Models) > 0,
+		Models:                  serviceModelValues(service.Models),
 		OomKillDisable:          service.OomKillDisable,
 		OomScoreAdj:             service.OomScoreAdj,
 		PidsLimit:               service.PidsLimit,
@@ -824,6 +831,25 @@ func jsonMap[T any](values map[string]T) map[string]any {
 	result := make(map[string]any, len(values))
 	for key, value := range values {
 		result[key] = value
+	}
+	return result
+}
+
+// serviceModelValues preserves service model binding options from compose-go.
+func serviceModelValues(models map[string]*types.ServiceModelConfig) map[string]normalizedServiceModel {
+	if len(models) == 0 {
+		return nil
+	}
+	result := make(map[string]normalizedServiceModel, len(models))
+	for name, model := range models {
+		if model == nil {
+			result[name] = normalizedServiceModel{}
+			continue
+		}
+		result[name] = normalizedServiceModel{
+			EndpointVariable: model.EndpointVariable,
+			ModelVariable:    model.ModelVariable,
+		}
 	}
 	return result
 }

@@ -457,7 +457,7 @@ Apple/container API work is discovered during implementation.
       <td>2026-06-18 13:00:42 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. Remaining C3 plugin work is tracked separately under providers, models, and lifecycle hooks.</td>
+      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. Remaining C3 plugin work is tracked separately under providers and lifecycle hooks. Service model runtime behavior moved to the Apple/container upstream backlog after the model-runner boundary was confirmed.</td>
     </tr>
     <tr>
       <td>Replica scaling edge cases</td>
@@ -484,7 +484,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Remaining plugin work covers service <code>models</code>. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Service <code>models</code> binding metadata is preserved for config output, but runtime model-runner behavior needs Apple/container model-runner parity. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
     </tr>
     <tr>
       <td>Provider service lifecycle</td>
@@ -494,6 +494,15 @@ Apple/container API work is discovered during implementation.
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Provider services now preserve <code>provider.type</code> and <code>provider.options</code> from <code>compose-go</code>, run provider <code>compose metadata</code> plus <code>up</code>/<code>down</code>/advertised <code>stop</code>, validate required metadata parameters, filter unknown provider options when metadata is available, and inject provider <code>setenv</code> values into direct dependents for <code>up</code> and one-off <code>run</code> dependency startup. This is plugin-owned functionality; no Apple/container runtime PR is needed for provider process execution.</td>
+    </tr>
+    <tr>
+      <td>Service model binding boundary</td>
+      <td>2026-06-18 16:23:30 BST</td>
+      <td>2026-06-18 16:23:30 BST</td>
+      <td>2026-06-18 16:23:30 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Preserved service <code>models</code> binding metadata from <code>compose-go</code> instead of a boolean marker, including explicit <code>endpoint_var</code>/<code>model_var</code> names and defaulted bindings. Docker Compose model runtime behavior shells out to the Docker Model plugin to pull/configure models and discover an endpoint. Apple/container does not expose a Compose-compatible model runner, endpoint discovery, or guaranteed service-container reachability primitive yet, so runtime service model bindings now reject as an Apple/container model-runner parity gap before resources are created.</td>
     </tr>
     <tr>
       <td>Logging and storage metadata</td>
@@ -569,7 +578,10 @@ Suggested Apple/container PR batches:
    archive/follow-link controls.
 11. Image and artifact parity: container commit image snapshots and Compose
     application OCI artifact publish/consume support.
-12. Runtime API socket parity: a safe Compose-compatible equivalent for
+12. Model-runner parity: a Compose-compatible model runner backend, model
+    pull/configure lifecycle, endpoint discovery, and service-container
+    reachability for model endpoints.
+13. Runtime API socket parity: a safe Compose-compatible equivalent for
     `use_api_socket` that does not overexpose host control surfaces.
 
 <table>
@@ -707,6 +719,15 @@ Suggested Apple/container PR batches:
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Compose needs service <code>restart</code> and <code>deploy.restart_policy</code> support compatible with local Docker Compose behavior.</td>
+    </tr>
+    <tr>
+      <td>Compose model runner parity</td>
+      <td>2026-06-18 16:23:30 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose service <code>models</code> need a model-runner backend that can pull/configure model artifacts, expose endpoint status, inject endpoint/model variables, and make those endpoints reachable from Apple/container service containers. Docker Compose currently delegates this to the Docker Model plugin; Apple/container does not expose an equivalent primitive.</td>
     </tr>
     <tr>
       <td>Docker Compose log parity</td>

@@ -2369,8 +2369,8 @@ private extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("service '\(service.name)' provider.type 'compose' is reserved")
             }
         }
-        if service.models == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses models; service model bindings are not implemented by container-compose yet")
+        if let models = service.models, !models.isEmpty {
+            throw ComposeError.unsupported("service '\(service.name)' uses models; Compose model bindings need a model-runner backend and endpoint injection primitive that is not available through apple/container yet")
         }
     }
 

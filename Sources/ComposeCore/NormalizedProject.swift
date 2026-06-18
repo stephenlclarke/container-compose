@@ -164,7 +164,7 @@ public struct ComposeService: Codable, Equatable {
     public var memReservation: String? = nil
     public var memSwapLimit: String? = nil
     public var memSwappiness: String? = nil
-    public var models: Bool? = nil
+    public var models: [String: ComposeServiceModelBinding]? = nil
     public var oomKillDisable: Bool? = nil
     public var oomScoreAdj: Int? = nil
     public var pidsLimit: Int? = nil
@@ -359,6 +359,17 @@ public struct ComposeProvider: Codable, Equatable, Sendable {
     public init(type: String, options: [String: [String]]? = nil) {
         self.type = type
         self.options = options
+    }
+}
+
+/// Service binding metadata for one top-level Compose model.
+public struct ComposeServiceModelBinding: Codable, Equatable, Sendable {
+    public var endpointVariable: String?
+    public var modelVariable: String?
+
+    public init(endpointVariable: String? = nil, modelVariable: String? = nil) {
+        self.endpointVariable = endpointVariable
+        self.modelVariable = modelVariable
     }
 }
 
