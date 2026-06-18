@@ -193,6 +193,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A4](#a4-apple-gap-health-secrets-and-restart).
 
+#### Advanced build configuration
+
+- **Compose surface:** `additional_contexts`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, unsupported build secret forms and metadata, build `shm_size`, `ssh`, and build `ulimits`.
+- **Missing Apple/container primitive:** Docker Compose compatible BuildKit inputs for additional contexts, build host entries, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced build secret metadata, build shared memory, build ulimits, and provenance/SBOM attestations.
+- **container-compose status:** Rejected before `container build` is invoked.
+- **Example:** [A6](#a6-apple-gap-advanced-build-fields).
+
 #### Runtime data and dynamic port commands
 
 - **Compose surface:** Target-only `ports` such as `"80"` or `"8080"`, `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
@@ -210,13 +217,6 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Apple/container path:** Not known to be the first blocker.
 - **Missing plugin work:** Dynamic allocation for fixed/single host ports, per-replica MAC policy, and a local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
-
-#### Advanced build configuration
-
-- **Compose surface:** `additional_contexts`, `entitlements`, build `extra_hosts`, build `isolation`, build `network`, build `privileged`, `provenance`, `sbom`, unsupported build secret forms and metadata, build `shm_size`, `ssh`, and build `ulimits`.
-- **Apple/container path:** Not known to be the first blocker for every field, though some fields may later need upstream BuildKit-compatible API work.
-- **Missing plugin work:** Safe translation to `container build` behavior and tests.
-- **Example:** [C2](#c2-plugin-gap-advanced-build-fields).
 
 #### Develop, providers, models, hooks
 
@@ -316,8 +316,8 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): [`apple/container`][apple-container] gap. Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
 - [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): [`apple/container`][apple-container] gap. Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
 - [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): [`apple/container`][apple-container] gap. Demonstrates process listing, event streams, dynamic host-port allocation, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
+- [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): [`apple/container`][apple-container] gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates scaled fixed-port collisions, fixed MAC addresses, DNS, and deploy semantics.
-- [C2: Plugin Gap, Advanced Build Fields](#c2-plugin-gap-advanced-build-fields): `container-compose` gap. Demonstrates additional contexts, unsupported secret forms and metadata, SSH, and provenance/SBOM fields.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
 - [C4: Plugin Gap, Metadata, Storage, And API Socket](#c4-plugin-gap-metadata-storage-and-api-socket): `container-compose` gap. Demonstrates logging options, external inherited mounts, advanced service volume options, API socket, and block I/O.
 - [C5: Plugin Gap, Additional CLI Commands](#c5-plugin-gap-additional-cli-commands): `container-compose` gap. Demonstrates Compose v2 commands that still need command-level plugin design.
@@ -910,19 +910,19 @@ FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 ```
 
-### C2: Plugin Gap, Advanced Build Fields
+### A6: Apple Gap, Advanced Build Fields
 
-Expected result: `container compose build` rejects this before running `container build` because the advanced build fields and secret metadata need safe plugin mapping first.
+Expected result: `container compose build` rejects this before running `container build` because `apple/container build` does not expose Docker Compose compatible BuildKit primitives for the advanced build fields and secret metadata in this example.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these build fields.
-- [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: needs explicit, tested mappings for advanced build behavior before invoking `container build`.
+- [`apple/container`][apple-container]: missing BuildKit-compatible primitives for additional contexts, build network/host/privilege settings, SSH forwarding, advanced secret metadata, and provenance/SBOM attestations.
+- `container-compose`: recognizes the normalized fields and rejects them before invoking `container build`.
 
 ```yaml
 # compose.yaml
-name: plugin-build-gap-demo
+name: apple-build-gap-demo
 
 services:
   api:

@@ -93,6 +93,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Added supported build tags, pull, labels, platforms, cache hints, file/env secrets, inline Dockerfiles, build command options, and service build pull policy.</td>
     </tr>
     <tr>
+      <td>Advanced build blocker classification</td>
+      <td>2026-06-18 11:37:58 BST</td>
+      <td>2026-06-18 11:37:58 BST</td>
+      <td>2026-06-18 11:37:58 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Inspected the normalized Compose build fields against <code>container build --help</code> and reclassified advanced BuildKit fields from plugin backlog to Apple/container upstream build parity. The runtime rejection now points to missing Docker Compose compatible Apple/container build primitives.</td>
+    </tr>
+    <tr>
       <td>Network and port feature expansion</td>
       <td>2026-06-17 19:57:49 BST</td>
       <td>2026-06-17 19:57:49 BST</td>
@@ -325,15 +334,6 @@ Apple/container API work is discovered during implementation.
       <td colspan="4"><strong>Notes:</strong> Extend beyond local <code>deploy.replicas</code> and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
-      <td>Advanced build fields</td>
-      <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
-      <td>not completed</td>
-    </tr>
-    <tr>
-      <td colspan="4"><strong>Notes:</strong> Covers additional contexts, entitlements, build network/isolation/privileged settings, provenance, SBOM, SSH, advanced secrets, shm size, and build ulimits.</td>
-    </tr>
-    <tr>
       <td>Providers, models, and lifecycle hooks</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>not started</td>
@@ -451,7 +451,7 @@ Suggested Apple/container PR batches:
     <tr>
       <td>BuildKit-compatible build inputs</td>
       <td>2026-06-18 10:34:11 BST</td>
-      <td>not started</td>
+      <td>2026-06-18 11:37:58 BST</td>
       <td>not completed</td>
     </tr>
     <tr>

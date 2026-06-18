@@ -3333,7 +3333,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported build fields additional_contexts, ssh; advanced build fields are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses unsupported build fields additional_contexts, ssh; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -5206,7 +5206,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).build(project: project, services: [], noCache: false)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported build fields secrets; advanced build fields are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses unsupported build fields secrets; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -9754,7 +9754,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported build fields entitlements, ssh; advanced build fields are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses unsupported build fields entitlements, ssh; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

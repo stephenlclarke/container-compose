@@ -1989,13 +1989,13 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Rejects build fields that are not translated to `container build` yet.
+    /// Rejects build fields that Apple `container build` cannot represent yet.
     func validateBuildSupport(service: ComposeService) throws {
         guard let fields = service.build?.unsupportedFields, !fields.isEmpty else {
             return
         }
         let fieldList = fields.joined(separator: ", ")
-        throw ComposeError.unsupported("service '\(service.name)' uses unsupported build fields \(fieldList); advanced build fields are not implemented by container-compose yet")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported build fields \(fieldList); advanced build fields need Docker Compose compatible apple/container build primitives")
     }
 
     /// Rejects deploy fields beyond replica count that are not orchestrated yet.
