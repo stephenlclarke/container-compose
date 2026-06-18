@@ -142,6 +142,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Preserved <code>develop.watch</code> triggers from compose-go in the Swift model and added command-level <code>watch</code> validation. File-watch loops and action execution remain open plugin work.</td>
     </tr>
     <tr>
+      <td>Watch dry-run plan</td>
+      <td>2026-06-18 11:22:43 BST</td>
+      <td>2026-06-18 11:22:43 BST</td>
+      <td>2026-06-18 11:23:47 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Emit a deterministic <code>watch --dry-run</code> plan after validating selected services and <code>develop.watch</code> triggers. Live file watching and action execution remain open plugin work.</td>
+    </tr>
+    <tr>
       <td>Scaled anonymous service volumes</td>
       <td>2026-06-18 10:07:04 BST</td>
       <td>2026-06-18 10:07:04 BST</td>
@@ -263,7 +272,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Model-boundary support now preserves and validates <code>develop.watch</code> triggers. Remaining work needs file watching, sync/rebuild/restart policy, and clear interaction with Compose <code>develop</code>.</td>
+      <td colspan="4"><strong>Notes:</strong> Model-boundary support now preserves and validates <code>develop.watch</code> triggers and <code>watch --dry-run</code> emits the planned settings/actions. Remaining work needs live file watching, sync/rebuild/restart policy, and clear interaction with Compose <code>develop</code>.</td>
     </tr>
     <tr>
       <td><code>commit</code> command</td>

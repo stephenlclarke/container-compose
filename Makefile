@@ -480,8 +480,12 @@ cli-smoke: build
 	wait_down_project_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait --down-project api)"; \
 	[[ "$$wait_down_project_output" == *"container wait demo-api-1"* ]]; \
 	[[ "$$wait_down_project_output" == *"container delete demo-api-1"* ]]; \
-	watch_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" watch --no-up --no-prune --quiet api 2>&1 || true)"; \
-	[[ "$$watch_output" == *"unsupported compose feature: watch: file watching and develop actions are not implemented by container-compose yet"* ]]; \
+	watch_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" watch --no-up --no-prune --quiet api)"; \
+	[[ "$$watch_output" == *"compose: watch project demo services api"* ]]; \
+	[[ "$$watch_output" == *"compose: watch initial-up disabled"* ]]; \
+	[[ "$$watch_output" == *"compose: watch prune disabled"* ]]; \
+	[[ "$$watch_output" == *"compose: watch quiet enabled"* ]]; \
+	[[ "$$watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
 	for unsupported_command in commit publish; do \
 		unsupported_output="$$(".build/debug/compose" --dry-run "$$unsupported_command" 2>&1 || true)"; \
 		[[ "$$unsupported_output" == *"unsupported compose feature: $$unsupported_command:"* ]]; \

@@ -101,6 +101,13 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **container-compose status:** Supported for the listed direct API paths. Rich log filtering and runtime process/event controls remain Apple/container gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
+#### Develop dry-run planning
+
+- **Compose surface:** `watch --dry-run`, `watch --no-up`, `watch --no-prune`, `watch --quiet`, selected services, and normalized `develop.watch` triggers.
+- **Apple/container path:** No runtime mutation. The dry-run path validates Compose trigger metadata and prints the planned watch settings/actions.
+- **container-compose status:** Supported for dry-run planning only. Live file watching, sync/rebuild/restart action execution, and `sync+exec` execution remain plugin work.
+- **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
+
 #### Default networking
 
 - **Compose surface:**
@@ -946,13 +953,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
-Expected result: `container compose config` preserves the `develop.watch` trigger metadata, and `container compose watch api` validates service selection and trigger shape before reporting that file watching and develop actions are not implemented yet. `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
+Expected result: `container compose config` preserves the `develop.watch` trigger metadata, and `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions. Live `container compose watch api` still reports that file watching and develop actions are not implemented yet. `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: preserves normalized `develop.watch` trigger metadata and validates `watch` command selections. It still needs file watching, sync/rebuild/restart action execution, service providers, model bindings, and hook execution.
+- `container-compose`: preserves normalized `develop.watch` trigger metadata, validates `watch` command selections, and emits a dry-run watch plan. It still needs live file watching, sync/rebuild/restart action execution, service providers, model bindings, and hook execution.
 
 ```yaml
 # compose.yaml
@@ -994,6 +1001,7 @@ Current command boundary:
 
 ```sh
 container compose config
+container compose --dry-run watch --no-up --no-prune --quiet api
 container compose watch --no-up --no-prune --quiet api
 ```
 

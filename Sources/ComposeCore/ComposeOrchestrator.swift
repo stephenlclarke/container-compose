@@ -1104,6 +1104,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             throw ComposeError.invalidProject("\(selected) does not declare develop.watch triggers")
         }
         try validateWatchTriggers(services: watchServices)
+        if options.dryRun {
+            emitWatchDryRunPlan(project: project, services: watchServices, watch: watch)
+            return
+        }
         throw ComposeError.unsupported("watch: file watching and develop actions are not implemented by container-compose yet")
     }
 
@@ -2054,6 +2058,42 @@ private extension ComposeOrchestrator {
         if action == "sync+exec", trigger.exec == nil {
             throw ComposeError.invalidProject("service '\(service.name)' develop.watch action 'sync+exec' requires exec metadata")
         }
+    }
+
+    /// Emits the validated watch plan without starting the file-watcher loop.
+    func emitWatchDryRunPlan(project: ComposeProject, services: [ComposeService], watch: ComposeWatchOptions) {
+        let serviceNames = services.map(\.name).joined(separator: ",")
+        options.emit("compose: watch project \(project.name) services \(serviceNames)")
+        options.emit("compose: watch initial-up \(watch.noUp ? "disabled" : "enabled")")
+        options.emit("compose: watch prune \(watch.prune ? "enabled" : "disabled")")
+        options.emit("compose: watch quiet \(watch.quiet ? "enabled" : "disabled")")
+        for service in services {
+            for trigger in service.develop?.watch ?? [] {
+                options.emit(watchDryRunLine(service: service, trigger: trigger))
+            }
+        }
+    }
+
+    /// Formats one validated `develop.watch` trigger for dry-run output.
+    func watchDryRunLine(service: ComposeService, trigger: ComposeDevelopWatch) -> String {
+        let action = trigger.action.trimmingCharacters(in: .whitespacesAndNewlines)
+        var fields = ["compose: watch", service.name, action, "path=\(trigger.path)"]
+        if let target = nonEmpty(trigger.target) {
+            fields.append("target=\(target)")
+        }
+        if let include = trigger.include, !include.isEmpty {
+            fields.append("include=\(include.joined(separator: ","))")
+        }
+        if let ignore = trigger.ignore, !ignore.isEmpty {
+            fields.append("ignore=\(ignore.joined(separator: ","))")
+        }
+        if trigger.initialSync == true {
+            fields.append("initial-sync=true")
+        }
+        if let execCommand = trigger.exec?.command, !execCommand.isEmpty {
+            fields.append("exec=\(shellQuoted(execCommand))")
+        }
+        return fields.joined(separator: " ")
     }
 
     /// Validates all selected services before any runtime side effects occur.

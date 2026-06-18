@@ -7731,6 +7731,48 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
+    @Test("watch dry run emits the validated trigger plan")
+    func watchDryRunEmitsValidatedTriggerPlan() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: "src", action: "rebuild", ignore: [".build/"]),
+                        ComposeDevelopWatch(
+                            path: "assets",
+                            action: "sync+exec",
+                            target: "/app/assets",
+                            include: ["*.swift"],
+                            initialSync: true,
+                            exec: ComposeDevelopWatchExec(command: ["sh", "-c", "touch /tmp/reloaded"])
+                        ),
+                    ])
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        ).watch(
+            project: project,
+            options: ComposeWatchOptions(services: ["api"], noUp: true, prune: false, quiet: true)
+        )
+
+        #expect(emitted.messages == [
+            "compose: watch project demo services api",
+            "compose: watch initial-up disabled",
+            "compose: watch prune disabled",
+            "compose: watch quiet enabled",
+            "compose: watch api rebuild path=src ignore=.build/",
+            "compose: watch api sync+exec path=assets target=/app/assets include=*.swift initial-sync=true exec=sh -c 'touch /tmp/reloaded'",
+        ])
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("watch validates develop triggers before runtime loop")
     func watchValidatesDevelopTriggersBeforeRuntimeLoop() async throws {
         let runner = RecordingRunner()
