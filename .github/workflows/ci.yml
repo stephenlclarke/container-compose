@@ -108,7 +108,9 @@ jobs:
       - name: Cache SonarQube packages
         if: >
           (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+          (github.event_name != 'pull_request' ||
+            (github.event.pull_request.head.repo.full_name == github.repository &&
+             github.actor != 'dependabot[bot]'))
         uses: actions/cache@v5
         with:
           path: ~/.sonar/cache
@@ -118,7 +120,9 @@ jobs:
       - name: Install Sonar Scanner CLI
         if: >
           (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+          (github.event_name != 'pull_request' ||
+            (github.event.pull_request.head.repo.full_name == github.repository &&
+             github.actor != 'dependabot[bot]'))
         env:
           SONAR_SCANNER_GPG_FINGERPRINT: 679F1EE92B19609DE816FDE81DB198F93525EC1A
           SONAR_SCANNER_VERSION: 8.1.0.6389
@@ -173,7 +177,9 @@ jobs:
       - name: SonarQube scan
         if: >
           (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+          (github.event_name != 'pull_request' ||
+            (github.event.pull_request.head.repo.full_name == github.repository &&
+             github.actor != 'dependabot[bot]'))
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_QUALITYGATE_WAIT: "true"
