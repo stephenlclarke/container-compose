@@ -16,6 +16,7 @@
 
 import ContainerAPIClient
 import ContainerResource
+import ContainerizationError
 
 /// Stable container data used by Compose project discovery and projections.
 public struct ComposeContainerSummary: Sendable, Equatable, Codable {
@@ -50,7 +51,7 @@ public protocol ContainerDiscoveryAPIClienting: Sendable {
     func listContainers(filters: ContainerListFilters) async throws -> [ContainerSnapshot]
 
     /// Returns a container snapshot when `id` exists.
-    func getContainer(id: String) async -> ContainerSnapshot?
+    func getContainer(id: String) async throws -> ContainerSnapshot?
 }
 
 /// Direct Apple container APIs used for Compose project discovery.
@@ -65,14 +66,14 @@ public protocol ContainerDiscoveryManaging: Sendable {
 /// Thin Apple `container` client wrapper around discovery API calls.
 public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     public typealias List = @Sendable (ContainerListFilters) async throws -> [ContainerSnapshot]
-    public typealias Get = @Sendable (String) async -> ContainerSnapshot?
+    public typealias Get = @Sendable (String) async throws -> ContainerSnapshot
 
     private let listOperation: List
     private let getOperation: Get
 
     public init(
         list: @escaping List = { try await ContainerClient().list(filters: $0) },
-        get: @escaping Get = { try? await ContainerClient().get(id: $0) }
+        get: @escaping Get = { try await ContainerClient().get(id: $0) }
     ) {
         self.listOperation = list
         self.getOperation = get
@@ -84,8 +85,12 @@ public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     }
 
     /// Fetches one container through `ContainerClient`.
-    public func getContainer(id: String) async -> ContainerSnapshot? {
-        await getOperation(id)
+    public func getContainer(id: String) async throws -> ContainerSnapshot? {
+        do {
+            return try await getOperation(id)
+        } catch let error as ContainerizationError where error.code == .notFound {
+            return nil
+        }
     }
 }
 
@@ -106,7 +111,7 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
 
     /// Fetches one container through `ContainerClient.get(id:)`.
     public func getContainer(id: String) async throws -> ComposeContainerSummary? {
-        guard let snapshot = await client.getContainer(id: id) else {
+        guard let snapshot = try await client.getContainer(id: id) else {
             return nil
         }
         return Self.summary(from: snapshot)

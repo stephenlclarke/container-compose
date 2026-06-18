@@ -4390,18 +4390,69 @@ struct ComposeOrchestratorTests {
                 try await recorder.listContainers(filters: filters)
             },
             get: { id in
-                await recorder.getContainer(id: id)
+                guard let snapshot = try await recorder.getContainer(id: id) else {
+                    throw ComposeError.invalidProject("missing test snapshot")
+                }
+                return snapshot
             }
         )
         let filters = ContainerListFilters(ids: ["demo-api-1"], status: .running)
 
         let listed = try await client.listContainers(filters: filters)
-        let fetched = await client.getContainer(id: "demo-api-1")
+        let fetched = try await client.getContainer(id: "demo-api-1")
 
         #expect(listed.map(\.id) == ["demo-api-1"])
         #expect(fetched?.id == "demo-api-1")
         #expect(await recorder.listFilters.map(\.ids) == [["demo-api-1"]])
         #expect(await recorder.getRequests == ["demo-api-1"])
+    }
+
+    @Test("discovery API client maps not found and surfaces get failures")
+    func discoveryAPIClientMapsNotFoundAndSurfacesGetFailures() async throws {
+        let notFoundClient = ContainerDiscoveryAPIClient(
+            list: { _ in [] },
+            get: { _ in
+                throw ContainerizationError(.notFound, message: "container not found")
+            }
+        )
+
+        let missing = try await notFoundClient.getContainer(id: "demo-missing-1")
+        #expect(missing == nil)
+
+        let expected = ComposeError.invalidProject("get failed")
+        let failingClient = ContainerDiscoveryAPIClient(
+            list: { _ in [] },
+            get: { _ in
+                throw expected
+            }
+        )
+
+        do {
+            _ = try await failingClient.getContainer(id: "demo-api-1")
+            Issue.record("Expected discovery get failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("discovery manager surfaces get failures")
+    func discoveryManagerSurfacesGetFailures() async throws {
+        let expected = ComposeError.invalidProject("get failed")
+        let client = RecordingContainerDiscoveryAPIClient(getError: expected)
+        let manager = ContainerClientDiscoveryManager(client: client)
+
+        do {
+            _ = try await manager.getContainer(id: "demo-api-1")
+            Issue.record("Expected discovery get failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.getRequests == ["demo-api-1"])
     }
 
     @Test("log manager reads tailed logs from direct API handles")
@@ -9102,12 +9153,18 @@ private actor RecordingContainerDiscoveryManager: ContainerDiscoveryManaging {
 private actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     private let listResponse: [ContainerSnapshot]
     private let getResponse: ContainerSnapshot?
+    private let getError: (any Error)?
     private var filters: [ContainerListFilters] = []
     private var gets: [String] = []
 
-    init(listResponse: [ContainerSnapshot] = [], getResponse: ContainerSnapshot? = nil) {
+    init(
+        listResponse: [ContainerSnapshot] = [],
+        getResponse: ContainerSnapshot? = nil,
+        getError: (any Error)? = nil
+    ) {
         self.listResponse = listResponse
         self.getResponse = getResponse
+        self.getError = getError
     }
 
     var listFilters: [ContainerListFilters] {
@@ -9123,8 +9180,11 @@ private actor RecordingContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienti
         return listResponse
     }
 
-    func getContainer(id: String) async -> ContainerSnapshot? {
+    func getContainer(id: String) async throws -> ContainerSnapshot? {
         gets.append(id)
+        if let getError {
+            throw getError
+        }
         return getResponse
     }
 }
