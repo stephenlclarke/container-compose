@@ -159,6 +159,7 @@ public struct ComposeUpOptions {
     public var noStart = false
     public var quietBuild = false
     public var quietPull = false
+    public var timeout: Int?
 
     public init() {
         // Stored property defaults represent Docker Compose's default up behavior.
@@ -511,7 +512,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validate(project: project)
         try validateUpOptions(up)
         if up.noStart {
-            try await create(project: project, options: createOptions(from: up), alwaysRecreateDeps: up.alwaysRecreateDeps)
+            try await create(
+                project: project,
+                options: createOptions(from: up),
+                alwaysRecreateDeps: up.alwaysRecreateDeps,
+                recreateTimeout: up.timeout
+            )
             return
         }
         let services = try up.noDeps && !up.services.isEmpty
@@ -558,7 +564,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                           existing.configHash == (try configHash(project: project, service: service)) {
                     options.emit("compose: reusing existing container \(name)")
                 } else {
-                    try await stopContainer(service: service, containerName: name)
+                    try await stopContainer(service: service, containerName: name, timeout: up.timeout)
                     try await deleteContainer(name)
                     try await runContainer(
                         try runArguments(
@@ -589,24 +595,29 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 continue
             }
             if existing != nil, shouldRestartAfterDependencyChange(service: service, changedServices: changedServices) {
-                try await restartContainer(service: service, containerName: name)
+                try await restartContainer(service: service, containerName: name, timeout: up.timeout)
                 changedServices.insert(service.name)
             }
         }
 
         if up.removeOrphans {
             let declaredContainers = Set(project.services.values.map { containerName(project: project, service: $0, oneOff: false) })
-            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers, timeout: up.timeout)
         }
     }
 
     /// Creates project resources and selected service containers without starting them.
     public func create(project: ComposeProject, options createOptions: ComposeCreateOptions) async throws {
-        try await create(project: project, options: createOptions, alwaysRecreateDeps: false)
+        try await create(project: project, options: createOptions, alwaysRecreateDeps: false, recreateTimeout: nil)
     }
 
     /// Creates project resources and selected service containers without starting them.
-    private func create(project: ComposeProject, options create: ComposeCreateOptions, alwaysRecreateDeps: Bool) async throws {
+    private func create(
+        project: ComposeProject,
+        options create: ComposeCreateOptions,
+        alwaysRecreateDeps: Bool,
+        recreateTimeout: Int?
+    ) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
         let services = try create.noDeps && !create.services.isEmpty
@@ -646,7 +657,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     options.emit("compose: reusing existing container \(name)")
                     continue
                 }
-                try await stopContainer(service: service, containerName: name)
+                try await stopContainer(service: service, containerName: name, timeout: recreateTimeout)
                 try await deleteContainer(name)
             }
 
@@ -663,7 +674,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         if create.removeOrphans {
             let declaredContainers = Set(project.services.values.map { containerName(project: project, service: $0, oneOff: false) })
-            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers, timeout: recreateTimeout)
         }
     }
 
@@ -696,7 +707,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await deleteContainer(name)
         }
         if down.removeOrphans {
-            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+            try await removeRemainingProjectContainers(project: project, excluding: declaredContainers, timeout: down.timeout)
         }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
@@ -1905,6 +1916,7 @@ private extension ComposeOrchestrator {
 
     /// Validates command-level `compose up` option combinations before runtime side effects.
     func validateUpOptions(_ options: ComposeUpOptions) throws {
+        try validateTimeoutSeconds(options.timeout, command: "up")
         if options.build, options.noBuild {
             throw ComposeError.invalidProject("--build and --no-build are incompatible")
         }
@@ -2897,12 +2909,16 @@ private extension ComposeOrchestrator {
 
     /// Stops a container that may not map to a declared service, such as an
     /// orphan container discovered from project labels.
-    func stopContainer(id: String) async throws {
-        let args = ["stop", id]
+    func stopContainer(id: String, timeout: Int? = nil) async throws {
+        var args = ["stop"]
+        if let timeout {
+            args.append(contentsOf: ["--time", "\(timeout)"])
+        }
+        args.append(id)
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: nil)
+            try await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: timeout)
         }
     }
 
@@ -2958,7 +2974,7 @@ private extension ComposeOrchestrator {
     }
 
     /// Removes project-scoped containers that are not in the declared set.
-    func removeRemainingProjectContainers(project: ComposeProject, excluding declaredContainers: Set<String>) async throws {
+    func removeRemainingProjectContainers(project: ComposeProject, excluding declaredContainers: Set<String>, timeout: Int? = nil) async throws {
         let args = ["list", "--format", "json", "--all"]
         if options.dryRun {
             try await runContainer(args)
@@ -2970,7 +2986,7 @@ private extension ComposeOrchestrator {
             .filter { !declaredContainers.contains($0) }
             .sorted()
         for container in remainingContainers {
-            try await stopContainer(id: container)
+            try await stopContainer(id: container, timeout: timeout)
             try await deleteContainer(container)
         }
     }

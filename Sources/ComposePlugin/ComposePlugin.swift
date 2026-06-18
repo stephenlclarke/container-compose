@@ -243,6 +243,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var noDeps = false
     @Flag(name: .customLong("no-start"), help: "Create services without starting them.")
     var noStart = false
+    @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers during recreate shutdown.")
+    var timeout: Int?
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
 
@@ -266,6 +268,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 $0.scales = scales
                 $0.noDeps = noDeps
                 $0.noStart = noStart
+                $0.timeout = timeout
             }
         )
     }

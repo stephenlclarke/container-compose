@@ -287,6 +287,11 @@ struct ComposeArgumentRewriterTests {
             "-t=13",
             "api",
         ])
+        let up = ComposeArgumentRewriter.rewrite([
+            "up",
+            "-t14",
+            "api",
+        ])
 
         #expect(down == [
             "down",
@@ -303,6 +308,12 @@ struct ComposeArgumentRewriterTests {
             "restart",
             "--timeout",
             "13",
+            "api",
+        ])
+        #expect(up == [
+            "up",
+            "--timeout",
+            "14",
             "api",
         ])
     }

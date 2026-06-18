@@ -1454,6 +1454,7 @@ struct ComposeOrchestratorTests {
             $0.services = ["api"]
             $0.noStart = true
             $0.alwaysRecreateDeps = true
+            $0.timeout = 12
         })
 
         let commands = runner.commands.map(\.arguments)
@@ -1462,7 +1463,7 @@ struct ComposeOrchestratorTests {
         #expect(!commands.contains { $0.contains("demo-api-1") })
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
         #expect(await lifecycleManager.requests == [
-            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: 12),
             .delete(id: "demo-db-1", force: false),
         ])
         #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
@@ -1619,6 +1620,7 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.up(project: project, options: ComposeUpOptions {
             $0.removeOrphans = true
+            $0.timeout = 7
         })
 
         #expect(runner.commands.count == 1)
@@ -1630,7 +1632,7 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await discoveryManager.listRequests == [true])
         #expect(await lifecycleManager.requests == [
-            .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
+            .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: 7),
             .delete(id: "demo-worker-1", force: false),
         ])
     }
@@ -6087,6 +6089,17 @@ struct ComposeOrchestratorTests {
             Issue.record("Unexpected error: \(error)")
         }
 
+        do {
+            try await orchestrator.up(project: project, options: ComposeUpOptions {
+                $0.timeout = -1
+            })
+            Issue.record("Expected invalid up timeout error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("up --timeout must be between 0 and 2147483647 seconds"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
         #expect(runner.commands.isEmpty)
     }
 
@@ -9272,6 +9285,41 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
+    @Test("up timeout overrides service stop grace period when recreating")
+    func upTimeoutOverridesServiceStopGracePeriodWhenRecreating() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: "stale"]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions {
+            $0.timeout = 12
+        })
+
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
             .delete(id: "demo-api-1", force: false),
         ])
     }
