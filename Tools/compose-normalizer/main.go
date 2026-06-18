@@ -880,7 +880,6 @@ func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
 	}
 	if volume.Volume != nil {
 		appendUnsupportedMountFieldWhen(&fields, "volume.labels", len(volume.Volume.Labels) > 0)
-		appendUnsupportedMountFieldWhen(&fields, "volume.nocopy", volume.Volume.NoCopy)
 		appendUnsupportedMountFieldWhen(&fields, "volume.subpath", volume.Volume.Subpath != "")
 	}
 	if volume.Image != nil {

@@ -245,6 +245,45 @@ struct ComposeNormalizerTests {
         #expect(project.services["worker"]?.build?.unsupportedFields == ["secrets"])
     }
 
+    @Test("normalizes volume nocopy as supported no-op")
+    func normalizesVolumeNoCopyAsSupportedNoOp() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            volumes:
+              - type: volume
+                source: cache
+                target: /cache
+                volume:
+                  nocopy: true
+        volumes:
+          cache: {}
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        let mount = try #require(api.volumes?.first)
+        #expect(mount.type == "volume")
+        #expect(mount.source == "cache")
+        #expect(mount.target == "/cache")
+        #expect(mount.unsupportedFields == nil)
+    }
+
     @Test("grouped model initializers preserve flat normalized fields")
     func groupedModelInitializersPreserveFlatNormalizedFields() throws {
         let build = ComposeBuild(

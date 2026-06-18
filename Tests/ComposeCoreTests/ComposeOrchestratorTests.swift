@@ -3591,6 +3591,34 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up accepts volume nocopy normalized marker")
+    func upAcceptsVolumeNoCopyNormalizedMarker() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            source: "cache",
+                            target: "/cache",
+                            unsupportedFields: ["volume.nocopy"]
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions())
+
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
+    }
+
     @Test("up inherits declared volumes from same-project services")
     func upInheritsDeclaredVolumesFromSameProjectServices() async throws {
         let runner = RecordingRunner()
@@ -10122,7 +10150,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported service mount error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported volume fields volume.nocopy, volume.subpath; advanced service volume options are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'job' uses unsupported volume fields volume.subpath; advanced service volume options are not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

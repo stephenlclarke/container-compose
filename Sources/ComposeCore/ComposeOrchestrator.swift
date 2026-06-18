@@ -2269,9 +2269,12 @@ private extension ComposeOrchestrator {
     /// represented by the current Apple `container --volume/--tmpfs` mapping.
     func unsupportedServiceMountFields(service: ComposeService, project: ComposeProject) throws -> [String]? {
         var seen = Set<String>()
-        let fields = try effectiveServiceVolumes(project: project, service: service).flatMap { $0.unsupportedFields ?? [] }.filter { field in
-            seen.insert(field).inserted
-        }
+        let fields = try effectiveServiceVolumes(project: project, service: service)
+            .flatMap { $0.unsupportedFields ?? [] }
+            .filter { $0 != "volume.nocopy" }
+            .filter { field in
+                seen.insert(field).inserted
+            }
         return fields.isEmpty ? nil : fields
     }
 

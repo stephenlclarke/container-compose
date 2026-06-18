@@ -237,6 +237,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Preserved <code>deploy.labels</code> as service-level metadata without applying it to runtime container labels or including it in recreate config hashes.</td>
     </tr>
     <tr>
+      <td>Volume nocopy support</td>
+      <td>2026-06-18 12:25:21 BST</td>
+      <td>2026-06-18 12:25:21 BST</td>
+      <td>2026-06-18 12:25:21 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Accepted long-form service volume <code>volume.nocopy</code> as supported no-copy metadata. The Apple/container volume mount path already matches the requested no-copy behavior, so no runtime flag mapping is required.</td>
+    </tr>
+    <tr>
       <td>Run capability overrides</td>
       <td>2026-06-18 10:16:25 BST</td>
       <td>2026-06-18 10:16:25 BST</td>
@@ -394,7 +403,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Covers logging options, storage options, image-declared inherited mounts, external <code>volumes_from</code>, advanced bind/volume options, and image mounts.</td>
+      <td colspan="4"><strong>Notes:</strong> Covers logging options, storage options, image-declared inherited mounts, external <code>volumes_from</code>, advanced bind/volume options beyond supported <code>volume.nocopy</code>, and image mounts.</td>
     </tr>
     <tr>
       <td>API socket and block I/O support</td>

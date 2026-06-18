@@ -315,7 +315,7 @@ volumes:
 
 	cases := map[string][]string{
 		"bindy":   {"consistency", "bind.selinux", "bind.propagation", "bind.recursive"},
-		"named":   {"volume.labels", "volume.nocopy", "volume.subpath"},
+		"named":   {"volume.labels", "volume.subpath"},
 		"scratch": nil,
 		"imagey":  {"type", "image.subpath"},
 	}

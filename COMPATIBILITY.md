@@ -128,7 +128,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - Same-project `volumes_from` for declared Compose mounts with `ro`/`rw` overrides.
   - One-off `run --volume/-v`, runtime-scoped `volumes`, quiet/json volume output, `rm --volumes/-v`, and `down --volumes`.
 - **Apple/container path:** Direct `ClientVolume.create`, `ClientVolume.list`, and `ClientVolume.delete`, plus supported `container create/run --volume`, `--tmpfs`, and `--mount type=tmpfs` flags.
-- **container-compose status:** Supported for declared Compose mounts and project-scoped volumes.
+- **container-compose status:** Supported for declared Compose mounts, project-scoped volumes, and explicit `volume.nocopy` no-copy behavior.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Common runtime options
@@ -234,9 +234,9 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 
 #### Metadata, logging, storage shortcuts
 
-- **Compose surface:** `logging`, `log_driver`, `log_opt`, `storage_opt`, external `volumes_from`, image-declared inherited mounts, service-level `volume_driver`, advanced service volume options, image mounts, and mount consistency.
+- **Compose surface:** `logging`, `log_driver`, `log_opt`, `storage_opt`, external `volumes_from`, image-declared inherited mounts, service-level `volume_driver`, advanced service volume options beyond `volume.nocopy`, image mounts, and mount consistency.
 - **Apple/container path:** Not known to be the first blocker for every field, though richer log/storage runtime APIs may later be needed upstream.
-- **Missing plugin work:** Runtime mapping, external/inferred inherited mount behavior, logging behavior, storage option handling, and advanced mount policy.
+- **Missing plugin work:** Runtime mapping, external/inferred inherited mount behavior, logging behavior, storage option handling, and advanced mount policy beyond supported `volume.nocopy`.
 - **Example:** [C4](#c4-plugin-gap-metadata-storage-and-api-socket).
 
 #### API socket and block I/O
@@ -1085,13 +1085,13 @@ container compose watch --no-up --no-prune --quiet api
 
 ### C4: Plugin Gap, Metadata, Storage, And API Socket
 
-Expected result: `container compose up` rejects this because logging/storage options, external inherited mounts, advanced service volume options, API socket exposure, and block I/O controls need plugin implementation and security review.
+Expected result: `container compose up` accepts `volume.nocopy` as no-copy volume metadata and rejects this example because `volume.subpath`, logging/storage options, external inherited mounts, API socket exposure, and block I/O controls need plugin implementation and security review.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this grouped example.
-- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It still needs runtime mapping, external-container and image-declared volume inheritance, advanced volume option policy beyond tmpfs size/mode, logging/storage policy, API socket security review, and block I/O handling.
+- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It still needs runtime mapping, external-container and image-declared volume inheritance, advanced volume option policy beyond `volume.nocopy` and tmpfs size/mode, logging/storage policy, API socket security review, and block I/O handling.
 
 ```yaml
 # compose.yaml
