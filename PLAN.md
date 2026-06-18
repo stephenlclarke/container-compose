@@ -381,6 +381,15 @@ The lozenges use a traffic-light scheme: green is complete, yellow is active, re
       <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local convergence and compose-go. Local convergence calls <code>GetScale()</code>, which reads <code>scale</code> and <code>deploy.replicas</code>, while no local Compose orchestration path reads <code>deploy.mode</code>. The normalizer now accepts <code>deploy.mode: global</code> as Docker Compose local no-op metadata and still rejects unknown deployment mode strings.</td>
     </tr>
     <tr>
+      <td>Deploy fallback gap classification</td>
+      <td>2026-06-18 18:02:11 BST</td>
+      <td>2026-06-18 18:02:11 BST</td>
+      <td>2026-06-18 18:02:11 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Reclassified remaining normalized deploy fallback fields away from plugin-owned backlog language. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, and unknown update orders now fail as Apple/container job lifecycle, scheduler, or update-orchestration primitive gaps with focused normalizer and orchestrator coverage.</td>
+    </tr>
+    <tr>
       <td>Deploy resource gap classification</td>
       <td>2026-06-18 15:33:36 BST</td>
       <td>2026-06-18 15:33:36 BST</td>
@@ -497,11 +506,13 @@ The lozenges use a traffic-light scheme: green is complete, yellow is active, re
   </tbody>
 </table>
 
-## <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">ACTIVE</span> container-compose Backlog
+## container-compose Backlog
 
 These tasks are valid Docker Compose v2 surfaces where Apple/container is not
 known to be the first blocker. The fix belongs in this repository unless deeper
 Apple/container API work is discovered during implementation.
+
+There are no current runtime surface-level gaps classified as repo-owned. The table remains as historical tracking for plugin-owned topics that were completed or reclassified to the Apple/container upstream backlog.
 
 <table>
   <thead>
@@ -526,10 +537,10 @@ Apple/container API work is discovered during implementation.
       <td>Replica scaling edge cases</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 10:07:04 BST</td>
-      <td><span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">ACTIVE</span></td>
+      <td>2026-06-18 18:02:11 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Scaled service DNS is an Apple/container networking gap. Remaining plugin work covers broader deploy behavior.</td>
+      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming and collision safeguards for <code>container_name</code>, too-small fixed published-port ranges, and fixed MAC addresses are complete. Local deploy behavior that container-compose can safely model is complete for the current boundary. Scaled service DNS, deploy job modes, and update-orchestration behavior beyond stop-first are Apple/container networking, completion, scheduler, or update primitive gaps.</td>
     </tr>
     <tr>
       <td>Local deploy interpretation</td>
@@ -538,13 +549,13 @@ Apple/container API work is discovered during implementation.
       <td>2026-06-18 17:12:16 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Standard Docker Compose local deploy interpretation is complete for the current model boundary. Explicit <code>deploy.mode: replicated</code> maps to existing replica orchestration; <code>deploy.mode: global</code>, <code>deploy.labels</code>, update metadata, rollback metadata, and placement metadata are accepted as Docker Compose local no-op metadata; CPU/memory deploy limits map to local runtime limits; and stop-first <code>deploy.update_config</code> including <code>delay</code> matches the existing recreate path. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, <code>deploy.resources.reservations</code>, and <code>deploy.update_config.order: start-first</code> are tracked with Apple/container runtime parity.</td>
+      <td colspan="4"><strong>Notes:</strong> Standard Docker Compose local deploy interpretation is complete for the current model boundary. Explicit <code>deploy.mode: replicated</code> maps to existing replica orchestration; <code>deploy.mode: global</code>, <code>deploy.labels</code>, update metadata, rollback metadata, and placement metadata are accepted as Docker Compose local no-op metadata; CPU/memory deploy limits map to local runtime limits; and stop-first <code>deploy.update_config</code> including <code>delay</code> matches the existing recreate path. <code>deploy.mode: replicated-job</code>, <code>deploy.mode: global-job</code>, unknown deploy modes, <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, <code>deploy.resources.reservations</code>, <code>deploy.update_config.order: start-first</code>, and unknown update orders are tracked with Apple/container runtime parity.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 13:23:28 BST</td>
-      <td><span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">ACTIVE</span></td>
+      <td>2026-06-18 16:23:30 BST</td>
     </tr>
     <tr>
       <td colspan="4"><strong>Notes:</strong> Service <code>post_start</code> and <code>pre_stop</code> execution is implemented for detached service lifecycle paths, <code>post_start</code> is implemented for detached one-off <code>run</code>, and <code>pre_stop</code> is implemented for detached one-off cleanup when container-compose controls the stop. Provider service lifecycle support is tracked as a completed subtask below. Service <code>models</code> binding metadata is preserved for config output, but runtime model-runner behavior needs Apple/container model-runner parity. Attached <code>up</code> post-start ordering, foreground <code>run</code> post-start ordering, and foreground one-off <code>pre_stop</code> need Apple/container foreground attach or stop-boundary primitives.</td>
@@ -625,10 +636,13 @@ Suggested Apple/container PR batches:
    resource reservations.
 5. Mount and storage parity: advanced bind/volume/image mounts, storage
    options, non-local service volume drivers, and inherited image volumes.
-6. Health and completion parity: health status, health-aware waits, stored exit
-   code, and completion timestamps.
+6. Health, completion, and job-mode parity: health status, health-aware waits,
+   stored exit code, completion timestamps, and Compose deploy job lifecycle
+   semantics for <code>replicated-job</code> and <code>global-job</code>.
 7. Start-first replacement parity: container rename or service alias handoff for
-   Docker Compose compatible temporary replacement finalization.
+   Docker Compose compatible temporary replacement finalization, plus update
+   orchestration primitives for any future update order beyond local
+   <code>stop-first</code>.
 8. Mount and policy parity: first-class config/secret stores or materialization,
    ownership/mode controls for non-file-backed grants, and restart policies.
 9. Log-data parity: timestamped log records, stream/source metadata, tail and
@@ -691,11 +705,11 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Start-first service replacement handoff</td>
       <td>2026-06-18 16:48:46 BST</td>
-      <td><span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">OPEN</span></td>
+      <td>2026-06-18 18:02:11 BST</td>
       <td><span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">UPSTREAM GAP</span></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose <code>deploy.update_config.order: start-first</code> needs a temporary replacement handoff. Docker Compose creates a replacement under a temporary name, stops/removes the old stable container, then renames the replacement. Apple/container needs either a container rename primitive or service hostname/alias movement that can preserve the Compose service identity without duplicate ID or duplicate hostname conflicts.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>deploy.update_config.order: start-first</code> needs a temporary replacement handoff. Docker Compose creates a replacement under a temporary name, stops/removes the old stable container, then renames the replacement. Apple/container needs either a container rename primitive or service hostname/alias movement that can preserve the Compose service identity without duplicate ID or duplicate hostname conflicts. Unknown update orders are treated as the same upstream update-orchestration family until Apple/container exposes a broader replacement/update primitive.</td>
     </tr>
     <tr>
       <td>Fixed addresses and richer IPAM</td>
@@ -772,11 +786,11 @@ Suggested Apple/container PR batches:
     <tr>
       <td>Container completion metadata</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td><span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">OPEN</span></td>
+      <td>2026-06-18 18:02:11 BST</td>
       <td><span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">UPSTREAM GAP</span></td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs stored exit code and completion time so <code>service_completed_successfully</code> and already-stopped <code>wait</code> replay can work.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs stored exit code and completion time so <code>service_completed_successfully</code> and already-stopped <code>wait</code> replay can work. Deploy job modes such as <code>replicated-job</code> and <code>global-job</code> also need completion-aware job lifecycle semantics and scheduler behavior before container-compose can map them faithfully.</td>
     </tr>
     <tr>
       <td>Config and secret stores/materialization</td>

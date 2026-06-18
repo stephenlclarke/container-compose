@@ -1392,6 +1392,12 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(global) = %#v, want empty", fields)
 	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated-job"}); !reflect.DeepEqual(fields, []string{"mode.replicated-job"}) {
+		t.Fatalf("unsupportedDeployFields(replicated-job) = %#v, want [mode.replicated-job]", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global-job"}); !reflect.DeepEqual(fields, []string{"mode.global-job"}) {
+		t.Fatalf("unsupportedDeployFields(global-job) = %#v, want [mode.global-job]", fields)
+	}
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "custom"}); !reflect.DeepEqual(fields, []string{"mode"}) {
 		t.Fatalf("unsupportedDeployFields(custom mode) = %#v, want [mode]", fields)
 	}

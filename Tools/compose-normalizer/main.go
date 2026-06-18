@@ -703,7 +703,9 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 		return nil
 	}
 	fields := []string{}
-	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
+	if field := unsupportedDeployModeField(deploy.Mode); field != "" {
+		fields = append(fields, field)
+	}
 	fields = append(fields, unsupportedUpdateConfigFields(deploy.UpdateConfig)...)
 	fields = append(fields, unsupportedDeployLimitFields(deploy.Resources.Limits)...)
 	fields = append(fields, unsupportedDeployReservationFields(deploy.Resources.Reservations)...)
@@ -730,14 +732,22 @@ func deployUpdateDelayNanoseconds(deploy *types.DeployConfig) int64 {
 	return int64(deploy.UpdateConfig.Delay)
 }
 
-// unsupportedDeployMode allows Compose deployment modes that Docker Compose
-// local orchestration accepts without changing the local replica algorithm.
-func unsupportedDeployMode(mode string) bool {
+// unsupportedDeployModeField allows Compose deployment modes that Docker Compose
+// local orchestration accepts without changing the local replica algorithm and
+// reports job modes separately because they require completion semantics.
+func unsupportedDeployModeField(mode string) string {
 	if mode == "" {
-		return false
+		return ""
 	}
-	return !strings.EqualFold(mode, "replicated") &&
-		!strings.EqualFold(mode, "global")
+	normalized := strings.ToLower(mode)
+	switch normalized {
+	case "replicated", "global":
+		return ""
+	case "replicated-job", "global-job":
+		return "mode." + normalized
+	default:
+		return "mode"
+	}
 }
 
 // appendUnsupportedDeployField records one unsupported deploy field when present.

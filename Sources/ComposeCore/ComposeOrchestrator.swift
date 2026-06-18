@@ -2375,6 +2375,15 @@ private extension ComposeOrchestrator {
         if fields.contains("update_config.order.start-first") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive")
         }
+        if let mode = unsupportedDeployJobModeField(in: fields) {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.mode '\(mode)'; deploy job modes need apple/container completion metadata and job lifecycle primitives")
+        }
+        if fields.contains("mode") {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.mode; deploy modes outside local replicated/global behavior need apple/container scheduler or job lifecycle primitives")
+        }
+        if fields.contains("update_config.order") {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.update_config.order; unsupported update orders need Docker Compose compatible apple/container update orchestration primitives")
+        }
         if let field = unsupportedDeployResourceLimitField(in: fields) {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); apple/container exposes local deploy CPU and memory limits but not this deploy resource limit yet")
         }
@@ -2382,7 +2391,12 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); resource reservations need an apple/container scheduler/resource reservation gap PR")
         }
         let fieldList = fields.joined(separator: ", ")
-        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, stop-first updates, and Docker Compose local metadata is not implemented by container-compose yet")
+        throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); remaining Compose Deploy Specification fields need Docker Compose compatible apple/container deploy or runtime primitives")
+    }
+
+    /// Returns a Compose Deploy job mode that needs completion semantics.
+    func unsupportedDeployJobModeField(in fields: [String]) -> String? {
+        fields.first { $0.hasPrefix("mode.") }?.replacingOccurrences(of: "mode.", with: "")
     }
 
     /// Returns unsupported deploy resource limits that need Apple runtime support.

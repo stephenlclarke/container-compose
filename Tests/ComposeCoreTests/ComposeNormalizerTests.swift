@@ -510,6 +510,37 @@ struct ComposeNormalizerTests {
         ])
     }
 
+    @Test("normalizes deploy job modes as unsupported through compose-go")
+    func normalizesDeployJobModesAsUnsupportedThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            deploy:
+              mode: replicated-job
+              replicas: 2
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        #expect(api.scale == 2)
+        #expect(api.unsupportedDeployFields == ["mode.replicated-job"])
+    }
+
     @Test("normalizes start-first deploy update through compose-go")
     func normalizesStartFirstDeployUpdateThroughComposeGo() async throws {
         let fileManager = FileManager.default

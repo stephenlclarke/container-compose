@@ -96,7 +96,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - Options: `up --no-start`, `up --always-recreate-deps`, timeouts, service `attach: false`, `rm --force/-f`, `wait --down-project`, `run --rm`, `run --detach/-d`, and `run --name`.
   - Lifecycle hooks: service `post_start` and `pre_stop` for detached service starts, `start`, `stop`, `restart`, `down`, service recreation, and replica pruning; service `post_start` for detached one-off `run`; service `pre_stop` for detached one-off cleanup when `container-compose` later stops the one-off container through project cleanup.
 - **Apple/container path:** `container create`, `container run`, `ContainerClient.bootstrap`, `ClientProcess.start`, `ClientProcess.wait`, `ContainerClient.get`, `ContainerClient.list`, `ContainerClient.stop`, `ContainerClient.delete`, `ContainerClient.kill`, and direct process exec through `ContainerClient.createProcess` / `ClientProcess.start`.
-- **container-compose status:** Supported for running or stopping service containers. `post_start` runs after service containers are started through a detached service lifecycle path and after detached one-off `run`; `pre_stop` runs before service-aware stops and before detached one-off containers are stopped through cleanup such as `up --remove-orphans` or `down --remove-orphans`. Already-stopped wait replay remains an Apple/container runtime gap. Attached `up` with `post_start`, foreground one-off `run` with `post_start`, and foreground one-off `run` with `pre_stop` remain Apple/container attach or stop-boundary gaps.
+- **container-compose status:** Supported for running or stopping service containers. `post_start` runs after service containers are started through a detached service lifecycle path and after detached one-off `run`; `pre_stop` runs before service-aware stops and before detached one-off containers are stopped through cleanup such as `up --remove-orphans` or `down --remove-orphans`. Compose job deploy modes, already-stopped wait replay, attached `up` with `post_start`, foreground one-off `run` with `post_start`, and foreground one-off `run` with `pre_stop` remain Apple/container completion, scheduler, attach, or stop-boundary gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Project discovery
@@ -228,8 +228,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 #### Health, completion, config/secret stores, service restart
 
 - **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
-- **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, external/content/environment-backed service `configs` and `secrets`, service `restart`, and `deploy.restart_policy`.
-- **Missing Apple/container primitive:** Health status, exit code/completion-time metadata, first-class config/secret store or materialization primitives, ownership/mode controls for non-file-backed grants, and restart policy support.
+- **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, `deploy.mode: replicated-job`, `deploy.mode: global-job`, external/content/environment-backed service `configs` and `secrets`, service `restart`, and `deploy.restart_policy`.
+- **Missing Apple/container primitive:** Health status, exit code/completion-time metadata, Compose-compatible job lifecycle and scheduler semantics, first-class config/secret store or materialization primitives, ownership/mode controls for non-file-backed grants, and restart policy support.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart).
 
@@ -244,8 +244,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 #### Start-first service replacement
 
 - **Status:** <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span>
-- **Compose surface:** `deploy.update_config.order: start-first`.
-- **Missing Apple/container primitive:** A Docker Compose compatible replacement handoff: create a temporary replacement while the old service container is still running, then either rename the replacement to the stable Compose container identity or move the service hostname/alias to it after the old container is removed. Current Apple/container APIs expose create, stop, and delete, but no container rename or service-alias handoff, and container creation rejects duplicate container IDs and duplicate attachment hostnames.
+- **Compose surface:** `deploy.update_config.order: start-first` and any future update order that requires more than the local stop-first recreate boundary.
+- **Missing Apple/container primitive:** A Docker Compose compatible replacement handoff: create a temporary replacement while the old service container is still running, then either rename the replacement to the stable Compose container identity or move the service hostname/alias to it after the old container is removed. Current Apple/container APIs expose create, stop, and delete, but no container rename or service-alias handoff, and container creation rejects duplicate container IDs and duplicate attachment hostnames. Unknown update orders are rejected as Apple/container update-orchestration gaps rather than plugin backlog.
 - **container-compose status:** Rejected before resources are created with a precise Apple/container runtime-gap message.
 - **Example:** [A12](#a12-apple-gap-start-first-service-replacement).
 
@@ -391,7 +391,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates hostname, domain name, explicit host entries, and legacy links.
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
-- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A4: Apple Gap, Health, Config And Secret Stores, And Restart](#a4-apple-gap-health-config-and-secret-stores-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, external/content/environment-backed service secrets/configs, and restart policies.
+- <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A4: Apple Gap, Health, Config And Secret Stores, And Restart](#a4-apple-gap-health-config-and-secret-stores-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, deploy job modes, external/content/environment-backed service secrets/configs, and restart policies.
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - <span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span> [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
@@ -933,12 +933,12 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### A4: Apple Gap, Health, Config And Secret Stores, And Restart
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs health status, completion metadata, first-class config/secret stores or materialization, and restart policies for both service `restart` and `deploy.restart_policy`. File-backed service configs/secrets are supported in [S1](#s1-supported-local-web-stack); this example uses inline and external definitions to show the remaining runtime store gap.
+Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs health status, completion metadata, job lifecycle/scheduler semantics, first-class config/secret stores or materialization, and restart policies for both service `restart` and `deploy.restart_policy`. File-backed service configs/secrets are supported in [S1](#s1-supported-local-web-stack); this example uses inline and external definitions to show the remaining runtime store gap.
 
 Status path:
 
-- Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, service restart policies, and deploy restart policies.
-- [`apple/container`][apple-container]: missing health status, exit/completion metadata, first-class config/secret store or materialization primitives, and restart policy support.
+- Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, service restart policies, deploy restart policies, and deploy job modes.
+- [`apple/container`][apple-container]: missing health status, exit/completion metadata, job lifecycle/scheduler semantics, first-class config/secret store or materialization primitives, and restart policy support.
 - `container-compose`: detects those fields and reports the Apple runtime gap.
 
 ```yaml
@@ -979,6 +979,14 @@ services:
       api:
         condition: service_healthy
 
+  batch:
+    build:
+      context: ./batch
+    command: ["sh", "-c", "printf 'done\n'"]
+    deploy:
+      mode: replicated-job
+      replicas: 2
+
 configs:
   api_config:
     content: |
@@ -1008,6 +1016,13 @@ Dockerfile: `worker/Dockerfile`
 ```dockerfile
 FROM alpine:3.20
 CMD ["sh", "-c", "echo worker-ready && sleep 3600"]
+```
+
+Dockerfile: `batch/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "printf 'done\n'"]
 ```
 
 ### A5: Apple Gap, Runtime Data Commands
@@ -1064,13 +1079,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Replica Scaling And Deploy Metadata
 
-Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, local no-op `deploy.mode: global`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `delay`, Docker Compose local no-op update metadata, `deploy.rollback_config`, `deploy.placement`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses. Start-first service replacement is tracked in [A12](#a12-apple-gap-start-first-service-replacement).
+Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, local no-op `deploy.mode: global`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `delay`, Docker Compose local no-op update metadata, `deploy.rollback_config`, `deploy.placement`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses. Deploy job modes are tracked in [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart), and start-first service replacement is tracked in [A12](#a12-apple-gap-start-first-service-replacement).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes scaling and deploy metadata.
 - [`apple/container`][apple-container]: supports the lifecycle and resource primitives needed for these local scale forms, while scaled service-name DNS is tracked in [A1](#a1-apple-gap-networking).
-- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; accepts `deploy.mode: global` as Docker Compose local no-op metadata because local Compose convergence uses `scale` / `deploy.replicas` rather than deployment mode; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first` and `deploy.update_config.delay` because the orchestrator recreates local replicas one at a time with a stop-before-start boundary; accepts Docker Compose local no-op deploy metadata such as `deploy.update_config.parallelism`, `deploy.update_config.failure_action`, `deploy.update_config.monitor`, `deploy.update_config.max_failure_ratio`, `deploy.rollback_config`, and `deploy.placement`; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; reports Apple/container resource gaps for `deploy.resources.limits.pids`, `deploy.resources.limits.devices`, `deploy.resources.limits.generic_resources`, `deploy.resources.reservations`, and `deploy.update_config.order: start-first`; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources.
+- `container-compose`: maps standalone `scale`, `up --scale`, `create --scale`, service `scale`, `deploy.mode: replicated`, and local `deploy.replicas` to indexed containers; accepts `deploy.mode: global` as Docker Compose local no-op metadata because local Compose convergence uses `scale` / `deploy.replicas` rather than deployment mode; rejects `deploy.mode: replicated-job`, `deploy.mode: global-job`, and unknown deploy modes as Apple/container job lifecycle or scheduler gaps; preserves `deploy.labels` as service metadata without applying them as container labels; accepts `deploy.update_config.order: stop-first` and `deploy.update_config.delay` because the orchestrator recreates local replicas one at a time with a stop-before-start boundary; accepts Docker Compose local no-op deploy metadata such as `deploy.update_config.parallelism`, `deploy.update_config.failure_action`, `deploy.update_config.monitor`, `deploy.update_config.max_failure_ratio`, `deploy.rollback_config`, and `deploy.placement`; maps large enough published-port ranges to deterministic per-replica host ports; maps anonymous volumes to deterministic per-replica runtime volume names; maps `deploy.resources.limits.cpus` and `deploy.resources.limits.memory` to local runtime limits; reports Apple/container resource gaps for `deploy.resources.limits.pids`, `deploy.resources.limits.devices`, `deploy.resources.limits.generic_resources`, `deploy.resources.reservations`, `deploy.update_config.order: start-first`, and unknown update orders; can target indexed service containers for `logs`, `attach`, `exec`, `cp`, `export`, and `port`; and rejects scaled `container_name`, too-small published-port ranges, and fixed MAC addresses before creating resources.
 
 The equivalent supported CLI scaling forms are:
 

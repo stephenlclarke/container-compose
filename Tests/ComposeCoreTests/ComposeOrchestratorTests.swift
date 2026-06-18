@@ -3490,8 +3490,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported deploy fields before creating resources")
-    func upRejectsUnsupportedDeployFieldsBeforeCreatingResources() async throws {
+    @Test("up rejects unsupported deploy modes as Apple runtime gaps")
+    func upRejectsUnsupportedDeployModesAsAppleRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -3509,7 +3509,55 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported deploy field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported deploy fields mode; Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, memory limits, stop-first updates, and Docker Compose local metadata is not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses deploy.mode; deploy modes outside local replicated/global behavior need apple/container scheduler or job lifecycle primitives"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects deploy job modes as Apple completion gaps")
+    func upRejectsDeployJobModesAsAppleCompletionGaps() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.unsupportedDeployFields = ["mode.replicated-job"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported deploy job mode error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses deploy.mode 'replicated-job'; deploy job modes need apple/container completion metadata and job lifecycle primitives"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects unsupported deploy update order as Apple orchestration gap")
+    func upRejectsUnsupportedDeployUpdateOrderAsAppleOrchestrationGap() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.unsupportedDeployFields = ["update_config.order"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported deploy update order error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses deploy.update_config.order; unsupported update orders need Docker Compose compatible apple/container update orchestration primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
