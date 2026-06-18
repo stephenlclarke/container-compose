@@ -730,14 +730,14 @@ func deployUpdateDelayNanoseconds(deploy *types.DeployConfig) int64 {
 	return int64(deploy.UpdateConfig.Delay)
 }
 
-// unsupportedDeployMode allows Compose's default replicated service mode. Other
-// modes, such as global, need scheduler semantics this local plugin does not
-// provide.
+// unsupportedDeployMode allows Compose deployment modes that Docker Compose
+// local orchestration accepts without changing the local replica algorithm.
 func unsupportedDeployMode(mode string) bool {
 	if mode == "" {
 		return false
 	}
-	return !strings.EqualFold(mode, "replicated")
+	return !strings.EqualFold(mode, "replicated") &&
+		!strings.EqualFold(mode, "global")
 }
 
 // appendUnsupportedDeployField records one unsupported deploy field when present.

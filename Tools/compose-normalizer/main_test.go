@@ -943,7 +943,6 @@ services:
 		t.Fatalf("api.DeployLabels = %#v, want %#v", got, want)
 	}
 	want := []string{
-		"mode",
 		"resources.limits.pids",
 		"resources.reservations.devices",
 		"restart_policy",
@@ -1331,8 +1330,11 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated"}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(replicated) = %#v, want empty", fields)
 	}
-	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); !reflect.DeepEqual(fields, []string{"mode"}) {
-		t.Fatalf("unsupportedDeployFields(global) = %#v, want [mode]", fields)
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(global) = %#v, want empty", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "custom"}); !reflect.DeepEqual(fields, []string{"mode"}) {
+		t.Fatalf("unsupportedDeployFields(custom mode) = %#v, want [mode]", fields)
 	}
 	oneAtATime := uint64(1)
 	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &oneAtATime, Order: "stop-first", Delay: 2_000_000_000}}); len(fields) != 0 {
@@ -1433,7 +1435,7 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	delay := types.Duration(5 * time.Second)
 
 	got := unsupportedDeployFields(&types.DeployConfig{
-		Mode:   "global",
+		Mode:   "custom",
 		Labels: types.Labels{"com.example.role": "api"},
 		UpdateConfig: &types.UpdateConfig{
 			Parallelism: &parallelism,

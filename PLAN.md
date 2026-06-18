@@ -279,7 +279,7 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 12:02:15 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is accepted as the local mode that matches existing replica orchestration. Non-replicated deploy modes remain open because they need scheduler semantics rather than simple local replica indexing.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is accepted as the local mode that matches existing replica orchestration. <code>deploy.mode: global</code> was later accepted as Docker Compose local no-op metadata after confirming Docker Compose local convergence uses <code>scale</code> / <code>deploy.replicas</code> and does not read deployment mode.</td>
     </tr>
     <tr>
       <td>Deploy restart policy blocker classification</td>
@@ -354,13 +354,22 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local orchestration and found no local application of <code>deploy.rollback_config</code> or <code>deploy.placement</code>. The normalizer now accepts rollback and placement sections, including placement constraints, preferences, and <code>max_replicas_per_node</code>, as Docker Compose local no-op metadata.</td>
     </tr>
     <tr>
+      <td>Deploy global mode metadata</td>
+      <td>2026-06-18 17:12:16 BST</td>
+      <td>2026-06-18 17:12:16 BST</td>
+      <td>2026-06-18 17:12:16 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Inspected Docker Compose local convergence and compose-go. Local convergence calls <code>GetScale()</code>, which reads <code>scale</code> and <code>deploy.replicas</code>, while no local Compose orchestration path reads <code>deploy.mode</code>. The normalizer now accepts <code>deploy.mode: global</code> as Docker Compose local no-op metadata and still rejects unknown deployment mode strings.</td>
+    </tr>
+    <tr>
       <td>Deploy resource gap classification</td>
       <td>2026-06-18 15:33:36 BST</td>
       <td>2026-06-18 15:33:36 BST</td>
       <td>2026-06-18 15:33:36 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Reclassified <code>deploy.resources.limits.pids</code> and <code>deploy.resources.reservations</code> from local deploy plugin backlog to Apple/container resource parity. Docker Compose deploy reservations require platform guarantees, while the current Apple/container create/run surface exposes local hard CPU and memory limits but no deploy PID limit or reservation primitive.</td>
+      <td colspan="4"><strong>Notes:</strong> Reclassified <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> from local deploy plugin backlog to Apple/container resource parity. Docker Compose deploy reservations require platform guarantees, while the current Apple/container create/run surface exposes local hard CPU and memory limits but no deploy PID, deploy device, generic resource, or reservation primitive.</td>
     </tr>
     <tr>
       <td>Volume nocopy support</td>
@@ -508,10 +517,10 @@ Apple/container API work is discovered during implementation.
       <td>Local deploy interpretation</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 12:02:15 BST</td>
-      <td>not completed</td>
+      <td>2026-06-18 17:12:16 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, <code>deploy.labels</code> are preserved as service metadata, CPU/memory deploy limits map to local runtime limits, stop-first <code>deploy.update_config</code> including <code>delay</code> is accepted because it matches the existing recreate path, and update, rollback, and placement metadata are accepted as Docker Compose local no-op metadata. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.reservations</code>, and <code>deploy.update_config.order: start-first</code> are tracked with Apple/container runtime parity. Continue extending broader deploy fields such as non-replicated deploy modes only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Standard Docker Compose local deploy interpretation is complete for the current model boundary. Explicit <code>deploy.mode: replicated</code> maps to existing replica orchestration; <code>deploy.mode: global</code>, <code>deploy.labels</code>, update metadata, rollback metadata, and placement metadata are accepted as Docker Compose local no-op metadata; CPU/memory deploy limits map to local runtime limits; and stop-first <code>deploy.update_config</code> including <code>delay</code> matches the existing recreate path. <code>deploy.restart_policy</code>, <code>deploy.endpoint_mode</code>, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, <code>deploy.resources.reservations</code>, and <code>deploy.update_config.order: start-first</code> are tracked with Apple/container runtime parity.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
@@ -711,7 +720,7 @@ Suggested Apple/container PR batches:
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, <code>deploy.resources.limits.pids</code>, and <code>deploy.resources.reservations</code> platform guarantees for CPU, memory, PIDs, devices, and generic resources. Current Apple/container create/run surfaces expose local hard CPU and memory limits but not those deploy resource primitives.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, <code>deploy.resources.limits.pids</code>, <code>deploy.resources.limits.devices</code>, <code>deploy.resources.limits.generic_resources</code>, and <code>deploy.resources.reservations</code> platform guarantees for CPU, memory, PIDs, devices, and generic resources. Current Apple/container create/run surfaces expose local hard CPU and memory limits but not those deploy resource primitives.</td>
     </tr>
     <tr>
       <td>User, security, device, GPU, and sysctl controls</td>

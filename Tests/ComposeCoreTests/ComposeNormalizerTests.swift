@@ -440,6 +440,12 @@ struct ComposeNormalizerTests {
                 limits:
                   cpus: "1.5"
                   memory: 256m
+          worker:
+            image: alpine:latest
+            deploy:
+              mode: global
+              labels:
+                com.example.service: worker
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -455,6 +461,11 @@ struct ComposeNormalizerTests {
         #expect(api.cpus == "1.5")
         #expect(api.memLimit?.isEmpty == false)
         #expect(api.unsupportedDeployFields == nil)
+
+        let worker = try #require(project.services["worker"])
+        #expect(worker.scale == nil)
+        #expect(worker.deployLabels == ["com.example.service": "worker"])
+        #expect(worker.unsupportedDeployFields == nil)
     }
 
     @Test("normalizes unsupported deploy resource fields through compose-go")
