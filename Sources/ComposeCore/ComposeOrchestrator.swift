@@ -543,7 +543,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
         }
 
-        let attachedForegroundServiceIndex = up.detach ? nil : services.indices.last
+        let attachedForegroundServiceIndex = foregroundServiceIndex(services: services, detach: up.detach)
         var changedServices = Set<String>()
         for (index, service) in services.enumerated() {
             if shouldBuildServiceForUp(up, service: service) {
@@ -1808,14 +1808,11 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Returns unsupported service metadata, attach, logging, and storage option fields.
+    /// Returns unsupported service metadata, logging, and storage option fields.
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
         if let annotations = service.annotations, !annotations.isEmpty {
             fields.append(("annotations", "service annotations are not implemented by container-compose yet"))
-        }
-        if service.attach != nil {
-            fields.append(("attach", "service attach behavior is not implemented by container-compose yet"))
         }
         if service.logging != nil {
             fields.append(("logging", "service logging configuration is not implemented by container-compose yet"))
@@ -1830,6 +1827,14 @@ private extension ComposeOrchestrator {
             fields.append(("storage_opt", "service storage options are not implemented by container-compose yet"))
         }
         return fields
+    }
+
+    /// Returns the service index that should inherit foreground IO for `up`.
+    func foregroundServiceIndex(services: [ComposeService], detach: Bool) -> Array<ComposeService>.Index? {
+        guard !detach else {
+            return nil
+        }
+        return services.indices.reversed().first { services[$0].attach != false }
     }
 
     /// Returns unsupported service-level volume inheritance and driver fields.

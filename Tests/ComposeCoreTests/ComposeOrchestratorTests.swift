@@ -1659,6 +1659,58 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
+    @Test("up detaches services that disable attach")
+    func upDetachesServicesThatDisableAttach() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.attach = false
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
+
+        let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        #expect(!dbRun.contains("--detach"))
+        #expect(apiRun.contains("--detach"))
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
+    }
+
+    @Test("up detaches all services when each service disables attach")
+    func upDetachesAllServicesWhenEachServiceDisablesAttach() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.attach = false
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
     @Test("up build does not rebuild build-only services")
     func upBuildDoesNotRebuildBuildOnlyServices() async throws {
         let runner = RecordingRunner(responses: [
@@ -9916,11 +9968,6 @@ private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedSer
             composeName: "annotations",
             reason: "service annotations are not implemented by container-compose yet",
             configure: { $0.annotations = ["com.example.note": "runtime"] }
-        ),
-        UnsupportedServiceMetadataAndLoggingFieldCase(
-            composeName: "attach",
-            reason: "service attach behavior is not implemented by container-compose yet",
-            configure: { $0.attach = false }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
