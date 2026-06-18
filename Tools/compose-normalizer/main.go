@@ -207,7 +207,7 @@ type normalizedBuildSecret struct {
 }
 
 // normalizedDevelop preserves Compose Develop Specification data needed by
-// future watch orchestration.
+// Swift validation and watch orchestration.
 type normalizedDevelop struct {
 	Watch []normalizedWatchTrigger `json:"watch,omitempty"`
 }
@@ -599,7 +599,7 @@ func providerValue(provider *types.ServiceProviderConfig) *normalizedProvider {
 }
 
 // developValues preserves Compose Develop Specification watch triggers for
-// Swift command validation and future watch orchestration.
+// Swift command validation and watch orchestration.
 func developValues(develop *types.DevelopConfig) *normalizedDevelop {
 	if develop == nil {
 		return nil

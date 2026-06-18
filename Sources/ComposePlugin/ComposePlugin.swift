@@ -810,7 +810,7 @@ struct Watch: AsyncParsableCommand, ComposeProjectCommand {
     var quiet = false
     @Argument(help: "Optional service names.")
     var services: [String] = []
-    /// Validates watch inputs before file watching is implemented.
+    /// Runs the validated watch plan through the orchestrator.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().watch(
