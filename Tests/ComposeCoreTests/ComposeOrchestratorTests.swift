@@ -3595,6 +3595,124 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["example/api:latest"])
     }
 
+    @Test("pull include deps with missing policy pulls dependency images first")
+    func pullIncludeDepsWithMissingPolicyPullsDependencyImagesFirst() async throws {
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = [
+                        "db": ComposeDependency(condition: "service_started"),
+                    ]
+                },
+                "db": composeService(name: "db", image: "example/db:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).pull(
+            project: project,
+            options: ComposePullOptions {
+                $0.services = ["api"]
+                $0.includeDependencies = true
+                $0.policy = "missing"
+            }
+        )
+
+        #expect(await imageManager.requests == [
+            .pullMissing("example/db:latest"),
+            .pullMissing("example/api:latest"),
+        ])
+    }
+
+    @Test("pull ignore buildable skips services with build sections")
+    func pullIgnoreBuildableSkipsServicesWithBuildSections() async throws {
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+                "db": composeService(name: "db", image: "example/db:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).pull(
+            project: project,
+            options: ComposePullOptions {
+                $0.ignoreBuildable = true
+            }
+        )
+
+        #expect(await imageManager.requests == [.pull("example/db:latest")])
+    }
+
+    @Test("pull ignore failures continues with later services")
+    func pullIgnoreFailuresContinuesWithLaterServices() async throws {
+        let imageManager = RecordingContainerImageManager(pullFailures: ["example/api:latest"])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+                "worker": composeService(name: "worker", image: "example/worker:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).pull(
+            project: project,
+            options: ComposePullOptions {
+                $0.ignorePullFailures = true
+            }
+        )
+
+        #expect(await imageManager.requests == [
+            .pull("example/api:latest"),
+            .pull("example/worker:latest"),
+        ])
+    }
+
+    @Test("pull rejects unsupported policy before side effects")
+    func pullRejectsUnsupportedPolicyBeforeSideEffects() async throws {
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                dependencies: orchestratorDependencies {
+                    $0.imageManager = imageManager
+                }
+            ).pull(
+                project: project,
+                options: ComposePullOptions {
+                    $0.policy = "never"
+                }
+            )
+            Issue.record("Expected unsupported pull policy failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unsupported pull policy 'never'"))
+        }
+
+        #expect(await imageManager.requests.isEmpty)
+    }
+
     @Test("push include deps pushes dependency images first")
     func pushIncludeDepsPushesDependencyImagesFirst() async throws {
         let imageManager = RecordingContainerImageManager()
@@ -9905,17 +10023,23 @@ private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
 
 private actor RecordingContainerImageManager: ContainerImageManaging {
     private var storage: [ContainerImageRequest] = []
+    private let pullFailures: Set<String>
+    private let pullMissingFailures: Set<String>
     private var pushOutputs: [String: String]
     private let pushFailures: Set<String>
     private var deleteOutputs: [String: String?]
     private let failure: ComposeError?
 
     init(
+        pullFailures: Set<String> = [],
+        pullMissingFailures: Set<String> = [],
         pushOutputs: [String: String] = [:],
         pushFailures: Set<String> = [],
         deleteOutputs: [String: String?] = [:],
         failure: ComposeError? = nil
     ) {
+        self.pullFailures = pullFailures
+        self.pullMissingFailures = pullMissingFailures
         self.pushOutputs = pushOutputs
         self.pushFailures = pushFailures
         self.deleteOutputs = deleteOutputs
@@ -9931,6 +10055,9 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             throw failure
         }
         storage.append(.pull(reference))
+        if pullFailures.contains(reference) {
+            throw ComposeError.invalidProject("pull failed: \(reference)")
+        }
     }
 
     func pullMissingImage(_ reference: String) async throws {
@@ -9938,6 +10065,9 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             throw failure
         }
         storage.append(.pullMissing(reference))
+        if pullMissingFailures.contains(reference) {
+            throw ComposeError.invalidProject("pull failed: \(reference)")
+        }
     }
 
     func pushImage(_ reference: String, emit: @escaping @Sendable (String) -> Void) async throws {

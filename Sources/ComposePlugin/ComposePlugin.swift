@@ -301,13 +301,33 @@ struct Pull: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "pull", abstract: "Pull service images.")
 
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("ignore-buildable"), help: "Ignore services that can be built locally.")
+    var ignoreBuildable = false
+    @Flag(name: .customLong("ignore-pull-failures"), help: "Pull what can be pulled and ignore image pull failures.")
+    var ignorePullFailures = false
+    @Flag(name: .customLong("include-deps"), help: "Also pull images for service dependencies.")
+    var includeDeps = false
+    @Option(name: .customLong("policy"), help: "Image pull policy: missing or always.")
+    var policy: String?
+    @Flag(name: .shortAndLong, help: "Pull without printing progress output.")
+    var quiet = false
     @Argument(help: "Optional services to pull.")
     var services: [String] = []
 
     /// Pulls selected service images.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().pull(project: loadedProject, services: services)
+        try await orchestrator().pull(
+            project: loadedProject,
+            options: ComposePullOptions {
+                $0.services = services
+                $0.ignoreBuildable = ignoreBuildable
+                $0.ignorePullFailures = ignorePullFailures
+                $0.includeDependencies = includeDeps
+                $0.policy = policy
+                $0.quiet = quiet
+            }
+        )
     }
 }
 

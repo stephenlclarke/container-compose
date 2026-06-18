@@ -199,6 +199,24 @@ public struct ComposeDownOptions {
     }
 }
 
+/// Options for `compose pull`.
+public struct ComposePullOptions {
+    public var services: [String] = []
+    public var ignoreBuildable = false
+    public var ignorePullFailures = false
+    public var includeDependencies = false
+    public var policy: String?
+    public var quiet = false
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default pull behavior.
+    }
+
+    public init(_ configure: (inout ComposePullOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose push`.
 public struct ComposePushOptions {
     public var services: [String] = []
@@ -643,14 +661,37 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Pulls images for selected services.
     public func pull(project: ComposeProject, services selected: [String]) async throws {
-        let services = try selectedServices(project: project, selected: selected)
+        try await pull(
+            project: project,
+            options: ComposePullOptions {
+                $0.services = selected
+            }
+        )
+    }
+
+    /// Pulls images for selected services with Docker Compose compatible options.
+    public func pull(project: ComposeProject, options pull: ComposePullOptions) async throws {
+        try validateComposePullPolicy(pull.policy)
+        let services = try pull.includeDependencies
+            ? orderedServices(project: project, selected: pull.services)
+            : selectedServices(project: project, selected: pull.services)
         for service in services {
+            if pull.ignoreBuildable, service.build != nil {
+                continue
+            }
             guard let image = service.image else { continue }
-            let args = ["image", "pull", image]
-            if options.dryRun {
-                try await runContainer(args)
-            } else {
-                try await imageManager.pullImage(image)
+            do {
+                if pull.policy == "missing" {
+                    try await pullMissingImage(image)
+                } else if options.dryRun {
+                    try await runContainer(["image", "pull", image])
+                } else {
+                    try await imageManager.pullImage(image)
+                }
+            } catch {
+                guard pull.ignorePullFailures else {
+                    throw error
+                }
             }
         }
     }
@@ -1738,6 +1779,16 @@ private extension ComposeOrchestrator {
             return
         }
         if !["always", "missing", "if_not_present", "never"].contains(policy) {
+            throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
+        }
+    }
+
+    /// Validates the command-level `pull --policy` subset from Docker Compose.
+    func validateComposePullPolicy(_ policy: String?) throws {
+        guard let policy, !policy.isEmpty else {
+            return
+        }
+        if !["always", "missing"].contains(policy) {
             throw ComposeError.invalidProject("unsupported pull policy '\(policy)'")
         }
     }
