@@ -4267,7 +4267,7 @@ struct ComposeOrchestratorTests {
         )
         try await orchestrator.stats(
             project: project,
-            options: ComposeStatsOptions(services: ["api"], all: true, noStream: true)
+            options: ComposeStatsOptions(services: ["api"], all: true, noStream: true, noTrunc: true)
         )
 
         #expect(runner.commands.isEmpty)
@@ -4312,8 +4312,8 @@ struct ComposeOrchestratorTests {
         #expect(await statsManager.requests.isEmpty)
     }
 
-    @Test("stats rejects unsupported options before runtime commands")
-    func statsRejectsUnsupportedOptionsBeforeRuntimeCommands() async throws {
+    @Test("stats rejects unsupported format before runtime commands")
+    func statsRejectsUnsupportedFormatBeforeRuntimeCommands() async throws {
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -4322,29 +4322,19 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        let cases: [(ComposeStatsOptions, ComposeError)] = [
-            (
-                ComposeStatsOptions(format: "yaml"),
-                .unsupported("stats --format 'yaml': apple/container stats supports table and json output")
-            ),
-            (
-                ComposeStatsOptions(noTrunc: true),
-                .unsupported("stats --no-trunc: apple/container stats does not expose truncation control")
-            ),
-        ]
-
-        for (options, expectedError) in cases {
-            let runner = RecordingRunner()
-            do {
-                try await ComposeOrchestrator(runner: runner).stats(project: project, options: options)
-                Issue.record("Expected unsupported stats option failure")
-            } catch let error as ComposeError {
-                #expect(error == expectedError)
-            } catch {
-                Issue.record("Unexpected error: \(error)")
-            }
-            #expect(runner.commands.isEmpty)
+        let runner = RecordingRunner()
+        do {
+            try await ComposeOrchestrator(runner: runner).stats(
+                project: project,
+                options: ComposeStatsOptions(format: "yaml")
+            )
+            Issue.record("Expected unsupported stats format failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("stats --format 'yaml': apple/container stats supports table and json output"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("ls lists compose projects with grouped status")

@@ -687,7 +687,7 @@ struct Stats: AsyncParsableCommand, ComposeProjectCommand {
     var format = "table"
     @Flag(name: .customLong("no-stream"), help: "Disable streaming stats and only pull the first result.")
     var noStream = false
-    @Flag(name: .customLong("no-trunc"), help: "Do not truncate output. Not supported by apple/container stats yet.")
+    @Flag(name: .customLong("no-trunc"), help: "Do not truncate output.")
     var noTrunc = false
     @Argument(help: "Optional service names.")
     var services: [String] = []

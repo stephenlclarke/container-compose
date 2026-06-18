@@ -124,6 +124,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Added indexed attach/log targets and accepted harmless log display flags.</td>
     </tr>
     <tr>
+      <td>Stats no-trunc display option</td>
+      <td>2026-06-18 11:12:17 BST</td>
+      <td>2026-06-18 11:12:17 BST</td>
+      <td>2026-06-18 11:16:29 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Accept Docker Compose <code>stats --no-trunc</code> because the direct stats renderer already emits full container IDs and does not need an Apple/container CLI truncation flag.</td>
+    </tr>
+    <tr>
       <td>Develop watch model boundary</td>
       <td>2026-06-18 09:44:11 BST</td>
       <td>2026-06-18 09:44:11 BST</td>
@@ -366,8 +375,7 @@ Suggested Apple/container PR batches:
    durable closed-container log replay, plus service logging driver/option
    controls.
 9. Command-data parity: dynamic host ports, events, process listing,
-   pause/unpause, stats truncation control, and copy archive/follow-link
-   controls.
+   pause/unpause, and copy archive/follow-link controls.
 10. Runtime API socket parity: a safe Compose-compatible equivalent for
     `use_api_socket` that does not overexpose host control surfaces.
 
@@ -442,7 +450,7 @@ Suggested Apple/container PR batches:
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, and stats truncation control.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code> and memory/swap/OOM/PID limits beyond current supported local limits.</td>
     </tr>
     <tr>
       <td>User, security, device, GPU, and sysctl controls</td>

@@ -2397,9 +2397,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose stats` options before invoking runtime stats.
     func validateStatsOptions(_ options: ComposeStatsOptions) throws {
-        if options.noTrunc {
-            throw ComposeError.unsupported("stats --no-trunc: apple/container stats does not expose truncation control")
-        }
         if !["table", "json"].contains(options.format) {
             throw ComposeError.unsupported("stats --format '\(options.format)': apple/container stats supports table and json output")
         }
