@@ -515,6 +515,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Grouped tmpfs constructor fields behind <code>ComposeMount.TmpfsOptions</code> so normalized mount construction stays under the Sonar parameter threshold while keeping flat decoded mount fields for orchestration.</td>
     </tr>
+    <tr>
+      <td>Sonar execution options runtime hook grouping</td>
+      <td>2026-06-18 19:37:47 BST</td>
+      <td>2026-06-18 19:37:47 BST</td>
+      <td>2026-06-18 19:37:47 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Grouped runtime injection callbacks behind <code>ComposeExecutionOptions.RuntimeHooks</code> and retained small convenience initializers for existing CLI and test configuration paths.</td>
+    </tr>
   </tbody>
 </table>
 

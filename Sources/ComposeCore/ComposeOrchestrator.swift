@@ -26,6 +26,29 @@ import Foundation
 public struct ComposeExecutionOptions {
     public static let defaultEnvironmentLauncher = ["", "usr", "bin", "env"].joined(separator: "/")
 
+    /// Runtime hooks that make orchestration deterministic and testable.
+    public struct RuntimeHooks {
+        public var oneOffIdentifier: @Sendable () -> String
+        public var currentDate: @Sendable () -> Date
+        public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
+        public var sleep: @Sendable (Duration) async throws -> Void
+        public var emit: @Sendable (String) -> Void
+
+        public init(
+            oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
+            currentDate: @escaping @Sendable () -> Date = Date.init,
+            hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
+            sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            emit: @escaping @Sendable (String) -> Void = { print($0) }
+        ) {
+            self.oneOffIdentifier = oneOffIdentifier
+            self.currentDate = currentDate
+            self.hostPortAllocator = hostPortAllocator
+            self.sleep = sleep
+            self.emit = emit
+        }
+    }
+
     public var dryRun: Bool
     public var containerBinary: String
     public var environmentLauncher: String
@@ -40,22 +63,75 @@ public struct ComposeExecutionOptions {
         dryRun: Bool = false,
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
-        oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
-        currentDate: @escaping @Sendable () -> Date = Date.init,
-        hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
         watchPollInterval: Duration = .seconds(1),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-        emit: @escaping @Sendable (String) -> Void = { print($0) }
+        runtimeHooks: RuntimeHooks = RuntimeHooks()
     ) {
         self.dryRun = dryRun
         self.containerBinary = containerBinary
         self.environmentLauncher = environmentLauncher
-        self.oneOffIdentifier = oneOffIdentifier
-        self.currentDate = currentDate
-        self.hostPortAllocator = hostPortAllocator
+        self.oneOffIdentifier = runtimeHooks.oneOffIdentifier
+        self.currentDate = runtimeHooks.currentDate
+        self.hostPortAllocator = runtimeHooks.hostPortAllocator
         self.watchPollInterval = watchPollInterval
-        self.sleep = sleep
-        self.emit = emit
+        self.sleep = runtimeHooks.sleep
+        self.emit = runtimeHooks.emit
+    }
+
+    public init(dryRun: Bool = false, emit: @escaping @Sendable (String) -> Void) {
+        self.init(dryRun: dryRun, runtimeHooks: RuntimeHooks(emit: emit))
+    }
+
+    public init(hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16) {
+        self.init(runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator))
+    }
+
+    public init(currentDate: @escaping @Sendable () -> Date) {
+        self.init(runtimeHooks: RuntimeHooks(currentDate: currentDate))
+    }
+
+    public init(environmentLauncher: String) {
+        self.init(environmentLauncher: environmentLauncher, runtimeHooks: RuntimeHooks())
+    }
+
+    public init(oneOffIdentifier: @escaping @Sendable () -> String) {
+        self.init(runtimeHooks: RuntimeHooks(oneOffIdentifier: oneOffIdentifier))
+    }
+
+    public init(sleep: @escaping @Sendable (Duration) async throws -> Void) {
+        self.init(runtimeHooks: RuntimeHooks(sleep: sleep))
+    }
+
+    public init(
+        watchPollInterval: Duration,
+        sleep: @escaping @Sendable (Duration) async throws -> Void
+    ) {
+        self.init(
+            watchPollInterval: watchPollInterval,
+            runtimeHooks: RuntimeHooks(sleep: sleep)
+        )
+    }
+
+    public init(
+        dryRun: Bool,
+        containerBinary: String,
+        emit: @escaping @Sendable (String) -> Void
+    ) {
+        self.init(
+            dryRun: dryRun,
+            containerBinary: containerBinary,
+            runtimeHooks: RuntimeHooks(emit: emit)
+        )
+    }
+
+    public init(
+        dryRun: Bool,
+        hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16,
+        emit: @escaping @Sendable (String) -> Void
+    ) {
+        self.init(
+            dryRun: dryRun,
+            runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator, emit: emit)
+        )
     }
 
     public static func defaultOneOffIdentifier() -> String {
