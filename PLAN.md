@@ -620,6 +620,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Corrected the runtime-boundary guide so it no longer describes dynamic host-port allocation as unsupported. The guide now matches the implementation and compatibility matrix: container-compose allocates ephemeral host ports before calling apple/container with explicit <code>--publish</code> bindings.</td>
     </tr>
+    <tr>
+      <td><code>DESIGN.md</code> dynamic port boundary wording</td>
+      <td>2026-06-18 20:18:11 BST</td>
+      <td>2026-06-18 20:18:11 BST</td>
+      <td>2026-06-18 20:18:11 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Corrected the design boundary so it lists dynamic host-port allocation as a supported CLI compatibility path. Unsupported runtime behavior is now described generically as depending on missing apple/container primitives instead of using the completed dynamic-port feature as the example.</td>
+    </tr>
   </tbody>
 </table>
 
