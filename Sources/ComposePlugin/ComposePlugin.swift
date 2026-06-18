@@ -452,7 +452,7 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "logs", abstract: "Show service logs.")
 
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .customLong("follow"), help: "Follow log output.")
+    @Flag(name: .customLong("follow"), help: "Follow log output. Docker Compose shorthand -f is accepted after logs.")
     var follow = false
     @Option(name: [.customShort("n"), .customLong("tail")], help: "Number of lines to show from the end of logs, or all.")
     var tail: String?
@@ -544,7 +544,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var noDeps = false
     @Flag(name: [.customShort("P"), .customLong("service-ports")], help: "Publish all ports declared by the service.")
     var servicePorts = false
-    @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated.")
+    @Option(name: .customLong("publish"), help: "Publish a container port to the host. May be repeated. Docker Compose shorthand -p is accepted after run.")
     var publish: [String] = []
     @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, if_not_present, or never.")
     var pull: String?
@@ -647,7 +647,7 @@ struct Restart: AsyncParsableCommand, ComposeProjectCommand {
 struct Rm: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "rm", abstract: "Remove service containers.")
     @OptionGroup var global: GlobalOptions
-    @Flag(name: .customLong("force"), help: "Don't ask to confirm removal and force container deletion.")
+    @Flag(name: .customLong("force"), help: "Don't ask to confirm removal and force container deletion. Docker Compose shorthand -f is accepted after rm.")
     var force = false
     @Flag(name: [.customShort("s"), .customLong("stop")], help: "Stop containers before removing them.")
     var stop = false

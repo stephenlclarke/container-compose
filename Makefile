@@ -136,6 +136,12 @@ cli-smoke: build
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Optional service names."* ]]; \
+	logs_help_output="$$(".build/debug/compose" logs --help)"; \
+	[[ "$$logs_help_output" == *"Docker Compose shorthand -f is accepted after logs."* ]]; \
+	run_help_output="$$(".build/debug/compose" run --help)"; \
+	[[ "$$run_help_output" == *"Docker Compose shorthand -p is accepted after run."* ]]; \
+	rm_help_output="$$(".build/debug/compose" rm --help)"; \
+	[[ "$$rm_help_output" == *"Docker Compose shorthand -f is accepted after rm."* ]]; \
 	wait_help_output="$$(".build/debug/compose" wait --help)"; \
 	[[ "$$wait_help_output" == *"Drop the project when the first selected service container stops."* ]]; \
 	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \
