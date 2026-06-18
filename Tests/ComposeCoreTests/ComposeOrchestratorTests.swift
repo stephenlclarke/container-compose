@@ -3894,6 +3894,81 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down surfaces network removal failures")
+    func downSurfacesNetworkRemovalFailures() async throws {
+        let runner = RecordingRunner()
+        let expected = ComposeError.invalidProject("network delete failed")
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let resourceManager = RecordingContainerResourceManager(networkDeleteError: expected)
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager,
+            resourceManager: resourceManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions(volumes: true))
+            Issue.record("Expected network delete failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+        #expect(await resourceManager.requests == [
+            .deleteNetwork(id: "demo_default"),
+        ])
+    }
+
+    @Test("down surfaces volume removal failures")
+    func downSurfacesVolumeRemovalFailures() async throws {
+        let runner = RecordingRunner()
+        let expected = ComposeError.invalidProject("volume delete failed")
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let resourceManager = RecordingContainerResourceManager(volumeDeleteError: expected)
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager,
+            resourceManager: resourceManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        ) {
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        do {
+            try await orchestrator.down(project: project, options: ComposeDownOptions(volumes: true))
+            Issue.record("Expected volume delete failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+        #expect(await resourceManager.requests == [
+            .deleteVolume(name: "demo_data"),
+        ])
+    }
+
     @Test("down rejects unsupported rmi policy before runtime commands")
     func downRejectsUnsupportedRMIPolicyBeforeRuntimeCommands() async throws {
         let runner = RecordingRunner()
@@ -4966,6 +5041,46 @@ struct ComposeOrchestratorTests {
         #expect(resources.count == 1)
         #expect(resources.first?.name.hasPrefix("demo_anon-") == true)
         #expect(!commands.contains { $0.contains("demo_cache") })
+    }
+
+    @Test("rm surfaces anonymous volume removal failures")
+    func rmSurfacesAnonymousVolumeRemovalFailures() async throws {
+        let runner = RecordingRunner()
+        let expected = ComposeError.invalidProject("anonymous volume delete failed")
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let resourceManager = RecordingContainerResourceManager(volumeDeleteError: expected)
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager,
+            resourceManager: resourceManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.volumes = [
+                        ComposeMount(type: "volume", target: "/scratch"),
+                    ]
+                },
+            ]
+        )
+
+        do {
+            try await orchestrator.rm(project: project, services: ["api"], stopFirst: false, force: true, volumes: true)
+            Issue.record("Expected anonymous volume delete failure")
+        } catch let error as ComposeError {
+            #expect(error == expected)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .delete(id: "demo-api-1", force: true),
+        ])
+        let resources = await resourceManager.requests
+        #expect(resources.count == 1)
+        #expect(resources.first?.name.hasPrefix("demo_anon-") == true)
     }
 
     @Test("lifecycle timeout overrides service stop grace period")
@@ -9323,17 +9438,23 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
 private actor RecordingContainerResourceManager: ContainerResourceManaging {
     private let volumes: [ComposeVolumeSummary]
     private let networkCreateError: (any Error)?
+    private let networkDeleteError: (any Error)?
     private let volumeCreateError: (any Error)?
+    private let volumeDeleteError: (any Error)?
     private var storage: [ContainerResourceRequest] = []
 
     init(
         volumes: [ComposeVolumeSummary] = [],
         networkCreateError: (any Error)? = nil,
-        volumeCreateError: (any Error)? = nil
+        networkDeleteError: (any Error)? = nil,
+        volumeCreateError: (any Error)? = nil,
+        volumeDeleteError: (any Error)? = nil
     ) {
         self.volumes = volumes
         self.networkCreateError = networkCreateError
+        self.networkDeleteError = networkDeleteError
         self.volumeCreateError = volumeCreateError
+        self.volumeDeleteError = volumeDeleteError
     }
 
     var requests: [ContainerResourceRequest] {
@@ -9349,6 +9470,9 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
 
     func deleteNetwork(id: String) async throws {
         storage.append(.deleteNetwork(id: id))
+        if let networkDeleteError {
+            throw networkDeleteError
+        }
     }
 
     func createVolume(name: String, labels: [String: String]) async throws {
@@ -9365,6 +9489,9 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
 
     func deleteVolume(name: String) async throws {
         storage.append(.deleteVolume(name: name))
+        if let volumeDeleteError {
+            throw volumeDeleteError
+        }
     }
 }
 

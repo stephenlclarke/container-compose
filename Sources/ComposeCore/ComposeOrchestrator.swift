@@ -598,7 +598,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if options.dryRun {
                 try await runContainer(args, check: false)
             } else {
-                try? await resourceManager.deleteNetwork(id: runtimeName)
+                try await resourceManager.deleteNetwork(id: runtimeName)
             }
         }
 
@@ -609,7 +609,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 if options.dryRun {
                     try await runContainer(args, check: false)
                 } else {
-                    try? await resourceManager.deleteVolume(name: runtimeName)
+                    try await resourceManager.deleteVolume(name: runtimeName)
                 }
             }
         }
@@ -947,7 +947,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 if options.dryRun {
                     try await runContainer(args, check: false)
                 } else {
-                    try? await resourceManager.deleteVolume(name: volume)
+                    try await resourceManager.deleteVolume(name: volume)
                 }
             }
         }
