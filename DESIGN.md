@@ -22,6 +22,23 @@ orchestration layer close to the Swift code and runtime primitives used by
 - Fail clearly when a Compose feature depends on a runtime primitive that
   [`apple/container`](https://github.com/apple/container) does not expose yet.
 
+## Adoption Friction
+
+The architecture is intentionally conservative so this repository can be
+evaluated for possible Apple/container adoption with as little reshaping as
+possible. New work should prefer Apple/container naming, SwiftPM structure,
+Hawkeye license-header expectations, direct Swift runtime APIs, and small
+reviewable boundaries. Compose compatibility gaps should be documented as either
+plugin work or Apple/container runtime primitive work instead of being hidden
+behind partial behavior.
+
+This also affects implementation choices. The Go helper stays at the
+normalization boundary, Swift owns orchestration, and compatibility fallbacks to
+the `container` CLI should remain obvious until a direct Apple/container API
+adapter exists. Keeping those seams explicit makes future upstream PRs smaller:
+runtime primitives can be proposed against Apple/container first, then this
+plugin can map the newly available API in a focused follow-up.
+
 ## Why Go Is Used
 
 Go is used only for the Compose normalization helper. The rest of the plugin is

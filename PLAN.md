@@ -32,45 +32,186 @@ Use `not started` or `not completed` where the event has not happened yet.
 
 ## Completed Work
 
-| Task | Added | Started | Completed |
-| --- | --- | --- | --- |
-| Direct API adapter foundation | 2026-06-17 16:12:21 BST | 2026-06-17 16:12:21 BST | 2026-06-17 18:48:12 BST |
-| Notes: Backfilled from commits `c4cabbb` through `ecec616`; moved file operations, kill, resources, lifecycle, discovery, logs, stats, images, start, exec, and copy paths toward direct Apple/container APIs. | | | |
-| Runtime docs reference | 2026-06-17 15:00:34 BST | 2026-06-17 15:00:34 BST | 2026-06-17 15:00:34 BST |
-| Notes: Added Apple/container API documentation references in `DESIGN.md`. | | | |
-| Compact CLI option normalization | 2026-06-17 14:09:37 BST | 2026-06-17 14:09:37 BST | 2026-06-17 14:30:13 BST |
-| Notes: Backfilled from commits `e730f76` through `da680fa`; aligned short/compact Docker Compose CLI forms. | | | |
-| Service labels, direct exec, and generated type design notes | 2026-06-17 18:26:58 BST | 2026-06-17 18:26:58 BST | 2026-06-17 19:39:13 BST |
-| Notes: Backfilled from direct exec, label file, deploy resource limit, and design-decision commits. | | | |
-| Build feature expansion | 2026-06-17 20:26:51 BST | 2026-06-17 20:26:51 BST | 2026-06-18 08:35:36 BST |
-| Notes: Added supported build tags, pull, labels, platforms, cache hints, file/env secrets, inline Dockerfiles, build command options, and service build pull policy. | | | |
-| Network and port feature expansion | 2026-06-17 19:57:49 BST | 2026-06-17 19:57:49 BST | 2026-06-18 07:26:56 BST |
-| Notes: Added single-network MAC addresses, MTU driver option, no-network mode, internal IPAM subnets, dynamic port rejection, runtime port lookup, and scaled explicit port ranges. | | | |
-| Storage feature expansion | 2026-06-18 08:09:21 BST | 2026-06-18 08:09:21 BST | 2026-06-18 09:04:41 BST |
-| Notes: Added tmpfs options, volume driver options, and same-project service volume inheritance. | | | |
-| Lifecycle and `up` option expansion | 2026-06-18 04:41:20 BST | 2026-06-18 04:41:20 BST | 2026-06-18 09:35:51 BST |
-| Notes: Added `up --no-start`, `--no-build`, `--quiet-build`, `--quiet-pull`, `--always-recreate-deps`, `--timeout`, scaling, `wait`, and `wait --down-project`. | | | |
-| Interaction command expansion | 2026-06-18 05:55:46 BST | 2026-06-18 05:55:46 BST | 2026-06-18 06:12:08 BST |
-| Notes: Added indexed attach/log targets and accepted harmless log display flags. | | | |
-| Develop watch model boundary | 2026-06-18 09:44:11 BST | 2026-06-18 09:44:11 BST | 2026-06-18 09:54:37 BST |
-| Notes: Preserved `develop.watch` triggers from compose-go in the Swift model and added command-level `watch` validation. File-watch loops and action execution remain open plugin work. | | | |
-| Scaled anonymous service volumes | 2026-06-18 10:07:04 BST | 2026-06-18 10:07:04 BST | 2026-06-18 10:11:26 BST |
-| Notes: Mapped anonymous service volumes to deterministic per-replica runtime names when services are scaled and removed those volumes with `down --volumes`. | | | |
-| Run capability overrides | 2026-06-18 10:16:25 BST | 2026-06-18 10:16:25 BST | 2026-06-18 10:20:55 BST |
-| Notes: Added Docker Compose `run --cap-add` and `run --cap-drop` mapping to Apple/container one-off runtime capability flags. | | | |
-| Hawkeye workflow alignment | 2026-06-18 10:23:56 BST | 2026-06-18 10:23:56 BST | 2026-06-18 10:40:06 BST |
-| Notes: Added Hawkeye license-header tooling, adopted Apple/container's build-once Swift coverage pattern, cached repo-local tools in CI, documented Apple/container upstream Compose parity gaps, and reformatted planning and compatibility docs for readability. | | | |
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Direct API adapter foundation</td>
+      <td>2026-06-17 16:12:21 BST</td>
+      <td>2026-06-17 16:12:21 BST</td>
+      <td>2026-06-17 18:48:12 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Backfilled from commits <code>c4cabbb</code> through <code>ecec616</code>; moved file operations, kill, resources, lifecycle, discovery, logs, stats, images, start, exec, and copy paths toward direct Apple/container APIs.</td>
+    </tr>
+    <tr>
+      <td>Runtime docs reference</td>
+      <td>2026-06-17 15:00:34 BST</td>
+      <td>2026-06-17 15:00:34 BST</td>
+      <td>2026-06-17 15:00:34 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added Apple/container API documentation references in <code>DESIGN.md</code>.</td>
+    </tr>
+    <tr>
+      <td>Compact CLI option normalization</td>
+      <td>2026-06-17 14:09:37 BST</td>
+      <td>2026-06-17 14:09:37 BST</td>
+      <td>2026-06-17 14:30:13 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Backfilled from commits <code>e730f76</code> through <code>da680fa</code>; aligned short/compact Docker Compose CLI forms.</td>
+    </tr>
+    <tr>
+      <td>Service labels, direct exec, and generated type design notes</td>
+      <td>2026-06-17 18:26:58 BST</td>
+      <td>2026-06-17 18:26:58 BST</td>
+      <td>2026-06-17 19:39:13 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Backfilled from direct exec, label file, deploy resource limit, and design-decision commits.</td>
+    </tr>
+    <tr>
+      <td>Build feature expansion</td>
+      <td>2026-06-17 20:26:51 BST</td>
+      <td>2026-06-17 20:26:51 BST</td>
+      <td>2026-06-18 08:35:36 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added supported build tags, pull, labels, platforms, cache hints, file/env secrets, inline Dockerfiles, build command options, and service build pull policy.</td>
+    </tr>
+    <tr>
+      <td>Network and port feature expansion</td>
+      <td>2026-06-17 19:57:49 BST</td>
+      <td>2026-06-17 19:57:49 BST</td>
+      <td>2026-06-18 07:26:56 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added single-network MAC addresses, MTU driver option, no-network mode, internal IPAM subnets, dynamic port rejection, runtime port lookup, and scaled explicit port ranges.</td>
+    </tr>
+    <tr>
+      <td>Storage feature expansion</td>
+      <td>2026-06-18 08:09:21 BST</td>
+      <td>2026-06-18 08:09:21 BST</td>
+      <td>2026-06-18 09:04:41 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added tmpfs options, volume driver options, and same-project service volume inheritance.</td>
+    </tr>
+    <tr>
+      <td>Lifecycle and <code>up</code> option expansion</td>
+      <td>2026-06-18 04:41:20 BST</td>
+      <td>2026-06-18 04:41:20 BST</td>
+      <td>2026-06-18 09:35:51 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added <code>up --no-start</code>, <code>--no-build</code>, <code>--quiet-build</code>, <code>--quiet-pull</code>, <code>--always-recreate-deps</code>, <code>--timeout</code>, scaling, <code>wait</code>, and <code>wait --down-project</code>.</td>
+    </tr>
+    <tr>
+      <td>Interaction command expansion</td>
+      <td>2026-06-18 05:55:46 BST</td>
+      <td>2026-06-18 05:55:46 BST</td>
+      <td>2026-06-18 06:12:08 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added indexed attach/log targets and accepted harmless log display flags.</td>
+    </tr>
+    <tr>
+      <td>Develop watch model boundary</td>
+      <td>2026-06-18 09:44:11 BST</td>
+      <td>2026-06-18 09:44:11 BST</td>
+      <td>2026-06-18 09:54:37 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Preserved <code>develop.watch</code> triggers from compose-go in the Swift model and added command-level <code>watch</code> validation. File-watch loops and action execution remain open plugin work.</td>
+    </tr>
+    <tr>
+      <td>Scaled anonymous service volumes</td>
+      <td>2026-06-18 10:07:04 BST</td>
+      <td>2026-06-18 10:07:04 BST</td>
+      <td>2026-06-18 10:11:26 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Mapped anonymous service volumes to deterministic per-replica runtime names when services are scaled and removed those volumes with <code>down --volumes</code>.</td>
+    </tr>
+    <tr>
+      <td>Run capability overrides</td>
+      <td>2026-06-18 10:16:25 BST</td>
+      <td>2026-06-18 10:16:25 BST</td>
+      <td>2026-06-18 10:20:55 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added Docker Compose <code>run --cap-add</code> and <code>run --cap-drop</code> mapping to Apple/container one-off runtime capability flags.</td>
+    </tr>
+    <tr>
+      <td>Hawkeye workflow alignment</td>
+      <td>2026-06-18 10:23:56 BST</td>
+      <td>2026-06-18 10:23:56 BST</td>
+      <td>2026-06-18 10:40:06 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added Hawkeye license-header tooling, adopted Apple/container&#x27;s build-once Swift coverage pattern, cached repo-local tools in CI, documented Apple/container upstream Compose parity gaps, and reformatted planning and compatibility docs for readability.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Active Documentation Work
 
-| Task | Added | Started | Completed |
-| --- | --- | --- | --- |
-| Add backlog tracking to `PLAN.md` | 2026-06-18 09:36:35 BST | 2026-06-18 09:36:35 BST | 2026-06-18 09:39:04 BST |
-| Notes: Include plugin backlog and Apple/container upstream PR backlog. | | | |
-| Reformat `BUILD.md` runtime boundary | 2026-06-18 09:36:35 BST | 2026-06-18 09:36:35 BST | 2026-06-18 09:39:04 BST |
-| Notes: Split the dense runtime-boundary paragraph into readable responsibilities and adapter tables. | | | |
-| Update `DESIGN.md` direct API discussion | 2026-06-18 09:36:35 BST | 2026-06-18 09:36:35 BST | 2026-06-18 09:39:04 BST |
-| Notes: Explain that direct Apple/container APIs are preferred wherever available and how that works with compose-go normalization. | | | |
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Add backlog tracking to <code>PLAN.md</code></td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 09:39:04 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Include plugin backlog and Apple/container upstream PR backlog.</td>
+    </tr>
+    <tr>
+      <td>Reformat <code>BUILD.md</code> runtime boundary</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 09:39:04 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Split the dense runtime-boundary paragraph into readable responsibilities and adapter tables.</td>
+    </tr>
+    <tr>
+      <td>Update <code>DESIGN.md</code> direct API discussion</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 09:39:04 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Explain that direct Apple/container APIs are preferred wherever available and how that works with compose-go normalization.</td>
+    </tr>
+    <tr>
+      <td>Contributor and compatibility readability pass</td>
+      <td>2026-06-18 10:57:58 BST</td>
+      <td>2026-06-18 10:57:58 BST</td>
+      <td>2026-06-18 11:05:06 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Reformat dense plan and compatibility status surfaces, align contributor guidance with Apple/container and Containerization contributor expectations, and document the adoption-friction goal.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## container-compose Backlog
 
@@ -78,28 +219,108 @@ These tasks are valid Docker Compose v2 surfaces where Apple/container is not
 known to be the first blocker. The fix belongs in this repository unless deeper
 Apple/container API work is discovered during implementation.
 
-| Task | Added | Started | Completed |
-| --- | --- | --- | --- |
-| Default `attach` stdin and signal proxy behavior | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Current support is output-only `attach --no-stdin --sig-proxy=false`; full support needs an interactive attach design. | | | |
-| `watch` and develop workflows | 2026-06-18 09:36:35 BST | 2026-06-18 09:44:11 BST | not completed |
-| Notes: Model-boundary support now preserves and validates `develop.watch` triggers. Remaining work needs file watching, sync/rebuild/restart policy, and clear interaction with Compose `develop`. | | | |
-| `commit` command | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Design service-container target resolution and image naming/output compatibility. | | | |
-| `publish` command | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Design how Compose project/service image publishing maps to Apple/container image APIs. | | | |
-| Replica scaling edge cases | 2026-06-18 09:36:35 BST | 2026-06-18 10:07:04 BST | not completed |
-| Notes: Per-replica anonymous volume naming is complete. Remaining edge cases cover fixed single host-port conflicts, too-small ranges, fixed MAC addresses, `container_name`, and broader deploy semantics. | | | |
-| Local deploy interpretation | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Extend beyond local `deploy.replicas` and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible. | | | |
-| Advanced build fields | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Covers additional contexts, entitlements, build network/isolation/privileged settings, provenance, SBOM, SSH, advanced secrets, shm size, and build ulimits. | | | |
-| Providers, models, and lifecycle hooks | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Covers service `provider`, `models`, `post_start`, and `pre_stop`. | | | |
-| Logging and storage metadata | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Covers logging options, storage options, image-declared inherited mounts, external `volumes_from`, advanced bind/volume options, and image mounts. | | | |
-| API socket and block I/O support | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Needs a security review before exposing `use_api_socket` and `blkio_config` behavior. | | | |
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Default <code>attach</code> stdin and signal proxy behavior</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Current support is output-only <code>attach --no-stdin --sig-proxy=false</code>; full support needs an interactive attach design.</td>
+    </tr>
+    <tr>
+      <td><code>watch</code> and develop workflows</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 09:44:11 BST</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Model-boundary support now preserves and validates <code>develop.watch</code> triggers. Remaining work needs file watching, sync/rebuild/restart policy, and clear interaction with Compose <code>develop</code>.</td>
+    </tr>
+    <tr>
+      <td><code>commit</code> command</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Design service-container target resolution and image naming/output compatibility.</td>
+    </tr>
+    <tr>
+      <td><code>publish</code> command</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Design how Compose project/service image publishing maps to Apple/container image APIs.</td>
+    </tr>
+    <tr>
+      <td>Replica scaling edge cases</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 10:07:04 BST</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Per-replica anonymous volume naming is complete. Remaining edge cases cover fixed single host-port conflicts, too-small ranges, fixed MAC addresses, <code>container_name</code>, and broader deploy semantics.</td>
+    </tr>
+    <tr>
+      <td>Local deploy interpretation</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Extend beyond local <code>deploy.replicas</code> and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
+    </tr>
+    <tr>
+      <td>Advanced build fields</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Covers additional contexts, entitlements, build network/isolation/privileged settings, provenance, SBOM, SSH, advanced secrets, shm size, and build ulimits.</td>
+    </tr>
+    <tr>
+      <td>Providers, models, and lifecycle hooks</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Covers service <code>provider</code>, <code>models</code>, <code>post_start</code>, and <code>pre_stop</code>.</td>
+    </tr>
+    <tr>
+      <td>Logging and storage metadata</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Covers logging options, storage options, image-declared inherited mounts, external <code>volumes_from</code>, advanced bind/volume options, and image mounts.</td>
+    </tr>
+    <tr>
+      <td>API socket and block I/O support</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Needs a security review before exposing <code>use_api_socket</code> and <code>blkio_config</code> behavior.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Apple/container Upstream Backlog
 
@@ -150,46 +371,189 @@ Suggested Apple/container PR batches:
 10. Runtime API socket parity: a safe Compose-compatible equivalent for
     `use_api_socket` that does not overexpose host control surfaces.
 
-| Task | Added | Started | Completed |
-| --- | --- | --- | --- |
-| Fork Apple/container for Compose primitive work | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Use the fork to stage small upstream PRs that unblock Compose compatibility. | | | |
-| Multi-network attachment and aliases | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs multiple service networks, network aliases, richer per-network options, and attach/connect semantics. | | | |
-| Fixed addresses and richer IPAM | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs fixed IPv4/IPv6 addresses, gateways, IP ranges, aux addresses, custom IPAM drivers, and multiple same-family subnets. | | | |
-| BuildKit-compatible build inputs | 2026-06-18 10:34:11 BST | not started | not completed |
-| Notes: Compose build parity needs additional contexts, build `extra_hosts`, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced secret metadata (`uid`, `gid`, `mode`), build `shm_size`, build `ulimits`, and provenance/SBOM attestations exposed through Apple/container build APIs. Current `container build` supports the common local subset but not the full Compose v2 build surface. | | | |
-| Host identity and host entries | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs hostname, domainname, extra host entries, and legacy link alias behavior. | | | |
-| Namespace and cgroup controls | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs compatible `cgroup`, `cgroup_parent`, `ipc`, `pid`, `userns_mode`, `uts`, and isolation modes. | | | |
-| Expanded resource controls | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs CPU scheduler controls beyond `cpus`, memory/swap/OOM/PID limits beyond current supported local limits, and stats truncation control. | | | |
-| User, security, device, GPU, and sysctl controls | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs supplemental groups, security profiles, privileged containers and exec, host devices, GPUs, and per-container sysctls. | | | |
-| Advanced mount and storage options | 2026-06-18 10:34:11 BST | not started | not completed |
-| Notes: Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume `nocopy`, volume subpaths, image mounts, mount consistency controls, service `storage_opt`, image-declared inherited mounts, and safe external-container `volumes_from` behavior. Current Apple/container mount flags cover the common local subset only. | | | |
-| Health status and dependency gates | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs health status and health-aware dependency waits for `service_healthy`. | | | |
-| Container completion metadata | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs stored exit code and completion time so `service_completed_successfully` and already-stopped `wait` replay can work. | | | |
-| Service config and secret mounts | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs first-class runtime config/secret mount primitives. | | | |
-| Restart policies | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose needs service restart policy support compatible with local Docker Compose behavior. | | | |
-| Docker Compose log parity | 2026-06-18 10:29:02 BST | not started | not completed |
-| Notes: Compose `logs` needs runtime log records with timestamps, stdout/stderr stream metadata, since/until filtering, tailing handled by the runtime, service/replica attribution for prefix output, reliable replay for stopped containers, and service logging driver/option controls such as rotation policy. Current Apple/container APIs expose raw log handles, so container-compose can only approximate unprefixed local log output. | | | |
-| Dynamic host-port allocation | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose accepts target-only ports such as `"80"`; Apple/container currently requires explicit host ports. | | | |
-| Runtime event stream and process listing | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose `events` and `top` need corresponding runtime APIs. | | | |
-| Pause and unpause | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose `pause` and `unpause` need container pause primitives. | | | |
-| Copy archive and follow-link controls | 2026-06-18 09:36:35 BST | not started | not completed |
-| Notes: Compose `cp --archive` and `cp --follow-link` need matching file copy controls. | | | |
-| Runtime API socket exposure | 2026-06-18 10:34:11 BST | not started | not completed |
-| Notes: Compose `use_api_socket` needs a safe Docker-compatible or Apple/container-compatible API socket exposure model, including credentials, least-privilege boundaries, and clear behavior when Docker API compatibility is unavailable. | | | |
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Fork Apple/container for Compose primitive work</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Use the fork to stage small upstream PRs that unblock Compose compatibility.</td>
+    </tr>
+    <tr>
+      <td>Multi-network attachment and aliases</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs multiple service networks, network aliases, richer per-network options, and attach/connect semantics.</td>
+    </tr>
+    <tr>
+      <td>Fixed addresses and richer IPAM</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs fixed IPv4/IPv6 addresses, gateways, IP ranges, aux addresses, custom IPAM drivers, and multiple same-family subnets.</td>
+    </tr>
+    <tr>
+      <td>BuildKit-compatible build inputs</td>
+      <td>2026-06-18 10:34:11 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose build parity needs additional contexts, build <code>extra_hosts</code>, build network modes, isolation, privileged builds, entitlements, SSH forwarding, advanced secret metadata (<code>uid</code>, <code>gid</code>, <code>mode</code>), build <code>shm_size</code>, build <code>ulimits</code>, and provenance/SBOM attestations exposed through Apple/container build APIs. Current <code>container build</code> supports the common local subset but not the full Compose v2 build surface.</td>
+    </tr>
+    <tr>
+      <td>Host identity and host entries</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs hostname, domainname, extra host entries, and legacy link alias behavior.</td>
+    </tr>
+    <tr>
+      <td>Namespace and cgroup controls</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs compatible <code>cgroup</code>, <code>cgroup_parent</code>, <code>ipc</code>, <code>pid</code>, <code>userns_mode</code>, <code>uts</code>, and isolation modes.</td>
+    </tr>
+    <tr>
+      <td>Expanded resource controls</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs CPU scheduler controls beyond <code>cpus</code>, memory/swap/OOM/PID limits beyond current supported local limits, and stats truncation control.</td>
+    </tr>
+    <tr>
+      <td>User, security, device, GPU, and sysctl controls</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs supplemental groups, security profiles, privileged containers and exec, host devices, GPUs, and per-container sysctls.</td>
+    </tr>
+    <tr>
+      <td>Advanced mount and storage options</td>
+      <td>2026-06-18 10:34:11 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume <code>nocopy</code>, volume subpaths, image mounts, mount consistency controls, service <code>storage_opt</code>, image-declared inherited mounts, and safe external-container <code>volumes_from</code> behavior. Current Apple/container mount flags cover the common local subset only.</td>
+    </tr>
+    <tr>
+      <td>Health status and dependency gates</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs health status and health-aware dependency waits for <code>service_healthy</code>.</td>
+    </tr>
+    <tr>
+      <td>Container completion metadata</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs stored exit code and completion time so <code>service_completed_successfully</code> and already-stopped <code>wait</code> replay can work.</td>
+    </tr>
+    <tr>
+      <td>Service config and secret mounts</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs first-class runtime config/secret mount primitives.</td>
+    </tr>
+    <tr>
+      <td>Restart policies</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose needs service restart policy support compatible with local Docker Compose behavior.</td>
+    </tr>
+    <tr>
+      <td>Docker Compose log parity</td>
+      <td>2026-06-18 10:29:02 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>logs</code> needs runtime log records with timestamps, stdout/stderr stream metadata, since/until filtering, tailing handled by the runtime, service/replica attribution for prefix output, reliable replay for stopped containers, and service logging driver/option controls such as rotation policy. Current Apple/container APIs expose raw log handles, so container-compose can only approximate unprefixed local log output.</td>
+    </tr>
+    <tr>
+      <td>Dynamic host-port allocation</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose accepts target-only ports such as <code>&quot;80&quot;</code>; Apple/container currently requires explicit host ports.</td>
+    </tr>
+    <tr>
+      <td>Runtime event stream and process listing</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>events</code> and <code>top</code> need corresponding runtime APIs.</td>
+    </tr>
+    <tr>
+      <td>Pause and unpause</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>pause</code> and <code>unpause</code> need container pause primitives.</td>
+    </tr>
+    <tr>
+      <td>Copy archive and follow-link controls</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>cp --archive</code> and <code>cp --follow-link</code> need matching file copy controls.</td>
+    </tr>
+    <tr>
+      <td>Runtime API socket exposure</td>
+      <td>2026-06-18 10:34:11 BST</td>
+      <td>not started</td>
+      <td>not completed</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Compose <code>use_api_socket</code> needs a safe Docker-compatible or Apple/container-compatible API socket exposure model, including credentials, least-privilege boundaries, and clear behavior when Docker API compatibility is unavailable.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Keeping This File Current
 
