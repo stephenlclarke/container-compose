@@ -44,6 +44,40 @@ The lozenges use a traffic-light scheme: green is complete, yellow is active, re
   be pushed to `main` after each fix when formal SonarQube validation is the
   active workflow.
 
+## Current Snapshot
+
+<table>
+  <thead>
+    <tr>
+      <th>Area</th>
+      <th>Status</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Completed repo work</td>
+      <td><span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">DONE</span></td>
+      <td>Tracked items in the completed sections have tested commits on <code>develop</code>.</td>
+    </tr>
+    <tr>
+      <td>container-compose owned runtime backlog</td>
+      <td><span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">DONE</span></td>
+      <td>No current runtime surface-level gaps are classified as repo-owned; newly discovered plugin gaps should move into the backlog with <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">ACTIVE</span> when implementation starts.</td>
+    </tr>
+    <tr>
+      <td>Apple/container runtime primitives</td>
+      <td><span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">UPSTREAM GAP</span></td>
+      <td>Remaining Docker Compose v2 parity gaps need Apple/container runtime, build, networking, storage, logging, or command-data work before this repo can finish the mapping.</td>
+    </tr>
+    <tr>
+      <td>Future upstream fork and PR work</td>
+      <td><span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">OPEN</span></td>
+      <td>Tracked upstream work has not started unless the row carries a start timestamp.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">DONE</span> Completed Work
 
 <table>
@@ -437,7 +471,7 @@ The lozenges use a traffic-light scheme: green is complete, yellow is active, re
   </tbody>
 </table>
 
-## Active Documentation Work
+## <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">DONE</span> Documentation Work
 
 <table>
   <thead>
@@ -506,7 +540,7 @@ The lozenges use a traffic-light scheme: green is complete, yellow is active, re
   </tbody>
 </table>
 
-## container-compose Backlog
+## <span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">DONE</span> container-compose Backlog
 
 These tasks are valid Docker Compose v2 surfaces where Apple/container is not
 known to be the first blocker. The fix belongs in this repository unless deeper

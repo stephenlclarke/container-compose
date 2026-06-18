@@ -47,6 +47,40 @@ The lozenges use a traffic-light scheme: green is supported/no-gap, yellow is pa
 - <span style="background:#FFFAE6;color:#974F0C;border:1px solid #FFE2A8;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PLUGIN GAP</span>: [`apple/container`][apple-container] is not known to be the blocker and this repository still needs implementation work.
 - <span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span>: normalized output is preserved, but runtime behavior is not applied.
 
+## Compatibility Snapshot
+
+<table>
+  <thead>
+    <tr>
+      <th>Area</th>
+      <th>Status</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Common local Compose workflows</td>
+      <td><span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">SUPPORTED</span> <span style="background:#FFF7D6;color:#7A4D00;border:1px solid #FFE380;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PARTIAL</span></td>
+      <td>The supported matrix covers the local-development path where Docker Compose v2, Apple/container, and this plugin all have matching behavior; partial rows call out adjacent Apple/container gaps.</td>
+    </tr>
+    <tr>
+      <td>Apple/container primitive gaps</td>
+      <td><span style="background:#FFEBE6;color:#BF2600;border:1px solid #FFBDAD;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">APPLE GAP</span></td>
+      <td>The Compose surface is valid, but the first missing piece is an Apple/container runtime, build, networking, storage, logging, or command-data primitive.</td>
+    </tr>
+    <tr>
+      <td>container-compose design gaps</td>
+      <td><span style="background:#E3FCEF;color:#006644;border:1px solid #ABF5D1;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">NO PLUGIN GAP</span></td>
+      <td>No current runtime or command surface is blocked first by this repository. New plugin-owned gaps should be marked with <span style="background:#FFFAE6;color:#974F0C;border:1px solid #FFE2A8;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">PLUGIN GAP</span> until implemented.</td>
+    </tr>
+    <tr>
+      <td>Normalized metadata only</td>
+      <td><span style="background:#F4F5F7;color:#42526E;border:1px solid #DFE1E6;border-radius:3px;padding:1px 6px;font-size:12px;font-weight:700;white-space:nowrap;">CONFIG ONLY</span></td>
+      <td>The data is preserved for <code>config</code> and <code>convert</code>; runtime commands either ignore harmless metadata or reject service-level use when no supported mapping exists.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Support Matrix
 
 Each entry below is written as a compact status card:
