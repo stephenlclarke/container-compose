@@ -480,6 +480,15 @@ is blocked upstream, and gray is not started.
       <td colspan="4"><strong>Notes:</strong> Reused the debug <code>compose</code> executable emitted by the Swift coverage test build for <code>make ci</code> smoke tests, avoiding a second non-coverage SwiftPM product build on the CI path while keeping standalone <code>make cli-smoke</code> build-first behavior.</td>
     </tr>
     <tr>
+      <td>CI release package cache</td>
+      <td>2026-06-18 20:01:14 BST</td>
+      <td>2026-06-18 20:01:14 BST</td>
+      <td>2026-06-18 20:01:14 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Added a main/manual workflow cache for SwiftPM release artifacts before <code>make package</code>, and included <code>Makefile</code> in the SwiftPM cache fingerprint so package-build behavior changes invalidate the relevant caches. This keeps pull-request debug/test cache hits from preventing reusable release products on later package builds.</td>
+    </tr>
+    <tr>
       <td>Sonar empty closure cleanup</td>
       <td>2026-06-18 19:20:02 BST</td>
       <td>2026-06-18 19:20:02 BST</td>

@@ -168,7 +168,7 @@ Build the plugin archive consumed by the install guide:
 make package
 ```
 
-GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds.
+GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds. Main and manual runs restore a separate SwiftPM release-artifact cache before packaging so a pull-request debug/test cache hit does not prevent release build products from being reused on later package builds.
 
 `make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`.
 
