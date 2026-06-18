@@ -3336,14 +3336,16 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported develop config before creating resources")
-    func upRejectsUnsupportedDevelopConfigBeforeCreatingResources() async throws {
+    @Test("up treats develop watch metadata as harmless")
+    func upTreatsDevelopWatchMetadataAsHarmless() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.develop = ComposeDevelop()
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: "src", action: "sync", target: "/app/src"),
+                    ])
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -3351,16 +3353,13 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported develop config error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses develop; develop/watch workflows are not implemented by container-compose yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        #expect(runner.commands.count == 1)
+        #expect(runner.commands[0].arguments.containsSequence(["run", "--name", "demo-api-1"]))
     }
 
     @Test("up rejects unsupported build fields before creating resources")
@@ -7888,34 +7887,228 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("watch validates develop triggers before runtime loop")
-    func watchValidatesDevelopTriggersBeforeRuntimeLoop() async throws {
+    @Test("watch applies initial sync before polling")
+    func watchAppliesInitialSyncBeforePolling() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sourceDirectory = directory.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        let sourceFile = sourceDirectory.appendingPathComponent("main.swift")
+        try "initial".write(to: sourceFile, atomically: true, encoding: .utf8)
+
         let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let sleeper = ThrowingSleeper(throwOnCall: 1)
         let project = ComposeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.develop = ComposeDevelop(watch: [
-                        ComposeDevelopWatch(path: "src", action: "rebuild"),
-                        ComposeDevelopWatch(path: "assets", action: "sync", target: "/app/assets"),
+                        ComposeDevelopWatch(
+                            path: sourceDirectory.path,
+                            action: "sync",
+                            target: "/app/src",
+                            include: ["*.swift"],
+                            initialSync: true
+                        ),
                     ])
                 },
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).watch(
-                project: project,
-                options: ComposeWatchOptions(services: ["api"], noUp: true, prune: false, quiet: true)
-            )
-            Issue.record("Expected watch runtime-loop gap")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("watch: file watching and develop actions are not implemented by container-compose yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                watchPollInterval: .milliseconds(1),
+                sleep: { try await sleeper.sleep($0) }
+            ),
+            copier: copier
+        ).watch(project: project, options: ComposeWatchOptions(services: ["api"], noUp: true, quiet: true))
 
         #expect(runner.commands.isEmpty)
+        let copyRequests = await copier.requests
+        #expect(copyRequests.count == 1)
+        if case .into(let id, let source, let destination) = copyRequests.first {
+            #expect(id == "demo-api-1")
+            #expect(source.hasSuffix("/src/main.swift"))
+            #expect(destination == "/app/src/main.swift")
+        } else {
+            Issue.record("Expected initial watch sync copy")
+        }
+    }
+
+    @Test("watch syncs changed files and runs sync exec hooks")
+    func watchSyncsChangedFilesAndRunsSyncExecHooks() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sourceDirectory = directory.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        let sourceFile = sourceDirectory.appendingPathComponent("main.swift")
+        try "before".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let execManager = RecordingContainerExecManager()
+        let sleeper = FileMutationSleeper(file: sourceFile, contents: "after")
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(
+                            path: sourceDirectory.path,
+                            action: "sync+exec",
+                            target: "/app/src",
+                            include: ["*.swift"],
+                            exec: ComposeDevelopWatchExec(
+                                command: ["sh", "-c", "touch /tmp/reloaded"],
+                                user: "1000",
+                                workingDir: "/app",
+                                environment: ["A": "1", "B": nil]
+                            )
+                        ),
+                    ])
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.copier = copier
+            $0.discoveryManager = discoveryManager
+            $0.execManager = execManager
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                watchPollInterval: .milliseconds(1),
+                sleep: { try await sleeper.sleep($0) }
+            ),
+            dependencies: dependencies
+        ).watch(project: project, options: ComposeWatchOptions(services: ["api"], noUp: true, quiet: true))
+
+        #expect(runner.commands.isEmpty)
+        let copyRequests = await copier.requests
+        #expect(copyRequests.count == 1)
+        if case .into(let id, let source, let destination) = copyRequests.first {
+            #expect(id == "demo-api-1")
+            #expect(source.hasSuffix("/src/main.swift"))
+            #expect(destination == "/app/src/main.swift")
+        } else {
+            Issue.record("Expected changed file watch sync copy")
+        }
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh", "-c", "touch /tmp/reloaded"],
+                environment: ["A=1", "B"],
+                user: "1000",
+                workingDirectory: "/app",
+                interactive: false,
+                tty: false
+            ),
+        ])
+    }
+
+    @Test("watch removes deleted synced files")
+    func watchRemovesDeletedSyncedFiles() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sourceDirectory = directory.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        let sourceFile = sourceDirectory.appendingPathComponent("main.swift")
+        try "before".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        let execManager = RecordingContainerExecManager()
+        let sleeper = FileDeletionSleeper(file: sourceFile)
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: sourceDirectory.path, action: "sync", target: "/app/src"),
+                    ])
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.execManager = execManager
+        }
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(
+                watchPollInterval: .milliseconds(1),
+                sleep: { try await sleeper.sleep($0) }
+            ),
+            dependencies: dependencies
+        ).watch(project: project, options: ComposeWatchOptions(services: ["api"], noUp: true, quiet: true))
+
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh", "-c", "rm -rf -- /app/src/main.swift"],
+                interactive: false,
+                tty: false
+            ),
+        ])
+    }
+
+    @Test("watch rebuilds services and prunes images")
+    func watchRebuildsServicesAndPrunesImages() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sourceFile = directory.appendingPathComponent("Dockerfile")
+        try "FROM scratch\n".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        let runner = RecordingRunner()
+        let sleeper = FileMutationSleeper(file: sourceFile, contents: "FROM busybox\n")
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api") {
+                    $0.build = ComposeBuild(context: directory.path)
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: sourceFile.path, action: "rebuild"),
+                    ])
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                watchPollInterval: .milliseconds(1),
+                sleep: { try await sleeper.sleep($0) }
+            ),
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).watch(project: project, options: ComposeWatchOptions(services: ["api"], noUp: true, quiet: true))
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 3)
+        #expect(commands[0].containsSequence(["build", "--tag", "demo_api:latest", "--quiet", directory.path]))
+        #expect(commands[1].containsSequence(["run", "--name", "demo-api-1"]))
+        #expect(commands[2].containsSequence(["image", "prune"]))
     }
 
     @Test("watch rejects services without develop triggers")
@@ -7954,6 +8147,19 @@ struct ComposeOrchestratorTests {
             (
                 ComposeDevelopWatch(path: "src", action: "sync+exec", target: "/app/src"),
                 .invalidProject("service 'api' develop.watch action 'sync+exec' requires exec metadata")
+            ),
+            (
+                ComposeDevelopWatch(path: "src", action: "sync+exec", target: "/app/src", exec: ComposeDevelopWatchExec()),
+                .invalidProject("service 'api' develop.watch action 'sync+exec' requires an exec command")
+            ),
+            (
+                ComposeDevelopWatch(
+                    path: "src",
+                    action: "sync+exec",
+                    target: "/app/src",
+                    exec: ComposeDevelopWatchExec(command: ["true"], privileged: true)
+                ),
+                .unsupported("service 'api' develop.watch sync+exec uses privileged; apple/container exec does not expose privileged process execution")
             ),
         ]
 
@@ -9820,14 +10026,16 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported develop config before creating resources")
-    func runRejectsUnsupportedDevelopConfigBeforeCreatingResources() async throws {
+    @Test("run treats develop watch metadata as harmless")
+    func runTreatsDevelopWatchMetadataAsHarmless() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.develop = ComposeDevelop()
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: "src", action: "sync", target: "/app/src"),
+                    ])
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -9835,16 +10043,14 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported develop config error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses develop; develop/watch workflows are not implemented by container-compose yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        #expect(runner.commands.count == 1)
+        #expect(runner.commands[0].arguments.contains("run"))
+        #expect(runner.commands[0].arguments.contains("--rm"))
     }
 
     @Test("run rejects unsupported build fields before creating resources")
@@ -12754,6 +12960,44 @@ private actor ThrowingSleeper {
         if calls >= throwOnCall {
             throw CancellationError()
         }
+    }
+}
+
+private actor FileMutationSleeper {
+    private let file: URL
+    private let contents: String
+    private var calls = 0
+
+    init(file: URL, contents: String) {
+        self.file = file
+        self.contents = contents
+    }
+
+    func sleep(_: Duration) async throws {
+        calls += 1
+        if calls == 1 {
+            try contents.write(to: file, atomically: true, encoding: .utf8)
+            return
+        }
+        throw CancellationError()
+    }
+}
+
+private actor FileDeletionSleeper {
+    private let file: URL
+    private var calls = 0
+
+    init(file: URL) {
+        self.file = file
+    }
+
+    func sleep(_: Duration) async throws {
+        calls += 1
+        if calls == 1 {
+            try FileManager.default.removeItem(at: file)
+            return
+        }
+        throw CancellationError()
     }
 }
 

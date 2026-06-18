@@ -101,11 +101,11 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **container-compose status:** Supported for the listed direct API paths. Rich log filtering and runtime process/event controls remain Apple/container gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
-#### Develop dry-run planning
+#### Develop watch workflows
 
-- **Compose surface:** `watch --dry-run`, `watch --no-up`, `watch --no-prune`, `watch --quiet`, selected services, and normalized `develop.watch` triggers.
-- **Apple/container path:** No runtime mutation. The dry-run path validates Compose trigger metadata and prints the planned watch settings/actions.
-- **container-compose status:** Supported for dry-run planning only. Live file watching, sync/rebuild/restart action execution, and `sync+exec` execution remain plugin work.
+- **Compose surface:** `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, `watch --quiet`, selected services, and normalized `develop.watch` triggers for `sync`, `sync+restart`, `sync+exec`, `restart`, and `rebuild`.
+- **Apple/container path:** Dry-run validation does not mutate runtime state. Live watch uses direct copy, exec, lifecycle restart, build, and image prune paths where Apple/container exposes them.
+- **container-compose status:** Supported for polling-based local file watching, initial sync, changed-file sync, deleted-file cleanup, sync exec hooks, restarts, rebuilds, and rebuild pruning. `develop.watch` metadata is harmless for ordinary `up` and `run`.
 - **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
 #### Default networking
@@ -232,11 +232,11 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Missing plugin work:** A local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
-#### Develop, providers, models, hooks
+#### Providers, models, and lifecycle hooks
 
-- **Compose surface:** `develop.watch`, service `provider`, service `models`, `post_start`, and `pre_stop`.
+- **Compose surface:** Service `provider`, service `models`, `post_start`, and `pre_stop`.
 - **Apple/container path:** Not known to be the first blocker.
-- **Missing plugin work:** File-watch loops, sync/rebuild/restart action execution, provider/model wiring, and lifecycle hook safety and ordering.
+- **Missing plugin work:** Provider/model wiring and lifecycle hook safety and ordering.
 - **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
 #### Metadata, logging, storage shortcuts
@@ -294,6 +294,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 - Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, and running/stopping-container `wait`.
 - Build and image: `build`, `pull`, `push`, `images`, and `down --rmi`.
 - Interaction: `ps`, `logs`, output-only `attach --no-stdin --sig-proxy=false`, `exec`, `cp`, `export`, explicit published-port `port`, `stats`, `stats --no-trunc`, and `version`.
+- Develop: `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, and `watch --quiet`.
 - Supported option families include indexed service targets, quiet/json/table output where listed above, explicit published ports, `--scale`, `--timeout`, `--no-build`, `--quiet-build`, `--quiet-pull`, `--no-start`, `--always-recreate-deps`, `--include-deps`, `--ignore-buildable`, `--ignore-pull-failures`, `--ignore-push-failures`, and `--down-project` for running/stopping service containers.
 
 ### Commands Blocked By [`apple/container`][apple-container] Runtime Gaps
@@ -307,7 +308,6 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 ### Commands Blocked By `container-compose` Design Gaps
 
-- `watch` file-watch/action execution.
 - Default stdin/signal-proxy `attach`.
 
 ## References
@@ -1081,13 +1081,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### C3: Plugin Gap, Develop, Providers, Models, And Hooks
 
-Expected result: `container compose config` preserves the `develop.watch` trigger metadata, and `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions. Live `container compose watch api` still reports that file watching and develop actions are not implemented yet. `container compose up` rejects this because watch/develop, provider/model wiring, and lifecycle hooks need plugin orchestration.
+Expected result: `container compose config` preserves the `develop.watch` trigger metadata, `container compose --dry-run watch api` validates service selection and trigger shape before printing the planned watch settings/actions, and live `container compose watch api` polls local files before executing sync, sync+restart, sync+exec, restart, and rebuild actions. `container compose up` treats `develop.watch` as harmless metadata. The `provider`, `models`, `post_start`, and `pre_stop` fields still reject before runtime side effects because they need plugin orchestration.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes develop, provider, model, and hook fields.
 - [`apple/container`][apple-container]: not known to be the first blocker for this example.
-- `container-compose`: preserves normalized `develop.watch` trigger metadata, validates `watch` command selections, and emits a dry-run watch plan. It still needs live file watching, sync/rebuild/restart action execution, service providers, model bindings, and hook execution.
+- `container-compose`: preserves normalized `develop.watch` trigger metadata, validates `watch` command selections, emits a dry-run watch plan, and supports live polling watch execution through direct copy, exec, restart, build, and image prune paths. It still needs service providers, model bindings, and hook execution.
 
 ```yaml
 # compose.yaml

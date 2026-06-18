@@ -26,6 +26,8 @@ public struct ComposeExecutionOptions {
     public var environmentLauncher: String
     public var oneOffIdentifier: @Sendable () -> String
     public var currentDate: @Sendable () -> Date
+    public var watchPollInterval: Duration
+    public var sleep: @Sendable (Duration) async throws -> Void
     public var emit: @Sendable (String) -> Void
 
     public init(
@@ -34,6 +36,8 @@ public struct ComposeExecutionOptions {
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
         currentDate: @escaping @Sendable () -> Date = Date.init,
+        watchPollInterval: Duration = .seconds(1),
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         emit: @escaping @Sendable (String) -> Void = { print($0) }
     ) {
         self.dryRun = dryRun
@@ -41,6 +45,8 @@ public struct ComposeExecutionOptions {
         self.environmentLauncher = environmentLauncher
         self.oneOffIdentifier = oneOffIdentifier
         self.currentDate = currentDate
+        self.watchPollInterval = watchPollInterval
+        self.sleep = sleep
         self.emit = emit
     }
 
@@ -1090,7 +1096,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
-    /// Validates watch service selections against normalized develop metadata.
+    /// Runs `compose watch` by applying initial syncs and polling watched paths
+    /// for Compose Develop Specification actions.
     public func watch(project: ComposeProject, options watch: ComposeWatchOptions = ComposeWatchOptions()) async throws {
         let services = try selectedServices(project: project, selected: watch.services)
         let watchServices = services.filter { service in
@@ -1108,7 +1115,35 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             emitWatchDryRunPlan(project: project, services: watchServices, watch: watch)
             return
         }
-        throw ComposeError.unsupported("watch: file watching and develop actions are not implemented by container-compose yet")
+
+        let runtimeProject = projectWithoutDevelopMetadata(project)
+        let runtimeServices = try watchServices.map { service in
+            guard let runtimeService = runtimeProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return runtimeService
+        }
+        if !watch.noUp {
+            try await up(
+                project: runtimeProject,
+                options: ComposeUpOptions {
+                    $0.services = runtimeServices.map(\.name)
+                    $0.detach = true
+                    $0.quietBuild = watch.quiet
+                    $0.quietPull = watch.quiet
+                }
+            )
+        }
+
+        var plans = try watchPlans(project: project, services: watchServices)
+        try await performInitialWatchSync(project: runtimeProject, plans: plans, quiet: watch.quiet)
+        do {
+            try await runWatchLoop(project: runtimeProject, plans: &plans, options: watch)
+        } catch is CancellationError {
+            if !watch.quiet {
+                options.emit("compose: watch stopped")
+            }
+        }
     }
 
     /// Attaches to service output using the Apple log stream.
@@ -1877,9 +1912,6 @@ private extension ComposeOrchestrator {
         if service.blkioConfig == true {
             throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls are not implemented by container-compose yet")
         }
-        if service.develop != nil {
-            throw ComposeError.unsupported("service '\(service.name)' uses develop; develop/watch workflows are not implemented by container-compose yet")
-        }
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
@@ -2064,8 +2096,8 @@ private extension ComposeOrchestrator {
         if action.contains("sync"), nonEmpty(trigger.target) == nil {
             throw ComposeError.invalidProject("service '\(service.name)' develop.watch action '\(action)' requires a target")
         }
-        if action == "sync+exec", trigger.exec == nil {
-            throw ComposeError.invalidProject("service '\(service.name)' develop.watch action 'sync+exec' requires exec metadata")
+        if action == "sync+exec" {
+            _ = try watchExecHook(trigger: trigger, service: service)
         }
     }
 
@@ -2103,6 +2135,249 @@ private extension ComposeOrchestrator {
             fields.append("exec=\(shellQuoted(execCommand))")
         }
         return fields.joined(separator: " ")
+    }
+
+    /// Creates executable watch plans with an initial filesystem snapshot.
+    func watchPlans(project: ComposeProject, services: [ComposeService]) throws -> [ComposeWatchPlan] {
+        try services.flatMap { service in
+            try (service.develop?.watch ?? []).map { trigger in
+                ComposeWatchPlan(
+                    service: service,
+                    trigger: trigger,
+                    snapshot: try watchSnapshot(project: project, trigger: trigger)
+                )
+            }
+        }
+    }
+
+    /// Applies `initial_sync` for sync-oriented watch triggers before polling.
+    func performInitialWatchSync(project: ComposeProject, plans: [ComposeWatchPlan], quiet: Bool) async throws {
+        for plan in plans where plan.trigger.initialSync == true && plan.action.hasPrefix("sync") {
+            guard !plan.snapshot.isEmpty else {
+                continue
+            }
+            try await syncWatchEntries(
+                project: project,
+                service: plan.service,
+                trigger: plan.trigger,
+                entries: Array(plan.snapshot.values).sorted(by: { $0.relativePath < $1.relativePath }),
+                quiet: quiet
+            )
+        }
+    }
+
+    /// Polls watched paths until the task is cancelled.
+    func runWatchLoop(project: ComposeProject, plans: inout [ComposeWatchPlan], options watch: ComposeWatchOptions) async throws {
+        if !watch.quiet {
+            options.emit("compose: watch started")
+        }
+        while !Task.isCancelled {
+            try await options.sleep(options.watchPollInterval)
+            for index in plans.indices {
+                let latest = try watchSnapshot(project: project, trigger: plans[index].trigger)
+                let changes = watchChanges(previous: plans[index].snapshot, latest: latest)
+                plans[index].snapshot = latest
+                guard !changes.isEmpty else {
+                    continue
+                }
+                try await performWatchAction(
+                    project: project,
+                    service: plans[index].service,
+                    trigger: plans[index].trigger,
+                    changes: changes,
+                    options: watch
+                )
+            }
+        }
+    }
+
+    /// Executes one Compose watch action against the matching service containers.
+    func performWatchAction(
+        project: ComposeProject,
+        service: ComposeService,
+        trigger: ComposeDevelopWatch,
+        changes: [ComposeWatchChange],
+        options watch: ComposeWatchOptions
+    ) async throws {
+        switch trigger.action.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "sync":
+            try await syncWatchChanges(project: project, service: service, trigger: trigger, changes: changes, quiet: watch.quiet)
+        case "sync+restart":
+            try await syncWatchChanges(project: project, service: service, trigger: trigger, changes: changes, quiet: watch.quiet)
+            try await restartWatchService(project: project, service: service, quiet: watch.quiet)
+        case "sync+exec":
+            try await syncWatchChanges(project: project, service: service, trigger: trigger, changes: changes, quiet: watch.quiet)
+            try await execWatchHook(project: project, service: service, trigger: trigger, quiet: watch.quiet)
+        case "restart":
+            try await restartWatchService(project: project, service: service, quiet: watch.quiet)
+        case "rebuild":
+            try await rebuildWatchService(project: project, service: service, options: watch)
+        default:
+            try validateWatchTrigger(trigger, service: service)
+        }
+    }
+
+    /// Copies changed files and removes deleted files for a sync action.
+    func syncWatchChanges(
+        project: ComposeProject,
+        service: ComposeService,
+        trigger: ComposeDevelopWatch,
+        changes: [ComposeWatchChange],
+        quiet: Bool
+    ) async throws {
+        let upserts = changes.compactMap(\.entry)
+        if !upserts.isEmpty {
+            try await syncWatchEntries(project: project, service: service, trigger: trigger, entries: upserts, quiet: quiet)
+        }
+        let deletes = changes.compactMap(\.deletedRelativePath)
+        if !deletes.isEmpty {
+            try await deleteWatchEntries(project: project, service: service, trigger: trigger, relativePaths: deletes, quiet: quiet)
+        }
+    }
+
+    /// Copies local watch entries into every running service replica.
+    func syncWatchEntries(
+        project: ComposeProject,
+        service: ComposeService,
+        trigger: ComposeDevelopWatch,
+        entries: [ComposeWatchEntry],
+        quiet: Bool
+    ) async throws {
+        let targets = try await serviceContainerTargets(project: project, services: [service])
+        for target in targets {
+            for entry in entries {
+                let destination = try watchTargetPath(trigger: trigger, relativePath: entry.relativePath)
+                if !quiet {
+                    options.emit("compose: watch sync \(service.name)[\(target.index)] \(entry.sourcePath) -> \(destination)")
+                }
+                try await copier.copyIntoContainer(id: target.name, source: entry.sourcePath, destination: destination)
+            }
+        }
+    }
+
+    /// Removes deleted watched paths from service replicas through direct exec.
+    func deleteWatchEntries(
+        project: ComposeProject,
+        service: ComposeService,
+        trigger: ComposeDevelopWatch,
+        relativePaths: [String],
+        quiet: Bool
+    ) async throws {
+        let targets = try await serviceContainerTargets(project: project, services: [service])
+        for target in targets {
+            for relativePath in relativePaths.sorted() {
+                let destination = try watchTargetPath(trigger: trigger, relativePath: relativePath)
+                if !quiet {
+                    options.emit("compose: watch delete \(service.name)[\(target.index)] \(destination)")
+                }
+                try await runWatchExec(
+                    service: service,
+                    containerID: target.name,
+                    command: ["sh", "-c", "rm -rf -- \(shellQuoted([destination]))"],
+                    user: nil,
+                    workingDirectory: nil,
+                    environment: []
+                )
+            }
+        }
+    }
+
+    /// Restarts every service replica affected by a watch trigger.
+    func restartWatchService(project: ComposeProject, service: ComposeService, quiet: Bool) async throws {
+        let targets = try await serviceContainerTargets(project: project, services: [service])
+        for target in targets {
+            if !quiet {
+                options.emit("compose: watch restart \(service.name)[\(target.index)]")
+            }
+            try await restartContainer(service: service, containerName: target.name)
+        }
+    }
+
+    /// Rebuilds and recreates a service after a rebuild watch trigger.
+    func rebuildWatchService(project: ComposeProject, service: ComposeService, options watch: ComposeWatchOptions) async throws {
+        if !watch.quiet {
+            self.options.emit("compose: watch rebuild \(service.name)")
+        }
+        try await up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.services = [service.name]
+                $0.build = true
+                $0.detach = true
+                $0.forceRecreate = true
+                $0.quietBuild = watch.quiet
+            }
+        )
+        if watch.prune {
+            try await runContainer(["image", "prune"])
+        }
+    }
+
+    /// Runs the command attached to a `sync+exec` trigger on each service replica.
+    func execWatchHook(project: ComposeProject, service: ComposeService, trigger: ComposeDevelopWatch, quiet: Bool) async throws {
+        let hook = try watchExecHook(trigger: trigger, service: service)
+        let targets = try await serviceContainerTargets(project: project, services: [service])
+        for target in targets {
+            if !quiet {
+                options.emit("compose: watch exec \(service.name)[\(target.index)] \(shellQuoted(hook.command))")
+            }
+            try await runWatchExec(
+                service: service,
+                containerID: target.name,
+                command: hook.command,
+                user: hook.user,
+                workingDirectory: hook.workingDirectory,
+                environment: hook.environment
+            )
+        }
+    }
+
+    /// Resolves and validates sync+exec hook metadata.
+    func watchExecHook(trigger: ComposeDevelopWatch, service: ComposeService) throws -> ComposeWatchExecHook {
+        guard let exec = trigger.exec else {
+            throw ComposeError.invalidProject("service '\(service.name)' develop.watch action 'sync+exec' requires exec metadata")
+        }
+        guard exec.privileged != true else {
+            throw ComposeError.unsupported("service '\(service.name)' develop.watch sync+exec uses privileged; apple/container exec does not expose privileged process execution")
+        }
+        guard let command = exec.command, !command.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' develop.watch action 'sync+exec' requires an exec command")
+        }
+        return ComposeWatchExecHook(
+            command: command,
+            user: nonEmpty(exec.user),
+            workingDirectory: nonEmpty(exec.workingDir),
+            environment: environmentArguments(exec.environment ?? [:])
+        )
+    }
+
+    /// Runs a non-interactive direct exec request for watch actions.
+    func runWatchExec(
+        service: ComposeService,
+        containerID: String,
+        command: [String],
+        user: String?,
+        workingDirectory: String?,
+        environment: [String]
+    ) async throws {
+        let status = try await execManager.execAttached(
+            request: ContainerAttachedExecRequest(
+                id: containerID,
+                command: command,
+                environment: environment,
+                user: user,
+                workingDirectory: workingDirectory,
+                interactive: false,
+                tty: false
+            )
+        )
+        if status != 0 {
+            throw ComposeError.commandFailed(
+                command: shellQuoted(command),
+                status: status,
+                stderr: "watch exec failed for service '\(service.name)'"
+            )
+        }
     }
 
     /// Validates all selected services before any runtime side effects occur.
@@ -4940,6 +5215,245 @@ private func normalizedRuntimeStatus(_ status: String) throws -> String {
     default:
         throw ComposeError.unsupported("ps status '\(status)'; apple/container exposes running, stopped, stopping, and unknown")
     }
+}
+
+/// One service trigger and its last observed filesystem state.
+private struct ComposeWatchPlan {
+    var service: ComposeService
+    var trigger: ComposeDevelopWatch
+    var snapshot: [String: ComposeWatchEntry]
+
+    var action: String {
+        trigger.action.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// A host file tracked by a `develop.watch` trigger.
+private struct ComposeWatchEntry: Equatable {
+    var relativePath: String
+    var sourcePath: String
+    var modifiedAt: Date?
+    var size: UInt64?
+}
+
+/// A host-side change that must be reflected into service containers.
+private enum ComposeWatchChange {
+    case upsert(ComposeWatchEntry)
+    case delete(relativePath: String)
+
+    var entry: ComposeWatchEntry? {
+        guard case .upsert(let entry) = self else {
+            return nil
+        }
+        return entry
+    }
+
+    var deletedRelativePath: String? {
+        guard case .delete(let relativePath) = self else {
+            return nil
+        }
+        return relativePath
+    }
+}
+
+/// Validated `sync+exec` hook settings.
+private struct ComposeWatchExecHook {
+    var command: [String]
+    var user: String?
+    var workingDirectory: String?
+    var environment: [String]
+}
+
+/// Returns a project suitable for ordinary runtime orchestration while
+/// `compose watch` owns the Develop Specification behavior.
+private func projectWithoutDevelopMetadata(_ project: ComposeProject) -> ComposeProject {
+    var copy = project
+    for (name, service) in copy.services {
+        var runtimeService = service
+        runtimeService.develop = nil
+        copy.services[name] = runtimeService
+    }
+    return copy
+}
+
+/// Captures the current files matched by one watch trigger.
+private func watchSnapshot(project: ComposeProject, trigger: ComposeDevelopWatch) throws -> [String: ComposeWatchEntry] {
+    let rootURL = resolvedWatchURL(project: project, path: trigger.path)
+    let fileManager = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fileManager.fileExists(atPath: rootURL.path, isDirectory: &isDirectory) else {
+        throw ComposeError.invalidProject("develop.watch path does not exist: \(trigger.path)")
+    }
+
+    if !isDirectory.boolValue {
+        let matchPath = rootURL.lastPathComponent
+        guard watchPathIncluded(matchPath, trigger: trigger) else {
+            return [:]
+        }
+        return [".": try watchEntry(url: rootURL, relativePath: ".")]
+    }
+
+    let keys: [URLResourceKey] = [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
+    guard let enumerator = fileManager.enumerator(
+        at: rootURL,
+        includingPropertiesForKeys: keys,
+        options: [.skipsPackageDescendants]
+    ) else {
+        return [:]
+    }
+
+    var snapshot: [String: ComposeWatchEntry] = [:]
+    for case let url as URL in enumerator {
+        let relativePath = watchRelativePath(rootURL: rootURL, url: url)
+        let values = try url.resourceValues(forKeys: Set(keys))
+        if values.isDirectory == true {
+            if watchPathIgnored(relativePath, trigger: trigger) {
+                enumerator.skipDescendants()
+            }
+            continue
+        }
+        guard watchPathIncluded(relativePath, trigger: trigger) else {
+            continue
+        }
+        snapshot[relativePath] = ComposeWatchEntry(
+            relativePath: relativePath,
+            sourcePath: url.path,
+            modifiedAt: values.contentModificationDate,
+            size: values.fileSize.map(UInt64.init)
+        )
+    }
+    return snapshot
+}
+
+/// Resolves relative Compose watch paths from the project directory.
+private func resolvedWatchURL(project: ComposeProject, path: String) -> URL {
+    let expanded = (path as NSString).expandingTildeInPath
+    if expanded.hasPrefix("/") {
+        return URL(fileURLWithPath: expanded).standardizedFileURL
+    }
+    return URL(fileURLWithPath: expanded, relativeTo: URL(fileURLWithPath: project.workingDirectory)).standardizedFileURL
+}
+
+/// Builds a stable relative path with POSIX separators for matching.
+private func watchRelativePath(rootURL: URL, url: URL) -> String {
+    let root = rootURL.standardizedFileURL.path
+    let path = url.standardizedFileURL.path
+    let prefix = root.hasSuffix("/") ? root : root + "/"
+    guard path.hasPrefix(prefix) else {
+        return url.lastPathComponent
+    }
+    return String(path.dropFirst(prefix.count))
+}
+
+/// Creates a watch entry from a host file URL.
+private func watchEntry(url: URL, relativePath: String) throws -> ComposeWatchEntry {
+    let values = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    return ComposeWatchEntry(
+        relativePath: relativePath,
+        sourcePath: url.path,
+        modifiedAt: values.contentModificationDate,
+        size: values.fileSize.map(UInt64.init)
+    )
+}
+
+/// Diffs two snapshots into deterministic upsert/delete changes.
+private func watchChanges(
+    previous: [String: ComposeWatchEntry],
+    latest: [String: ComposeWatchEntry]
+) -> [ComposeWatchChange] {
+    let upserts = latest.keys.sorted().compactMap { key -> ComposeWatchChange? in
+        guard previous[key] != latest[key], let entry = latest[key] else {
+            return nil
+        }
+        return .upsert(entry)
+    }
+    let deletes = previous.keys
+        .filter { latest[$0] == nil }
+        .sorted()
+        .map { ComposeWatchChange.delete(relativePath: $0) }
+    return upserts + deletes
+}
+
+/// Returns the target path for a watched file relative to the trigger target.
+private func watchTargetPath(trigger: ComposeDevelopWatch, relativePath: String) throws -> String {
+    guard let target = nonEmpty(trigger.target) else {
+        throw ComposeError.invalidProject("develop.watch action '\(trigger.action)' requires a target")
+    }
+    guard relativePath != "." && !relativePath.isEmpty else {
+        return target
+    }
+    return target.hasSuffix("/") ? target + relativePath : target + "/" + relativePath
+}
+
+/// Converts Compose key/value environment metadata to exec arguments.
+private func environmentArguments(_ values: [String: String?]) -> [String] {
+    values.keys.sorted().map { key in
+        guard let value = values[key] ?? nil else {
+            return key
+        }
+        return "\(key)=\(value)"
+    }
+}
+
+/// Applies include and ignore rules to a normalized relative path.
+private func watchPathIncluded(_ relativePath: String, trigger: ComposeDevelopWatch) -> Bool {
+    guard !watchPathIgnored(relativePath, trigger: trigger) else {
+        return false
+    }
+    guard let include = trigger.include, !include.isEmpty else {
+        return true
+    }
+    return include.contains { watchPattern($0, matches: relativePath) }
+}
+
+/// Returns true when any ignore pattern excludes the path.
+private func watchPathIgnored(_ relativePath: String, trigger: ComposeDevelopWatch) -> Bool {
+    guard let ignore = trigger.ignore, !ignore.isEmpty else {
+        return false
+    }
+    return ignore.contains { watchPattern($0, matches: relativePath) }
+}
+
+/// Matches Compose watch glob patterns against relative paths or basenames.
+private func watchPattern(_ rawPattern: String, matches rawRelativePath: String) -> Bool {
+    let pattern = normalizedWatchPath(rawPattern)
+    let relativePath = normalizedWatchPath(rawRelativePath)
+    guard !pattern.isEmpty else {
+        return false
+    }
+    if pattern.hasSuffix("/") {
+        let directory = String(pattern.dropLast())
+        return relativePath == directory || relativePath.hasPrefix(directory + "/")
+    }
+    if pattern.contains("/") {
+        return glob(pattern, matches: relativePath)
+    }
+    return glob(pattern, matches: (relativePath as NSString).lastPathComponent)
+}
+
+/// Normalizes watch paths to POSIX separators for deterministic matching.
+private func normalizedWatchPath(_ value: String) -> String {
+    value.replacingOccurrences(of: "\\", with: "/")
+        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+}
+
+/// Minimal glob matching for Compose watch include/ignore filters.
+private func glob(_ pattern: String, matches value: String) -> Bool {
+    var regex = "^"
+    for character in pattern {
+        switch character {
+        case "*":
+            regex += ".*"
+        case "?":
+            regex += "."
+        case ".", "+", "(", ")", "^", "$", "|", "{", "}", "[", "]", "\\":
+            regex += "\\\(character)"
+        default:
+            regex.append(character)
+        }
+    }
+    regex += "$"
+    return value.range(of: regex, options: .regularExpression) != nil
 }
 
 /// Returns a SHA-256 hex digest for stable names and labels.

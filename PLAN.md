@@ -162,7 +162,7 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 09:54:37 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Preserved <code>develop.watch</code> triggers from compose-go in the Swift model and added command-level <code>watch</code> validation. File-watch loops and action execution remain open plugin work.</td>
+      <td colspan="4"><strong>Notes:</strong> Preserved <code>develop.watch</code> triggers from compose-go in the Swift model and added command-level <code>watch</code> validation. Live action execution was completed later by the watch live action execution task.</td>
     </tr>
     <tr>
       <td>Watch dry-run plan</td>
@@ -171,7 +171,16 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 11:23:47 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Emit a deterministic <code>watch --dry-run</code> plan after validating selected services and <code>develop.watch</code> triggers. Live file watching and action execution remain open plugin work.</td>
+      <td colspan="4"><strong>Notes:</strong> Emit a deterministic <code>watch --dry-run</code> plan after validating selected services and <code>develop.watch</code> triggers. Live action execution was completed later by the watch live action execution task.</td>
+    </tr>
+    <tr>
+      <td>Watch live action execution</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 12:43:00 BST</td>
+      <td>2026-06-18 13:00:42 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Implemented polling-based <code>compose watch</code> execution for <code>develop.watch</code> actions: initial sync, changed-file sync, deleted-file cleanup, <code>sync+exec</code>, service restart, rebuild, and image pruning. Ordinary <code>up</code> and <code>run</code> now treat <code>develop.watch</code> as harmless metadata.</td>
     </tr>
     <tr>
       <td>Scaled anonymous service volumes</td>
@@ -373,10 +382,10 @@ Apple/container API work is discovered during implementation.
       <td><code>watch</code> and develop workflows</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 09:44:11 BST</td>
-      <td>not completed</td>
+      <td>2026-06-18 13:00:42 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Model-boundary support now preserves and validates <code>develop.watch</code> triggers and <code>watch --dry-run</code> emits the planned settings/actions. Remaining work needs live file watching, sync/rebuild/restart policy, and clear interaction with Compose <code>develop</code>.</td>
+      <td colspan="4"><strong>Notes:</strong> <code>develop.watch</code> is now supported for dry-run planning and live polling execution. Remaining C3 plugin work is tracked separately under providers, models, and lifecycle hooks.</td>
     </tr>
     <tr>
       <td>Replica scaling edge cases</td>
