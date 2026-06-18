@@ -236,6 +236,15 @@ cli-smoke: build
 	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
 	[[ "$$up_no_deps_output" == *"container run"* ]]; \
 	[[ "$$up_no_deps_output" != *"demo-db-1"* ]]; \
+	up_no_start_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-start api)"; \
+	[[ "$$up_no_start_output" == *"container create"* ]]; \
+	[[ "$$up_no_start_output" != *"container run"* ]]; \
+	[[ "$$up_no_start_output" == *"demo-db-1"* ]]; \
+	[[ "$$up_no_start_output" == *"demo-api-1"* ]]; \
+	up_no_start_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-start --no-deps api)"; \
+	[[ "$$up_no_start_no_deps_output" == *"container create"* ]]; \
+	[[ "$$up_no_start_no_deps_output" != *"container run"* ]]; \
+	[[ "$$up_no_start_no_deps_output" != *"demo-db-1"* ]]; \
 	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --scale api=2 api 2>&1 || true)"; \
 	[[ "$$up_scale_output" == *"unsupported compose feature: up --scale: service replica scaling is not implemented by container-compose yet"* ]]; \
 	create_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --build api)"; \

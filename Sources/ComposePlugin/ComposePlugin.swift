@@ -232,6 +232,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var scales: [String] = []
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
     var noDeps = false
+    @Flag(name: .customLong("no-start"), help: "Create services without starting them.")
+    var noStart = false
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
 
@@ -250,6 +252,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 $0.pullPolicy = pull
                 $0.scales = scales
                 $0.noDeps = noDeps
+                $0.noStart = noStart
             }
         )
     }

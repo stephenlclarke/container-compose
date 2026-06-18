@@ -154,6 +154,7 @@ public struct ComposeUpOptions {
     public var pullPolicy: String?
     public var scales: [String] = []
     public var noDeps = false
+    public var noStart = false
 
     public init() {
         // Stored property defaults represent Docker Compose's default up behavior.
@@ -174,6 +175,7 @@ public struct ComposeCreateOptions {
     public var removeOrphans = false
     public var pullPolicy: String?
     public var scales: [String] = []
+    public var noDeps = false
 
     public init() {
         // Stored property defaults represent Docker Compose's default create behavior.
@@ -502,6 +504,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
         try validateUpOptions(up)
+        if up.noStart {
+            try await create(project: project, options: createOptions(from: up))
+            return
+        }
         let services = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
@@ -583,9 +589,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func create(project: ComposeProject, options create: ComposeCreateOptions) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
-        let services = try orderedServices(project: project, selected: create.services)
+        let services = try create.noDeps && !create.services.isEmpty
+            ? selectedServices(project: project, selected: create.services)
+            : orderedServices(project: project, selected: create.services)
+        let validateDependencies = !(create.noDeps && !create.services.isEmpty)
         try validateCreatePullPolicy(create.pullPolicy)
-        try validateRuntimeSupport(services: services, project: project)
+        try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
         try validatePublishedPorts(services: services)
 
         try await ensureResources(project: project)
@@ -626,6 +635,20 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if create.removeOrphans {
             let declaredContainers = Set(project.services.values.map { containerName(project: project, service: $0, oneOff: false) })
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers)
+        }
+    }
+
+    /// Converts `up --no-start` options into the equivalent `create` request.
+    private func createOptions(from up: ComposeUpOptions) -> ComposeCreateOptions {
+        ComposeCreateOptions {
+            $0.services = up.services
+            $0.build = up.build
+            $0.forceRecreate = up.forceRecreate
+            $0.noRecreate = up.noRecreate
+            $0.removeOrphans = up.removeOrphans
+            $0.pullPolicy = up.pullPolicy
+            $0.scales = up.scales
+            $0.noDeps = up.noDeps
         }
     }
 
