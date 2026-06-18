@@ -5956,9 +5956,108 @@ struct ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
-    @Test("wait down-project reports pending orchestration gap")
-    func waitDownProjectReportsPendingOrchestrationGap() async throws {
+    @Test("wait down-project tears down project after first selected service exits")
+    func waitDownProjectTearsDownProjectAfterFirstSelectedServiceExits() async throws {
+        let emitted = MessageRecorder()
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-api-1": 5])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "demo-db-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "db",
+                    composeOneOffLabel: "false",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).wait(project: project, options: ComposeWaitOptions(services: ["api"], downProject: true))
+
+        #expect(emitted.messages == ["5"])
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-api-1"),
+            .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
+            .delete(id: "demo-api-1", force: false),
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-db-1", force: false),
+        ])
+        #expect(await discoveryManager.listRequests == [true, true])
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("wait down-project dry run emits wait then down plan")
+    func waitDownProjectDryRunEmitsWaitThenDownPlan() async throws {
+        let emitted = MessageRecorder()
         let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.stopGracePeriodSeconds = 7
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).wait(project: project, options: ComposeWaitOptions(services: ["api"], downProject: true))
+
+        #expect(emitted.messages == [
+            "+ container wait demo-api-1",
+            "+ container stop --time 7 demo-api-1",
+            "+ container delete demo-api-1",
+            "+ container stop demo-db-1",
+            "+ container delete demo-db-1",
+        ])
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("wait down-project rejects already stopped containers before teardown")
+    func waitDownProjectRejectsAlreadyStoppedContainersBeforeTeardown() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ]
+            ),
+        ])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -5969,17 +6068,20 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(
                 dependencies: orchestratorDependencies {
+                    $0.discoveryManager = discoveryManager
                     $0.lifecycleManager = lifecycleManager
                 }
             ).wait(project: project, options: ComposeWaitOptions(downProject: true))
-            Issue.record("Expected down-project wait to be rejected")
+            Issue.record("Expected stopped down-project wait target to be rejected")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("wait --down-project: project teardown after the first container exit is not implemented by container-compose yet"))
+            #expect(error == .unsupported("wait: service 'api' container 'demo-api-1' is stopped; apple/container does not expose stored exit codes for already-stopped containers"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         #expect(await lifecycleManager.requests.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
     @Test("lifecycle manager maps compose lifecycle to direct API client")

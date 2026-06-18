@@ -498,6 +498,10 @@ private struct ServiceContainerTarget {
     var name: String
 }
 
+private struct ServiceContainerWaitResult {
+    var exitCode: Int32
+}
+
 private struct ServiceContainerReconcileRequest {
     var name: String
     var runOptions: RunArgumentOptions
@@ -1384,20 +1388,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Waits for selected service containers to exit and prints their exit codes.
     public func wait(project: ComposeProject, options wait: ComposeWaitOptions = ComposeWaitOptions()) async throws {
-        guard !wait.downProject else {
-            throw ComposeError.unsupported("wait --down-project: project teardown after the first container exit is not implemented by container-compose yet")
-        }
         let services = try selectedServices(project: project, selected: wait.services)
-        for target in try await serviceContainerTargets(project: project, services: services) {
+        let targets = try await serviceContainerTargets(project: project, services: services)
+        if wait.downProject {
+            try await waitThenDownProject(project: project, targets: targets)
+            return
+        }
+        for target in targets {
             let containerID = target.name
             if options.dryRun {
                 try await runContainer(["wait", containerID])
                 continue
             }
-            guard let container = try await discoveryManager.getContainer(id: containerID) else {
-                throw ComposeError.invalidProject("service '\(target.service.name)' container '\(containerID)' does not exist")
-            }
-            try validateWaitTarget(container, service: target.service)
+            try await validateWaitTarget(target)
             let exitCode = try await lifecycleManager.waitContainer(id: containerID)
             options.emit(String(exitCode))
         }
@@ -3289,10 +3292,63 @@ private extension ComposeOrchestrator {
     }
 
     /// Ensures `wait` only asks Apple for live process state it can return.
+    func validateWaitTarget(_ target: ServiceContainerTarget) async throws {
+        guard let container = try await discoveryManager.getContainer(id: target.name) else {
+            throw ComposeError.invalidProject("service '\(target.service.name)' container '\(target.name)' does not exist")
+        }
+        try validateWaitTarget(container, service: target.service)
+    }
+
+    /// Ensures `wait` only asks Apple for live process state it can return.
     func validateWaitTarget(_ container: ComposeContainerSummary, service: ComposeService) throws {
         let status = container.status.lowercased()
         guard status == "running" || status == "stopping" else {
             throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is \(container.status); apple/container does not expose stored exit codes for already-stopped containers")
+        }
+    }
+
+    /// Waits for the first selected service container to exit, then drops the project.
+    func waitThenDownProject(project: ComposeProject, targets: [ServiceContainerTarget]) async throws {
+        if options.dryRun {
+            for target in targets {
+                try await runContainer(["wait", target.name])
+            }
+            try await down(project: project, options: ComposeDownOptions())
+            return
+        }
+        for target in targets {
+            try await validateWaitTarget(target)
+        }
+        let result = try await waitForFirstServiceContainerExit(targets)
+        options.emit(String(result.exitCode))
+        try await down(project: project, options: ComposeDownOptions())
+    }
+
+    /// Races service container waits so `--down-project` can clean up after
+    /// the first selected service container exits.
+    func waitForFirstServiceContainerExit(_ targets: [ServiceContainerTarget]) async throws -> ServiceContainerWaitResult {
+        let lifecycleManager = lifecycleManager
+        let waitTasks = targets.map(\.name).map { containerID in
+            Task {
+                ServiceContainerWaitResult(
+                    exitCode: try await lifecycleManager.waitContainer(id: containerID)
+                )
+            }
+        }
+        defer {
+            waitTasks.forEach { $0.cancel() }
+        }
+        return try await withThrowingTaskGroup(of: ServiceContainerWaitResult.self) { group in
+            for waitTask in waitTasks {
+                group.addTask {
+                    try await waitTask.value
+                }
+            }
+            guard let result = try await group.next() else {
+                throw ComposeError.invalidProject("wait requires at least one service container")
+            }
+            group.cancelAll()
+            return result
         }
     }
 
