@@ -11458,8 +11458,7 @@ struct ComposeOrchestratorTests {
                             type: "tmpfs",
                             target: "/scratch",
                             readOnly: true,
-                            tmpfsSize: "67108864",
-                            tmpfsMode: "1777"
+                            tmpfs: .init(size: "67108864", mode: "1777")
                         ),
                     ]
                 },

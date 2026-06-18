@@ -506,6 +506,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Grouped discovered image metadata behind a typed <code>ComposeContainerSummary.Image</code> constructor value so the public summary initializer stays under the Sonar parameter threshold while preserving flat stored discovery fields.</td>
     </tr>
+    <tr>
+      <td>Sonar mount initializer tmpfs grouping</td>
+      <td>2026-06-18 19:31:44 BST</td>
+      <td>2026-06-18 19:31:44 BST</td>
+      <td>2026-06-18 19:31:44 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Grouped tmpfs constructor fields behind <code>ComposeMount.TmpfsOptions</code> so normalized mount construction stays under the Sonar parameter threshold while keeping flat decoded mount fields for orchestration.</td>
+    </tr>
   </tbody>
 </table>
 
