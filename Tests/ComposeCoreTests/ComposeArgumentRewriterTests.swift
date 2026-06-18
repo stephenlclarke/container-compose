@@ -190,6 +190,27 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("preserves logs display flags after subcommand")
+    func preservesLogsDisplayFlagsAfterSubcommand() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--project-name",
+            "demo",
+            "logs",
+            "--no-color",
+            "--no-log-prefix",
+            "api",
+        ])
+
+        #expect(rewritten == [
+            "logs",
+            "--project-name",
+            "demo",
+            "--no-color",
+            "--no-log-prefix",
+            "api",
+        ])
+    }
+
     @Test("does not rewrite logs follow shorthand after terminator")
     func doesNotRewriteLogsFollowShorthandAfterTerminator() {
         let rewritten = ComposeArgumentRewriter.rewrite([

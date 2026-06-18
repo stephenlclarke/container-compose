@@ -458,6 +458,10 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var tail: String?
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
+    @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Accepted because container-compose log output is already monochrome.")
+    var noColor = false
+    @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes. Accepted because container-compose log output is already prefix-free.")
+    var noLogPrefix = false
     @Argument(help: "Optional services to show.")
     var services: [String] = []
 

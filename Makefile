@@ -302,6 +302,8 @@ cli-smoke: build
 	[[ "$$logs_all_output" != *" -n "* ]]; \
 	logs_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --index 2 api)"; \
 	[[ "$$logs_index_output" == *"container logs demo-api-2"* ]]; \
+	logs_display_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --no-color --no-log-prefix api)"; \
+	[[ "$$logs_display_output" == *"container logs demo-api-1"* ]]; \
 	attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false api)"; \
 	[[ "$$attach_output" == *"container logs --follow demo-api-1"* ]]; \
 	attach_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false --index 2 api)"; \
