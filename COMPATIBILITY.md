@@ -160,8 +160,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Rich network attachment and IPAM controls
 
-- **Compose surface:** Multiple service networks, aliases, service-name DNS for replicas, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
-- **Missing Apple/container primitive:** Multi-network attach/connect, per-network aliases/options beyond MAC and MTU, multi-record DNS lookup for scaled service names, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
+- **Compose surface:** Multiple service networks, aliases, service-name DNS for replicas, `deploy.endpoint_mode`, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
+- **Missing Apple/container primitive:** Multi-network attach/connect, per-network aliases/options beyond MAC and MTU, VIP/DNSRR service endpoint discovery, multi-record DNS lookup for scaled service names, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A1](#a1-apple-gap-networking).
 
@@ -221,7 +221,7 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 #### Local deploy handling
 
 - **Compose surface:** Deploy fields beyond local replicated mode, replica count, CPU limits, and memory limits.
-- **Apple/container path:** Not known to be the first blocker.
+- **Apple/container path:** Not known to be the first blocker after excluding `deploy.restart_policy` and `deploy.endpoint_mode`, which are tracked as Apple/container gaps.
 - **Missing plugin work:** A local interpretation of broader deploy semantics.
 - **Example:** [C1](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy).
 
@@ -318,7 +318,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 Every example includes a Compose file or commands plus the matching Dockerfile snippets needed to try the surface in an isolated scratch directory.
 
 - [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Supported. Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
-- [A1: Apple Gap, Networking](#a1-apple-gap-networking): [`apple/container`][apple-container] gap. Demonstrates multiple networks, aliases, service-name DNS for replicas, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+- [A1: Apple Gap, Networking](#a1-apple-gap-networking): [`apple/container`][apple-container] gap. Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 - [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): [`apple/container`][apple-container] gap. Demonstrates hostname, domain name, explicit host entries, and legacy links.
 - [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): [`apple/container`][apple-container] gap. Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
 - [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): [`apple/container`][apple-container] gap. Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
@@ -578,12 +578,12 @@ container compose down --rmi local --timeout 12 --volumes
 
 ### A1: Apple Gap, Networking
 
-Expected result: `container compose up` rejects this before creating resources because [`apple/container`][apple-container] needs multi-network attach/connect, per-network aliases/options beyond MAC and MTU, service-name DNS that can return multiple replica addresses, fixed addresses, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+Expected result: `container compose up` rejects this before creating resources because [`apple/container`][apple-container] needs multi-network attach/connect, per-network aliases/options beyond MAC and MTU, VIP/DNSRR endpoint discovery, service-name DNS that can return multiple replica addresses, fixed addresses, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these network attachments.
-- [`apple/container`][apple-container]: missing multi-network attach/connect, per-network aliases/options beyond MAC and MTU, service-name aliases and multi-record DNS lookup for scaled replicas, fixed addresses, Docker-compatible namespace modes other than no-network, IPAM gateway/range/auxiliary-address controls, custom IPAM drivers, and multiple same-family IPAM subnets.
+- [`apple/container`][apple-container]: missing multi-network attach/connect, per-network aliases/options beyond MAC and MTU, service-name aliases, VIP/DNSRR endpoint discovery, multi-record DNS lookup for scaled replicas, fixed addresses, Docker-compatible namespace modes other than no-network, IPAM gateway/range/auxiliary-address controls, custom IPAM drivers, and multiple same-family IPAM subnets.
 - `container-compose`: detects those fields and fails before creating resources.
 
 ```yaml
@@ -616,6 +616,7 @@ services:
     build:
       context: ./worker
     deploy:
+      endpoint_mode: dnsrr
       replicas: 2
 
 networks:

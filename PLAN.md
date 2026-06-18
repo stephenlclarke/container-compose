@@ -219,6 +219,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.restart_policy</code> with service-level <code>restart</code> as an Apple/container runtime gap. Apple/container exposes lifecycle restart commands but no create/run restart policy primitive.</td>
     </tr>
     <tr>
+      <td>Deploy endpoint mode blocker classification</td>
+      <td>2026-06-18 12:09:54 BST</td>
+      <td>2026-06-18 12:09:54 BST</td>
+      <td>2026-06-18 12:09:54 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Classified <code>deploy.endpoint_mode</code> as an Apple/container networking gap. Compose endpoint modes such as <code>vip</code> and <code>dnsrr</code> need service-level discovery semantics that are not exposed by the current runtime.</td>
+    </tr>
+    <tr>
       <td>Run capability overrides</td>
       <td>2026-06-18 10:16:25 BST</td>
       <td>2026-06-18 10:16:25 BST</td>
@@ -358,7 +367,7 @@ Apple/container API work is discovered during implementation.
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration, and <code>deploy.restart_policy</code> is tracked with Apple/container restart policy parity. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration. <code>deploy.restart_policy</code> and <code>deploy.endpoint_mode</code> are tracked with Apple/container restart and networking parity. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>
@@ -415,7 +424,8 @@ Recommended upstream workflow:
 Suggested Apple/container PR batches:
 
 1. Networking parity: multi-network attachment, aliases, service-name
-   multi-record DNS for replicas, fixed addresses, and richer IPAM.
+   multi-record DNS for replicas, Compose endpoint modes, fixed addresses, and
+   richer IPAM.
 2. Build parity: BuildKit-compatible inputs that Docker Compose v2 can express,
    including additional contexts, build networking, SSH, attestations, and
    advanced build secret metadata.
@@ -475,7 +485,7 @@ Suggested Apple/container PR batches:
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases plus DNS lookup that can return multiple A/AAAA records for scaled service names. Apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose service discovery needs network aliases, endpoint modes such as <code>vip</code> and <code>dnsrr</code>, plus DNS lookup that can return multiple A/AAAA records for scaled service names. Apple/container currently allocates one attachment per hostname, DNS lookup returns a single attachment, and container creation rejects duplicate attachment hostnames.</td>
     </tr>
     <tr>
       <td>Fixed addresses and richer IPAM</td>

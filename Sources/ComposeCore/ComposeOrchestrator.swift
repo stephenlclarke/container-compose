@@ -2006,6 +2006,9 @@ private extension ComposeOrchestrator {
         if fields.contains("restart_policy") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy; restart policy support needs an apple/container runtime gap PR")
         }
+        if fields.contains("endpoint_mode") {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR")
+        }
         let fieldList = fields.joined(separator: ", ")
         throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); Compose Deploy Specification beyond local replicated mode, replica count, CPU limits, and memory limits is not implemented by container-compose yet")
     }

@@ -9839,6 +9839,33 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("run rejects deploy endpoint mode as a networking runtime gap")
+    func runRejectsDeployEndpointModeAsNetworkingRuntimeGap() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.unsupportedDeployFields = ["endpoint_mode"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported deploy endpoint mode error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported provider model and hook fields before creating resources")
     func runRejectsUnsupportedProviderModelAndHookFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedProviderModelAndHookFieldCases() {
