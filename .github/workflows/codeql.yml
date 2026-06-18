@@ -1,0 +1,103 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - regression
+  pull_request:
+    branches:
+      - main
+      - develop
+      - regression
+    types:
+      - opened
+      - synchronize
+      - reopened
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: macos-26
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v6
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Read apple/container ref
+        id: apple-container-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(
+            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
+          )"
+          if [[ -z "$ref" ]]; then
+            printf 'APPLE_CONTAINER_REF is empty\n' >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout apple/container dependency
+        uses: actions/checkout@v6
+        with:
+          repository: apple/container
+          path: container
+          ref: ${{ steps.apple-container-ref.outputs.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: swift,go
+          build-mode: manual
+          config-file: container-compose/.github/codeql/codeql-config.yml
+
+      - name: Build Swift plugin for CodeQL
+        run: swift build --disable-automatic-resolution --product compose
+        working-directory: container-compose
+
+      - name: Build Go normalizer for CodeQL
+        run: go build -o compose-normalizer .
+        working-directory: container-compose/Tools/compose-normalizer
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:swift-go"
