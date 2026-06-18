@@ -816,7 +816,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     var noStdin = false
     @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Not supported by apple/container logs yet.")
     var detachKeys: String?
-    @Option(name: .customLong("index"), help: "Container index. Only 1 is supported until replica-aware log lookup is available.")
+    @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
     @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false for output-only attach.")
     var sigProxy = "true"

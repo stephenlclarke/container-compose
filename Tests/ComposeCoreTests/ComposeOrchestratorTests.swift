@@ -6483,6 +6483,51 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["attached"])
     }
 
+    @Test("attach output-only mode targets selected container index")
+    func attachOutputOnlyModeTargetsSelectedContainerIndex() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["replica"])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-2",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.logManager = logManager
+            }
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions {
+                $0.noStdin = true
+                $0.index = 2
+                $0.sigProxy = "false"
+            }
+        )
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-2", tail: nil, follow: true),
+        ])
+        #expect(emitted.messages == ["replica"])
+    }
+
     @Test("attach dry run emits logs follow command")
     func attachDryRunEmitsLogsFollowCommand() async throws {
         let emitted = MessageRecorder()
@@ -6513,8 +6558,39 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("attach rejects unsupported stdin signal and replica options")
-    func attachRejectsUnsupportedStdinSignalAndReplicaOptions() async throws {
+    @Test("attach dry run emits indexed logs follow command")
+    func attachDryRunEmitsIndexedLogsFollowCommand() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            logManager: logManager
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions {
+                $0.noStdin = true
+                $0.index = 2
+                $0.sigProxy = "false"
+            }
+        )
+
+        #expect(emitted.messages == [
+            "+ container logs --follow demo-api-2",
+        ])
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("attach rejects unsupported stdin signal and detach options")
+    func attachRejectsUnsupportedStdinSignalAndDetachOptions() async throws {
         let cases: [(options: ComposeAttachOptions, error: ComposeError)] = [
             (
                 ComposeAttachOptions(),
@@ -6526,14 +6602,6 @@ struct ComposeOrchestratorTests {
                     $0.sigProxy = "true"
                 },
                 .unsupported("attach --sig-proxy=true: apple/container logs does not proxy signals to service processes; use --sig-proxy=false")
-            ),
-            (
-                ComposeAttachOptions {
-                    $0.noStdin = true
-                    $0.sigProxy = "false"
-                    $0.index = 2
-                },
-                .unsupported("attach --index 2: service replica attach needs replica-aware log lookup")
             ),
             (
                 ComposeAttachOptions {

@@ -935,7 +935,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Attaches to service output using the Apple log stream.
     public func attach(project: ComposeProject, serviceName: String, options attach: ComposeAttachOptions) async throws {
         try validateAttachOptions(attach)
-        try await logs(project: project, services: [serviceName], follow: true, tail: nil)
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+        let id = try await serviceContainerID(project: project, service: service, index: attach.index)
+        let args = ["logs", "--follow", id]
+        if options.dryRun {
+            try await runContainer(args)
+        } else {
+            try await logManager.logs(id: id, tail: nil, follow: true, emit: options.emit)
+        }
     }
 
     /// Executes a command in an existing service container.
@@ -2688,9 +2697,6 @@ private extension ComposeOrchestrator {
 
     /// Validates that attach uses only the output stream Apple exposes through logs.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
-        if attach.index != 1 {
-            throw ComposeError.unsupported("attach --index \(attach.index): service replica attach needs replica-aware log lookup")
-        }
         if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
             throw ComposeError.unsupported("attach --detach-keys: apple/container logs does not expose detach key handling")
         }

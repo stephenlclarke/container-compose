@@ -302,6 +302,8 @@ cli-smoke: build
 	[[ "$$logs_all_output" != *" -n "* ]]; \
 	attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false api)"; \
 	[[ "$$attach_output" == *"container logs --follow demo-api-1"* ]]; \
+	attach_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false --index 2 api)"; \
+	[[ "$$attach_index_output" == *"container logs --follow demo-api-2"* ]]; \
 	attach_default_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach api 2>&1 || true)"; \
 	[[ "$$attach_default_output" == *"unsupported compose feature: attach: apple/container logs is output-only"* ]]; \
 	exec_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec api echo ok)"; \
