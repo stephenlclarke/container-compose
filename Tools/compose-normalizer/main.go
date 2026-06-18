@@ -639,13 +639,14 @@ func serviceScale(service types.ServiceConfig) *int {
 	return nil
 }
 
-// unsupportedDeployFields reports deploy fields beyond local replica count.
+// unsupportedDeployFields reports deploy fields beyond local replica count and
+// the ordinary replicated service mode the local orchestrator already models.
 func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	if deploy == nil {
 		return nil
 	}
 	fields := []string{}
-	appendUnsupportedDeployField(&fields, "mode", deploy.Mode != "")
+	appendUnsupportedDeployField(&fields, "mode", unsupportedDeployMode(deploy.Mode))
 	appendUnsupportedDeployField(&fields, "labels", len(deploy.Labels) > 0)
 	appendUnsupportedDeployField(&fields, "update_config", updateConfigHasFields(deploy.UpdateConfig))
 	appendUnsupportedDeployField(&fields, "rollback_config", updateConfigHasFields(deploy.RollbackConfig))
@@ -655,6 +656,16 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	appendUnsupportedDeployField(&fields, "placement", placementHasFields(deploy.Placement))
 	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
 	return fields
+}
+
+// unsupportedDeployMode allows Compose's default replicated service mode. Other
+// modes, such as global, need scheduler semantics this local plugin does not
+// provide.
+func unsupportedDeployMode(mode string) bool {
+	if mode == "" {
+		return false
+	}
+	return !strings.EqualFold(mode, "replicated")
 }
 
 // appendUnsupportedDeployField records one unsupported deploy field when present.

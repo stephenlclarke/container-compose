@@ -201,6 +201,15 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Inspected Apple/container DNS and network services. Runtime DNS lookup returns one attachment per hostname and container creation rejects duplicate attachment hostnames, so Docker Compose service-name DNS for multiple replicas needs Apple/container alias and multi-record lookup primitives before container-compose can map it.</td>
     </tr>
     <tr>
+      <td>Deploy replicated mode support</td>
+      <td>2026-06-18 12:02:15 BST</td>
+      <td>2026-06-18 12:02:15 BST</td>
+      <td>2026-06-18 12:02:15 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is accepted as the local mode that matches existing replica orchestration. Non-replicated deploy modes remain open because they need scheduler semantics rather than simple local replica indexing.</td>
+    </tr>
+    <tr>
       <td>Run capability overrides</td>
       <td>2026-06-18 10:16:25 BST</td>
       <td>2026-06-18 10:16:25 BST</td>
@@ -336,11 +345,11 @@ Apple/container API work is discovered during implementation.
     <tr>
       <td>Local deploy interpretation</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>not started</td>
+      <td>2026-06-18 12:02:15 BST</td>
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Extend beyond local <code>deploy.replicas</code> and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
+      <td colspan="4"><strong>Notes:</strong> Explicit <code>deploy.mode: replicated</code> is now accepted as the local mode that matches existing replica orchestration. Continue extending beyond local <code>deploy.replicas</code>, replicated mode, and CPU/memory limits only where local-development semantics are safe and Docker Compose compatible.</td>
     </tr>
     <tr>
       <td>Providers, models, and lifecycle hooks</td>

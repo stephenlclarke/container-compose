@@ -343,6 +343,8 @@ struct ComposeNormalizerTests {
           api:
             image: nginx:latest
             deploy:
+              mode: replicated
+              replicas: 2
               resources:
                 limits:
                   cpus: "1.5"
@@ -356,6 +358,7 @@ struct ComposeNormalizerTests {
         ))
 
         let api = try #require(project.services["api"])
+        #expect(api.scale == 2)
         #expect(api.cpus == "1.5")
         #expect(api.memLimit?.isEmpty == false)
         #expect(api.unsupportedDeployFields == nil)

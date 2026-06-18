@@ -806,6 +806,32 @@ services:
 	}
 }
 
+func TestLoadProjectAcceptsReplicatedDeployMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    deploy:
+      mode: replicated
+      replicas: 2
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	api := project.Services["api"]
+	if api.Scale == nil || *api.Scale != 2 {
+		t.Fatalf("api.Scale = %#v, want 2", api.Scale)
+	}
+	if len(api.UnsupportedDeployFields) != 0 {
+		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
 func TestLoadProjectNormalizesDeployResourceLimitsAsRuntimeOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `
@@ -846,7 +872,7 @@ services:
     image: nginx:alpine
     deploy:
       replicas: 1
-      mode: replicated
+      mode: global
       labels:
         com.example.role: api
       update_config:
@@ -1228,6 +1254,12 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(empty) = %#v, want empty", fields)
 	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated"}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(replicated) = %#v, want empty", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); !reflect.DeepEqual(fields, []string{"mode"}) {
+		t.Fatalf("unsupportedDeployFields(global) = %#v, want [mode]", fields)
+	}
 	if got := unitBytesValue(0); got != "" {
 		t.Fatalf("unitBytesValue(0) = %q, want empty", got)
 	}
@@ -1283,7 +1315,7 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 	delay := types.Duration(5 * time.Second)
 
 	got := unsupportedDeployFields(&types.DeployConfig{
-		Mode:   "replicated",
+		Mode:   "global",
 		Labels: types.Labels{"com.example.role": "api"},
 		UpdateConfig: &types.UpdateConfig{
 			Parallelism: &parallelism,
