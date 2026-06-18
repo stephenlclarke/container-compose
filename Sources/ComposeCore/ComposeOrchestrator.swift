@@ -1283,7 +1283,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             : selectedServices(project: project, selected: push.services)
         let emit: @Sendable (String) -> Void
         if push.quiet {
-            emit = { _ in }
+            emit = { _ in
+                // `push --quiet` intentionally suppresses per-image status lines.
+            }
         } else {
             emit = options.emit
         }

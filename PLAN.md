@@ -479,6 +479,15 @@ is blocked upstream, and gray is not started.
     <tr>
       <td colspan="4"><strong>Notes:</strong> Reused the debug <code>compose</code> executable emitted by the Swift coverage test build for <code>make ci</code> smoke tests, avoiding a second non-coverage SwiftPM product build on the CI path while keeping standalone <code>make cli-smoke</code> build-first behavior.</td>
     </tr>
+    <tr>
+      <td>Sonar empty closure cleanup</td>
+      <td>2026-06-18 19:20:02 BST</td>
+      <td>2026-06-18 19:20:02 BST</td>
+      <td>2026-06-18 19:20:02 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Documented the intentionally empty <code>push --quiet</code> emission closure so the Swift source makes the quiet-mode behavior clear to reviewers and static analysis.</td>
+    </tr>
   </tbody>
 </table>
 
