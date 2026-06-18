@@ -148,12 +148,12 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
-  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, `logs --no-color`, `logs --no-log-prefix`, static `logs --since` and `logs --until`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
+  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, blank-line-preserving log replay/follow, `logs --no-color`, `logs --no-log-prefix`, static `logs --since` and `logs --until`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
   - File movement: service-aware `cp`, service-to-service `cp`, indexed `cp`, `cp --all`, one-off copy target discovery, and `export`.
   - Runtime queries: published-port `port`, indexed `port`, dynamically allocated and host-bound port lookup after container creation, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
 - **apple/container path:** Direct `ContainerClient` list/get/logs/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`. Static `logs --since` and `logs --until` use the local apple/container log-options API work.
-- **container-compose status:** Supported for the listed direct API paths. `logs --timestamps`, filtered log follow streams, structured stdout/stderr log identity, and runtime process/event controls remain apple/container gaps.
+- **container-compose status:** Supported for the listed direct API paths. `logs --timestamps`, filtered log follow streams, byte-for-byte non-UTF-8 handling, structured stdout/stderr log identity, and runtime process/event controls remain apple/container gaps or compatibility decisions.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Develop watch workflows

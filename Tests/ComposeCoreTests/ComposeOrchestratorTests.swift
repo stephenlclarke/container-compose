@@ -7508,6 +7508,20 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == ["demo-api-1"])
     }
 
+    @Test("log manager preserves blank lines from direct API logs")
+    func logManagerPreservesBlankLinesFromDirectAPILogs() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerLogAPIClient(fileHandles: [
+            try temporaryLogFileHandle(contents: "one\n\ntwo\n"),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { emitted.append($0) })
+
+        #expect(emitted.messages == ["one\n\ntwo"])
+        #expect(await client.requests == ["demo-api-1"])
+    }
+
     @Test("log manager rejects missing direct API log handles")
     func logManagerRejectsMissingDirectAPILogHandles() async throws {
         let client = RecordingContainerLogAPIClient()
@@ -7562,6 +7576,40 @@ struct ComposeOrchestratorTests {
         #expect(await client.options == [
             ContainerLogOptions()
         ])
+    }
+
+    @Test("log manager follows blank and split direct API log lines")
+    func logManagerFollowsBlankAndSplitDirectAPILogLines() async throws {
+        let emitted = MessageRecorder()
+        let pipe = Pipe()
+        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let manager = ContainerClientLogManager(client: client)
+
+        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        try await Task.sleep(for: .milliseconds(50))
+        pipe.fileHandleForWriting.write(Data("one\n\npa".utf8))
+        try await Task.sleep(for: .milliseconds(50))
+        pipe.fileHandleForWriting.write(Data("rt\n".utf8))
+        try pipe.fileHandleForWriting.close()
+        try await followTask
+
+        #expect(emitted.messages == ["one", "", "part"])
+    }
+
+    @Test("log manager flushes final partial followed direct API log line")
+    func logManagerFlushesFinalPartialFollowedDirectAPILogLine() async throws {
+        let emitted = MessageRecorder()
+        let pipe = Pipe()
+        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let manager = ContainerClientLogManager(client: client)
+
+        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        try await Task.sleep(for: .milliseconds(50))
+        pipe.fileHandleForWriting.write(Data("partial".utf8))
+        try pipe.fileHandleForWriting.close()
+        try await followTask
+
+        #expect(emitted.messages == ["partial"])
     }
 
     @Test("log manager rejects invalid UTF-8 while following direct API logs")

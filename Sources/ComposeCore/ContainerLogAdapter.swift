@@ -147,10 +147,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         guard let output = String(data: data, encoding: .utf8) else {
             throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
         }
-        let trimmed = output.trimmingCharacters(in: .newlines)
-        if !trimmed.isEmpty {
-            emit(trimmed)
-        }
+        emitLogLines(recordsForCompleteLogText(output), emit: emit)
     }
 
     /// Emits the last `count` non-empty log lines.
@@ -170,7 +167,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         var offset = size
         var lines: [String] = []
 
-        while offset > 0, lines.count < count {
+        while offset > 0, lines.count <= count {
             let readSize = min(UInt64(1024), offset)
             offset -= readSize
             try fileHandle.seek(toOffset: offset)
@@ -179,13 +176,10 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             guard let chunk = String(data: buffer, encoding: .utf8) else {
                 throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
             }
-            lines = chunk.components(separatedBy: .newlines).filter { !$0.isEmpty }
+            lines = recordsForCompleteLogText(chunk)
         }
 
-        let output = lines.suffix(count).joined(separator: "\n")
-        if !output.isEmpty {
-            emit(output)
-        }
+        emitLogLines(Array(lines.suffix(count)), emit: emit)
     }
 
     /// Emits lines appended to the log file until the handle closes.
@@ -195,6 +189,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
         _ = try? fileHandle.seekToEnd()
+        let accumulator = LogLineAccumulator()
         let stream = AsyncThrowingStream<String, any Error> { continuation in
             fileHandle.readabilityHandler = { handle in
                 let data = handle.availableData
@@ -202,6 +197,9 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                     do {
                         _ = try handle.seekToEnd()
                     } catch {
+                        if let pending = accumulator.flush() {
+                            continuation.yield(pending)
+                        }
                         handle.readabilityHandler = nil
                         continuation.finish()
                     }
@@ -212,7 +210,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                     continuation.finish(throwing: ComposeError.invalidProject("container logs for \(id) are not valid UTF-8"))
                     return
                 }
-                for line in output.components(separatedBy: .newlines) where !line.isEmpty {
+                for line in accumulator.append(output) {
                     continuation.yield(line)
                 }
             }
@@ -225,4 +223,93 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             emit(line)
         }
     }
+
+    /// Emits parsed log records while preserving intentionally blank lines.
+    private func emitLogLines(_ lines: [String], emit: @escaping @Sendable (String) -> Void) {
+        guard !lines.isEmpty else {
+            return
+        }
+        emit(lines.joined(separator: "\n"))
+    }
+
+    /// Splits complete log text into line records without inventing a final blank line.
+    private func recordsForCompleteLogText(_ output: String) -> [String] {
+        guard !output.isEmpty else {
+            return []
+        }
+        var result = completeLogRecords(in: output)
+        if !result.remainder.isEmpty {
+            result.records.append(result.remainder)
+        }
+        return result.records
+    }
+}
+
+/// Incrementally splits followed log data into complete log records.
+private final class LogLineAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending = ""
+
+    /// Appends a chunk and returns the complete log records it contains.
+    func append(_ output: String) -> [String] {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        let result = completeLogRecords(in: pending + output)
+        pending = result.remainder
+        return result.records
+    }
+
+    /// Returns the final unterminated log record, if one exists.
+    func flush() -> String? {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        guard !pending.isEmpty else {
+            return nil
+        }
+        let output = pending
+        pending = ""
+        return output
+    }
+}
+
+/// Complete log records found in a text chunk and any trailing partial line.
+private struct LogRecordSplit {
+    var records: [String]
+    var remainder: String
+}
+
+/// Splits text into complete lines while treating CRLF as one separator.
+private func completeLogRecords(in output: String) -> LogRecordSplit {
+    var records: [String] = []
+    var current = ""
+    var index = output.startIndex
+
+    while index < output.endIndex {
+        let character = output[index]
+        if character == "\n" {
+            records.append(current)
+            current = ""
+            index = output.index(after: index)
+        } else if character == "\r" {
+            records.append(current)
+            current = ""
+            let next = output.index(after: index)
+            if next < output.endIndex, output[next] == "\n" {
+                index = output.index(after: next)
+            } else {
+                index = next
+            }
+        } else {
+            current.append(character)
+            index = output.index(after: index)
+        }
+    }
+
+    return LogRecordSplit(records: records, remainder: current)
 }

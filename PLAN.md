@@ -78,7 +78,7 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
     <tr>
       <td>Exact byte/line fidelity</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>container-compose emits UTF-8 text and drops empty split lines in tail/follow paths. Docker Compose should preserve log event boundaries and blank output more faithfully.</td>
+      <td>container-compose now preserves blank UTF-8 line records and followed partial lines. Full byte fidelity and stdout/stderr identity still need runtime support or a deliberate compatibility decision.</td>
     </tr>
   </tbody>
 </table>
@@ -127,12 +127,13 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Remaining work:
 
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Preserve blank log lines and partial trailing lines consistently while following.
+- None known for plugin-side follow fan-out and line splitting. Timestamped or structured follow filters remain apple/container work in later sections.
 
 Completed implementation:
 
 - `ComposeOrchestrator.logs` resolves the full target set first, then fans out multiple `ContainerLogManaging.logs` streams with a task group.
 - Regression coverage proves a scaled service starts both followed replicas before either stream is released.
+- `ContainerClientLogManager` preserves blank followed records and flushes a final partial line when the stream closes.
 
 ### L3. Tail Mode
 
@@ -153,7 +154,7 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Remaining work:
 
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Empty-line fidelity should be checked against Docker Compose before this is called fully compliant.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Docker Compose comparison fixtures should still be added for unusual trailing-newline and byte-stream cases.
 
 ### L4. Service and Replica Selection
 
@@ -284,9 +285,9 @@ Docker Compose surface: raw application stdout/stderr content displayed through 
 Current `container-compose` behavior:
 
 - Requires UTF-8 log data.
-- Trims trailing newlines in full replay.
-- Filters empty lines in tail and follow paths.
-- Emits log chunks as complete strings rather than structured log records.
+- Preserves blank line records in full replay, local tailing, and followed streams.
+- Buffers followed output so split lines are not emitted until complete, and flushes a final partial line when the stream closes.
+- Emits UTF-8 log text chunks rather than structured stdout/stderr records.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
@@ -295,14 +296,13 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Missing behavior:
 
-- <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Preserve intentional blank log lines when reading and following.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Decide whether non-UTF-8 logs should fail, pass bytes through, or match Docker's replacement behavior.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Preserve stdout/stderr stream identity if future Compose behavior requires it for formatting or filtering.
 
 Implementation direction:
 
-- Add Docker Compose comparison fixtures for blank lines, trailing newline behavior, and non-UTF-8 bytes.
-- Fix plugin-side blank-line handling where raw file handles already contain enough information.
+- Add Docker Compose comparison fixtures for trailing newline behavior and non-UTF-8 bytes.
+- Keep the plugin-side blank-line and split-line regression tests as guardrails.
 - Track stream identity as upstream runtime work unless apple/container adds structured log records.
 
 ## Suggested Work Order
@@ -310,7 +310,7 @@ Implementation direction:
 1. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement all-replica target resolution for `logs`.
 2. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
 3. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
-4. <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
+4. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
 5. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container timestamped structured log records.
 6. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Propose apple/container service logging policy primitives.
 7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Revisit `--timestamps`, filtered follow, and service `logging` mappings after upstream runtime APIs exist.
