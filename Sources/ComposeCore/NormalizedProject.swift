@@ -492,6 +492,8 @@ public struct ComposeMount: Codable, Equatable {
     public var source: String?
     public var target: String?
     public var readOnly: Bool?
+    public var tmpfsSize: String?
+    public var tmpfsMode: String?
     public var raw: String?
     public var unsupportedFields: [String]?
 
@@ -500,6 +502,8 @@ public struct ComposeMount: Codable, Equatable {
         source: String? = nil,
         target: String? = nil,
         readOnly: Bool? = nil,
+        tmpfsSize: String? = nil,
+        tmpfsMode: String? = nil,
         raw: String? = nil,
         unsupportedFields: [String]? = nil
     ) {
@@ -507,6 +511,8 @@ public struct ComposeMount: Codable, Equatable {
         self.source = source
         self.target = target
         self.readOnly = readOnly
+        self.tmpfsSize = tmpfsSize
+        self.tmpfsMode = tmpfsMode
         self.raw = raw
         self.unsupportedFields = unsupportedFields
     }

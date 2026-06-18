@@ -196,6 +196,8 @@ type normalizedMount struct {
 	Source            string   `json:"source,omitempty"`
 	Target            string   `json:"target,omitempty"`
 	ReadOnly          bool     `json:"readOnly,omitempty"`
+	TmpfsSize         string   `json:"tmpfsSize,omitempty"`
+	TmpfsMode         string   `json:"tmpfsMode,omitempty"`
 	Raw               string   `json:"raw,omitempty"`
 	UnsupportedFields []string `json:"unsupportedFields,omitempty"`
 }
@@ -723,10 +725,28 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 			Source:            volume.Source,
 			Target:            volume.Target,
 			ReadOnly:          volume.ReadOnly,
+			TmpfsSize:         tmpfsSizeValue(volume),
+			TmpfsMode:         tmpfsModeValue(volume),
 			UnsupportedFields: unsupportedMountFields(volume),
 		})
 	}
 	return result
+}
+
+// tmpfsSizeValue returns the normalized byte count for long-form tmpfs mounts.
+func tmpfsSizeValue(volume types.ServiceVolumeConfig) string {
+	if volume.Type != "tmpfs" || volume.Tmpfs == nil {
+		return ""
+	}
+	return unitBytesValue(volume.Tmpfs.Size)
+}
+
+// tmpfsModeValue returns the normalized octal mode for long-form tmpfs mounts.
+func tmpfsModeValue(volume types.ServiceVolumeConfig) string {
+	if volume.Type != "tmpfs" || volume.Tmpfs == nil || volume.Tmpfs.Mode == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%04o", volume.Tmpfs.Mode)
 }
 
 // unsupportedMountFields reports mount options that the Apple runtime
@@ -746,10 +766,6 @@ func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
 		appendUnsupportedMountFieldWhen(&fields, "volume.labels", len(volume.Volume.Labels) > 0)
 		appendUnsupportedMountFieldWhen(&fields, "volume.nocopy", volume.Volume.NoCopy)
 		appendUnsupportedMountFieldWhen(&fields, "volume.subpath", volume.Volume.Subpath != "")
-	}
-	if volume.Tmpfs != nil {
-		appendUnsupportedMountFieldWhen(&fields, "tmpfs.size", unitBytesValue(volume.Tmpfs.Size) != "")
-		appendUnsupportedMountFieldWhen(&fields, "tmpfs.mode", volume.Tmpfs.Mode != 0)
 	}
 	if volume.Image != nil {
 		appendUnsupportedMountFieldWhen(&fields, "image.subpath", volume.Image.SubPath != "")

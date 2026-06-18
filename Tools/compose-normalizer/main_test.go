@@ -316,7 +316,7 @@ volumes:
 	cases := map[string][]string{
 		"bindy":   {"consistency", "bind.selinux", "bind.propagation", "bind.recursive"},
 		"named":   {"volume.labels", "volume.nocopy", "volume.subpath"},
-		"scratch": {"tmpfs.size", "tmpfs.mode"},
+		"scratch": nil,
 		"imagey":  {"type", "image.subpath"},
 	}
 	for serviceName, want := range cases {
@@ -327,6 +327,32 @@ volumes:
 		if got := mounts[0].UnsupportedFields; !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s unsupported volume fields = %#v, want %#v", serviceName, got, want)
 		}
+	}
+}
+
+func TestMountValuesPreservesSupportedTmpfsOptions(t *testing.T) {
+	got := mountValues([]types.ServiceVolumeConfig{
+		{
+			Type:     "tmpfs",
+			Target:   "/scratch",
+			ReadOnly: true,
+			Tmpfs: &types.ServiceVolumeTmpfs{
+				Size: types.UnitBytes(64 * 1024 * 1024),
+				Mode: 0o1777,
+			},
+		},
+	})
+	want := []normalizedMount{
+		{
+			Type:      "tmpfs",
+			Target:    "/scratch",
+			ReadOnly:  true,
+			TmpfsSize: "67108864",
+			TmpfsMode: "1777",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mountValues(tmpfs) = %#v, want %#v", got, want)
 	}
 }
 

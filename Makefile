@@ -137,6 +137,7 @@ cli-smoke: build
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n  db:\n    image: alpine\n' > "$$tmpdir/scale-deps.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080-8081:80"\n' > "$$tmpdir/scale-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    pull_policy: daily\n' > "$$tmpdir/pull-window.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    volumes:\n      - type: tmpfs\n        target: /scratch\n        tmpfs:\n          size: 64m\n          mode: 1777\n' > "$$tmpdir/tmpfs-options.yml"; \
 	mkdir -p "$$tmpdir/api"; \
 	printf 'FROM alpine:3.20\n' > "$$tmpdir/api/Dockerfile"; \
 	printf 'secret\n' > "$$tmpdir/build-token.txt"; \
@@ -158,6 +159,9 @@ cli-smoke: build
 	[[ "$$pull_window_output" == *"container image inspect alpine"* ]]; \
 	[[ "$$pull_window_output" == *"container image pull alpine"* ]]; \
 	[[ "$$pull_window_output" == *"container run"* ]]; \
+	tmpfs_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/tmpfs-options.yml" up api)"; \
+	[[ "$$tmpfs_options_output" == *"--mount type=tmpfs,destination=/scratch,size=67108864,mode=1777"* ]]; \
+	[[ "$$tmpfs_options_output" != *"--tmpfs /scratch"* ]]; \
 	push_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" push --include-deps --ignore-push-failures -q api)"; \
 	[[ "$$(printf '%s\n' "$$push_options_output" | grep -c "container image push alpine")" == "2" ]]; \
 	run_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run api echo hello)"; \

@@ -9109,6 +9109,40 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("run maps long form tmpfs options to typed mount")
+    func runMapsLongFormTmpfsOptionsToTypedMount() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "tmpfs",
+                            target: "/scratch",
+                            readOnly: true,
+                            tmpfsSize: "67108864",
+                            tmpfsMode: "1777"
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"])
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--mount",
+            "type=tmpfs,destination=/scratch,readonly,size=67108864,mode=1777",
+        ]))
+        #expect(!command.containsSequence(["--tmpfs", "/scratch"]))
+    }
+
     @Test("run rejects unsupported API socket mounting before creating resources")
     func runRejectsUnsupportedAPISocketBeforeCreatingResources() async throws {
         let runner = RecordingRunner()

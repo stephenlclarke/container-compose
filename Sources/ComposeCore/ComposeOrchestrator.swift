@@ -3300,7 +3300,11 @@ private extension ComposeOrchestrator {
             guard let target = mount.target else {
                 throw ComposeError.invalidProject("tmpfs mount is missing target")
             }
-            args.append(contentsOf: ["--tmpfs", target])
+            if mountRequiresTypedTmpfsArgument(mount) {
+                args.append(contentsOf: ["--mount", typedTmpfsMountArgument(mount, target: target)])
+            } else {
+                args.append(contentsOf: ["--tmpfs", target])
+            }
             return
         }
         guard let target = mount.target else {
@@ -3323,6 +3327,29 @@ private extension ComposeOrchestrator {
             value += ":ro"
         }
         args.append(contentsOf: ["--volume", value])
+    }
+
+    /// Returns whether a tmpfs mount needs the typed `--mount` form.
+    func mountRequiresTypedTmpfsArgument(_ mount: ComposeMount) -> Bool {
+        mount.readOnly == true || nonEmpty(mount.tmpfsSize) != nil || nonEmpty(mount.tmpfsMode) != nil
+    }
+
+    /// Builds a typed Apple `container --mount` value for long-form tmpfs options.
+    func typedTmpfsMountArgument(_ mount: ComposeMount, target: String) -> String {
+        var fields = [
+            "type=tmpfs",
+            "destination=\(target)",
+        ]
+        if mount.readOnly == true {
+            fields.append("readonly")
+        }
+        if let size = nonEmpty(mount.tmpfsSize) {
+            fields.append("size=\(size)")
+        }
+        if let mode = nonEmpty(mount.tmpfsMode) {
+            fields.append("mode=\(mode)")
+        }
+        return fields.joined(separator: ",")
     }
 
     /// Returns stable runtime names for anonymous volumes attached to services.
