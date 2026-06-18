@@ -598,7 +598,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if options.dryRun {
                 try await runContainer(args, check: false)
             } else {
-                try? await resourceManager.deleteNetwork(id: runtimeName)
+                try await resourceManager.deleteNetwork(id: runtimeName)
             }
         }
 
@@ -609,7 +609,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 if options.dryRun {
                     try await runContainer(args, check: false)
                 } else {
-                    try? await resourceManager.deleteVolume(name: runtimeName)
+                    try await resourceManager.deleteVolume(name: runtimeName)
                 }
             }
         }
@@ -799,10 +799,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if exec.tty, !exec.detach {
             args.append("--tty")
         }
-        args.append(containerName(project: project, service: service, oneOff: false))
+        let containerID = try await serviceContainerID(project: project, service: service, index: exec.index)
+        args.append(containerID)
         args.append(contentsOf: exec.command)
         if !options.dryRun {
-            let containerID = containerName(project: project, service: service, oneOff: false)
             if exec.detach {
                 try await execManager.execDetached(
                     request: ContainerDetachedExecRequest(
@@ -947,7 +947,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 if options.dryRun {
                     try await runContainer(args, check: false)
                 } else {
-                    try? await resourceManager.deleteVolume(name: volume)
+                    try await resourceManager.deleteVolume(name: volume)
                 }
             }
         }
@@ -1031,13 +1031,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if stats.noStream {
             args.append("--no-stream")
         }
+        if stats.all {
+            args.append("--all")
+        }
         let ids = services.map { containerName(project: project, service: $0, oneOff: false) }
         args.append(contentsOf: ids)
         if options.dryRun {
             try await runContainer(args)
             return
         }
-        try await statsManager.stats(ids: ids, format: stats.format, noStream: stats.noStream, emit: options.emit)
+        try await statsManager.stats(
+            ids: ids,
+            format: stats.format,
+            noStream: stats.noStream,
+            includeStopped: stats.all,
+            emit: options.emit
+        )
     }
 
     /// Sends a signal to selected service containers.
@@ -1074,8 +1083,18 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
 
-        let source = try await copyEndpoint(copy.arguments[0], project: project, includeOneOff: copy.all && !options.dryRun)
-        let destination = try await copyEndpoint(copy.arguments[1], project: project, includeOneOff: copy.all && !options.dryRun)
+        let source = try await copyEndpoint(
+            copy.arguments[0],
+            project: project,
+            index: copy.index,
+            includeOneOff: copy.all && !options.dryRun
+        )
+        let destination = try await copyEndpoint(
+            copy.arguments[1],
+            project: project,
+            index: copy.index,
+            includeOneOff: copy.all && !options.dryRun
+        )
         switch (source, destination) {
         case (.containers(let sources), .local(let localPath)):
             guard let source = sources.first else {
@@ -1136,7 +1155,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Exports an existing service container filesystem as a tar archive.
     public func export(project: ComposeProject, serviceName: String, options export: ComposeExportOptions = ComposeExportOptions()) async throws {
-        try validateExportOptions(export)
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
@@ -1145,7 +1163,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if let output = export.output {
             args.append(contentsOf: ["--output", output])
         }
-        let containerID = containerName(project: project, service: service, oneOff: false)
+        let containerID = try await serviceContainerID(project: project, service: service, index: export.index)
         args.append(containerID)
         if options.dryRun {
             try await runContainer(args, inheritedIO: export.output == nil)
@@ -1154,33 +1172,38 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await exporter.exportContainer(id: containerID, output: export.output)
     }
 
-    /// Prints the public address for a statically published service port.
+    /// Prints the public address for a published service port from runtime state.
     public func port(
         project: ComposeProject,
         serviceName: String,
         privatePort: String,
         protocolName: String,
         index: Int
-    ) throws {
-        guard index == 1 else {
-            throw ComposeError.unsupported("port --index \(index): replica-aware published port lookup needs richer inspect output")
-        }
+    ) async throws {
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
 
         let requested = try parsePortLookup(privatePort: privatePort, protocolName: protocolName)
-        let mappings = try (service.ports ?? []).map { try parsePublishedPort($0, serviceName: service.name) }
+        try validatePublishedPorts(service.ports ?? [], serviceName: service.name)
+        if options.dryRun {
+            try emitDryRunPort(service: service, requested: requested)
+            return
+        }
 
-        guard let mapping = mappings.first(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published != nil }),
-              let published = mapping.published
-        else {
-            if mappings.contains(where: { $0.target == requested.target && $0.protocolName == requested.protocolName && $0.published == nil }) {
-                throw dynamicPortUnsupported(serviceName: service.name, target: requested.target, protocolName: requested.protocolName)
-            }
+        let containerID = try await serviceContainerID(project: project, service: service, index: index)
+        guard let container = try await discoveryManager.getContainer(id: containerID) else {
+            throw ComposeError.invalidProject("service '\(service.name)' container '\(containerID)' does not exist")
+        }
+
+        guard let mapping = publishedPort(
+            in: container.publishedPorts,
+            target: requested.target,
+            protocolName: requested.protocolName
+        ) else {
             throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
         }
-        options.emit("\(mapping.hostIP ?? "0.0.0.0"):\(published)")
+        options.emit("\(mapping.hostAddress):\(mapping.hostPort)")
     }
 
     /// Throws a consistently formatted unsupported-feature error.
@@ -1250,6 +1273,34 @@ private extension ComposeOrchestrator {
         }
         let suffix = oneOff ? "run-\(slug(options.oneOffIdentifier()))" : "1"
         return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
+    }
+
+    /// Resolves the runtime ID for a service container index.
+    func serviceContainerID(project: ComposeProject, service: ComposeService, index: Int) async throws -> String {
+        let id = try serviceContainerName(project: project, service: service, index: index)
+        guard index != 1, !options.dryRun else {
+            return id
+        }
+
+        let containers = try await projectContainers(projectName: project.name, all: true)
+        guard serviceContainerExists(containers, service: service, id: id) else {
+            throw ComposeError.invalidProject("service '\(service.name)' container '\(id)' does not exist")
+        }
+        return id
+    }
+
+    /// Returns the deterministic runtime name for a service container index.
+    func serviceContainerName(project: ComposeProject, service: ComposeService, index: Int) throws -> String {
+        guard index >= 1 else {
+            throw ComposeError.invalidProject("container index must be greater than zero")
+        }
+        if index == 1 {
+            return containerName(project: project, service: service, oneOff: false)
+        }
+        if let containerName = service.containerName, !containerName.isEmpty {
+            throw ComposeError.invalidProject("service '\(service.name)' uses container_name; --index \(index) requires Compose-managed replica names")
+        }
+        return "\(slug(project.name))-\(slug(service.name))-\(index)"
     }
 
     /// Validates project-level invariants before runtime orchestration starts.
@@ -1672,9 +1723,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose stats` options before invoking runtime stats.
     func validateStatsOptions(_ options: ComposeStatsOptions) throws {
-        if options.all {
-            throw ComposeError.unsupported("stats --all: apple/container stats only reports running containers")
-        }
         if options.noTrunc {
             throw ComposeError.unsupported("stats --no-trunc: apple/container stats does not expose truncation control")
         }
@@ -1736,9 +1784,6 @@ private extension ComposeOrchestrator {
 
     /// Validates `compose exec` options before invoking runtime exec.
     func validateExecOptions(_ options: ComposeExecOptions) throws {
-        if options.index != 1 {
-            throw ComposeError.unsupported("exec --index: service replica exec needs replica-aware container lookup")
-        }
         if options.privileged {
             throw ComposeError.unsupported("exec --privileged: apple/container exec does not expose privileged process execution")
         }
@@ -1751,16 +1796,6 @@ private extension ComposeOrchestrator {
         }
         if options.followLink {
             throw ComposeError.unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
-        }
-        if options.index != 1 {
-            throw ComposeError.unsupported("cp --index \(options.index): service replica copy needs replica-aware container lookup")
-        }
-    }
-
-    /// Validates `compose export` options before invoking runtime export.
-    func validateExportOptions(_ options: ComposeExportOptions) throws {
-        if options.index != 1 {
-            throw ComposeError.unsupported("export --index \(options.index): service replica export needs replica-aware container lookup")
         }
     }
 
@@ -2253,6 +2288,7 @@ private extension ComposeOrchestrator {
     private func copyEndpoint(
         _ argument: String,
         project: ComposeProject,
+        index: Int,
         includeOneOff: Bool
     ) async throws -> ComposeCopyEndpoint {
         guard let delimiter = argument.firstIndex(of: ":") else {
@@ -2270,20 +2306,32 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("container copy path for service '\(serviceName)' must be absolute")
         }
         if includeOneOff {
-            let containers = try await copyTargets(project: project, service: service, path: path)
+            let containers = try await copyTargets(project: project, service: service, path: path, index: index)
             guard !containers.isEmpty else {
                 throw ComposeError.invalidProject("no container found for service '\(serviceName)'")
             }
             return .containers(containers)
         }
-        return .containers([ComposeCopyContainerTarget(id: containerName(project: project, service: service, oneOff: false), path: path)])
+        let id = try await serviceContainerID(project: project, service: service, index: index)
+        return .containers([ComposeCopyContainerTarget(id: id, path: path)])
     }
 
     /// Returns service and one-off containers that can be targeted by `cp --all`.
-    private func copyTargets(project: ComposeProject, service: ComposeService, path: String) async throws -> [ComposeCopyContainerTarget] {
-        try await projectContainers(projectName: project.name, all: true)
+    private func copyTargets(project: ComposeProject, service: ComposeService, path: String, index: Int) async throws -> [ComposeCopyContainerTarget] {
+        let containers = try await projectContainers(projectName: project.name, all: true)
             .filter { $0.serviceName == service.name }
             .sorted(by: compareCopyTargetContainers)
+
+        if index == 1 {
+            return containers.map { ComposeCopyContainerTarget(id: $0.id, path: path) }
+        }
+
+        let indexedID = try serviceContainerName(project: project, service: service, index: index)
+        guard serviceContainerExists(containers, service: service, id: indexedID) else {
+            throw ComposeError.invalidProject("service '\(service.name)' container '\(indexedID)' does not exist")
+        }
+        return containers
+            .filter { $0.id == indexedID || $0.isOneOff }
             .map { ComposeCopyContainerTarget(id: $0.id, path: path) }
     }
 
@@ -2401,7 +2449,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("port requires a private container port")
         }
         guard !target.contains("-") else {
-            throw ComposeError.unsupported("port ranges need richer inspect output")
+            throw ComposeError.invalidProject("port requires a single private container port")
         }
         if parts.count == 2 {
             let requestedProtocol = try normalizedPortProtocol(parts[1])
@@ -2412,36 +2460,103 @@ private extension ComposeOrchestrator {
         return (target, normalizedProtocol)
     }
 
-    /// Parses one normalized Compose port mapping.
-    func parsePublishedPort(_ value: String, serviceName: String) throws -> ComposePublishedPort {
+    /// Finds the host port mapped to the requested single container port.
+    func publishedPort(
+        in ports: [ComposeContainerPublishedPort],
+        target: String,
+        protocolName: String
+    ) -> ComposeContainerPublishedPort? {
+        guard let targetPort = UInt16(target) else {
+            return nil
+        }
+        for port in ports where port.protocolName == protocolName {
+            let lowerBound = Int(port.containerPort)
+            let upperBound = lowerBound + Int(port.count) - 1
+            guard Int(targetPort) >= lowerBound, Int(targetPort) <= upperBound else {
+                continue
+            }
+            let offset = Int(targetPort) - Int(port.containerPort)
+            guard let hostPort = UInt16(exactly: Int(port.hostPort) + offset) else {
+                return nil
+            }
+            return ComposeContainerPublishedPort(
+                hostAddress: port.hostAddress,
+                hostPort: hostPort,
+                containerPort: targetPort,
+                protocolName: port.protocolName,
+                count: 1
+            )
+        }
+        return nil
+    }
+
+    /// Emits a dry-run `port` answer from normalized Compose metadata.
+    func emitDryRunPort(
+        service: ComposeService,
+        requested: (target: String, protocolName: String)
+    ) throws {
+        let ports = try (service.ports ?? []).flatMap {
+            try dryRunPublishedPorts(from: $0, serviceName: service.name)
+        }
+        guard let mapping = publishedPort(in: ports, target: requested.target, protocolName: requested.protocolName) else {
+            throw ComposeError.invalidProject("service '\(service.name)' does not publish target port \(requested.target)/\(requested.protocolName)")
+        }
+        options.emit("\(mapping.hostAddress):\(mapping.hostPort)")
+    }
+
+    /// Expands one explicit Compose port mapping for dry-run `port` previews.
+    func dryRunPublishedPorts(from value: String, serviceName: String) throws -> [ComposeContainerPublishedPort] {
         let protocolSplit = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let rawBinding = protocolSplit.first, !rawBinding.isEmpty else {
             throw ComposeError.invalidProject("service '\(serviceName)' has an empty port mapping")
         }
         let protocolName = try normalizedPortProtocol(protocolSplit.count == 2 ? protocolSplit[1] : "tcp")
         let parts = rawBinding.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-
-        switch parts.count {
-        case 1:
-            guard !parts[0].contains("-") else {
-                throw dynamicPortUnsupported(serviceName: serviceName, target: parts[0], protocolName: protocolName)
-            }
-            return ComposePublishedPort(hostIP: nil, published: nil, target: parts[0], protocolName: protocolName)
-        case 2...:
-            let target = parts[parts.count - 1]
-            let published = parts[parts.count - 2]
-            let hostParts = parts.dropLast(2)
-            let hostIP = hostParts.isEmpty ? nil : hostParts.joined(separator: ":")
-            guard !target.isEmpty, !published.isEmpty else {
-                throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
-            }
-            guard !target.contains("-"), !published.contains("-") else {
-                throw ComposeError.unsupported("service '\(serviceName)' uses port range '\(value)'; port range lookup needs richer inspect output")
-            }
-            return ComposePublishedPort(hostIP: hostIP?.isEmpty == true ? nil : hostIP, published: published, target: target, protocolName: protocolName)
-        default:
-            throw ComposeError.invalidProject("service '\(serviceName)' has unsupported port mapping '\(value)'")
+        guard parts.count >= 2 else {
+            throw dynamicPortUnsupported(serviceName: serviceName, target: rawBinding, protocolName: protocolName)
         }
+
+        let target = parts[parts.count - 1]
+        let published = parts[parts.count - 2]
+        let hostParts = parts.dropLast(2)
+        let hostAddress = hostParts.isEmpty ? "0.0.0.0" : hostParts.joined(separator: ":")
+        let hostRange = try portRange(published, field: "host", mapping: value, serviceName: serviceName)
+        let targetRange = try portRange(target, field: "container", mapping: value, serviceName: serviceName)
+        guard hostRange.count == targetRange.count else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has mismatched port ranges '\(value)'")
+        }
+
+        return (0..<hostRange.count).map { offset in
+            ComposeContainerPublishedPort(
+                hostAddress: hostAddress,
+                hostPort: UInt16(hostRange.start + offset),
+                containerPort: UInt16(targetRange.start + offset),
+                protocolName: protocolName
+            )
+        }
+    }
+
+    /// Parses a single port or inclusive port range in a Compose mapping.
+    func portRange(
+        _ value: String,
+        field: String,
+        mapping: String,
+        serviceName: String
+    ) throws -> (start: Int, count: Int) {
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard [1, 2].contains(parts.count),
+              let start = parts.first.flatMap({ UInt16($0) }),
+              start > 1
+        else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has invalid \(field) port range '\(mapping)'")
+        }
+        if parts.count == 1 {
+            return (Int(start), 1)
+        }
+        guard let end = UInt16(parts[1]), end >= start else {
+            throw ComposeError.invalidProject("service '\(serviceName)' has invalid \(field) port range '\(mapping)'")
+        }
+        return (Int(start), Int(end - start + 1))
     }
 
     /// Normalizes Docker Compose port protocols accepted by `compose port`.
@@ -2521,7 +2636,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await lifecycleManager.stopContainer(
+            try await lifecycleManager.stopContainer(
                 id: containerName,
                 signal: service.stopSignal,
                 timeoutInSeconds: timeout ?? service.stopGracePeriodSeconds
@@ -2542,7 +2657,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: nil)
+            try await lifecycleManager.stopContainer(id: id, signal: nil, timeoutInSeconds: nil)
         }
     }
 
@@ -2557,7 +2672,7 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args, check: false)
         } else {
-            try? await lifecycleManager.deleteContainer(id: id, force: force)
+            try await lifecycleManager.deleteContainer(id: id, force: force)
         }
     }
 
@@ -2693,14 +2808,6 @@ private extension ComposeOrchestrator {
 /// container can be reused.
 private struct ExistingContainer {
     var configHash: String?
-}
-
-/// Parsed representation of a Compose port mapping for static `port` lookups.
-private struct ComposePublishedPort {
-    var hostIP: String?
-    var published: String?
-    var target: String
-    var protocolName: String
 }
 
 private extension ComposeNetworkOptions {
@@ -3213,6 +3320,13 @@ private func filterContainersByStatus(_ containers: [ComposeContainerSummary], s
 /// Filters direct API containers by Compose project label.
 private func filterProjectContainers(projectName: String, containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
     containers.filter { $0.projectName == projectName }
+}
+
+/// Returns true when a discovered normal service container matches an ID.
+private func serviceContainerExists(_ containers: [ComposeContainerSummary], service: ComposeService, id: String) -> Bool {
+    containers.contains { container in
+        container.id == id && container.serviceName == service.name && !container.isOneOff
+    }
 }
 
 /// Orders normal service containers before one-off `run` containers for `cp --all`.

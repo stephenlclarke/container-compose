@@ -77,7 +77,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
         try emitExistingLogs(id: id, from: fileHandle, tail: tail, emit: emit)
         if follow {
-            try await followFile(fileHandle, emit: emit)
+            try await followFile(id: id, fileHandle, emit: emit)
         }
     }
 
@@ -150,11 +150,12 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
     /// Emits lines appended to the log file until the handle closes.
     private func followFile(
+        id: String,
         _ fileHandle: FileHandle,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
         _ = try? fileHandle.seekToEnd()
-        let stream = AsyncStream<String> { continuation in
+        let stream = AsyncThrowingStream<String, any Error> { continuation in
             fileHandle.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
@@ -167,6 +168,8 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                     return
                 }
                 guard let output = String(data: data, encoding: .utf8) else {
+                    handle.readabilityHandler = nil
+                    continuation.finish(throwing: ComposeError.invalidProject("container logs for \(id) are not valid UTF-8"))
                     return
                 }
                 for line in output.components(separatedBy: .newlines) where !line.isEmpty {
@@ -178,7 +181,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             fileHandle.readabilityHandler = nil
         }
 
-        for await line in stream {
+        for try await line in stream {
             emit(line)
         }
     }

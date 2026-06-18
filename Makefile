@@ -279,8 +279,8 @@ cli-smoke: build
 	[[ "$$exec_detach_output" == *"container exec --detach demo-api-1 sleep 60"* ]]; \
 	[[ "$$exec_detach_output" != *"--interactive"* ]]; \
 	[[ "$$exec_detach_output" != *"--tty"* ]]; \
-	exec_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --index 2 api true 2>&1 || true)"; \
-	[[ "$$exec_index_output" == *"unsupported compose feature: exec --index: service replica exec needs replica-aware container lookup"* ]]; \
+	exec_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --index 2 api true)"; \
+	[[ "$$exec_index_output" == *"container exec --interactive --tty demo-api-2 true"* ]]; \
 	exec_privileged_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --privileged api true 2>&1 || true)"; \
 	[[ "$$exec_privileged_output" == *"unsupported compose feature: exec --privileged: apple/container exec does not expose privileged process execution"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
@@ -295,14 +295,14 @@ cli-smoke: build
 	[[ "$$cp_all_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_all_service_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --all api:/tmp/file db:/tmp/file)"; \
 	[[ "$$cp_all_service_output" == *"container cp demo-api-1:/tmp/file demo-db-1:/tmp/file"* ]]; \
-	cp_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 2 api:/tmp/file . 2>&1 || true)"; \
-	[[ "$$cp_index_output" == *"unsupported compose feature: cp --index 2: service replica copy needs replica-aware container lookup"* ]]; \
+	cp_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 2 api:/tmp/file .)"; \
+	[[ "$$cp_index_output" == *"container cp demo-api-2:/tmp/file ."* ]]; \
 	export_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export api)"; \
 	[[ "$$export_output" == *"container export demo-api-1"* ]]; \
 	export_file_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export -o api.tar api)"; \
 	[[ "$$export_file_output" == *"container export --output api.tar demo-api-1"* ]]; \
-	export_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export --index 2 api 2>&1 || true)"; \
-	[[ "$$export_index_output" == *"unsupported compose feature: export --index 2: service replica export needs replica-aware container lookup"* ]]; \
+	export_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo export --index 2 api)"; \
+	[[ "$$export_index_output" == *"container export demo-api-2"* ]]; \
 	stop_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop --timeout 12 api)"; \
 	[[ "$$stop_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	stop_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop -t12 api)"; \

@@ -16,6 +16,7 @@
 
 import ContainerAPIClient
 import ContainerResource
+import ContainerizationError
 
 /// Stable container data used by Compose project discovery and projections.
 public struct ComposeContainerSummary: Sendable, Equatable, Codable {
@@ -25,6 +26,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     public var imageReference: String
     public var imageDigest: String?
     public var platform: String
+    public var publishedPorts: [ComposeContainerPublishedPort]
 
     public init(
         id: String,
@@ -32,7 +34,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         labels: [String: String] = [:],
         imageReference: String = "",
         imageDigest: String? = nil,
-        platform: String = ""
+        platform: String = "",
+        publishedPorts: [ComposeContainerPublishedPort] = []
     ) {
         self.id = id
         self.status = status
@@ -40,6 +43,30 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         self.imageReference = imageReference
         self.imageDigest = imageDigest
         self.platform = platform
+        self.publishedPorts = publishedPorts
+    }
+}
+
+/// Stable published-port data projected from Apple's container snapshot.
+public struct ComposeContainerPublishedPort: Sendable, Equatable, Codable {
+    public var hostAddress: String
+    public var hostPort: UInt16
+    public var containerPort: UInt16
+    public var protocolName: String
+    public var count: UInt16
+
+    public init(
+        hostAddress: String,
+        hostPort: UInt16,
+        containerPort: UInt16,
+        protocolName: String,
+        count: UInt16 = 1
+    ) {
+        self.hostAddress = hostAddress
+        self.hostPort = hostPort
+        self.containerPort = containerPort
+        self.protocolName = protocolName
+        self.count = count
     }
 }
 
@@ -50,7 +77,7 @@ public protocol ContainerDiscoveryAPIClienting: Sendable {
     func listContainers(filters: ContainerListFilters) async throws -> [ContainerSnapshot]
 
     /// Returns a container snapshot when `id` exists.
-    func getContainer(id: String) async -> ContainerSnapshot?
+    func getContainer(id: String) async throws -> ContainerSnapshot?
 }
 
 /// Direct Apple container APIs used for Compose project discovery.
@@ -65,14 +92,14 @@ public protocol ContainerDiscoveryManaging: Sendable {
 /// Thin Apple `container` client wrapper around discovery API calls.
 public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     public typealias List = @Sendable (ContainerListFilters) async throws -> [ContainerSnapshot]
-    public typealias Get = @Sendable (String) async -> ContainerSnapshot?
+    public typealias Get = @Sendable (String) async throws -> ContainerSnapshot
 
     private let listOperation: List
     private let getOperation: Get
 
     public init(
         list: @escaping List = { try await ContainerClient().list(filters: $0) },
-        get: @escaping Get = { try? await ContainerClient().get(id: $0) }
+        get: @escaping Get = { try await ContainerClient().get(id: $0) }
     ) {
         self.listOperation = list
         self.getOperation = get
@@ -84,8 +111,12 @@ public struct ContainerDiscoveryAPIClient: ContainerDiscoveryAPIClienting {
     }
 
     /// Fetches one container through `ContainerClient`.
-    public func getContainer(id: String) async -> ContainerSnapshot? {
-        await getOperation(id)
+    public func getContainer(id: String) async throws -> ContainerSnapshot? {
+        do {
+            return try await getOperation(id)
+        } catch let error as ContainerizationError where error.code == .notFound {
+            return nil
+        }
     }
 }
 
@@ -106,7 +137,7 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
 
     /// Fetches one container through `ContainerClient.get(id:)`.
     public func getContainer(id: String) async throws -> ComposeContainerSummary? {
-        guard let snapshot = await client.getContainer(id: id) else {
+        guard let snapshot = try await client.getContainer(id: id) else {
             return nil
         }
         return Self.summary(from: snapshot)
@@ -120,7 +151,16 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
             labels: snapshot.configuration.labels,
             imageReference: snapshot.configuration.image.reference,
             imageDigest: snapshot.configuration.image.digest,
-            platform: snapshot.platform.description
+            platform: snapshot.platform.description,
+            publishedPorts: snapshot.configuration.publishedPorts.map {
+                ComposeContainerPublishedPort(
+                    hostAddress: String(describing: $0.hostAddress),
+                    hostPort: $0.hostPort,
+                    containerPort: $0.containerPort,
+                    protocolName: $0.proto.rawValue,
+                    count: $0.count
+                )
+            }
         )
     }
 }

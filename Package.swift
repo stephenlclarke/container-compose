@@ -50,6 +50,7 @@ let package = Package(
                 .product(name: "ContainerAPIClient", package: "container"),
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
+                .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
                 .product(name: "Logging", package: "swift-log"),
             ],
