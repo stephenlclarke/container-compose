@@ -128,9 +128,10 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - Service-level `volume_driver: local` for the default local volume driver.
   - Tmpfs mounts, including long-form `tmpfs.size` and `tmpfs.mode`.
   - Same-project `volumes_from` for declared Compose mounts with `ro`/`rw` overrides.
+  - External-container `volumes_from` for Apple/container volume, bind, and tmpfs mounts discovered through direct container inspection, with `ro`/`rw` overrides.
   - One-off `run --volume/-v`, runtime-scoped `volumes`, quiet/json volume output, `rm --volumes/-v`, and `down --volumes`.
-- **Apple/container path:** Direct `ClientVolume.create`, `ClientVolume.list`, and `ClientVolume.delete`, plus supported `container create/run --volume`, `--tmpfs`, and `--mount type=tmpfs` flags.
-- **container-compose status:** Supported for declared Compose mounts, project-scoped volumes, the default local service `volume_driver`, and explicit `volume.nocopy` no-copy behavior.
+- **Apple/container path:** Direct `ClientVolume.create`, `ClientVolume.list`, `ClientVolume.delete`, and `ContainerClient.get` snapshot inspection, plus supported `container create/run --volume`, `--tmpfs`, and `--mount type=tmpfs` flags.
+- **container-compose status:** Supported for declared Compose mounts, project-scoped volumes, same-project and external `volumes_from`, the default local service `volume_driver`, and explicit `volume.nocopy` no-copy behavior.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Common runtime options
@@ -204,8 +205,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Advanced mounts and storage controls
 
-- **Compose surface:** Long-form service `volume.subpath`, image-backed service mounts, `image.subpath`, advanced bind/volume options such as bind propagation, SELinux flags, recursive bind behavior, mount consistency, non-local service `volume_driver`, and service `storage_opt`.
-- **Missing Apple/container primitive:** Named-volume subpath mounts, image-backed service mounts, advanced bind/volume controls, non-local service volume drivers, and per-container root filesystem storage options. The current Apple/container CLI/API mount surface exposes volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath, image mount source selector, propagation/SELinux/consistency controls, or service storage option mapping.
+- **Compose surface:** Long-form service `volume.subpath`, image-backed service mounts, `image.subpath`, advanced bind/volume options such as bind propagation, SELinux flags, recursive bind behavior, mount consistency, non-local service `volume_driver`, service `storage_opt`, and external inherited block mounts.
+- **Missing Apple/container primitive:** Named-volume subpath mounts, image-backed service mounts, advanced bind/volume controls, non-local service volume drivers, per-container root filesystem storage options, and a Compose-compatible way to inherit external block mounts. The current Apple/container CLI/API mount surface exposes volume source, target, readonly, tmpfs size, and tmpfs mode, but no subpath, image mount source selector, propagation/SELinux/consistency controls, block-mount inheritance mapping, or service storage option mapping.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A8](#a8-apple-gap-advanced-mounts-and-storage-controls).
 
@@ -255,19 +256,12 @@ These are valid Docker Compose v2 surfaces where [`apple/container`][apple-conta
 - **Missing plugin work:** Provider/model wiring, foreground attach ordering for `post_start`, and a one-off stop boundary for `pre_stop`.
 - **Example:** [C3](#c3-plugin-gap-develop-providers-models-and-hooks).
 
-#### External volume inheritance
-
-- **Compose surface:** External-container `volumes_from` references.
-- **Apple/container path:** Not known to be the first blocker once the plugin can discover and translate mounts from external containers.
-- **Missing plugin work:** External-container mount discovery, permission override handling, and deterministic reconciliation for inherited mounts outside the current Compose project.
-- **Example:** [C4](#c4-plugin-gap-external-volume-inheritance-api-socket-and-block-io).
-
 #### API socket and block I/O
 
 - **Compose surface:** `use_api_socket` and `blkio_config`.
 - **Apple/container path:** Not known to be the first blocker.
 - **Missing plugin work:** Security review and resource-control mapping.
-- **Example:** [C4](#c4-plugin-gap-external-volume-inheritance-api-socket-and-block-io).
+- **Example:** [C4](#c4-plugin-gap-api-socket-and-block-io).
 
 ### Config-Only Today
 
@@ -346,7 +340,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): [`apple/container`][apple-container] gap. Demonstrates service logging drivers and logging options.
 - [C1: Plugin Gap, Replica Scaling Edge Cases And Deploy](#c1-plugin-gap-replica-scaling-edge-cases-and-deploy): `container-compose` gap. Demonstrates supported scale forms, collision safeguards, and deploy semantics.
 - [C3: Plugin Gap, Develop, Providers, Models, And Hooks](#c3-plugin-gap-develop-providers-models-and-hooks): `container-compose` gap. Demonstrates watch/develop, providers, model bindings, and lifecycle hooks.
-- [C4: Plugin Gap, External Volume Inheritance, API Socket, And Block I/O](#c4-plugin-gap-external-volume-inheritance-api-socket-and-block-io): `container-compose` gap. Demonstrates external inherited mounts, API socket, and block I/O.
+- [C4: Plugin Gap, API Socket And Block I/O](#c4-plugin-gap-api-socket-and-block-io): `container-compose` gap. Demonstrates API socket exposure and block I/O controls after supported volume inheritance is accepted.
 - [O1: Config-Only Metadata](#o1-config-only-metadata): Config-only. Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
 
 ## Examples With Dockerfiles
@@ -1159,15 +1153,17 @@ container compose --dry-run watch --no-up --no-prune --quiet api
 container compose watch --no-up --no-prune --quiet api
 ```
 
-### C4: Plugin Gap, External Volume Inheritance, API Socket, And Block I/O
+### C4: Plugin Gap, API Socket And Block I/O
 
-Expected result: `container compose up` accepts same-project `volumes_from`, `volume_driver: local`, and `volume.nocopy` as supported local storage behavior, then rejects this example because external inherited mounts, API socket exposure, and block I/O controls need plugin implementation and security review. Logging driver/options are tracked in [A10](#a10-apple-gap-service-logging-controls), while advanced mount and storage controls are tracked in [A8](#a8-apple-gap-advanced-mounts-and-storage-controls).
+Expected result: `container compose up` accepts same-project `volumes_from`, external `volumes_from` backed by Apple/container volume/bind/tmpfs mount metadata, `volume_driver: local`, and `volume.nocopy` as supported storage behavior. This example then rejects because API socket exposure and block I/O controls need plugin implementation and security review. Logging driver/options are tracked in [A10](#a10-apple-gap-service-logging-controls), while advanced mount and storage controls are tracked in [A8](#a8-apple-gap-advanced-mounts-and-storage-controls).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
-- [`apple/container`][apple-container]: not known to be the first blocker for external-container volume inheritance, API socket exposure, or block I/O policy.
-- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It still needs external-container volume inheritance, API socket security review, and block I/O handling.
+- [`apple/container`][apple-container]: not known to be the first blocker for API socket exposure or block I/O policy.
+- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to Apple runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, maps external `volumes_from` by inspecting the referenced container through direct Apple/container APIs, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the Apple volume mount path, and maps long-form tmpfs `size`/`mode` through Apple `container --mount type=tmpfs`. It still needs API socket security review and block I/O handling.
+
+The external container reference assumes an existing Apple/container container named `legacy-worker` with volume, bind, or tmpfs mounts that can be represented as Apple `container --volume` or `--mount type=tmpfs` arguments.
 
 ```yaml
 # compose.yaml

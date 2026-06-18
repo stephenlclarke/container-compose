@@ -27,6 +27,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     public var imageDigest: String?
     public var platform: String
     public var publishedPorts: [ComposeContainerPublishedPort]
+    public var mounts: [ComposeMount]
 
     public init(
         id: String,
@@ -35,7 +36,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         imageReference: String = "",
         imageDigest: String? = nil,
         platform: String = "",
-        publishedPorts: [ComposeContainerPublishedPort] = []
+        publishedPorts: [ComposeContainerPublishedPort] = [],
+        mounts: [ComposeMount] = []
     ) {
         self.id = id
         self.status = status
@@ -44,6 +46,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         self.imageDigest = imageDigest
         self.platform = platform
         self.publishedPorts = publishedPorts
+        self.mounts = mounts
     }
 }
 
@@ -160,7 +163,29 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
                     protocolName: $0.proto.rawValue,
                     count: $0.count
                 )
-            }
+            },
+            mounts: snapshot.configuration.mounts.map(Self.mount(from:))
         )
+    }
+
+    /// Projects an Apple filesystem mount into a runtime-ready Compose mount.
+    private static func mount(from filesystem: Filesystem) -> ComposeMount {
+        let readOnly = filesystem.options.readonly ? true : nil
+        switch filesystem.type {
+        case .volume(let name, _, _, _):
+            return ComposeMount(type: "external-volume", source: name, target: filesystem.destination, readOnly: readOnly)
+        case .virtiofs:
+            return ComposeMount(type: "bind", source: filesystem.source, target: filesystem.destination, readOnly: readOnly)
+        case .tmpfs:
+            return ComposeMount(type: "tmpfs", target: filesystem.destination, readOnly: readOnly)
+        case .block:
+            return ComposeMount(
+                type: "block",
+                source: filesystem.source,
+                target: filesystem.destination,
+                readOnly: readOnly,
+                unsupportedFields: ["apple.container.block"]
+            )
+        }
     }
 }

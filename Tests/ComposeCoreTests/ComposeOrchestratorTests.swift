@@ -1368,7 +1368,8 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(
             runner: runner,
-            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) })
+            options: ComposeExecutionOptions(hostPortAllocator: { try ports.next(hostAddress: $0, protocolName: $1) }),
+            discoveryManager: RecordingContainerDiscoveryManager()
         ).create(project: project, options: ComposeCreateOptions())
 
         let command = try #require(runner.commands.first?.arguments)
@@ -3871,9 +3872,93 @@ struct ComposeOrchestratorTests {
         #expect(baselineHash != changedHash)
     }
 
-    @Test("up rejects external container volumes_from before creating resources")
-    func upRejectsExternalContainerVolumesFromBeforeCreatingResources() async throws {
+    @Test("up config hash includes external inherited volumes")
+    func upConfigHashIncludesExternalInheritedVolumes() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.volumesFrom = ["container:legacy"]
+                },
+            ]
+        )
+
+        let baselineRunner = RecordingRunner()
+        try await ComposeOrchestrator(
+            runner: baselineRunner,
+            discoveryManager: RecordingContainerDiscoveryManager(containers: [
+                ComposeContainerSummary(
+                    id: "legacy",
+                    status: "running",
+                    mounts: [ComposeMount(type: "external-volume", source: "legacy_data", target: "/data")]
+                ),
+            ])
+        ).up(project: project, options: ComposeUpOptions {
+            $0.noStart = true
+        })
+        let baselineCreate = try #require(baselineRunner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        let baselineHash = try #require(composeConfigHash(in: baselineCreate))
+
+        let changedRunner = RecordingRunner()
+        try await ComposeOrchestrator(
+            runner: changedRunner,
+            discoveryManager: RecordingContainerDiscoveryManager(containers: [
+                ComposeContainerSummary(
+                    id: "legacy",
+                    status: "running",
+                    mounts: [ComposeMount(type: "external-volume", source: "legacy_state", target: "/state")]
+                ),
+            ])
+        ).up(project: project, options: ComposeUpOptions {
+            $0.noStart = true
+        })
+        let changedCreate = try #require(changedRunner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        let changedHash = try #require(composeConfigHash(in: changedCreate))
+
+        #expect(baselineHash != changedHash)
+    }
+
+    @Test("up inherits external container volumes from direct inspect")
+    func upInheritsExternalContainerVolumesFromDirectInspect() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy",
+                status: "running",
+                mounts: [
+                    ComposeMount(type: "external-volume", source: "legacy_data", target: "/data"),
+                    ComposeMount(type: "bind", source: "/host/seed", target: "/seed", readOnly: true),
+                    ComposeMount(type: "tmpfs", target: "/scratch"),
+                ]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.volumesFrom = ["container:legacy:ro"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(await discoveryManager.getRequests.contains("legacy"))
+        let workerRun = try #require(runner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-worker-1"]) })
+        #expect(workerRun.containsSequence(["--volume", "legacy_data:/data:ro"]))
+        #expect(workerRun.containsSequence(["--volume", "/host/seed:/seed:ro"]))
+        #expect(workerRun.containsSequence(["--mount", "type=tmpfs,destination=/scratch,readonly"]))
+        #expect(workerRun.containsSequence(["--volume", "demo_cache:/cache"]))
+    }
+
+    @Test("up rejects missing external container volumes_from before creating resources")
+    func upRejectsMissingExternalContainerVolumesFromBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -3884,10 +3969,48 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported external volumes_from error")
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected missing external volumes_from error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'worker' uses volumes_from 'container:legacy:ro'; external container volume inheritance is not implemented by container-compose yet"))
+            #expect(error == .invalidProject("service 'worker' volumes_from 'container:legacy:ro' references missing external container 'legacy'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects unsupported external container volume mounts before creating resources")
+    func upRejectsUnsupportedExternalContainerVolumeMountsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy",
+                status: "running",
+                mounts: [
+                    ComposeMount(
+                        type: "block",
+                        source: "/tmp/disk.img",
+                        target: "/disk",
+                        unsupportedFields: ["apple.container.block"]
+                    ),
+                ]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.volumesFrom = ["container:legacy:ro"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported external volume mount error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'worker' uses volumes_from 'container:legacy:ro'; external container 'legacy' has unsupported mount fields apple.container.block"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -6745,6 +6868,11 @@ struct ComposeOrchestratorTests {
                         proto: .tcp,
                         count: 2
                     ),
+                ],
+                mounts: [
+                    Filesystem.volume(name: "legacy_data", format: "ext4", source: "/tmp/legacy-data", destination: "/data", options: ["ro"]),
+                    Filesystem.virtiofs(source: "/tmp/seed", destination: "/seed", options: []),
+                    Filesystem.tmpfs(destination: "/scratch", options: ["ro"]),
                 ]
             ),
             containerSnapshot(
@@ -6784,6 +6912,11 @@ struct ComposeOrchestratorTests {
             platform: "linux/arm64",
             publishedPorts: [
                 ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 2),
+            ],
+            mounts: [
+                ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", readOnly: true),
+                ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed"),
+                ComposeMount(type: "tmpfs", target: "/scratch", readOnly: true),
             ]
         ))
         #expect(all.map(\.status) == ["running", "stopped"])
@@ -10684,28 +10817,40 @@ struct ComposeOrchestratorTests {
         #expect(jobRun.containsSequence(["example/job", "echo", "hello"]))
     }
 
-    @Test("run rejects external container volumes_from before creating resources")
-    func runRejectsExternalContainerVolumesFromBeforeCreatingResources() async throws {
+    @Test("run inherits external container volumes from direct inspect")
+    func runInheritsExternalContainerVolumesFromDirectInspect() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy",
+                status: "running",
+                mounts: [
+                    ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", readOnly: true),
+                    ComposeMount(type: "bind", source: "/host/seed", target: "/seed"),
+                ]
+            ),
+        ])
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "example/job") {
-                    $0.volumesFrom = ["container:legacy:ro"]
+                    $0.volumesFrom = ["container:legacy:rw"]
                 },
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported external volumes_from error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses volumes_from 'container:legacy:ro'; external container volume inheritance is not implemented by container-compose yet"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+            discoveryManager: discoveryManager
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.getRequests == ["legacy"])
+        let jobRun = try #require(runner.commands.map(\.arguments).first { $0.containsSequence(["--name", "demo-job-run-abc123"]) })
+        #expect(jobRun.containsSequence(["--volume", "legacy_data:/data"]))
+        #expect(!jobRun.containsSequence(["--volume", "legacy_data:/data:ro"]))
+        #expect(jobRun.containsSequence(["--volume", "/host/seed:/seed"]))
+        #expect(jobRun.containsSequence(["example/job", "true"]))
     }
 
     @Test("run rejects unsupported volume shortcut fields before creating resources")
@@ -12656,7 +12801,8 @@ private func containerSnapshot(
     imageReference: String,
     imageDigest: String,
     platform: String,
-    publishedPorts: [PublishPort] = []
+    publishedPorts: [PublishPort] = [],
+    mounts: [Filesystem] = []
 ) throws -> ContainerSnapshot {
     var configuration = ContainerConfiguration(
         id: id,
@@ -12673,6 +12819,7 @@ private func containerSnapshot(
     configuration.labels = labels
     configuration.platform = try ociPlatform(platform)
     configuration.publishedPorts = publishedPorts
+    configuration.mounts = mounts
     return ContainerSnapshot(configuration: configuration, status: status, networks: [])
 }
 

@@ -135,7 +135,16 @@ Use `not started` or `not completed` where the event has not happened yet.
       <td>2026-06-18 14:28:22 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, and advanced bind/volume mount options as Apple/container runtime primitive gaps. External-container <code>volumes_from</code>, API socket exposure, and block I/O remain container-compose design/security-review work.</td>
+      <td colspan="4"><strong>Notes:</strong> Accepted service <code>volume_driver: local</code> as the supported default local volume driver. Reclassified service logging drivers/options, service <code>storage_opt</code>, non-local service volume drivers, advanced bind/volume mount options, and unsupported external block-mount inheritance as Apple/container runtime primitive gaps. API socket exposure and block I/O remain container-compose design/security-review work.</td>
+    </tr>
+    <tr>
+      <td>External <code>volumes_from</code> inheritance</td>
+      <td>2026-06-18 09:36:35 BST</td>
+      <td>2026-06-18 14:36:43 BST</td>
+      <td>2026-06-18 14:46:45 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Implemented external-container <code>volumes_from</code> inheritance by inspecting referenced Apple/container containers through the direct discovery API, translating supported volume, bind, and tmpfs mounts into runtime arguments, applying <code>ro</code>/<code>rw</code> overrides, and including inherited external mounts in recreate config hashes. Unsupported external block mounts reject before resources are created.</td>
     </tr>
     <tr>
       <td>Lifecycle and <code>up</code> option expansion</td>
@@ -454,10 +463,10 @@ Apple/container API work is discovered during implementation.
       <td>Logging and storage metadata</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 14:20:37 BST</td>
-      <td>not completed</td>
+      <td>2026-06-18 14:46:45 BST</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Service <code>volume_driver: local</code> is supported. Logging driver/options, service <code>storage_opt</code>, non-local service volume drivers, image-declared inherited mounts, image mounts, and advanced bind/volume options are now tracked as Apple/container runtime gaps. Remaining plugin-owned work in this area is external-container <code>volumes_from</code> mount discovery and reconciliation.</td>
+      <td colspan="4"><strong>Notes:</strong> Service <code>volume_driver: local</code> is supported. External-container <code>volumes_from</code> is supported for Apple/container volume, bind, and tmpfs mounts discovered through direct inspect. Logging driver/options, service <code>storage_opt</code>, non-local service volume drivers, image-declared inherited mounts, image mounts, external block mounts, and advanced bind/volume options are tracked as Apple/container runtime gaps.</td>
     </tr>
     <tr>
       <td>API socket and block I/O support</td>
@@ -622,7 +631,7 @@ Suggested Apple/container PR batches:
       <td>not completed</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, non-local service volume drivers, service <code>storage_opt</code>, and image-declared inherited mounts. Current Apple/container mount flags cover the common local subset only. External-container <code>volumes_from</code> is still plugin-owned until mount discovery proves that an Apple/container primitive is missing.</td>
+      <td colspan="4"><strong>Notes:</strong> Compose needs bind propagation, SELinux flags, recursive/read-only bind behavior, volume subpaths, image mounts, mount consistency controls, non-local service volume drivers, service <code>storage_opt</code>, image-declared inherited mounts, and a safe Compose-compatible mapping for external inherited block mounts. Current Apple/container mount flags cover the common local subset only. External-container <code>volumes_from</code> is implemented for volume, bind, and tmpfs mounts that direct inspect can represent as Apple <code>container --volume</code> or <code>--mount type=tmpfs</code> arguments.</td>
     </tr>
     <tr>
       <td>Health status and dependency gates</td>

@@ -573,7 +573,7 @@ public struct ComposeBuildSecret: Codable, Equatable {
 }
 
 /// Mount definition normalized from Compose volume and bind syntax.
-public struct ComposeMount: Codable, Equatable {
+public struct ComposeMount: Codable, Equatable, Sendable {
     public var type: String?
     public var source: String?
     public var target: String?
