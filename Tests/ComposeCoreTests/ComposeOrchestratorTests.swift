@@ -10669,7 +10669,10 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--label", "com.example.role=api"]))
