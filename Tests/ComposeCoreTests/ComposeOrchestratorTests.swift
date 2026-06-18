@@ -4519,8 +4519,58 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported configs before creating resources")
-    func upRejectsUnsupportedConfigsBeforeCreatingResources() async throws {
+    @Test("up maps file-backed configs and secrets to read-only bind mounts")
+    func upMapsFileBackedConfigsAndSecretsToReadOnlyBindMounts() async throws {
+        let runner = RecordingRunner()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let config = directory.appendingPathComponent("app.conf")
+        let otherConfig = directory.appendingPathComponent("other.conf")
+        let secret = directory.appendingPathComponent("token.txt")
+        let otherSecret = directory.appendingPathComponent("other-token.txt")
+        try Data("config\n".utf8).write(to: config)
+        try Data("other-config\n".utf8).write(to: otherConfig)
+        try Data("secret\n".utf8).write(to: secret)
+        try Data("other-secret\n".utf8).write(to: otherSecret)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [
+                        .object(["source": .string("app_config")]),
+                        .object(["source": .string("other_config"), "target": .string("/etc/other.conf")]),
+                    ]
+                    $0.secrets = [
+                        .object(["source": .string("app_secret")]),
+                        .object(["source": .string("other_secret"), "target": .string("custom-token")]),
+                    ]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.configs = [
+                "app_config": .object(["file": .string("app.conf")]),
+                "other_config": .object(["file": .string(otherConfig.path)]),
+            ]
+            $0.secrets = [
+                "app_secret": .object(["file": .string(secret.path)]),
+                "other_secret": .object(["file": .string(otherSecret.path)]),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--volume", "\(config.path):/app_config:ro"]))
+        #expect(command.containsSequence(["--volume", "\(otherConfig.path):/etc/other.conf:ro"]))
+        #expect(command.containsSequence(["--volume", "\(secret.path):/run/secrets/app_secret:ro"]))
+        #expect(command.containsSequence(["--volume", "\(otherSecret.path):/run/secrets/custom-token:ro"]))
+    }
+
+    @Test("up rejects external configs before creating resources")
+    func upRejectsExternalConfigsBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -4539,39 +4589,9 @@ struct ComposeOrchestratorTests {
 
         do {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported configs error")
+            Issue.record("Expected external config error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses configs; config mount support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
-    @Test("up rejects unsupported secrets before creating resources")
-    func upRejectsUnsupportedSecretsBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.secrets = [.object(["source": .string("app_secret"), "target": .string("/run/secrets/app_secret")])]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                },
-            ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            $0.secrets = ["app_secret": .object(["external": .bool(true)])]
-        }
-
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported secrets error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses secrets; secret mount support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' uses external config 'app_config'; external configs need an apple/container config store primitive"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -11484,38 +11504,41 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported configs before creating resources")
-    func runRejectsUnsupportedConfigsBeforeCreatingResources() async throws {
+    @Test("run maps file-backed configs and secrets to read-only bind mounts")
+    func runMapsFileBackedConfigsAndSecretsToReadOnlyBindMounts() async throws {
         let runner = RecordingRunner()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let config = directory.appendingPathComponent("app.conf")
+        let secret = directory.appendingPathComponent("token.txt")
+        try Data("config\n".utf8).write(to: config)
+        try Data("secret\n".utf8).write(to: secret)
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.configs = [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.configs = [.string("app_config")]
+                    $0.secrets = [.object(["source": .string("app_secret"), "target": .string("runtime-token")])]
                 },
             ]
         ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            $0.configs = ["app_config": .object(["external": .bool(true)])]
+            $0.configs = ["app_config": .object(["file": .string(config.path)])]
+            $0.secrets = ["app_secret": .object(["file": .string(secret.path)])]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported configs error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses configs; config mount support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--volume", "\(config.path):/app_config:ro"]))
+        #expect(command.containsSequence(["--volume", "\(secret.path):/run/secrets/runtime-token:ro"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 
-    @Test("run rejects unsupported secrets before creating resources")
-    func runRejectsUnsupportedSecretsBeforeCreatingResources() async throws {
+    @Test("run rejects environment-backed secrets before creating resources")
+    func runRejectsEnvironmentBackedSecretsBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -11529,14 +11552,14 @@ struct ComposeOrchestratorTests {
         ) {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            $0.secrets = ["app_secret": .object(["external": .bool(true)])]
+            $0.secrets = ["app_secret": .object(["environment": .string("APP_SECRET")])]
         }
 
         do {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported secrets error")
+            Issue.record("Expected environment-backed secret error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses secrets; secret mount support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'job' uses environment-backed secret 'app_secret'; environment-backed secrets need an apple/container secret materialization primitive"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

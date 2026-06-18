@@ -34,7 +34,7 @@ Docker Compose v2 accepts the surface and [`apple/container`][apple-container] i
 
 ### Config-Only
 
-Docker Compose v2 accepts the surface and runtime support is not needed for normalized `config` output. `container-compose` preserves the data for `config` and `convert`; runtime commands either ignore harmless metadata or reject service-level use when runtime behavior is requested.
+Docker Compose v2 accepts the surface and runtime support is not needed for normalized `config` output. `container-compose` preserves the data for `config` and `convert`; runtime commands either ignore harmless metadata or reject service-level use when the requested behavior has no supported runtime mapping.
 
 ## Status Lozenges
 
@@ -150,6 +150,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **Status:** 🟡 PARTIAL
 - **Compose surface:**
   - Named volumes, external volumes, bind mounts, read-only mounts, anonymous volumes, and deterministic per-replica anonymous volume names.
+  - File-backed service `configs` and `secrets` mounted read-only at Compose-compatible targets.
   - Top-level volume `driver`, `driver_opts`, and `labels`.
   - Service-level `volume_driver: local` for the default local volume driver.
   - Tmpfs mounts, including long-form `tmpfs.size` and `tmpfs.mode`.
@@ -157,7 +158,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - External-container `volumes_from` for Apple/container volume, bind, and tmpfs mounts discovered through direct container inspection, with `ro`/`rw` overrides.
   - One-off `run --volume/-v`, runtime-scoped `volumes`, quiet/json volume output, `rm --volumes/-v`, and `down --volumes`.
 - **Apple/container path:** Direct `ClientVolume.create`, `ClientVolume.list`, `ClientVolume.delete`, and `ContainerClient.get` snapshot inspection, plus supported `container create/run --volume`, `--tmpfs`, and `--mount type=tmpfs` flags.
-- **container-compose status:** Supported for declared Compose mounts, project-scoped volumes, same-project and external `volumes_from`, the default local service `volume_driver`, and explicit `volume.nocopy` no-copy behavior.
+- **container-compose status:** Supported for declared Compose mounts, project-scoped volumes, file-backed service `configs` and `secrets`, same-project and external `volumes_from`, the default local service `volume_driver`, and explicit `volume.nocopy` no-copy behavior.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Common runtime options
@@ -222,13 +223,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A3](#a3-apple-gap-runtime-controls).
 
-#### Health, completion, configs, secrets, service restart
+#### Health, completion, config/secret stores, service restart
 
 - **Status:** 🔴 APPLE GAP
-- **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `configs`, service-level `secrets`, service `restart`, and `deploy.restart_policy`.
-- **Missing Apple/container primitive:** Health status, exit code/completion-time metadata, config/secret mount primitives, and restart policy support.
+- **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, external/content/environment-backed service `configs` and `secrets`, service `restart`, and `deploy.restart_policy`.
+- **Missing Apple/container primitive:** Health status, exit code/completion-time metadata, first-class config/secret store or materialization primitives, ownership/mode controls for non-file-backed grants, and restart policy support.
 - **container-compose status:** Rejected before resources are created.
-- **Example:** [A4](#a4-apple-gap-health-secrets-and-restart).
+- **Example:** [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart).
 
 #### Compose model runner
 
@@ -326,10 +327,10 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 
 #### Top-level `configs` and `secrets` definitions
 
-- **Status:** ⚪ CONFIG ONLY
-- **Current behavior:** Preserved by `config` and `convert`. File-backed and environment-backed secrets can feed supported `build.secrets`.
-- **Runtime boundary:** Service-level consumption is an [`apple/container`][apple-container] gap because mounts need runtime support.
-- **Examples:** [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-secrets-and-restart).
+- **Status:** 🟡 PARTIAL
+- **Current behavior:** Preserved by `config` and `convert`. File-backed definitions can feed service `configs` and `secrets` through read-only runtime bind mounts. File-backed and environment-backed secrets can feed supported `build.secrets`.
+- **Runtime boundary:** External definitions, inline `content`, environment-backed runtime grants, and strict `uid`/`gid`/`mode` materialization need first-class [`apple/container`][apple-container] config/secret store or materialization primitives.
+- **Examples:** [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart).
 
 #### Top-level `models` definitions
 
@@ -383,12 +384,12 @@ Status: 🟢 NO PLUGIN GAP
 
 Every example includes a Compose file or commands plus the matching Dockerfile snippets needed to try the surface in an isolated scratch directory.
 
-- 🟢 SUPPORTED [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
+- 🟢 SUPPORTED [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, file-backed service configs/secrets, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
 - 🟢 SUPPORTED [S2: Supported Provider Service](#s2-supported-provider-service): Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
 - 🔴 APPLE GAP [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 - 🔴 APPLE GAP [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates hostname, domain name, explicit host entries, and legacy links.
 - 🔴 APPLE GAP [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
-- 🔴 APPLE GAP [A4: Apple Gap, Health, Secrets, And Restart](#a4-apple-gap-health-secrets-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, service secrets/configs, and restart policies.
+- 🔴 APPLE GAP [A4: Apple Gap, Health, Config And Secret Stores, And Restart](#a4-apple-gap-health-config-and-secret-stores-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, external/content/environment-backed service secrets/configs, and restart policies.
 - 🔴 APPLE GAP [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
 - 🔴 APPLE GAP [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - 🔴 APPLE GAP [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
@@ -406,12 +407,12 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 ### S1: Supported Local Web Stack
 
-Expected result: `container compose config`, `container compose convert`, `build --pull --with-dependencies --quiet`, `build --push`, `pull --include-deps --policy missing --quiet`, `push --include-deps --quiet`, `create`, `create --quiet-pull`, `up`, `up --quiet-build`, `up --quiet-pull`, `up --always-recreate-deps`, `up --timeout`, service `attach: false`, `ps`, `logs`, `exec`, `stats`, `wait` and `wait --down-project` for running/stopping service containers, `cp`, `volumes`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
+Expected result: `container compose config`, `container compose convert`, `build --pull --with-dependencies --quiet`, `build --push`, `pull --include-deps --policy missing --quiet`, `push --include-deps --quiet`, `create`, `create --quiet-pull`, `up`, `up --quiet-build`, `up --quiet-pull`, `up --always-recreate-deps`, `up --timeout`, file-backed runtime configs/secrets, service `attach: false`, `ps`, `logs`, `exec`, `stats`, `wait` and `wait --down-project` for running/stopping service containers, `cp`, `volumes`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes this project.
-- [`apple/container`][apple-container]: has the needed build, image, lifecycle, discovery, network, volume, log, exec, wait, copy, and export primitives.
+- [`apple/container`][apple-container]: has the needed build, image, lifecycle, discovery, network, volume, read-only bind mount, log, exec, wait, copy, and export primitives.
 - `container-compose`: maps the normalized model to those primitives.
 
 ```yaml
@@ -459,6 +460,11 @@ services:
         tmpfs:
           size: 64m
           mode: 1777
+    configs:
+      - source: api_config
+        target: /etc/api.conf
+    secrets:
+      - api_token
     volume_driver: local
     tmpfs:
       - /run
@@ -518,7 +524,13 @@ volumes:
     labels:
       example.com/volume: cache
 
+configs:
+  api_config:
+    file: ./api.conf
+
 secrets:
+  api_token:
+    file: ./api-token.txt
   build_cert:
     file: ./build-cert.pem
   npm_token:
@@ -542,6 +554,18 @@ File: `build-cert.pem`
 
 ```text
 local-build-secret-placeholder
+```
+
+File: `api.conf`
+
+```text
+enabled=true
+```
+
+File: `api-token.txt`
+
+```text
+local-runtime-secret-placeholder
 ```
 
 File: `api.env`
@@ -905,14 +929,14 @@ FROM alpine:3.20
 CMD ["sh", "-c", "sleep 3600"]
 ```
 
-### A4: Apple Gap, Health, Secrets, And Restart
+### A4: Apple Gap, Health, Config And Secret Stores, And Restart
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs health status, completion metadata, config/secret mounts, and restart policies for both service `restart` and `deploy.restart_policy`.
+Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs health status, completion metadata, first-class config/secret stores or materialization, and restart policies for both service `restart` and `deploy.restart_policy`. File-backed service configs/secrets are supported in [S1](#s1-supported-local-web-stack); this example uses inline and external definitions to show the remaining runtime store gap.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, service restart policies, and deploy restart policies.
-- [`apple/container`][apple-container]: missing health status, exit/completion metadata, config/secret mount primitives, and restart policy support.
+- [`apple/container`][apple-container]: missing health status, exit/completion metadata, first-class config/secret store or materialization primitives, and restart policy support.
 - `container-compose`: detects those fields and reports the Apple runtime gap.
 
 ```yaml
@@ -955,11 +979,12 @@ services:
 
 configs:
   api_config:
-    file: ./api.conf
+    content: |
+      enabled=true
 
 secrets:
   api_token:
-    file: ./api-token.txt
+    external: true
 ```
 
 Dockerfile: `migrate/Dockerfile`
@@ -1547,7 +1572,7 @@ CMD ["sh", "-c", "date && sleep 3600"]
 
 ### O1: Config-Only Metadata
 
-Expected result: `container compose config` preserves this metadata. Runtime commands do not publish `expose`, do not act on `x-*`, and reject service-level model/config/secret consumption when it needs runtime behavior.
+Expected result: `container compose config` preserves this metadata. Runtime commands do not publish `expose`, do not act on `x-*`, and reject service-level model bindings or config/secret grants only when they need unsupported runtime behavior such as a model runner or first-class config/secret store.
 
 Status path:
 

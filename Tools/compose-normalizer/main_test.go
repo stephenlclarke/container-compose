@@ -260,6 +260,65 @@ secrets:
 	}
 }
 
+func TestLoadProjectNormalizesFileBackedServiceConfigsAndSecrets(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, filepath.Join(dir, "app.conf"), "config\n")
+	writeFile(t, filepath.Join(dir, "token.txt"), "secret\n")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: alpine
+    configs:
+      - app_config
+      - source: other_config
+        target: /etc/other.conf
+    secrets:
+      - app_secret
+      - source: other_secret
+        target: runtime-token
+configs:
+  app_config:
+    file: ./app.conf
+  other_config:
+    file: ./app.conf
+secrets:
+  app_secret:
+    file: ./token.txt
+  other_secret:
+    file: ./token.txt
+`)
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "sample", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	config := types.FileObjectConfig(project.Configs["app_config"].(types.ConfigObjConfig))
+	if got, want := config.File, filepath.Join(dir, "app.conf"); got != want {
+		t.Fatalf("app_config file = %q, want %q", got, want)
+	}
+	secret := types.FileObjectConfig(project.Secrets["app_secret"].(types.SecretConfig))
+	if got, want := secret.File, filepath.Join(dir, "token.txt"); got != want {
+		t.Fatalf("app_secret file = %q, want %q", got, want)
+	}
+
+	configs := project.Services["api"].Configs.([]types.ServiceConfigObjConfig)
+	if got, want := types.FileReferenceConfig(configs[0]).Source, "app_config"; got != want {
+		t.Fatalf("api config source = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(configs[1]).Target, "/etc/other.conf"; got != want {
+		t.Fatalf("api config target = %q, want %q", got, want)
+	}
+	secrets := project.Services["api"].Secrets.([]types.ServiceSecretConfig)
+	if got, want := types.FileReferenceConfig(secrets[0]).Target, "/run/secrets/app_secret"; got != want {
+		t.Fatalf("api secret target = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(secrets[1]).Target, "runtime-token"; got != want {
+		t.Fatalf("api secret custom target = %q, want %q", got, want)
+	}
+}
+
 func TestLoadProjectMarksUnsupportedVolumeOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "data"), "data\n")

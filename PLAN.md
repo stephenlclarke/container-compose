@@ -136,6 +136,15 @@ Use the status lozenges below where the event has not happened yet.
       <td colspan="4"><strong>Notes:</strong> Added tmpfs options, volume driver options, and same-project service volume inheritance.</td>
     </tr>
     <tr>
+      <td>File-backed service configs and secrets</td>
+      <td>2026-06-18 17:49:27 BST</td>
+      <td>2026-06-18 17:49:27 BST</td>
+      <td>2026-06-18 17:49:27 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4"><strong>Notes:</strong> Mapped file-backed service <code>configs</code> and <code>secrets</code> to read-only Apple/container bind mounts with Compose-compatible default and long-form targets. External, inline, and environment-backed runtime grants remain Apple/container config/secret store or materialization gaps.</td>
+    </tr>
+    <tr>
       <td>Logging and storage blocker classification</td>
       <td>2026-06-18 09:36:35 BST</td>
       <td>2026-06-18 14:20:37 BST</td>
@@ -618,8 +627,8 @@ Suggested Apple/container PR batches:
    code, and completion timestamps.
 7. Start-first replacement parity: container rename or service alias handoff for
    Docker Compose compatible temporary replacement finalization.
-8. Mount and policy parity: first-class config/secret mounts and restart
-   policies.
+8. Mount and policy parity: first-class config/secret stores or materialization,
+   ownership/mode controls for non-file-backed grants, and restart policies.
 9. Log-data parity: timestamped log records, stream/source metadata, tail and
    since/until filtering, prefix-friendly service/replica attribution, and
    durable closed-container log replay, plus service logging driver/option
@@ -768,13 +777,13 @@ Suggested Apple/container PR batches:
       <td colspan="4"><strong>Notes:</strong> Compose needs stored exit code and completion time so <code>service_completed_successfully</code> and already-stopped <code>wait</code> replay can work.</td>
     </tr>
     <tr>
-      <td>Service config and secret mounts</td>
+      <td>Config and secret stores/materialization</td>
       <td>2026-06-18 09:36:35 BST</td>
-      <td>⚪ OPEN</td>
+      <td>2026-06-18 17:49:27 BST</td>
       <td>🔴 UPSTREAM GAP</td>
     </tr>
     <tr>
-      <td colspan="4"><strong>Notes:</strong> Compose needs first-class runtime config/secret mount primitives.</td>
+      <td colspan="4"><strong>Notes:</strong> File-backed service <code>configs</code> and <code>secrets</code> are implemented in container-compose through read-only bind mounts. Compose still needs first-class Apple/container config/secret stores or materialization for external definitions, inline config content, environment-backed runtime grants, and strict ownership/mode behavior that cannot be represented as a simple bind mount.</td>
     </tr>
     <tr>
       <td>Restart policies</td>

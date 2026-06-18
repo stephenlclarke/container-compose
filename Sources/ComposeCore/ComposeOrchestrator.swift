@@ -2306,12 +2306,7 @@ private extension ComposeOrchestrator {
         if service.healthcheck != nil {
             throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
         }
-        if let configs = service.configs, !configs.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses configs; config mount support needs an apple/container runtime gap PR")
-        }
-        if let secrets = service.secrets, !secrets.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses secrets; secret mount support needs an apple/container runtime gap PR")
-        }
+        _ = try serviceConfigSecretMounts(project: project, service: service)
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
             throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>")
         }
@@ -5285,6 +5280,85 @@ private func nonEmpty(_ value: String?) -> String? {
     return value
 }
 
+/// Config or secret kind used by service file-grant mount rendering.
+private enum ComposeFileMountKind {
+    case config
+    case secret
+
+    var singularName: String {
+        switch self {
+        case .config:
+            "config"
+        case .secret:
+            "secret"
+        }
+    }
+
+    var pluralName: String {
+        switch self {
+        case .config:
+            "configs"
+        case .secret:
+            "secrets"
+        }
+    }
+
+    func targetPath(source: String, target: String?) -> String {
+        guard let target = nonEmpty(target?.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            switch self {
+            case .config:
+                return "/\(source)"
+            case .secret:
+                return "/run/secrets/\(source)"
+            }
+        }
+        if target.hasPrefix("/") {
+            return target
+        }
+        switch self {
+        case .config:
+            return "/\(target)"
+        case .secret:
+            return "/run/secrets/\(target)"
+        }
+    }
+}
+
+/// Service-level config or secret grant after reading Compose's short or long
+/// syntax from the normalized JSON model.
+private struct ComposeFileGrant {
+    var source: String
+    var target: String?
+}
+
+private extension ComposeValue {
+    var boolValue: Bool? {
+        guard case .bool(let value) = self else {
+            return nil
+        }
+        return value
+    }
+
+    var stringValue: String? {
+        guard case .string(let value) = self else {
+            return nil
+        }
+        return value
+    }
+}
+
+/// Resolves a project-relative file path the same way Compose paths are loaded.
+private func resolvedProjectPath(_ path: String, project: ComposeProject) -> String {
+    let expanded = (path as NSString).expandingTildeInPath
+    if expanded.hasPrefix("/") {
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+    return URL(
+        fileURLWithPath: expanded,
+        relativeTo: URL(fileURLWithPath: project.workingDirectory, isDirectory: true)
+    ).standardizedFileURL.path
+}
+
 /// Resolves a normalized Compose network definition to its runtime name.
 private func networkRuntimeName(project: ComposeProject, composeName: String, network: ComposeNetwork) -> String {
     declaredResourceName(
@@ -5438,7 +5512,107 @@ private func effectiveServiceVolumes(
         }
     }
     volumes.append(contentsOf: service.volumes ?? [])
+    volumes.append(contentsOf: try serviceConfigSecretMounts(project: project, service: service))
     return volumes
+}
+
+/// Converts supported file-backed service configs and secrets into read-only
+/// bind mounts accepted by Apple `container --volume`.
+private func serviceConfigSecretMounts(project: ComposeProject, service: ComposeService) throws -> [ComposeMount] {
+    try serviceConfigSecretMounts(
+        project: project,
+        service: service,
+        kind: .config,
+        grants: service.configs ?? [],
+        definitions: project.configs ?? [:]
+    ) + serviceConfigSecretMounts(
+        project: project,
+        service: service,
+        kind: .secret,
+        grants: service.secrets ?? [],
+        definitions: project.secrets ?? [:]
+    )
+}
+
+/// Converts one config or secret grant list into bind mounts.
+private func serviceConfigSecretMounts(
+    project: ComposeProject,
+    service: ComposeService,
+    kind: ComposeFileMountKind,
+    grants: [ComposeValue],
+    definitions: [String: ComposeValue]
+) throws -> [ComposeMount] {
+    try grants.map { value in
+        let grant = try parseComposeFileGrant(value, kind: kind, service: service)
+        let source = try composeFileGrantSourcePath(
+            grant: grant,
+            definitions: definitions,
+            project: project,
+            service: service,
+            kind: kind
+        )
+        return ComposeMount(
+            type: "bind",
+            source: source,
+            target: kind.targetPath(source: grant.source, target: grant.target),
+            readOnly: true
+        )
+    }
+}
+
+/// Parses one normalized service config or secret reference.
+private func parseComposeFileGrant(
+    _ value: ComposeValue,
+    kind: ComposeFileMountKind,
+    service: ComposeService
+) throws -> ComposeFileGrant {
+    switch value {
+    case .string(let source):
+        let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) reference must not be empty")
+        }
+        return ComposeFileGrant(source: source)
+    case .object(let fields):
+        guard let source = fields["source"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) reference is missing source")
+        }
+        return ComposeFileGrant(
+            source: source,
+            target: fields["target"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    default:
+        throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) reference must be a string or object")
+    }
+}
+
+/// Resolves the top-level file source for one service config or secret grant.
+private func composeFileGrantSourcePath(
+    grant: ComposeFileGrant,
+    definitions: [String: ComposeValue],
+    project: ComposeProject,
+    service: ComposeService,
+    kind: ComposeFileMountKind
+) throws -> String {
+    guard let definition = definitions[grant.source] else {
+        throw ComposeError.invalidProject("service '\(service.name)' references undefined \(kind.singularName) '\(grant.source)'")
+    }
+    guard case .object(let fields) = definition else {
+        throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' definition must be an object")
+    }
+    if fields["external"]?.boolValue == true {
+        throw ComposeError.unsupported("service '\(service.name)' uses external \(kind.singularName) '\(grant.source)'; external \(kind.pluralName) need an apple/container \(kind.singularName) store primitive")
+    }
+    if let file = fields["file"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !file.isEmpty {
+        return resolvedProjectPath(file, project: project)
+    }
+    if fields["environment"]?.stringValue != nil {
+        throw ComposeError.unsupported("service '\(service.name)' uses environment-backed \(kind.singularName) '\(grant.source)'; environment-backed \(kind.pluralName) need an apple/container \(kind.singularName) materialization primitive")
+    }
+    if fields["content"]?.stringValue != nil {
+        throw ComposeError.unsupported("service '\(service.name)' uses content-backed \(kind.singularName) '\(grant.source)'; inline \(kind.pluralName) need an apple/container \(kind.singularName) materialization primitive")
+    }
+    throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' must define file for runtime mounting")
 }
 
 /// Parses and validates supported `volumes_from` references.
