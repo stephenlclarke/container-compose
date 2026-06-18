@@ -234,6 +234,9 @@ cli-smoke: build
 	[[ "$$up_output" == *"--network demo_default,mac=02:42:ac:11:00:03,mtu=1450"* ]]; \
 	[[ "$$up_output" == *"--name demo-db-1 --detach"* ]]; \
 	[[ "$$up_output" != *"--name demo-api-1 --detach"* ]]; \
+	up_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --pull always --quiet-pull api)"; \
+	[[ "$$up_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
+	[[ "$$up_quiet_pull_output" == *"container run"* ]]; \
 	up_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-deps api)"; \
 	[[ "$$up_no_deps_output" == *"container run"* ]]; \
 	[[ "$$up_no_deps_output" != *"demo-db-1"* ]]; \
@@ -264,6 +267,9 @@ cli-smoke: build
 	[[ "$$create_output" == *"--dns-option use-vc"* ]]; \
 	[[ "$$create_output" == *"--network demo_default,mac=02:42:ac:11:00:03,mtu=1450"* ]]; \
 	[[ "$$create_output" != *"--detach"* ]]; \
+	create_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" create --pull always --quiet-pull api)"; \
+	[[ "$$create_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
+	[[ "$$create_quiet_pull_output" == *"container create"* ]]; \
 	create_dynamic_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/dynamic-ports.yml" create api 2>&1 || true)"; \
 	[[ "$$create_dynamic_ports_output" == *"unsupported compose feature: service 'api' publishes target port 80/tcp dynamically; apple/container publish requires explicit host ports"* ]]; \
 	detached_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach api)"; \

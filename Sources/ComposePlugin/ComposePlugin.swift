@@ -181,7 +181,7 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
     var noRecreate = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, never, or build.")
     var pull: String?
-    @Flag(name: .customLong("quiet-pull"), help: "Accepted for Docker Compose compatibility.")
+    @Flag(name: .customLong("quiet-pull"), help: "Pull without printing progress output.")
     var quietPull = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
@@ -206,6 +206,7 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
                 $0.removeOrphans = removeOrphans
                 $0.pullPolicy = pull
                 $0.scales = scales
+                $0.quietPull = quietPull
             }
         )
     }
@@ -232,6 +233,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var removeOrphans = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, or never.")
     var pull: String?
+    @Flag(name: .customLong("quiet-pull"), help: "Pull without printing progress output.")
+    var quietPull = false
     @Option(name: .customLong("scale"), help: "Scale SERVICE to NUM. Replica scaling is not supported yet.")
     var scales: [String] = []
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
@@ -256,6 +259,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 $0.noRecreate = noRecreate
                 $0.removeOrphans = removeOrphans
                 $0.pullPolicy = pull
+                $0.quietPull = quietPull
                 $0.scales = scales
                 $0.noDeps = noDeps
                 $0.noStart = noStart

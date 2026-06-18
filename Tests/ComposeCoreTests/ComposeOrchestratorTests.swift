@@ -993,6 +993,30 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
     }
 
+    @Test("create quiet-pull dry run disables pull progress")
+    func createQuietPullDryRunDisablesPullProgress() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "alpine")]
+        )
+
+        try await orchestrator.create(
+            project: project,
+            options: ComposeCreateOptions {
+                $0.pullPolicy = "always"
+                $0.quietPull = true
+            }
+        )
+
+        let messages = emitted.messages
+        #expect(messages.contains("+ container image pull --progress none alpine"))
+        #expect(messages.contains { $0.hasPrefix("+ container create ") })
+    }
+
     @Test("create auto builds build-only services by default")
     func createAutoBuildsBuildOnlyServicesByDefault() async throws {
         let runner = RecordingRunner(responses: [
@@ -1739,6 +1763,32 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
+    @Test("up quiet-pull uses direct image pull before run")
+    func upQuietPullUsesDirectImagePullBeforeRun() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.pullPolicy = "always"
+                $0.quietPull = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await imageManager.requests == [.pull("example/api")])
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
     @Test("up applies service pull policies when no global pull policy is set")
     func upAppliesServicePullPoliciesWhenNoGlobalPullPolicyIsSet() async throws {
         let runner = RecordingRunner(responses: [
@@ -1774,6 +1824,33 @@ struct ComposeOrchestratorTests {
             .pullMissing("example/worker"),
         ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1", "demo-worker-1"])
+    }
+
+    @Test("up quiet-pull dry run disables service pull policy progress")
+    func upQuietPullDryRunDisablesServicePullPolicyProgress() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.pullPolicy = "always"
+                },
+            ]
+        )
+
+        try await orchestrator.up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.quietPull = true
+            }
+        )
+
+        let messages = emitted.messages
+        #expect(messages.contains("+ container image pull --progress none alpine"))
+        #expect(messages.contains { $0.hasPrefix("+ container run ") })
     }
 
     @Test("up rejects unsupported service pull policies before creating resources")
@@ -9164,6 +9241,24 @@ struct ComposeOrchestratorTests {
         try await orchestrator.pull(project: project, services: ["api"])
 
         #expect(emitted.messages == ["+ 'container bin' image pull example/api:latest"])
+    }
+
+    @Test("dry run pull quiet disables pull progress")
+    func dryRunPullQuietDisablesPullProgress() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "alpine")])
+
+        try await orchestrator.pull(
+            project: project,
+            options: ComposePullOptions {
+                $0.quiet = true
+            }
+        )
+
+        #expect(emitted.messages == ["+ container image pull --progress none alpine"])
     }
 
     @Test("dry run up does not treat synthetic inspect success as existing container")

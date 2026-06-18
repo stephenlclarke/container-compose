@@ -157,6 +157,7 @@ public struct ComposeUpOptions {
     public var noDeps = false
     public var noStart = false
     public var quietBuild = false
+    public var quietPull = false
 
     public init() {
         // Stored property defaults represent Docker Compose's default up behavior.
@@ -179,6 +180,7 @@ public struct ComposeCreateOptions {
     public var scales: [String] = []
     public var noDeps = false
     public var quietBuild = false
+    public var quietPull = false
 
     public init() {
         // Stored property defaults represent Docker Compose's default create behavior.
@@ -521,7 +523,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         try await ensureResources(project: project)
 
-        try await applyPullPolicy(up.pullPolicy, project: project, services: services)
+        try await applyPullPolicy(up.pullPolicy, project: project, services: services, quiet: up.quietPull)
 
         if up.build {
             try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
@@ -654,6 +656,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             $0.scales = up.scales
             $0.noDeps = up.noDeps
             $0.quietBuild = up.quietBuild
+            $0.quietPull = up.quietPull
         }
     }
 
@@ -749,9 +752,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             guard let image = service.image else { continue }
             do {
                 if pull.policy == "missing" {
-                    try await pullMissingImage(image)
+                    try await pullMissingImage(image, quiet: pull.quiet)
                 } else if options.dryRun {
-                    try await runContainer(["image", "pull", image])
+                    try await runContainer(imagePullArguments(image, quiet: pull.quiet))
                 } else {
                     try await imageManager.pullImage(image)
                 }
@@ -2132,17 +2135,23 @@ private extension ComposeOrchestrator {
     }
 
     /// Applies the Compose `up --pull` policy before starting services.
-    func applyPullPolicy(_ policy: String?, project: ComposeProject, services: [ComposeService]) async throws {
+    func applyPullPolicy(_ policy: String?, project: ComposeProject, services: [ComposeService], quiet: Bool = false) async throws {
         guard let policy, !policy.isEmpty else {
-            try await applyServicePullPolicies(services: services)
+            try await applyServicePullPolicies(services: services, quiet: quiet)
             return
         }
 
         switch policy {
         case "always":
-            try await pull(project: project, services: services.map(\.name))
+            try await pull(
+                project: project,
+                options: ComposePullOptions {
+                    $0.services = services.map(\.name)
+                    $0.quiet = quiet
+                }
+            )
         case "missing", "if_not_present":
-            try await pullMissingImages(services: services)
+            try await pullMissingImages(services: services, quiet: quiet)
         case "never":
             return
         default:
@@ -2160,7 +2169,7 @@ private extension ComposeOrchestrator {
             return
         }
 
-        try await applyPullPolicy(create.pullPolicy, project: project, services: services)
+        try await applyPullPolicy(create.pullPolicy, project: project, services: services, quiet: create.quietPull)
 
         guard create.build, !create.noBuild else {
             return
@@ -2179,29 +2188,29 @@ private extension ComposeOrchestrator {
     }
 
     /// Applies service-level `pull_policy` when no global pull override is set.
-    func applyServicePullPolicies(services: [ComposeService]) async throws {
+    func applyServicePullPolicies(services: [ComposeService], quiet: Bool = false) async throws {
         for service in services {
             guard let policy = service.pullPolicy, !policy.isEmpty else {
                 continue
             }
-            try await applyServicePullPolicy(policy, service: service)
+            try await applyServicePullPolicy(policy, service: service, quiet: quiet)
         }
     }
 
     /// Applies the local-runtime-backed subset of Compose service pull policies.
-    func applyServicePullPolicy(_ policy: String, service: ComposeService) async throws {
+    func applyServicePullPolicy(_ policy: String, service: ComposeService, quiet: Bool = false) async throws {
         guard let image = service.image else {
             return
         }
         switch policy {
         case "always":
             if options.dryRun {
-                try await runContainer(["image", "pull", image])
+                try await runContainer(imagePullArguments(image, quiet: quiet))
             } else {
                 try await imageManager.pullImage(image)
             }
         case "missing", "if_not_present":
-            try await pullMissingImage(image)
+            try await pullMissingImage(image, quiet: quiet)
         case "never":
             return
         default:
@@ -2331,24 +2340,34 @@ private extension ComposeOrchestrator {
     }
 
     /// Pulls only service images not already present in the local image store.
-    func pullMissingImages(services: [ComposeService]) async throws {
+    func pullMissingImages(services: [ComposeService], quiet: Bool = false) async throws {
         for service in services {
             guard let image = service.image else {
                 continue
             }
-            try await pullMissingImage(image)
+            try await pullMissingImage(image, quiet: quiet)
         }
     }
 
     /// Pulls one image when it is absent from the local image store.
-    func pullMissingImage(_ image: String) async throws {
+    func pullMissingImage(_ image: String, quiet: Bool = false) async throws {
         let inspectArgs = ["image", "inspect", image]
         if options.dryRun {
             try await runContainer(inspectArgs, check: false, emitOutput: false)
-            try await runContainer(["image", "pull", image])
+            try await runContainer(imagePullArguments(image, quiet: quiet))
         } else {
             try await imageManager.pullMissingImage(image)
         }
+    }
+
+    /// Builds the Apple `container image pull` dry-run arguments.
+    func imagePullArguments(_ image: String, quiet: Bool) -> [String] {
+        var args = ["image", "pull"]
+        if quiet {
+            args.append(contentsOf: ["--progress", "none"])
+        }
+        args.append(image)
+        return args
     }
 
     /// Builds the `container run` argument vector for a service.
