@@ -236,6 +236,7 @@ struct ComposeNormalizerTests {
         let build = ComposeBuild(
             context: "api",
             dockerfile: "Containerfile",
+            dockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
             args: ["VERSION": "1"],
             cache: ComposeBuild.Cache(
                 from: ["type=registry,ref=example/api:cache"],
@@ -265,6 +266,7 @@ struct ComposeNormalizerTests {
 
         #expect(build.cacheFrom == ["type=registry,ref=example/api:cache"])
         #expect(build.cacheTo == ["type=local,dest=.cache"])
+        #expect(build.dockerfileInline == "FROM alpine:3.20\nRUN echo inline\n")
         #expect(build.labels == ["org.opencontainers.image.title": "api"])
         #expect(build.secrets == [ComposeBuildSecret(id: "token", environment: "TOKEN")])
         #expect(build.target == "runtime")

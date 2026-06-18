@@ -2418,6 +2418,12 @@ private extension ComposeOrchestrator {
             return
         }
         try validateBuildSupport(service: service)
+        var inlineDockerfileDirectory: URL?
+        defer {
+            if let inlineDockerfileDirectory {
+                try? FileManager.default.removeItem(at: inlineDockerfileDirectory)
+            }
+        }
         var args = ["build"]
         guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
@@ -2426,8 +2432,15 @@ private extension ComposeOrchestrator {
         for tag in build.tags ?? [] where !tag.isEmpty && tag != image {
             args.append(contentsOf: ["--tag", tag])
         }
-        if let dockerfile = build.dockerfile, !dockerfile.isEmpty {
+        if let dockerfile = nonEmpty(build.dockerfile) {
+            if nonEmpty(build.dockerfileInline) != nil {
+                throw ComposeError.invalidProject("service '\(service.name)' cannot define both dockerfile and dockerfile_inline")
+            }
             args.append(contentsOf: ["--file", dockerfile])
+        } else if let dockerfileInline = nonEmpty(build.dockerfileInline) {
+            let dockerfileURL = try materializeInlineDockerfile(project: project, service: service, contents: dockerfileInline)
+            inlineDockerfileDirectory = dockerfileURL.deletingLastPathComponent()
+            args.append(contentsOf: ["--file", dockerfileURL.path])
         }
         if let target = build.target, !target.isEmpty {
             args.append(contentsOf: ["--target", target])
@@ -2461,6 +2474,16 @@ private extension ComposeOrchestrator {
         }
         args.append(build.context ?? ".")
         try await runContainer(args)
+    }
+
+    /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for Apple `container build`.
+    func materializeInlineDockerfile(project: ComposeProject, service: ComposeService, contents: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("container-compose-\(project.name)-\(service.name)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let dockerfile = directory.appendingPathComponent("Dockerfile", isDirectory: false)
+        try contents.write(to: dockerfile, atomically: true, encoding: .utf8)
+        return dockerfile
     }
 
     /// Encodes one Compose build secret for Apple `container build --secret`.

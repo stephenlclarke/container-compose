@@ -100,6 +100,33 @@ private func temporaryDirectory() throws -> URL {
     return url
 }
 
+private final class InlineDockerfileRunner: CommandRunning, @unchecked Sendable {
+    private(set) var commands: [[String]] = []
+    private(set) var dockerfileContents: [String] = []
+
+    func run(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?,
+        io: CommandIO
+    ) async throws -> CommandResult {
+        _ = executable
+        _ = workingDirectory
+        _ = environment
+        _ = io
+        commands.append(arguments)
+        if let fileIndex = arguments.firstIndex(of: "--file"),
+           arguments.indices.contains(fileIndex + 1) {
+            let dockerfileURL = URL(fileURLWithPath: arguments[fileIndex + 1])
+            if FileManager.default.fileExists(atPath: dockerfileURL.path) {
+                dockerfileContents.append(try String(contentsOf: dockerfileURL, encoding: .utf8))
+            }
+        }
+        return CommandResult(status: 0, stdout: "", stderr: "")
+    }
+}
+
 private func orchestratorDependencies(
     configure: (inout ComposeOrchestratorDependencies) -> Void
 ) -> ComposeOrchestratorDependencies {
@@ -4276,6 +4303,62 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["example/api:latest"])
     }
 
+    @Test("build materializes inline Dockerfile for container build")
+    func buildMaterializesInlineDockerfileForContainerBuild() async throws {
+        let runner = InlineDockerfileRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:inline") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        dockerfileInline: "FROM alpine:3.20\nRUN echo inline\n"
+                    )
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).build(project: project, services: ["api"], noCache: false)
+
+        let command = try #require(runner.commands.first)
+        let fileIndex = try #require(command.firstIndex(of: "--file"))
+        let dockerfilePath = command[fileIndex + 1]
+        #expect(command.containsSequence(["container", "build", "--tag", "example/api:inline"]))
+        #expect(dockerfilePath.contains("container-compose-demo-api-"))
+        #expect(dockerfilePath.hasSuffix("/Dockerfile"))
+        #expect(command.last == "api")
+        #expect(runner.dockerfileContents == ["FROM alpine:3.20\nRUN echo inline\n"])
+        #expect(!FileManager.default.fileExists(atPath: dockerfilePath))
+    }
+
+    @Test("build rejects conflicting Dockerfile forms before emitting commands")
+    func buildRejectsConflictingDockerfileFormsBeforeEmittingCommands() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        dockerfile: "Dockerfile",
+                        dockerfileInline: "FROM alpine"
+                    )
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).build(project: project, services: [], noCache: false)
+            Issue.record("Expected conflicting Dockerfile forms error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' cannot define both dockerfile and dockerfile_inline"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("pull include deps with missing policy pulls dependency images first")
     func pullIncludeDepsWithMissingPolicyPullsDependencyImagesFirst() async throws {
         let imageManager = RecordingContainerImageManager()
@@ -4610,7 +4693,7 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api:latest") {
                     $0.build = ComposeBuild(
                         context: "api",
-                        options: ComposeBuild.Options(unsupportedFields: ["dockerfile_inline", "secrets"])
+                        options: ComposeBuild.Options(unsupportedFields: ["secrets"])
                     )
                 },
             ]
@@ -4620,7 +4703,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).build(project: project, services: [], noCache: false)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported build fields dockerfile_inline, secrets; advanced build fields are not implemented by container-compose yet"))
+            #expect(error == .unsupported("service 'api' uses unsupported build fields secrets; advanced build fields are not implemented by container-compose yet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

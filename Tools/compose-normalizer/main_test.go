@@ -991,6 +991,12 @@ services:
     mem_limit: 128m
   worker:
     image: alpine
+  inline:
+    build:
+      context: ./inline
+      dockerfile_inline: |
+        FROM alpine:3.20
+        RUN echo inline
 `)
 
 	project, err := loadProject(
@@ -1043,6 +1049,16 @@ services:
 	}
 	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupported build fields = %#v, want %#v", got, want)
+	}
+	inline := project.Services["inline"]
+	if inline.Build == nil {
+		t.Fatal("inline.Build is nil")
+	}
+	if inline.Build.DockerfileInline != "FROM alpine:3.20\nRUN echo inline\n" {
+		t.Fatalf("inline Dockerfile = %q, want normalized inline Dockerfile", inline.Build.DockerfileInline)
+	}
+	if fields := inline.Build.UnsupportedFields; len(fields) != 0 {
+		t.Fatalf("inline unsupported build fields = %#v, want empty", fields)
 	}
 	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("env files = %#v, want %#v", got, want)
@@ -1298,7 +1314,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 	}, true)
 	want := []string{
 		"additional_contexts",
-		"dockerfile_inline",
 		"entitlements",
 		"extra_hosts",
 		"isolation",

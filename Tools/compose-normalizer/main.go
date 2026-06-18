@@ -168,6 +168,7 @@ type normalizedService struct {
 type normalizedBuild struct {
 	Context           string                  `json:"context,omitempty"`
 	Dockerfile        string                  `json:"dockerfile,omitempty"`
+	DockerfileInline  string                  `json:"dockerfileInline,omitempty"`
 	Args              map[string]string       `json:"args,omitempty"`
 	CacheFrom         []string                `json:"cacheFrom,omitempty"`
 	CacheTo           []string                `json:"cacheTo,omitempty"`
@@ -500,6 +501,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		result.Build = &normalizedBuild{
 			Context:           service.Build.Context,
 			Dockerfile:        service.Build.Dockerfile,
+			DockerfileInline:  service.Build.DockerfileInline,
 			Args:              buildArgs(service.Build.Args),
 			CacheFrom:         append([]string(nil), service.Build.CacheFrom...),
 			CacheTo:           append([]string(nil), service.Build.CacheTo...),
@@ -1038,7 +1040,6 @@ func unsupportedBuildFields(build *types.BuildConfig, unsupportedSecrets bool) [
 	}
 	fields := []string{}
 	appendUnsupportedBuildField(&fields, "additional_contexts", len(build.AdditionalContexts) > 0)
-	appendUnsupportedBuildField(&fields, "dockerfile_inline", build.DockerfileInline != "")
 	appendUnsupportedBuildField(&fields, "entitlements", len(build.Entitlements) > 0)
 	appendUnsupportedBuildField(&fields, "extra_hosts", len(build.ExtraHosts) > 0)
 	appendUnsupportedBuildField(&fields, "isolation", build.Isolation != "")

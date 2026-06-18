@@ -434,6 +434,7 @@ public struct ComposeBuild: Codable, Equatable {
 
     public var context: String?
     public var dockerfile: String?
+    public var dockerfileInline: String?
     public var args: [String: String]?
     public var cacheFrom: [String]?
     public var cacheTo: [String]?
@@ -449,6 +450,7 @@ public struct ComposeBuild: Codable, Equatable {
     public init(
         context: String? = nil,
         dockerfile: String? = nil,
+        dockerfileInline: String? = nil,
         args: [String: String]? = nil,
         cache: Cache = Cache(),
         metadata: Metadata = Metadata(),
@@ -456,6 +458,7 @@ public struct ComposeBuild: Codable, Equatable {
     ) {
         self.context = context
         self.dockerfile = dockerfile
+        self.dockerfileInline = dockerfileInline
         self.args = args
         self.cacheFrom = cache.from
         self.cacheTo = cache.to

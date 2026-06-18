@@ -139,6 +139,7 @@ cli-smoke: build
 	printf 'FROM alpine:3.20\n' > "$$tmpdir/api/Dockerfile"; \
 	printf 'secret\n' > "$$tmpdir/build-token.txt"; \
 	printf 'services:\n  api:\n    image: example/api:build\n    build:\n      context: ./api\n      secrets:\n        - source: file_token\n        - source: env_token\n          target: npm_token\nsecrets:\n  file_token:\n    file: ./build-token.txt\n  env_token:\n    environment: NPM_TOKEN\n' > "$$tmpdir/build-secrets.yml"; \
+	printf 'name: inline-build\nservices:\n  api:\n    image: example/api:inline\n    build:\n      context: ./api\n      dockerfile_inline: |\n        FROM alpine:3.20\n        RUN echo inline\n' > "$$tmpdir/build-inline.yml"; \
 	printf 'services:\n  worker:\n    build:\n      context: ./api\n' > "$$tmpdir/build-only.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
@@ -170,6 +171,10 @@ cli-smoke: build
 	[[ "$$build_secret_output" == *"--secret id=npm_token,env=NPM_TOKEN"* ]]; \
 	[[ "$$build_secret_output" == *"--pull"* ]]; \
 	[[ "$$build_secret_output" == *"--quiet"* ]]; \
+	build_inline_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-inline.yml" build api)"; \
+	[[ "$$build_inline_output" == *"container build"* ]]; \
+	[[ "$$build_inline_output" == *"--tag example/api:inline"* ]]; \
+	[[ "$$build_inline_output" == *"--file "*"container-compose-inline-build-api-"*"/Dockerfile"* ]]; \
 	run_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --pull missing api true)"; \
 	[[ "$$run_pull_output" == *"container image inspect alpine"* ]]; \
 	[[ "$$run_pull_output" == *"container image pull alpine"* ]]; \
