@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-18 21:05:51 BST`.
+Assessment timestamp: `2026-06-19 01:17:33 BST`.
 
 ## Scope
 
@@ -27,9 +27,9 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when static raw replay filters are present, while retaining `ContainerClient.logs(id:)` compatibility for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended lines with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps`.
+`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when raw replay filters are present, while retaining raw file-handle follow for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended raw lines with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps` and `ContainerClient.logRecordFile(id:)` for followed `--timestamps`, `--since`, and `--until` behavior that needs capture-time records.
 
-[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, timestamped structured log storage, and `ContainerClient.logRecords(id:options:)`. Followed structured records and filtered follow streams are still runtime/API gaps.
+[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, and `ContainerClient.logRecordFile(id:)`. Those local APIs give the plugin enough data to implement timestamped and time-filtered follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
 
 ## Related Compose Implementations
 
@@ -110,7 +110,7 @@ How this repo complements it: <img alt="COMPLEMENTS OTHER IMPL" src="https://img
     <tr>
       <td>Timestamp and time-window filtering</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>Static <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack. Timestamped follow and filtered follow streams remain apple/container gaps.</td>
+      <td>Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured record snapshots plus the structured record file API. Released support still depends on upstream apple/container PR acceptance.</td>
     </tr>
     <tr>
       <td>Service logging drivers/options</td>
@@ -169,7 +169,7 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Remaining work:
 
-- None known for plugin-side follow fan-out and line splitting. Timestamped or structured follow filters remain apple/container work in later sections.
+- None known for plugin-side follow fan-out and line splitting. Timestamped or structured follow filtering is tracked in the timestamp section because it depends on the local apple/container structured record APIs being upstreamed.
 
 Completed implementation:
 
@@ -267,8 +267,8 @@ Current `container-compose` behavior:
 - Accepts RFC 3339 timestamps and relative durations such as `30m`, `2h`, or `1h30m`.
 - Passes static timestamp filters through the direct apple/container log API.
 - Uses structured `ContainerClient.logRecords(id:options:)` on the local integration stack to render static `logs --timestamps` without parsing timestamps from application output.
-- Rejects `--follow` combined with `--since` or `--until` because the current direct API returns filtered snapshots, not filtered follow streams.
-- Rejects `--timestamps --follow` because the current direct API returns timestamped record snapshots, not timestamped record streams.
+- Uses `ContainerClient.logRecordFile(id:)` on the local integration stack to follow structured JSONL records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
+- Keeps unfiltered raw follow on the original stdio file handle so the common streaming path does not parse structured records unnecessarily.
 - Cannot reconstruct capture timestamps for logs produced before the structured record store exists.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
@@ -276,22 +276,20 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 - Upstream exposes raw stdio and boot log file handles.
 - The local `logs-integration` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`.
 - The local `logs-integration` branch stores timestamped runtime records and exposes `ContainerClient.logRecords(id:options:)` with timestamp, stream, and raw bytes for static replay.
-- Does not yet expose a log cursor, filtered follow streams, or structured followed record streams.
+- The local `logs-integration` branch exposes `ContainerClient.logRecordFile(id:)` so clients can follow the structured JSONL record file directly.
+- Does not yet have upstream-reviewed cursor, truncation, retention, or rotation semantics for long-lived structured follow clients.
 
 Missing behavior:
 
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Static `--timestamps`, `--since`, and `--until` work on the local integration stack, but still need upstream apple/container PR acceptance before they can be treated as released support.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Runtime or API support for filtered follow streams.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Runtime or API support for timestamped followed record streams.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> A stable record format now exists locally; upstream review needs to confirm the long-term shape before plugin releases can depend on it.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Static and followed `--timestamps`, `--since`, and `--until` work on the local integration stack, but still need upstream apple/container PR acceptance before they can be treated as released support.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> A stable record format and file API now exist locally; upstream review needs to confirm cursor, retention, and rotation behavior before plugin releases can depend on it.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Capture timestamps are unavailable for containers that only have legacy raw stdio logs.
 
 Implementation direction:
 
-- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs: log options, filtered static replay, structured timestamped record storage, and structured record retrieval.
+- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs: log options, filtered static replay, structured timestamped record storage, structured record retrieval, and structured record file follow access.
 - Compare the upstreamable API shape with [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) before opening PRs so both Compose implementations can converge on one runtime contract.
-- After the runtime exposes filtered streaming, allow `--follow` together with `--since` and `--until`.
-- After the runtime exposes structured record streaming, allow `--timestamps --follow`.
-- Add golden behavior tests using absolute timestamps, relative durations, and combined `--since`/`--until` windows.
+- Add golden behavior tests using absolute timestamps, relative durations, followed timestamp output, and combined `--since`/`--until` windows.
 
 ### L7. Service Logging Driver and Options
 
@@ -332,23 +330,23 @@ Current `container-compose` behavior:
 - Requires UTF-8 log data.
 - Preserves blank line records in full replay, local tailing, and followed streams.
 - Buffers followed output so split lines are not emitted until complete, and flushes a final partial line when the stream closes.
-- Emits UTF-8 log text chunks rather than structured stdout/stderr records.
+- Emits UTF-8 log text chunks; the local structured record path preserves stdout/stderr identity in apple/container records, but Compose output formatting does not currently distinguish streams.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
-- Stores a merged stdio file and returns a file handle.
-- Does not expose stdout/stderr stream metadata or per-record boundaries.
+- Upstream stores a merged stdio file and returns a file handle.
+- The local `logs-integration` branch also stores structured records with stdout/stderr stream metadata and per-record capture timestamps.
 
 Missing behavior:
 
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Decide whether non-UTF-8 logs should fail, pass bytes through, or match Docker's replacement behavior.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Preserve stdout/stderr stream identity if future Compose behavior requires it for formatting or filtering.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Decide whether stdout/stderr stream identity should influence future Compose formatting or filtering.
 
 Implementation direction:
 
 - Add Docker Compose comparison fixtures for trailing newline behavior and non-UTF-8 bytes.
 - Keep the plugin-side blank-line and split-line regression tests as guardrails.
-- Track stream identity as upstream runtime work unless apple/container adds structured log records.
+- Keep the stream-identity data available through structured records while avoiding plugin formatting changes unless Docker Compose comparison fixtures require them.
 
 ## Suggested Work Order
 
@@ -356,9 +354,9 @@ Implementation direction:
 2. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
 3. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
-5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records and direct retrieval API.
+5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and structured record file follow API.
 6. <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Propose apple/container service logging policy primitives.
-7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit timestamped follow, filtered follow, and service `logging` mappings after upstream runtime APIs exist.
+7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit service `logging` mappings and any Docker Compose comparison differences after upstream runtime APIs exist.
 
 ## Acceptance Criteria
 
@@ -368,7 +366,7 @@ Implementation direction:
 - Default output includes Compose-style service/replica prefixes and optional color; `--no-log-prefix` and `--no-color` alter real behavior.
 - `--tail` applies independently to each selected container.
 - Blank lines and trailing newline behavior match Docker Compose v2 fixtures.
-- Static `--timestamps`, `--since`, and `--until` match Docker Compose v2 where the local apple/container structured record API is available; follow combinations reject with precise apple/container runtime-gap messages until timestamped and filtered runtime streams exist.
+- Static and followed `--timestamps`, `--since`, and `--until` match Docker Compose v2 where the local apple/container structured record and record-file APIs are available; released support waits for upstream apple/container PR acceptance.
 - Service `logging.driver` and `logging.options` either map to apple/container logging policy primitives or reject before side effects with precise apple/container runtime-gap messages.
 
 ## References

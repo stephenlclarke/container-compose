@@ -1483,12 +1483,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let runtimeTail = try runtimeLogTail(logOptions.tail)
         let runtimeSince = try runtimeLogTimestamp(logOptions.since)
         let runtimeUntil = try runtimeLogTimestamp(logOptions.until)
-        try validateRuntimeLogOptions(
-            follow: logOptions.follow,
-            since: runtimeSince,
-            until: runtimeUntil,
-            timestamps: logOptions.timestamps
-        )
         let targets = try await logTargets(project: project, services: services, index: logOptions.index)
         if options.dryRun {
             for target in targets {
@@ -4811,16 +4805,6 @@ private extension ComposeOrchestrator {
             return options.currentDate().addingTimeInterval(-interval)
         }
         throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps or relative durations")
-    }
-
-    /// Validates log filters that depend on apple/container runtime behavior.
-    func validateRuntimeLogOptions(follow: Bool, since: Date?, until: Date?, timestamps: Bool) throws {
-        if timestamps && follow {
-            throw ComposeError.unsupported("logs --timestamps --follow: apple/container does not expose timestamped follow streams")
-        }
-        if follow && (since != nil || until != nil) {
-            throw ComposeError.unsupported("logs --follow with --since/--until: apple/container does not expose filtered follow streams")
-        }
     }
 
     private static func parseRFC3339LogTimestamp(_ value: String) -> Date? {

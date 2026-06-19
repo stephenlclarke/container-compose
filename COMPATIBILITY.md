@@ -148,12 +148,12 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
-  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, blank-line-preserving log replay/follow, static `logs --timestamps`, `logs --no-color`, `logs --no-log-prefix`, static `logs --since` and `logs --until`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
+  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, blank-line-preserving log replay/follow, static and followed `logs --timestamps`, `logs --no-color`, `logs --no-log-prefix`, static and followed `logs --since` and `logs --until`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
   - File movement: service-aware `cp`, service-to-service `cp`, indexed `cp`, `cp --all`, one-off copy target discovery, and `export`.
   - Runtime queries: published-port `port`, indexed `port`, dynamically allocated and host-bound port lookup after container creation, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
-- **apple/container path:** Direct `ContainerClient` list/get/logs/logRecords/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`. Static `logs --since`, `logs --until`, and `logs --timestamps` use the local apple/container log-options and structured log-record API work.
-- **container-compose status:** Supported for the listed direct API paths. Timestamped follow, filtered log follow streams, byte-for-byte non-UTF-8 handling, released structured stdout/stderr log identity, and runtime process/event controls remain apple/container gaps or compatibility decisions.
+- **apple/container path:** Direct `ContainerClient` list/get/logs/logRecords/logRecordFile/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`. Static `logs --since`, `logs --until`, and `logs --timestamps` use the local apple/container log-options and structured log-record API work; followed timestamp and time-window output uses the local structured log-record-file API.
+- **container-compose status:** Supported for the listed direct API paths on the local integration stack. Released timestamped follow and filtered log follow support waits for upstream apple/container acceptance of the structured record file API. Byte-for-byte non-UTF-8 handling, released structured stdout/stderr log identity semantics, and runtime process/event controls remain apple/container gaps or compatibility decisions.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Develop watch workflows
@@ -446,7 +446,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 ### S1: Supported Local Web Stack
 
-Expected result: `container compose config`, `container compose convert`, `build --pull --with-dependencies --quiet`, `build --push`, `pull --include-deps --policy missing --quiet`, `push --include-deps --quiet`, `create`, `create --quiet-pull`, `up`, `up --quiet-build`, `up --quiet-pull`, `up --always-recreate-deps`, `up --timeout`, file-backed runtime configs/secrets, service `attach: false`, `ps`, `logs`, `exec`, `stats`, `wait` and `wait --down-project` for running/stopping service containers, `cp`, `volumes`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
+Expected result: `container compose config`, `container compose convert`, `build --pull --with-dependencies --quiet`, `build --push`, `pull --include-deps --policy missing --quiet`, `push --include-deps --quiet`, `create`, `create --quiet-pull`, `up`, `up --quiet-build`, `up --quiet-pull`, `up --always-recreate-deps`, `up --timeout`, file-backed runtime configs/secrets, service `attach: false`, `ps`, `logs`, timestamped and time-filtered logs on the local structured-record integration stack, `exec`, `stats`, `wait` and `wait --down-project` for running/stopping service containers, `cp`, `volumes`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
 
 Status path:
 
@@ -680,6 +680,8 @@ container compose logs api
 container compose logs
 container compose logs --index 2 api
 container compose logs --since 2026-06-18T10:00:00Z --until 30m api
+container compose logs --follow --timestamps api
+container compose logs --follow --since 2026-06-18T10:00:00Z --until 30m api
 container compose --ansi always logs api
 container compose logs --no-color --no-log-prefix api
 container compose attach --no-stdin --sig-proxy=false api

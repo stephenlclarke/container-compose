@@ -25,6 +25,9 @@ public protocol ContainerLogAPIClienting: Sendable {
 
     /// Returns the structured log records exposed by apple/container for `id`.
     func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord]
+
+    /// Returns the structured log record file exposed by apple/container for `id`.
+    func logRecordFileHandle(id: String) async throws -> FileHandle
 }
 
 public extension ContainerLogAPIClienting {
@@ -72,16 +75,20 @@ public extension ContainerLogManaging {
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     public typealias Logs = @Sendable (String, ContainerLogOptions) async throws -> [FileHandle]
     public typealias LogRecords = @Sendable (String, ContainerLogOptions) async throws -> [ContainerLogRecord]
+    public typealias LogRecordFile = @Sendable (String) async throws -> FileHandle
 
     private let logsOperation: Logs
     private let logRecordsOperation: LogRecords
+    private let logRecordFileOperation: LogRecordFile
 
     public init(
         logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1) },
-        logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1) }
+        logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1) },
+        logRecordFile: @escaping LogRecordFile = { try await ContainerClient().logRecordFile(id: $0) }
     ) {
         self.logsOperation = logs
         self.logRecordsOperation = logRecords
+        self.logRecordFileOperation = logRecordFile
     }
 
     /// Fetches log file handles through `ContainerClient`.
@@ -92,6 +99,11 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     /// Fetches structured log records through `ContainerClient`.
     public func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
         try await logRecordsOperation(id, options)
+    }
+
+    /// Fetches the structured log record file through `ContainerClient`.
+    public func logRecordFileHandle(id: String) async throws -> FileHandle {
+        try await logRecordFileOperation(id)
     }
 }
 
@@ -113,10 +125,19 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
+        if follow && (timestamps || since != nil || until != nil) {
+            try await emitStructuredFollowLogs(
+                id: id,
+                tail: tail,
+                since: since,
+                until: until,
+                timestamps: timestamps,
+                emit: emit
+            )
+            return
+        }
+
         if timestamps {
-            guard !follow else {
-                throw ComposeError.unsupported("logs --timestamps --follow: apple/container does not expose timestamped follow streams")
-            }
             try await emitTimestampedLogs(id: id, tail: tail, since: since, until: until, emit: emit)
             return
         }
@@ -143,6 +164,41 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         }
     }
 
+    /// Emits followed structured records when Compose needs runtime timestamps.
+    private func emitStructuredFollowLogs(
+        id: String,
+        tail: Int?,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        let options = ContainerLogOptions(since: since, until: until, timestamps: timestamps)
+        let records = try await client.logRecords(id: id, options: options)
+        let lines = try structuredLogLines(id: id, records: records, timestamps: timestamps)
+        if tail.map({ $0 > 0 }) ?? true {
+            let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
+            emitLogLines(selectedLines, emit: emit)
+        }
+
+        if let until, until <= Date() {
+            return
+        }
+
+        let fileHandle = try await client.logRecordFileHandle(id: id)
+        defer {
+            try? fileHandle.close()
+        }
+        try await followLogRecordFile(
+            id: id,
+            fileHandle,
+            since: since,
+            until: until,
+            timestamps: timestamps,
+            emit: emit
+        )
+    }
+
     /// Emits timestamped log records exposed by the structured log API.
     private func emitTimestampedLogs(
         id: String,
@@ -157,30 +213,20 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
         let options = ContainerLogOptions(since: since, until: until, timestamps: true)
         let records = try await client.logRecords(id: id, options: options)
-        let lines = try timestampedLogLines(id: id, records: records)
+        let lines = try structuredLogLines(id: id, records: records, timestamps: true)
         let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
         emitLogLines(selectedLines, emit: emit)
     }
 
-    /// Converts structured runtime chunks into Compose log lines with timestamps.
-    private func timestampedLogLines(id: String, records: [ContainerLogRecord]) throws -> [String] {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        var accumulator = TimestampedLogLineAccumulator()
-        var lines: [String] = []
-        for record in records {
-            guard let output = String(data: record.data, encoding: .utf8) else {
-                throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
-            }
-            for line in accumulator.append(output, timestamp: record.timestamp) {
-                lines.append("\(formatter.string(from: line.timestamp)) \(line.text)")
-            }
-        }
-        if let line = accumulator.flush() {
-            lines.append("\(formatter.string(from: line.timestamp)) \(line.text)")
-        }
-        return lines
+    /// Converts structured runtime chunks into Compose log lines.
+    private func structuredLogLines(
+        id: String,
+        records: [ContainerLogRecord],
+        timestamps: Bool
+    ) throws -> [String] {
+        let renderer = StructuredLogRecordRenderer(id: id, since: nil, until: nil, timestamps: timestamps)
+        let result = try renderer.append(records)
+        return result.lines + renderer.flush()
     }
 
     /// Emits existing log contents before an optional follow loop starts.
@@ -286,6 +332,68 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         }
     }
 
+    /// Emits structured records appended to the JSONL log file until the handle closes.
+    private func followLogRecordFile(
+        id: String,
+        _ fileHandle: FileHandle,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        _ = try? fileHandle.seekToEnd()
+        let decoder = LogRecordJSONLDecoder()
+        let renderer = StructuredLogRecordRenderer(id: id, since: since, until: until, timestamps: timestamps)
+        let stream = AsyncThrowingStream<String, any Error> { continuation in
+            fileHandle.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    do {
+                        _ = try handle.seekToEnd()
+                    } catch {
+                        handle.readabilityHandler = nil
+                        do {
+                            let records = try decoder.flush()
+                            let result = try renderer.append(records)
+                            for line in result.lines + renderer.flush() {
+                                continuation.yield(line)
+                            }
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    }
+                    return
+                }
+
+                do {
+                    let records = try decoder.append(data)
+                    let result = try renderer.append(records)
+                    for line in result.lines {
+                        continuation.yield(line)
+                    }
+                    if result.shouldFinish {
+                        handle.readabilityHandler = nil
+                        for line in renderer.flush() {
+                            continuation.yield(line)
+                        }
+                        continuation.finish()
+                    }
+                } catch {
+                    handle.readabilityHandler = nil
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+        defer {
+            fileHandle.readabilityHandler = nil
+        }
+
+        for try await line in stream {
+            emit(line)
+        }
+    }
+
     /// Emits parsed log records while preserving intentionally blank lines.
     private func emitLogLines(_ lines: [String], emit: @escaping @Sendable (String) -> Void) {
         guard !lines.isEmpty else {
@@ -350,6 +458,125 @@ private struct LogRecordSplit {
 private struct TimestampedLogLine {
     var timestamp: Date
     var text: String
+}
+
+/// Result from rendering structured log records.
+private struct StructuredLogRenderResult {
+    var lines: [String]
+    var shouldFinish: Bool
+}
+
+/// Incrementally decodes newline-delimited structured log records.
+private final class LogRecordJSONLDecoder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let decoder: JSONDecoder
+    private var buffer = Data()
+
+    init() {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        self.decoder = decoder
+    }
+
+    /// Appends a JSONL byte chunk and returns every complete record.
+    func append(_ data: Data) throws -> [ContainerLogRecord] {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        buffer.append(data)
+        var records: [ContainerLogRecord] = []
+        while let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+            let line = buffer[..<newline]
+            buffer.removeSubrange(...newline)
+            guard !line.isEmpty else {
+                continue
+            }
+            records.append(try decoder.decode(ContainerLogRecord.self, from: Data(line)))
+        }
+        return records
+    }
+
+    /// Decodes the final unterminated JSONL record, if one exists.
+    func flush() throws -> [ContainerLogRecord] {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        guard !buffer.isEmpty else {
+            return []
+        }
+        let data = buffer
+        buffer.removeAll()
+        return [try decoder.decode(ContainerLogRecord.self, from: data)]
+    }
+}
+
+/// Renders structured runtime records as Compose log lines.
+private final class StructuredLogRecordRenderer: @unchecked Sendable {
+    private let lock = NSLock()
+    private let id: String
+    private let since: Date?
+    private let until: Date?
+    private let timestamps: Bool
+    private let formatter: ISO8601DateFormatter
+    private var accumulator = TimestampedLogLineAccumulator()
+
+    init(id: String, since: Date?, until: Date?, timestamps: Bool) {
+        self.id = id
+        self.since = since
+        self.until = until
+        self.timestamps = timestamps
+        self.formatter = ISO8601DateFormatter()
+        self.formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    }
+
+    /// Appends records and returns complete lines plus whether an `until` bound ended the stream.
+    func append(_ records: [ContainerLogRecord]) throws -> StructuredLogRenderResult {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        var lines: [String] = []
+        for record in records {
+            if let until, record.timestamp > until {
+                return StructuredLogRenderResult(lines: lines, shouldFinish: true)
+            }
+            if let since, record.timestamp < since {
+                continue
+            }
+            guard let output = String(data: record.data, encoding: .utf8) else {
+                throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
+            }
+            for line in accumulator.append(output, timestamp: record.timestamp) {
+                lines.append(format(line))
+            }
+        }
+        return StructuredLogRenderResult(lines: lines, shouldFinish: false)
+    }
+
+    /// Returns the final unterminated structured line, if one exists.
+    func flush() -> [String] {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        guard let line = accumulator.flush() else {
+            return []
+        }
+        return [format(line)]
+    }
+
+    private func format(_ line: TimestampedLogLine) -> String {
+        guard timestamps else {
+            return line.text
+        }
+        return "\(formatter.string(from: line.timestamp)) \(line.text)"
+    }
 }
 
 /// Incrementally rebuilds timestamped lines from structured log chunks.
