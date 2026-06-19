@@ -116,17 +116,17 @@ How this repo complements it: <img alt="PEER IMPL" src="https://img.shields.io/b
     <tr>
       <td>Timestamp and time-window filtering</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Followed structured logs use one record-file handle for initial replay and streaming. Released support still depends on upstream apple/container PR acceptance.</td>
+      <td><img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Followed structured logs use one record-file handle for initial replay and streaming. Released support still depends on upstream apple/container PR acceptance.</td>
     </tr>
     <tr>
       <td>Service logging drivers/options</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>Default JSON-file logging without options maps to apple/container local stdio capture. Non-default drivers and logging options need runtime logging policy primitives that apple/container does not currently expose.</td>
+      <td><img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Default JSON-file logging without options maps to apple/container local stdio capture. Non-default drivers and logging options need runtime logging policy primitives that apple/container does not currently expose.</td>
     </tr>
     <tr>
       <td>Exact byte/line fidelity</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
+      <td><img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
     </tr>
   </tbody>
 </table>
