@@ -3483,7 +3483,7 @@ private extension ComposeOrchestrator {
            !isSupportedRuntimeLogDriver(logDriver) {
             fields.append(("log_driver", loggingReason))
         }
-        if let logOptions = service.logOptions, !logOptions.isEmpty {
+        if !isSupportedLegacyRuntimeLogOptions(service: service) {
             fields.append(("log_opt", loggingReason))
         }
         if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
@@ -3507,7 +3507,7 @@ private extension ComposeOrchestrator {
             }
             let driver = fields["driver"]?.stringValue
             let options = fields["options"]
-            return (driver == nil || isSupportedRuntimeLogDriver(driver)) && isEmptyLoggingOptions(options)
+            return isSupportedRuntimeLogDriver(driver) && isSupportedRuntimeLogOptions(options, driver: driver)
         default:
             return false
         }
@@ -3515,11 +3515,11 @@ private extension ComposeOrchestrator {
 
     /// Returns whether a logging driver can be represented by apple/container.
     func isSupportedRuntimeLogDriver(_ driver: String?) -> Bool {
-        driver == "json-file" || driver == "local" || driver == "none"
+        driver == nil || driver == "json-file" || driver == "local" || driver == "none"
     }
 
-    /// Returns whether Compose logging options request no runtime policy changes.
-    func isEmptyLoggingOptions(_ options: ComposeValue?) -> Bool {
+    /// Returns whether Compose logging options map to local apple/container options.
+    func isSupportedRuntimeLogOptions(_ options: ComposeValue?, driver: String?) -> Bool {
         guard let options else {
             return true
         }
@@ -3527,10 +3527,34 @@ private extension ComposeOrchestrator {
         case .null:
             return true
         case .object(let fields):
-            return fields.isEmpty
+            if fields.isEmpty {
+                return true
+            }
+            guard driver != "none" else {
+                return false
+            }
+            return fields.allSatisfy { key, value in
+                isSupportedRuntimeLogOptionKey(key) && value.stringValue != nil
+            }
         default:
             return false
         }
+    }
+
+    /// Returns whether legacy Compose log options map to local apple/container options.
+    func isSupportedLegacyRuntimeLogOptions(service: ComposeService) -> Bool {
+        guard let logOptions = service.logOptions, !logOptions.isEmpty else {
+            return true
+        }
+        guard isSupportedRuntimeLogDriver(service.logDriver), service.logDriver != "none" else {
+            return false
+        }
+        return logOptions.keys.allSatisfy(isSupportedRuntimeLogOptionKey)
+    }
+
+    /// Returns whether an option key is supported by apple/container local logging.
+    func isSupportedRuntimeLogOptionKey(_ key: String) -> Bool {
+        key == "max-size" || key == "max-file"
     }
 
     /// Returns the runtime log driver override needed for non-default Compose logging.
@@ -3540,6 +3564,25 @@ private extension ComposeOrchestrator {
             return driver == "none" ? "none" : nil
         }
         return service.logDriver == "none" ? "none" : nil
+    }
+
+    /// Returns local apple/container logging options for service create/run.
+    func runtimeLogOptionArguments(service: ComposeService) -> [String] {
+        var options: [String: String] = [:]
+        if case .object(let fields)? = service.logging,
+           case .object(let logOptions)? = fields["options"] {
+            for (key, value) in logOptions {
+                if let stringValue = value.stringValue {
+                    options[key] = stringValue
+                }
+            }
+        }
+        for (key, value) in service.logOptions ?? [:] {
+            options[key] = value
+        }
+        return options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
+            ["--log-opt", "\(key)=\(value)"]
+        }
     }
 
     /// Returns the service replica that should inherit foreground IO for `up`.
@@ -4601,6 +4644,7 @@ private extension ComposeOrchestrator {
         if let logDriver = runtimeLogDriverArgument(service: service) {
             args.append(contentsOf: ["--log-driver", logDriver])
         }
+        args.append(contentsOf: runtimeLogOptionArguments(service: service))
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
             if let value {
                 args.append(contentsOf: ["--env", "\(key)=\(value)"])

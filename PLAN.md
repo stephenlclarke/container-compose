@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 05:07:12 BST`.
+Assessment timestamp: `2026-06-19 05:20:42 BST`.
 
 ## Scope
 
@@ -120,7 +120,7 @@ How this repo complements it: <img alt="COMPLEMENTS OTHER IMPL" src="https://img
     <tr>
       <td>Service logging drivers/options</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging without options map to apple/container local stdio capture. <code>none</code> maps to disabled persisted capture on the local integration stack. The local apple/container branch now parses local <code>max-size</code>/<code>max-file</code> options and supports static rotated replay, but Compose option mapping still waits on plugin-side local option mapping and rotated follow semantics.</td>
+      <td><img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging map to apple/container local stdio capture. <code>none</code> maps to disabled persisted capture on the local integration stack. Local <code>max-size</code>/<code>max-file</code> options now map to apple/container <code>--log-opt</code> flags; rotated follow and remote drivers remain open.</td>
     </tr>
     <tr>
       <td>Exact byte/line fidelity</td>
@@ -322,21 +322,22 @@ Docker Compose surface: service `logging.driver`, `logging.options`, legacy `log
 
 Current `container-compose` behavior:
 
-- Accepts `logging.driver: json-file`, `logging.driver: local`, `logging.options: {}`, and legacy `log_driver: json-file` or `log_driver: local` without `log_opt` as no-op mappings to apple/container's local stdio log capture.
+- Accepts `logging.driver: json-file`, `logging.driver: local`, `logging.options: {}`, and legacy `log_driver: json-file` or `log_driver: local` as mappings to apple/container's local stdio log capture.
 - Maps `logging.driver: none` and legacy `log_driver: none` without options to apple/container's local disabled-capture policy on the local integration stack.
-- Rejects remote or otherwise unsupported service logging drivers and any logging options before creating resources.
+- Maps local `logging.options` and legacy `log_opt` keys `max-size` and `max-file` to apple/container `--log-opt` flags for the default, `json-file`, and `local` drivers.
+- Rejects remote or otherwise unsupported service logging drivers, unsupported logging options, and any logging options attached to `none` before creating resources.
 - Preserves the compatibility boundary in tests and `COMPATIBILITY.md`.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Captures container stdio to local runtime files.
 - The local `logs-integration` branch adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, supports disabled persisted capture through `--log-driver none`, parses `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` into the local rotation policy, honors configured local `maxSizeInBytes` / `maxFileCount` at the runtime writer, and exposes static rotated raw and structured replay through direct log options.
-- Does not expose Docker-compatible remote logging driver selection, Compose logging option parsing, rotated follow semantics, or remote logging backends.
+- Does not expose Docker-compatible remote logging driver selection, rotated follow semantics, or remote logging backends.
 
 Missing behavior:
 
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Disabled persisted capture works on the local integration stack but still depends on upstream apple/container PR acceptance before it can be treated as released support.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Writer-level local rotation, CLI option parsing, and static rotated replay work on the local integration stack for `max-size` and `max-file`, but container-compose option mapping and rotated follow behavior still need implementation/API design.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Writer-level local rotation, CLI option parsing, Compose option mapping, and static rotated replay work on the local integration stack for `max-size` and `max-file`, but rotated follow behavior still needs implementation/API design.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Remote or non-local runtime logging driver selection per container.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Driver-specific options such as syslog endpoint, labels, env inclusion, and non-local option handoff.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Clear policy for unsupported Docker logging drivers on macOS.
@@ -344,7 +345,7 @@ Missing behavior:
 Implementation direction:
 
 - Split the local [`apple/container`](https://github.com/apple/container) logging policy work into small upstream PRs: policy model, disabled local capture, and CLI/direct API bridge.
-- Keep `container-compose` rejection behavior for logging options and remote drivers until the plugin maps local options and the runtime read path supports rotated follow.
+- Keep `container-compose` rejection behavior for remote drivers, options on `none`, and non-local logging options until apple/container exposes compatible runtime primitives.
 - Revisit rotation and retention only after upstream review settles cursor and retention semantics for followed structured logs.
 
 ### L8. Exact Log Fidelity

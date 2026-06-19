@@ -999,6 +999,32 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("create maps local logging options to runtime policy")
+    func createMapsLocalLoggingOptionsToRuntimePolicy() async throws {
+        for testCase in supportedLocalServiceLoggingOptionCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let discoveryManager = RecordingContainerDiscoveryManager()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+                .create(project: project, options: ComposeCreateOptions())
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+            #expect(!command.contains("--log-driver"))
+            for option in testCase.expectedOptions {
+                #expect(command.containsSequence(["--log-opt", option]))
+            }
+        }
+    }
+
     @Test("create surfaces network create failures before creating containers")
     func createSurfacesNetworkCreateFailuresBeforeCreatingContainers() async throws {
         let runner = RecordingRunner()
@@ -4040,6 +4066,32 @@ struct ComposeOrchestratorTests {
             #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
             #expect(!command.contains("--log-driver"))
             #expect(!command.contains("--log-opt"))
+        }
+    }
+
+    @Test("up maps local logging options to runtime policy")
+    func upMapsLocalLoggingOptionsToRuntimePolicy() async throws {
+        for testCase in supportedLocalServiceLoggingOptionCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let discoveryManager = RecordingContainerDiscoveryManager()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+                .up(project: project, options: ComposeUpOptions())
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+            #expect(!command.contains("--log-driver"))
+            for option in testCase.expectedOptions {
+                #expect(command.containsSequence(["--log-opt", option]))
+            }
         }
     }
 
@@ -12363,6 +12415,31 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run maps local logging options to runtime policy")
+    func runMapsLocalLoggingOptionsToRuntimePolicy() async throws {
+        for testCase in supportedLocalServiceLoggingOptionCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "run", "--name"]))
+            #expect(!command.contains("--log-driver"))
+            for option in testCase.expectedOptions {
+                #expect(command.containsSequence(["--log-opt", option]))
+            }
+        }
+    }
+
     @Test("run maps disabled logging driver to runtime policy")
     func runMapsDisabledLoggingDriverToRuntimePolicy() async throws {
         for testCase in disabledServiceLoggingFieldCases() {
@@ -14403,6 +14480,11 @@ private struct SupportedServiceLoggingFieldCase: Sendable {
     let configure: @Sendable (inout ComposeService) -> Void
 }
 
+private struct SupportedServiceLoggingOptionCase: Sendable {
+    let configure: @Sendable (inout ComposeService) -> Void
+    let expectedOptions: [String]
+}
+
 private struct DisabledServiceLoggingFieldCase: Sendable {
     let configure: @Sendable (inout ComposeService) -> Void
 }
@@ -14426,6 +14508,48 @@ private func supportedLocalServiceLoggingFieldCases() -> [SupportedServiceLoggin
         ),
         SupportedServiceLoggingFieldCase(
             configure: { $0.logDriver = "local" }
+        ),
+    ]
+}
+
+private func supportedLocalServiceLoggingOptionCases() -> [SupportedServiceLoggingOptionCase] {
+    [
+        SupportedServiceLoggingOptionCase(
+            configure: {
+                $0.logging = .object([
+                    "driver": .string("json-file"),
+                    "options": .object(["max-size": .string("10m"), "max-file": .string("3")]),
+                ])
+            },
+            expectedOptions: ["max-size=10m", "max-file=3"]
+        ),
+        SupportedServiceLoggingOptionCase(
+            configure: {
+                $0.logging = .object([
+                    "driver": .string("local"),
+                    "options": .object(["max-size": .string("512b")]),
+                ])
+            },
+            expectedOptions: ["max-size=512b"]
+        ),
+        SupportedServiceLoggingOptionCase(
+            configure: {
+                $0.logging = .object(["options": .object(["max-file": .string("5")])])
+            },
+            expectedOptions: ["max-file=5"]
+        ),
+        SupportedServiceLoggingOptionCase(
+            configure: {
+                $0.logDriver = "local"
+                $0.logOptions = ["max-size": "20m", "max-file": "4"]
+            },
+            expectedOptions: ["max-size=20m", "max-file=4"]
+        ),
+        SupportedServiceLoggingOptionCase(
+            configure: {
+                $0.logOptions = ["max-size": "1g"]
+            },
+            expectedOptions: ["max-size=1g"]
         ),
     ]
 }
@@ -14454,7 +14578,12 @@ private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedSer
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("local"), "options": .object(["max-size": .string("10m")])]) }
+            configure: { $0.logging = .object(["driver": .string("local"), "options": .object(["mode": .string("non-blocking")])]) }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "logging",
+            reason: "service logging driver/options need an apple/container runtime gap PR",
+            configure: { $0.logging = .object(["driver": .string("none"), "options": .object(["max-size": .string("10m")])]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_driver",
@@ -14464,7 +14593,15 @@ private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedSer
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_opt",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logOptions = ["max-size": "10m"] }
+            configure: { $0.logOptions = ["mode": "non-blocking"] }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "log_opt",
+            reason: "service logging driver/options need an apple/container runtime gap PR",
+            configure: {
+                $0.logDriver = "none"
+                $0.logOptions = ["max-size": "10m"]
+            }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "storage_opt",
