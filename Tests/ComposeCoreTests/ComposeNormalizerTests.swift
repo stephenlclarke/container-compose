@@ -190,6 +190,46 @@ struct ComposeNormalizerTests {
         ))
     }
 
+    @Test("normalizes logging fixture without losing shell variables")
+    func normalizesLoggingFixtureWithoutLosingShellVariables() async throws {
+        let composeFile = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("examples/logging/compose.yml")
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+
+        #expect(project.name == "compose-log-fixture")
+        #expect(project.services.count == 9)
+        #expect(project.services["replicas"]?.scale == 2)
+        #expect(project.services["disabled-capture"]?.logging == .object(["driver": .string("none")]))
+        #expect(project.services["rotating-json"]?.logging == .object([
+            "driver": .string("json-file"),
+            "options": .object([
+                "max-file": .string("3"),
+                "max-size": .string("2k"),
+            ]),
+        ]))
+        #expect(project.services["rotating-local"]?.logging == .object([
+            "driver": .string("local"),
+            "options": .object([
+                "max-file": .string("3"),
+                "max-size": .string("2k"),
+            ]),
+        ]))
+
+        let followCommand = try #require(project.services["follow"]?.command?.last)
+        #expect(followCommand.contains(#""$i" -le "${LOG_LINES}""#))
+        #expect(followCommand.contains(#"sleep "${LOG_DELAY}""#))
+
+        let tailCommand = try #require(project.services["tail"]?.command?.last)
+        #expect(tailCommand.contains(#""$i" -le 12"#))
+
+        let replicaCommand = try #require(project.services["replicas"]?.command?.last)
+        #expect(replicaCommand.contains(#""${HOSTNAME:-unknown}""#))
+
+        let fidelityCommand = try #require(project.services["fidelity"]?.command?.last)
+        #expect(fidelityCommand.contains(#"printf 'non-utf8:\377\376\n'"#))
+    }
+
     @Test("normalizes dynamic host-bound ports through compose-go")
     func normalizesDynamicHostBoundPortsThroughComposeGo() async throws {
         let fileManager = FileManager.default
