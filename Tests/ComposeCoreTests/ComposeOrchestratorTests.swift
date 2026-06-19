@@ -7796,7 +7796,10 @@ struct ComposeOrchestratorTests {
             Data(),
             Data("live\n".utf8),
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
@@ -7818,7 +7821,10 @@ struct ComposeOrchestratorTests {
             Data("one\n\npa".utf8),
             Data("one\n\npart\n".utf8),
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
@@ -7837,7 +7843,10 @@ struct ComposeOrchestratorTests {
             Data("old\nactive\n".utf8),
             Data("active\nnew\n".utf8),
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
@@ -7849,14 +7858,17 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["new"])
     }
 
-    @Test("log manager keeps followed direct API partial line pending")
-    func logManagerKeepsFollowedDirectAPIPartialLinePending() async throws {
+    @Test("log manager keeps followed direct API partial line pending while live")
+    func logManagerKeepsFollowedDirectAPIPartialLinePendingWhileLive() async throws {
         let emitted = MessageRecorder()
         let client = RotatingContainerLogAPIClient(logSnapshots: [
             Data(),
             Data("partial".utf8),
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
@@ -7868,6 +7880,26 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages.isEmpty)
     }
 
+    @Test("log manager flushes followed direct API partial line after stop")
+    func logManagerFlushesFollowedDirectAPIPartialLineAfterStop() async throws {
+        let emitted = MessageRecorder()
+        let stateProvider = RecordingContainerLogFollowStateProvider(responses: [true, false])
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data(),
+            Data("partial".utf8),
+        ])
+        let manager = ContainerClientLogManager(client: client, followStateProvider: stateProvider)
+
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        }
+        try await waitForMessages(["partial"], in: emitted)
+        try await followTask.value
+
+        #expect(emitted.messages == ["partial"])
+        #expect(await stateProvider.requests == ["demo-api-1", "demo-api-1"])
+    }
+
     @Test("log manager preserves non-UTF-8 bytes while following direct API logs")
     func logManagerPreservesNonUTF8BytesWhileFollowingDirectAPILogs() async throws {
         let emitted = DataRecorder()
@@ -7875,7 +7907,10 @@ struct ComposeOrchestratorTests {
             Data(),
             Data([0xFF, 0xFE, 0x0A, 0x41, 0x0A]),
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
@@ -15183,6 +15218,30 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
         for output in outputs {
             emit(Data(output.utf8))
         }
+    }
+}
+
+private actor RecordingContainerLogFollowStateProvider: ContainerLogFollowStateProviding {
+    private var responses: [Bool]
+    private var storage: [String] = []
+
+    init(responses: [Bool] = []) {
+        self.responses = responses
+    }
+
+    var requests: [String] {
+        storage
+    }
+
+    func isLiveForLogFollow(id: String) async throws -> Bool {
+        storage.append(id)
+        guard !responses.isEmpty else {
+            return true
+        }
+        guard responses.count > 1 else {
+            return responses[0]
+        }
+        return responses.removeFirst()
     }
 }
 

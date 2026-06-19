@@ -364,7 +364,7 @@ Docker Compose surface: raw application stdout/stderr content displayed through 
 Current `container-compose` behavior:
 
 - Preserves blank line records in full replay, local tailing, and followed streams.
-- Buffers followed output so split lines are not emitted until complete, and flushes a final partial line when the stream closes.
+- Buffers followed output so split lines are not emitted until complete, uses the direct runtime status API to detect when a raw followed container is no longer live, and flushes the final partial line at that stop boundary.
 - Emits log byte records through a dedicated data emitter so non-UTF-8 payloads are preserved in raw, prefixed, followed, and timestamped output.
 - Covers Compose line-boundary fixtures for empty logs, blank records, final newlines, CRLF/CR separators, prefixed blank records, and unterminated final records.
 - The local structured record path preserves stdout/stderr identity in apple/container records, but Compose output formatting does not currently distinguish streams.

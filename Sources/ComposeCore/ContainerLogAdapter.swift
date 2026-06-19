@@ -37,6 +37,29 @@ public extension ContainerLogAPIClienting {
     }
 }
 
+/// Runtime state used to decide when a followed log stream has finished.
+public protocol ContainerLogFollowStateProviding: Sendable {
+    /// Returns true while container `id` can still append runtime log bytes.
+    func isLiveForLogFollow(id: String) async throws -> Bool
+}
+
+/// `ContainerClient`-backed live-state provider for followed log streams.
+public struct ContainerClientLogFollowStateProvider: ContainerLogFollowStateProviding {
+    private let client: ContainerDiscoveryAPIClienting
+
+    public init(client: ContainerDiscoveryAPIClienting = ContainerDiscoveryAPIClient()) {
+        self.client = client
+    }
+
+    /// Returns true for running or stopping containers.
+    public func isLiveForLogFollow(id: String) async throws -> Bool {
+        guard let container = try await client.getContainer(id: id) else {
+            return false
+        }
+        return container.status == .running || container.status == .stopping
+    }
+}
+
 /// Direct apple/container API used for service container logs.
 public protocol ContainerLogManaging: Sendable {
     /// Emits logs for container `id`, optionally following appended lines.
@@ -149,9 +172,14 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
 /// `ContainerClient`-backed log manager for service containers.
 public struct ContainerClientLogManager: ContainerLogManaging {
     private let client: ContainerLogAPIClienting
+    private let followStateProvider: ContainerLogFollowStateProviding
 
-    public init(client: ContainerLogAPIClienting = ContainerLogAPIClient()) {
+    public init(
+        client: ContainerLogAPIClienting = ContainerLogAPIClient(),
+        followStateProvider: ContainerLogFollowStateProviding = ContainerClientLogFollowStateProvider()
+    ) {
         self.client = client
+        self.followStateProvider = followStateProvider
     }
 
     /// Emits stdio logs through `ContainerClient.logs(id:)`.
@@ -266,6 +294,9 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         let options = ContainerLogOptions(includeRotated: true)
         let data = try await logDataSnapshot(id: id, options: options)
         emitExistingLogs(from: data, tail: tail, emit: emit)
+        guard try await followStateProvider.isLiveForLogFollow(id: id) else {
+            return
+        }
 
         var cursor = LogDataReplayCursor(snapshot: data)
         let accumulator = LogLineAccumulator()
@@ -279,6 +310,12 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             let appended = cursor.appendedData(in: try await logDataSnapshot(id: id, options: options))
             for line in accumulator.append(appended) {
                 emit(line)
+            }
+            guard try await followStateProvider.isLiveForLogFollow(id: id) else {
+                if let finalLine = accumulator.flush() {
+                    emit(finalLine)
+                }
+                return
             }
         }
     }
