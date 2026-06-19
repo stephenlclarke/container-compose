@@ -148,12 +148,12 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
-  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, fixture-covered blank-line/trailing-newline handling, non-UTF-8-preserving log replay/follow, static and followed `logs --timestamps`, `logs --no-color`, `logs --no-log-prefix`, static and followed `logs --since` and `logs --until`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
+  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, fixture-covered blank-line/trailing-newline handling, non-UTF-8-preserving log replay/follow, static and followed `logs --timestamps`, `logs --no-color`, `logs --no-log-prefix`, static and followed `logs --since` and `logs --until` with RFC 3339, Unix timestamp, and relative-duration filters, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
   - File movement: service-aware `cp`, service-to-service `cp`, indexed `cp`, `cp --all`, one-off copy target discovery, and `export`.
   - Runtime queries: published-port `port`, indexed `port`, dynamically allocated and host-bound port lookup after container creation, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
 - **apple/container path:** Direct `ContainerClient` list/get/logs/logRecords/logRecordFile/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`. Static `logs --since`, `logs --until`, and `logs --timestamps` use the local apple/container log-options and structured log-record API work; the local apple/container CLI renders static `container logs --timestamps` and followed `container logs --follow --timestamps/--since/--until` from structured records. Followed timestamp and time-window output uses one local structured log-record-file handle for initial replay and streaming.
-- **container-compose status:** Supported for the listed direct API paths on the local integration stack. Line-boundary tests cover empty logs, blank records, final newlines, CRLF/CR separators, prefixed blank records, and unterminated final records. Released timestamped follow, filtered log follow, and byte-preserving structured log support wait for upstream apple/container acceptance of the structured record and record-file API shape. Released structured stdout/stderr log identity semantics and runtime process/event controls remain apple/container gaps or compatibility decisions.
+- **container-compose status:** Supported for the listed direct API paths on the local integration stack. Time filters accept RFC 3339 timestamps, Unix timestamps in seconds with optional fractional seconds, and relative durations. Line-boundary tests cover empty logs, blank records, final newlines, CRLF/CR separators, prefixed blank records, and unterminated final records. Released timestamped follow, filtered log follow, and byte-preserving structured log support wait for upstream apple/container acceptance of the structured record and record-file API shape. Released structured stdout/stderr log identity semantics and runtime process/event controls remain apple/container gaps or compatibility decisions.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Develop watch workflows
@@ -682,6 +682,7 @@ container compose logs api
 container compose logs
 container compose logs --index 2 api
 container compose logs --since 2026-06-18T10:00:00Z --until 30m api
+container compose logs --since 1781776800 --until 1781782200.25 api
 container compose logs --follow --timestamps api
 container compose logs --follow --since 2026-06-18T10:00:00Z --until 30m api
 container compose --ansi always logs api

@@ -9534,6 +9534,48 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["api-1 | filtered-log"])
     }
 
+    @Test("logs accepts Unix timestamp filters")
+    func logsAcceptsUnixTimestampFilters() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["filtered-log"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(
+                dryRun: false,
+                runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
+                    emit: { emitted.append($0) },
+                    emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) }
+                )
+            ),
+            logManager: logManager
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.since = "1781776800"
+                $0.until = "1781782200.25"
+            }
+        )
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(
+                id: "demo-api-1",
+                tail: nil,
+                follow: false,
+                since: date("2026-06-18T10:00:00Z"),
+                until: date("2026-06-18T11:30:00.250Z")
+            ),
+        ])
+        #expect(emitted.messages == ["api-1 | filtered-log"])
+    }
+
     @Test("logs passes timestamps to log manager")
     func logsPassesTimestampsToLogManager() async throws {
         let emitted = MessageRecorder()
@@ -9647,7 +9689,7 @@ struct ComposeOrchestratorTests {
             )
             Issue.record("Expected invalid time filter error")
         } catch let error as ComposeError {
-            #expect(error == .invalidProject("logs time filters must be RFC 3339 timestamps or relative durations"))
+            #expect(error == .invalidProject("logs time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

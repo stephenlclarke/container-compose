@@ -4878,10 +4878,13 @@ private extension ComposeOrchestrator {
         if let date = Self.parseRFC3339LogTimestamp(value) {
             return date
         }
+        if let date = Self.parseUnixLogTimestamp(value) {
+            return date
+        }
         if let interval = Self.parseRelativeLogDuration(value) {
             return options.currentDate().addingTimeInterval(-interval)
         }
-        throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps or relative durations")
+        throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
     }
 
     private static func parseRFC3339LogTimestamp(_ value: String) -> Date? {
@@ -4890,6 +4893,35 @@ private extension ComposeOrchestrator {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return fractionalFormatter.date(from: value) ?? formatter.date(from: value)
+    }
+
+    private static func parseUnixLogTimestamp(_ value: String) -> Date? {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count <= 2,
+              let secondsPart = parts.first,
+              !secondsPart.isEmpty,
+              secondsPart.allSatisfy(\.isNumber),
+              let seconds = TimeInterval(String(secondsPart)),
+              seconds.isFinite,
+              seconds >= 0
+        else {
+            return nil
+        }
+
+        var fractionalSeconds: TimeInterval = 0
+        if parts.count == 2 {
+            let fractionPart = parts[1]
+            guard !fractionPart.isEmpty,
+                  fractionPart.count <= 9,
+                  fractionPart.allSatisfy(\.isNumber),
+                  let fraction = TimeInterval("0.\(fractionPart)")
+            else {
+                return nil
+            }
+            fractionalSeconds = fraction
+        }
+
+        return Date(timeIntervalSince1970: seconds + fractionalSeconds)
     }
 
     private static func parseRelativeLogDuration(_ value: String) -> TimeInterval? {

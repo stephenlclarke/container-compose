@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 04:15:05 BST`.
+Assessment timestamp: `2026-06-19 04:18:35 BST`.
 
 ## Scope
 
@@ -280,7 +280,7 @@ Docker Compose surface: `docker compose logs --timestamps`, `docker compose logs
 Current `container-compose` behavior:
 
 - Exposes `--since` and `--until` on `compose logs`.
-- Accepts RFC 3339 timestamps and relative durations such as `30m`, `2h`, or `1h30m`.
+- Accepts RFC 3339 timestamps, Unix timestamps in seconds with optional fractional seconds, and relative durations such as `30m`, `2h`, or `1h30m`.
 - Passes static timestamp filters through the direct apple/container log API.
 - Uses structured `ContainerClient.logRecords(id:options:)` on the local integration stack to render static `logs --timestamps` without parsing timestamps from application output.
 - Uses one `ContainerClient.logRecordFile(id:)` handle on the local integration stack for initial replay plus followed structured JSONL records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
@@ -308,7 +308,7 @@ Implementation direction:
 
 - Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs: log options, filtered static replay, structured timestamped record storage, structured record retrieval, and structured record file follow access.
 - Compare the upstreamable API shape with [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) before opening PRs so both Compose implementations can converge on one runtime contract.
-- Add golden behavior tests using absolute timestamps, relative durations, followed timestamp output, and combined `--since`/`--until` windows after the upstream API shape settles.
+- Add golden behavior tests using RFC 3339 timestamps, Unix timestamps, relative durations, followed timestamp output, and combined `--since`/`--until` windows after the upstream API shape settles.
 
 ### L7. Service Logging Driver and Options
 
