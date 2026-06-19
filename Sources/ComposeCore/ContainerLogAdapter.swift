@@ -180,20 +180,26 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        if follow && (timestamps || since != nil || until != nil) {
-            try await emitStructuredFollowLogs(
-                id: id,
-                tail: tail,
-                since: since,
-                until: until,
-                timestamps: timestamps,
-                emit: emit
-            )
-            return
-        }
-
-        if timestamps {
-            try await emitTimestampedLogs(id: id, tail: tail, since: since, until: until, emit: emit)
+        if timestamps || since != nil || until != nil {
+            if follow {
+                try await emitStructuredFollowLogs(
+                    id: id,
+                    tail: tail,
+                    since: since,
+                    until: until,
+                    timestamps: timestamps,
+                    emit: emit
+                )
+            } else {
+                try await emitStructuredLogs(
+                    id: id,
+                    tail: tail,
+                    since: since,
+                    until: until,
+                    timestamps: timestamps,
+                    emit: emit
+                )
+            }
             return
         }
 
@@ -262,21 +268,22 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         )
     }
 
-    /// Emits timestamped log records exposed by the structured log API.
-    private func emitTimestampedLogs(
+    /// Emits structured log records exposed by the direct log API.
+    private func emitStructuredLogs(
         id: String,
         tail: Int?,
         since: Date?,
         until: Date?,
+        timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         guard tail.map({ $0 > 0 }) ?? true else {
             return
         }
 
-        let options = ContainerLogOptions(since: since, until: until, timestamps: true, includeRotated: true)
+        let options = ContainerLogOptions(timestamps: true, includeRotated: true)
         let records = try await client.logRecords(id: id, options: options)
-        let lines = structuredLogLines(records: records, timestamps: true)
+        let lines = structuredLogLines(records: records, since: since, until: until, timestamps: timestamps)
         let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
         emitLogLines(selectedLines, emit: emit)
     }
@@ -335,9 +342,11 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     /// Converts structured runtime chunks into Compose log lines.
     private func structuredLogLines(
         records: [ContainerLogRecord],
+        since: Date?,
+        until: Date?,
         timestamps: Bool
     ) -> [Data] {
-        let renderer = StructuredLogRecordRenderer(since: nil, until: nil, timestamps: timestamps)
+        let renderer = StructuredLogRecordRenderer(since: since, until: until, timestamps: timestamps)
         let result = renderer.append(records)
         return result.lines + renderer.flush()
     }
@@ -574,13 +583,13 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
 
         var lines: [Data] = []
         for record in records {
-            if let until, record.timestamp > until {
-                return StructuredLogRenderResult(lines: lines, shouldFinish: true)
-            }
-            if let since, record.timestamp < since {
-                continue
-            }
             for line in accumulator.append(record.data, timestamp: record.timestamp) {
+                if let until, line.timestamp > until {
+                    return StructuredLogRenderResult(lines: lines, shouldFinish: true)
+                }
+                if let since, line.timestamp < since {
+                    continue
+                }
                 lines.append(format(line))
             }
         }
@@ -595,6 +604,12 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
         }
 
         guard let line = accumulator.flush() else {
+            return []
+        }
+        if let until, line.timestamp > until {
+            return []
+        }
+        if let since, line.timestamp < since {
             return []
         }
         return [format(line)]

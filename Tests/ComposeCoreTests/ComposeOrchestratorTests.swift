@@ -7591,13 +7591,16 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("log manager passes static filters to direct API")
-    func logManagerPassesStaticFiltersToDirectAPI() async throws {
+    @Test("log manager applies static time filters through structured records")
+    func logManagerAppliesStaticTimeFiltersThroughStructuredRecords() async throws {
         let emitted = MessageRecorder()
         let since = Date(timeIntervalSince1970: 100)
         let until = Date(timeIntervalSince1970: 200)
-        let client = RecordingContainerLogAPIClient(fileHandles: [
-            try temporaryLogFileHandle(contents: "filtered\n"),
+        let client = RecordingContainerLogAPIClient(records: [
+            ContainerLogRecord(timestamp: since.addingTimeInterval(-1), stream: .stdout, data: Data("old\n".utf8)),
+            ContainerLogRecord(timestamp: since, stream: .stdout, data: Data("inside".utf8)),
+            ContainerLogRecord(timestamp: until, stream: .stdout, data: Data("-line\n".utf8)),
+            ContainerLogRecord(timestamp: until.addingTimeInterval(1), stream: .stdout, data: Data("new\n".utf8)),
         ])
         let manager = ContainerClientLogManager(client: client)
 
@@ -7611,11 +7614,12 @@ struct ComposeOrchestratorTests {
             emit: { emitted.append($0) }
         )
 
-        #expect(emitted.messages == ["filtered"])
-        #expect(await client.requests == ["demo-api-1"])
-        #expect(await client.options == [
-            ContainerLogOptions(tail: 5, since: since, until: until, includeRotated: true)
+        #expect(emitted.messages == ["inside-line"])
+        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordOptions == [
+            ContainerLogOptions(timestamps: true, includeRotated: true)
         ])
+        #expect(await client.requests.isEmpty)
     }
 
     @Test("log manager reads all logs from direct API handles")
@@ -7730,6 +7734,39 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == [
             "2026-06-18T10:00:00.000Z two\n2026-06-18T10:00:00.000Z three"
+        ])
+        #expect(await client.recordOptions == [
+            ContainerLogOptions(timestamps: true, includeRotated: true)
+        ])
+    }
+
+    @Test("log manager filters timestamped records after line reconstruction")
+    func logManagerFiltersTimestampedRecordsAfterLineReconstruction() async throws {
+        let emitted = MessageRecorder()
+        let before = date("2026-06-18T10:00:00Z")
+        let since = date("2026-06-18T10:00:01Z")
+        let until = date("2026-06-18T10:00:02Z")
+        let after = date("2026-06-18T10:00:03Z")
+        let client = RecordingContainerLogAPIClient(records: [
+            ContainerLogRecord(timestamp: before, stream: .stdout, data: Data("old".utf8)),
+            ContainerLogRecord(timestamp: since, stream: .stdout, data: Data("-line\ninside".utf8)),
+            ContainerLogRecord(timestamp: until, stream: .stdout, data: Data("-line\nclosing".utf8)),
+            ContainerLogRecord(timestamp: after, stream: .stdout, data: Data("-line\n".utf8)),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(
+            id: "demo-api-1",
+            tail: nil,
+            follow: false,
+            since: since,
+            until: until,
+            timestamps: true,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == [
+            "2026-06-18T10:00:01.000Z inside-line\n2026-06-18T10:00:02.000Z closing-line"
         ])
         #expect(await client.recordOptions == [
             ContainerLogOptions(timestamps: true, includeRotated: true)
