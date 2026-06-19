@@ -975,6 +975,30 @@ struct ComposeOrchestratorTests {
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
+    @Test("create maps disabled logging driver to runtime policy")
+    func createMapsDisabledLoggingDriverToRuntimePolicy() async throws {
+        for testCase in disabledServiceLoggingFieldCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let discoveryManager = RecordingContainerDiscoveryManager()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+                .create(project: project, options: ComposeCreateOptions())
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+            #expect(command.containsSequence(["--log-driver", "none"]))
+            #expect(!command.contains("--log-opt"))
+        }
+    }
+
     @Test("create surfaces network create failures before creating containers")
     func createSurfacesNetworkCreateFailuresBeforeCreatingContainers() async throws {
         let runner = RecordingRunner()
@@ -4015,6 +4039,30 @@ struct ComposeOrchestratorTests {
             let command = try #require(runner.commands.first?.arguments)
             #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
             #expect(!command.contains("--log-driver"))
+            #expect(!command.contains("--log-opt"))
+        }
+    }
+
+    @Test("up maps disabled logging driver to runtime policy")
+    func upMapsDisabledLoggingDriverToRuntimePolicy() async throws {
+        for testCase in disabledServiceLoggingFieldCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let discoveryManager = RecordingContainerDiscoveryManager()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+                .up(project: project, options: ComposeUpOptions())
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+            #expect(command.containsSequence(["--log-driver", "none"]))
             #expect(!command.contains("--log-opt"))
         }
     }
@@ -12273,6 +12321,29 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run maps disabled logging driver to runtime policy")
+    func runMapsDisabledLoggingDriverToRuntimePolicy() async throws {
+        for testCase in disabledServiceLoggingFieldCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "run", "--name"]))
+            #expect(command.containsSequence(["--log-driver", "none"]))
+            #expect(!command.contains("--log-opt"))
+        }
+    }
+
     @Test("run inherits declared volumes from dependency services")
     func runInheritsDeclaredVolumesFromDependencyServices() async throws {
         let runner = RecordingRunner()
@@ -14290,6 +14361,10 @@ private struct SupportedServiceLoggingFieldCase: Sendable {
     let configure: @Sendable (inout ComposeService) -> Void
 }
 
+private struct DisabledServiceLoggingFieldCase: Sendable {
+    let configure: @Sendable (inout ComposeService) -> Void
+}
+
 private func supportedLocalServiceLoggingFieldCases() -> [SupportedServiceLoggingFieldCase] {
     [
         SupportedServiceLoggingFieldCase(
@@ -14309,6 +14384,20 @@ private func supportedLocalServiceLoggingFieldCases() -> [SupportedServiceLoggin
         ),
         SupportedServiceLoggingFieldCase(
             configure: { $0.logDriver = "local" }
+        ),
+    ]
+}
+
+private func disabledServiceLoggingFieldCases() -> [DisabledServiceLoggingFieldCase] {
+    [
+        DisabledServiceLoggingFieldCase(
+            configure: { $0.logging = .object(["driver": .string("none")]) }
+        ),
+        DisabledServiceLoggingFieldCase(
+            configure: { $0.logging = .object(["driver": .string("none"), "options": .object([:])]) }
+        ),
+        DisabledServiceLoggingFieldCase(
+            configure: { $0.logDriver = "none" }
         ),
     ]
 }

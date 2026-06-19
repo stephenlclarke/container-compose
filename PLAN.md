@@ -122,7 +122,7 @@ How this repo complements it: <img alt="PEER IMPL" src="https://img.shields.io/b
     <tr>
       <td>Service logging drivers/options</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging without options map to apple/container local stdio capture. Remote drivers and logging options need runtime logging policy primitives that apple/container does not currently expose.</td>
+      <td><img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging without options map to apple/container local stdio capture. <code>none</code> maps to disabled persisted capture on the local integration stack. Remote drivers and logging options still need runtime logging policy primitives.</td>
     </tr>
     <tr>
       <td>Exact byte/line fidelity</td>
@@ -324,25 +324,28 @@ Docker Compose surface: service `logging.driver`, `logging.options`, legacy `log
 Current `container-compose` behavior:
 
 - Accepts `logging.driver: json-file`, `logging.driver: local`, `logging.options: {}`, and legacy `log_driver: json-file` or `log_driver: local` without `log_opt` as no-op mappings to apple/container's local stdio log capture.
+- Maps `logging.driver: none` and legacy `log_driver: none` without options to apple/container's local disabled-capture policy on the local integration stack.
 - Rejects remote or otherwise unsupported service logging drivers and any logging options before creating resources.
 - Preserves the compatibility boundary in tests and `COMPATIBILITY.md`.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Captures container stdio to local runtime files.
-- Does not expose Docker-compatible logging driver selection, logging options, rotation policy, or remote logging backends.
+- The local `logs-integration` branch adds a typed local logging policy, disabled persisted capture, and `container create/run --log-driver none`.
+- Does not expose Docker-compatible remote logging driver selection, logging options, rotation policy, or remote logging backends.
 
 Missing behavior:
 
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Disabled persisted capture works on the local integration stack but still depends on upstream apple/container PR acceptance before it can be treated as released support.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Remote or non-local runtime logging driver selection per container.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Driver-specific options such as rotation, max size, syslog endpoint, labels, or env inclusion.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Clear policy for unsupported Docker logging drivers on macOS.
 
 Implementation direction:
 
-- Open an [`apple/container`](https://github.com/apple/container) design discussion before mapping Compose logging policies, because this changes runtime storage and forwarding behavior.
-- Keep `container-compose` rejection behavior until a real runtime policy exists.
-- Add mapping tests only after the runtime API shape is known.
+- Split the local [`apple/container`](https://github.com/apple/container) logging policy work into small upstream PRs: policy model, disabled local capture, and CLI/direct API bridge.
+- Keep `container-compose` rejection behavior for logging options and remote drivers until the runtime policy supports them.
+- Revisit rotation and retention only after upstream review settles cursor and retention semantics for followed structured logs.
 
 ### L8. Exact Log Fidelity
 

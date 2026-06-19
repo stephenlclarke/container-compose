@@ -3475,12 +3475,12 @@ private extension ComposeOrchestrator {
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
         let loggingReason = "service logging driver/options need an apple/container runtime gap PR"
-        if !isSupportedLocalLogging(service.logging) {
+        if !isSupportedRuntimeLogging(service.logging) {
             fields.append(("logging", loggingReason))
         }
         if let logDriver = service.logDriver,
            !logDriver.isEmpty,
-           !isSupportedLocalLogDriver(logDriver) {
+           !isSupportedRuntimeLogDriver(logDriver) {
             fields.append(("log_driver", loggingReason))
         }
         if let logOptions = service.logOptions, !logOptions.isEmpty {
@@ -3492,8 +3492,8 @@ private extension ComposeOrchestrator {
         return fields
     }
 
-    /// Returns whether Compose logging maps to apple/container's local stdio capture.
-    func isSupportedLocalLogging(_ logging: ComposeValue?) -> Bool {
+    /// Returns whether Compose logging maps to an apple/container runtime log policy.
+    func isSupportedRuntimeLogging(_ logging: ComposeValue?) -> Bool {
         guard let logging else {
             return true
         }
@@ -3507,15 +3507,15 @@ private extension ComposeOrchestrator {
             }
             let driver = fields["driver"]?.stringValue
             let options = fields["options"]
-            return (driver == nil || isSupportedLocalLogDriver(driver)) && isEmptyLoggingOptions(options)
+            return (driver == nil || isSupportedRuntimeLogDriver(driver)) && isEmptyLoggingOptions(options)
         default:
             return false
         }
     }
 
-    /// Returns whether a logging driver stores logs in apple/container's local log path.
-    func isSupportedLocalLogDriver(_ driver: String?) -> Bool {
-        driver == "json-file" || driver == "local"
+    /// Returns whether a logging driver can be represented by apple/container.
+    func isSupportedRuntimeLogDriver(_ driver: String?) -> Bool {
+        driver == "json-file" || driver == "local" || driver == "none"
     }
 
     /// Returns whether Compose logging options request no runtime policy changes.
@@ -3531,6 +3531,15 @@ private extension ComposeOrchestrator {
         default:
             return false
         }
+    }
+
+    /// Returns the runtime log driver override needed for non-default Compose logging.
+    func runtimeLogDriverArgument(service: ComposeService) -> String? {
+        if case .object(let fields)? = service.logging,
+           let driver = fields["driver"]?.stringValue {
+            return driver == "none" ? "none" : nil
+        }
+        return service.logDriver == "none" ? "none" : nil
     }
 
     /// Returns the service replica that should inherit foreground IO for `up`.
@@ -4588,6 +4597,9 @@ private extension ComposeOrchestrator {
         }
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
+        }
+        if let logDriver = runtimeLogDriverArgument(service: service) {
+            args.append(contentsOf: ["--log-driver", logDriver])
         }
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
             if let value {
