@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 06:19:29 BST`.
+Assessment timestamp: `2026-06-19 19:48:23 BST`.
 
 ## Scope
 
@@ -34,9 +34,9 @@ The cross-implementation lozenges are intentionally separate from the support-st
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` for raw replay and follow. Static raw replay passes `tail`, `--since`, `--until`, and rotated replay requests to apple/container where available. Followed raw logs on the local `logs-integration` stack poll merged rotated replay snapshots and emit only the newly appended suffix, so rename-based local rotation does not strand the follower on an old file handle. For timestamped output and time-window follow, the plugin consumes `ContainerClient.logRecords(id:options:)` with rotated replay enabled and follows merged structured record snapshots with the same overlap cursor. Raw followed streams use direct container status to exit when the target stops. Structured followed streams use direct container status to keep partial records buffered while the target is live, then flush a final unterminated record once the target stops.
+`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` for raw replay and follow. Static raw replay passes `tail`, `--since`, `--until`, and rotated replay requests to apple/container where available. Followed raw logs on the local `logs-integration-chris` stack poll merged rotated replay snapshots and emit only the newly appended suffix, so rename-based local rotation does not strand the follower on an old file handle. For timestamped output and time-window follow, the plugin consumes `ContainerClient.logRecords(id:options:)` with rotated replay enabled and follows merged structured record snapshots with the same overlap cursor. Raw followed streams use direct container status to exit when the target stops. Structured followed streams use direct container status to keep partial records buffered while the target is live, then flush a final unterminated record once the target stops.
 
-[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, byte-preserving raw log tail filtering, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, Unix timestamp parsing for `container logs --since/--until`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, static `container logs --timestamps` CLI rendering, followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured records, rotated raw/structured follow by polling merged replay snapshots through the direct APIs, direct-status stop-boundary exit for raw follow, and stop-boundary flushing for final unterminated followed structured records. Those local APIs give the plugin enough data to implement timestamped, time-filtered, and rotated follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
+[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local [`stephenlclarke/container` `logs-integration-chris`](https://github.com/stephenlclarke/container/tree/logs-integration-chris) branch is linear from upstream `main`, starts with Chris George's [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) / [`apple/container#1592`](https://github.com/apple/container/pull/1592) `ContainerLogOptions(since:timestamps:)` API shape, and then layers tail/until, static filtered replay, byte-preserving raw log tail filtering, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, Unix timestamp parsing for `container logs --since/--until`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, static `container logs --timestamps` CLI rendering, followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured records, rotated raw/structured follow by polling merged replay snapshots through the direct APIs, direct-status stop-boundary exit for raw follow, and stop-boundary flushing for final unterminated followed structured records. Those local APIs give the plugin enough data to implement timestamped, time-filtered, and rotated follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
 
 ## Related Compose Implementations
 
@@ -53,12 +53,13 @@ Overlap: <img alt="IMPLEMENTATION LINK" src="https://img.shields.io/badge/IMPLEM
 - Implements a broad Docker Compose-like CLI and runtime abstraction layer for Apple containers.
 - Tracks fork-forward runtime gaps that also matter to this repo, including log options, events, restart policy, healthcheck observation, richer IPAM, process flag factoring, and resource controls.
 - [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) overlaps directly with this log plan by adding `ContainerLogOptions` for `since` and `timestamps` to `ContainerClient.logs`.
+- Chris George confirmed the [`apple/container#1752`](https://github.com/apple/container/issues/1752#issuecomment-4752812508) direction on `2026-06-19`. The local `logs-integration-chris` branch preserves his API shape first, then layers the broader Compose log capabilities as separate signed commits that can be split into upstream PRs.
 
 How this repo complements it: <img alt="IMPLEMENTATION LINK" src="https://img.shields.io/badge/IMPLEMENTATION%20LINK-2563EB?style=flat-square"> <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-DB2777?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
 
 - This repo keeps Compose normalization behind `compose-go` so Docker Compose v2 merge, interpolation, profile, include, and extension semantics stay aligned with Docker's maintained implementation.
 - This repo is shaped as a `container compose` plugin using the current plugin install layout, with direct `apple/container` APIs used wherever available.
-- The local log work goes beyond raw line filtering by adding structured timestamped records and a `ContainerClient.logRecords` API. That should be compared with `full-chaos/container#11` so any upstream PR can reuse compatible naming and wire semantics rather than creating a competing API shape.
+- The local log work goes beyond raw line filtering by adding structured timestamped records and a `ContainerClient.logRecords` API. It is now based on `full-chaos/container#11` so upstream PRs can reuse compatible naming and wire semantics rather than creating a competing API shape.
 
 ### Mcrich23/Container-Compose
 
@@ -179,7 +180,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream `container logs --follow <container-id>` follows one container log file.
-- The local `logs-integration` branch can also follow merged rotated raw replay snapshots through `ContainerClient.logs(id:options:)` with `includeRotated: true`, and exits when direct container status shows the target is no longer live.
+- The local `logs-integration-chris` branch can also follow merged rotated raw replay snapshots through `ContainerClient.logs(id:options:)` with `includeRotated: true`, and exits when direct container status shows the target is no longer live.
 - The direct API exposes container status through `ContainerClient.get`, which lets clients distinguish live buffering from stopped final-line flushing.
 
 Remaining work:
@@ -298,12 +299,12 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream exposes raw stdio and boot log file handles.
-- The local `logs-integration` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
-- The local `logs-integration` branch accepts RFC 3339 timestamps and Unix timestamps in seconds with optional fractional seconds for `container logs --since` and `--until`.
-- The local `logs-integration` branch stores timestamped runtime records and exposes `ContainerClient.logRecords(id:options:)` with timestamp, stream, and raw bytes for static replay.
-- The local `logs-integration` branch exposes `ContainerClient.logRecordFile(id:)` for clients that want direct structured JSONL file access.
-- The local `logs-integration` branch renders static `container logs --timestamps` output through structured records with tail applied after runtime chunks are rebuilt into log lines.
-- The local `logs-integration` branch renders followed `container logs --timestamps`, `--since`, and `--until` output through merged rotated structured record snapshots, renders plain unfiltered `container logs --follow` through merged rotated raw snapshots, exits raw follow when direct container status shows the target is no longer live, and flushes final unterminated followed structured records at the same stop boundary.
+- The local `logs-integration-chris` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
+- The local `logs-integration-chris` branch accepts RFC 3339 timestamps and Unix timestamps in seconds with optional fractional seconds for `container logs --since` and `--until`.
+- The local `logs-integration-chris` branch stores timestamped runtime records and exposes `ContainerClient.logRecords(id:options:)` with timestamp, stream, and raw bytes for static replay.
+- The local `logs-integration-chris` branch exposes `ContainerClient.logRecordFile(id:)` for clients that want direct structured JSONL file access.
+- The local `logs-integration-chris` branch renders static `container logs --timestamps` output through structured records with tail applied after runtime chunks are rebuilt into log lines.
+- The local `logs-integration-chris` branch renders followed `container logs --timestamps`, `--since`, and `--until` output through merged rotated structured record snapshots, renders plain unfiltered `container logs --follow` through merged rotated raw snapshots, exits raw follow when direct container status shows the target is no longer live, and flushes final unterminated followed structured records at the same stop boundary.
 - Does not yet have upstream-reviewed cursor, truncation, or retention semantics for long-lived merged replay follow clients.
 
 Missing behavior:
@@ -314,8 +315,8 @@ Missing behavior:
 
 Implementation direction:
 
-- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs: log options, filtered static replay, structured timestamped record storage, structured record retrieval, static rotated replay, and rotated merged-replay follow.
-- Compare the upstreamable API shape with [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) before opening PRs so both Compose implementations can converge on one runtime contract.
+- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs from `logs-integration-chris`: Chris-compatible log options, filtered static replay, structured timestamped record storage, structured record retrieval, static rotated replay, and rotated merged-replay follow.
+- Keep the upstreamable API shape aligned with [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) so both Compose implementations can converge on one runtime contract.
 - Add golden behavior tests using RFC 3339 timestamps, Unix timestamps, relative durations, followed timestamp output, and combined `--since`/`--until` windows after the upstream API shape settles.
 
 ### L7. Service Logging Driver and Options
@@ -342,7 +343,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Captures container stdio to local runtime files.
-- The local `logs-integration` branch adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, supports disabled persisted capture through `--log-driver none`, parses `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` into the local rotation policy, honors configured local `maxSizeInBytes` / `maxFileCount` at the runtime writer, and exposes static plus followed rotated raw and structured replay through direct log options.
+- The local `logs-integration-chris` branch adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, supports disabled persisted capture through `--log-driver none`, parses `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` into the local rotation policy, honors configured local `maxSizeInBytes` / `maxFileCount` at the runtime writer, and exposes static plus followed rotated raw and structured replay through direct log options.
 - Does not expose Docker-compatible remote logging driver selection or remote logging backends.
 
 Missing behavior:
@@ -382,7 +383,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream stores a merged stdio file and returns a file handle.
-- The local `logs-integration` branch also stores structured records with stdout/stderr stream metadata and per-record capture timestamps.
+- The local `logs-integration-chris` branch also stores structured records with stdout/stderr stream metadata and per-record capture timestamps.
 
 Missing behavior:
 
