@@ -7546,6 +7546,38 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == ["demo-api-1"])
     }
 
+    @Test("log manager preserves Compose line boundary fixtures")
+    func logManagerPreservesComposeLineBoundaryFixtures() async throws {
+        struct Fixture {
+            var name: String
+            var input: Data
+            var expectedMessages: [String]
+        }
+
+        let fixtures = [
+            Fixture(name: "empty file emits nothing", input: Data(), expectedMessages: []),
+            Fixture(name: "single blank line", input: Data("\n".utf8), expectedMessages: [""]),
+            Fixture(name: "two blank lines", input: Data("\n\n".utf8), expectedMessages: ["\n"]),
+            Fixture(name: "final newline is not an extra record", input: Data("one\n".utf8), expectedMessages: ["one"]),
+            Fixture(name: "blank record before final newline", input: Data("one\n\n".utf8), expectedMessages: ["one\n"]),
+            Fixture(name: "unterminated final record", input: Data("one\n\npartial".utf8), expectedMessages: ["one\n\npartial"]),
+            Fixture(name: "CRLF and CR separators", input: Data("one\r\ntwo\rthree\n".utf8), expectedMessages: ["one\ntwo\nthree"]),
+        ]
+
+        for fixture in fixtures {
+            let emitted = MessageRecorder()
+            let client = RecordingContainerLogAPIClient(fileHandles: [
+                try temporaryLogFileHandle(data: fixture.input),
+            ])
+            let manager = ContainerClientLogManager(client: client)
+
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { emitted.append($0) })
+
+            #expect(emitted.messages == fixture.expectedMessages, "Fixture failed: \(fixture.name)")
+            #expect(await client.requests == ["demo-api-1"], "Fixture did not request logs: \(fixture.name)")
+        }
+    }
+
     @Test("log manager renders timestamped records from direct API")
     func logManagerRendersTimestampedRecordsFromDirectAPI() async throws {
         let emitted = MessageRecorder()
@@ -9105,6 +9137,26 @@ struct ComposeOrchestratorTests {
         ).logs(project: project, services: ["api"])
 
         #expect(emitted.messages == ["api-1 | one\napi-1 | two"])
+    }
+
+    @Test("logs prefixes Compose line boundary fixtures")
+    func logsPrefixesComposeLineBoundaryFixtures() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["one\n\npartial"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(project: project, services: ["api"])
+
+        #expect(emitted.messages == ["api-1 | one\napi-1 | \napi-1 | partial"])
     }
 
     @Test("logs colorizes prefixes when requested")

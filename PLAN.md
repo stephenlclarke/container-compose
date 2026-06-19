@@ -26,6 +26,8 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 - <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">: another Compose implementation is working in the same problem area and should be reviewed before upstreaming.
 - <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">: this repository adds a compatible piece, different architecture boundary, or upstreamable slice that can help the other implementation.
 
+The cross-implementation lozenges are intentionally separate from the support-status traffic lights. Cyan marks overlap that needs comparison before upstreaming; purple marks complementary work that can help another implementation without necessarily solving the same layer.
+
 ## Current Runtime Evidence
 
 `container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when raw replay filters are present, while retaining raw file-handle follow for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended raw byte records with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps` and uses a single `ContainerClient.logRecordFile(id:)` handle for initial replay plus followed `--timestamps`, `--since`, and `--until` behavior that needs capture-time records.
@@ -197,7 +199,7 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Remaining work:
 
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Docker Compose comparison fixtures should still be added for unusual trailing-newline cases.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Deterministic Compose line-boundary fixtures now cover empty logs, blank records, final newlines, CRLF/CR separators, and unterminated final records. Live Docker Compose capture can be added when `docker compose` and a running daemon are available locally.
 
 ### L4. Service and Replica Selection
 
@@ -260,6 +262,11 @@ Remaining plugin work:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
+Related implementation signal:
+
+- <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) works in the same runtime log-options space and should be compared before opening apple/container PRs.
+- <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> This repo's structured record path can provide timestamp, stream, and byte-preserving data that command-oriented Compose implementations can consume.
+
 Docker Compose surface: `docker compose logs --timestamps`, `docker compose logs --since VALUE`, and `docker compose logs --until VALUE`.
 
 Current `container-compose` behavior:
@@ -297,6 +304,10 @@ Implementation direction:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
 
+Related implementation signal:
+
+- <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Other Compose implementations also hit apple/container's missing logging-policy layer, so any design should be coordinated before mapping non-default drivers.
+
 Docker Compose surface: service `logging.driver`, `logging.options`, legacy `log_driver`, and legacy `log_opt`.
 
 Current `container-compose` behavior:
@@ -326,6 +337,10 @@ Implementation direction:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
+Related implementation signal:
+
+- <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Byte-preserving and line-boundary fixtures are plugin-side guardrails that can validate whichever runtime log API shape becomes shared upstream.
+
 Docker Compose surface: raw application stdout/stderr content displayed through `docker compose logs`.
 
 Current `container-compose` behavior:
@@ -333,6 +348,7 @@ Current `container-compose` behavior:
 - Preserves blank line records in full replay, local tailing, and followed streams.
 - Buffers followed output so split lines are not emitted until complete, and flushes a final partial line when the stream closes.
 - Emits log byte records through a dedicated data emitter so non-UTF-8 payloads are preserved in raw, prefixed, followed, and timestamped output.
+- Covers Compose line-boundary fixtures for empty logs, blank records, final newlines, CRLF/CR separators, prefixed blank records, and unterminated final records.
 - The local structured record path preserves stdout/stderr identity in apple/container records, but Compose output formatting does not currently distinguish streams.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
@@ -346,7 +362,7 @@ Missing behavior:
 
 Implementation direction:
 
-- Add Docker Compose comparison fixtures for trailing newline behavior.
+- Add live Docker Compose output capture for the line-boundary fixtures when `docker compose` and a running daemon are available locally.
 - Keep the plugin-side blank-line and split-line regression tests as guardrails.
 - Keep the stream-identity data available through structured records while avoiding plugin formatting changes unless Docker Compose comparison fixtures require them.
 
