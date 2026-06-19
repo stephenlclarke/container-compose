@@ -33,19 +33,22 @@ public struct ComposeExecutionOptions {
         public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
         public var sleep: @Sendable (Duration) async throws -> Void
         public var emit: @Sendable (String) -> Void
+        public var emitData: (@Sendable (Data) -> Void)?
 
         public init(
             oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
             currentDate: @escaping @Sendable () -> Date = Date.init,
             hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
             sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-            emit: @escaping @Sendable (String) -> Void = { print($0) }
+            emit: @escaping @Sendable (String) -> Void = { print($0) },
+            emitData: (@Sendable (Data) -> Void)? = nil
         ) {
             self.oneOffIdentifier = oneOffIdentifier
             self.currentDate = currentDate
             self.hostPortAllocator = hostPortAllocator
             self.sleep = sleep
             self.emit = emit
+            self.emitData = emitData
         }
     }
 
@@ -58,6 +61,7 @@ public struct ComposeExecutionOptions {
     public var watchPollInterval: Duration
     public var sleep: @Sendable (Duration) async throws -> Void
     public var emit: @Sendable (String) -> Void
+    public var emitData: @Sendable (Data) -> Void
 
     public init(
         dryRun: Bool = false,
@@ -75,10 +79,11 @@ public struct ComposeExecutionOptions {
         self.watchPollInterval = watchPollInterval
         self.sleep = runtimeHooks.sleep
         self.emit = runtimeHooks.emit
+        self.emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
     }
 
     public init(dryRun: Bool = false, emit: @escaping @Sendable (String) -> Void) {
-        self.init(dryRun: dryRun, runtimeHooks: RuntimeHooks(emit: emit))
+        self.init(dryRun: dryRun, runtimeHooks: RuntimeHooks(emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) }))
     }
 
     public init(hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16) {
@@ -119,7 +124,7 @@ public struct ComposeExecutionOptions {
         self.init(
             dryRun: dryRun,
             containerBinary: containerBinary,
-            runtimeHooks: RuntimeHooks(emit: emit)
+            runtimeHooks: RuntimeHooks(emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) })
         )
     }
 
@@ -130,12 +135,18 @@ public struct ComposeExecutionOptions {
     ) {
         self.init(
             dryRun: dryRun,
-            runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator, emit: emit)
+            runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator, emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) })
         )
     }
 
     public static func defaultOneOffIdentifier() -> String {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+    }
+
+    /// Writes log bytes directly so container output can preserve non-UTF-8 payloads.
+    public static func defaultLogDataEmitter(_ data: Data) {
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data([UInt8(ascii: "\n")]))
     }
 
     /// Allocates an ephemeral host port compatible with apple/container's
@@ -1600,17 +1611,23 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         for target: ServiceContainerTarget,
         noLogPrefix: Bool,
         colorPrefixes: Bool
-    ) -> @Sendable (String) -> Void {
-        let emit = options.emit
+    ) -> @Sendable (Data) -> Void {
+        let emit = options.emitData
         guard !noLogPrefix else {
             return emit
         }
         let prefix = colorPrefixes ? colorizedLogPrefix(for: target) : logPrefix(for: target)
+        let prefixData = Data("\(prefix) | ".utf8)
         return { output in
-            let prefixed = output
-                .components(separatedBy: .newlines)
-                .map { "\(prefix) | \($0)" }
-                .joined(separator: "\n")
+            let lines = recordsForCompleteLogData(output)
+            var prefixed = Data()
+            for (index, line) in lines.enumerated() {
+                if index > 0 {
+                    prefixed.append(UInt8(ascii: "\n"))
+                }
+                prefixed.append(prefixData)
+                prefixed.append(line)
+            }
             emit(prefixed)
         }
     }
@@ -6957,6 +6974,41 @@ private func glob(_ pattern: String, matches value: String) -> Bool {
     }
     regex += "$"
     return value.range(of: regex, options: .regularExpression) != nil
+}
+
+/// Splits log output bytes into records without requiring UTF-8 decoding.
+private func recordsForCompleteLogData(_ output: Data) -> [Data] {
+    guard !output.isEmpty else {
+        return []
+    }
+
+    var records: [Data] = []
+    var current = Data()
+    var index = output.startIndex
+    while index < output.endIndex {
+        let byte = output[index]
+        if byte == UInt8(ascii: "\n") {
+            records.append(current)
+            current.removeAll()
+            index = output.index(after: index)
+        } else if byte == UInt8(ascii: "\r") {
+            records.append(current)
+            current.removeAll()
+            let next = output.index(after: index)
+            if next < output.endIndex, output[next] == UInt8(ascii: "\n") {
+                index = output.index(after: next)
+            } else {
+                index = next
+            }
+        } else {
+            current.append(byte)
+            index = output.index(after: index)
+        }
+    }
+    if !current.isEmpty {
+        records.append(current)
+    }
+    return records
 }
 
 /// Returns a SHA-256 hex digest for stable names and labels.

@@ -7604,30 +7604,25 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("log manager rejects invalid UTF-8 from timestamped records")
-    func logManagerRejectsInvalidUTF8FromTimestampedRecords() async throws {
+    @Test("log manager preserves non-UTF-8 bytes from timestamped records")
+    func logManagerPreservesNonUTF8BytesFromTimestampedRecords() async throws {
+        let emitted = DataRecorder()
         let client = RecordingContainerLogAPIClient(records: [
-            ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data([0xFF])),
+            ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data([0xFF, 0xFE, 0x0A, 0x41])),
         ])
         let manager = ContainerClientLogManager(client: client)
 
-        do {
-            try await manager.logs(
-                id: "demo-api-1",
-                tail: nil,
-                follow: false,
-                since: nil,
-                until: nil,
-                timestamps: true,
-                emit: { _ in }
-            )
-            Issue.record("Expected invalid UTF-8 log error")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("container logs for demo-api-1 are not valid UTF-8"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await manager.logs(
+            id: "demo-api-1",
+            tail: nil,
+            follow: false,
+            since: nil,
+            until: nil,
+            timestamps: true,
+            emit: { emitted.append($0) }
+        )
 
+        #expect(emitted.data == [Data("2026-06-18T10:00:00.000Z ".utf8) + Data([0xFF, 0xFE, 0x0A]) + Data("2026-06-18T10:00:00.000Z A".utf8)])
         #expect(await client.recordRequests == ["demo-api-1"])
     }
 
@@ -7637,7 +7632,7 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientLogManager(client: client)
 
         do {
-            try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { _ in })
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { (_: Data) in })
             Issue.record("Expected missing log handle error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("container logs returned no stdio handle for demo-api-1"))
@@ -7648,22 +7643,17 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == ["demo-api-1"])
     }
 
-    @Test("log manager rejects invalid UTF-8 from direct API logs")
-    func logManagerRejectsInvalidUTF8FromDirectAPILogs() async throws {
+    @Test("log manager preserves non-UTF-8 bytes from direct API logs")
+    func logManagerPreservesNonUTF8BytesFromDirectAPILogs() async throws {
+        let emitted = DataRecorder()
         let client = RecordingContainerLogAPIClient(fileHandles: [
-            try temporaryLogFileHandle(data: Data([0xFF])),
+            try temporaryLogFileHandle(data: Data([0xFF, 0xFE, 0x0A, 0x41])),
         ])
         let manager = ContainerClientLogManager(client: client)
 
-        do {
-            try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { _ in })
-            Issue.record("Expected invalid UTF-8 log error")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("container logs for demo-api-1 are not valid UTF-8"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await manager.logs(id: "demo-api-1", tail: nil, follow: false, emit: { emitted.append($0) })
 
+        #expect(emitted.data == [Data([0xFF, 0xFE, 0x0A, 0x41])])
         #expect(await client.requests == ["demo-api-1"])
     }
 
@@ -7721,26 +7711,20 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["partial"])
     }
 
-    @Test("log manager rejects invalid UTF-8 while following direct API logs")
-    func logManagerRejectsInvalidUTF8WhileFollowingDirectAPILogs() async throws {
+    @Test("log manager preserves non-UTF-8 bytes while following direct API logs")
+    func logManagerPreservesNonUTF8BytesWhileFollowingDirectAPILogs() async throws {
+        let emitted = DataRecorder()
         let pipe = Pipe()
         let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
         let manager = ContainerClientLogManager(client: client)
 
-        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { _ in })
+        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
         try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(Data([0xFF]))
+        pipe.fileHandleForWriting.write(Data([0xFF, 0xFE, 0x0A, 0x41]))
         try pipe.fileHandleForWriting.close()
+        try await followTask
 
-        do {
-            try await followTask
-            Issue.record("Expected invalid UTF-8 follow log error")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("container logs for demo-api-1 are not valid UTF-8"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
+        #expect(emitted.data == [Data([0xFF, 0xFE]), Data([0x41])])
         #expect(await client.requests == ["demo-api-1"])
     }
 
@@ -9423,7 +9407,8 @@ struct ComposeOrchestratorTests {
                 dryRun: false,
                 runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
                     currentDate: { now },
-                    emit: { emitted.append($0) }
+                    emit: { emitted.append($0) },
+                    emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) }
                 )
             ),
             logManager: logManager
@@ -14739,7 +14724,7 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         storage.append(
             ContainerLogRequest(
@@ -14752,7 +14737,7 @@ private actor RecordingContainerLogManager: ContainerLogManaging {
             )
         )
         for output in outputs {
-            emit(output)
+            emit(Data(output.utf8))
         }
     }
 }
@@ -14773,7 +14758,7 @@ private actor BlockingContainerLogManager: ContainerLogManaging {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         storage.append(
             ContainerLogRequest(
@@ -15448,6 +15433,23 @@ private final class MessageRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         storage.append(message)
+    }
+}
+
+private final class DataRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Data] = []
+
+    var data: [Data] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func append(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(data)
     }
 }
 

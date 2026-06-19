@@ -47,17 +47,56 @@ public protocol ContainerLogManaging: Sendable {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws
 }
 
 public extension ContainerLogManaging {
+    /// Emits logs through a string callback for tests and non-binary consumers.
+    func logs(
+        id: String,
+        tail: Int?,
+        follow: Bool,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        try await logs(
+            id: id,
+            tail: tail,
+            follow: follow,
+            since: since,
+            until: until,
+            timestamps: timestamps,
+            emit: { emit(String(decoding: $0, as: UTF8.self)) }
+        )
+    }
+
     /// Emits logs without timestamp filters.
     func logs(
         id: String,
         tail: Int?,
         follow: Bool,
         emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        try await logs(
+            id: id,
+            tail: tail,
+            follow: follow,
+            since: nil,
+            until: nil,
+            timestamps: false,
+            emit: emit
+        )
+    }
+
+    /// Emits logs without timestamp filters through a byte callback.
+    func logs(
+        id: String,
+        tail: Int?,
+        follow: Bool,
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         try await logs(
             id: id,
@@ -123,7 +162,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         if follow && (timestamps || since != nil || until != nil) {
             try await emitStructuredFollowLogs(
@@ -158,9 +197,9 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             }
         }
 
-        try emitExistingLogs(id: id, from: fileHandle, tail: follow ? tail : nil, emit: emit)
+        try emitExistingLogs(from: fileHandle, tail: follow ? tail : nil, emit: emit)
         if follow {
-            try await followFile(id: id, fileHandle, emit: emit)
+            try await followFile(fileHandle, emit: emit)
         }
     }
 
@@ -171,14 +210,14 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         since: Date?,
         until: Date?,
         timestamps: Bool,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         let fileHandle = try await client.logRecordFileHandle(id: id)
         defer {
             try? fileHandle.close()
         }
         let decoder = LogRecordJSONLDecoder()
-        let renderer = StructuredLogRecordRenderer(id: id, since: since, until: until, timestamps: timestamps)
+        let renderer = StructuredLogRecordRenderer(since: since, until: until, timestamps: timestamps)
         let shouldFinish = try emitInitialStructuredRecordFile(
             from: fileHandle,
             tail: tail,
@@ -205,7 +244,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         tail: Int?,
         since: Date?,
         until: Date?,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         guard tail.map({ $0 > 0 }) ?? true else {
             return
@@ -213,19 +252,18 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
         let options = ContainerLogOptions(since: since, until: until, timestamps: true)
         let records = try await client.logRecords(id: id, options: options)
-        let lines = try structuredLogLines(id: id, records: records, timestamps: true)
+        let lines = structuredLogLines(records: records, timestamps: true)
         let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
         emitLogLines(selectedLines, emit: emit)
     }
 
     /// Converts structured runtime chunks into Compose log lines.
     private func structuredLogLines(
-        id: String,
         records: [ContainerLogRecord],
         timestamps: Bool
-    ) throws -> [String] {
-        let renderer = StructuredLogRecordRenderer(id: id, since: nil, until: nil, timestamps: timestamps)
-        let result = try renderer.append(records)
+    ) -> [Data] {
+        let renderer = StructuredLogRecordRenderer(since: nil, until: nil, timestamps: timestamps)
+        let result = renderer.append(records)
         return result.lines + renderer.flush()
     }
 
@@ -235,7 +273,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         tail: Int?,
         decoder: LogRecordJSONLDecoder,
         renderer: StructuredLogRecordRenderer,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) throws -> Bool {
         guard tail != 0 else {
             _ = try? fileHandle.seekToEnd()
@@ -253,7 +291,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         }
 
         let records = try decoder.append(fileHandle.readData(ofLength: Int(size)))
-        let result = try renderer.append(records)
+        let result = renderer.append(records)
         let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
         let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
         emitLogLines(selectedLines, emit: emit)
@@ -262,39 +300,33 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
     /// Emits existing log contents before an optional follow loop starts.
     private func emitExistingLogs(
-        id: String,
         from fileHandle: FileHandle,
         tail: Int?,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) throws {
         if let tail {
-            try emitTail(id: id, from: fileHandle, count: tail, emit: emit)
+            try emitTail(from: fileHandle, count: tail, emit: emit)
         } else {
-            try emitAll(id: id, from: fileHandle, emit: emit)
+            try emitAll(from: fileHandle, emit: emit)
         }
     }
 
     /// Emits all log contents currently available from the file handle.
     private func emitAll(
-        id: String,
         from fileHandle: FileHandle,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) throws {
         guard let data = try fileHandle.readToEnd() else {
             return
         }
-        guard let output = String(data: data, encoding: .utf8) else {
-            throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
-        }
-        emitLogLines(recordsForCompleteLogText(output), emit: emit)
+        emitLogLines(recordsForCompleteLogData(data), emit: emit)
     }
 
-    /// Emits the last `count` non-empty log lines.
+    /// Emits the last `count` log records.
     private func emitTail(
-        id: String,
         from fileHandle: FileHandle,
         count: Int,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) throws {
         guard count > 0 else {
             _ = try? fileHandle.seekToEnd()
@@ -304,7 +336,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         var buffer = Data()
         let size = try fileHandle.seekToEnd()
         var offset = size
-        var lines: [String] = []
+        var lines: [Data] = []
 
         while offset > 0, lines.count <= count {
             let readSize = min(UInt64(1024), offset)
@@ -312,10 +344,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             try fileHandle.seek(toOffset: offset)
             buffer.insert(contentsOf: fileHandle.readData(ofLength: Int(readSize)), at: 0)
 
-            guard let chunk = String(data: buffer, encoding: .utf8) else {
-                throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
-            }
-            lines = recordsForCompleteLogText(chunk)
+            lines = recordsForCompleteLogData(buffer)
         }
 
         emitLogLines(Array(lines.suffix(count)), emit: emit)
@@ -323,13 +352,12 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
     /// Emits lines appended to the log file until the handle closes.
     private func followFile(
-        id: String,
         _ fileHandle: FileHandle,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         _ = try? fileHandle.seekToEnd()
         let accumulator = LogLineAccumulator()
-        let stream = AsyncThrowingStream<String, any Error> { continuation in
+        let stream = AsyncThrowingStream<Data, any Error> { continuation in
             fileHandle.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
@@ -344,12 +372,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                     }
                     return
                 }
-                guard let output = String(data: data, encoding: .utf8) else {
-                    handle.readabilityHandler = nil
-                    continuation.finish(throwing: ComposeError.invalidProject("container logs for \(id) are not valid UTF-8"))
-                    return
-                }
-                for line in accumulator.append(output) {
+                for line in accumulator.append(data) {
                     continuation.yield(line)
                 }
             }
@@ -369,9 +392,9 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         decoder: LogRecordJSONLDecoder,
         renderer: StructuredLogRecordRenderer,
         until: Date?,
-        emit: @escaping @Sendable (String) -> Void
+        emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        let stream = AsyncThrowingStream<String, any Error> { continuation in
+        let stream = AsyncThrowingStream<Data, any Error> { continuation in
             let coordinator = StructuredLogFollowCoordinator(
                 fileHandle: fileHandle,
                 decoder: decoder,
@@ -415,15 +438,22 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     }
 
     /// Emits parsed log records while preserving intentionally blank lines.
-    private func emitLogLines(_ lines: [String], emit: @escaping @Sendable (String) -> Void) {
+    private func emitLogLines(_ lines: [Data], emit: @escaping @Sendable (Data) -> Void) {
         guard !lines.isEmpty else {
             return
         }
-        emit(lines.joined(separator: "\n"))
+        var output = Data()
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                output.append(UInt8(ascii: "\n"))
+            }
+            output.append(line)
+        }
+        emit(output)
     }
 
-    /// Splits complete log text into line records without inventing a final blank line.
-    private func recordsForCompleteLogText(_ output: String) -> [String] {
+    /// Splits complete log data into line records without inventing a final blank line.
+    private func recordsForCompleteLogData(_ output: Data) -> [Data] {
         guard !output.isEmpty else {
             return []
         }
@@ -438,22 +468,23 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 /// Incrementally splits followed log data into complete log records.
 private final class LogLineAccumulator: @unchecked Sendable {
     private let lock = NSLock()
-    private var pending = ""
+    private var pending = Data()
 
     /// Appends a chunk and returns the complete log records it contains.
-    func append(_ output: String) -> [String] {
+    func append(_ output: Data) -> [Data] {
         lock.lock()
         defer {
             lock.unlock()
         }
 
-        let result = completeLogRecords(in: pending + output)
+        pending.append(output)
+        let result = completeLogRecords(in: pending)
         pending = result.remainder
         return result.records
     }
 
     /// Returns the final unterminated log record, if one exists.
-    func flush() -> String? {
+    func flush() -> Data? {
         lock.lock()
         defer {
             lock.unlock()
@@ -463,37 +494,37 @@ private final class LogLineAccumulator: @unchecked Sendable {
             return nil
         }
         let output = pending
-        pending = ""
+        pending.removeAll()
         return output
     }
 }
 
-/// Complete log records found in a text chunk and any trailing partial line.
+/// Complete log records found in a byte chunk and any trailing partial line.
 private struct LogRecordSplit {
-    var records: [String]
-    var remainder: String
+    var records: [Data]
+    var remainder: Data
 }
 
 /// One complete timestamped log line reconstructed from runtime chunks.
 private struct TimestampedLogLine {
     var timestamp: Date
-    var text: String
+    var data: Data
 }
 
 /// Result from rendering structured log records.
 private struct StructuredLogRenderResult {
-    var lines: [String]
+    var lines: [Data]
     var shouldFinish: Bool
 }
 
 /// Outcome from reading or finishing a structured log follow stream.
 private enum StructuredLogFollowEvent {
     case none
-    case yield([String])
-    case finish([String])
+    case yield([Data])
+    case finish([Data])
     case fail(any Error)
 
-    func emit(to continuation: AsyncThrowingStream<String, any Error>.Continuation) {
+    func emit(to continuation: AsyncThrowingStream<Data, any Error>.Continuation) {
         switch self {
         case .none:
             return
@@ -518,14 +549,14 @@ private final class StructuredLogFollowCoordinator: @unchecked Sendable {
     private let fileHandle: FileHandle
     private let decoder: LogRecordJSONLDecoder
     private let renderer: StructuredLogRecordRenderer
-    private let continuation: AsyncThrowingStream<String, any Error>.Continuation
+    private let continuation: AsyncThrowingStream<Data, any Error>.Continuation
     private var finished = false
 
     init(
         fileHandle: FileHandle,
         decoder: LogRecordJSONLDecoder,
         renderer: StructuredLogRecordRenderer,
-        continuation: AsyncThrowingStream<String, any Error>.Continuation
+        continuation: AsyncThrowingStream<Data, any Error>.Continuation
     ) {
         self.fileHandle = fileHandle
         self.decoder = decoder
@@ -574,7 +605,7 @@ private final class StructuredLogFollowCoordinator: @unchecked Sendable {
 
         do {
             let records = try decoder.append(data)
-            let result = try renderer.append(records)
+            let result = renderer.append(records)
             if result.shouldFinish {
                 finished = true
                 fileHandle.readabilityHandler = nil
@@ -599,7 +630,7 @@ private final class StructuredLogFollowCoordinator: @unchecked Sendable {
 
         do {
             let records = flushDecoder ? try decoder.flush() : []
-            let result = try renderer.append(records)
+            let result = renderer.append(records)
             finished = true
             fileHandle.readabilityHandler = nil
             return .finish(result.lines + renderer.flush())
@@ -662,15 +693,13 @@ private final class LogRecordJSONLDecoder: @unchecked Sendable {
 /// Renders structured runtime records as Compose log lines.
 private final class StructuredLogRecordRenderer: @unchecked Sendable {
     private let lock = NSLock()
-    private let id: String
     private let since: Date?
     private let until: Date?
     private let timestamps: Bool
     private let formatter: ISO8601DateFormatter
     private var accumulator = TimestampedLogLineAccumulator()
 
-    init(id: String, since: Date?, until: Date?, timestamps: Bool) {
-        self.id = id
+    init(since: Date?, until: Date?, timestamps: Bool) {
         self.since = since
         self.until = until
         self.timestamps = timestamps
@@ -679,13 +708,13 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
     }
 
     /// Appends records and returns complete lines plus whether an `until` bound ended the stream.
-    func append(_ records: [ContainerLogRecord]) throws -> StructuredLogRenderResult {
+    func append(_ records: [ContainerLogRecord]) -> StructuredLogRenderResult {
         lock.lock()
         defer {
             lock.unlock()
         }
 
-        var lines: [String] = []
+        var lines: [Data] = []
         for record in records {
             if let until, record.timestamp > until {
                 return StructuredLogRenderResult(lines: lines, shouldFinish: true)
@@ -693,10 +722,7 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
             if let since, record.timestamp < since {
                 continue
             }
-            guard let output = String(data: record.data, encoding: .utf8) else {
-                throw ComposeError.invalidProject("container logs for \(id) are not valid UTF-8")
-            }
-            for line in accumulator.append(output, timestamp: record.timestamp) {
+            for line in accumulator.append(record.data, timestamp: record.timestamp) {
                 lines.append(format(line))
             }
         }
@@ -704,7 +730,7 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
     }
 
     /// Returns the final unterminated structured line, if one exists.
-    func flush() -> [String] {
+    func flush() -> [Data] {
         lock.lock()
         defer {
             lock.unlock()
@@ -716,48 +742,37 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
         return [format(line)]
     }
 
-    private func format(_ line: TimestampedLogLine) -> String {
+    private func format(_ line: TimestampedLogLine) -> Data {
         guard timestamps else {
-            return line.text
+            return line.data
         }
-        return "\(formatter.string(from: line.timestamp)) \(line.text)"
+        var data = Data("\(formatter.string(from: line.timestamp)) ".utf8)
+        data.append(line.data)
+        return data
     }
 }
 
 /// Incrementally rebuilds timestamped lines from structured log chunks.
 private struct TimestampedLogLineAccumulator {
-    private var pending = ""
+    private var pending = Data()
     private var pendingTimestamp: Date?
 
     /// Appends one runtime chunk and returns complete timestamped lines.
-    mutating func append(_ output: String, timestamp: Date) -> [TimestampedLogLine] {
-        var records: [TimestampedLogLine] = []
-        var index = output.startIndex
-
-        while index < output.endIndex {
-            let character = output[index]
-            if character == "\n" {
-                records.append(TimestampedLogLine(timestamp: pendingTimestamp ?? timestamp, text: pending))
-                resetPending()
-                index = output.index(after: index)
-            } else if character == "\r" {
-                records.append(TimestampedLogLine(timestamp: pendingTimestamp ?? timestamp, text: pending))
-                resetPending()
-                let next = output.index(after: index)
-                if next < output.endIndex, output[next] == "\n" {
-                    index = output.index(after: next)
-                } else {
-                    index = next
-                }
-            } else {
-                if pendingTimestamp == nil {
-                    pendingTimestamp = timestamp
-                }
-                pending.append(character)
-                index = output.index(after: index)
-            }
+    mutating func append(_ output: Data, timestamp: Date) -> [TimestampedLogLine] {
+        if !output.isEmpty, pending.isEmpty, pendingTimestamp == nil {
+            pendingTimestamp = timestamp
         }
-
+        pending.append(output)
+        let result = completeLogRecords(in: pending)
+        pending = result.remainder
+        var records: [TimestampedLogLine] = []
+        for record in result.records {
+            records.append(TimestampedLogLine(timestamp: pendingTimestamp ?? timestamp, data: record))
+            pendingTimestamp = nil
+        }
+        if !pending.isEmpty, pendingTimestamp == nil {
+            pendingTimestamp = timestamp
+        }
         return records
     }
 
@@ -766,40 +781,40 @@ private struct TimestampedLogLineAccumulator {
         guard !pending.isEmpty, let timestamp = pendingTimestamp else {
             return nil
         }
-        let line = TimestampedLogLine(timestamp: timestamp, text: pending)
+        let line = TimestampedLogLine(timestamp: timestamp, data: pending)
         resetPending()
         return line
     }
 
     private mutating func resetPending() {
-        pending = ""
+        pending.removeAll()
         pendingTimestamp = nil
     }
 }
 
-/// Splits text into complete lines while treating CRLF as one separator.
-private func completeLogRecords(in output: String) -> LogRecordSplit {
-    var records: [String] = []
-    var current = ""
+/// Splits data into complete lines while treating CRLF as one separator.
+private func completeLogRecords(in output: Data) -> LogRecordSplit {
+    var records: [Data] = []
+    var current = Data()
     var index = output.startIndex
 
     while index < output.endIndex {
-        let character = output[index]
-        if character == "\n" {
+        let byte = output[index]
+        if byte == UInt8(ascii: "\n") {
             records.append(current)
-            current = ""
+            current.removeAll()
             index = output.index(after: index)
-        } else if character == "\r" {
+        } else if byte == UInt8(ascii: "\r") {
             records.append(current)
-            current = ""
+            current.removeAll()
             let next = output.index(after: index)
-            if next < output.endIndex, output[next] == "\n" {
+            if next < output.endIndex, output[next] == UInt8(ascii: "\n") {
                 index = output.index(after: next)
             } else {
                 index = next
             }
         } else {
-            current.append(character)
+            current.append(byte)
             index = output.index(after: index)
         }
     }

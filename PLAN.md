@@ -22,14 +22,15 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 - <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square">: [`apple/container`](https://github.com/apple/container) appears to expose enough runtime data, but `container-compose` still needs implementation work.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">: the first missing piece is an [`apple/container`](https://github.com/apple/container) runtime, log-storage, or logging-policy primitive.
 - <img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square">: not started or not yet broken down into a concrete implementation path.
+- <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square">: this task intersects another public Compose implementation and should be checked against that implementation before upstreaming.
 - <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">: another Compose implementation is working in the same problem area and should be reviewed before upstreaming.
 - <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">: this repository adds a compatible piece, different architecture boundary, or upstreamable slice that can help the other implementation.
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when raw replay filters are present, while retaining raw file-handle follow for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended raw lines with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps` and uses a single `ContainerClient.logRecordFile(id:)` handle for initial replay plus followed `--timestamps`, `--since`, and `--until` behavior that needs capture-time records.
+`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when raw replay filters are present, while retaining raw file-handle follow for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended raw byte records with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps` and uses a single `ContainerClient.logRecordFile(id:)` handle for initial replay plus followed `--timestamps`, `--since`, and `--until` behavior that needs capture-time records.
 
-[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, and `ContainerClient.logRecordFile(id:)`. Those local APIs give the plugin enough data to implement timestamped and time-filtered follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
+[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, byte-preserving raw log tail filtering, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, and `ContainerClient.logRecordFile(id:)`. Those local APIs give the plugin enough data to implement timestamped and time-filtered follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
 
 ## Related Compose Implementations
 
@@ -41,13 +42,13 @@ Repository: [`full-chaos/container-compose`](https://github.com/full-chaos/conta
 
 Container fork used: [`full-chaos/container`](https://github.com/full-chaos/container), pinned from `Package.swift` to branch [`tier2-fork-patches`](https://github.com/full-chaos/container/tree/tier2-fork-patches). Its README also describes an opt-in [`dev`](https://github.com/full-chaos/container/tree/dev) branch for fork-forward runtime features.
 
-Overlap: <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
+Overlap: <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
 
 - Implements a broad Docker Compose-like CLI and runtime abstraction layer for Apple containers.
 - Tracks fork-forward runtime gaps that also matter to this repo, including log options, events, restart policy, healthcheck observation, richer IPAM, process flag factoring, and resource controls.
 - [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) overlaps directly with this log plan by adding `ContainerLogOptions` for `since` and `timestamps` to `ContainerClient.logs`.
 
-How this repo complements it: <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+How this repo complements it: <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
 - This repo keeps Compose normalization behind `compose-go` so Docker Compose v2 merge, interpolation, profile, include, and extension semantics stay aligned with Docker's maintained implementation.
 - This repo is shaped as a `container compose` plugin using the current plugin install layout, with direct `apple/container` APIs used wherever available.
@@ -59,13 +60,13 @@ Repository: [`Mcrich23/Container-Compose`](https://github.com/Mcrich23/Container
 
 Container fork used: the public `Container-Compose` package currently depends on [`apple/container`](https://github.com/apple/container) from `1.0.0`. The related fork [`Mcrich23/container`](https://github.com/Mcrich23/container) contains an [`add-compose`](https://github.com/Mcrich23/container/tree/add-compose) branch with the earlier in-tree plugin work and an [`add-command-option-group-function-macro`](https://github.com/Mcrich23/container/tree/add-command-option-group-function-macro) branch related to plugin OptionGroup passthrough.
 
-Overlap: <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
+Overlap: <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
 
 - Provides the original Swift Compose implementation lineage that later fed discussion around plugin support and OptionGroup passthrough.
 - Uses `ContainerCommands` heavily, which overlaps with the plugin ergonomics discussion in [`apple/container#1410`](https://github.com/apple/container/discussions/1410), [`apple/container#633`](https://github.com/apple/container/issues/633), and [`apple/container#717`](https://github.com/apple/container/pull/717).
 - Covers basic Compose model structures, command wiring, service dependencies, volumes, networks, and logging surfaces.
 
-How this repo complements it: <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+How this repo complements it: <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
 - This repo deliberately does not depend on unsettled OptionGroup passthrough for core orchestration. It uses direct `ContainerClient`, `NetworkClient`, `ClientVolume`, image, stats, copy, exec, and lifecycle APIs where possible.
 - This repo treats earlier Compose branches as reference material, but keeps the implementation standalone and split into upstreamable runtime/API slices plus plugin-side Compose behavior.
@@ -120,7 +121,7 @@ How this repo complements it: <img alt="COMPLEMENTS OTHER IMPL" src="https://img
     <tr>
       <td>Exact byte/line fidelity</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>container-compose now preserves blank UTF-8 line records and followed partial lines. Full byte fidelity and stdout/stderr identity still need runtime support or a deliberate compatibility decision.</td>
+      <td>container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
     </tr>
   </tbody>
 </table>
@@ -137,7 +138,7 @@ Current `container-compose` behavior:
 
 - Resolves a Compose service container to the deterministic apple/container runtime ID.
 - Calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager`.
-- Reads the stdio file handle and emits existing UTF-8 log data.
+- Reads the stdio file handle and emits existing log bytes.
 - Supports stopped-container replay when the apple/container bundle and log files still exist.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
@@ -160,7 +161,7 @@ Current `container-compose` behavior:
 - Supports `--follow` for resolved service container targets.
 - Starts multiple selected service and replica streams concurrently with a throwing task group.
 - Surfaces stream failures instead of letting one followed stream starve later targets.
-- Uses a file readability handler to emit appended UTF-8 log lines.
+- Uses a file readability handler to emit appended log byte records.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
@@ -196,7 +197,7 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Remaining work:
 
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Docker Compose comparison fixtures should still be added for unusual trailing-newline and byte-stream cases.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Docker Compose comparison fixtures should still be added for unusual trailing-newline cases.
 
 ### L4. Service and Replica Selection
 
@@ -257,7 +258,7 @@ Remaining plugin work:
 
 ### L6. Timestamps, `--since`, and `--until`
 
-Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
 Docker Compose surface: `docker compose logs --timestamps`, `docker compose logs --since VALUE`, and `docker compose logs --until VALUE`.
 
@@ -275,7 +276,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream exposes raw stdio and boot log file handles.
-- The local `logs-integration` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`.
+- The local `logs-integration` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
 - The local `logs-integration` branch stores timestamped runtime records and exposes `ContainerClient.logRecords(id:options:)` with timestamp, stream, and raw bytes for static replay.
 - The local `logs-integration` branch exposes `ContainerClient.logRecordFile(id:)` so clients can follow the structured JSONL record file directly.
 - Does not yet have upstream-reviewed cursor, truncation, retention, or rotation semantics for long-lived structured follow clients.
@@ -294,7 +295,7 @@ Implementation direction:
 
 ### L7. Service Logging Driver and Options
 
-Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
 
 Docker Compose surface: service `logging.driver`, `logging.options`, legacy `log_driver`, and legacy `log_opt`.
 
@@ -323,16 +324,16 @@ Implementation direction:
 
 ### L8. Exact Log Fidelity
 
-Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
 Docker Compose surface: raw application stdout/stderr content displayed through `docker compose logs`.
 
 Current `container-compose` behavior:
 
-- Requires UTF-8 log data.
 - Preserves blank line records in full replay, local tailing, and followed streams.
 - Buffers followed output so split lines are not emitted until complete, and flushes a final partial line when the stream closes.
-- Emits UTF-8 log text chunks; the local structured record path preserves stdout/stderr identity in apple/container records, but Compose output formatting does not currently distinguish streams.
+- Emits log byte records through a dedicated data emitter so non-UTF-8 payloads are preserved in raw, prefixed, followed, and timestamped output.
+- The local structured record path preserves stdout/stderr identity in apple/container records, but Compose output formatting does not currently distinguish streams.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
@@ -341,12 +342,11 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Missing behavior:
 
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Decide whether non-UTF-8 logs should fail, pass bytes through, or match Docker's replacement behavior.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Decide whether stdout/stderr stream identity should influence future Compose formatting or filtering.
 
 Implementation direction:
 
-- Add Docker Compose comparison fixtures for trailing newline behavior and non-UTF-8 bytes.
+- Add Docker Compose comparison fixtures for trailing newline behavior.
 - Keep the plugin-side blank-line and split-line regression tests as guardrails.
 - Keep the stream-identity data available through structured records while avoiding plugin formatting changes unless Docker Compose comparison fixtures require them.
 
@@ -356,9 +356,9 @@ Implementation direction:
 2. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
 3. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
-5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and structured record file follow API.
-6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Propose apple/container service logging policy primitives for non-default drivers and logging options.
-7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit service `logging` mappings and any Docker Compose comparison differences after upstream runtime APIs exist.
+5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and structured record file follow API.
+6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Propose apple/container service logging policy primitives for non-default drivers and logging options.
+7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="CROSS-IMPL" src="https://img.shields.io/badge/CROSS--IMPL-B83280?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit service `logging` mappings and any Docker Compose comparison differences after upstream runtime APIs exist.
 
 ## Acceptance Criteria
 
