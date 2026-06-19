@@ -3453,19 +3453,63 @@ private extension ComposeOrchestrator {
     /// Returns logging and storage fields that need apple/container runtime primitives.
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
-        if service.logging != nil {
-            fields.append(("logging", "service logging driver/options need an apple/container runtime gap PR"))
+        let loggingReason = "service logging driver/options need an apple/container runtime gap PR"
+        if !isSupportedDefaultJSONFileLogging(service.logging) {
+            fields.append(("logging", loggingReason))
         }
-        if let logDriver = service.logDriver, !logDriver.isEmpty {
-            fields.append(("log_driver", "service logging driver/options need an apple/container runtime gap PR"))
+        if let logDriver = service.logDriver,
+           !logDriver.isEmpty,
+           !isDefaultJSONFileLogDriver(logDriver) {
+            fields.append(("log_driver", loggingReason))
         }
         if let logOptions = service.logOptions, !logOptions.isEmpty {
-            fields.append(("log_opt", "service logging driver/options need an apple/container runtime gap PR"))
+            fields.append(("log_opt", loggingReason))
         }
         if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
             fields.append(("storage_opt", "per-container storage options need an apple/container rootfs storage runtime gap PR"))
         }
         return fields
+    }
+
+    /// Returns whether Compose logging maps to apple/container's default local stdio capture.
+    func isSupportedDefaultJSONFileLogging(_ logging: ComposeValue?) -> Bool {
+        guard let logging else {
+            return true
+        }
+        switch logging {
+        case .null:
+            return true
+        case .object(let fields):
+            let knownKeys = Set(["driver", "options"])
+            guard fields.keys.allSatisfy({ knownKeys.contains($0) }) else {
+                return false
+            }
+            let driver = fields["driver"]?.stringValue
+            let options = fields["options"]
+            return (driver == nil || isDefaultJSONFileLogDriver(driver)) && isEmptyLoggingOptions(options)
+        default:
+            return false
+        }
+    }
+
+    /// Returns whether a logging driver is Compose's default JSON-file local driver.
+    func isDefaultJSONFileLogDriver(_ driver: String?) -> Bool {
+        driver == "json-file"
+    }
+
+    /// Returns whether Compose logging options request no runtime policy changes.
+    func isEmptyLoggingOptions(_ options: ComposeValue?) -> Bool {
+        guard let options else {
+            return true
+        }
+        switch options {
+        case .null:
+            return true
+        case .object(let fields):
+            return fields.isEmpty
+        default:
+            return false
+        }
     }
 
     /// Returns the service replica that should inherit foreground IO for `up`.

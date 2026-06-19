@@ -3995,6 +3995,30 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("up accepts default json file logging without options")
+    func upAcceptsDefaultJSONFileLoggingWithoutOptions() async throws {
+        for testCase in supportedDefaultServiceLoggingFieldCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let discoveryManager = RecordingContainerDiscoveryManager()
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "api": composeService(name: "api", image: "example/api") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+                .up(project: project, options: ComposeUpOptions())
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+            #expect(!command.contains("--log-driver"))
+            #expect(!command.contains("--log-opt"))
+        }
+    }
+
     @Test("up rejects unsupported volume shortcut fields before creating resources")
     func upRejectsUnsupportedVolumeShortcutFieldsBeforeCreatingResources() async throws {
         for testCase in unsupportedServiceVolumeShortcutFieldCases() {
@@ -12157,6 +12181,29 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("run accepts default json file logging without options")
+    func runAcceptsDefaultJSONFileLoggingWithoutOptions() async throws {
+        for testCase in supportedDefaultServiceLoggingFieldCases() {
+            let runner = RecordingRunner(responses: [.success])
+            let project = composeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        testCase.configure(&$0)
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner)
+                .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.starts(with: ["container", "run", "--name"]))
+            #expect(!command.contains("--log-driver"))
+            #expect(!command.contains("--log-opt"))
+        }
+    }
+
     @Test("run inherits declared volumes from dependency services")
     func runInheritsDeclaredVolumesFromDependencyServices() async throws {
         let runner = RecordingRunner()
@@ -14170,17 +14217,40 @@ private struct UnsupportedServiceMetadataAndLoggingFieldCase: Sendable {
     }
 }
 
+private struct SupportedServiceLoggingFieldCase: Sendable {
+    let configure: @Sendable (inout ComposeService) -> Void
+}
+
+private func supportedDefaultServiceLoggingFieldCases() -> [SupportedServiceLoggingFieldCase] {
+    [
+        SupportedServiceLoggingFieldCase(
+            configure: { $0.logging = .object(["driver": .string("json-file")]) }
+        ),
+        SupportedServiceLoggingFieldCase(
+            configure: { $0.logging = .object(["driver": .string("json-file"), "options": .object([:])]) }
+        ),
+        SupportedServiceLoggingFieldCase(
+            configure: { $0.logDriver = "json-file" }
+        ),
+    ]
+}
+
 private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedServiceMetadataAndLoggingFieldCase] {
     [
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("json-file")]) }
+            configure: { $0.logging = .object(["driver": .string("syslog")]) }
+        ),
+        UnsupportedServiceMetadataAndLoggingFieldCase(
+            composeName: "logging",
+            reason: "service logging driver/options need an apple/container runtime gap PR",
+            configure: { $0.logging = .object(["driver": .string("json-file"), "options": .object(["max-size": .string("10m")])]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_driver",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logDriver = "json-file" }
+            configure: { $0.logDriver = "syslog" }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_opt",
