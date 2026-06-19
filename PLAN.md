@@ -29,7 +29,7 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 - <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">: another Compose implementation is working in the same problem area and should be reviewed before upstreaming.
 - <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">: this repository adds a compatible piece, different architecture boundary, or upstreamable slice that can help the other implementation.
 
-The cross-implementation lozenges are intentionally separate from the support-status traffic lights. Blue marks work that needs peer implementation awareness, cyan marks direct overlap that needs comparison before upstreaming, and purple marks complementary work that can help another implementation without necessarily solving the same layer.
+The cross-implementation lozenges are intentionally separate from the support-status traffic lights. Blue marks work that needs peer implementation awareness, cyan marks direct overlap that needs comparison before upstreaming, and purple marks complementary work that can help another implementation without necessarily solving the same layer. Detailed work items use a separate `Peer alignment` line when the overlap or complement signal is important enough to influence implementation order or upstream PR shape.
 
 ## Current Runtime Evidence
 
@@ -263,9 +263,11 @@ Remaining plugin work:
 
 ### L6. Timestamps, `--since`, and `--until`
 
-Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Related implementation signal:
+Peer alignment: <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+
+Peer alignment details:
 
 - <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) works in the same runtime log-options space and should be compared before opening apple/container PRs.
 - <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> This repo's structured record path can provide timestamp, stream, and byte-preserving data that command-oriented Compose implementations can consume.
@@ -307,11 +309,14 @@ Implementation direction:
 
 ### L7. Service Logging Driver and Options
 
-Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Related implementation signal:
+Peer alignment: <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+
+Peer alignment details:
 
 - <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Other Compose implementations also hit apple/container's missing logging-policy layer, so any design should be coordinated before mapping remote drivers or driver options.
+- <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> This repo's current local-driver acceptance and precise rejection boundary can be reused by command-oriented Compose implementations while the apple/container policy API is still unsettled.
 
 Docker Compose surface: service `logging.driver`, `logging.options`, legacy `log_driver`, and legacy `log_opt`.
 
@@ -340,9 +345,11 @@ Implementation direction:
 
 ### L8. Exact Log Fidelity
 
-Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Related implementation signal:
+Peer alignment: <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+
+Peer alignment details:
 
 - <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Byte-preserving and line-boundary fixtures are plugin-side guardrails that can validate whichever runtime log API shape becomes shared upstream.
 
