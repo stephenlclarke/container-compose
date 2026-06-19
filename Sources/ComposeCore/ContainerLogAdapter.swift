@@ -277,15 +277,18 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        guard tail.map({ $0 > 0 }) ?? true else {
-            return
-        }
-
-        let options = ContainerLogOptions(timestamps: true, includeRotated: true)
+        let options = ContainerLogOptions(
+            tail: tail,
+            since: since,
+            until: until,
+            timestamps: true,
+            includeRotated: true
+        )
         let records = try await client.logRecords(id: id, options: options)
-        let lines = structuredLogLines(records: records, since: since, until: until, timestamps: timestamps)
-        let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
-        emitLogLines(selectedLines, emit: emit)
+        emitLogLines(
+            structuredLogLines(records: records, since: nil, until: nil, timestamps: timestamps),
+            emit: emit
+        )
     }
 
     /// Emits and follows raw logs through merged rotated replay snapshots.
@@ -304,7 +307,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         let initial = completeLogRecords(in: data)
         emitLogLines(tail.map { Array(initial.records.suffix($0)) } ?? initial.records, emit: emit)
         var cursor = LogDataReplayCursor(snapshot: data)
-        let accumulator = LogLineAccumulator(initial: initial.remainder)
+        let accumulator = LogLineAccumulator(initial: tail == 0 ? Data() : initial.remainder)
         while !Task.isCancelled {
             do {
                 try await Task.sleep(for: .milliseconds(250))

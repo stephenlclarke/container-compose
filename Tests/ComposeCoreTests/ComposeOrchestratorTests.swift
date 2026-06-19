@@ -7617,7 +7617,7 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["inside-line"])
         #expect(await client.recordRequests == ["demo-api-1"])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(timestamps: true, includeRotated: true)
+            ContainerLogOptions(tail: 5, since: since, until: until, timestamps: true, includeRotated: true)
         ])
         #expect(await client.requests.isEmpty)
     }
@@ -7713,12 +7713,14 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests.isEmpty)
     }
 
-    @Test("log manager applies tail after timestamped record splitting")
-    func logManagerAppliesTailAfterTimestampedRecordSplitting() async throws {
+    @Test("log manager applies static timestamped tail through direct API")
+    func logManagerAppliesStaticTimestampedTailThroughDirectAPI() async throws {
         let emitted = MessageRecorder()
         let timestamp = date("2026-06-18T10:00:00Z")
         let client = RecordingContainerLogAPIClient(records: [
-            ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("one\ntwo\nthree\n".utf8)),
+            ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("one\n".utf8)),
+            ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("two\n".utf8)),
+            ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("three\n".utf8)),
         ])
         let manager = ContainerClientLogManager(client: client)
 
@@ -7736,22 +7738,22 @@ struct ComposeOrchestratorTests {
             "2026-06-18T10:00:00.000Z two\n2026-06-18T10:00:00.000Z three"
         ])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(timestamps: true, includeRotated: true)
+            ContainerLogOptions(tail: 2, timestamps: true, includeRotated: true)
         ])
     }
 
-    @Test("log manager filters timestamped records after line reconstruction")
-    func logManagerFiltersTimestampedRecordsAfterLineReconstruction() async throws {
+    @Test("log manager filters static timestamped records through direct API")
+    func logManagerFiltersStaticTimestampedRecordsThroughDirectAPI() async throws {
         let emitted = MessageRecorder()
         let before = date("2026-06-18T10:00:00Z")
         let since = date("2026-06-18T10:00:01Z")
         let until = date("2026-06-18T10:00:02Z")
         let after = date("2026-06-18T10:00:03Z")
         let client = RecordingContainerLogAPIClient(records: [
-            ContainerLogRecord(timestamp: before, stream: .stdout, data: Data("old".utf8)),
-            ContainerLogRecord(timestamp: since, stream: .stdout, data: Data("-line\ninside".utf8)),
-            ContainerLogRecord(timestamp: until, stream: .stdout, data: Data("-line\nclosing".utf8)),
-            ContainerLogRecord(timestamp: after, stream: .stdout, data: Data("-line\n".utf8)),
+            ContainerLogRecord(timestamp: before, stream: .stdout, data: Data("old\n".utf8)),
+            ContainerLogRecord(timestamp: since, stream: .stdout, data: Data("inside\n".utf8)),
+            ContainerLogRecord(timestamp: until, stream: .stdout, data: Data("closing\n".utf8)),
+            ContainerLogRecord(timestamp: after, stream: .stdout, data: Data("new\n".utf8)),
         ])
         let manager = ContainerClientLogManager(client: client)
 
@@ -7766,10 +7768,10 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == [
-            "2026-06-18T10:00:01.000Z inside-line\n2026-06-18T10:00:02.000Z closing-line"
+            "2026-06-18T10:00:01.000Z inside\n2026-06-18T10:00:02.000Z closing"
         ])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(timestamps: true, includeRotated: true)
+            ContainerLogOptions(since: since, until: until, timestamps: true, includeRotated: true)
         ])
     }
 
@@ -7893,6 +7895,28 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["part"])
+    }
+
+    @Test("log manager tail zero does not complete initial direct API partial line")
+    func logManagerTailZeroDoesNotCompleteInitialDirectAPIPartialLine() async throws {
+        let emitted = MessageRecorder()
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data("old-part".utf8),
+            Data("old-partnew\n".utf8),
+        ])
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
+
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        }
+        try await waitForMessages(["new"], in: emitted)
+        followTask.cancel()
+        try await followTask.value
+
+        #expect(emitted.messages == ["new"])
     }
 
     @Test("log manager flushes initial followed direct API partial line after stop")
@@ -15489,7 +15513,7 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
         recordStorage.append(id)
         recordOptionsStorage.append(options)
-        return records
+        return applyLogOptions(to: records, options: options)
     }
 }
 
@@ -15547,6 +15571,30 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         }
         return recordSnapshots.removeFirst()
     }
+}
+
+private func applyLogOptions(
+    to records: [ContainerLogRecord],
+    options: ContainerLogOptions
+) -> [ContainerLogRecord] {
+    var filtered = records.filter { record in
+        if let since = options.since, record.timestamp < since {
+            return false
+        }
+        if let until = options.until, record.timestamp > until {
+            return false
+        }
+        return true
+    }
+
+    if let tail = options.tail, tail >= 0 {
+        if tail == 0 {
+            return []
+        }
+        filtered = Array(filtered.suffix(tail))
+    }
+
+    return filtered
 }
 
 private actor RecordingContainerExecManager: ContainerExecManaging {

@@ -213,7 +213,7 @@ cleanly to a Compose operation.
 | Project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.list()`, and `ClientVolume.delete(name:)` |
 | Image pull, inspect, push, and delete | `ClientImage.pull`, `ClientImage.get`, `ClientImage.push`, `ClientImage.delete`, and `ClientImage.cleanUpOrphanedBlobs()` |
 | Service lifecycle | `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ClientProcess.wait()`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and `ContainerClient.kill(id:signal:)` |
-| Logs and output-only attach | `ContainerClient.logs(id:options:)` for static log replay filters, and `ContainerClient.logs(id:)` compatibility for unfiltered streams |
+| Logs and output-only attach | `ContainerClient.logs(id:options:)` for raw static replay, `ContainerClient.logRecords(id:options:)` for timestamped static replay with Docker-like API tail/time filters, and plugin-side follow cursors until apple/container exposes a rotation-aware stream |
 | Attached and detached exec | `ProcessIO.create(tty:interactive:detach:)`, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)`, `ProcessIO.handleProcess(process:log:)`, and `ClientProcess.start()` |
 | Stats | `ContainerClient.stats(id:)` with stopped-container metadata from `ContainerClient.list(filters:)` |
 | Copy and export | `ContainerClient.copyIn`, `ContainerClient.copyOut`, and `ContainerClient.export(id:archive:)` |

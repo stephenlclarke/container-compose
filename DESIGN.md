@@ -204,7 +204,9 @@ Direct API paths currently include:
   `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and
   `ContainerClient.kill(id:signal:)`.
 - `compose logs` and output-only `compose attach --no-stdin --sig-proxy=false`
-  through `ContainerClient.logs(id:)`.
+  through `ContainerClient.logs(id:options:)` for raw replay and
+  `ContainerClient.logRecords(id:options:)` for timestamped static replay with
+  Docker-like API tail/time filters.
 - Attached and detached `compose exec` through `ProcessIO`,
   `ContainerClient.createProcess`, `ProcessIO.handleProcess`, and
   `ClientProcess.start()`.
