@@ -7535,7 +7535,7 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["one\ntwo\nthree"])
         #expect(await client.requests == ["demo-api-1"])
         #expect(await client.options == [
-            ContainerLogOptions(tail: 2)
+            ContainerLogOptions(tail: 2, includeRotated: true)
         ])
     }
 
@@ -7562,7 +7562,7 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["filtered"])
         #expect(await client.requests == ["demo-api-1"])
         #expect(await client.options == [
-            ContainerLogOptions(tail: 5, since: since, until: until)
+            ContainerLogOptions(tail: 5, since: since, until: until, includeRotated: true)
         ])
     }
 
@@ -7652,7 +7652,7 @@ struct ComposeOrchestratorTests {
         ])
         #expect(await client.recordRequests == ["demo-api-1"])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(timestamps: true)
+            ContainerLogOptions(timestamps: true, includeRotated: true)
         ])
         #expect(await client.requests.isEmpty)
     }
@@ -7680,7 +7680,7 @@ struct ComposeOrchestratorTests {
             "2026-06-18T10:00:00.000Z two\n2026-06-18T10:00:00.000Z three"
         ])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(timestamps: true)
+            ContainerLogOptions(timestamps: true, includeRotated: true)
         ])
     }
 

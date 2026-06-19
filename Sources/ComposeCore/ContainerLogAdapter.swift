@@ -185,7 +185,8 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             tail: follow ? nil : tail,
             since: since,
             until: until,
-            timestamps: timestamps
+            timestamps: timestamps,
+            includeRotated: !follow
         )
         let fileHandles = try await client.logFileHandles(id: id, options: options)
         guard let fileHandle = fileHandles.first else {
@@ -250,7 +251,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             return
         }
 
-        let options = ContainerLogOptions(since: since, until: until, timestamps: true)
+        let options = ContainerLogOptions(since: since, until: until, timestamps: true, includeRotated: true)
         let records = try await client.logRecords(id: id, options: options)
         let lines = structuredLogLines(records: records, timestamps: true)
         let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
