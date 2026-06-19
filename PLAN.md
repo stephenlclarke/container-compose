@@ -332,7 +332,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Captures container stdio to local runtime files.
-- The local `logs-integration` branch adds a typed local logging policy, disabled persisted capture, and `container create/run --log-driver none`.
+- The local `logs-integration` branch adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, and supports disabled persisted capture through `--log-driver none`.
 - Does not expose Docker-compatible remote logging driver selection, logging options, rotation policy, or remote logging backends.
 
 Missing behavior:

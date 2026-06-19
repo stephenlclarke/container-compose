@@ -306,7 +306,7 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:** Service `logging`, `log_driver`, and `log_opt`.
-- **Missing apple/container primitive:** Compose-compatible remote service logging drivers, logging options, rotation policy, and log metadata controls. Current released apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration. The local integration stack adds disabled persisted capture through `--log-driver none`.
+- **Missing apple/container primitive:** Compose-compatible remote service logging drivers, logging options, rotation policy, and log metadata controls. Current released apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration. The local integration stack treats `--log-driver json-file` and `--log-driver local` as local capture aliases and adds disabled persisted capture through `--log-driver none`.
 - **container-compose status:** Accepts file-backed `json-file` and `local` logging without options as no-op mappings to apple/container's local stdio log capture. On the local integration stack, `logging.driver: none` and legacy `log_driver: none` map to disabled persisted capture. Remote drivers and any logging options are rejected before resources are created.
 - **Example:** [A10](#a10-partial-service-logging-controls).
 
@@ -1524,7 +1524,7 @@ Expected result: `container compose up api worker quiet` accepts the file-backed
 Status path:
 
 - Docker Compose v2: accepts and normalizes service logging configuration.
-- [`apple/container`][apple-container]: exposes local runtime log streams. The local integration stack adds a disabled persisted-capture policy through `--log-driver none`, but still lacks logging options, rotation policy, remote drivers, and driver-specific metadata controls.
+- [`apple/container`][apple-container]: exposes local runtime log streams. The local integration stack accepts `--log-driver json-file` and `--log-driver local` as local capture aliases and adds a disabled persisted-capture policy through `--log-driver none`, but still lacks logging options, rotation policy, remote drivers, and driver-specific metadata controls.
 - `container-compose`: accepts `json-file` and `local` without options as local log capture behavior, maps `none` to disabled persisted capture on the local integration stack, then reports the apple/container runtime gap for logging options and remote drivers.
 
 ```yaml
