@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 05:27:35 BST`.
+Assessment timestamp: `2026-06-19 05:46:07 BST`.
 
 ## Scope
 
@@ -25,16 +25,17 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 
 ## Cross-Implementation Lozenges
 
+- <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square">: this work overlaps with or complements another Compose implementation and should stay visible during upstream planning.
 - <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square">: another Compose implementation is working in the same problem area and should be reviewed before upstreaming.
 - <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">: this repository adds a compatible piece, different architecture boundary, or upstreamable slice that can help the other implementation.
 
-The cross-implementation lozenges are intentionally separate from the support-status traffic lights. Cyan <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> marks direct overlap that needs comparison before upstreaming. Purple <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> marks complementary work that can help another implementation without necessarily solving the same layer. A work item can carry both lozenges when it both intersects peer code and contributes a reusable compatibility boundary, fixture, or apple/container API slice.
+The cross-implementation lozenges are intentionally separate from the support-status traffic lights. Teal <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> is the scan-friendly marker for any peer relationship. Cyan <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> marks direct overlap that needs comparison before upstreaming. Purple <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> marks complementary work that can help another implementation without necessarily solving the same layer. A work item can carry both detail lozenges when it both intersects peer code and contributes a reusable compatibility boundary, fixture, or apple/container API slice.
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when raw replay filters are present, while retaining raw file-handle follow for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, `--until`, and static rotated replay requests to apple/container where available, and follows appended raw byte records with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps` with static rotated replay enabled, and uses a single `ContainerClient.logRecordFile(id:)` handle for initial replay plus followed `--timestamps`, `--since`, and `--until` behavior that needs capture-time records.
+`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` for raw replay and follow. Static raw replay passes `tail`, `--since`, `--until`, and rotated replay requests to apple/container where available. Followed raw logs on the local `logs-integration` stack poll merged rotated replay snapshots and emit only the newly appended suffix, so rename-based local rotation does not strand the follower on an old file handle. For timestamped output and time-window follow, the plugin consumes `ContainerClient.logRecords(id:options:)` with rotated replay enabled and follows merged structured record snapshots with the same overlap cursor.
 
-[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, byte-preserving raw log tail filtering, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, Unix timestamp parsing for `container logs --since/--until`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, static `container logs --timestamps` CLI rendering, and followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured records. Those local APIs give the plugin enough data to implement timestamped and time-filtered follow behavior plus static rotated replay, but released support still depends on upstream review and acceptance of the apple/container API shape.
+[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, byte-preserving raw log tail filtering, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, Unix timestamp parsing for `container logs --since/--until`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, static `container logs --timestamps` CLI rendering, followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured records, and rotated raw/structured follow by polling merged replay snapshots through the direct APIs. Those local APIs give the plugin enough data to implement timestamped, time-filtered, and rotated follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
 
 ## Related Compose Implementations
 
@@ -46,13 +47,13 @@ Repository: [`full-chaos/container-compose`](https://github.com/full-chaos/conta
 
 Container fork used: [`full-chaos/container`](https://github.com/full-chaos/container), pinned from `Package.swift` to branch [`tier2-fork-patches`](https://github.com/full-chaos/container/tree/tier2-fork-patches). Its README also describes an opt-in [`dev`](https://github.com/full-chaos/container/tree/dev) branch for fork-forward runtime features.
 
-Overlap: <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square">
+Overlap: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square">
 
 - Implements a broad Docker Compose-like CLI and runtime abstraction layer for Apple containers.
 - Tracks fork-forward runtime gaps that also matter to this repo, including log options, events, restart policy, healthcheck observation, richer IPAM, process flag factoring, and resource controls.
 - [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) overlaps directly with this log plan by adding `ContainerLogOptions` for `since` and `timestamps` to `ContainerClient.logs`.
 
-How this repo complements it: <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
+How this repo complements it: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
 
 - This repo keeps Compose normalization behind `compose-go` so Docker Compose v2 merge, interpolation, profile, include, and extension semantics stay aligned with Docker's maintained implementation.
 - This repo is shaped as a `container compose` plugin using the current plugin install layout, with direct `apple/container` APIs used wherever available.
@@ -64,13 +65,13 @@ Repository: [`Mcrich23/Container-Compose`](https://github.com/Mcrich23/Container
 
 Container fork used: the public `Container-Compose` package currently depends on [`apple/container`](https://github.com/apple/container) from `1.0.0`. The related fork [`Mcrich23/container`](https://github.com/Mcrich23/container) contains an [`add-compose`](https://github.com/Mcrich23/container/tree/add-compose) branch with the earlier in-tree plugin work and an [`add-command-option-group-function-macro`](https://github.com/Mcrich23/container/tree/add-command-option-group-function-macro) branch related to plugin OptionGroup passthrough.
 
-Overlap: <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square">
+Overlap: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square">
 
 - Provides the original Swift Compose implementation lineage that later fed discussion around plugin support and OptionGroup passthrough.
 - Uses `ContainerCommands` heavily, which overlaps with the plugin ergonomics discussion in [`apple/container#1410`](https://github.com/apple/container/discussions/1410), [`apple/container#633`](https://github.com/apple/container/issues/633), and [`apple/container#717`](https://github.com/apple/container/pull/717).
 - Covers basic Compose model structures, command wiring, service dependencies, volumes, networks, and logging surfaces.
 
-How this repo complements it: <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
+How this repo complements it: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
 
 - This repo deliberately does not depend on unsettled OptionGroup passthrough for core orchestration. It uses direct `ContainerClient`, `NetworkClient`, `ClientVolume`, image, stats, copy, exec, and lifecycle APIs where possible.
 - This repo treats earlier Compose branches as reference material, but keeps the implementation standalone and split into upstreamable runtime/API slices plus plugin-side Compose behavior.
@@ -115,17 +116,17 @@ How this repo complements it: <img alt="PEER COMPLEMENT" src="https://img.shield
     <tr>
       <td>Timestamp and time-window filtering</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Followed structured logs use one record-file handle for initial replay and streaming. Released support still depends on upstream apple/container PR acceptance.</td>
+      <td><img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Followed structured logs poll merged rotated record snapshots and emit only newly appended records. Released support still depends on upstream apple/container PR acceptance.</td>
     </tr>
     <tr>
       <td>Service logging drivers/options</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging map to apple/container local stdio capture. <code>none</code> maps to disabled persisted capture on the local integration stack. Local <code>max-size</code>/<code>max-file</code> options now map to apple/container <code>--log-opt</code> flags; rotated follow and remote drivers remain open.</td>
+      <td><img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging map to apple/container local stdio capture. <code>none</code> maps to disabled persisted capture on the local integration stack. Local <code>max-size</code>/<code>max-file</code> options now map to apple/container <code>--log-opt</code> flags; static and followed rotated local replay work on the local stack. Remote drivers remain open.</td>
     </tr>
     <tr>
       <td>Exact byte/line fidelity</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
+      <td><img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
     </tr>
   </tbody>
 </table>
@@ -264,7 +265,7 @@ Remaining plugin work:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Peer alignment: <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
+Peer alignment: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
 
 Peer alignment details:
 
@@ -279,8 +280,8 @@ Current `container-compose` behavior:
 - Accepts RFC 3339 timestamps, Unix timestamps in seconds with optional fractional seconds, and relative durations such as `30m`, `2h`, or `1h30m`.
 - Passes static timestamp filters through the direct apple/container log API.
 - Uses structured `ContainerClient.logRecords(id:options:)` on the local integration stack to render static `logs --timestamps` without parsing timestamps from application output.
-- Uses one `ContainerClient.logRecordFile(id:)` handle on the local integration stack for initial replay plus followed structured JSONL records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
-- Keeps unfiltered raw follow on the original stdio file handle so the common streaming path does not parse structured records unnecessarily.
+- Uses merged rotated `ContainerClient.logRecords(id:options:)` snapshots on the local integration stack for initial replay plus followed structured records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
+- Uses merged rotated `ContainerClient.logs(id:options:)` snapshots for unfiltered raw follow and emits only the appended suffix between snapshots.
 - Stops structured follow when the `--until` deadline is reached, even when no new log records arrive.
 - Cannot reconstruct capture timestamps for logs produced before the structured record store exists.
 
@@ -290,20 +291,20 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 - The local `logs-integration` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
 - The local `logs-integration` branch accepts RFC 3339 timestamps and Unix timestamps in seconds with optional fractional seconds for `container logs --since` and `--until`.
 - The local `logs-integration` branch stores timestamped runtime records and exposes `ContainerClient.logRecords(id:options:)` with timestamp, stream, and raw bytes for static replay.
-- The local `logs-integration` branch exposes `ContainerClient.logRecordFile(id:)` so clients can follow the structured JSONL record file directly.
+- The local `logs-integration` branch exposes `ContainerClient.logRecordFile(id:)` for clients that want direct structured JSONL file access.
 - The local `logs-integration` branch renders static `container logs --timestamps` output through structured records with tail applied after runtime chunks are rebuilt into log lines.
-- The local `logs-integration` branch renders followed `container logs --timestamps`, `--since`, and `--until` output through the structured record-file handle while keeping plain unfiltered `container logs --follow` on the raw stdio path.
-- Does not yet have upstream-reviewed cursor, truncation, retention, or rotation semantics for long-lived structured follow clients.
+- The local `logs-integration` branch renders followed `container logs --timestamps`, `--since`, and `--until` output through merged rotated structured record snapshots, and renders plain unfiltered `container logs --follow` through merged rotated raw snapshots.
+- Does not yet have upstream-reviewed cursor, truncation, or retention semantics for long-lived merged replay follow clients.
 
 Missing behavior:
 
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Static and followed `--timestamps`, `--since`, and `--until` work on the local integration stack, but still need upstream apple/container PR acceptance before they can be treated as released support.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> A stable record format and file API now exist locally; upstream review needs to confirm cursor, retention, and rotation behavior before plugin releases can depend on it.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> A stable record format plus merged replay cursor behavior now exist locally; upstream review needs to confirm cursor, retention, and truncation behavior before plugin releases can depend on it.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Capture timestamps are unavailable for containers that only have legacy raw stdio logs.
 
 Implementation direction:
 
-- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs: log options, filtered static replay, structured timestamped record storage, structured record retrieval, and structured record file follow access.
+- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs: log options, filtered static replay, structured timestamped record storage, structured record retrieval, static rotated replay, and rotated merged-replay follow.
 - Compare the upstreamable API shape with [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) before opening PRs so both Compose implementations can converge on one runtime contract.
 - Add golden behavior tests using RFC 3339 timestamps, Unix timestamps, relative durations, followed timestamp output, and combined `--since`/`--until` windows after the upstream API shape settles.
 
@@ -311,7 +312,7 @@ Implementation direction:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Peer alignment: <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
+Peer alignment: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
 
 Peer alignment details:
 
@@ -331,13 +332,13 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Captures container stdio to local runtime files.
-- The local `logs-integration` branch adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, supports disabled persisted capture through `--log-driver none`, parses `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` into the local rotation policy, honors configured local `maxSizeInBytes` / `maxFileCount` at the runtime writer, and exposes static rotated raw and structured replay through direct log options.
-- Does not expose Docker-compatible remote logging driver selection, rotated follow semantics, or remote logging backends.
+- The local `logs-integration` branch adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, supports disabled persisted capture through `--log-driver none`, parses `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` into the local rotation policy, honors configured local `maxSizeInBytes` / `maxFileCount` at the runtime writer, and exposes static plus followed rotated raw and structured replay through direct log options.
+- Does not expose Docker-compatible remote logging driver selection or remote logging backends.
 
 Missing behavior:
 
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Disabled persisted capture works on the local integration stack but still depends on upstream apple/container PR acceptance before it can be treated as released support.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Writer-level local rotation, CLI option parsing, Compose option mapping, and static rotated replay work on the local integration stack for `max-size` and `max-file`, but rotated follow behavior still needs implementation/API design.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Writer-level local rotation, CLI option parsing, Compose option mapping, static rotated replay, and followed rotated replay work on the local integration stack for `max-size` and `max-file`, but still depend on upstream API review before they can be treated as released support.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Remote or non-local runtime logging driver selection per container.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Driver-specific options such as syslog endpoint, labels, env inclusion, and non-local option handoff.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Clear policy for unsupported Docker logging drivers on macOS.
@@ -346,13 +347,13 @@ Implementation direction:
 
 - Split the local [`apple/container`](https://github.com/apple/container) logging policy work into small upstream PRs: policy model, disabled local capture, and CLI/direct API bridge.
 - Keep `container-compose` rejection behavior for remote drivers, options on `none`, and non-local logging options until apple/container exposes compatible runtime primitives.
-- Revisit rotation and retention only after upstream review settles cursor and retention semantics for followed structured logs.
+- Keep local-driver rotation support behind the merged replay cursor until upstream review settles cursor, truncation, and retention semantics for followed logs.
 
 ### L8. Exact Log Fidelity
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Peer alignment: <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
+Peer alignment: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
 
 Peer alignment details:
 
@@ -389,9 +390,9 @@ Implementation direction:
 2. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
 3. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
-5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and structured record file follow API.
-6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Propose apple/container service logging policy primitives for remote drivers, rotated follow, and remaining logging options.
-7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Revisit service `logging` mappings beyond local file-backed drivers after upstream runtime APIs exist.
+5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and rotated merged-replay follow API.
+6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Propose apple/container service logging policy primitives for remote drivers and remaining non-local logging options.
+7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Revisit service `logging` mappings beyond local file-backed drivers after upstream runtime APIs exist.
 
 ## Acceptance Criteria
 
