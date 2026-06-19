@@ -3995,9 +3995,9 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("up accepts default json file logging without options")
-    func upAcceptsDefaultJSONFileLoggingWithoutOptions() async throws {
-        for testCase in supportedDefaultServiceLoggingFieldCases() {
+    @Test("up accepts local logging drivers without options")
+    func upAcceptsLocalLoggingDriversWithoutOptions() async throws {
+        for testCase in supportedLocalServiceLoggingFieldCases() {
             let runner = RecordingRunner(responses: [.success])
             let discoveryManager = RecordingContainerDiscoveryManager()
             let project = composeProject(
@@ -12218,9 +12218,9 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("run accepts default json file logging without options")
-    func runAcceptsDefaultJSONFileLoggingWithoutOptions() async throws {
-        for testCase in supportedDefaultServiceLoggingFieldCases() {
+    @Test("run accepts local logging drivers without options")
+    func runAcceptsLocalLoggingDriversWithoutOptions() async throws {
+        for testCase in supportedLocalServiceLoggingFieldCases() {
             let runner = RecordingRunner(responses: [.success])
             let project = composeProject(
                 name: "demo",
@@ -14258,7 +14258,7 @@ private struct SupportedServiceLoggingFieldCase: Sendable {
     let configure: @Sendable (inout ComposeService) -> Void
 }
 
-private func supportedDefaultServiceLoggingFieldCases() -> [SupportedServiceLoggingFieldCase] {
+private func supportedLocalServiceLoggingFieldCases() -> [SupportedServiceLoggingFieldCase] {
     [
         SupportedServiceLoggingFieldCase(
             configure: { $0.logging = .object(["driver": .string("json-file")]) }
@@ -14267,7 +14267,16 @@ private func supportedDefaultServiceLoggingFieldCases() -> [SupportedServiceLogg
             configure: { $0.logging = .object(["driver": .string("json-file"), "options": .object([:])]) }
         ),
         SupportedServiceLoggingFieldCase(
+            configure: { $0.logging = .object(["driver": .string("local")]) }
+        ),
+        SupportedServiceLoggingFieldCase(
+            configure: { $0.logging = .object(["driver": .string("local"), "options": .object([:])]) }
+        ),
+        SupportedServiceLoggingFieldCase(
             configure: { $0.logDriver = "json-file" }
+        ),
+        SupportedServiceLoggingFieldCase(
+            configure: { $0.logDriver = "local" }
         ),
     ]
 }
@@ -14282,7 +14291,7 @@ private func unsupportedServiceMetadataAndLoggingFieldCases() -> [UnsupportedSer
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "logging",
             reason: "service logging driver/options need an apple/container runtime gap PR",
-            configure: { $0.logging = .object(["driver": .string("json-file"), "options": .object(["max-size": .string("10m")])]) }
+            configure: { $0.logging = .object(["driver": .string("local"), "options": .object(["max-size": .string("10m")])]) }
         ),
         UnsupportedServiceMetadataAndLoggingFieldCase(
             composeName: "log_driver",

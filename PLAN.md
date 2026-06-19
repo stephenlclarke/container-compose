@@ -121,7 +121,7 @@ How this repo complements it: <img alt="PEER IMPL" src="https://img.shields.io/b
     <tr>
       <td>Service logging drivers/options</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Default JSON-file logging without options maps to apple/container local stdio capture. Non-default drivers and logging options need runtime logging policy primitives that apple/container does not currently expose.</td>
+      <td><img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging without options map to apple/container local stdio capture. Remote drivers and logging options need runtime logging policy primitives that apple/container does not currently expose.</td>
     </tr>
     <tr>
       <td>Exact byte/line fidelity</td>
@@ -311,14 +311,14 @@ Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?styl
 
 Related implementation signal:
 
-- <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Other Compose implementations also hit apple/container's missing logging-policy layer, so any design should be coordinated before mapping non-default drivers.
+- <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Other Compose implementations also hit apple/container's missing logging-policy layer, so any design should be coordinated before mapping remote drivers or driver options.
 
 Docker Compose surface: service `logging.driver`, `logging.options`, legacy `log_driver`, and legacy `log_opt`.
 
 Current `container-compose` behavior:
 
-- Accepts `logging.driver: json-file`, `logging.options: {}`, and legacy `log_driver: json-file` without `log_opt` as no-op mappings to apple/container's default local stdio log capture.
-- Rejects non-default service logging drivers and any logging options before creating resources.
+- Accepts `logging.driver: json-file`, `logging.driver: local`, `logging.options: {}`, and legacy `log_driver: json-file` or `log_driver: local` without `log_opt` as no-op mappings to apple/container's local stdio log capture.
+- Rejects remote or otherwise unsupported service logging drivers and any logging options before creating resources.
 - Preserves the compatibility boundary in tests and `COMPATIBILITY.md`.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
@@ -328,7 +328,7 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 
 Missing behavior:
 
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Runtime logging driver selection per container.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Remote or non-local runtime logging driver selection per container.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Driver-specific options such as rotation, max size, syslog endpoint, labels, or env inclusion.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Clear policy for unsupported Docker logging drivers on macOS.
 
@@ -378,8 +378,8 @@ Implementation direction:
 3. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
 5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and structured record file follow API.
-6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Propose apple/container service logging policy primitives for non-default drivers and logging options.
-7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit service `logging` mappings and any Docker Compose comparison differences after upstream runtime APIs exist.
+6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Propose apple/container service logging policy primitives for remote drivers and logging options.
+7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit service `logging` mappings beyond local file-backed drivers after upstream runtime APIs exist.
 
 ## Acceptance Criteria
 

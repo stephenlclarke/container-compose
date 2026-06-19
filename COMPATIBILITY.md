@@ -306,8 +306,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:** Service `logging`, `log_driver`, and `log_opt`.
-- **Missing apple/container primitive:** Compose-compatible non-default service logging drivers, logging options, rotation policy, and log metadata controls. Current apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration.
-- **container-compose status:** Accepts default JSON-file logging without options as a no-op mapping to apple/container's local stdio log capture. Non-default drivers and any logging options are rejected before resources are created.
+- **Missing apple/container primitive:** Compose-compatible remote service logging drivers, logging options, rotation policy, and log metadata controls. Current apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration.
+- **container-compose status:** Accepts file-backed `json-file` and `local` logging without options as no-op mappings to apple/container's local stdio log capture. Remote drivers and any logging options are rejected before resources are created.
 - **Example:** [A10](#a10-partial-service-logging-controls).
 
 #### API socket and block I/O controls
@@ -434,7 +434,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A10: Partial, Service Logging Controls](#a10-partial-service-logging-controls): Demonstrates accepted default JSON-file logging and remaining service logging driver/option gaps.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A10: Partial, Service Logging Controls](#a10-partial-service-logging-controls): Demonstrates accepted local file-backed logging and remaining service logging driver/option gaps.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
@@ -1519,13 +1519,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### A10: Partial, Service Logging Controls
 
-Expected result: `container compose up api` accepts the default JSON-file logging driver without options because apple/container already captures local stdio logs. `container compose up worker shipper` rejects before creating resources because apple/container does not expose Compose-compatible logging options or non-default logging driver primitives.
+Expected result: `container compose up api worker` accepts the file-backed `json-file` and `local` logging drivers without options because apple/container already captures local stdio logs. `container compose up rotated shipper` rejects before creating resources because apple/container does not expose Compose-compatible logging options or remote logging driver primitives.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes service logging configuration.
 - [`apple/container`][apple-container]: exposes local runtime log streams, but not service logging driver selection, logging options, rotation policy, or driver-specific metadata controls.
-- `container-compose`: accepts `json-file` without options as the default local log capture behavior, then reports the apple/container runtime gap for logging options and non-default drivers.
+- `container-compose`: accepts `json-file` and `local` without options as local log capture behavior, then reports the apple/container runtime gap for logging options and remote drivers.
 
 ```yaml
 # compose.yaml
@@ -1542,7 +1542,13 @@ services:
     build:
       context: ./worker
     logging:
-      driver: json-file
+      driver: local
+
+  rotated:
+    build:
+      context: ./rotated
+    logging:
+      driver: local
       options:
         max-size: "10m"
         max-file: "3"
@@ -1550,9 +1556,7 @@ services:
   shipper:
     build:
       context: ./shipper
-    log_driver: json-file
-    log_opt:
-      max-size: "10m"
+    log_driver: syslog
 ```
 
 Dockerfile: `api/Dockerfile`
@@ -1567,6 +1571,13 @@ Dockerfile: `worker/Dockerfile`
 ```dockerfile
 FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
+```
+
+Dockerfile: `rotated/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo rotated; sleep 30; done"]
 ```
 
 Dockerfile: `shipper/Dockerfile`

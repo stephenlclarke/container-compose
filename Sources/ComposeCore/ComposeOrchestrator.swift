@@ -3471,12 +3471,12 @@ private extension ComposeOrchestrator {
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
         let loggingReason = "service logging driver/options need an apple/container runtime gap PR"
-        if !isSupportedDefaultJSONFileLogging(service.logging) {
+        if !isSupportedLocalLogging(service.logging) {
             fields.append(("logging", loggingReason))
         }
         if let logDriver = service.logDriver,
            !logDriver.isEmpty,
-           !isDefaultJSONFileLogDriver(logDriver) {
+           !isSupportedLocalLogDriver(logDriver) {
             fields.append(("log_driver", loggingReason))
         }
         if let logOptions = service.logOptions, !logOptions.isEmpty {
@@ -3488,8 +3488,8 @@ private extension ComposeOrchestrator {
         return fields
     }
 
-    /// Returns whether Compose logging maps to apple/container's default local stdio capture.
-    func isSupportedDefaultJSONFileLogging(_ logging: ComposeValue?) -> Bool {
+    /// Returns whether Compose logging maps to apple/container's local stdio capture.
+    func isSupportedLocalLogging(_ logging: ComposeValue?) -> Bool {
         guard let logging else {
             return true
         }
@@ -3503,15 +3503,15 @@ private extension ComposeOrchestrator {
             }
             let driver = fields["driver"]?.stringValue
             let options = fields["options"]
-            return (driver == nil || isDefaultJSONFileLogDriver(driver)) && isEmptyLoggingOptions(options)
+            return (driver == nil || isSupportedLocalLogDriver(driver)) && isEmptyLoggingOptions(options)
         default:
             return false
         }
     }
 
-    /// Returns whether a logging driver is Compose's default JSON-file local driver.
-    func isDefaultJSONFileLogDriver(_ driver: String?) -> Bool {
-        driver == "json-file"
+    /// Returns whether a logging driver stores logs in apple/container's local log path.
+    func isSupportedLocalLogDriver(_ driver: String?) -> Bool {
+        driver == "json-file" || driver == "local"
     }
 
     /// Returns whether Compose logging options request no runtime policy changes.
