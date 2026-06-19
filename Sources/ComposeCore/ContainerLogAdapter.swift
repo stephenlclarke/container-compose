@@ -252,7 +252,15 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             renderer: renderer,
             emit: emit
         )
-        if shouldFinish || until.map({ $0 <= Date() }) == true {
+        if shouldFinish {
+            return
+        }
+        if until.map({ $0 <= Date() }) == true {
+            emitEachLogLine(renderer.flush(), emit: emit)
+            return
+        }
+        guard try await followStateProvider.isLiveForLogFollow(id: id) else {
+            emitEachLogLine(renderer.flush(), emit: emit)
             return
         }
 
@@ -388,6 +396,10 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
             emitEachLogLine(lines, emit: emit)
             if result.shouldFinish {
+                return
+            }
+            guard try await followStateProvider.isLiveForLogFollow(id: id) else {
+                emitEachLogLine(renderer.flush(), emit: emit)
                 return
             }
         }

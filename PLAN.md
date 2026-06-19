@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 06:15:11 BST`.
+Assessment timestamp: `2026-06-19 06:19:29 BST`.
 
 ## Scope
 
@@ -33,7 +33,7 @@ The cross-implementation lozenges are intentionally separate from the support-st
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` for raw replay and follow. Static raw replay passes `tail`, `--since`, `--until`, and rotated replay requests to apple/container where available. Followed raw logs on the local `logs-integration` stack poll merged rotated replay snapshots and emit only the newly appended suffix, so rename-based local rotation does not strand the follower on an old file handle. For timestamped output and time-window follow, the plugin consumes `ContainerClient.logRecords(id:options:)` with rotated replay enabled and follows merged structured record snapshots with the same overlap cursor.
+`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` for raw replay and follow. Static raw replay passes `tail`, `--since`, `--until`, and rotated replay requests to apple/container where available. Followed raw logs on the local `logs-integration` stack poll merged rotated replay snapshots and emit only the newly appended suffix, so rename-based local rotation does not strand the follower on an old file handle. For timestamped output and time-window follow, the plugin consumes `ContainerClient.logRecords(id:options:)` with rotated replay enabled and follows merged structured record snapshots with the same overlap cursor. Raw and structured followed streams use direct container status to keep partial records buffered while the target is live, then flush a final unterminated record once the target stops.
 
 [`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, byte-preserving raw log tail filtering, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, Unix timestamp parsing for `container logs --since/--until`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, static `container logs --timestamps` CLI rendering, followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured records, and rotated raw/structured follow by polling merged replay snapshots through the direct APIs. Those local APIs give the plugin enough data to implement timestamped, time-filtered, and rotated follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
 
@@ -126,7 +126,7 @@ How this repo complements it: <img alt="PEER ALIGNED" src="https://img.shields.i
     <tr>
       <td>Exact byte/line fidelity</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
+      <td><img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> container-compose preserves blank line records, raw and structured followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
     </tr>
   </tbody>
 </table>
@@ -291,6 +291,7 @@ Current `container-compose` behavior:
 - Uses merged rotated `ContainerClient.logRecords(id:options:)` snapshots on the local integration stack for initial replay plus followed structured records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
 - Uses merged rotated `ContainerClient.logs(id:options:)` snapshots for unfiltered raw follow and emits only the appended suffix between snapshots.
 - Stops structured follow when the `--until` deadline is reached, even when no new log records arrive.
+- Buffers split structured records while the followed target is live, then flushes the final unterminated structured record when direct runtime status shows the target is no longer live.
 - Cannot reconstruct capture timestamps for logs produced before the structured record store exists.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
@@ -372,7 +373,7 @@ Docker Compose surface: raw application stdout/stderr content displayed through 
 Current `container-compose` behavior:
 
 - Preserves blank line records in full replay, local tailing, and followed streams.
-- Buffers followed output so split lines are not emitted until complete, uses the direct runtime status API to detect when a raw followed container is no longer live, and flushes the final partial line at that stop boundary.
+- Buffers followed output so split raw and structured lines are not emitted until complete, uses the direct runtime status API to detect when a followed container is no longer live, and flushes the final partial line at that stop boundary.
 - Emits log byte records through a dedicated data emitter so non-UTF-8 payloads are preserved in raw, prefixed, followed, and timestamped output.
 - Covers Compose line-boundary fixtures for empty logs, blank records, final newlines, CRLF/CR separators, prefixed blank records, and unterminated final records.
 - The local structured record path preserves stdout/stderr identity in apple/container records, but Compose output formatting does not currently distinguish streams.

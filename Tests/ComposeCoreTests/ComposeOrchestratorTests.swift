@@ -7935,7 +7935,10 @@ struct ComposeOrchestratorTests {
                 ContainerLogRecord(timestamp: secondTimestamp, stream: .stderr, data: Data("rt\n".utf8)),
             ],
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(
@@ -7975,7 +7978,10 @@ struct ComposeOrchestratorTests {
             [first, second],
             [second, third],
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(
@@ -8010,7 +8016,10 @@ struct ComposeOrchestratorTests {
                 ContainerLogRecord(timestamp: until.addingTimeInterval(1), stream: .stdout, data: Data("new\n".utf8)),
             ],
         ])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
 
         let followTask = Task {
             try await manager.logs(
@@ -8060,11 +8069,106 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests.isEmpty)
     }
 
+    @Test("log manager flushes structured partial line when until already elapsed")
+    func logManagerFlushesStructuredPartialLineWhenUntilAlreadyElapsed() async throws {
+        let emitted = MessageRecorder()
+        let until = Date().addingTimeInterval(-1)
+        let records = [
+            ContainerLogRecord(timestamp: until.addingTimeInterval(-1), stream: .stdout, data: Data("snapshot".utf8)),
+        ]
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [records])
+        let manager = ContainerClientLogManager(client: client)
+
+        try await manager.logs(
+            id: "demo-api-1",
+            tail: nil,
+            follow: true,
+            since: nil,
+            until: until,
+            timestamps: true,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages.count == 1)
+        #expect(emitted.messages[0].hasSuffix(" snapshot"))
+        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordFileRequests.isEmpty)
+        #expect(await client.recordOptions == [ContainerLogOptions(timestamps: true, includeRotated: true)])
+        #expect(await client.requests.isEmpty)
+    }
+
+    @Test("log manager keeps followed structured partial line pending while live")
+    func logManagerKeepsFollowedStructuredPartialLinePendingWhileLive() async throws {
+        let emitted = MessageRecorder()
+        let timestamp = date("2026-06-18T10:00:00.123Z")
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [
+            [],
+            [
+                ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("partial".utf8)),
+            ],
+        ])
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
+
+        let followTask = Task {
+            try await manager.logs(
+                id: "demo-api-1",
+                tail: 0,
+                follow: true,
+                since: nil,
+                until: nil,
+                timestamps: true,
+                emit: { emitted.append($0) }
+            )
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        followTask.cancel()
+        try await followTask.value
+
+        #expect(emitted.messages.isEmpty)
+    }
+
+    @Test("log manager flushes followed structured partial line after stop")
+    func logManagerFlushesFollowedStructuredPartialLineAfterStop() async throws {
+        let emitted = MessageRecorder()
+        let stateProvider = RecordingContainerLogFollowStateProvider(responses: [true, false])
+        let timestamp = date("2026-06-18T10:00:00.123Z")
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [
+            [],
+            [
+                ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("partial".utf8)),
+            ],
+        ])
+        let manager = ContainerClientLogManager(client: client, followStateProvider: stateProvider)
+
+        let followTask = Task {
+            try await manager.logs(
+                id: "demo-api-1",
+                tail: 0,
+                follow: true,
+                since: nil,
+                until: nil,
+                timestamps: true,
+                emit: { emitted.append($0) }
+            )
+        }
+        try await waitForMessages(["2026-06-18T10:00:00.123Z partial"], in: emitted)
+        try await followTask.value
+
+        #expect(emitted.messages == ["2026-06-18T10:00:00.123Z partial"])
+        #expect(await stateProvider.requests == ["demo-api-1", "demo-api-1"])
+    }
+
     @Test("log manager stops quiet structured follow at until deadline")
     func logManagerStopsQuietStructuredFollowAtUntilDeadline() async throws {
         let emitted = MessageRecorder()
         let client = RotatingContainerLogAPIClient(recordSnapshots: [[]])
-        let manager = ContainerClientLogManager(client: client)
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
         let until = Date().addingTimeInterval(1)
         let start = Date()
 
