@@ -1502,7 +1502,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     follow: logOptions.follow,
                     tail: runtimeTail,
                     since: logOptions.since,
-                    until: logOptions.until
+                    until: logOptions.until,
+                    timestamps: logOptions.timestamps
                 )
                 try await runContainer(args)
             }
@@ -1535,7 +1536,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Renders direct runtime arguments for log dry-run output.
-    private func logRuntimeArguments(id: String, follow: Bool, tail: Int?, since: String?, until: String?) -> [String] {
+    private func logRuntimeArguments(id: String, follow: Bool, tail: Int?, since: String?, until: String?, timestamps: Bool) -> [String] {
         var args = ["logs"]
         if follow {
             args.append("--follow")
@@ -1548,6 +1549,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if let until {
             args.append(contentsOf: ["--until", until])
+        }
+        if timestamps {
+            args.append("--timestamps")
         }
         args.append(id)
         return args

@@ -489,7 +489,7 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var since: String?
     @Option(name: .customLong("until"), help: "Show logs before an RFC 3339 timestamp or relative duration.")
     var until: String?
-    @Flag(name: [.customShort("t"), .customLong("timestamps")], help: "Show timestamps. Not supported until apple/container exposes timestamped log records.")
+    @Flag(name: [.customShort("t"), .customLong("timestamps")], help: "Show runtime capture timestamps.")
     var timestamps = false
     @Option(name: .customLong("index"), help: "Target one service container index instead of all matching replicas.")
     var index: Int?

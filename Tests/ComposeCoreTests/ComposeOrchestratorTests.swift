@@ -9668,6 +9668,38 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
+    @Test("logs dry run emits timestamp options")
+    func logsDryRunEmitsTimestampOptions() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            logManager: logManager
+        ).logs(
+            project: project,
+            services: ["api"],
+            options: ComposeLogsOptions {
+                $0.follow = true
+                $0.since = "2026-06-18T10:00:00Z"
+                $0.until = "2026-06-18T11:00:00Z"
+                $0.timestamps = true
+            }
+        )
+
+        #expect(emitted.messages == [
+            "+ container logs --follow --since 2026-06-18T10:00:00Z --until 2026-06-18T11:00:00Z --timestamps demo-api-1",
+        ])
+        #expect(await logManager.requests.isEmpty)
+    }
+
     @Test("logs dry run emits indexed runtime command")
     func logsDryRunEmitsIndexedRuntimeCommand() async throws {
         let emitted = MessageRecorder()
