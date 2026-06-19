@@ -7836,6 +7836,44 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["one", "", "part"])
     }
 
+    @Test("log manager completes initial followed direct API partial line")
+    func logManagerCompletesInitialFollowedDirectAPIPartialLine() async throws {
+        let emitted = MessageRecorder()
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data("pa".utf8),
+            Data("part\n".utf8),
+        ])
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider()
+        )
+
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: nil, follow: true, emit: { emitted.append($0) })
+        }
+        try await waitForMessages(["part"], in: emitted)
+        followTask.cancel()
+        try await followTask.value
+
+        #expect(emitted.messages == ["part"])
+    }
+
+    @Test("log manager flushes initial followed direct API partial line after stop")
+    func logManagerFlushesInitialFollowedDirectAPIPartialLineAfterStop() async throws {
+        let emitted = MessageRecorder()
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data("partial".utf8),
+        ])
+        let manager = ContainerClientLogManager(
+            client: client,
+            followStateProvider: RecordingContainerLogFollowStateProvider(responses: [false])
+        )
+
+        try await manager.logs(id: "demo-api-1", tail: nil, follow: true, emit: { emitted.append($0) })
+
+        #expect(emitted.messages == ["partial"])
+    }
+
     @Test("log manager follows rotated direct API log snapshots")
     func logManagerFollowsRotatedDirectAPILogSnapshots() async throws {
         let emitted = MessageRecorder()
@@ -7963,7 +8001,6 @@ struct ComposeOrchestratorTests {
             "2026-06-18T10:00:00.123Z part",
         ])
         #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.recordFileRequests.isEmpty)
         #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
         #expect(await client.requests.isEmpty)
     }
@@ -7999,7 +8036,6 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["2026-06-18T10:00:02.000Z three"])
-        #expect(await client.recordFileRequests.isEmpty)
     }
 
     @Test("log manager filters followed structured records")
@@ -8037,7 +8073,6 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == ["inside"])
         #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.recordFileRequests.isEmpty)
         #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
         #expect(await client.requests.isEmpty)
     }
@@ -8064,7 +8099,6 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == ["snapshot"])
         #expect(await client.recordRequests == ["demo-api-1"])
-        #expect(await client.recordFileRequests.isEmpty)
         #expect(await client.recordOptions == [ContainerLogOptions(timestamps: true, includeRotated: true)])
         #expect(await client.requests.isEmpty)
     }
@@ -8092,7 +8126,6 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages.count == 1)
         #expect(emitted.messages[0].hasSuffix(" snapshot"))
         #expect(await client.recordRequests == ["demo-api-1"])
-        #expect(await client.recordFileRequests.isEmpty)
         #expect(await client.recordOptions == [ContainerLogOptions(timestamps: true, includeRotated: true)])
         #expect(await client.requests.isEmpty)
     }
@@ -8185,7 +8218,6 @@ struct ComposeOrchestratorTests {
         #expect(Date().timeIntervalSince(start) < 3)
         #expect(emitted.messages.isEmpty)
         #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.recordFileRequests.isEmpty)
         #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
         #expect(await client.requests.isEmpty)
     }
@@ -8227,28 +8259,6 @@ struct ComposeOrchestratorTests {
         #expect(response == records)
         #expect(await recorder.recordRequests == ["demo-api-1"])
         #expect(await recorder.recordOptions == [options])
-    }
-
-    @Test("log API client forwards configured record file operation")
-    func logAPIClientForwardsConfiguredRecordFileOperation() async throws {
-        let fileHandle = try temporaryLogFileHandle(contents: "")
-        let recorder = RecordingContainerLogAPIClient(recordFileHandle: fileHandle)
-        let client = ContainerLogAPIClient(
-            logs: { id, options in
-                try await recorder.logFileHandles(id: id, options: options)
-            },
-            logRecords: { id, options in
-                try await recorder.logRecords(id: id, options: options)
-            },
-            logRecordFile: { id in
-                try await recorder.logRecordFileHandle(id: id)
-            }
-        )
-
-        let response = try await client.logRecordFileHandle(id: "demo-api-1")
-
-        #expect(response === fileHandle)
-        #expect(await recorder.recordFileRequests == ["demo-api-1"])
     }
 
     @Test("stats manager renders static table from direct API stats")
@@ -15407,17 +15417,14 @@ private actor BlockingContainerLogManager: ContainerLogManaging {
 private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private let fileHandles: [FileHandle]
     private let records: [ContainerLogRecord]
-    private let recordFileHandle: FileHandle?
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
     private var recordStorage: [String] = []
     private var recordOptionsStorage: [ContainerLogOptions] = []
-    private var recordFileStorage: [String] = []
 
-    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = [], recordFileHandle: FileHandle? = nil) {
+    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = []) {
         self.fileHandles = fileHandles
         self.records = records
-        self.recordFileHandle = recordFileHandle
     }
 
     var requests: [String] {
@@ -15436,10 +15443,6 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         recordOptionsStorage
     }
 
-    var recordFileRequests: [String] {
-        recordFileStorage
-    }
-
     func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
         storage.append(id)
         optionsStorage.append(options)
@@ -15451,14 +15454,6 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         recordOptionsStorage.append(options)
         return records
     }
-
-    func logRecordFileHandle(id: String) async throws -> FileHandle {
-        recordFileStorage.append(id)
-        guard let recordFileHandle else {
-            throw ComposeError.invalidProject("missing record file handle for \(id)")
-        }
-        return recordFileHandle
-    }
 }
 
 private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
@@ -15468,7 +15463,6 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
     private var optionsStorage: [ContainerLogOptions] = []
     private var recordStorage: [String] = []
     private var recordOptionsStorage: [ContainerLogOptions] = []
-    private var recordFileStorage: [String] = []
 
     init(logSnapshots: [Data] = [], recordSnapshots: [[ContainerLogRecord]] = []) {
         self.logSnapshots = logSnapshots
@@ -15491,10 +15485,6 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         recordOptionsStorage
     }
 
-    var recordFileRequests: [String] {
-        recordFileStorage
-    }
-
     func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
         storage.append(id)
         optionsStorage.append(options)
@@ -15505,11 +15495,6 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         recordStorage.append(id)
         recordOptionsStorage.append(options)
         return nextRecordSnapshot()
-    }
-
-    func logRecordFileHandle(id: String) async throws -> FileHandle {
-        recordFileStorage.append(id)
-        throw ComposeError.invalidProject("record file handle should not be requested for \(id)")
     }
 
     private func nextLogSnapshot() -> Data {

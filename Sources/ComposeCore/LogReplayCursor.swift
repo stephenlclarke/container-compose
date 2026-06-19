@@ -27,7 +27,7 @@ struct LogDataReplayCursor {
 
     /// Returns bytes that are present in `current` but were not emitted from the previous snapshot.
     mutating func appendedData(in current: Data) -> Data {
-        let overlap = LogReplayOverlap.length(previous: Array(previous), current: Array(current))
+        let overlap = LogReplayOverlap.length(previous: previous, current: current)
         previous = current
         guard overlap < current.count else {
             return Data()
@@ -57,6 +57,31 @@ struct LogRecordReplayCursor {
 
 /// Computes suffix/prefix overlap for retained rotated-log snapshots.
 private enum LogReplayOverlap {
+    /// Returns the length of the longest byte suffix of `previous` that is also a prefix of `current`.
+    static func length(previous: Data, current: Data) -> Int {
+        guard !previous.isEmpty, !current.isEmpty else {
+            return 0
+        }
+        if current.starts(with: previous) {
+            return previous.count
+        }
+
+        let table = prefixTable(for: current)
+        var matched = 0
+        for (index, value) in previous.enumerated() {
+            while matched > 0 && value != byte(at: matched, in: current) {
+                matched = table[matched - 1]
+            }
+            if value == byte(at: matched, in: current) {
+                matched += 1
+                if matched == current.count && index < previous.index(before: previous.endIndex) {
+                    matched = table[matched - 1]
+                }
+            }
+        }
+        return matched
+    }
+
     /// Returns the length of the longest suffix of `previous` that is also a prefix of `current`.
     static func length<Element: Equatable>(previous: [Element], current: [Element]) -> Int {
         guard !previous.isEmpty, !current.isEmpty else {
@@ -103,5 +128,29 @@ private enum LogReplayOverlap {
             }
         }
         return table
+    }
+
+    private static func prefixTable(for pattern: Data) -> [Int] {
+        guard !pattern.isEmpty else {
+            return []
+        }
+
+        var table = Array(repeating: 0, count: pattern.count)
+        var matched = 0
+        for index in 1..<pattern.count {
+            let value = byte(at: index, in: pattern)
+            while matched > 0 && value != byte(at: matched, in: pattern) {
+                matched = table[matched - 1]
+            }
+            if value == byte(at: matched, in: pattern) {
+                matched += 1
+                table[index] = matched
+            }
+        }
+        return table
+    }
+
+    private static func byte(at offset: Int, in data: Data) -> UInt8 {
+        data[data.index(data.startIndex, offsetBy: offset)]
     }
 }

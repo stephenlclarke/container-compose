@@ -25,9 +25,6 @@ public protocol ContainerLogAPIClienting: Sendable {
 
     /// Returns the structured log records exposed by apple/container for `id`.
     func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord]
-
-    /// Returns the structured log record file exposed by apple/container for `id`.
-    func logRecordFileHandle(id: String) async throws -> FileHandle
 }
 
 public extension ContainerLogAPIClienting {
@@ -137,20 +134,16 @@ public extension ContainerLogManaging {
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     public typealias Logs = @Sendable (String, ContainerLogOptions) async throws -> [FileHandle]
     public typealias LogRecords = @Sendable (String, ContainerLogOptions) async throws -> [ContainerLogRecord]
-    public typealias LogRecordFile = @Sendable (String) async throws -> FileHandle
 
     private let logsOperation: Logs
     private let logRecordsOperation: LogRecords
-    private let logRecordFileOperation: LogRecordFile
 
     public init(
         logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1) },
-        logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1) },
-        logRecordFile: @escaping LogRecordFile = { try await ContainerClient().logRecordFile(id: $0) }
+        logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1) }
     ) {
         self.logsOperation = logs
         self.logRecordsOperation = logRecords
-        self.logRecordFileOperation = logRecordFile
     }
 
     /// Fetches log file handles through `ContainerClient`.
@@ -161,11 +154,6 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     /// Fetches structured log records through `ContainerClient`.
     public func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
         try await logRecordsOperation(id, options)
-    }
-
-    /// Fetches the structured log record file through `ContainerClient`.
-    public func logRecordFileHandle(id: String) async throws -> FileHandle {
-        try await logRecordFileOperation(id)
     }
 }
 
@@ -301,13 +289,15 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     ) async throws {
         let options = ContainerLogOptions(includeRotated: true)
         let data = try await logDataSnapshot(id: id, options: options)
-        emitExistingLogs(from: data, tail: tail, emit: emit)
         guard try await followStateProvider.isLiveForLogFollow(id: id) else {
+            emitExistingLogs(from: data, tail: tail, emit: emit)
             return
         }
 
+        let initial = completeLogRecords(in: data)
+        emitLogLines(tail.map { Array(initial.records.suffix($0)) } ?? initial.records, emit: emit)
         var cursor = LogDataReplayCursor(snapshot: data)
-        let accumulator = LogLineAccumulator()
+        let accumulator = LogLineAccumulator(initial: initial.remainder)
         while !Task.isCancelled {
             do {
                 try await Task.sleep(for: .milliseconds(250))
@@ -506,6 +496,10 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 private final class LogLineAccumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var pending = Data()
+
+    init(initial: Data = Data()) {
+        self.pending = initial
+    }
 
     /// Appends a chunk and returns the complete log records it contains.
     func append(_ output: Data) -> [Data] {
