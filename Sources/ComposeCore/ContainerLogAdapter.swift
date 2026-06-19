@@ -21,16 +21,24 @@ import Foundation
 /// Low-level apple/container log call used by `ContainerClientLogManager`.
 public protocol ContainerLogAPIClienting: Sendable {
     /// Returns the log file handles exposed by apple/container for `id`.
-    func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle]
+    func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle]
 
     /// Returns the structured log records exposed by apple/container for `id`.
-    func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord]
+    func logRecords(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [ContainerLogRecord]
+
+    /// Returns the active structured log record file exposed by apple/container for `id`.
+    func logRecordFile(id: String) async throws -> FileHandle
 }
 
 public extension ContainerLogAPIClienting {
     /// Returns unfiltered log file handles exposed by apple/container for `id`.
     func logFileHandles(id: String) async throws -> [FileHandle] {
-        try await logFileHandles(id: id, options: .default)
+        try await logFileHandles(id: id, options: .default, replay: .default)
+    }
+
+    /// Returns unfiltered structured log records exposed by apple/container for `id`.
+    func logRecords(id: String) async throws -> [ContainerLogRecord] {
+        try await logRecords(id: id, options: .default, replay: .default)
     }
 }
 
@@ -132,28 +140,37 @@ public extension ContainerLogManaging {
 
 /// Thin apple/container client wrapper around log API calls.
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
-    public typealias Logs = @Sendable (String, ContainerLogOptions) async throws -> [FileHandle]
-    public typealias LogRecords = @Sendable (String, ContainerLogOptions) async throws -> [ContainerLogRecord]
+    public typealias Logs = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [FileHandle]
+    public typealias LogRecords = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [ContainerLogRecord]
+    public typealias LogRecordFile = @Sendable (String) async throws -> FileHandle
 
     private let logsOperation: Logs
     private let logRecordsOperation: LogRecords
+    private let logRecordFileOperation: LogRecordFile
 
     public init(
-        logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1) },
-        logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1) }
+        logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1, replay: $2) },
+        logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1, replay: $2) },
+        logRecordFile: @escaping LogRecordFile = { try await ContainerClient().logRecordFile(id: $0) }
     ) {
         self.logsOperation = logs
         self.logRecordsOperation = logRecords
+        self.logRecordFileOperation = logRecordFile
     }
 
     /// Fetches log file handles through `ContainerClient`.
-    public func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
-        try await logsOperation(id, options)
+    public func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
+        try await logsOperation(id, options, replay)
     }
 
     /// Fetches structured log records through `ContainerClient`.
-    public func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
-        try await logRecordsOperation(id, options)
+    public func logRecords(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [ContainerLogRecord] {
+        try await logRecordsOperation(id, options, replay)
+    }
+
+    /// Fetches the active structured log record file through `ContainerClient`.
+    public func logRecordFile(id: String) async throws -> FileHandle {
+        try await logRecordFileOperation(id)
     }
 }
 
@@ -208,14 +225,9 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             return
         }
 
-        let options = ContainerLogOptions(
-            tail: tail,
-            since: since,
-            until: until,
-            timestamps: timestamps,
-            includeRotated: true
-        )
-        let fileHandles = try await client.logFileHandles(id: id, options: options)
+        let options = ContainerLogOptions(tail: tail, since: since, until: until)
+        let replay = ContainerLogReplayOptions(includeRotated: true)
+        let fileHandles = try await client.logFileHandles(id: id, options: options, replay: replay)
         guard let fileHandle = fileHandles.first else {
             throw ComposeError.invalidProject("container logs returned no stdio handle for \(id)")
         }
@@ -237,17 +249,23 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        let options = ContainerLogOptions(timestamps: true, includeRotated: true)
-        let records = try await client.logRecords(id: id, options: options)
         let renderer = StructuredLogRecordRenderer(since: since, until: until, timestamps: timestamps)
-        let shouldFinish = emitInitialStructuredRecords(
-            records,
-            tail: tail,
-            renderer: renderer,
-            emit: emit
-        )
-        if shouldFinish {
-            return
+        if tail != 0 {
+            let options = ContainerLogOptions(tail: tail, since: since, until: until)
+            let records = try await client.logRecords(
+                id: id,
+                options: options,
+                replay: ContainerLogReplayOptions(includeRotated: true)
+            )
+            let shouldFinish = emitInitialStructuredRecords(
+                records,
+                tail: nil,
+                renderer: renderer,
+                emit: emit
+            )
+            if shouldFinish {
+                return
+            }
         }
         if until.map({ $0 <= Date() }) == true {
             emitEachLogLine(renderer.flush(), emit: emit)
@@ -258,14 +276,54 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             return
         }
 
-        try await followRotatingStructuredRecords(
+        let recordFile = try await client.logRecordFile(id: id)
+        defer {
+            try? recordFile.close()
+        }
+        _ = try? recordFile.seekToEnd()
+        try await followStructuredRecordFile(
             id: id,
-            initialRecords: records,
+            recordFile: recordFile,
             renderer: renderer,
             until: until,
-            options: options,
             emit: emit
         )
+    }
+
+    /// Follows the active structured record file without replaying full merged snapshots.
+    private func followStructuredRecordFile(
+        id: String,
+        recordFile: FileHandle,
+        renderer: StructuredLogRecordRenderer,
+        until: Date?,
+        emit: @escaping @Sendable (Data) -> Void
+    ) async throws {
+        let decoder = StructuredLogRecordJSONLDecoder()
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch is CancellationError {
+                return
+            }
+            if let data = try recordFile.readToEnd(), !data.isEmpty {
+                let result = renderer.append(try decoder.append(data))
+                let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
+                emitEachLogLine(lines, emit: emit)
+                if result.shouldFinish {
+                    return
+                }
+            }
+            if until.map({ $0 <= Date() }) == true {
+                emitEachLogLine(renderer.flush(), emit: emit)
+                return
+            }
+
+            guard try await followStateProvider.isLiveForLogFollow(id: id) else {
+                let result = renderer.append(try decoder.flush())
+                emitEachLogLine(result.lines + renderer.flush(), emit: emit)
+                return
+            }
+        }
     }
 
     /// Emits structured log records exposed by the direct log API.
@@ -277,14 +335,12 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        let options = ContainerLogOptions(
-            tail: tail,
-            since: since,
-            until: until,
-            timestamps: true,
-            includeRotated: true
+        let options = ContainerLogOptions(tail: tail, since: since, until: until)
+        let records = try await client.logRecords(
+            id: id,
+            options: options,
+            replay: ContainerLogReplayOptions(includeRotated: true)
         )
-        let records = try await client.logRecords(id: id, options: options)
         emitLogLines(
             structuredLogLines(records: records, since: nil, until: nil, timestamps: timestamps),
             emit: emit
@@ -297,8 +353,9 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         tail: Int?,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        let options = ContainerLogOptions(includeRotated: true)
-        let data = try await logDataSnapshot(id: id, options: options)
+        let options = ContainerLogOptions()
+        let replay = ContainerLogReplayOptions(includeRotated: true)
+        let data = try await logDataSnapshot(id: id, options: options, replay: replay)
         guard try await followStateProvider.isLiveForLogFollow(id: id) else {
             emitExistingLogs(from: data, tail: tail, emit: emit)
             return
@@ -315,7 +372,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
                 return
             }
 
-            let appended = cursor.appendedData(in: try await logDataSnapshot(id: id, options: options))
+            let appended = cursor.appendedData(in: try await logDataSnapshot(id: id, options: options, replay: replay))
             for line in accumulator.append(appended) {
                 emit(line)
             }
@@ -329,8 +386,8 @@ public struct ContainerClientLogManager: ContainerLogManaging {
     }
 
     /// Returns merged raw stdio log bytes from the direct apple/container API.
-    private func logDataSnapshot(id: String, options: ContainerLogOptions) async throws -> Data {
-        let fileHandles = try await client.logFileHandles(id: id, options: options)
+    private func logDataSnapshot(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> Data {
+        let fileHandles = try await client.logFileHandles(id: id, options: options, replay: replay)
         defer {
             for handle in fileHandles {
                 try? handle.close()
@@ -370,41 +427,6 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
         emitLogLines(selectedLines, emit: emit)
         return result.shouldFinish
-    }
-
-    /// Polls merged structured records and emits newly appended records across rotation.
-    private func followRotatingStructuredRecords(
-        id: String,
-        initialRecords: [ContainerLogRecord],
-        renderer: StructuredLogRecordRenderer,
-        until: Date?,
-        options: ContainerLogOptions,
-        emit: @escaping @Sendable (Data) -> Void
-    ) async throws {
-        var cursor = LogRecordReplayCursor(snapshot: initialRecords)
-        while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: .milliseconds(250))
-            } catch is CancellationError {
-                return
-            }
-            if until.map({ $0 <= Date() }) == true {
-                emitEachLogLine(renderer.flush(), emit: emit)
-                return
-            }
-
-            let records = cursor.appendedRecords(in: try await client.logRecords(id: id, options: options))
-            let result = renderer.append(records)
-            let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
-            emitEachLogLine(lines, emit: emit)
-            if result.shouldFinish {
-                return
-            }
-            guard try await followStateProvider.isLiveForLogFollow(id: id) else {
-                emitEachLogLine(renderer.flush(), emit: emit)
-                return
-            }
-        }
     }
 
     /// Emits existing log contents before an optional follow loop starts.
@@ -625,6 +647,58 @@ private final class StructuredLogRecordRenderer: @unchecked Sendable {
         var data = Data("\(formatter.string(from: line.timestamp)) ".utf8)
         data.append(line.data)
         return data
+    }
+}
+
+/// Incrementally decodes newline-delimited structured log records.
+private final class StructuredLogRecordJSONLDecoder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let decoder: JSONDecoder
+    private var buffer = Data()
+
+    init() {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        self.decoder = decoder
+    }
+
+    /// Appends bytes from the active record file and returns complete records.
+    func append(_ data: Data) throws -> [ContainerLogRecord] {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        buffer.append(data)
+        var records: [ContainerLogRecord] = []
+        var recordStart = buffer.startIndex
+        while let newline = buffer[recordStart...].firstIndex(of: UInt8(ascii: "\n")) {
+            let line = buffer[recordStart..<newline]
+            recordStart = buffer.index(after: newline)
+            guard !line.isEmpty else {
+                continue
+            }
+            records.append(try decoder.decode(ContainerLogRecord.self, from: Data(line)))
+        }
+        if recordStart > buffer.startIndex {
+            buffer.removeSubrange(..<recordStart)
+        }
+        return records
+    }
+
+    /// Decodes a final complete record that was written without a trailing newline.
+    func flush() throws -> [ContainerLogRecord] {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        guard !buffer.isEmpty else {
+            return []
+        }
+        let data = buffer
+        buffer.removeAll()
+        return [try decoder.decode(ContainerLogRecord.self, from: data)]
     }
 }
 

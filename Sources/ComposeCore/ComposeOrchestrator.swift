@@ -20,6 +20,7 @@ import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
+import ContainerResource
 import Foundation
 
 /// Runtime settings used while translating Compose operations to `container`.
@@ -4919,95 +4920,10 @@ private extension ComposeOrchestrator {
         guard let value, !value.isEmpty else {
             return nil
         }
-        if let date = Self.parseRFC3339LogTimestamp(value) {
+        if let date = ContainerLogTimestampParser.parse(value, relativeTo: options.currentDate()) {
             return date
-        }
-        if let date = Self.parseUnixLogTimestamp(value) {
-            return date
-        }
-        if let interval = Self.parseRelativeLogDuration(value) {
-            return options.currentDate().addingTimeInterval(-interval)
         }
         throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
-    }
-
-    private static func parseRFC3339LogTimestamp(_ value: String) -> Date? {
-        let fractionalFormatter = ISO8601DateFormatter()
-        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return fractionalFormatter.date(from: value) ?? formatter.date(from: value)
-    }
-
-    private static func parseUnixLogTimestamp(_ value: String) -> Date? {
-        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count <= 2,
-              let secondsPart = parts.first,
-              !secondsPart.isEmpty,
-              secondsPart.allSatisfy(\.isNumber),
-              let seconds = TimeInterval(String(secondsPart)),
-              seconds.isFinite,
-              seconds >= 0
-        else {
-            return nil
-        }
-
-        var fractionalSeconds: TimeInterval = 0
-        if parts.count == 2 {
-            let fractionPart = parts[1]
-            guard !fractionPart.isEmpty,
-                  fractionPart.count <= 9,
-                  fractionPart.allSatisfy(\.isNumber),
-                  let fraction = TimeInterval("0.\(fractionPart)")
-            else {
-                return nil
-            }
-            fractionalSeconds = fraction
-        }
-
-        return Date(timeIntervalSince1970: seconds + fractionalSeconds)
-    }
-
-    private static func parseRelativeLogDuration(_ value: String) -> TimeInterval? {
-        var total: TimeInterval = 0
-        var index = value.startIndex
-        var parsedComponent = false
-        while index < value.endIndex {
-            let numberStart = index
-            while index < value.endIndex, value[index].isNumber {
-                index = value.index(after: index)
-            }
-            guard numberStart < index, let amount = TimeInterval(value[numberStart..<index]) else {
-                return nil
-            }
-
-            let unitStart = index
-            while index < value.endIndex, value[index].isLetter {
-                index = value.index(after: index)
-            }
-            let unit = String(value[unitStart..<index])
-            guard let multiplier = relativeLogDurationMultiplier(unit) else {
-                return nil
-            }
-            total += amount * multiplier
-            parsedComponent = true
-        }
-        return parsedComponent ? total : nil
-    }
-
-    private static func relativeLogDurationMultiplier(_ unit: String) -> TimeInterval? {
-        switch unit {
-        case "", "s", "sec", "secs", "second", "seconds":
-            return 1
-        case "m", "min", "mins", "minute", "minutes":
-            return 60
-        case "h", "hr", "hrs", "hour", "hours":
-            return 60 * 60
-        case "d", "day", "days":
-            return 24 * 60 * 60
-        default:
-            return nil
-        }
     }
 
     /// Validates that attach stays on the output-only log-follow path apple/container exposes today.

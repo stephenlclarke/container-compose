@@ -7587,7 +7587,10 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["one\ntwo\nthree"])
         #expect(await client.requests == ["demo-api-1"])
         #expect(await client.options == [
-            ContainerLogOptions(tail: 2, includeRotated: true)
+            ContainerLogOptions(tail: 2)
+        ])
+        #expect(await client.replayOptions == [
+            ContainerLogReplayOptions(includeRotated: true)
         ])
     }
 
@@ -7617,7 +7620,10 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["inside-line"])
         #expect(await client.recordRequests == ["demo-api-1"])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(tail: 5, since: since, until: until, timestamps: true, includeRotated: true)
+            ContainerLogOptions(tail: 5, since: since, until: until)
+        ])
+        #expect(await client.recordReplayOptions == [
+            ContainerLogReplayOptions(includeRotated: true)
         ])
         #expect(await client.requests.isEmpty)
     }
@@ -7708,7 +7714,10 @@ struct ComposeOrchestratorTests {
         ])
         #expect(await client.recordRequests == ["demo-api-1"])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(timestamps: true, includeRotated: true)
+            ContainerLogOptions()
+        ])
+        #expect(await client.recordReplayOptions == [
+            ContainerLogReplayOptions(includeRotated: true)
         ])
         #expect(await client.requests.isEmpty)
     }
@@ -7738,7 +7747,10 @@ struct ComposeOrchestratorTests {
             "2026-06-18T10:00:00.000Z two\n2026-06-18T10:00:00.000Z three"
         ])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(tail: 2, timestamps: true, includeRotated: true)
+            ContainerLogOptions(tail: 2)
+        ])
+        #expect(await client.recordReplayOptions == [
+            ContainerLogReplayOptions(includeRotated: true)
         ])
     }
 
@@ -7771,7 +7783,10 @@ struct ComposeOrchestratorTests {
             "2026-06-18T10:00:01.000Z inside\n2026-06-18T10:00:02.000Z closing"
         ])
         #expect(await client.recordOptions == [
-            ContainerLogOptions(since: since, until: until, timestamps: true, includeRotated: true)
+            ContainerLogOptions(since: since, until: until)
+        ])
+        #expect(await client.recordReplayOptions == [
+            ContainerLogReplayOptions(includeRotated: true)
         ])
     }
 
@@ -7849,7 +7864,8 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == ["live"])
         #expect(await client.requests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.options.allSatisfy { $0 == ContainerLogOptions(includeRotated: true) })
+        #expect(await client.options.allSatisfy { $0 == ContainerLogOptions() })
+        #expect(await client.replayOptions.allSatisfy { $0 == ContainerLogReplayOptions(includeRotated: true) })
     }
 
     @Test("log manager follows blank and split direct API log lines")
@@ -8061,8 +8077,10 @@ struct ComposeOrchestratorTests {
             "2026-06-18T10:00:00.123Z one",
             "2026-06-18T10:00:00.123Z part",
         ])
-        #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
+        #expect(await client.recordRequests.isEmpty)
+        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordReplayOptions.isEmpty)
+        #expect(await client.recordFileRequests == ["demo-api-1"])
         #expect(await client.requests.isEmpty)
     }
 
@@ -8097,6 +8115,8 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["2026-06-18T10:00:02.000Z three"])
+        #expect(await client.recordRequests.isEmpty)
+        #expect(await client.recordFileRequests == ["demo-api-1"])
     }
 
     @Test("log manager filters followed structured records")
@@ -8133,8 +8153,10 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["inside"])
-        #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
+        #expect(await client.recordRequests.isEmpty)
+        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordReplayOptions.isEmpty)
+        #expect(await client.recordFileRequests == ["demo-api-1"])
         #expect(await client.requests.isEmpty)
     }
 
@@ -8160,7 +8182,9 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == ["snapshot"])
         #expect(await client.recordRequests == ["demo-api-1"])
-        #expect(await client.recordOptions == [ContainerLogOptions(timestamps: true, includeRotated: true)])
+        #expect(await client.recordOptions == [ContainerLogOptions(until: until)])
+        #expect(await client.recordReplayOptions == [ContainerLogReplayOptions(includeRotated: true)])
+        #expect(await client.recordFileRequests.isEmpty)
         #expect(await client.requests.isEmpty)
     }
 
@@ -8187,7 +8211,9 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages.count == 1)
         #expect(emitted.messages[0].hasSuffix(" snapshot"))
         #expect(await client.recordRequests == ["demo-api-1"])
-        #expect(await client.recordOptions == [ContainerLogOptions(timestamps: true, includeRotated: true)])
+        #expect(await client.recordOptions == [ContainerLogOptions(until: until)])
+        #expect(await client.recordReplayOptions == [ContainerLogReplayOptions(includeRotated: true)])
+        #expect(await client.recordFileRequests.isEmpty)
         #expect(await client.requests.isEmpty)
     }
 
@@ -8278,8 +8304,8 @@ struct ComposeOrchestratorTests {
 
         #expect(Date().timeIntervalSince(start) < 3)
         #expect(emitted.messages.isEmpty)
-        #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
+        #expect(await client.recordRequests.isEmpty)
+        #expect(await client.recordFileRequests == ["demo-api-1"])
         #expect(await client.requests.isEmpty)
     }
 
@@ -8288,15 +8314,17 @@ struct ComposeOrchestratorTests {
         let fileHandle = try temporaryLogFileHandle(contents: "hello\n")
         let recorder = RecordingContainerLogAPIClient(fileHandles: [fileHandle])
         let options = ContainerLogOptions(tail: 1)
-        let client = ContainerLogAPIClient { id, options in
-            try await recorder.logFileHandles(id: id, options: options)
+        let replay = ContainerLogReplayOptions(includeRotated: true)
+        let client = ContainerLogAPIClient { id, options, replay in
+            try await recorder.logFileHandles(id: id, options: options, replay: replay)
         }
 
-        let handles = try await client.logFileHandles(id: "demo-api-1", options: options)
+        let handles = try await client.logFileHandles(id: "demo-api-1", options: options, replay: replay)
 
         #expect(handles.count == 1)
         #expect(await recorder.requests == ["demo-api-1"])
         #expect(await recorder.options == [options])
+        #expect(await recorder.replayOptions == [replay])
     }
 
     @Test("log API client forwards configured record operation")
@@ -8305,21 +8333,23 @@ struct ComposeOrchestratorTests {
             ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data("hello\n".utf8)),
         ]
         let recorder = RecordingContainerLogAPIClient(records: records)
-        let options = ContainerLogOptions(timestamps: true)
+        let options = ContainerLogOptions(tail: 1)
+        let replay = ContainerLogReplayOptions(includeRotated: true)
         let client = ContainerLogAPIClient(
-            logs: { id, options in
-                try await recorder.logFileHandles(id: id, options: options)
+            logs: { id, options, replay in
+                try await recorder.logFileHandles(id: id, options: options, replay: replay)
             },
-            logRecords: { id, options in
-                try await recorder.logRecords(id: id, options: options)
+            logRecords: { id, options, replay in
+                try await recorder.logRecords(id: id, options: options, replay: replay)
             }
         )
 
-        let response = try await client.logRecords(id: "demo-api-1", options: options)
+        let response = try await client.logRecords(id: "demo-api-1", options: options, replay: replay)
 
         #expect(response == records)
         #expect(await recorder.recordRequests == ["demo-api-1"])
         #expect(await recorder.recordOptions == [options])
+        #expect(await recorder.recordReplayOptions == [replay])
     }
 
     @Test("stats manager renders static table from direct API stats")
@@ -15023,6 +15053,32 @@ private func temporaryLogFileHandle(data: Data) throws -> FileHandle {
     return handle
 }
 
+private final class TemporaryLogFile: @unchecked Sendable {
+    private let url: URL
+    private let writeHandle: FileHandle
+    let readHandle: FileHandle
+
+    init(data: Data = Data()) throws {
+        url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("log")
+        try data.write(to: url)
+        readHandle = try FileHandle(forReadingFrom: url)
+        writeHandle = try FileHandle(forWritingTo: url)
+    }
+
+    func append(_ data: Data) throws {
+        try writeHandle.seekToEnd()
+        writeHandle.write(data)
+    }
+
+    deinit {
+        try? readHandle.close()
+        try? writeHandle.close()
+        try? FileManager.default.removeItem(at: url)
+    }
+}
+
 private func logRecordData(_ records: [ContainerLogRecord]) throws -> Data {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -15478,14 +15534,20 @@ private actor BlockingContainerLogManager: ContainerLogManaging {
 private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private let fileHandles: [FileHandle]
     private let records: [ContainerLogRecord]
+    private let recordFile: TemporaryLogFile?
+    private var generatedRecordFiles: [TemporaryLogFile] = []
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
+    private var replayStorage: [ContainerLogReplayOptions] = []
     private var recordStorage: [String] = []
     private var recordOptionsStorage: [ContainerLogOptions] = []
+    private var recordReplayStorage: [ContainerLogReplayOptions] = []
+    private var recordFileStorage: [String] = []
 
-    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = []) {
+    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = [], recordFile: TemporaryLogFile? = nil) {
         self.fileHandles = fileHandles
         self.records = records
+        self.recordFile = recordFile
     }
 
     var requests: [String] {
@@ -15496,6 +15558,10 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         optionsStorage
     }
 
+    var replayOptions: [ContainerLogReplayOptions] {
+        replayStorage
+    }
+
     var recordRequests: [String] {
         recordStorage
     }
@@ -15504,26 +15570,51 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         recordOptionsStorage
     }
 
-    func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
+    var recordReplayOptions: [ContainerLogReplayOptions] {
+        recordReplayStorage
+    }
+
+    var recordFileRequests: [String] {
+        recordFileStorage
+    }
+
+    func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
         storage.append(id)
         optionsStorage.append(options)
+        replayStorage.append(replay)
         return fileHandles
     }
 
-    func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
+    func logRecords(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [ContainerLogRecord] {
         recordStorage.append(id)
         recordOptionsStorage.append(options)
+        recordReplayStorage.append(replay)
         return applyLogOptions(to: records, options: options)
+    }
+
+    func logRecordFile(id: String) async throws -> FileHandle {
+        recordFileStorage.append(id)
+        if let recordFile {
+            return recordFile.readHandle
+        }
+        let file = try TemporaryLogFile(data: logRecordData(records))
+        generatedRecordFiles.append(file)
+        return file.readHandle
     }
 }
 
 private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
     private var logSnapshots: [Data]
     private var recordSnapshots: [[ContainerLogRecord]]
+    private var lastRecordSnapshot: [ContainerLogRecord]?
+    private var recordFiles: [TemporaryLogFile] = []
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
+    private var replayStorage: [ContainerLogReplayOptions] = []
     private var recordStorage: [String] = []
     private var recordOptionsStorage: [ContainerLogOptions] = []
+    private var recordReplayStorage: [ContainerLogReplayOptions] = []
+    private var recordFileStorage: [String] = []
 
     init(logSnapshots: [Data] = [], recordSnapshots: [[ContainerLogRecord]] = []) {
         self.logSnapshots = logSnapshots
@@ -15538,6 +15629,10 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         optionsStorage
     }
 
+    var replayOptions: [ContainerLogReplayOptions] {
+        replayStorage
+    }
+
     var recordRequests: [String] {
         recordStorage
     }
@@ -15546,16 +15641,47 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         recordOptionsStorage
     }
 
-    func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
+    var recordReplayOptions: [ContainerLogReplayOptions] {
+        recordReplayStorage
+    }
+
+    var recordFileRequests: [String] {
+        recordFileStorage
+    }
+
+    func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
         storage.append(id)
         optionsStorage.append(options)
+        replayStorage.append(replay)
         return [try temporaryLogFileHandle(data: nextLogSnapshot())]
     }
 
-    func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
+    func logRecords(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [ContainerLogRecord] {
         recordStorage.append(id)
         recordOptionsStorage.append(options)
-        return nextRecordSnapshot()
+        recordReplayStorage.append(replay)
+        let snapshot = nextRecordSnapshot()
+        lastRecordSnapshot = snapshot
+        return applyLogOptions(to: snapshot, options: options)
+    }
+
+    func logRecordFile(id: String) async throws -> FileHandle {
+        recordFileStorage.append(id)
+        let initial = lastRecordSnapshot ?? recordSnapshots.first ?? []
+        let file = try TemporaryLogFile(data: logRecordData(initial))
+        recordFiles.append(file)
+        let snapshots = recordSnapshots
+        Task {
+            var previous = initial
+            for snapshot in snapshots {
+                try? await Task.sleep(for: .milliseconds(50))
+                let appended = appendedLogRecords(previous: &previous, current: snapshot)
+                if !appended.isEmpty {
+                    try? file.append(logRecordData(appended))
+                }
+            }
+        }
+        return file.readHandle
     }
 
     private func nextLogSnapshot() -> Data {
@@ -15595,6 +15721,33 @@ private func applyLogOptions(
     }
 
     return filtered
+}
+
+private func appendedLogRecords(
+    previous: inout [ContainerLogRecord],
+    current: [ContainerLogRecord]
+) -> [ContainerLogRecord] {
+    let overlap = logRecordOverlapLength(previous: previous, current: current)
+    previous = current
+    guard overlap < current.count else {
+        return []
+    }
+    return Array(current.dropFirst(overlap))
+}
+
+private func logRecordOverlapLength(previous: [ContainerLogRecord], current: [ContainerLogRecord]) -> Int {
+    guard !previous.isEmpty, !current.isEmpty else {
+        return 0
+    }
+    if current.starts(with: previous) {
+        return previous.count
+    }
+    for length in stride(from: min(previous.count, current.count), through: 1, by: -1) {
+        if Array(previous.suffix(length)) == Array(current.prefix(length)) {
+            return length
+        }
+    }
+    return 0
 }
 
 private actor RecordingContainerExecManager: ContainerExecManaging {

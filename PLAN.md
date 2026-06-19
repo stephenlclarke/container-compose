@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 22:20:09 BST`.
+Assessment timestamp: `2026-06-19 22:49:12 BST`.
 
 ## Scope
 
@@ -34,16 +34,16 @@ The cross-implementation lozenges are intentionally separate from the support-st
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` for raw replay and follow. Static raw replay passes `tail`, `--since`, `--until`, and rotated replay requests to apple/container where available. Static timestamped output and time-window rendering pass `tail`, `--since`, and `--until` to `ContainerClient.logRecords(id:options:)`, then render the returned structured records locally. That validates the direct API shape, but strict Docker parity requires apple/container to apply filters after logical log-line reconstruction rather than merely counting or filtering stored record fragments. Followed raw and structured logs still use a plugin-side merged-snapshot polling path to survive rename-based local rotation; this is useful for local validation, but a first-class apple/container rotation-aware follow cursor or stream remains upstream work before the behavior should be treated as an accepted runtime primitive.
+`container-compose` currently calls `ContainerClient.logs(id:options:replay:)` through `ContainerClientLogManager` for raw replay and follow. Static raw replay passes `tail`, `--since`, `--until`, and rotated replay requests to apple/container where available. Static timestamped output and time-window rendering pass `tail`, `--since`, and `--until` to `ContainerClient.logRecords(id:options:replay:)`, then render the returned structured records locally. The local apple/container branch now applies structured replay filters after logical log-line reconstruction, including split records, chunked records, and final complete EOF records. Followed structured logs now read the active `ContainerClient.logRecordFile(id:)` JSONL record file with a bounded cursor instead of repeatedly polling full merged snapshots. Followed raw logs still use plugin-side merged-snapshot polling to survive rename-based local rotation; this is useful for local validation, but a first-class apple/container rotation-aware follow cursor or stream remains upstream work before the behavior should be treated as an accepted runtime primitive.
 
-[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local [`stephenlclarke/container` `logs-integration-chris`](https://github.com/stephenlclarke/container/tree/logs-integration-chris) branch is linear from upstream `main`, starts with Chris George's [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) / [`apple/container#1592`](https://github.com/apple/container/pull/1592) `ContainerLogOptions(since:timestamps:)` API shape, and then layers tail/until, static filtered replay, byte-preserving raw log tail filtering, Docker-like line-framed structured log storage, `ContainerClient.logRecords(id:options:)` with API-level tail/since/until filtering, `ContainerClient.logRecordFile(id:)`, Unix timestamp parsing for `container logs --since/--until`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, static `container logs --timestamps` CLI rendering, and followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured record files. The branch deliberately keeps CLI follow on active file/record handles instead of polling whole merged rotated snapshots. It is an integration proving branch, not the intended upstream PR shape; rotation-aware follow cursor or stream semantics are tracked as separate apple/container work.
+[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local [`stephenlclarke/container` `logs-integration-chris`](https://github.com/stephenlclarke/container/tree/logs-integration-chris) branch is linear from upstream `main`, starts with Chris George's [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) / [`apple/container#1592`](https://github.com/apple/container/pull/1592) retrieval-options direction, then tightens the API boundary by keeping `ContainerLogOptions` focused on retrieval filters, `ContainerLogReplayOptions` focused on rotated replay policy, and timestamp rendering as command/plugin presentation. The branch layers tail/until, static filtered replay, byte-preserving raw log tail filtering, Docker-compatible timestamp parsing, Docker-like line-framed structured log storage, `ContainerClient.logRecords(id:options:replay:)` with line-correct tail/since/until filtering, `ContainerClient.logRecordFile(id:)`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, static `container logs --timestamps` CLI rendering, and followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured record files. The branch deliberately keeps CLI follow on active file/record handles instead of polling whole merged rotated snapshots. It is an integration proving branch, not the intended upstream PR shape; rotation-aware follow cursor or stream semantics are tracked as separate apple/container work.
 
 ## apple/container Log Direction
 
 The container-side log work should be proposed upstream as small, reviewable PRs rather than as the full local integration branch. The intended sequence is:
 
-1. Preserve Chris George's `ContainerLogOptions(since:timestamps:)` direction from [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) and [`apple/container#1592`](https://github.com/apple/container/pull/1592) as the base API shape.
-2. Add `tail`, `since`, and `until` behavior only where apple/container can honor Docker's line-based contract after logical record reconstruction. Record-level filtering in the local branch is scaffolding until split, chunked, final-EOF, and legacy raw records are line-correct.
+1. Preserve Chris George's log retrieval direction from [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) and [`apple/container#1592`](https://github.com/apple/container/pull/1592), while keeping retrieval filters, replay policy, and presentation flags on separate API boundaries.
+2. Add `tail`, `since`, and `until` behavior only where apple/container can honor Docker's line-based contract after logical record reconstruction, with tests for split records, chunked records, final complete EOF records, and legacy raw records.
 3. Add Docker-compatible timestamp parsing for RFC 3339/RFC 3339 nano, Unix seconds with optional fractional seconds, and relative durations.
 4. Add structured log records and record-file replay with byte-fidelity, stdout/stderr identity, final-record EOF handling, and line-boundary tests.
 5. Add static rotated raw and structured replay for local file-backed logging.
@@ -131,7 +131,7 @@ How this repo complements it: <img alt="IMPLEMENTATION LINK" src="https://img.sh
     <tr>
       <td>Timestamp and time-window filtering</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="IMPLEMENTATION LINK" src="https://img.shields.io/badge/IMPLEMENTATION%20LINK-2563EB?style=flat-square"> <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-DB2777?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Static rendering delegates tail and time filters to the direct apple/container record API, then renders the returned records. Upstream acceptance still needs line-correct filtering after logical log-line reconstruction plus a rotation-aware follow cursor so followed structured logs no longer rely on plugin-side merged replay polling.</td>
+      <td><img alt="IMPLEMENTATION LINK" src="https://img.shields.io/badge/IMPLEMENTATION%20LINK-2563EB?style=flat-square"> <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-DB2777?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Static rendering delegates line-correct tail and time filters to the direct apple/container record API, then renders the returned records. Followed structured logs read the active record file with a bounded cursor. Upstream acceptance still needs the structured API PRs and a rotation-aware follow cursor for long-lived clients.</td>
     </tr>
     <tr>
       <td>Service logging drivers/options</td>
@@ -157,7 +157,7 @@ Docker Compose surface: `docker compose logs SERVICE`, `docker compose logs` for
 Current `container-compose` behavior:
 
 - Resolves a Compose service container to the deterministic apple/container runtime ID.
-- Calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager`.
+- Calls `ContainerClient.logs(id:options:replay:)` through `ContainerClientLogManager`.
 - Reads the stdio file handle and emits existing log bytes.
 - Supports stopped-container replay when the apple/container bundle and log files still exist.
 
@@ -193,7 +193,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream `container logs --follow <container-id>` follows one container log file.
-- The local `logs-integration-chris` branch follows active raw log handles for the CLI and exposes static rotated replay through `ContainerClient.logs(id:options:)` with `includeRotated: true`.
+- The local `logs-integration-chris` branch follows active raw log handles for the CLI and exposes static rotated replay through `ContainerClient.logs(id:options:replay:)` with `ContainerLogReplayOptions(includeRotated: true)`.
 - The direct API exposes container status through `ContainerClient.get`, which lets clients distinguish live buffering from stopped final-line flushing.
 
 Remaining work:
@@ -302,9 +302,9 @@ Current `container-compose` behavior:
 - Exposes `--since` and `--until` on `compose logs`.
 - Accepts RFC 3339 timestamps, Unix timestamps in seconds with optional fractional seconds, and relative durations such as `30m`, `2h`, or `1h30m`.
 - Parses static timestamp filters and passes them to the direct structured record API.
-- Uses structured `ContainerClient.logRecords(id:options:)` on the local integration stack to render static `logs --timestamps` without parsing timestamps from application output.
-- Uses `ContainerClient.logRecords(id:options:)` with direct API `tail`, `since`, and `until` options on the local integration stack for static `--timestamps`, `--since`, and `--until`, then renders the returned records. This is the local validation path; the upstream target is line-correct server-side filtering after logical log-line reconstruction.
-- Uses plugin-side merged rotated `ContainerClient.logRecords(id:options:)` and `ContainerClient.logs(id:options:)` polling for rotation-aware follow validation until apple/container exposes a first-class follow cursor or stream.
+- Uses structured `ContainerClient.logRecords(id:options:replay:)` on the local integration stack to render static `logs --timestamps` without parsing timestamps from application output.
+- Uses `ContainerClient.logRecords(id:options:replay:)` with direct API `tail`, `since`, and `until` options on the local integration stack for static `--timestamps`, `--since`, and `--until`, then renders the returned line-correct records.
+- Uses active `ContainerClient.logRecordFile(id:)` access with a bounded local cursor for followed structured logs. Raw rotated follow still uses plugin-side merged `ContainerClient.logs(id:options:replay:)` polling until apple/container exposes a first-class follow cursor or stream.
 - Stops structured follow when the `--until` deadline is reached, even when no new log records arrive.
 - Buffers split structured records while the followed target is live, then flushes the final unterminated structured record when direct runtime status shows the target is no longer live.
 - Cannot reconstruct capture timestamps for logs produced before the structured record store exists.
@@ -312,11 +312,11 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream exposes raw stdio and boot log file handles.
-- The local `logs-integration-chris` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
-- The local `logs-integration-chris` branch accepts RFC 3339 timestamps and Unix timestamps in seconds with optional fractional seconds for `container logs --since` and `--until`.
-- The local `logs-integration-chris` branch stores timestamped runtime records at Docker-like line boundaries, flushes final complete records at static EOF, and exposes `ContainerClient.logRecords(id:options:)` with timestamp, stream, raw bytes, and API-level tail/since/until filtering for static replay.
+- The local `logs-integration-chris` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:replay:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
+- The local `logs-integration-chris` branch accepts RFC 3339, RFC 3339 nano, Unix timestamps in seconds with optional fractional seconds, and relative durations for `container logs --since` and `--until`.
+- The local `logs-integration-chris` branch stores timestamped runtime records at Docker-like line boundaries, flushes final complete records at static EOF, and exposes `ContainerClient.logRecords(id:options:replay:)` with timestamp, stream, raw bytes, and line-correct tail/since/until filtering for static replay.
 - The local `logs-integration-chris` branch exposes `ContainerClient.logRecordFile(id:)` for clients that want direct structured JSONL file access.
-- The local `logs-integration-chris` branch renders static `container logs --timestamps` output through structured records before rendering; line-correct filtering across every record source remains the upstream acceptance target.
+- The local `logs-integration-chris` branch renders static `container logs --timestamps` output through structured records before rendering; upstream review still needs to confirm the contract across legacy raw logs, rotated retention, and truncation behavior.
 - The local `logs-integration-chris` branch renders followed `container logs --timestamps`, `--since`, and `--until` output from the active structured record file and renders plain unfiltered `container logs --follow` from the active raw log handle.
 - Does not yet have upstream-reviewed cursor, truncation, rotation, or retention semantics for long-lived rotation-aware follow clients.
 - Still needs upstream review to confirm `tail`, `since`, and `until` filtering is applied to reconstructed logical log lines rather than raw storage fragments in every record source.
@@ -324,20 +324,22 @@ Current [`apple/container`](https://github.com/apple/container) behavior:
 Missing behavior:
 
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Static and followed `--timestamps`, `--since`, and `--until` work on the local integration stack, but still need upstream apple/container PR acceptance before they can be treated as released support.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Local record filtering validates the API shape, but Docker parity requires apple/container to filter reconstructed logical lines for split records, chunked records, legacy raw logs, and final complete EOF records.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> A stable record format plus merged replay cursor behavior now exist locally; upstream review needs to confirm cursor, retention, and truncation behavior before plugin releases can depend on it.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Line-correct structured replay filtering works locally, but Docker parity still depends on upstream apple/container acceptance and explicit coverage for legacy raw logs, rotated retention, and truncation behavior.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> A stable record format plus active record-file follow behavior now exist locally; upstream review needs to confirm cursor, retention, and truncation behavior before plugin releases can depend on it.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Capture timestamps are unavailable for containers that only have legacy raw stdio logs.
 
 Implementation direction:
 
-- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs from `logs-integration-chris`: Chris-compatible log options, line-correct filtered static replay, Docker-compatible timestamp parsing, structured timestamped record storage, structured record retrieval, static rotated replay, local logging policy and rotation, and a later rotation-aware follow cursor or stream design.
+- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs from `logs-integration-chris`: retrieval-only log options, replay policy options, line-correct filtered static replay, Docker-compatible timestamp parsing, structured timestamped record storage, structured record retrieval, static rotated replay, local logging policy and rotation, and a later rotation-aware follow cursor or stream design.
 - Keep the upstreamable API shape aligned with [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) so both Compose implementations can converge on one runtime contract.
 - Add golden behavior tests using RFC 3339 timestamps, Unix timestamps, relative durations, followed timestamp output, and combined `--since`/`--until` windows after the upstream API shape settles.
 
 Completed implementation:
 
-- Completed `2026-06-19 21:55:01 BST`: static `container-compose` timestamped logs now pass `tail`, `since`, and `until` to the direct `ContainerClient.logRecords(id:options:)` API instead of reimplementing those filters locally.
+- Completed `2026-06-19 21:55:01 BST`: static `container-compose` timestamped logs now pass `tail`, `since`, and `until` to the direct `ContainerClient.logRecords(id:options:replay:)` API instead of reimplementing those filters locally.
 - Completed `2026-06-19 21:55:01 BST`: the local apple/container branch now treats structured records as Docker-like line-framed log entries, flushes a final complete JSON record at static EOF/deadline EOF, and keeps live follow from treating a writer's incomplete JSON bytes as a record.
+- Completed `2026-06-19 22:49:12 BST`: the local apple/container branch split retrieval filters from replay policy, added shared Docker-compatible timestamp parsing, and applies structured `tail`, `since`, and `until` filters after logical log-line reconstruction.
+- Completed `2026-06-19 22:49:12 BST`: `container-compose` structured follow now uses the active `ContainerClient.logRecordFile(id:)` JSONL file with a bounded cursor instead of repeatedly polling full merged structured snapshots.
 
 ### L7. Service Logging Driver and Options
 
