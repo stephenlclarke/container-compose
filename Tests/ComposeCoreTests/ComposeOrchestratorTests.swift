@@ -7792,142 +7792,209 @@ struct ComposeOrchestratorTests {
     @Test("log manager follows appended direct API log lines")
     func logManagerFollowsAppendedDirectAPILogLines() async throws {
         let emitted = MessageRecorder()
-        let pipe = Pipe()
-        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data(),
+            Data("live\n".utf8),
+        ])
         let manager = ContainerClientLogManager(client: client)
 
-        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
-        try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(Data("live\n".utf8))
-        try pipe.fileHandleForWriting.close()
-        try await followTask
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        }
+        try await waitForMessages(["live"], in: emitted)
+        followTask.cancel()
+        try await followTask.value
 
         #expect(emitted.messages == ["live"])
-        #expect(await client.requests == ["demo-api-1"])
-        #expect(await client.options == [
-            ContainerLogOptions()
-        ])
+        #expect(await client.requests.allSatisfy { $0 == "demo-api-1" })
+        #expect(await client.options.allSatisfy { $0 == ContainerLogOptions(includeRotated: true) })
     }
 
     @Test("log manager follows blank and split direct API log lines")
     func logManagerFollowsBlankAndSplitDirectAPILogLines() async throws {
         let emitted = MessageRecorder()
-        let pipe = Pipe()
-        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data(),
+            Data("one\n\npa".utf8),
+            Data("one\n\npart\n".utf8),
+        ])
         let manager = ContainerClientLogManager(client: client)
 
-        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
-        try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(Data("one\n\npa".utf8))
-        try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(Data("rt\n".utf8))
-        try pipe.fileHandleForWriting.close()
-        try await followTask
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        }
+        try await waitForMessages(["one", "", "part"], in: emitted)
+        followTask.cancel()
+        try await followTask.value
 
         #expect(emitted.messages == ["one", "", "part"])
     }
 
-    @Test("log manager flushes final partial followed direct API log line")
-    func logManagerFlushesFinalPartialFollowedDirectAPILogLine() async throws {
+    @Test("log manager follows rotated direct API log snapshots")
+    func logManagerFollowsRotatedDirectAPILogSnapshots() async throws {
         let emitted = MessageRecorder()
-        let pipe = Pipe()
-        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data("old\nactive\n".utf8),
+            Data("active\nnew\n".utf8),
+        ])
         let manager = ContainerClientLogManager(client: client)
 
-        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
-        try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(Data("partial".utf8))
-        try pipe.fileHandleForWriting.close()
-        try await followTask
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        }
+        try await waitForMessages(["new"], in: emitted)
+        followTask.cancel()
+        try await followTask.value
 
-        #expect(emitted.messages == ["partial"])
+        #expect(emitted.messages == ["new"])
+    }
+
+    @Test("log manager keeps followed direct API partial line pending")
+    func logManagerKeepsFollowedDirectAPIPartialLinePending() async throws {
+        let emitted = MessageRecorder()
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data(),
+            Data("partial".utf8),
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        followTask.cancel()
+        try await followTask.value
+
+        #expect(emitted.messages.isEmpty)
     }
 
     @Test("log manager preserves non-UTF-8 bytes while following direct API logs")
     func logManagerPreservesNonUTF8BytesWhileFollowingDirectAPILogs() async throws {
         let emitted = DataRecorder()
-        let pipe = Pipe()
-        let client = RecordingContainerLogAPIClient(fileHandles: [pipe.fileHandleForReading])
+        let client = RotatingContainerLogAPIClient(logSnapshots: [
+            Data(),
+            Data([0xFF, 0xFE, 0x0A, 0x41, 0x0A]),
+        ])
         let manager = ContainerClientLogManager(client: client)
 
-        async let followTask: Void = manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
-        try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(Data([0xFF, 0xFE, 0x0A, 0x41]))
-        try pipe.fileHandleForWriting.close()
-        try await followTask
+        let followTask = Task {
+            try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
+        }
+        try await waitForData([Data([0xFF, 0xFE]), Data([0x41])], in: emitted)
+        followTask.cancel()
+        try await followTask.value
 
         #expect(emitted.data == [Data([0xFF, 0xFE]), Data([0x41])])
-        #expect(await client.requests == ["demo-api-1"])
+        #expect(await client.requests.allSatisfy { $0 == "demo-api-1" })
     }
 
     @Test("log manager follows timestamped structured record file")
     func logManagerFollowsTimestampedStructuredRecordFile() async throws {
         let emitted = MessageRecorder()
-        let pipe = Pipe()
-        let client = RecordingContainerLogAPIClient(recordFileHandle: pipe.fileHandleForReading)
-        let manager = ContainerClientLogManager(client: client)
         let firstTimestamp = date("2026-06-18T10:00:00.123Z")
         let secondTimestamp = date("2026-06-18T10:00:01.456Z")
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [
+            [],
+            [
+                ContainerLogRecord(timestamp: firstTimestamp, stream: .stdout, data: Data("one\npa".utf8)),
+                ContainerLogRecord(timestamp: secondTimestamp, stream: .stderr, data: Data("rt\n".utf8)),
+            ],
+        ])
+        let manager = ContainerClientLogManager(client: client)
 
-        async let followTask: Void = manager.logs(
-            id: "demo-api-1",
-            tail: 0,
-            follow: true,
-            since: nil,
-            until: nil,
-            timestamps: true,
-            emit: { emitted.append($0) }
-        )
-        try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(try logRecordData([
-            ContainerLogRecord(timestamp: firstTimestamp, stream: .stdout, data: Data("one\npa".utf8)),
-            ContainerLogRecord(timestamp: secondTimestamp, stream: .stderr, data: Data("rt\n".utf8)),
-        ]))
-        try pipe.fileHandleForWriting.close()
-        try await followTask
+        let followTask = Task {
+            try await manager.logs(
+                id: "demo-api-1",
+                tail: 0,
+                follow: true,
+                since: nil,
+                until: nil,
+                timestamps: true,
+                emit: { emitted.append($0) }
+            )
+        }
+        try await waitForMessages([
+            "2026-06-18T10:00:00.123Z one",
+            "2026-06-18T10:00:00.123Z part",
+        ], in: emitted)
+        followTask.cancel()
+        try await followTask.value
 
         #expect(emitted.messages == [
-            "2026-06-18T10:00:00.000Z one",
-            "2026-06-18T10:00:00.000Z part",
+            "2026-06-18T10:00:00.123Z one",
+            "2026-06-18T10:00:00.123Z part",
         ])
-        #expect(await client.recordRequests.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
-        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
+        #expect(await client.recordFileRequests.isEmpty)
+        #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
         #expect(await client.requests.isEmpty)
+    }
+
+    @Test("log manager follows rotated structured record snapshots")
+    func logManagerFollowsRotatedStructuredRecordSnapshots() async throws {
+        let emitted = MessageRecorder()
+        let first = ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data("one\n".utf8))
+        let second = ContainerLogRecord(timestamp: date("2026-06-18T10:00:01Z"), stream: .stdout, data: Data("two\n".utf8))
+        let third = ContainerLogRecord(timestamp: date("2026-06-18T10:00:02Z"), stream: .stdout, data: Data("three\n".utf8))
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [
+            [first, second],
+            [second, third],
+        ])
+        let manager = ContainerClientLogManager(client: client)
+
+        let followTask = Task {
+            try await manager.logs(
+                id: "demo-api-1",
+                tail: 0,
+                follow: true,
+                since: nil,
+                until: nil,
+                timestamps: true,
+                emit: { emitted.append($0) }
+            )
+        }
+        try await waitForMessages(["2026-06-18T10:00:02.000Z three"], in: emitted)
+        followTask.cancel()
+        try await followTask.value
+
+        #expect(emitted.messages == ["2026-06-18T10:00:02.000Z three"])
+        #expect(await client.recordFileRequests.isEmpty)
     }
 
     @Test("log manager filters followed structured records")
     func logManagerFiltersFollowedStructuredRecords() async throws {
         let emitted = MessageRecorder()
-        let pipe = Pipe()
-        let client = RecordingContainerLogAPIClient(recordFileHandle: pipe.fileHandleForReading)
-        let manager = ContainerClientLogManager(client: client)
         let base = date("2100-01-01T00:00:00Z")
         let since = date("2100-01-01T00:00:01Z")
         let until = date("2100-01-01T00:00:02Z")
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [
+            [],
+            [
+                ContainerLogRecord(timestamp: base, stream: .stdout, data: Data("old\n".utf8)),
+                ContainerLogRecord(timestamp: since, stream: .stdout, data: Data("inside\n".utf8)),
+                ContainerLogRecord(timestamp: until.addingTimeInterval(1), stream: .stdout, data: Data("new\n".utf8)),
+            ],
+        ])
+        let manager = ContainerClientLogManager(client: client)
 
-        async let followTask: Void = manager.logs(
-            id: "demo-api-1",
-            tail: 0,
-            follow: true,
-            since: since,
-            until: until,
-            timestamps: false,
-            emit: { emitted.append($0) }
-        )
-        try await Task.sleep(for: .milliseconds(50))
-        pipe.fileHandleForWriting.write(try logRecordData([
-            ContainerLogRecord(timestamp: base, stream: .stdout, data: Data("old\n".utf8)),
-            ContainerLogRecord(timestamp: since, stream: .stdout, data: Data("inside\n".utf8)),
-            ContainerLogRecord(timestamp: until.addingTimeInterval(1), stream: .stdout, data: Data("new\n".utf8)),
-        ]))
-        try pipe.fileHandleForWriting.close()
-        try await followTask
+        let followTask = Task {
+            try await manager.logs(
+                id: "demo-api-1",
+                tail: 0,
+                follow: true,
+                since: since,
+                until: until,
+                timestamps: false,
+                emit: { emitted.append($0) }
+            )
+        }
+        try await waitForMessages(["inside"], in: emitted)
+        try await followTask.value
 
         #expect(emitted.messages == ["inside"])
-        #expect(await client.recordRequests.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
-        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
+        #expect(await client.recordFileRequests.isEmpty)
+        #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
         #expect(await client.requests.isEmpty)
     }
 
@@ -7935,10 +8002,10 @@ struct ComposeOrchestratorTests {
     func logManagerSkipsStructuredFollowWhenUntilAlreadyElapsed() async throws {
         let emitted = MessageRecorder()
         let until = Date().addingTimeInterval(-1)
-        let fileHandle = try temporaryLogFileHandle(data: try logRecordData([
+        let records = [
             ContainerLogRecord(timestamp: until.addingTimeInterval(-1), stream: .stdout, data: Data("snapshot\n".utf8)),
-        ]))
-        let client = RecordingContainerLogAPIClient(recordFileHandle: fileHandle)
+        ]
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [records])
         let manager = ContainerClientLogManager(client: client)
 
         try await manager.logs(
@@ -7952,17 +8019,16 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == ["snapshot"])
-        #expect(await client.recordRequests.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
-        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordFileRequests.isEmpty)
+        #expect(await client.recordOptions == [ContainerLogOptions(timestamps: true, includeRotated: true)])
         #expect(await client.requests.isEmpty)
     }
 
     @Test("log manager stops quiet structured follow at until deadline")
     func logManagerStopsQuietStructuredFollowAtUntilDeadline() async throws {
         let emitted = MessageRecorder()
-        let pipe = Pipe()
-        let client = RecordingContainerLogAPIClient(recordFileHandle: pipe.fileHandleForReading)
+        let client = RotatingContainerLogAPIClient(recordSnapshots: [[]])
         let manager = ContainerClientLogManager(client: client)
         let until = Date().addingTimeInterval(1)
         let start = Date()
@@ -7976,13 +8042,12 @@ struct ComposeOrchestratorTests {
             timestamps: false,
             emit: { emitted.append($0) }
         )
-        try pipe.fileHandleForWriting.close()
 
         #expect(Date().timeIntervalSince(start) < 3)
         #expect(emitted.messages.isEmpty)
-        #expect(await client.recordRequests.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
-        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordRequests.allSatisfy { $0 == "demo-api-1" })
+        #expect(await client.recordFileRequests.isEmpty)
+        #expect(await client.recordOptions.allSatisfy { $0 == ContainerLogOptions(timestamps: true, includeRotated: true) })
         #expect(await client.requests.isEmpty)
     }
 
@@ -14759,6 +14824,24 @@ private func logRecordData(_ records: [ContainerLogRecord]) throws -> Data {
     return data
 }
 
+private func waitForMessages(_ expected: [String], in recorder: MessageRecorder) async throws {
+    for _ in 0..<100 {
+        if recorder.messages == expected {
+            return
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+}
+
+private func waitForData(_ expected: [Data], in recorder: DataRecorder) async throws {
+    for _ in 0..<100 {
+        if recorder.data == expected {
+            return
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+}
+
 private func containerStats(
     id: String,
     cpuUsageUsec: UInt64?,
@@ -15212,6 +15295,72 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
             throw ComposeError.invalidProject("missing record file handle for \(id)")
         }
         return recordFileHandle
+    }
+}
+
+private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
+    private var logSnapshots: [Data]
+    private var recordSnapshots: [[ContainerLogRecord]]
+    private var storage: [String] = []
+    private var optionsStorage: [ContainerLogOptions] = []
+    private var recordStorage: [String] = []
+    private var recordOptionsStorage: [ContainerLogOptions] = []
+    private var recordFileStorage: [String] = []
+
+    init(logSnapshots: [Data] = [], recordSnapshots: [[ContainerLogRecord]] = []) {
+        self.logSnapshots = logSnapshots
+        self.recordSnapshots = recordSnapshots
+    }
+
+    var requests: [String] {
+        storage
+    }
+
+    var options: [ContainerLogOptions] {
+        optionsStorage
+    }
+
+    var recordRequests: [String] {
+        recordStorage
+    }
+
+    var recordOptions: [ContainerLogOptions] {
+        recordOptionsStorage
+    }
+
+    var recordFileRequests: [String] {
+        recordFileStorage
+    }
+
+    func logFileHandles(id: String, options: ContainerLogOptions) async throws -> [FileHandle] {
+        storage.append(id)
+        optionsStorage.append(options)
+        return [try temporaryLogFileHandle(data: nextLogSnapshot())]
+    }
+
+    func logRecords(id: String, options: ContainerLogOptions) async throws -> [ContainerLogRecord] {
+        recordStorage.append(id)
+        recordOptionsStorage.append(options)
+        return nextRecordSnapshot()
+    }
+
+    func logRecordFileHandle(id: String) async throws -> FileHandle {
+        recordFileStorage.append(id)
+        throw ComposeError.invalidProject("record file handle should not be requested for \(id)")
+    }
+
+    private func nextLogSnapshot() -> Data {
+        guard logSnapshots.count > 1 else {
+            return logSnapshots.first ?? Data()
+        }
+        return logSnapshots.removeFirst()
+    }
+
+    private func nextRecordSnapshot() -> [ContainerLogRecord] {
+        guard recordSnapshots.count > 1 else {
+            return recordSnapshots.first ?? []
+        }
+        return recordSnapshots.removeFirst()
     }
 }
 

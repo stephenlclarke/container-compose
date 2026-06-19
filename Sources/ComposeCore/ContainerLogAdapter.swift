@@ -181,12 +181,17 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             return
         }
 
+        if follow {
+            try await emitFollowedRotatingLogs(id: id, tail: tail, emit: emit)
+            return
+        }
+
         let options = ContainerLogOptions(
-            tail: follow ? nil : tail,
+            tail: tail,
             since: since,
             until: until,
             timestamps: timestamps,
-            includeRotated: !follow
+            includeRotated: true
         )
         let fileHandles = try await client.logFileHandles(id: id, options: options)
         guard let fileHandle = fileHandles.first else {
@@ -199,9 +204,6 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         }
 
         try emitExistingLogs(from: fileHandle, tail: follow ? tail : nil, emit: emit)
-        if follow {
-            try await followFile(fileHandle, emit: emit)
-        }
     }
 
     /// Emits followed structured records when Compose needs runtime timestamps.
@@ -213,16 +215,12 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        let fileHandle = try await client.logRecordFileHandle(id: id)
-        defer {
-            try? fileHandle.close()
-        }
-        let decoder = LogRecordJSONLDecoder()
+        let options = ContainerLogOptions(timestamps: true, includeRotated: true)
+        let records = try await client.logRecords(id: id, options: options)
         let renderer = StructuredLogRecordRenderer(since: since, until: until, timestamps: timestamps)
-        let shouldFinish = try emitInitialStructuredRecordFile(
-            from: fileHandle,
+        let shouldFinish = emitInitialStructuredRecords(
+            records,
             tail: tail,
-            decoder: decoder,
             renderer: renderer,
             emit: emit
         )
@@ -230,11 +228,12 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             return
         }
 
-        try await followLogRecordFile(
-            fileHandle,
-            decoder: decoder,
+        try await followRotatingStructuredRecords(
+            id: id,
+            initialRecords: records,
             renderer: renderer,
             until: until,
+            options: options,
             emit: emit
         )
     }
@@ -258,6 +257,46 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         emitLogLines(selectedLines, emit: emit)
     }
 
+    /// Emits and follows raw logs through merged rotated replay snapshots.
+    private func emitFollowedRotatingLogs(
+        id: String,
+        tail: Int?,
+        emit: @escaping @Sendable (Data) -> Void
+    ) async throws {
+        let options = ContainerLogOptions(includeRotated: true)
+        let data = try await logDataSnapshot(id: id, options: options)
+        emitExistingLogs(from: data, tail: tail, emit: emit)
+
+        var cursor = LogDataReplayCursor(snapshot: data)
+        let accumulator = LogLineAccumulator()
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch is CancellationError {
+                return
+            }
+
+            let appended = cursor.appendedData(in: try await logDataSnapshot(id: id, options: options))
+            for line in accumulator.append(appended) {
+                emit(line)
+            }
+        }
+    }
+
+    /// Returns merged raw stdio log bytes from the direct apple/container API.
+    private func logDataSnapshot(id: String, options: ContainerLogOptions) async throws -> Data {
+        let fileHandles = try await client.logFileHandles(id: id, options: options)
+        defer {
+            for handle in fileHandles {
+                try? handle.close()
+            }
+        }
+        guard let fileHandle = fileHandles.first else {
+            throw ComposeError.invalidProject("container logs returned no stdio handle for \(id)")
+        }
+        return try fileHandle.readToEnd() ?? Data()
+    }
+
     /// Converts structured runtime chunks into Compose log lines.
     private func structuredLogLines(
         records: [ContainerLogRecord],
@@ -268,35 +307,53 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         return result.lines + renderer.flush()
     }
 
-    /// Emits structured records that already exist in a seekable record file.
-    private func emitInitialStructuredRecordFile(
-        from fileHandle: FileHandle,
+    /// Emits structured records that already exist in a merged replay snapshot.
+    private func emitInitialStructuredRecords(
+        _ records: [ContainerLogRecord],
         tail: Int?,
-        decoder: LogRecordJSONLDecoder,
         renderer: StructuredLogRecordRenderer,
         emit: @escaping @Sendable (Data) -> Void
-    ) throws -> Bool {
+    ) -> Bool {
         guard tail != 0 else {
-            _ = try? fileHandle.seekToEnd()
             return false
-        }
-        guard let size = try? fileHandle.seekToEnd() else {
-            return false
-        }
-        try fileHandle.seek(toOffset: 0)
-        guard size > 0 else {
-            return false
-        }
-        guard size <= UInt64(Int.max) else {
-            throw ComposeError.invalidProject("container structured log file is too large to replay")
         }
 
-        let records = try decoder.append(fileHandle.readData(ofLength: Int(size)))
         let result = renderer.append(records)
         let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
         let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
         emitLogLines(selectedLines, emit: emit)
         return result.shouldFinish
+    }
+
+    /// Polls merged structured records and emits newly appended records across rotation.
+    private func followRotatingStructuredRecords(
+        id: String,
+        initialRecords: [ContainerLogRecord],
+        renderer: StructuredLogRecordRenderer,
+        until: Date?,
+        options: ContainerLogOptions,
+        emit: @escaping @Sendable (Data) -> Void
+    ) async throws {
+        var cursor = LogRecordReplayCursor(snapshot: initialRecords)
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch is CancellationError {
+                return
+            }
+            if until.map({ $0 <= Date() }) == true {
+                emitEachLogLine(renderer.flush(), emit: emit)
+                return
+            }
+
+            let records = cursor.appendedRecords(in: try await client.logRecords(id: id, options: options))
+            let result = renderer.append(records)
+            let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
+            emitEachLogLine(lines, emit: emit)
+            if result.shouldFinish {
+                return
+            }
+        }
     }
 
     /// Emits existing log contents before an optional follow loop starts.
@@ -351,91 +408,14 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         emitLogLines(Array(lines.suffix(count)), emit: emit)
     }
 
-    /// Emits lines appended to the log file until the handle closes.
-    private func followFile(
-        _ fileHandle: FileHandle,
+    /// Emits existing log contents from a merged replay snapshot.
+    private func emitExistingLogs(
+        from data: Data,
+        tail: Int?,
         emit: @escaping @Sendable (Data) -> Void
-    ) async throws {
-        _ = try? fileHandle.seekToEnd()
-        let accumulator = LogLineAccumulator()
-        let stream = AsyncThrowingStream<Data, any Error> { continuation in
-            fileHandle.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    do {
-                        _ = try handle.seekToEnd()
-                    } catch {
-                        if let pending = accumulator.flush() {
-                            continuation.yield(pending)
-                        }
-                        handle.readabilityHandler = nil
-                        continuation.finish()
-                    }
-                    return
-                }
-                for line in accumulator.append(data) {
-                    continuation.yield(line)
-                }
-            }
-        }
-        defer {
-            fileHandle.readabilityHandler = nil
-        }
-
-        for try await line in stream {
-            emit(line)
-        }
-    }
-
-    /// Emits structured records appended to the JSONL log file until the handle closes.
-    private func followLogRecordFile(
-        _ fileHandle: FileHandle,
-        decoder: LogRecordJSONLDecoder,
-        renderer: StructuredLogRecordRenderer,
-        until: Date?,
-        emit: @escaping @Sendable (Data) -> Void
-    ) async throws {
-        let stream = AsyncThrowingStream<Data, any Error> { continuation in
-            let coordinator = StructuredLogFollowCoordinator(
-                fileHandle: fileHandle,
-                decoder: decoder,
-                renderer: renderer,
-                continuation: continuation
-            )
-            let deadlineTask = until.map { deadline in
-                Task {
-                    if let nanoseconds = Self.followDeadlineNanoseconds(until: deadline) {
-                        try? await Task.sleep(nanoseconds: nanoseconds)
-                    }
-                    if !Task.isCancelled {
-                        coordinator.finish(flushDecoder: false)
-                    }
-                }
-            }
-            continuation.onTermination = { _ in
-                deadlineTask?.cancel()
-                coordinator.cancel()
-            }
-            fileHandle.readabilityHandler = { handle in
-                coordinator.handleAvailableData(from: handle)
-            }
-        }
-        defer {
-            fileHandle.readabilityHandler = nil
-        }
-
-        for try await line in stream {
-            emit(line)
-        }
-    }
-
-    /// Returns a positive sleep duration for a future `--until` deadline.
-    private static func followDeadlineNanoseconds(until deadline: Date) -> UInt64? {
-        let seconds = deadline.timeIntervalSinceNow
-        guard seconds > 0 else {
-            return nil
-        }
-        return UInt64(seconds * 1_000_000_000)
+    ) {
+        let lines = recordsForCompleteLogData(data)
+        emitLogLines(tail.map { Array(lines.suffix($0)) } ?? lines, emit: emit)
     }
 
     /// Emits parsed log records while preserving intentionally blank lines.
@@ -451,6 +431,13 @@ public struct ContainerClientLogManager: ContainerLogManaging {
             output.append(line)
         }
         emit(output)
+    }
+
+    /// Emits parsed log records as separate callbacks for followed streams.
+    private func emitEachLogLine(_ lines: [Data], emit: @escaping @Sendable (Data) -> Void) {
+        for line in lines {
+            emit(line)
+        }
     }
 
     /// Splits complete log data into line records without inventing a final blank line.
@@ -516,179 +503,6 @@ private struct TimestampedLogLine {
 private struct StructuredLogRenderResult {
     var lines: [Data]
     var shouldFinish: Bool
-}
-
-/// Outcome from reading or finishing a structured log follow stream.
-private enum StructuredLogFollowEvent {
-    case none
-    case yield([Data])
-    case finish([Data])
-    case fail(any Error)
-
-    func emit(to continuation: AsyncThrowingStream<Data, any Error>.Continuation) {
-        switch self {
-        case .none:
-            return
-        case .yield(let lines):
-            for line in lines {
-                continuation.yield(line)
-            }
-        case .finish(let lines):
-            for line in lines {
-                continuation.yield(line)
-            }
-            continuation.finish()
-        case .fail(let error):
-            continuation.finish(throwing: error)
-        }
-    }
-}
-
-/// Coordinates structured log file readability callbacks and deadline completion.
-private final class StructuredLogFollowCoordinator: @unchecked Sendable {
-    private let lock = NSLock()
-    private let fileHandle: FileHandle
-    private let decoder: LogRecordJSONLDecoder
-    private let renderer: StructuredLogRecordRenderer
-    private let continuation: AsyncThrowingStream<Data, any Error>.Continuation
-    private var finished = false
-
-    init(
-        fileHandle: FileHandle,
-        decoder: LogRecordJSONLDecoder,
-        renderer: StructuredLogRecordRenderer,
-        continuation: AsyncThrowingStream<Data, any Error>.Continuation
-    ) {
-        self.fileHandle = fileHandle
-        self.decoder = decoder
-        self.renderer = renderer
-        self.continuation = continuation
-    }
-
-    /// Consumes data made available by the followed structured log record file.
-    func handleAvailableData(from handle: FileHandle) {
-        let data = handle.availableData
-        guard !data.isEmpty else {
-            do {
-                _ = try handle.seekToEnd()
-            } catch {
-                finish(flushDecoder: true)
-            }
-            return
-        }
-
-        event(for: data).emit(to: continuation)
-    }
-
-    /// Finishes the stream, optionally decoding a final unterminated JSONL record.
-    func finish(flushDecoder: Bool) {
-        finishEvent(flushDecoder: flushDecoder).emit(to: continuation)
-    }
-
-    /// Cancels follow callbacks without finishing the already terminated stream.
-    func cancel() {
-        lock.lock()
-        defer {
-            lock.unlock()
-        }
-        finished = true
-        fileHandle.readabilityHandler = nil
-    }
-
-    private func event(for data: Data) -> StructuredLogFollowEvent {
-        lock.lock()
-        defer {
-            lock.unlock()
-        }
-        guard !finished else {
-            return .none
-        }
-
-        do {
-            let records = try decoder.append(data)
-            let result = renderer.append(records)
-            if result.shouldFinish {
-                finished = true
-                fileHandle.readabilityHandler = nil
-                return .finish(result.lines + renderer.flush())
-            }
-            return .yield(result.lines)
-        } catch {
-            finished = true
-            fileHandle.readabilityHandler = nil
-            return .fail(error)
-        }
-    }
-
-    private func finishEvent(flushDecoder: Bool) -> StructuredLogFollowEvent {
-        lock.lock()
-        defer {
-            lock.unlock()
-        }
-        guard !finished else {
-            return .none
-        }
-
-        do {
-            let records = flushDecoder ? try decoder.flush() : []
-            let result = renderer.append(records)
-            finished = true
-            fileHandle.readabilityHandler = nil
-            return .finish(result.lines + renderer.flush())
-        } catch {
-            finished = true
-            fileHandle.readabilityHandler = nil
-            return .fail(error)
-        }
-    }
-}
-
-/// Incrementally decodes newline-delimited structured log records.
-private final class LogRecordJSONLDecoder: @unchecked Sendable {
-    private let lock = NSLock()
-    private let decoder: JSONDecoder
-    private var buffer = Data()
-
-    init() {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        self.decoder = decoder
-    }
-
-    /// Appends a JSONL byte chunk and returns every complete record.
-    func append(_ data: Data) throws -> [ContainerLogRecord] {
-        lock.lock()
-        defer {
-            lock.unlock()
-        }
-
-        buffer.append(data)
-        var records: [ContainerLogRecord] = []
-        while let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-            let line = buffer[..<newline]
-            buffer.removeSubrange(...newline)
-            guard !line.isEmpty else {
-                continue
-            }
-            records.append(try decoder.decode(ContainerLogRecord.self, from: Data(line)))
-        }
-        return records
-    }
-
-    /// Decodes the final unterminated JSONL record, if one exists.
-    func flush() throws -> [ContainerLogRecord] {
-        lock.lock()
-        defer {
-            lock.unlock()
-        }
-
-        guard !buffer.isEmpty else {
-            return []
-        }
-        let data = buffer
-        buffer.removeAll()
-        return [try decoder.decode(ContainerLogRecord.self, from: data)]
-    }
 }
 
 /// Renders structured runtime records as Compose log lines.
