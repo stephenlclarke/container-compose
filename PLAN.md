@@ -166,12 +166,13 @@ Current `container-compose` behavior:
 - Supports `--follow` for resolved service container targets.
 - Starts multiple selected service and replica streams concurrently with a throwing task group.
 - Surfaces stream failures instead of letting one followed stream starve later targets.
-- Uses a file readability handler to emit appended log byte records.
+- Polls merged raw log replay snapshots through `ContainerClient.logs(id:options:)` with rotated replay enabled, emits only appended complete log records, and flushes an unterminated final record when direct runtime status shows the target is no longer live.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
-- `container logs --follow <container-id>` follows one container log file.
-- The direct API exposes the file handle that makes the current plugin implementation possible.
+- Upstream `container logs --follow <container-id>` follows one container log file.
+- The local `logs-integration` branch can also follow merged rotated raw replay snapshots through `ContainerClient.logs(id:options:)` with `includeRotated: true`.
+- The direct API exposes container status through `ContainerClient.get`, which lets clients distinguish live buffering from stopped final-line flushing.
 
 Remaining work:
 
