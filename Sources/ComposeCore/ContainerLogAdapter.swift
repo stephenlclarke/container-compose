@@ -345,44 +345,28 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         let decoder = LogRecordJSONLDecoder()
         let renderer = StructuredLogRecordRenderer(id: id, since: since, until: until, timestamps: timestamps)
         let stream = AsyncThrowingStream<String, any Error> { continuation in
+            let coordinator = StructuredLogFollowCoordinator(
+                fileHandle: fileHandle,
+                decoder: decoder,
+                renderer: renderer,
+                continuation: continuation
+            )
+            let deadlineTask = until.map { deadline in
+                Task {
+                    if let nanoseconds = Self.followDeadlineNanoseconds(until: deadline) {
+                        try? await Task.sleep(nanoseconds: nanoseconds)
+                    }
+                    if !Task.isCancelled {
+                        coordinator.finish(flushDecoder: false)
+                    }
+                }
+            }
+            continuation.onTermination = { _ in
+                deadlineTask?.cancel()
+                coordinator.cancel()
+            }
             fileHandle.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    do {
-                        _ = try handle.seekToEnd()
-                    } catch {
-                        handle.readabilityHandler = nil
-                        do {
-                            let records = try decoder.flush()
-                            let result = try renderer.append(records)
-                            for line in result.lines + renderer.flush() {
-                                continuation.yield(line)
-                            }
-                            continuation.finish()
-                        } catch {
-                            continuation.finish(throwing: error)
-                        }
-                    }
-                    return
-                }
-
-                do {
-                    let records = try decoder.append(data)
-                    let result = try renderer.append(records)
-                    for line in result.lines {
-                        continuation.yield(line)
-                    }
-                    if result.shouldFinish {
-                        handle.readabilityHandler = nil
-                        for line in renderer.flush() {
-                            continuation.yield(line)
-                        }
-                        continuation.finish()
-                    }
-                } catch {
-                    handle.readabilityHandler = nil
-                    continuation.finish(throwing: error)
-                }
+                coordinator.handleAvailableData(from: handle)
             }
         }
         defer {
@@ -392,6 +376,15 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         for try await line in stream {
             emit(line)
         }
+    }
+
+    /// Returns a positive sleep duration for a future `--until` deadline.
+    private static func followDeadlineNanoseconds(until deadline: Date) -> UInt64? {
+        let seconds = deadline.timeIntervalSinceNow
+        guard seconds > 0 else {
+            return nil
+        }
+        return UInt64(seconds * 1_000_000_000)
     }
 
     /// Emits parsed log records while preserving intentionally blank lines.
@@ -464,6 +457,131 @@ private struct TimestampedLogLine {
 private struct StructuredLogRenderResult {
     var lines: [String]
     var shouldFinish: Bool
+}
+
+/// Outcome from reading or finishing a structured log follow stream.
+private enum StructuredLogFollowEvent {
+    case none
+    case yield([String])
+    case finish([String])
+    case fail(any Error)
+
+    func emit(to continuation: AsyncThrowingStream<String, any Error>.Continuation) {
+        switch self {
+        case .none:
+            return
+        case .yield(let lines):
+            for line in lines {
+                continuation.yield(line)
+            }
+        case .finish(let lines):
+            for line in lines {
+                continuation.yield(line)
+            }
+            continuation.finish()
+        case .fail(let error):
+            continuation.finish(throwing: error)
+        }
+    }
+}
+
+/// Coordinates structured log file readability callbacks and deadline completion.
+private final class StructuredLogFollowCoordinator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let fileHandle: FileHandle
+    private let decoder: LogRecordJSONLDecoder
+    private let renderer: StructuredLogRecordRenderer
+    private let continuation: AsyncThrowingStream<String, any Error>.Continuation
+    private var finished = false
+
+    init(
+        fileHandle: FileHandle,
+        decoder: LogRecordJSONLDecoder,
+        renderer: StructuredLogRecordRenderer,
+        continuation: AsyncThrowingStream<String, any Error>.Continuation
+    ) {
+        self.fileHandle = fileHandle
+        self.decoder = decoder
+        self.renderer = renderer
+        self.continuation = continuation
+    }
+
+    /// Consumes data made available by the followed structured log record file.
+    func handleAvailableData(from handle: FileHandle) {
+        let data = handle.availableData
+        guard !data.isEmpty else {
+            do {
+                _ = try handle.seekToEnd()
+            } catch {
+                finish(flushDecoder: true)
+            }
+            return
+        }
+
+        event(for: data).emit(to: continuation)
+    }
+
+    /// Finishes the stream, optionally decoding a final unterminated JSONL record.
+    func finish(flushDecoder: Bool) {
+        finishEvent(flushDecoder: flushDecoder).emit(to: continuation)
+    }
+
+    /// Cancels follow callbacks without finishing the already terminated stream.
+    func cancel() {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+        finished = true
+        fileHandle.readabilityHandler = nil
+    }
+
+    private func event(for data: Data) -> StructuredLogFollowEvent {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+        guard !finished else {
+            return .none
+        }
+
+        do {
+            let records = try decoder.append(data)
+            let result = try renderer.append(records)
+            if result.shouldFinish {
+                finished = true
+                fileHandle.readabilityHandler = nil
+                return .finish(result.lines + renderer.flush())
+            }
+            return .yield(result.lines)
+        } catch {
+            finished = true
+            fileHandle.readabilityHandler = nil
+            return .fail(error)
+        }
+    }
+
+    private func finishEvent(flushDecoder: Bool) -> StructuredLogFollowEvent {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+        guard !finished else {
+            return .none
+        }
+
+        do {
+            let records = flushDecoder ? try decoder.flush() : []
+            let result = try renderer.append(records)
+            finished = true
+            fileHandle.readabilityHandler = nil
+            return .finish(result.lines + renderer.flush())
+        } catch {
+            finished = true
+            fileHandle.readabilityHandler = nil
+            return .fail(error)
+        }
+    }
 }
 
 /// Incrementally decodes newline-delimited structured log records.

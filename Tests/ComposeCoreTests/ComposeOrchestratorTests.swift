@@ -7822,6 +7822,36 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("log manager stops quiet structured follow at until deadline")
+    func logManagerStopsQuietStructuredFollowAtUntilDeadline() async throws {
+        let emitted = MessageRecorder()
+        let pipe = Pipe()
+        let client = RecordingContainerLogAPIClient(recordFileHandle: pipe.fileHandleForReading)
+        let manager = ContainerClientLogManager(client: client)
+        let until = Date().addingTimeInterval(1)
+        let start = Date()
+
+        try await manager.logs(
+            id: "demo-api-1",
+            tail: 0,
+            follow: true,
+            since: nil,
+            until: until,
+            timestamps: false,
+            emit: { emitted.append($0) }
+        )
+        try pipe.fileHandleForWriting.close()
+
+        #expect(Date().timeIntervalSince(start) < 3)
+        #expect(emitted.messages.isEmpty)
+        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordFileRequests == ["demo-api-1"])
+        #expect(await client.recordOptions == [
+            ContainerLogOptions(until: until)
+        ])
+        #expect(await client.requests.isEmpty)
+    }
+
     @Test("log API client forwards configured operation")
     func logAPIClientForwardsConfiguredOperation() async throws {
         let fileHandle = try temporaryLogFileHandle(contents: "hello\n")

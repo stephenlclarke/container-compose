@@ -269,6 +269,7 @@ Current `container-compose` behavior:
 - Uses structured `ContainerClient.logRecords(id:options:)` on the local integration stack to render static `logs --timestamps` without parsing timestamps from application output.
 - Uses `ContainerClient.logRecordFile(id:)` on the local integration stack to follow structured JSONL records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
 - Keeps unfiltered raw follow on the original stdio file handle so the common streaming path does not parse structured records unnecessarily.
+- Stops structured follow when the `--until` deadline is reached, even when no new log records arrive.
 - Cannot reconstruct capture timestamps for logs produced before the structured record store exists.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
