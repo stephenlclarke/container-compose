@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 05:46:07 BST`.
+Assessment timestamp: `2026-06-19 06:15:11 BST`.
 
 ## Scope
 
@@ -158,6 +158,13 @@ Remaining work:
 ### L2. Follow Mode
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
+
+Peer alignment: <img alt="PEER ALIGNED" src="https://img.shields.io/badge/PEER%20ALIGNED-0F766E?style=flat-square"> <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
+
+Peer alignment details:
+
+- <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> Runtime log-follow behavior overlaps with the fork-forward log work in [`full-chaos/container-compose`](https://github.com/full-chaos/container-compose) and should be compared before proposing apple/container follow APIs.
+- <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square"> This repo's plugin-side fan-out, service/replica aggregation, and rotated snapshot cursor tests can validate shared lower-level log-follow primitives used by command-oriented Compose implementations.
 
 Docker Compose surface: `docker compose logs --follow [SERVICE...]`.
 
