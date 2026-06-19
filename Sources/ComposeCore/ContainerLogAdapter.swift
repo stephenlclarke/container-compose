@@ -173,28 +173,28 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        let options = ContainerLogOptions(since: since, until: until, timestamps: timestamps)
-        let records = try await client.logRecords(id: id, options: options)
-        let lines = try structuredLogLines(id: id, records: records, timestamps: timestamps)
-        if tail.map({ $0 > 0 }) ?? true {
-            let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
-            emitLogLines(selectedLines, emit: emit)
-        }
-
-        if let until, until <= Date() {
-            return
-        }
-
         let fileHandle = try await client.logRecordFileHandle(id: id)
         defer {
             try? fileHandle.close()
         }
+        let decoder = LogRecordJSONLDecoder()
+        let renderer = StructuredLogRecordRenderer(id: id, since: since, until: until, timestamps: timestamps)
+        let shouldFinish = try emitInitialStructuredRecordFile(
+            from: fileHandle,
+            tail: tail,
+            decoder: decoder,
+            renderer: renderer,
+            emit: emit
+        )
+        if shouldFinish || until.map({ $0 <= Date() }) == true {
+            return
+        }
+
         try await followLogRecordFile(
-            id: id,
             fileHandle,
-            since: since,
+            decoder: decoder,
+            renderer: renderer,
             until: until,
-            timestamps: timestamps,
             emit: emit
         )
     }
@@ -227,6 +227,37 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         let renderer = StructuredLogRecordRenderer(id: id, since: nil, until: nil, timestamps: timestamps)
         let result = try renderer.append(records)
         return result.lines + renderer.flush()
+    }
+
+    /// Emits structured records that already exist in a seekable record file.
+    private func emitInitialStructuredRecordFile(
+        from fileHandle: FileHandle,
+        tail: Int?,
+        decoder: LogRecordJSONLDecoder,
+        renderer: StructuredLogRecordRenderer,
+        emit: @escaping @Sendable (String) -> Void
+    ) throws -> Bool {
+        guard tail != 0 else {
+            _ = try? fileHandle.seekToEnd()
+            return false
+        }
+        guard let size = try? fileHandle.seekToEnd() else {
+            return false
+        }
+        try fileHandle.seek(toOffset: 0)
+        guard size > 0 else {
+            return false
+        }
+        guard size <= UInt64(Int.max) else {
+            throw ComposeError.invalidProject("container structured log file is too large to replay")
+        }
+
+        let records = try decoder.append(fileHandle.readData(ofLength: Int(size)))
+        let result = try renderer.append(records)
+        let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
+        let selectedLines = tail.map { Array(lines.suffix($0)) } ?? lines
+        emitLogLines(selectedLines, emit: emit)
+        return result.shouldFinish
     }
 
     /// Emits existing log contents before an optional follow loop starts.
@@ -334,16 +365,12 @@ public struct ContainerClientLogManager: ContainerLogManaging {
 
     /// Emits structured records appended to the JSONL log file until the handle closes.
     private func followLogRecordFile(
-        id: String,
         _ fileHandle: FileHandle,
-        since: Date?,
+        decoder: LogRecordJSONLDecoder,
+        renderer: StructuredLogRecordRenderer,
         until: Date?,
-        timestamps: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        _ = try? fileHandle.seekToEnd()
-        let decoder = LogRecordJSONLDecoder()
-        let renderer = StructuredLogRecordRenderer(id: id, since: since, until: until, timestamps: timestamps)
         let stream = AsyncThrowingStream<String, any Error> { continuation in
             let coordinator = StructuredLogFollowCoordinator(
                 fileHandle: fileHandle,

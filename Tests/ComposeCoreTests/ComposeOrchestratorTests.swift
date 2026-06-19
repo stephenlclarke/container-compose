@@ -7750,11 +7750,9 @@ struct ComposeOrchestratorTests {
             "2026-06-18T10:00:00.000Z one",
             "2026-06-18T10:00:00.000Z part",
         ])
-        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordRequests.isEmpty)
         #expect(await client.recordFileRequests == ["demo-api-1"])
-        #expect(await client.recordOptions == [
-            ContainerLogOptions(timestamps: true)
-        ])
+        #expect(await client.recordOptions.isEmpty)
         #expect(await client.requests.isEmpty)
     }
 
@@ -7787,11 +7785,9 @@ struct ComposeOrchestratorTests {
         try await followTask
 
         #expect(emitted.messages == ["inside"])
-        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordRequests.isEmpty)
         #expect(await client.recordFileRequests == ["demo-api-1"])
-        #expect(await client.recordOptions == [
-            ContainerLogOptions(since: since, until: until)
-        ])
+        #expect(await client.recordOptions.isEmpty)
         #expect(await client.requests.isEmpty)
     }
 
@@ -7799,9 +7795,10 @@ struct ComposeOrchestratorTests {
     func logManagerSkipsStructuredFollowWhenUntilAlreadyElapsed() async throws {
         let emitted = MessageRecorder()
         let until = Date().addingTimeInterval(-1)
-        let client = RecordingContainerLogAPIClient(records: [
+        let fileHandle = try temporaryLogFileHandle(data: try logRecordData([
             ContainerLogRecord(timestamp: until.addingTimeInterval(-1), stream: .stdout, data: Data("snapshot\n".utf8)),
-        ])
+        ]))
+        let client = RecordingContainerLogAPIClient(recordFileHandle: fileHandle)
         let manager = ContainerClientLogManager(client: client)
 
         try await manager.logs(
@@ -7815,11 +7812,10 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == ["snapshot"])
-        #expect(await client.recordRequests == ["demo-api-1"])
-        #expect(await client.recordFileRequests.isEmpty)
-        #expect(await client.recordOptions == [
-            ContainerLogOptions(until: until)
-        ])
+        #expect(await client.recordRequests.isEmpty)
+        #expect(await client.recordFileRequests == ["demo-api-1"])
+        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.requests.isEmpty)
     }
 
     @Test("log manager stops quiet structured follow at until deadline")
@@ -7844,11 +7840,9 @@ struct ComposeOrchestratorTests {
 
         #expect(Date().timeIntervalSince(start) < 3)
         #expect(emitted.messages.isEmpty)
-        #expect(await client.recordRequests == ["demo-api-1"])
+        #expect(await client.recordRequests.isEmpty)
         #expect(await client.recordFileRequests == ["demo-api-1"])
-        #expect(await client.recordOptions == [
-            ContainerLogOptions(until: until)
-        ])
+        #expect(await client.recordOptions.isEmpty)
         #expect(await client.requests.isEmpty)
     }
 

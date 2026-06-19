@@ -27,7 +27,7 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 
 ## Current Runtime Evidence
 
-`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when raw replay filters are present, while retaining raw file-handle follow for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended raw lines with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps` and `ContainerClient.logRecordFile(id:)` for followed `--timestamps`, `--since`, and `--until` behavior that needs capture-time records.
+`container-compose` currently calls `ContainerClient.logs(id:options:)` through `ContainerClientLogManager` when raw replay filters are present, while retaining raw file-handle follow for unfiltered streams. It reads the first returned file handle as the container stdio log, passes static `tail`, `--since`, and `--until` filters to apple/container where available, and follows appended raw lines with a file readability handler. On the local `logs-integration` stack it also consumes `ContainerClient.logRecords(id:options:)` for static `logs --timestamps` and uses a single `ContainerClient.logRecordFile(id:)` handle for initial replay plus followed `--timestamps`, `--since`, and `--until` behavior that needs capture-time records.
 
 [`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local `logs-integration` branch adds `ContainerLogOptions`, static filtered replay, timestamped structured log storage, `ContainerClient.logRecords(id:options:)`, and `ContainerClient.logRecordFile(id:)`. Those local APIs give the plugin enough data to implement timestamped and time-filtered follow behavior, but released support still depends on upstream review and acceptance of the apple/container API shape.
 
@@ -110,7 +110,7 @@ How this repo complements it: <img alt="COMPLEMENTS OTHER IMPL" src="https://img
     <tr>
       <td>Timestamp and time-window filtering</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td>Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured record snapshots plus the structured record file API. Released support still depends on upstream apple/container PR acceptance.</td>
+      <td>Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Followed structured logs use one record-file handle for initial replay and streaming. Released support still depends on upstream apple/container PR acceptance.</td>
     </tr>
     <tr>
       <td>Service logging drivers/options</td>
@@ -267,7 +267,7 @@ Current `container-compose` behavior:
 - Accepts RFC 3339 timestamps and relative durations such as `30m`, `2h`, or `1h30m`.
 - Passes static timestamp filters through the direct apple/container log API.
 - Uses structured `ContainerClient.logRecords(id:options:)` on the local integration stack to render static `logs --timestamps` without parsing timestamps from application output.
-- Uses `ContainerClient.logRecordFile(id:)` on the local integration stack to follow structured JSONL records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
+- Uses one `ContainerClient.logRecordFile(id:)` handle on the local integration stack for initial replay plus followed structured JSONL records for `--timestamps --follow` and `--follow` combined with `--since` or `--until`.
 - Keeps unfiltered raw follow on the original stdio file handle so the common streaming path does not parse structured records unnecessarily.
 - Stops structured follow when the `--until` deadline is reached, even when no new log records arrive.
 - Cannot reconstruct capture timestamps for logs produced before the structured record store exists.
