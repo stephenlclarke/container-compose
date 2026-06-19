@@ -26,11 +26,12 @@ Docker Compose currently documents `logs` with `--follow`, `--index`, `--no-colo
 ## Cross-Implementation Lozenges
 
 - <img alt="PEER IMPL" src="https://img.shields.io/badge/PEER%20IMPL-2563EB?style=flat-square">: this task intersects another public Compose implementation and should be checked against that implementation before upstreaming.
+- <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square">: this plan item overlaps with or complements another public Compose implementation and needs a cross-implementation comparison before upstreaming.
 - <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square">: this plan item overlaps with or complements another implementation enough that PR boundaries, API names, and behavior should be compared before upstreaming.
 - <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square">: another Compose implementation is working in the same problem area and should be reviewed before upstreaming.
 - <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">: this repository adds a compatible piece, different architecture boundary, or upstreamable slice that can help the other implementation.
 
-The cross-implementation lozenges are intentionally separate from the support-status traffic lights. Blue identifies the other public implementation, magenta marks a backlog item that needs peer-alignment attention, cyan marks direct overlap that needs comparison before upstreaming, and purple marks complementary work that can help another implementation without necessarily solving the same layer. Detailed work items use a separate `Peer alignment` line when the overlap or complement signal is important enough to influence implementation order or upstream PR shape.
+The cross-implementation lozenges are intentionally separate from the support-status traffic lights. Blue identifies the other public implementation, teal marks a backlog touchpoint with peer work, magenta marks a backlog item that needs peer-alignment attention, cyan marks direct overlap that needs comparison before upstreaming, and purple marks complementary work that can help another implementation without necessarily solving the same layer. Detailed work items use a separate `Peer alignment` line when the overlap or complement signal is important enough to influence implementation order or upstream PR shape.
 
 ## Current Runtime Evidence
 
@@ -117,17 +118,17 @@ How this repo complements it: <img alt="PEER IMPL" src="https://img.shields.io/b
     <tr>
       <td>Timestamp and time-window filtering</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Followed structured logs use one record-file handle for initial replay and streaming. Released support still depends on upstream apple/container PR acceptance.</td>
+      <td><img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Static and followed <code>--timestamps</code>, <code>--since</code>, and <code>--until</code> are implemented on the local integration stack through structured records. Followed structured logs use one record-file handle for initial replay and streaming. Released support still depends on upstream apple/container PR acceptance.</td>
     </tr>
     <tr>
       <td>Service logging drivers/options</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging without options map to apple/container local stdio capture. <code>none</code> maps to disabled persisted capture on the local integration stack. Remote drivers and logging options still need runtime logging policy primitives.</td>
+      <td><img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> File-backed <code>json-file</code> and <code>local</code> logging without options map to apple/container local stdio capture. <code>none</code> maps to disabled persisted capture on the local integration stack. Remote drivers and logging options still need runtime logging policy primitives.</td>
     </tr>
     <tr>
       <td>Exact byte/line fidelity</td>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"></td>
-      <td><img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
+      <td><img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> container-compose preserves blank line records, followed partial lines, and non-UTF-8 payload bytes on the local integration stack. stdout/stderr identity remains available in structured records but is not yet user-visible Compose formatting.</td>
     </tr>
   </tbody>
 </table>
@@ -266,7 +267,7 @@ Remaining plugin work:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Peer alignment: <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+Peer alignment: <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
 Peer alignment details:
 
@@ -312,7 +313,7 @@ Implementation direction:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Peer alignment: <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+Peer alignment: <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
 Peer alignment details:
 
@@ -351,7 +352,7 @@ Implementation direction:
 
 Status: <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 
-Peer alignment: <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
+Peer alignment: <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square">
 
 Peer alignment details:
 
@@ -388,9 +389,9 @@ Implementation direction:
 2. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement concurrent multi-service and multi-replica follow.
 3. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default Compose prefixes, `--no-log-prefix` behavior, and color policy.
 4. <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Fix blank-line and line-boundary fidelity that can be solved from current raw file handles.
-5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and structured record file follow API.
-6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Propose apple/container service logging policy primitives for remote drivers and logging options.
-7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit service `logging` mappings beyond local file-backed drivers after upstream runtime APIs exist.
+5. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Upstream the local apple/container timestamped structured log records, direct retrieval API, and structured record file follow API.
+6. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="OVERLAPS OTHER IMPL" src="https://img.shields.io/badge/OVERLAPS%20OTHER%20IMPL-0891B2?style=flat-square"> Propose apple/container service logging policy primitives for remote drivers and logging options.
+7. <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-0F766E?style=flat-square"> <img alt="PEER ALIGNMENT" src="https://img.shields.io/badge/PEER%20ALIGNMENT-C026D3?style=flat-square"> <img alt="COMPLEMENTS OTHER IMPL" src="https://img.shields.io/badge/COMPLEMENTS%20OTHER%20IMPL-7C3AED?style=flat-square"> Revisit service `logging` mappings beyond local file-backed drivers after upstream runtime APIs exist.
 
 ## Acceptance Criteria
 
