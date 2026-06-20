@@ -27,6 +27,7 @@ runtime orchestration.
 
 - [INSTALL.md](INSTALL.md)
 - [COMPATIBILITY.md](COMPATIBILITY.md)
+- [BRANCHES.md](BRANCHES.md)
 - [BUILD.md](BUILD.md)
 - [DESIGN.md](DESIGN.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
