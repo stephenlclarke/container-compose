@@ -1,19 +1,19 @@
 # Mission Control
 
-Last updated: 2026-06-21 22:51:12 BST.
+Last updated: 2026-06-21 23:00:38 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
 ## Current Objective
 
-Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The just-completed local slab is log-driver and local option parsing, because it bridges the runtime logging policy model to Docker-compatible `--log-driver` and `--log-opt` inputs without adding Compose presentation policy to `apple/container`.
+Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The just-completed local slab is writer-level local log rotation, because it makes Docker-compatible `max-size` and `max-file` policy affect persisted raw and structured runtime logs without adding Compose presentation policy to `apple/container`.
 
 ## Branch Map
 
 | Repository | Branch | Purpose | Current state |
 | --- | --- | --- | --- |
-| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active local worktree with log-driver/local-option tracking updates |
-| `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction | Active local worktree with static rotated tail, policy model, disabled-capture, and local driver/options handoff files |
+| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active local worktree with writer-rotation tracking updates |
+| `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction | Active local worktree with static rotated tail, policy model, disabled-capture, local driver/options, and writer-rotation handoff files |
 | `stephenlclarke/container` | `logs-structured-record-storage` | Apple-facing structured log storage slice | PR-ready local/fork branch, not yet accepted upstream |
 | `stephenlclarke/container` | `logs-structured-record-api` | Apple-facing structured record retrieval slice | PR-ready local/fork branch plus local cleanup commit, not yet accepted upstream |
 | `apple/container` | `main` | Upstream runtime | Runtime primitives are still pending upstream review |
@@ -28,8 +28,9 @@ Complete Docker Compose v2 local-development log behavior where `apple/container
 6. The completed local slab adds static rotated replay and a bounded line-tail scan. Its handoff files are `ISSUE-logs-static-rotated-tail.md` and `PR-logs-static-rotated-tail.md` in the container fork.
 7. The logging-policy stack starts with the typed local policy model. Its local code-bearing commit is `e41e630`, and its handoff files are `ISSUE-logs-local-policy-model.md` and `PR-logs-local-policy-model.md` in the container fork.
 8. The completed disabled-capture slab adds the `.none` local storage policy behavior. Its local code-bearing commit is `6cbf778`, and its handoff files are `ISSUE-logs-disabled-local-capture.md` and `PR-logs-disabled-local-capture.md` in the container fork.
-9. The active parser slab maps local Docker-compatible logging drivers and options to `ContainerLogConfiguration`. Its local code-bearing commits are `f787d3d`, `9cca5b3`, and `ee28563`; its handoff files are `ISSUE-logs-local-driver-options.md` and `PR-logs-local-driver-options.md`.
-10. Later slabs add writer-level rotation and a rotation-aware follow cursor or stream.
+9. The parser slab maps local Docker-compatible logging drivers and options to `ContainerLogConfiguration`. Its local code-bearing commits are `f787d3d`, `9cca5b3`, and `ee28563`; its handoff files are `ISSUE-logs-local-driver-options.md` and `PR-logs-local-driver-options.md`.
+10. The writer-rotation slab applies local `max-size` and `max-file` retention policy while writing persisted raw and structured logs. Its local code-bearing commit is `06862b7`; its handoff files are `ISSUE-logs-local-writer-rotation.md` and `PR-logs-local-writer-rotation.md`.
+11. Later slabs add a rotation-aware follow cursor or stream.
 
 ## Docker/Compose Reference Targets
 
@@ -49,7 +50,7 @@ Complete Docker Compose v2 local-development log behavior where `apple/container
 
 ## Active Slab
 
-Log-driver and local option parsing.
+Writer-level local log rotation.
 
 Done:
 
@@ -59,15 +60,15 @@ Done:
 
 Completed locally:
 
-- Finished the typed local logging policy model and disabled-capture handoffs after the static rotated replay slab.
-- Confirmed the local `container` integration branch already contains the log-driver and local option parser behavior from commits `f787d3d`, `9cca5b3`, and `ee28563`.
-- Added focused coverage for `json-file` with local retention options before writing the handoff.
-- Added Apple-template-aligned log-driver/local-option handoff files so the change can become an Apple-facing PR after the logging policy model and disabled-capture slices settle.
+- Finished the typed local logging policy model, disabled-capture, and local driver/options handoffs after the static rotated replay slab.
+- Confirmed the local `container` integration branch already contains writer-level local rotation behavior from commit `06862b7`.
+- Added focused coverage for reopening existing active log files before applying size-based rotation.
+- Added Apple-template-aligned writer-rotation handoff files so the change can become an Apple-facing PR after the logging policy model and parser slices settle.
 
 Next:
 
-- Split writer-level local rotation from local commit `06862b7`.
 - Add or update Docker comparison fixtures for rotated `docker compose logs --tail` output.
+- Design and split a rotation-aware follow cursor or stream so plugin-side raw rotated-follow polling can be retired.
 - After runtime validation, remove any plugin-side workaround that duplicates accepted runtime behavior.
 
 ## Open Blockers

@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-21 22:51:12 BST`.
+Assessment timestamp: `2026-06-21 23:00:38 BST`.
 
 Mission-control state for the active branch, runtime dependency chain, and next work item is tracked in [STATUS.md](STATUS.md). Use that file as the handoff entry point before starting another log or Compose capability slice.
 
@@ -49,9 +49,10 @@ The container-side log work should be proposed upstream as small, reviewable PRs
 3. Add Docker-compatible timestamp parsing for RFC 3339/RFC 3339 nano, Unix seconds with optional fractional seconds, and relative durations.
 4. Add structured log records and record-file replay with byte-fidelity, stdout/stderr identity, final-record EOF handling, and line-boundary tests.
 5. Add static rotated raw and structured replay for local file-backed logging.
-6. Add a bounded rotation-aware follow cursor or stream so `container-compose` does not need plugin-side merged-snapshot polling.
-7. Add local logging policy support for `json-file`, `local`, `none`, `max-size`, and `max-file` separately from any future remote logging drivers.
-8. Update `container-compose` after each accepted apple/container primitive lands, keeping Compose-specific formatting, prefixing, fan-out, and service selection inside this repository.
+6. Add local logging policy support for `json-file`, `local`, `none`, `max-size`, and `max-file` separately from any future remote logging drivers.
+7. Add writer-level local rotation so `max-size` and `max-file` affect raw and structured persisted logs in the runtime writer.
+8. Add a bounded rotation-aware follow cursor or stream so `container-compose` does not need plugin-side merged-snapshot polling.
+9. Update `container-compose` after each accepted apple/container primitive lands, keeping Compose-specific formatting, prefixing, fan-out, and service selection inside this repository.
 
 ## Next Slab: Static Rotated Replay And Bounded Tail
 
@@ -161,13 +162,13 @@ Existing PRs and branches to leverage:
       <td colspan="4">Notes: split from local commits `f787d3d`, `9cca5b3`, and `ee28563` and documented with `ISSUE-logs-local-driver-options.md` and `PR-logs-local-driver-options.md` in the container fork. This maps `json-file` and `local` to local capture, maps `none` to disabled capture, parses local `max-size` and `max-file`, rejects unsupported drivers/options precisely, and keeps remote logging drivers, metadata options, compression, and Compose presentation policy out of scope. Upstream support remains partial until this branch is turned into an apple/container PR and accepted.</td>
     </tr>
     <tr>
-      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream writer-level local log rotation</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream writer-level local log rotation</td>
       <td>2026-06-21 22:38:05 BST</td>
-      <td></td>
-      <td></td>
+      <td>2026-06-21 23:00:38 BST</td>
+      <td>2026-06-21 23:00:38 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: split from local commit `06862b7` after the model and parser slices are settled. This should keep rotation in the runtime writer, preserve raw and structured files together, and pair with static rotated replay rather than Compose-specific follow polling.</td>
+      <td colspan="4">Notes: split from local commit `06862b7` and documented with `ISSUE-logs-local-writer-rotation.md` and `PR-logs-local-writer-rotation.md` in the container fork. This keeps rotation in the runtime writer, preserves raw `stdio.log` and structured `stdio.jsonl` files together, applies `max-size` and `max-file` from `ContainerLogConfiguration`, handles active-file-only retention, seeds size counters from existing active files, and pairs with static rotated replay rather than Compose-specific follow polling. Upstream support remains partial until this branch is turned into an apple/container PR and accepted.</td>
     </tr>
   </tbody>
 </table>
