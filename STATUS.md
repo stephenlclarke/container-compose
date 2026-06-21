@@ -1,18 +1,18 @@
 # Mission Control
 
-Last updated: 2026-06-21 23:43:58 BST.
+Last updated: 2026-06-22 00:05:48 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
 ## Current Objective
 
-Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The active local slab is raw rotation-aware follow support in the container fork, because it lets `container-compose` retire plugin-side merged-snapshot polling for raw `logs --follow` once the plugin adapter is switched.
+Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The just-completed local slab retargets raw `container-compose logs --follow` to the forked runtime `ContainerClient.followLogs(id:options:)` stream so the plugin no longer rebuilds merged raw snapshots while following.
 
 ## Branch Map
 
 | Repository | Branch | Purpose | Current state |
 | --- | --- | --- | --- |
-| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active local worktree with Docker rotated-tail fixture updates and raw follow dependency tracking |
+| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active local worktree with Docker rotated-tail fixture updates and raw follow retargeting to `ContainerClient.followLogs(id:options:)` |
 | `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction | Active local worktree with static rotated tail, policy model, disabled-capture, local driver/options, writer rotation, and raw rotation-aware follow handoff files |
 | `stephenlclarke/container` | `logs-structured-record-storage` | Apple-facing structured log storage slice | PR-ready local/fork branch, not yet accepted upstream |
 | `stephenlclarke/container` | `logs-structured-record-api` | Apple-facing structured record retrieval slice | PR-ready local/fork branch plus local cleanup commit, not yet accepted upstream |
@@ -51,7 +51,7 @@ Complete Docker Compose v2 local-development log behavior where `apple/container
 
 ## Active Slab
 
-Raw rotation-aware follow support in the container fork.
+Raw rotation-aware follow support across the container fork and compose plugin.
 
 Done:
 
@@ -60,6 +60,7 @@ Done:
 - Compose log manager already requests `ContainerLogReplayOptions(includeRotated: true)` for static raw and structured replay.
 - The local `container` integration branch already contains writer-level local rotation behavior from commit `06862b7`.
 - The local `container` integration branch now exposes raw `ContainerClient.followLogs(id:options:)` with Docker-style initial tail replay and rename-based active-file follow.
+- `container-compose` now calls `ContainerClient.followLogs(id:options:)` for raw followed logs and keeps only Compose line reconstruction and container-stop flushing in the plugin.
 
 Completed locally:
 
@@ -69,18 +70,17 @@ Completed locally:
 - Added an optional Docker Compose fixture harness for rotated `json-file` and `local` log tail behavior.
 - Captured Docker Engine 29.2.1 / Docker Compose 5.1.4 parity evidence for `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all`.
 - Added Apple-template-aligned raw rotation-aware follow handoff files in the container fork.
+- Removed the plugin-side raw merged-snapshot polling path after switching the adapter to the runtime follow stream.
 
 Next:
 
-- Switch `container-compose` raw rotated-follow from plugin-side merged-snapshot polling to `ContainerClient.followLogs(id:options:)` on the fork integration stack.
 - Expand Docker comparison fixtures beyond rotated tail to timestamp filters, blank/CRLF records, final partial records, `--tail 0 --follow`, and selected multi-replica follow behavior.
 - Design and split structured/timestamped rotation-aware follow over retained `stdio.jsonl` records.
 
 ## Open Blockers
 
 - `apple/container` has not accepted the retrieval parser stack yet, so released `container-compose` branches must still distinguish upstream support from fork-only support.
-- `apple/container` still needs an accepted raw rotation-aware follow stream before released `container-compose` raw `logs --follow` can stop using plugin-side polling.
-- `container-compose` still needs a plugin adapter slice to call `ContainerClient.followLogs(id:options:)` on the fork integration stack.
+- `apple/container` still needs an accepted raw rotation-aware follow stream before released `container-compose` can rely on that runtime stream without depending on the fork.
 - Structured/timestamped rotated follow still needs an apple/container runtime cursor over retained `stdio.jsonl` records.
 - Remote logging drivers and driver-specific metadata remain runtime gaps; local `json-file`, `local`, `none`, `max-size`, and `max-file` stay fork-only until upstream runtime policy lands.
 

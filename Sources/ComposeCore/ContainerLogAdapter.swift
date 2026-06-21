@@ -28,6 +28,9 @@ public protocol ContainerLogAPIClienting: Sendable {
 
     /// Returns the active structured log record file exposed by apple/container for `id`.
     func logRecordFile(id: String) async throws -> FileHandle
+
+    /// Returns the followed raw stdio stream exposed by apple/container for `id`.
+    func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle
 }
 
 public extension ContainerLogAPIClienting {
@@ -39,6 +42,11 @@ public extension ContainerLogAPIClienting {
     /// Returns unfiltered structured log records exposed by apple/container for `id`.
     func logRecords(id: String) async throws -> [ContainerLogRecord] {
         try await logRecords(id: id, options: .default, replay: .default)
+    }
+
+    /// Returns the followed raw stdio stream with default retrieval options.
+    func followLogs(id: String) async throws -> FileHandle {
+        try await followLogs(id: id, options: .default)
     }
 }
 
@@ -143,19 +151,23 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     public typealias Logs = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [FileHandle]
     public typealias LogRecords = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [ContainerLogRecord]
     public typealias LogRecordFile = @Sendable (String) async throws -> FileHandle
+    public typealias FollowLogs = @Sendable (String, ContainerLogOptions) async throws -> FileHandle
 
     private let logsOperation: Logs
     private let logRecordsOperation: LogRecords
     private let logRecordFileOperation: LogRecordFile
+    private let followLogsOperation: FollowLogs
 
     public init(
         logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1, replay: $2) },
         logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1, replay: $2) },
-        logRecordFile: @escaping LogRecordFile = { try await ContainerClient().logRecordFile(id: $0) }
+        logRecordFile: @escaping LogRecordFile = { try await ContainerClient().logRecordFile(id: $0) },
+        followLogs: @escaping FollowLogs = { try await ContainerClient().followLogs(id: $0, options: $1) }
     ) {
         self.logsOperation = logs
         self.logRecordsOperation = logRecords
         self.logRecordFileOperation = logRecordFile
+        self.followLogsOperation = followLogs
     }
 
     /// Fetches log file handles through `ContainerClient`.
@@ -171,6 +183,11 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     /// Fetches the active structured log record file through `ContainerClient`.
     public func logRecordFile(id: String) async throws -> FileHandle {
         try await logRecordFileOperation(id)
+    }
+
+    /// Follows raw stdio logs through `ContainerClient`.
+    public func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
+        try await followLogsOperation(id, options)
     }
 }
 
@@ -221,7 +238,7 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         }
 
         if follow {
-            try await emitFollowedRotatingLogs(id: id, tail: tail, emit: emit)
+            try await emitFollowedRawLogStream(id: id, tail: tail, emit: emit)
             return
         }
 
@@ -347,56 +364,76 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         )
     }
 
-    /// Emits and follows raw logs through merged rotated replay snapshots.
-    private func emitFollowedRotatingLogs(
+    /// Emits and follows raw logs through the runtime-owned follow stream.
+    private func emitFollowedRawLogStream(
         id: String,
         tail: Int?,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        let options = ContainerLogOptions()
-        let replay = ContainerLogReplayOptions(includeRotated: true)
-        let data = try await logDataSnapshot(id: id, options: options, replay: replay)
-        guard try await followStateProvider.isLiveForLogFollow(id: id) else {
-            emitExistingLogs(from: data, tail: tail, emit: emit)
+        let fileHandle = try await client.followLogs(id: id, options: ContainerLogOptions(tail: tail))
+        defer {
+            try? fileHandle.close()
+        }
+
+        let accumulator = LogLineAccumulator()
+        let termination = FollowedRawLogTermination()
+        do {
+            try await withTaskCancellationHandler {
+                for try await chunk in followedRawLogChunks(id: id, fileHandle: fileHandle) {
+                    for line in accumulator.append(chunk) {
+                        emit(line)
+                    }
+                }
+            } onCancel: {
+                termination.cancel()
+            }
+        } catch is CancellationError {
+            termination.cancel()
+        }
+
+        guard termination.shouldFlush, let finalLine = accumulator.flush() else {
             return
         }
-
-        let initial = completeLogRecords(in: data)
-        emitLogLines(tail.map { Array(initial.records.suffix($0)) } ?? initial.records, emit: emit)
-        var cursor = LogDataReplayCursor(snapshot: data)
-        let accumulator = LogLineAccumulator(initial: tail == 0 ? Data() : initial.remainder)
-        while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: .milliseconds(250))
-            } catch is CancellationError {
-                return
-            }
-
-            let appended = cursor.appendedData(in: try await logDataSnapshot(id: id, options: options, replay: replay))
-            for line in accumulator.append(appended) {
-                emit(line)
-            }
-            guard try await followStateProvider.isLiveForLogFollow(id: id) else {
-                if let finalLine = accumulator.flush() {
-                    emit(finalLine)
-                }
-                return
-            }
-        }
+        emit(finalLine)
     }
 
-    /// Returns merged raw stdio log bytes from the direct apple/container API.
-    private func logDataSnapshot(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> Data {
-        let fileHandles = try await client.logFileHandles(id: id, options: options, replay: replay)
-        defer {
-            for handle in fileHandles {
-                try? handle.close()
+    /// Converts a followed runtime file handle into chunks and ends when the container stops.
+    private func followedRawLogChunks(id: String, fileHandle: FileHandle) -> AsyncThrowingStream<Data, any Error> {
+        let followStateProvider = self.followStateProvider
+        return AsyncThrowingStream { continuation in
+            let stopTask = Task {
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(for: .milliseconds(250))
+                        guard try await followStateProvider.isLiveForLogFollow(id: id) else {
+                            fileHandle.readabilityHandler = nil
+                            continuation.finish()
+                            return
+                        }
+                    } catch {
+                        fileHandle.readabilityHandler = nil
+                        continuation.finish(throwing: error)
+                        return
+                    }
+                }
+            }
+
+            fileHandle.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else {
+                    handle.readabilityHandler = nil
+                    stopTask.cancel()
+                    continuation.finish()
+                    return
+                }
+                continuation.yield(data)
+            }
+
+            continuation.onTermination = { _ in
+                fileHandle.readabilityHandler = nil
+                stopTask.cancel()
             }
         }
-        guard let fileHandle = fileHandles.first else {
-            throw ComposeError.invalidProject("container logs returned no stdio handle for \(id)")
-        }
-        return try fileHandle.readToEnd() ?? Data()
     }
 
     /// Converts structured runtime chunks into Compose log lines.
@@ -561,6 +598,28 @@ private final class LogLineAccumulator: @unchecked Sendable {
         let output = pending
         pending.removeAll()
         return output
+    }
+}
+
+/// Tracks whether a followed raw stream ended because the caller cancelled it.
+private final class FollowedRawLogTermination: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var shouldFlush: Bool {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+        return !cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+        cancelled = true
     }
 }
 

@@ -7843,11 +7843,10 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == ["demo-api-1"])
     }
 
-    @Test("log manager follows appended direct API log lines")
-    func logManagerFollowsAppendedDirectAPILogLines() async throws {
+    @Test("log manager follows appended direct API log stream")
+    func logManagerFollowsAppendedDirectAPILogStream() async throws {
         let emitted = MessageRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
-            Data(),
+        let client = RotatingContainerLogAPIClient(followChunks: [
             Data("live\n".utf8),
         ])
         let manager = ContainerClientLogManager(
@@ -7863,18 +7862,17 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["live"])
-        #expect(await client.requests.allSatisfy { $0 == "demo-api-1" })
-        #expect(await client.options.allSatisfy { $0 == ContainerLogOptions() })
-        #expect(await client.replayOptions.allSatisfy { $0 == ContainerLogReplayOptions(includeRotated: true) })
+        #expect(await client.followRequests == ["demo-api-1"])
+        #expect(await client.followOptions == [ContainerLogOptions(tail: 0)])
+        #expect(await client.requests.isEmpty)
     }
 
-    @Test("log manager follows blank and split direct API log lines")
-    func logManagerFollowsBlankAndSplitDirectAPILogLines() async throws {
+    @Test("log manager follows blank and split direct API log stream")
+    func logManagerFollowsBlankAndSplitDirectAPILogStream() async throws {
         let emitted = MessageRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
-            Data(),
+        let client = RotatingContainerLogAPIClient(followChunks: [
             Data("one\n\npa".utf8),
-            Data("one\n\npart\n".utf8),
+            Data("rt\n".utf8),
         ])
         let manager = ContainerClientLogManager(
             client: client,
@@ -7889,14 +7887,16 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["one", "", "part"])
+        #expect(await client.followRequests == ["demo-api-1"])
+        #expect(await client.requests.isEmpty)
     }
 
-    @Test("log manager completes initial followed direct API partial line")
-    func logManagerCompletesInitialFollowedDirectAPIPartialLine() async throws {
+    @Test("log manager completes initial followed direct API stream partial line")
+    func logManagerCompletesInitialFollowedDirectAPIStreamPartialLine() async throws {
         let emitted = MessageRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
+        let client = RotatingContainerLogAPIClient(followChunks: [
             Data("pa".utf8),
-            Data("part\n".utf8),
+            Data("rt\n".utf8),
         ])
         let manager = ContainerClientLogManager(
             client: client,
@@ -7911,14 +7911,14 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["part"])
+        #expect(await client.followOptions == [ContainerLogOptions()])
     }
 
-    @Test("log manager tail zero does not complete initial direct API partial line")
-    func logManagerTailZeroDoesNotCompleteInitialDirectAPIPartialLine() async throws {
+    @Test("log manager passes tail zero to followed direct API stream")
+    func logManagerPassesTailZeroToFollowedDirectAPIStream() async throws {
         let emitted = MessageRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
-            Data("old-part".utf8),
-            Data("old-partnew\n".utf8),
+        let client = RotatingContainerLogAPIClient(followChunks: [
+            Data("new\n".utf8),
         ])
         let manager = ContainerClientLogManager(
             client: client,
@@ -7933,12 +7933,14 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["new"])
+        #expect(await client.followOptions == [ContainerLogOptions(tail: 0)])
+        #expect(await client.requests.isEmpty)
     }
 
-    @Test("log manager flushes initial followed direct API partial line after stop")
-    func logManagerFlushesInitialFollowedDirectAPIPartialLineAfterStop() async throws {
+    @Test("log manager flushes initial followed direct API stream partial line after stop")
+    func logManagerFlushesInitialFollowedDirectAPIStreamPartialLineAfterStop() async throws {
         let emitted = MessageRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
+        let client = RotatingContainerLogAPIClient(followChunks: [
             Data("partial".utf8),
         ])
         let manager = ContainerClientLogManager(
@@ -7949,14 +7951,14 @@ struct ComposeOrchestratorTests {
         try await manager.logs(id: "demo-api-1", tail: nil, follow: true, emit: { emitted.append($0) })
 
         #expect(emitted.messages == ["partial"])
+        #expect(await client.followRequests == ["demo-api-1"])
     }
 
-    @Test("log manager follows rotated direct API log snapshots")
-    func logManagerFollowsRotatedDirectAPILogSnapshots() async throws {
+    @Test("log manager emits runtime-followed rotated direct API stream")
+    func logManagerEmitsRuntimeFollowedRotatedDirectAPIStream() async throws {
         let emitted = MessageRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
-            Data("old\nactive\n".utf8),
-            Data("active\nnew\n".utf8),
+        let client = RotatingContainerLogAPIClient(followChunks: [
+            Data("new\n".utf8),
         ])
         let manager = ContainerClientLogManager(
             client: client,
@@ -7971,13 +7973,14 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["new"])
+        #expect(await client.followOptions == [ContainerLogOptions(tail: 0)])
+        #expect(await client.requests.isEmpty)
     }
 
-    @Test("log manager keeps followed direct API partial line pending while live")
-    func logManagerKeepsFollowedDirectAPIPartialLinePendingWhileLive() async throws {
+    @Test("log manager keeps followed direct API stream partial line pending while live")
+    func logManagerKeepsFollowedDirectAPIStreamPartialLinePendingWhileLive() async throws {
         let emitted = MessageRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
-            Data(),
+        let client = RotatingContainerLogAPIClient(followChunks: [
             Data("partial".utf8),
         ])
         let manager = ContainerClientLogManager(
@@ -7993,14 +7996,14 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages.isEmpty)
+        #expect(await client.followRequests == ["demo-api-1"])
     }
 
-    @Test("log manager flushes followed direct API partial line after stop")
-    func logManagerFlushesFollowedDirectAPIPartialLineAfterStop() async throws {
+    @Test("log manager flushes followed direct API stream partial line after stop")
+    func logManagerFlushesFollowedDirectAPIStreamPartialLineAfterStop() async throws {
         let emitted = MessageRecorder()
         let stateProvider = RecordingContainerLogFollowStateProvider(responses: [true, false])
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
-            Data(),
+        let client = RotatingContainerLogAPIClient(followChunks: [
             Data("partial".utf8),
         ])
         let manager = ContainerClientLogManager(client: client, followStateProvider: stateProvider)
@@ -8013,13 +8016,13 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == ["partial"])
         #expect(await stateProvider.requests == ["demo-api-1", "demo-api-1"])
+        #expect(await client.followRequests == ["demo-api-1"])
     }
 
-    @Test("log manager preserves non-UTF-8 bytes while following direct API logs")
-    func logManagerPreservesNonUTF8BytesWhileFollowingDirectAPILogs() async throws {
+    @Test("log manager preserves non-UTF-8 bytes while following direct API stream")
+    func logManagerPreservesNonUTF8BytesWhileFollowingDirectAPIStream() async throws {
         let emitted = DataRecorder()
-        let client = RotatingContainerLogAPIClient(logSnapshots: [
-            Data(),
+        let client = RotatingContainerLogAPIClient(followChunks: [
             Data([0xFF, 0xFE, 0x0A, 0x41, 0x0A]),
         ])
         let manager = ContainerClientLogManager(
@@ -8035,7 +8038,8 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.data == [Data([0xFF, 0xFE]), Data([0x41])])
-        #expect(await client.requests.allSatisfy { $0 == "demo-api-1" })
+        #expect(await client.followRequests == ["demo-api-1"])
+        #expect(await client.requests.isEmpty)
     }
 
     @Test("log manager follows timestamped structured record file")
@@ -8350,6 +8354,25 @@ struct ComposeOrchestratorTests {
         #expect(await recorder.recordRequests == ["demo-api-1"])
         #expect(await recorder.recordOptions == [options])
         #expect(await recorder.recordReplayOptions == [replay])
+    }
+
+    @Test("log API client forwards configured follow operation")
+    func logAPIClientForwardsConfiguredFollowOperation() async throws {
+        let fileHandle = try temporaryLogFileHandle(contents: "hello\n")
+        let recorder = RecordingContainerLogAPIClient(fileHandles: [fileHandle])
+        let options = ContainerLogOptions(tail: 1)
+        let client = ContainerLogAPIClient(followLogs: { id, options in
+            try await recorder.followLogs(id: id, options: options)
+        })
+
+        let handle = try await client.followLogs(id: "demo-api-1", options: options)
+        defer {
+            try? handle.close()
+        }
+
+        #expect(try handle.readToEnd() == Data("hello\n".utf8))
+        #expect(await recorder.followRequests == ["demo-api-1"])
+        #expect(await recorder.followOptions == [options])
     }
 
     @Test("stats manager renders static table from direct API stats")
@@ -15543,6 +15566,8 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private var recordOptionsStorage: [ContainerLogOptions] = []
     private var recordReplayStorage: [ContainerLogReplayOptions] = []
     private var recordFileStorage: [String] = []
+    private var followStorage: [String] = []
+    private var followOptionsStorage: [ContainerLogOptions] = []
 
     init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = [], recordFile: TemporaryLogFile? = nil) {
         self.fileHandles = fileHandles
@@ -15578,6 +15603,14 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         recordFileStorage
     }
 
+    var followRequests: [String] {
+        followStorage
+    }
+
+    var followOptions: [ContainerLogOptions] {
+        followOptionsStorage
+    }
+
     func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
         storage.append(id)
         optionsStorage.append(options)
@@ -15601,11 +15634,21 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         generatedRecordFiles.append(file)
         return file.readHandle
     }
+
+    func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
+        followStorage.append(id)
+        followOptionsStorage.append(options)
+        if let fileHandle = fileHandles.first {
+            return fileHandle
+        }
+        return try temporaryLogFileHandle(data: Data())
+    }
 }
 
 private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
     private var logSnapshots: [Data]
     private var recordSnapshots: [[ContainerLogRecord]]
+    private let followChunks: [Data]
     private var lastRecordSnapshot: [ContainerLogRecord]?
     private var recordFiles: [TemporaryLogFile] = []
     private var storage: [String] = []
@@ -15615,10 +15658,14 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
     private var recordOptionsStorage: [ContainerLogOptions] = []
     private var recordReplayStorage: [ContainerLogReplayOptions] = []
     private var recordFileStorage: [String] = []
+    private var followStorage: [String] = []
+    private var followOptionsStorage: [ContainerLogOptions] = []
+    private var followWriters: [FileHandle] = []
 
-    init(logSnapshots: [Data] = [], recordSnapshots: [[ContainerLogRecord]] = []) {
+    init(logSnapshots: [Data] = [], recordSnapshots: [[ContainerLogRecord]] = [], followChunks: [Data] = []) {
         self.logSnapshots = logSnapshots
         self.recordSnapshots = recordSnapshots
+        self.followChunks = followChunks
     }
 
     var requests: [String] {
@@ -15647,6 +15694,14 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
 
     var recordFileRequests: [String] {
         recordFileStorage
+    }
+
+    var followRequests: [String] {
+        followStorage
+    }
+
+    var followOptions: [ContainerLogOptions] {
+        followOptionsStorage
     }
 
     func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
@@ -15682,6 +15737,22 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
             }
         }
         return file.readHandle
+    }
+
+    func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
+        followStorage.append(id)
+        followOptionsStorage.append(options)
+        let pipe = Pipe()
+        let writer = pipe.fileHandleForWriting
+        followWriters.append(writer)
+        let chunks = followChunks
+        Task {
+            for chunk in chunks {
+                try? await Task.sleep(for: .milliseconds(50))
+                try? writer.write(contentsOf: chunk)
+            }
+        }
+        return pipe.fileHandleForReading
     }
 
     private func nextLogSnapshot() -> Data {
