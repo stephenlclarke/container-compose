@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-21 22:32:35 BST`.
+Assessment timestamp: `2026-06-21 22:38:05 BST`.
 
 Mission-control state for the active branch, runtime dependency chain, and next work item is tracked in [STATUS.md](STATUS.md). Use that file as the handoff entry point before starting another log or Compose capability slice.
 
@@ -134,13 +134,40 @@ Existing PRs and branches to leverage:
       <td colspan="4">Notes: replace plugin-side merged-snapshot polling with a runtime cursor that can follow active logs across rename-based rotation, detect truncation/retention loss, flush final partial records after container exit, and bound memory and file reads for long-running Compose follow sessions.</td>
     </tr>
     <tr>
-      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream local logging policy and rotation controls</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream local logging policy model</td>
       <td>2026-06-21 20:24:08 BST</td>
+      <td>2026-06-21 22:38:05 BST</td>
+      <td>2026-06-21 22:38:05 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: the first upstream-sized slice is the typed `ContainerLogConfiguration` model plus `ContainerConfiguration.logging` default decoding. The local code-bearing commit is `e41e630`; handoff files are `ISSUE-logs-local-policy-model.md` and `PR-logs-local-policy-model.md` in the container fork. This slice is model-only and deliberately excludes CLI flags, disabled capture, writer rotation, and Compose policy.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream disabled local log capture</td>
+      <td>2026-06-21 22:38:05 BST</td>
       <td></td>
       <td></td>
     </tr>
     <tr>
-      <td colspan="4">Notes: split the local logging policy work into reviewable apple/container PRs: typed local policy model, `json-file` and `local` as local capture aliases, `none` as disabled persisted capture, `max-size` and `max-file` parsing, writer-level rotation, static rotated replay tests, and explicit rejection or no-op policy for unsupported remote drivers.</td>
+      <td colspan="4">Notes: split from local commit `6cbf778`. This should add the `.none` local storage policy behavior and runtime writer suppression without adding CLI flags or Compose mapping.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream log driver and local option parsing</td>
+      <td>2026-06-21 22:38:05 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: split from local commits `f787d3d`, `9cca5b3`, and `ee28563`. This should map `json-file` and `local` to local capture, map `none` to disabled capture, parse local `max-size` and `max-file`, reject unsupported drivers/options precisely, and keep remote logging drivers out of scope.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream writer-level local log rotation</td>
+      <td>2026-06-21 22:38:05 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: split from local commit `06862b7` after the model and parser slices are settled. This should keep rotation in the runtime writer, preserve raw and structured files together, and pair with static rotated replay rather than Compose-specific follow polling.</td>
     </tr>
   </tbody>
 </table>

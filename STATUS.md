@@ -1,6 +1,6 @@
 # Mission Control
 
-Last updated: 2026-06-21 22:32:35 BST.
+Last updated: 2026-06-21 22:38:05 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
@@ -26,7 +26,8 @@ Complete Docker Compose v2 local-development log behavior where `apple/container
 4. `logs-structured-record-storage` adds active `stdio.jsonl` structured records beside `stdio.log`.
 5. `logs-structured-record-api` exposes active structured records and active record-file access.
 6. The completed local slab adds static rotated replay and a bounded line-tail scan. Its handoff files are `ISSUE-logs-static-rotated-tail.md` and `PR-logs-static-rotated-tail.md` in the container fork.
-7. Later slabs add a rotation-aware follow cursor or stream, then local logging policy and rotation controls.
+7. The next logging-policy slab starts with the typed local policy model. Its local code-bearing commit is `e41e630`, and its handoff files are `ISSUE-logs-local-policy-model.md` and `PR-logs-local-policy-model.md` in the container fork.
+8. Later slabs add disabled local capture, driver/option parsing, writer-level rotation, and a rotation-aware follow cursor or stream.
 
 ## Docker/Compose Reference Targets
 
@@ -62,6 +63,9 @@ Completed locally:
 
 Next:
 
+- Split disabled local capture from local commit `6cbf778` into the next Apple-sized handoff.
+- Split log-driver and local-option parsing from local commits `f787d3d`, `9cca5b3`, and `ee28563`.
+- Split writer-level local rotation from local commit `06862b7`.
 - Add or update Docker comparison fixtures for rotated `docker compose logs --tail` output.
 - Document which runtime branch or PR supplies the primitive in `PLAN.md` and `COMPATIBILITY.md`.
 - After runtime validation, remove any plugin-side workaround that duplicates accepted runtime behavior.
