@@ -2,7 +2,9 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-21 20:24:08 BST`.
+Assessment timestamp: `2026-06-21 22:32:35 BST`.
+
+Mission-control state for the active branch, runtime dependency chain, and next work item is tracked in [STATUS.md](STATUS.md). Use that file as the handoff entry point before starting another log or Compose capability slice.
 
 ## Scope
 
@@ -51,9 +53,18 @@ The container-side log work should be proposed upstream as small, reviewable PRs
 7. Add local logging policy support for `json-file`, `local`, `none`, `max-size`, and `max-file` separately from any future remote logging drivers.
 8. Update `container-compose` after each accepted apple/container primitive lands, keeping Compose-specific formatting, prefixing, fan-out, and service selection inside this repository.
 
-## Next Slab: Complete Log Runtime And Compose Integration
+## Next Slab: Static Rotated Replay And Bounded Tail
 
 Assumption for this slab: Chris George's [`apple/container#1592`](https://github.com/apple/container/pull/1592) and the follow-up [`apple/container#1764`](https://github.com/apple/container/pull/1764) / [`apple/container#1765`](https://github.com/apple/container/pull/1765) changes merge upstream. Treat those as the baseline runtime contract for `ContainerClient.logs(id:options:)`, `tail`, `since`, `until`, and Docker-compatible timestamp parsing. The next work should not reopen those decisions unless upstream review changes the accepted API shape.
+
+Why this slab now: Docker Compose documents `logs --tail` as the number of lines to show from the end of logs for each container. Docker logging drivers document local retained log files through options such as `max-size` and `max-file`. The current local runtime integration can replay rotated files, but the next upstreamable change needs to make static rotated `tail` efficient and line-correct so `container logs -n 10` and `container compose logs --tail 10` do not require reading the entire retained history into memory.
+
+Reference targets:
+
+- Docker Compose CLI `logs`: [`docker compose logs`](https://docs.docker.com/reference/cli/docker/compose/logs/)
+- Compose service `logging`: [`services.logging`](https://docs.docker.com/reference/compose-file/services/#logging)
+- Docker `json-file` rotation options: [`json-file` logging driver](https://docs.docker.com/engine/logging/drivers/json-file/)
+- Docker `local` retained log behavior: [`local` logging driver](https://docs.docker.com/engine/logging/drivers/local/)
 
 Existing PRs and branches to leverage:
 
@@ -105,13 +116,13 @@ Existing PRs and branches to leverage:
       <td colspan="4">Notes: split from the local `logs-integration-chris` branch into a small apple/container branch named `logs-structured-record-api`. The branch stacks on `logs-structured-record-storage` and exposes `ContainerClient.logRecords(id:options:)` for decoded `ContainerLogRecord` snapshots plus `ContainerClient.logRecordFile(id:)` for the active `stdio.jsonl` file handle. The wire surfaces are XPC routes `containerLogRecords` and `containerLogRecordFile`; retrieval options are `ContainerLogOptions.tail`, `ContainerLogOptions.since`, and `ContainerLogOptions.until`. Timestamp rendering stays a command/plugin presentation concern. Upstream support remains partial until this branch is turned into an apple/container PR and accepted; rotated replay and legacy raw-log fallback remain separate slices.</td>
     </tr>
     <tr>
-      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream static rotated replay and bounded tail scan</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream static rotated replay and bounded tail scan</td>
       <td>2026-06-21 20:24:08 BST</td>
-      <td></td>
-      <td></td>
+      <td>2026-06-21 22:10:01 BST</td>
+      <td>2026-06-21 22:32:35 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: upstream `ContainerLogReplayOptions(includeRotated:)` or an accepted replay-policy equivalent, static rotated raw/structured replay, retention ordering, and the bounded tail-read optimization currently local in the dirty `logs-integration-chris` worktree. This avoids making `container logs -n 10` replay full log history.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch as commit `86a9bda` with handoff files `ISSUE-logs-static-rotated-tail.md` and `PR-logs-static-rotated-tail.md`. The runtime-owned behavior is `ContainerLogReplayOptions(includeRotated:)` or an accepted replay-policy equivalent, deterministic active-plus-rotated retention ordering, negative tail as all, `tail 0` as empty, line reconstruction across file boundaries, and bounded reverse scanning for static raw replay. This avoids making `container logs -n 10` replay full retained history. Keep Compose-specific prefixes, colors, service names, and replica ordering out of the runtime branch. Split this into an Apple-facing PR branch after #1592/#1764/#1765 settle.</td>
     </tr>
     <tr>
       <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Design and upstream a rotation-aware follow cursor or stream</td>
@@ -147,13 +158,13 @@ Existing PRs and branches to leverage:
   </thead>
   <tbody>
     <tr>
-      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Retarget log adapter to the merged retrieval baseline</td>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Retarget static raw replay to runtime-owned rotated tail</td>
       <td>2026-06-21 20:24:08 BST</td>
-      <td></td>
-      <td></td>
+      <td>2026-06-21 22:10:01 BST</td>
+      <td>2026-06-21 22:32:35 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: after #1592/#1764/#1765 land, update `ContainerLogAdapter` and `ContainerClientLogManager` to depend on the accepted direct APIs for raw `tail`, `since`, and `until`; keep only Compose-owned service fan-out, prefix/color policy, target ordering, and output formatting in this repository.</td>
+      <td colspan="4">Notes: `ContainerClientLogManager` already asks the direct API for `ContainerLogOptions(tail:)` and `ContainerLogReplayOptions(includeRotated: true)` on static raw logs. Prove the runtime honors that request with bounded static rotated replay, then keep the plugin as a thin fan-out and formatting layer. The remaining plugin-side merged-snapshot polling path should stay marked experimental until apple/container exposes a rotation-aware follow cursor or stream.</td>
     </tr>
     <tr>
       <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Switch timestamped logs to the upstream structured API</td>
@@ -183,13 +194,13 @@ Existing PRs and branches to leverage:
       <td colspan="4">Notes: after apple/container logging policy lands, enable released support for Compose `logging.driver: json-file`, `logging.driver: local`, `logging.driver: none`, `logging.options.max-size`, and `logging.options.max-file`; keep remote logging drivers and remote-only options rejected with precise apple/container runtime-gap messages.</td>
     </tr>
     <tr>
-      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Add Docker Compose comparison fixtures for the completed log surface</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add Docker Compose comparison fixtures for the completed log surface</td>
       <td>2026-06-21 20:24:08 BST</td>
-      <td></td>
+      <td>2026-06-21 22:10:01 BST</td>
       <td></td>
     </tr>
     <tr>
-      <td colspan="4">Notes: add live Docker Compose or captured-golden tests for RFC 3339/RFC 3339 nano, Unix timestamps, relative durations, `--tail 0 --follow`, negative tail, rotated replay, blank records, CRLF/CR separators, final partial lines, and selected-service multi-replica follow.</td>
+      <td colspan="4">Notes: extend `examples/logging/compose.yml` and/or add a local comparison harness for `docker compose logs --tail` against `container compose logs --tail` on rotated `json-file` and `local` services. Keep live Docker comparisons optional in CI because they require Docker Engine, but record captured expected behavior for static fixtures. Cover RFC 3339/RFC 3339 nano, Unix timestamps, relative durations, `--tail 0 --follow`, negative tail, rotated replay, blank records, CRLF/CR separators, final partial lines, and selected-service multi-replica follow over time.</td>
     </tr>
     <tr>
       <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Update branch compatibility after runtime releases</td>
