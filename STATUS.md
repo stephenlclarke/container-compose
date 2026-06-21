@@ -1,19 +1,19 @@
 # Mission Control
 
-Last updated: 2026-06-21 22:38:05 BST.
+Last updated: 2026-06-21 22:44:22 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
 ## Current Objective
 
-Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The just-completed local slab is static rotated replay with bounded `--tail` reads, because it moves `container logs -n <count>` and `container compose logs --tail <count>` closer to Docker's line-count contract without replaying full retained log history.
+Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The just-completed local slab is disabled persisted local log capture, because it gives later CLI and Compose mapping work a runtime-owned way to represent Docker-compatible `logging.driver: none` without adding Compose policy to `apple/container`.
 
 ## Branch Map
 
 | Repository | Branch | Purpose | Current state |
 | --- | --- | --- | --- |
-| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active, ahead of origin by one docs commit at the start of this slice |
-| `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction | Active local worktree with static rotated tail changes committed as `86a9bda` |
+| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active, ahead of origin by three docs commits at the start of this slice |
+| `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction | Active local worktree with static rotated tail changes committed as `86a9bda` and disabled-capture handoff files added locally |
 | `stephenlclarke/container` | `logs-structured-record-storage` | Apple-facing structured log storage slice | PR-ready local/fork branch, not yet accepted upstream |
 | `stephenlclarke/container` | `logs-structured-record-api` | Apple-facing structured record retrieval slice | PR-ready local/fork branch plus local cleanup commit, not yet accepted upstream |
 | `apple/container` | `main` | Upstream runtime | Runtime primitives are still pending upstream review |
@@ -26,8 +26,9 @@ Complete Docker Compose v2 local-development log behavior where `apple/container
 4. `logs-structured-record-storage` adds active `stdio.jsonl` structured records beside `stdio.log`.
 5. `logs-structured-record-api` exposes active structured records and active record-file access.
 6. The completed local slab adds static rotated replay and a bounded line-tail scan. Its handoff files are `ISSUE-logs-static-rotated-tail.md` and `PR-logs-static-rotated-tail.md` in the container fork.
-7. The next logging-policy slab starts with the typed local policy model. Its local code-bearing commit is `e41e630`, and its handoff files are `ISSUE-logs-local-policy-model.md` and `PR-logs-local-policy-model.md` in the container fork.
-8. Later slabs add disabled local capture, driver/option parsing, writer-level rotation, and a rotation-aware follow cursor or stream.
+7. The logging-policy stack starts with the typed local policy model. Its local code-bearing commit is `e41e630`, and its handoff files are `ISSUE-logs-local-policy-model.md` and `PR-logs-local-policy-model.md` in the container fork.
+8. The completed disabled-capture slab adds the `.none` local storage policy behavior. Its local code-bearing commit is `6cbf778`, and its handoff files are `ISSUE-logs-disabled-local-capture.md` and `PR-logs-disabled-local-capture.md` in the container fork.
+9. Later slabs add driver/option parsing, writer-level rotation, and a rotation-aware follow cursor or stream.
 
 ## Docker/Compose Reference Targets
 
@@ -47,7 +48,7 @@ Complete Docker Compose v2 local-development log behavior where `apple/container
 
 ## Active Slab
 
-Static rotated replay and bounded tail scan.
+Disabled persisted local log capture.
 
 Done:
 
@@ -57,13 +58,12 @@ Done:
 
 Completed locally:
 
-- Finished the `container` fork bounded rotated tail implementation on `logs-integration-chris`.
-- Added focused runtime tests for rotated file ordering, split lines across rotation, `--tail 0`, negative tail as all, and bounded reads.
-- Added Apple-template-aligned handoff files so the change can become an Apple-facing PR after #1592/#1764/#1765.
+- Finished the typed local logging policy model handoff after the static rotated replay slab.
+- Confirmed the local `container` integration branch already contains the disabled-capture runtime behavior from commit `6cbf778`.
+- Added Apple-template-aligned disabled-capture handoff files so the change can become an Apple-facing PR after the logging policy model settles.
 
 Next:
 
-- Split disabled local capture from local commit `6cbf778` into the next Apple-sized handoff.
 - Split log-driver and local-option parsing from local commits `f787d3d`, `9cca5b3`, and `ee28563`.
 - Split writer-level local rotation from local commit `06862b7`.
 - Add or update Docker comparison fixtures for rotated `docker compose logs --tail` output.
