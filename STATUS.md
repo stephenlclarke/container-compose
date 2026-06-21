@@ -1,18 +1,18 @@
 # Mission Control
 
-Last updated: 2026-06-21 23:00:38 BST.
+Last updated: 2026-06-21 23:18:03 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
 ## Current Objective
 
-Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The just-completed local slab is writer-level local log rotation, because it makes Docker-compatible `max-size` and `max-file` policy affect persisted raw and structured runtime logs without adding Compose presentation policy to `apple/container`.
+Complete Docker Compose v2 local-development log behavior where `apple/container` can expose matching runtime primitives. The active local slab is Docker Compose comparison evidence for rotated log tail behavior, because it gives the plugin and runtime slices a concrete Docker parity target without making Docker Engine a normal CI dependency.
 
 ## Branch Map
 
 | Repository | Branch | Purpose | Current state |
 | --- | --- | --- | --- |
-| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active local worktree with writer-rotation tracking updates |
+| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log behavior against the forked runtime | Active local worktree with Docker rotated-tail fixture updates |
 | `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction | Active local worktree with static rotated tail, policy model, disabled-capture, local driver/options, and writer-rotation handoff files |
 | `stephenlclarke/container` | `logs-structured-record-storage` | Apple-facing structured log storage slice | PR-ready local/fork branch, not yet accepted upstream |
 | `stephenlclarke/container` | `logs-structured-record-api` | Apple-facing structured record retrieval slice | PR-ready local/fork branch plus local cleanup commit, not yet accepted upstream |
@@ -50,24 +50,26 @@ Complete Docker Compose v2 local-development log behavior where `apple/container
 
 ## Active Slab
 
-Writer-level local log rotation.
+Docker Compose rotated-tail comparison fixtures.
 
 Done:
 
 - Base log retrieval PRs are identified and tracked.
 - Structured storage and active retrieval branches are split from the integration branch.
 - Compose log manager already requests `ContainerLogReplayOptions(includeRotated: true)` for static raw and structured replay.
+- The local `container` integration branch already contains writer-level local rotation behavior from commit `06862b7`.
 
 Completed locally:
 
 - Finished the typed local logging policy model, disabled-capture, and local driver/options handoffs after the static rotated replay slab.
-- Confirmed the local `container` integration branch already contains writer-level local rotation behavior from commit `06862b7`.
 - Added focused coverage for reopening existing active log files before applying size-based rotation.
 - Added Apple-template-aligned writer-rotation handoff files so the change can become an Apple-facing PR after the logging policy model and parser slices settle.
+- Added an optional Docker Compose fixture harness for rotated `json-file` and `local` log tail behavior.
+- Captured Docker Engine 29.2.1 / Docker Compose 5.1.4 parity evidence for `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all`.
 
 Next:
 
-- Add or update Docker comparison fixtures for rotated `docker compose logs --tail` output.
+- Expand Docker comparison fixtures beyond rotated tail to timestamp filters, blank/CRLF records, final partial records, and selected multi-replica follow behavior.
 - Design and split a rotation-aware follow cursor or stream so plugin-side raw rotated-follow polling can be retired.
 - After runtime validation, remove any plugin-side workaround that duplicates accepted runtime behavior.
 

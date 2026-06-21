@@ -63,7 +63,10 @@ let package = Package(
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
             ],
-            path: "Tests/ComposeCoreTests"
+            path: "Tests/ComposeCoreTests",
+            resources: [
+                .process("Fixtures"),
+            ]
         ),
     ]
 )

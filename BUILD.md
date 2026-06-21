@@ -30,6 +30,9 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
 
 - Optional: `sonar-scanner` and either `SONAR_TOKEN` or `SONAR_TOKEN_PERSONAL`
   for local SonarQube scans.
+- Optional: Docker Engine plus either `docker compose` or `docker-compose` for
+  local Docker Compose parity fixture refreshes. Colima works well on macOS
+  when Docker Desktop is not used.
 
 If you need to force a specific Apple developer directory, set:
 
@@ -159,6 +162,24 @@ coverage.xml
 Tools/compose-normalizer/coverage.out
 *.profraw
 ```
+
+## Docker Compose Parity Fixtures
+
+The normal `make ci` path does not require Docker. For local parity checks against Docker Compose behavior, start a local Docker daemon and run:
+
+```sh
+make docker-log-fixtures
+```
+
+This runs `examples/logging/compose.yml` through Docker Compose and compares the captured rotated log tail behavior with `Tests/ComposeCoreTests/Fixtures/logging/docker-compose-rotated-tail.expected`. The fixture currently records `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all` for rotated `json-file` and `local` logging drivers.
+
+Refresh the checked fixture after intentionally changing the example or adopting a newer Docker behavior with:
+
+```sh
+make docker-log-fixtures-update
+```
+
+The fixture script skips cleanly when Docker, Docker Compose, or the daemon is unavailable. Use `./scripts/capture-docker-compose-log-fixtures.sh --strict` when an unavailable Docker dependency should fail the local run.
 
 ## Package Archive
 

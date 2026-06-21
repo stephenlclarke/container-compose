@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-21 23:00:38 BST`.
+Assessment timestamp: `2026-06-21 23:18:03 BST`.
 
 Mission-control state for the active branch, runtime dependency chain, and next work item is tracked in [STATUS.md](STATUS.md). Use that file as the handoff entry point before starting another log or Compose capability slice.
 
@@ -228,7 +228,7 @@ Existing PRs and branches to leverage:
       <td></td>
     </tr>
     <tr>
-      <td colspan="4">Notes: extend `examples/logging/compose.yml` and/or add a local comparison harness for `docker compose logs --tail` against `container compose logs --tail` on rotated `json-file` and `local` services. Keep live Docker comparisons optional in CI because they require Docker Engine, but record captured expected behavior for static fixtures. Cover RFC 3339/RFC 3339 nano, Unix timestamps, relative durations, `--tail 0 --follow`, negative tail, rotated replay, blank records, CRLF/CR separators, final partial lines, and selected-service multi-replica follow over time.</td>
+      <td colspan="4">Notes: 2026-06-21 23:18:03 BST added `Tests/ComposeCoreTests/Fixtures/logging/docker-compose-rotated-tail.expected`, `scripts/capture-docker-compose-log-fixtures.sh`, and the optional `make docker-log-fixtures` / `make docker-log-fixtures-update` targets. The captured Docker Engine 29.2.1 / Docker Compose 5.1.4 fixture records rotated `json-file` and `local` behavior for `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all`; retained full-history line counts differ by driver, but positive tail remains per-service logical-line based. Keep live Docker comparisons optional in CI because they require Docker Engine. Remaining fixture coverage should add RFC 3339/RFC 3339 nano, Unix timestamps, relative durations, `--tail 0 --follow`, blank records, CRLF/CR separators, final partial lines, and selected-service multi-replica follow over time.</td>
     </tr>
     <tr>
       <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Update branch compatibility after runtime releases</td>

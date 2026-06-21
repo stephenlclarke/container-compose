@@ -67,7 +67,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -528,6 +528,12 @@ cli-smoke-built:
 	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \
 	[[ "$$publish_output" == *"unsupported compose feature: publish:"* ]]; \
 	[[ "$$publish_output" == *"apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet"* ]]
+
+docker-log-fixtures:
+	./scripts/capture-docker-compose-log-fixtures.sh
+
+docker-log-fixtures-update:
+	./scripts/capture-docker-compose-log-fixtures.sh --update
 
 coverage: swift-coverage go-test
 
