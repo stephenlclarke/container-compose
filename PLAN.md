@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-19 22:49:12 BST`.
+Assessment timestamp: `2026-06-21 20:24:08 BST`.
 
 ## Scope
 
@@ -50,6 +50,157 @@ The container-side log work should be proposed upstream as small, reviewable PRs
 6. Add a bounded rotation-aware follow cursor or stream so `container-compose` does not need plugin-side merged-snapshot polling.
 7. Add local logging policy support for `json-file`, `local`, `none`, `max-size`, and `max-file` separately from any future remote logging drivers.
 8. Update `container-compose` after each accepted apple/container primitive lands, keeping Compose-specific formatting, prefixing, fan-out, and service selection inside this repository.
+
+## Next Slab: Complete Log Runtime And Compose Integration
+
+Assumption for this slab: Chris George's [`apple/container#1592`](https://github.com/apple/container/pull/1592) and the follow-up [`apple/container#1764`](https://github.com/apple/container/pull/1764) / [`apple/container#1765`](https://github.com/apple/container/pull/1765) changes merge upstream. Treat those as the baseline runtime contract for `ContainerClient.logs(id:options:)`, `tail`, `since`, `until`, and Docker-compatible timestamp parsing. The next work should not reopen those decisions unless upstream review changes the accepted API shape.
+
+Existing PRs and branches to leverage:
+
+- <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [`apple/container#1592`](https://github.com/apple/container/pull/1592): Chris George's base log retrieval-options API. Use this naming and API direction as the compatibility anchor.
+- <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [`apple/container#1764`](https://github.com/apple/container/pull/1764): tail and until retrieval filters. Use it as the baseline for line-based filter semantics.
+- <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [`apple/container#1765`](https://github.com/apple/container/pull/1765): Docker-compatible timestamp and duration parser. Use it as the shared parser for container CLI, runtime API, and `container-compose`.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [`apple/container#1758`](https://github.com/apple/container/pull/1758): SwiftLog handler deprecation cleanup. Keep it as log-stack hygiene, but do not treat it as a Compose feature dependency.
+- <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11): the fork-side precursor to #1592. Continue comparing API names and behavior so the two Compose efforts converge rather than fork the log contract.
+- <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`apple/container#1736`](https://github.com/apple/container/pull/1736): peer Compose implementation. Use it for examples, test ideas, and CLI expectation comparison only; do not move Compose-specific policy into apple/container runtime PRs.
+
+### Container Runtime Slab
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Finalize the assumed merged retrieval baseline</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: rebase the local `logs-integration-chris` branch after #1592/#1764/#1765 land, drop duplicate parser/filter code, keep `ContainerLogOptions` as retrieval-only state, keep replay policy outside presentation flags, and preserve tests for negative tail, `--tail 0 --follow`, EOF final records, split records, legacy raw records, and line-based filtering.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream structured log record storage</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td>2026-06-21 20:50:49 BST</td>
+      <td>2026-06-21 20:50:49 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: split from the local `logs-integration-chris` branch into a small apple/container branch named `logs-structured-record-storage`. The branch writes raw workload bytes to `stdio.log` and Docker-like line-framed JSON Lines sidecar records to `stdio.jsonl`. Each sidecar record contains `timestamp`, `stream`, and base64 `data`; final complete EOF records and oversized unterminated 16 KiB chunks are covered by tests. Keep this runtime-only; no Compose prefixes, colors, service names, or replica policy. Upstream support remains partial until this branch is turned into an apple/container PR and accepted.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream structured retrieval APIs</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: expose `ContainerClient.logRecords(id:options:replay:)` and `ContainerClient.logRecordFile(id:)` or the upstream-approved equivalent. The API must apply `tail`, `since`, and `until` to reconstructed logical records, preserve stdout/stderr identity, and define behavior for legacy raw logs that predate structured records.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream static rotated replay and bounded tail scan</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: upstream `ContainerLogReplayOptions(includeRotated:)` or an accepted replay-policy equivalent, static rotated raw/structured replay, retention ordering, and the bounded tail-read optimization currently local in the dirty `logs-integration-chris` worktree. This avoids making `container logs -n 10` replay full log history.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Design and upstream a rotation-aware follow cursor or stream</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: replace plugin-side merged-snapshot polling with a runtime cursor that can follow active logs across rename-based rotation, detect truncation/retention loss, flush final partial records after container exit, and bound memory and file reads for long-running Compose follow sessions.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream local logging policy and rotation controls</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: split the local logging policy work into reviewable apple/container PRs: typed local policy model, `json-file` and `local` as local capture aliases, `none` as disabled persisted capture, `max-size` and `max-file` parsing, writer-level rotation, static rotated replay tests, and explicit rejection or no-op policy for unsupported remote drivers.</td>
+    </tr>
+  </tbody>
+</table>
+
+### container-compose Work Unlocked By The Runtime Slab
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Retarget log adapter to the merged retrieval baseline</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: after #1592/#1764/#1765 land, update `ContainerLogAdapter` and `ContainerClientLogManager` to depend on the accepted direct APIs for raw `tail`, `since`, and `until`; keep only Compose-owned service fan-out, prefix/color policy, target ordering, and output formatting in this repository.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Switch timestamped logs to the upstream structured API</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: replace local-integration guards with the accepted `logRecords`/record-file API, render static and followed `--timestamps`, `--since`, and `--until` from runtime records, and keep legacy raw-log fallback behavior explicit for containers created before structured record support.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Replace raw rotated-follow polling with runtime cursor support</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: remove the plugin-side repeated merged-snapshot polling path once apple/container exposes a rotation-aware cursor or stream. Keep Compose fan-out concurrency and per-service prefixing, but let the runtime own rotation/truncation and partial-record boundaries.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Promote local logging driver mappings to released support</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: after apple/container logging policy lands, enable released support for Compose `logging.driver: json-file`, `logging.driver: local`, `logging.driver: none`, `logging.options.max-size`, and `logging.options.max-file`; keep remote logging drivers and remote-only options rejected with precise apple/container runtime-gap messages.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Add Docker Compose comparison fixtures for the completed log surface</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: add live Docker Compose or captured-golden tests for RFC 3339/RFC 3339 nano, Unix timestamps, relative durations, `--tail 0 --follow`, negative tail, rotated replay, blank records, CRLF/CR separators, final partial lines, and selected-service multi-replica follow.</td>
+    </tr>
+    <tr>
+      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Update branch compatibility after runtime releases</td>
+      <td>2026-06-21 20:24:08 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: once each apple/container PR lands, update `COMPATIBILITY.md` on `apple-container-compatible`, `full-compose-preview`, and `logs-integration` so released upstream support, fork-only support, and remaining runtime gaps stay distinct.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Related Compose Implementations
 
