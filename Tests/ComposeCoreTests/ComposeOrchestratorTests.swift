@@ -8042,8 +8042,8 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests.isEmpty)
     }
 
-    @Test("log manager follows timestamped structured record file")
-    func logManagerFollowsTimestampedStructuredRecordFile() async throws {
+    @Test("log manager follows timestamped structured record stream")
+    func logManagerFollowsTimestampedStructuredRecordStream() async throws {
         let emitted = MessageRecorder()
         let firstTimestamp = date("2026-06-18T10:00:00.123Z")
         let secondTimestamp = date("2026-06-18T10:00:01.456Z")
@@ -8084,12 +8084,13 @@ struct ComposeOrchestratorTests {
         #expect(await client.recordRequests.isEmpty)
         #expect(await client.recordOptions.isEmpty)
         #expect(await client.recordReplayOptions.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [ContainerLogOptions(tail: 0)])
         #expect(await client.requests.isEmpty)
     }
 
-    @Test("log manager follows rotated structured record snapshots")
-    func logManagerFollowsRotatedStructuredRecordSnapshots() async throws {
+    @Test("log manager follows runtime structured record stream")
+    func logManagerFollowsRuntimeStructuredRecordStream() async throws {
         let emitted = MessageRecorder()
         let first = ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data("one\n".utf8))
         let second = ContainerLogRecord(timestamp: date("2026-06-18T10:00:01Z"), stream: .stdout, data: Data("two\n".utf8))
@@ -8120,7 +8121,8 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == ["2026-06-18T10:00:02.000Z three"])
         #expect(await client.recordRequests.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [ContainerLogOptions(tail: 0)])
     }
 
     @Test("log manager filters followed structured records")
@@ -8160,7 +8162,10 @@ struct ComposeOrchestratorTests {
         #expect(await client.recordRequests.isEmpty)
         #expect(await client.recordOptions.isEmpty)
         #expect(await client.recordReplayOptions.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [
+            ContainerLogOptions(tail: 0, since: since, until: until)
+        ])
         #expect(await client.requests.isEmpty)
     }
 
@@ -8185,10 +8190,11 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(emitted.messages == ["snapshot"])
-        #expect(await client.recordRequests == ["demo-api-1"])
-        #expect(await client.recordOptions == [ContainerLogOptions(until: until)])
-        #expect(await client.recordReplayOptions == [ContainerLogReplayOptions(includeRotated: true)])
-        #expect(await client.recordFileRequests.isEmpty)
+        #expect(await client.recordRequests.isEmpty)
+        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordReplayOptions.isEmpty)
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [ContainerLogOptions(until: until)])
         #expect(await client.requests.isEmpty)
     }
 
@@ -8214,10 +8220,11 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages.count == 1)
         #expect(emitted.messages[0].hasSuffix(" snapshot"))
-        #expect(await client.recordRequests == ["demo-api-1"])
-        #expect(await client.recordOptions == [ContainerLogOptions(until: until)])
-        #expect(await client.recordReplayOptions == [ContainerLogReplayOptions(includeRotated: true)])
-        #expect(await client.recordFileRequests.isEmpty)
+        #expect(await client.recordRequests.isEmpty)
+        #expect(await client.recordOptions.isEmpty)
+        #expect(await client.recordReplayOptions.isEmpty)
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [ContainerLogOptions(until: until)])
         #expect(await client.requests.isEmpty)
     }
 
@@ -8225,12 +8232,15 @@ struct ComposeOrchestratorTests {
     func logManagerKeepsFollowedStructuredPartialLinePendingWhileLive() async throws {
         let emitted = MessageRecorder()
         let timestamp = date("2026-06-18T10:00:00.123Z")
-        let client = RotatingContainerLogAPIClient(recordSnapshots: [
-            [],
-            [
-                ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("partial".utf8)),
+        let client = RotatingContainerLogAPIClient(
+            recordSnapshots: [
+                [],
+                [
+                    ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("partial".utf8)),
+                ],
             ],
-        ])
+            closeFollowRecordStream: false
+        )
         let manager = ContainerClientLogManager(
             client: client,
             followStateProvider: RecordingContainerLogFollowStateProvider()
@@ -8252,12 +8262,13 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages.isEmpty)
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [ContainerLogOptions(tail: 0)])
     }
 
-    @Test("log manager flushes followed structured partial line after stop")
-    func logManagerFlushesFollowedStructuredPartialLineAfterStop() async throws {
+    @Test("log manager flushes followed structured partial line when runtime stream ends")
+    func logManagerFlushesFollowedStructuredPartialLineWhenRuntimeStreamEnds() async throws {
         let emitted = MessageRecorder()
-        let stateProvider = RecordingContainerLogFollowStateProvider(responses: [true, false])
         let timestamp = date("2026-06-18T10:00:00.123Z")
         let client = RotatingContainerLogAPIClient(recordSnapshots: [
             [],
@@ -8265,7 +8276,7 @@ struct ComposeOrchestratorTests {
                 ContainerLogRecord(timestamp: timestamp, stream: .stdout, data: Data("partial".utf8)),
             ],
         ])
-        let manager = ContainerClientLogManager(client: client, followStateProvider: stateProvider)
+        let manager = ContainerClientLogManager(client: client)
 
         let followTask = Task {
             try await manager.logs(
@@ -8282,11 +8293,12 @@ struct ComposeOrchestratorTests {
         try await followTask.value
 
         #expect(emitted.messages == ["2026-06-18T10:00:00.123Z partial"])
-        #expect(await stateProvider.requests == ["demo-api-1", "demo-api-1"])
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [ContainerLogOptions(tail: 0)])
     }
 
-    @Test("log manager stops quiet structured follow at until deadline")
-    func logManagerStopsQuietStructuredFollowAtUntilDeadline() async throws {
+    @Test("log manager delegates quiet structured follow deadline to runtime")
+    func logManagerDelegatesQuietStructuredFollowDeadlineToRuntime() async throws {
         let emitted = MessageRecorder()
         let client = RotatingContainerLogAPIClient(recordSnapshots: [[]])
         let manager = ContainerClientLogManager(
@@ -8309,7 +8321,8 @@ struct ComposeOrchestratorTests {
         #expect(Date().timeIntervalSince(start) < 3)
         #expect(emitted.messages.isEmpty)
         #expect(await client.recordRequests.isEmpty)
-        #expect(await client.recordFileRequests == ["demo-api-1"])
+        #expect(await client.followRecordRequests == ["demo-api-1"])
+        #expect(await client.followRecordOptions == [ContainerLogOptions(tail: 0, until: until)])
         #expect(await client.requests.isEmpty)
     }
 
@@ -8373,6 +8386,29 @@ struct ComposeOrchestratorTests {
         #expect(try handle.readToEnd() == Data("hello\n".utf8))
         #expect(await recorder.followRequests == ["demo-api-1"])
         #expect(await recorder.followOptions == [options])
+    }
+
+    @Test("log API client forwards configured structured follow operation")
+    func logAPIClientForwardsConfiguredStructuredFollowOperation() async throws {
+        let records = [
+            ContainerLogRecord(timestamp: date("2026-06-18T10:00:00Z"), stream: .stdout, data: Data("hello\n".utf8)),
+        ]
+        let recorder = RecordingContainerLogAPIClient(records: records)
+        let options = ContainerLogOptions(tail: 1)
+        let client = ContainerLogAPIClient(followLogRecords: { id, options in
+            try await recorder.followLogRecords(id: id, options: options)
+        })
+
+        let handle = try await client.followLogRecords(id: "demo-api-1", options: options)
+        defer {
+            try? handle.close()
+        }
+
+        let data = try #require(try handle.readToEnd())
+
+        #expect(try logRecords(from: data) == records)
+        #expect(await recorder.followRecordRequests == ["demo-api-1"])
+        #expect(await recorder.followRecordOptions == [options])
     }
 
     @Test("stats manager renders static table from direct API stats")
@@ -15113,6 +15149,14 @@ private func logRecordData(_ records: [ContainerLogRecord]) throws -> Data {
     return data
 }
 
+private func logRecords(from data: Data) throws -> [ContainerLogRecord] {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try data.split(separator: UInt8(ascii: "\n")).map { line in
+        try decoder.decode(ContainerLogRecord.self, from: Data(line))
+    }
+}
+
 private func waitForMessages(_ expected: [String], in recorder: MessageRecorder) async throws {
     for _ in 0..<100 {
         if recorder.messages == expected {
@@ -15557,22 +15601,20 @@ private actor BlockingContainerLogManager: ContainerLogManaging {
 private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
     private let fileHandles: [FileHandle]
     private let records: [ContainerLogRecord]
-    private let recordFile: TemporaryLogFile?
-    private var generatedRecordFiles: [TemporaryLogFile] = []
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
     private var replayStorage: [ContainerLogReplayOptions] = []
     private var recordStorage: [String] = []
     private var recordOptionsStorage: [ContainerLogOptions] = []
     private var recordReplayStorage: [ContainerLogReplayOptions] = []
-    private var recordFileStorage: [String] = []
     private var followStorage: [String] = []
     private var followOptionsStorage: [ContainerLogOptions] = []
+    private var followRecordStorage: [String] = []
+    private var followRecordOptionsStorage: [ContainerLogOptions] = []
 
-    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = [], recordFile: TemporaryLogFile? = nil) {
+    init(fileHandles: [FileHandle] = [], records: [ContainerLogRecord] = []) {
         self.fileHandles = fileHandles
         self.records = records
-        self.recordFile = recordFile
     }
 
     var requests: [String] {
@@ -15599,16 +15641,20 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         recordReplayStorage
     }
 
-    var recordFileRequests: [String] {
-        recordFileStorage
-    }
-
     var followRequests: [String] {
         followStorage
     }
 
     var followOptions: [ContainerLogOptions] {
         followOptionsStorage
+    }
+
+    var followRecordRequests: [String] {
+        followRecordStorage
+    }
+
+    var followRecordOptions: [ContainerLogOptions] {
+        followRecordOptionsStorage
     }
 
     func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
@@ -15625,16 +15671,6 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         return applyLogOptions(to: records, options: options)
     }
 
-    func logRecordFile(id: String) async throws -> FileHandle {
-        recordFileStorage.append(id)
-        if let recordFile {
-            return recordFile.readHandle
-        }
-        let file = try TemporaryLogFile(data: logRecordData(records))
-        generatedRecordFiles.append(file)
-        return file.readHandle
-    }
-
     func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
         followStorage.append(id)
         followOptionsStorage.append(options)
@@ -15643,29 +15679,42 @@ private actor RecordingContainerLogAPIClient: ContainerLogAPIClienting {
         }
         return try temporaryLogFileHandle(data: Data())
     }
+
+    func followLogRecords(id: String, options: ContainerLogOptions) async throws -> FileHandle {
+        followRecordStorage.append(id)
+        followRecordOptionsStorage.append(options)
+        return try temporaryLogFileHandle(data: logRecordData(applyLogOptions(to: records, options: options)))
+    }
 }
 
 private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
     private var logSnapshots: [Data]
     private var recordSnapshots: [[ContainerLogRecord]]
     private let followChunks: [Data]
-    private var lastRecordSnapshot: [ContainerLogRecord]?
-    private var recordFiles: [TemporaryLogFile] = []
+    private let closeFollowRecordStream: Bool
     private var storage: [String] = []
     private var optionsStorage: [ContainerLogOptions] = []
     private var replayStorage: [ContainerLogReplayOptions] = []
     private var recordStorage: [String] = []
     private var recordOptionsStorage: [ContainerLogOptions] = []
     private var recordReplayStorage: [ContainerLogReplayOptions] = []
-    private var recordFileStorage: [String] = []
     private var followStorage: [String] = []
     private var followOptionsStorage: [ContainerLogOptions] = []
+    private var followRecordStorage: [String] = []
+    private var followRecordOptionsStorage: [ContainerLogOptions] = []
     private var followWriters: [FileHandle] = []
+    private var followRecordWriters: [FileHandle] = []
 
-    init(logSnapshots: [Data] = [], recordSnapshots: [[ContainerLogRecord]] = [], followChunks: [Data] = []) {
+    init(
+        logSnapshots: [Data] = [],
+        recordSnapshots: [[ContainerLogRecord]] = [],
+        followChunks: [Data] = [],
+        closeFollowRecordStream: Bool = true
+    ) {
         self.logSnapshots = logSnapshots
         self.recordSnapshots = recordSnapshots
         self.followChunks = followChunks
+        self.closeFollowRecordStream = closeFollowRecordStream
     }
 
     var requests: [String] {
@@ -15692,16 +15741,20 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         recordReplayStorage
     }
 
-    var recordFileRequests: [String] {
-        recordFileStorage
-    }
-
     var followRequests: [String] {
         followStorage
     }
 
     var followOptions: [ContainerLogOptions] {
         followOptionsStorage
+    }
+
+    var followRecordRequests: [String] {
+        followRecordStorage
+    }
+
+    var followRecordOptions: [ContainerLogOptions] {
+        followRecordOptionsStorage
     }
 
     func logFileHandles(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [FileHandle] {
@@ -15716,27 +15769,7 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         recordOptionsStorage.append(options)
         recordReplayStorage.append(replay)
         let snapshot = nextRecordSnapshot()
-        lastRecordSnapshot = snapshot
         return applyLogOptions(to: snapshot, options: options)
-    }
-
-    func logRecordFile(id: String) async throws -> FileHandle {
-        recordFileStorage.append(id)
-        let initial = lastRecordSnapshot ?? recordSnapshots.first ?? []
-        let file = try TemporaryLogFile(data: logRecordData(initial))
-        recordFiles.append(file)
-        let snapshots = recordSnapshots
-        Task {
-            var previous = initial
-            for snapshot in snapshots {
-                try? await Task.sleep(for: .milliseconds(50))
-                let appended = appendedLogRecords(previous: &previous, current: snapshot)
-                if !appended.isEmpty {
-                    try? file.append(logRecordData(appended))
-                }
-            }
-        }
-        return file.readHandle
     }
 
     func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
@@ -15750,6 +15783,38 @@ private actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
             for chunk in chunks {
                 try? await Task.sleep(for: .milliseconds(50))
                 try? writer.write(contentsOf: chunk)
+            }
+        }
+        return pipe.fileHandleForReading
+    }
+
+    func followLogRecords(id: String, options: ContainerLogOptions) async throws -> FileHandle {
+        followRecordStorage.append(id)
+        followRecordOptionsStorage.append(options)
+        let pipe = Pipe()
+        let writer = pipe.fileHandleForWriting
+        followRecordWriters.append(writer)
+        let snapshots = recordSnapshots
+        let closeStream = closeFollowRecordStream
+        Task {
+            var previous: [ContainerLogRecord] = []
+            for (index, snapshot) in snapshots.enumerated() {
+                try? await Task.sleep(for: .milliseconds(50))
+                let records: [ContainerLogRecord]
+                if index == 0 {
+                    records = applyLogOptions(to: snapshot, options: options)
+                    previous = snapshot
+                } else {
+                    let appended = appendedLogRecords(previous: &previous, current: snapshot)
+                    let followOptions = ContainerLogOptions(since: options.since, until: options.until)
+                    records = applyLogOptions(to: appended, options: followOptions)
+                }
+                if !records.isEmpty {
+                    try? writer.write(contentsOf: logRecordData(records))
+                }
+            }
+            if closeStream {
+                try? writer.close()
             }
         }
         return pipe.fileHandleForReading

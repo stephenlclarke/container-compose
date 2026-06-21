@@ -26,11 +26,11 @@ public protocol ContainerLogAPIClienting: Sendable {
     /// Returns the structured log records exposed by apple/container for `id`.
     func logRecords(id: String, options: ContainerLogOptions, replay: ContainerLogReplayOptions) async throws -> [ContainerLogRecord]
 
-    /// Returns the active structured log record file exposed by apple/container for `id`.
-    func logRecordFile(id: String) async throws -> FileHandle
-
     /// Returns the followed raw stdio stream exposed by apple/container for `id`.
     func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle
+
+    /// Returns the followed structured log record stream exposed by apple/container for `id`.
+    func followLogRecords(id: String, options: ContainerLogOptions) async throws -> FileHandle
 }
 
 public extension ContainerLogAPIClienting {
@@ -47,6 +47,11 @@ public extension ContainerLogAPIClienting {
     /// Returns the followed raw stdio stream with default retrieval options.
     func followLogs(id: String) async throws -> FileHandle {
         try await followLogs(id: id, options: .default)
+    }
+
+    /// Returns the followed structured log record stream with default retrieval options.
+    func followLogRecords(id: String) async throws -> FileHandle {
+        try await followLogRecords(id: id, options: .default)
     }
 }
 
@@ -150,24 +155,24 @@ public extension ContainerLogManaging {
 public struct ContainerLogAPIClient: ContainerLogAPIClienting {
     public typealias Logs = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [FileHandle]
     public typealias LogRecords = @Sendable (String, ContainerLogOptions, ContainerLogReplayOptions) async throws -> [ContainerLogRecord]
-    public typealias LogRecordFile = @Sendable (String) async throws -> FileHandle
     public typealias FollowLogs = @Sendable (String, ContainerLogOptions) async throws -> FileHandle
+    public typealias FollowLogRecords = @Sendable (String, ContainerLogOptions) async throws -> FileHandle
 
     private let logsOperation: Logs
     private let logRecordsOperation: LogRecords
-    private let logRecordFileOperation: LogRecordFile
     private let followLogsOperation: FollowLogs
+    private let followLogRecordsOperation: FollowLogRecords
 
     public init(
         logs: @escaping Logs = { try await ContainerClient().logs(id: $0, options: $1, replay: $2) },
         logRecords: @escaping LogRecords = { try await ContainerClient().logRecords(id: $0, options: $1, replay: $2) },
-        logRecordFile: @escaping LogRecordFile = { try await ContainerClient().logRecordFile(id: $0) },
-        followLogs: @escaping FollowLogs = { try await ContainerClient().followLogs(id: $0, options: $1) }
+        followLogs: @escaping FollowLogs = { try await ContainerClient().followLogs(id: $0, options: $1) },
+        followLogRecords: @escaping FollowLogRecords = { try await ContainerClient().followLogRecords(id: $0, options: $1) }
     ) {
         self.logsOperation = logs
         self.logRecordsOperation = logRecords
-        self.logRecordFileOperation = logRecordFile
         self.followLogsOperation = followLogs
+        self.followLogRecordsOperation = followLogRecords
     }
 
     /// Fetches log file handles through `ContainerClient`.
@@ -180,14 +185,14 @@ public struct ContainerLogAPIClient: ContainerLogAPIClienting {
         try await logRecordsOperation(id, options, replay)
     }
 
-    /// Fetches the active structured log record file through `ContainerClient`.
-    public func logRecordFile(id: String) async throws -> FileHandle {
-        try await logRecordFileOperation(id)
-    }
-
     /// Follows raw stdio logs through `ContainerClient`.
     public func followLogs(id: String, options: ContainerLogOptions) async throws -> FileHandle {
         try await followLogsOperation(id, options)
+    }
+
+    /// Follows structured log records through `ContainerClient`.
+    public func followLogRecords(id: String, options: ContainerLogOptions) async throws -> FileHandle {
+        try await followLogRecordsOperation(id, options)
     }
 }
 
@@ -266,79 +271,74 @@ public struct ContainerClientLogManager: ContainerLogManaging {
         timestamps: Bool,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
-        let renderer = StructuredLogRecordRenderer(since: since, until: until, timestamps: timestamps)
-        if tail != 0 {
-            let options = ContainerLogOptions(tail: tail, since: since, until: until)
-            let records = try await client.logRecords(
-                id: id,
-                options: options,
-                replay: ContainerLogReplayOptions(includeRotated: true)
-            )
-            let shouldFinish = emitInitialStructuredRecords(
-                records,
-                tail: nil,
-                renderer: renderer,
-                emit: emit
-            )
-            if shouldFinish {
-                return
-            }
-        }
-        if until.map({ $0 <= Date() }) == true {
-            emitEachLogLine(renderer.flush(), emit: emit)
-            return
-        }
-        guard try await followStateProvider.isLiveForLogFollow(id: id) else {
-            emitEachLogLine(renderer.flush(), emit: emit)
-            return
-        }
-
-        let recordFile = try await client.logRecordFile(id: id)
-        defer {
-            try? recordFile.close()
-        }
-        _ = try? recordFile.seekToEnd()
-        try await followStructuredRecordFile(
+        let recordStream = try await client.followLogRecords(
             id: id,
-            recordFile: recordFile,
-            renderer: renderer,
-            until: until,
+            options: ContainerLogOptions(tail: tail, since: since, until: until)
+        )
+        defer {
+            try? recordStream.close()
+        }
+        try await followStructuredRecordStream(
+            recordStream: recordStream,
+            renderer: StructuredLogRecordRenderer(since: nil, until: nil, timestamps: timestamps),
             emit: emit
         )
     }
 
-    /// Follows the active structured record file without replaying full merged snapshots.
-    private func followStructuredRecordFile(
-        id: String,
-        recordFile: FileHandle,
+    /// Emits followed structured records from the runtime-owned stream.
+    private func followStructuredRecordStream(
+        recordStream: FileHandle,
         renderer: StructuredLogRecordRenderer,
-        until: Date?,
         emit: @escaping @Sendable (Data) -> Void
     ) async throws {
         let decoder = StructuredLogRecordJSONLDecoder()
-        while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: .milliseconds(250))
-            } catch is CancellationError {
-                return
+        let termination = FollowedRawLogTermination()
+        do {
+            try await withTaskCancellationHandler {
+                for try await data in followedStructuredRecordChunks(recordStream: recordStream) {
+                    guard !data.isEmpty else {
+                        continue
+                    }
+                    let result = renderer.append(try decoder.append(data))
+                    let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
+                    emitEachLogLine(lines, emit: emit)
+                    if result.shouldFinish {
+                        return
+                    }
+                }
+            } onCancel: {
+                termination.cancel()
             }
-            if let data = try recordFile.readToEnd(), !data.isEmpty {
-                let result = renderer.append(try decoder.append(data))
-                let lines = result.shouldFinish ? result.lines + renderer.flush() : result.lines
-                emitEachLogLine(lines, emit: emit)
-                if result.shouldFinish {
+        } catch is CancellationError {
+            termination.cancel()
+        }
+
+        guard termination.shouldFlush else {
+            return
+        }
+        let finalRecords = try decoder.flush()
+        if !finalRecords.isEmpty {
+            let result = renderer.append(finalRecords)
+            emitEachLogLine(result.lines, emit: emit)
+        }
+        emitEachLogLine(renderer.flush(), emit: emit)
+    }
+
+    /// Converts a followed structured record handle into JSONL chunks.
+    private func followedStructuredRecordChunks(recordStream: FileHandle) -> AsyncThrowingStream<Data, any Error> {
+        AsyncThrowingStream { continuation in
+            recordStream.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else {
+                    handle.readabilityHandler = nil
+                    continuation.finish()
                     return
                 }
-            }
-            if until.map({ $0 <= Date() }) == true {
-                emitEachLogLine(renderer.flush(), emit: emit)
-                return
+                continuation.yield(data)
             }
 
-            guard try await followStateProvider.isLiveForLogFollow(id: id) else {
-                let result = renderer.append(try decoder.flush())
-                emitEachLogLine(result.lines + renderer.flush(), emit: emit)
-                return
+            continuation.onTermination = { _ in
+                recordStream.readabilityHandler = nil
             }
         }
     }
@@ -721,7 +721,7 @@ private final class StructuredLogRecordJSONLDecoder: @unchecked Sendable {
         self.decoder = decoder
     }
 
-    /// Appends bytes from the active record file and returns complete records.
+    /// Appends bytes from the followed record stream and returns complete records.
     func append(_ data: Data) throws -> [ContainerLogRecord] {
         lock.lock()
         defer {
