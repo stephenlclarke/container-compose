@@ -494,6 +494,7 @@ Completed implementation:
 - Completed `2026-06-19 22:49:12 BST`: `container-compose` structured follow now uses the active `ContainerClient.logRecordFile(id:)` JSONL file with a bounded cursor instead of repeatedly polling full merged structured snapshots.
 - Completed `2026-06-21 20:50:49 BST`: the upstreamable `logs-structured-record-storage` branch now documents and tests the active `stdio.log` raw byte format and `stdio.jsonl` JSON Lines structured record format with `timestamp`, `stream`, and base64 `data`.
 - Completed `2026-06-21 21:11:04 BST`: the upstreamable `logs-structured-record-api` branch now documents and tests the active structured retrieval surfaces: `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, `ContainerLogRecord`, XPC routes `containerLogRecords` and `containerLogRecordFile`, and `ContainerLogOptions.tail/since/until` retrieval filters.
+- Completed `2026-06-21 21:16:15 BST`: PR and issue-ready design choices for the structured log slices are recorded in the container fork's [Structured Log Records PR Notes](https://github.com/stephenlclarke/container/blob/logs-structured-record-api/docs/structured-log-records-pr-notes.md), including raw versus structured storage, record boundaries, retrieval-filter ownership, XPC surfaces, Compose boundaries, and out-of-scope follow-up PRs.
 
 ### L7. Service Logging Driver and Options
 
