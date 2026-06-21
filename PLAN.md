@@ -2,7 +2,7 @@
 
 This plan tracks the log-related work needed for `container-compose` to match Docker Compose v2 local-development behavior where [`apple/container`](https://github.com/apple/container) exposes equivalent runtime primitives.
 
-Assessment timestamp: `2026-06-21 22:44:22 BST`.
+Assessment timestamp: `2026-06-21 22:51:12 BST`.
 
 Mission-control state for the active branch, runtime dependency chain, and next work item is tracked in [STATUS.md](STATUS.md). Use that file as the handoff entry point before starting another log or Compose capability slice.
 
@@ -152,13 +152,13 @@ Existing PRs and branches to leverage:
       <td colspan="4">Notes: split from local commit `6cbf778` and documented with `ISSUE-logs-disabled-local-capture.md` and `PR-logs-disabled-local-capture.md` in the container fork. This slice adds the `.none` local storage policy behavior and runtime writer suppression while preserving attached stdio. It deliberately excludes CLI flags, Compose mapping, remote logging drivers, and writer rotation. Upstream support remains partial until this branch is turned into an apple/container PR and accepted.</td>
     </tr>
     <tr>
-      <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream log driver and local option parsing</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream log driver and local option parsing</td>
       <td>2026-06-21 22:38:05 BST</td>
-      <td></td>
-      <td></td>
+      <td>2026-06-21 22:51:12 BST</td>
+      <td>2026-06-21 22:51:12 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: split from local commits `f787d3d`, `9cca5b3`, and `ee28563`. This should map `json-file` and `local` to local capture, map `none` to disabled capture, parse local `max-size` and `max-file`, reject unsupported drivers/options precisely, and keep remote logging drivers out of scope.</td>
+      <td colspan="4">Notes: split from local commits `f787d3d`, `9cca5b3`, and `ee28563` and documented with `ISSUE-logs-local-driver-options.md` and `PR-logs-local-driver-options.md` in the container fork. This maps `json-file` and `local` to local capture, maps `none` to disabled capture, parses local `max-size` and `max-file`, rejects unsupported drivers/options precisely, and keeps remote logging drivers, metadata options, compression, and Compose presentation policy out of scope. Upstream support remains partial until this branch is turned into an apple/container PR and accepted.</td>
     </tr>
     <tr>
       <td><img alt="OUTSTANDING" src="https://img.shields.io/badge/OUTSTANDING-6B7280?style=flat-square"> Upstream writer-level local log rotation</td>
