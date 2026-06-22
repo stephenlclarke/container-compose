@@ -209,6 +209,15 @@ Reference targets:
     <tr>
       <td colspan="4">Notes: `container-compose` now uses the direct image API to read fork-exposed Docker image healthcheck metadata. Services without an explicit Compose `healthcheck.test` can inherit Dockerfile `HEALTHCHECK` command, interval, timeout, start period, start interval, and retries; timing-only Compose overrides merge over image defaults. Explicit `disable: true` still maps to `--no-healthcheck`. Timing-only overrides reject before resources are created when the image does not expose a Dockerfile healthcheck command. Handoff files are `ISSUE-image-healthcheck-inheritance.md` and `PR-image-healthcheck-inheritance.md` in this repository.</td>
     </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Materialize Docker Compose runtime config and secret file sources in container-compose</td>
+      <td>2026-06-22 03:29:10 BST</td>
+      <td>2026-06-22 03:29:10 BST</td>
+      <td>2026-06-22 03:59:34 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now materializes Docker Compose top-level `configs.content`, `configs.environment`, and `secrets.environment` definitions into deterministic project-scoped local files under the per-user state root, then mounts them read-only through existing apple/container bind-mount primitives. Generated config files use mode `0444`; generated secret files use mode `0400`; dry-runs render the target bind mounts without writing secret material; `down` removes the project-scoped materialized files after containers are removed. File-backed definitions continue to mount their source paths directly. External configs/secrets and strict service-level `uid`/`gid`/`mode` ownership semantics remain separate apple/container/runtime boundary work. Handoff files are `ISSUE-config-secret-materialization.md` and `PR-config-secret-materialization.md` in this repository.</td>
+    </tr>
   </tbody>
 </table>
 

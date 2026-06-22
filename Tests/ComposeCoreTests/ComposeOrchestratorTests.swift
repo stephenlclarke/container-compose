@@ -19,6 +19,11 @@ import ContainerResource
 import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOCI
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 import Testing
 
@@ -48,6 +53,46 @@ private func composeProject(
     var project = ComposeProject(name: name, services: services)
     configure(&project)
     return project
+}
+
+private func readOnlyVolumeSource(target: String, in arguments: [String]) -> String? {
+    let suffix = ":\(target):ro"
+    for index in arguments.indices where arguments[index] == "--volume" {
+        let valueIndex = arguments.index(after: index)
+        guard arguments.indices.contains(valueIndex) else {
+            continue
+        }
+        let value = arguments[valueIndex]
+        if value.hasSuffix(suffix) {
+            return String(value.dropLast(suffix.count))
+        }
+    }
+    return nil
+}
+
+private func posixPermissions(at path: String) throws -> Int {
+    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+    let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+    return permissions.intValue & 0o777
+}
+
+private final class LockedStringRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+
+    func append(_ value: String) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    var snapshot: [String] {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+        return values
+    }
 }
 
 private func composeRunOptions(
@@ -5125,6 +5170,140 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--volume", "\(otherConfig.path):/etc/other.conf:ro"]))
         #expect(command.containsSequence(["--volume", "\(secret.path):/run/secrets/app_secret:ro"]))
         #expect(command.containsSequence(["--volume", "\(otherSecret.path):/run/secrets/custom-token:ro"]))
+    }
+
+    @Test("up materializes inline configs and environment backed secrets")
+    func upMaterializesInlineConfigsAndEnvironmentBackedSecrets() async throws {
+        let runner = RecordingRunner()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let configEnvironment = "COMPOSE_CONFIG_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        let secretEnvironment = "COMPOSE_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        setenv(configEnvironment, "from environment\n", 1)
+        setenv(secretEnvironment, "super-secret", 1)
+        defer {
+            unsetenv(configEnvironment)
+            unsetenv(secretEnvironment)
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [
+                        .object(["source": .string("inline_config"), "target": .string("/etc/inline.conf")]),
+                        .object(["source": .string("env_config"), "target": .string("env.conf")]),
+                    ]
+                    $0.secrets = [.object(["source": .string("app_secret"), "target": .string("runtime-token")])]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.composeFiles = [directory.appendingPathComponent("compose.yaml").path]
+            $0.configs = [
+                "inline_config": .object(["content": .string("inline config\n")]),
+                "env_config": .object(["environment": .string(configEnvironment)]),
+            ]
+            $0.secrets = ["app_secret": .object(["environment": .string(secretEnvironment)])]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(materializedConfigSecretDirectory: directory.appendingPathComponent("state", isDirectory: true)),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = RecordingContainerDiscoveryManager()
+            }
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        let inlineConfig = try #require(readOnlyVolumeSource(target: "/etc/inline.conf", in: command))
+        let environmentConfig = try #require(readOnlyVolumeSource(target: "/env.conf", in: command))
+        let secret = try #require(readOnlyVolumeSource(target: "/run/secrets/runtime-token", in: command))
+        #expect(try String(contentsOfFile: inlineConfig, encoding: .utf8) == "inline config\n")
+        #expect(try String(contentsOfFile: environmentConfig, encoding: .utf8) == "from environment\n")
+        #expect(try String(contentsOfFile: secret, encoding: .utf8) == "super-secret")
+        #expect(try posixPermissions(at: inlineConfig) == 0o444)
+        #expect(try posixPermissions(at: environmentConfig) == 0o444)
+        #expect(try posixPermissions(at: secret) == 0o400)
+    }
+
+    @Test("down removes materialized config and secret files")
+    func downRemovesMaterializedConfigAndSecretFiles() async throws {
+        let runner = RecordingRunner()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let stateRoot = directory.appendingPathComponent("state", isDirectory: true)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [.object(["source": .string("inline_config"), "target": .string("/etc/inline.conf")])]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.configs = ["inline_config": .object(["content": .string("inline config\n")])]
+        }
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(materializedConfigSecretDirectory: stateRoot),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = RecordingContainerDiscoveryManager()
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        let inlineConfig = try #require(readOnlyVolumeSource(target: "/etc/inline.conf", in: command))
+        #expect(FileManager.default.fileExists(atPath: inlineConfig))
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions())
+
+        #expect(!FileManager.default.fileExists(atPath: inlineConfig))
+        let remainingEntries = (try? FileManager.default.contentsOfDirectory(atPath: stateRoot.path)) ?? []
+        #expect(remainingEntries.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
+    @Test("up dry run does not materialize inline configs")
+    func upDryRunDoesNotMaterializeInlineConfigs() async throws {
+        let emitted = LockedStringRecorder()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let stateRoot = directory.appendingPathComponent("state", isDirectory: true)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [.object(["source": .string("inline_config"), "target": .string("/etc/inline.conf")])]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.configs = ["inline_config": .object(["content": .string("inline config\n")])]
+        }
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(
+                dryRun: true,
+                materializedConfigSecretDirectory: stateRoot,
+                runtimeHooks: ComposeExecutionOptions.RuntimeHooks(emit: emitted.append)
+            )
+        ).up(project: project, options: ComposeUpOptions())
+
+        #expect(!FileManager.default.fileExists(atPath: stateRoot.path))
+        #expect(emitted.snapshot.contains { $0.contains("--volume") && $0.contains(":/etc/inline.conf:ro") })
     }
 
     @Test("up rejects external configs before creating resources")
@@ -13852,9 +14031,47 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 
-    @Test("run rejects environment-backed secrets before creating resources")
-    func runRejectsEnvironmentBackedSecretsBeforeCreatingResources() async throws {
+    @Test("run materializes environment backed secrets")
+    func runMaterializesEnvironmentBackedSecrets() async throws {
         let runner = RecordingRunner()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let secretEnvironment = "RUN_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        setenv(secretEnvironment, "run-secret", 1)
+        defer {
+            unsetenv(secretEnvironment)
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.secrets = [.object(["source": .string("app_secret"), "target": .string("runtime-token")])]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.secrets = ["app_secret": .object(["environment": .string(secretEnvironment)])]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(materializedConfigSecretDirectory: directory.appendingPathComponent("state", isDirectory: true))
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        let secret = try #require(readOnlyVolumeSource(target: "/run/secrets/runtime-token", in: command))
+        #expect(try String(contentsOfFile: secret, encoding: .utf8) == "run-secret")
+        #expect(try posixPermissions(at: secret) == 0o400)
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
+    }
+
+    @Test("run rejects unset environment-backed secrets before creating resources")
+    func runRejectsUnsetEnvironmentBackedSecretsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let missingEnvironment = "MISSING_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        unsetenv(missingEnvironment)
         let project = composeProject(
             name: "demo",
             services: [
@@ -13867,14 +14084,14 @@ struct ComposeOrchestratorTests {
         ) {
             $0.networks = ["backend": ComposeNetwork(name: "backend")]
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
-            $0.secrets = ["app_secret": .object(["environment": .string("APP_SECRET")])]
+            $0.secrets = ["app_secret": .object(["environment": .string(missingEnvironment)])]
         }
 
         do {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected environment-backed secret error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses environment-backed secret 'app_secret'; environment-backed secrets need an apple/container secret materialization primitive"))
+            #expect(error == .invalidProject("service 'job' uses environment-backed secret 'app_secret', but host environment variable '\(missingEnvironment)' is not set"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

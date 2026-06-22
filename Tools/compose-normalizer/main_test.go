@@ -319,6 +319,62 @@ secrets:
 	}
 }
 
+func TestLoadProjectNormalizesInlineAndEnvironmentBackedConfigsAndSecrets(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: alpine
+    configs:
+      - source: inline_config
+        target: /etc/inline.conf
+      - source: env_config
+        target: env.conf
+    secrets:
+      - source: env_secret
+        target: runtime-token
+configs:
+  inline_config:
+    content: |
+      inline=true
+  env_config:
+    environment: APP_CONFIG
+secrets:
+  env_secret:
+    environment: APP_SECRET
+`)
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "sample", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	inlineConfig := types.FileObjectConfig(project.Configs["inline_config"].(types.ConfigObjConfig))
+	if got, want := inlineConfig.Content, "inline=true\n"; got != want {
+		t.Fatalf("inline_config content = %q, want %q", got, want)
+	}
+	envConfig := types.FileObjectConfig(project.Configs["env_config"].(types.ConfigObjConfig))
+	if got, want := envConfig.Environment, "APP_CONFIG"; got != want {
+		t.Fatalf("env_config environment = %q, want %q", got, want)
+	}
+	envSecret := types.FileObjectConfig(project.Secrets["env_secret"].(types.SecretConfig))
+	if got, want := envSecret.Environment, "APP_SECRET"; got != want {
+		t.Fatalf("env_secret environment = %q, want %q", got, want)
+	}
+	configs := project.Services["api"].Configs.([]types.ServiceConfigObjConfig)
+	if got, want := types.FileReferenceConfig(configs[0]).Target, "/etc/inline.conf"; got != want {
+		t.Fatalf("api inline config target = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(configs[1]).Target, "env.conf"; got != want {
+		t.Fatalf("api environment config target = %q, want %q", got, want)
+	}
+	secrets := project.Services["api"].Secrets.([]types.ServiceSecretConfig)
+	if got, want := types.FileReferenceConfig(secrets[0]).Target, "runtime-token"; got != want {
+		t.Fatalf("api environment secret target = %q, want %q", got, want)
+	}
+}
+
 func TestLoadProjectMarksUnsupportedVolumeOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "data"), "data\n")

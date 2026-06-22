@@ -60,6 +60,7 @@ public struct ComposeExecutionOptions {
     public var currentDate: @Sendable () -> Date
     public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
     public var watchPollInterval: Duration
+    public var materializedConfigSecretDirectory: URL
     public var sleep: @Sendable (Duration) async throws -> Void
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
@@ -69,6 +70,7 @@ public struct ComposeExecutionOptions {
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         watchPollInterval: Duration = .seconds(1),
+        materializedConfigSecretDirectory: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
         runtimeHooks: RuntimeHooks = RuntimeHooks()
     ) {
         self.dryRun = dryRun
@@ -78,6 +80,7 @@ public struct ComposeExecutionOptions {
         self.currentDate = runtimeHooks.currentDate
         self.hostPortAllocator = runtimeHooks.hostPortAllocator
         self.watchPollInterval = watchPollInterval
+        self.materializedConfigSecretDirectory = materializedConfigSecretDirectory
         self.sleep = runtimeHooks.sleep
         self.emit = runtimeHooks.emit
         self.emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
@@ -142,6 +145,13 @@ public struct ComposeExecutionOptions {
 
     public static func defaultOneOffIdentifier() -> String {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+    }
+
+    /// Returns the per-user root for local config and secret materialization.
+    public static func defaultMaterializedConfigSecretDirectory() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".container-compose", isDirectory: true)
+            .appendingPathComponent("config-secrets", isDirectory: true)
     }
 
     /// Writes log bytes directly so container output can preserve non-UTF-8 payloads.
@@ -1169,7 +1179,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                existing.configHash == (try configHash(
                    project: project,
                    service: service,
-                   externalVolumeMounts: request.externalVolumeMounts
+                   externalVolumeMounts: request.externalVolumeMounts,
+                   materializedConfigSecretRoot: options.materializedConfigSecretDirectory
                )) {
                 options.emit("compose: reusing existing container \(name)")
                 return .unchanged
@@ -1346,6 +1357,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if down.removeOrphans {
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers, timeout: down.timeout)
+        }
+
+        if !options.dryRun {
+            try removeMaterializedConfigSecrets(
+                project: project,
+                root: options.materializedConfigSecretDirectory
+            )
         }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
@@ -5087,7 +5105,8 @@ private extension ComposeOrchestrator {
             project: project,
             service: service,
             oneOff: run.oneOff,
-            externalVolumeMounts: externalVolumeMounts
+            externalVolumeMounts: externalVolumeMounts,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory
         ) {
             args.append(contentsOf: ["--label", label])
         }
@@ -5147,7 +5166,9 @@ private extension ComposeOrchestrator {
         for mount in try effectiveServiceVolumes(
             project: project,
             service: service,
-            externalVolumeMounts: externalVolumeMounts
+            externalVolumeMounts: externalVolumeMounts,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+            materializeConfigSecrets: !options.dryRun
         ) {
             try appendMount(mount, context: mountContext, args: &args)
         }
@@ -5311,7 +5332,8 @@ private extension ComposeOrchestrator {
             if let existing, existing.configHash == (try configHash(
                 project: workingProject,
                 service: service,
-                externalVolumeMounts: externalVolumeMounts
+                externalVolumeMounts: externalVolumeMounts,
+                materializedConfigSecretRoot: options.materializedConfigSecretDirectory
             )) {
                 options.emit("compose: reusing existing container \(name)")
                 continue
@@ -6352,6 +6374,24 @@ private enum ComposeFileMountKind {
             return "/run/secrets/\(target)"
         }
     }
+
+    var materializedPermissions: Int {
+        switch self {
+        case .config:
+            0o444
+        case .secret:
+            0o400
+        }
+    }
+
+    var supportedDefinitionFields: String {
+        switch self {
+        case .config:
+            "file, environment, or content"
+        case .secret:
+            "file or environment"
+        }
+    }
 }
 
 /// Service-level config or secret grant after reading Compose's short or long
@@ -6359,6 +6399,40 @@ private enum ComposeFileMountKind {
 private struct ComposeFileGrant {
     var source: String
     var target: String?
+}
+
+/// Project-local file content staged for runtime config or secret bind mounts.
+private struct ComposeMaterializedFile {
+    var url: URL
+    var contents: String
+    var permissions: Int
+
+    /// Creates the backing file with restrictive directory permissions.
+    func write() throws {
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let data = Data(contents.utf8)
+        if fileManager.fileExists(atPath: url.path) {
+            if try Data(contentsOf: url) != data {
+                try data.write(to: url, options: .atomic)
+            }
+            try fileManager.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path)
+            return
+        }
+        guard fileManager.createFile(
+            atPath: url.path,
+            contents: data,
+            attributes: [.posixPermissions: permissions]
+        ) else {
+            throw ComposeError.invalidProject("failed to materialize Compose config or secret at '\(url.path)'")
+        }
+    }
 }
 
 private extension ComposeValue {
@@ -6391,6 +6465,37 @@ private extension ComposeValue {
             return nil
         }
     }
+}
+
+/// Reads the live host environment so tests and command invocations can
+/// materialize Compose environment-backed configs and secrets deterministically.
+private func hostEnvironmentValue(_ name: String) -> String? {
+    guard let value = getenv(name) else {
+        return nil
+    }
+    return String(cString: value)
+}
+
+/// Returns the deterministic project directory used for materialized grants.
+private func materializedProjectDirectory(project: ComposeProject, root: URL) -> URL {
+    let identity = [
+        project.name,
+        project.workingDirectory,
+        project.composeFiles.sorted().joined(separator: "\n"),
+    ].joined(separator: "\n")
+    return root.appendingPathComponent(
+        "\(slug(project.name))-\(stableHash(identity).prefix(12))",
+        isDirectory: true
+    )
+}
+
+/// Removes local materialized config and secret files for a project.
+private func removeMaterializedConfigSecrets(project: ComposeProject, root: URL) throws {
+    let directory = materializedProjectDirectory(project: project, root: root)
+    guard FileManager.default.fileExists(atPath: directory.path) else {
+        return
+    }
+    try FileManager.default.removeItem(at: directory)
 }
 
 /// Resolves a project-relative file path the same way Compose paths are loaded.
@@ -6506,12 +6611,16 @@ private func externalVolumesFromReferences(
 private func effectiveServiceVolumes(
     project: ComposeProject,
     service: ComposeService,
-    externalVolumeMounts: ExternalVolumeMounts? = nil
+    externalVolumeMounts: ExternalVolumeMounts? = nil,
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
+    materializeConfigSecrets: Bool = false
 ) throws -> [ComposeMount] {
     try effectiveServiceVolumes(
         project: project,
         service: service,
         externalVolumeMounts: externalVolumeMounts,
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materializeConfigSecrets: materializeConfigSecrets,
         stack: []
     )
 }
@@ -6522,6 +6631,8 @@ private func effectiveServiceVolumes(
     project: ComposeProject,
     service: ComposeService,
     externalVolumeMounts: ExternalVolumeMounts?,
+    materializedConfigSecretRoot: URL,
+    materializeConfigSecrets: Bool,
     stack: [String]
 ) throws -> [ComposeMount] {
     if stack.contains(service.name) {
@@ -6540,6 +6651,8 @@ private func effectiveServiceVolumes(
                 project: project,
                 service: sourceService,
                 externalVolumeMounts: externalVolumeMounts,
+                materializedConfigSecretRoot: materializedConfigSecretRoot,
+                materializeConfigSecrets: materializeConfigSecrets,
                 stack: stack + [service.name]
             )
             volumes.append(contentsOf: inherited.map {
@@ -6558,25 +6671,39 @@ private func effectiveServiceVolumes(
         }
     }
     volumes.append(contentsOf: service.volumes ?? [])
-    volumes.append(contentsOf: try serviceConfigSecretMounts(project: project, service: service))
+    volumes.append(contentsOf: try serviceConfigSecretMounts(
+        project: project,
+        service: service,
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materialize: materializeConfigSecrets
+    ))
     return volumes
 }
 
-/// Converts supported file-backed service configs and secrets into read-only
-/// bind mounts accepted by apple/container `container --volume`.
-private func serviceConfigSecretMounts(project: ComposeProject, service: ComposeService) throws -> [ComposeMount] {
+/// Converts supported service configs and secrets into read-only bind mounts
+/// accepted by apple/container `container --volume`.
+private func serviceConfigSecretMounts(
+    project: ComposeProject,
+    service: ComposeService,
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
+    materialize: Bool = false
+) throws -> [ComposeMount] {
     try serviceConfigSecretMounts(
         project: project,
         service: service,
         kind: .config,
         grants: service.configs ?? [],
-        definitions: project.configs ?? [:]
+        definitions: project.configs ?? [:],
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materialize: materialize
     ) + serviceConfigSecretMounts(
         project: project,
         service: service,
         kind: .secret,
         grants: service.secrets ?? [],
-        definitions: project.secrets ?? [:]
+        definitions: project.secrets ?? [:],
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materialize: materialize
     )
 }
 
@@ -6586,7 +6713,9 @@ private func serviceConfigSecretMounts(
     service: ComposeService,
     kind: ComposeFileMountKind,
     grants: [ComposeValue],
-    definitions: [String: ComposeValue]
+    definitions: [String: ComposeValue],
+    materializedConfigSecretRoot: URL,
+    materialize: Bool
 ) throws -> [ComposeMount] {
     try grants.map { value in
         let grant = try parseComposeFileGrant(value, kind: kind, service: service)
@@ -6595,7 +6724,9 @@ private func serviceConfigSecretMounts(
             definitions: definitions,
             project: project,
             service: service,
-            kind: kind
+            kind: kind,
+            materializedConfigSecretRoot: materializedConfigSecretRoot,
+            materialize: materialize
         )
         return ComposeMount(
             type: "bind",
@@ -6638,7 +6769,9 @@ private func composeFileGrantSourcePath(
     definitions: [String: ComposeValue],
     project: ComposeProject,
     service: ComposeService,
-    kind: ComposeFileMountKind
+    kind: ComposeFileMountKind,
+    materializedConfigSecretRoot: URL,
+    materialize: Bool
 ) throws -> String {
     guard let definition = definitions[grant.source] else {
         throw ComposeError.invalidProject("service '\(service.name)' references undefined \(kind.singularName) '\(grant.source)'")
@@ -6652,13 +6785,80 @@ private func composeFileGrantSourcePath(
     if let file = fields["file"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !file.isEmpty {
         return resolvedProjectPath(file, project: project)
     }
-    if fields["environment"]?.stringValue != nil {
-        throw ComposeError.unsupported("service '\(service.name)' uses environment-backed \(kind.singularName) '\(grant.source)'; environment-backed \(kind.pluralName) need an apple/container \(kind.singularName) materialization primitive")
+    if let environment = fields["environment"] {
+        let name = try composeFileGrantEnvironmentVariable(
+            environment,
+            grant: grant,
+            service: service,
+            kind: kind
+        )
+        guard let contents = hostEnvironmentValue(name) else {
+            throw ComposeError.invalidProject("service '\(service.name)' uses environment-backed \(kind.singularName) '\(grant.source)', but host environment variable '\(name)' is not set")
+        }
+        let materialized = materializedComposeFile(
+            project: project,
+            grant: grant,
+            kind: kind,
+            contents: contents,
+            root: materializedConfigSecretRoot
+        )
+        if materialize {
+            try materialized.write()
+        }
+        return materialized.url.path
     }
-    if fields["content"]?.stringValue != nil {
-        throw ComposeError.unsupported("service '\(service.name)' uses content-backed \(kind.singularName) '\(grant.source)'; inline \(kind.pluralName) need an apple/container \(kind.singularName) materialization primitive")
+    if let content = fields["content"] {
+        guard kind == .config else {
+            throw ComposeError.unsupported("service '\(service.name)' uses content-backed secret '\(grant.source)'; Docker Compose secrets support file or environment sources")
+        }
+        guard let contents = content.stringValue else {
+            throw ComposeError.invalidProject("config '\(grant.source)' content must be a string")
+        }
+        let materialized = materializedComposeFile(
+            project: project,
+            grant: grant,
+            kind: kind,
+            contents: contents,
+            root: materializedConfigSecretRoot
+        )
+        if materialize {
+            try materialized.write()
+        }
+        return materialized.url.path
     }
-    throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' must define file for runtime mounting")
+    throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' must define \(kind.supportedDefinitionFields) for runtime mounting")
+}
+
+/// Extracts the host environment variable name for an environment-backed grant.
+private func composeFileGrantEnvironmentVariable(
+    _ value: ComposeValue,
+    grant: ComposeFileGrant,
+    service: ComposeService,
+    kind: ComposeFileMountKind
+) throws -> String {
+    guard let name = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' environment-backed \(kind.singularName) '\(grant.source)' must name a host environment variable")
+    }
+    return name
+}
+
+/// Builds a deterministic materialized file path for a config or secret value.
+private func materializedComposeFile(
+    project: ComposeProject,
+    grant: ComposeFileGrant,
+    kind: ComposeFileMountKind,
+    contents: String,
+    root: URL
+) -> ComposeMaterializedFile {
+    let digest = stableHash(contents)
+    let directory = materializedProjectDirectory(project: project, root: root)
+        .appendingPathComponent(kind.pluralName, isDirectory: true)
+    let filename = "\(slug(grant.source))-\(digest.prefix(16))"
+    return ComposeMaterializedFile(
+        url: directory.appendingPathComponent(filename, isDirectory: false),
+        contents: contents,
+        permissions: kind.materializedPermissions
+    )
 }
 
 /// Parses and validates supported `volumes_from` references.
@@ -6784,7 +6984,8 @@ private func serviceLabels(
     project: ComposeProject,
     service: ComposeService,
     oneOff: Bool,
-    externalVolumeMounts: ExternalVolumeMounts = [:]
+    externalVolumeMounts: ExternalVolumeMounts = [:],
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
 ) throws -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("\(serviceLabel)=\(service.name)")
@@ -6792,7 +6993,8 @@ private func serviceLabels(
     let serviceConfigHash = try configHash(
         project: project,
         service: service,
-        externalVolumeMounts: externalVolumeMounts
+        externalVolumeMounts: externalVolumeMounts,
+        materializedConfigSecretRoot: materializedConfigSecretRoot
     )
     labels.append("\(configHashLabel)=\(serviceConfigHash)")
     if let firstFile = project.composeFiles.first {
@@ -6810,7 +7012,8 @@ private func composeFilesHash(_ composeFiles: [String]) -> String {
 private func configHash(
     project: ComposeProject,
     service: ComposeService,
-    externalVolumeMounts: ExternalVolumeMounts = [:]
+    externalVolumeMounts: ExternalVolumeMounts = [:],
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
 ) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -6821,7 +7024,8 @@ private func configHash(
     effectiveService.volumes = try effectiveServiceVolumes(
         project: project,
         service: service,
-        externalVolumeMounts: externalVolumeMounts
+        externalVolumeMounts: externalVolumeMounts,
+        materializedConfigSecretRoot: materializedConfigSecretRoot
     )
     let fingerprint = ServiceConfigFingerprint(
         service: effectiveService,
