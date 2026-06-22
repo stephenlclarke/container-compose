@@ -243,7 +243,7 @@ Reference targets:
       <td>2026-06-22 04:33:28 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now accepts compose-go normalized static `extra_hosts` values, including `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms, validates IP literals before side effects, and maps service and one-off containers to `container run/create --add-host`. Docker's `host-gateway` magic value is handled by the separate host-gateway slice, while `domainname`, `links`, and `external_links` remain separate host-identity gaps. Handoff files are `ISSUE-extra-hosts.md` and `PR-extra-hosts.md` in this repository.</td>
+      <td colspan="4">Notes: `container-compose` now accepts compose-go normalized static `extra_hosts` values, including `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms, validates IP literals before side effects, and maps service and one-off containers to `container run/create --add-host`. Docker's `host-gateway` magic value is handled by the separate host-gateway slice, Compose `domainname` is handled by the separate domain-name slice, and `links` / `external_links` remain separate host-identity gaps. Handoff files are `ISSUE-extra-hosts.md` and `PR-extra-hosts.md` in this repository.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Resolve Docker `host-gateway` in the container fork</td>
@@ -279,7 +279,25 @@ Reference targets:
       <td>2026-06-22 04:54:29 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now validates Compose service `hostname` with RFC1123 label rules and maps it to `container run/create --hostname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Compose `domainname` remains blocked until `apple/container` and the lower runtime expose a domain-name primitive; `external_links` remains a separate networking identity gap. Handoff files are `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.</td>
+      <td colspan="4">Notes: `container-compose` now validates Compose service `hostname` with RFC1123 label rules and maps it to `container run/create --hostname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Compose `domainname` is handled by the separate domain-name runtime/plugin slice; `external_links` remains a separate networking identity gap. Handoff files are `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add explicit container domain names to the container fork</td>
+      <td>2026-06-22 06:15 BST</td>
+      <td>2026-06-22 06:15 BST</td>
+      <td>2026-06-22 06:15 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by adding `ContainerConfiguration.domainname`, shared `container run/create --domainname` flags, RFC1123 validation, and a runtime bridge through the existing `kernel.domainname` sysctl path. This remains fork-backed until accepted upstream, and the sysctl bridge can be replaced by a direct lower-runtime `domainname` mapping once `containerization` wires the OCI field into `vminitd`. Handoff files are `ISSUE-domainname.md` and `PR-domainname.md` in the container fork.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `domainname` to runtime domain names</td>
+      <td>2026-06-22 06:15 BST</td>
+      <td>2026-06-22 06:15 BST</td>
+      <td>2026-06-22 06:15 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now validates Compose service `domainname` with RFC1123 label rules and maps it to `container run/create --domainname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Released upstream `apple/container` still needs accepted domain-name support before this can be enabled on branches pinned to upstream. Handoff files are `ISSUE-service-domainname.md` and `PR-service-domainname.md` in this repository.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add network attachment aliases to the container fork</td>

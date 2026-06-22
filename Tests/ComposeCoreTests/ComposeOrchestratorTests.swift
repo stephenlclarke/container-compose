@@ -1212,6 +1212,7 @@ struct ComposeOrchestratorTests {
                     $0.platform = "linux/amd64"
                     $0.dnsOptions = ["use-vc"]
                     $0.hostname = "custom-api"
+                    $0.domainName = "example.test"
                     $0.extraHosts = ["db=10.0.0.5", "myhostv6=[::1]"]
                 },
             ]
@@ -1247,6 +1248,7 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
         #expect(create.containsSequence(["--dns-option", "use-vc"]))
         #expect(create.containsSequence(["--hostname", "custom-api"]))
+        #expect(create.containsSequence(["--domainname", "example.test"]))
         #expect(create.containsSequence(["--add-host", "db:10.0.0.5"]))
         #expect(create.containsSequence(["--add-host", "myhostv6:::1"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
@@ -3598,28 +3600,43 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported domain names before creating resources")
-    func upRejectsUnsupportedDomainNamesBeforeCreatingResources() async throws {
+    @Test("up maps domain names to runtime arguments")
+    func upMapsDomainNamesToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.domainName = "example.test."
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--domainname", "example.test"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("up rejects invalid domain names before creating resources")
+    func upRejectsInvalidDomainNamesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.domainName = "example.test"
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.domainName = "bad_name"
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
         do {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported domain name error")
+            Issue.record("Expected invalid domain name error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses domainname; custom domain name support needs an apple/container runtime gap PR"))
+            #expect(error == .invalidProject("service 'api' domainname 'bad_name' is not a valid RFC1123 hostname"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -13418,28 +13435,41 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--hostname", "custom-job"]))
     }
 
-    @Test("run rejects unsupported domain names before creating resources")
-    func runRejectsUnsupportedDomainNamesBeforeCreatingResources() async throws {
+    @Test("run maps domain names to runtime arguments")
+    func runMapsDomainNamesToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.domainName = "example.test"
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--domainname", "example.test"]))
+    }
+
+    @Test("run rejects invalid domain names before creating resources")
+    func runRejectsInvalidDomainNamesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.domainName = "bad_name"
+                },
+            ]
+        )
 
         do {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported domain name error")
+            Issue.record("Expected invalid domain name error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses domainname; custom domain name support needs an apple/container runtime gap PR"))
+            #expect(error == .invalidProject("service 'job' domainname 'bad_name' is not a valid RFC1123 hostname"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

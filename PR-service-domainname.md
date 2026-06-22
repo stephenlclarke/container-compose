@@ -1,0 +1,68 @@
+# Pull Request
+
+## Summary
+
+- Map Compose service `domainname` to fork-backed `container run/create --domainname`.
+- Validate domain names with the same RFC1123 label rules used for hostname-like Compose fields.
+- Keep released upstream support clearly marked as blocked until `apple/container` accepts the matching primitive.
+
+## Type of Change
+
+- [ ] Bug fix
+- [x] New feature
+- [ ] Breaking change
+- [x] Documentation update
+
+## Motivation and Context
+
+Docker Compose supports service-level `domainname` for setting the NIS domain name visible inside created service containers. The plugin previously rejected this field because released upstream `apple/container` did not expose an explicit domain-name primitive.
+
+The local container fork now adds `ContainerConfiguration.domainname` and `container run/create --domainname`. This plugin change keeps Compose-specific validation in `container-compose` and passes a generic runtime argument to the fork.
+
+References:
+
+- Compose service `domainname`: <https://docs.docker.com/reference/compose-file/services/#domainname>
+- Docker `container run --domainname`: <https://docs.docker.com/reference/cli/docker/container/run/>
+- Runtime handoff files in the container fork: `ISSUE-domainname.md` and `PR-domainname.md`
+
+## Implementation Details
+
+- Replaced the blanket `domainname` rejection with `runtimeDomainnameArgument(service:)`.
+- Reused the existing RFC1123 validation helper for hostname-like values.
+- Appended `--domainname` in the shared service create/run argument builder so `up`, `create`, and one-off `run` use the same mapping.
+- Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
+
+## Docker Compose Compatibility Notes
+
+- Supported now on the fork-backed integration branch: service `domainname` for service containers and one-off `run` containers.
+- Remaining upstream gap: released `apple/container` needs accepted domain-name support before branches pinned to upstream can enable this.
+- Remaining networking gaps: `external_links`, implicit default-network links, multi-network link projection, and Docker-compatible shared aliases are still separate runtime/DNS surfaces.
+
+## Testing
+
+- [x] Tested locally
+- [x] Added/updated tests
+- [x] Added/updated docs
+
+Focused validation:
+
+```sh
+swift test --filter 'ComposeOrchestratorTests/createCreatesResourcesAndServiceContainersWithoutStartingThem|ComposeOrchestratorTests/upMapsDomainNamesToRuntimeArguments|ComposeOrchestratorTests/upRejectsInvalidDomainNamesBeforeCreatingResources|ComposeOrchestratorTests/runMapsDomainNamesToRuntimeArguments|ComposeOrchestratorTests/runRejectsInvalidDomainNamesBeforeCreatingResources'
+```
+
+Additional local checks:
+
+```sh
+make check
+make coverage-check
+git diff --check
+```
+
+## container-compose Checks
+
+- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
+- [x] This pull request is focused on one issue or one coherent change.
+- [x] I used Conventional Commits in commit messages and the pull request title.
+- [x] I signed my commits with a GitHub-supported signature method.
+- [x] I removed credentials, tokens, private keys, personal data, and private registry details from code, tests, logs, and screenshots.

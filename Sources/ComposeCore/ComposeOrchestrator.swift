@@ -2789,9 +2789,7 @@ private extension ComposeOrchestrator {
         }
         _ = try runtimeExtraHostArguments(service: service)
         _ = try runtimeHostnameArgument(service: service)
-        if let domainName = service.domainName, !domainName.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses domainname; custom domain name support needs an apple/container runtime gap PR")
-        }
+        _ = try runtimeDomainnameArgument(service: service)
         if let sysctls = service.sysctls, !sysctls.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
         }
@@ -3806,6 +3804,14 @@ private extension ComposeOrchestrator {
             return nil
         }
         return try validatedRFC1123Hostname(hostname, field: "hostname", service: service)
+    }
+
+    /// Returns the runtime NIS domain-name argument for Compose `domainname`.
+    func runtimeDomainnameArgument(service: ComposeService) throws -> String? {
+        guard let domainName = service.domainName?.trimmingCharacters(in: .whitespacesAndNewlines), !domainName.isEmpty else {
+            return nil
+        }
+        return try validatedRFC1123Hostname(domainName, field: "domainname", service: service)
     }
 
     /// Validates a Compose hostname using RFC1123 label rules.
@@ -5380,6 +5386,9 @@ private extension ComposeOrchestrator {
         }
         if let hostname = try runtimeHostnameArgument(service: service) {
             args.append(contentsOf: ["--hostname", hostname])
+        }
+        if let domainName = try runtimeDomainnameArgument(service: service) {
+            args.append(contentsOf: ["--domainname", domainName])
         }
         for cap in service.capAdd ?? [] {
             args.append(contentsOf: ["--cap-add", cap])
