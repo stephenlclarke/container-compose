@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD013 -->
 
-Last updated: 2026-06-22 11:55 BST
+Last updated: 2026-06-22 11:58 BST
 
 Follow-up on 2026-06-22: `COMPATIBILITY.md` now documents fork-backed PID-only `container compose top`, and `PLAN.md` now records the completed process-listing / Compose `top` slab. The process-list handoff docs mentioned below were not present as untracked files in the `container` or `containerization` working trees on this machine after refreshing the forks.
 
@@ -11,6 +11,8 @@ Follow-up on 2026-06-22: the first runtime event-streaming slice is implemented 
 Follow-up on 2026-06-22: the Compose-side event mapping slice is implemented in `/Users/sclarke/github/container-compose` on `logs-integration` as commit `113be38063ea` (`feat(events): map compose events`). The slice adds `ContainerEventsAdapter.swift`, injects an `eventsManager`, replaces the `Events` placeholder with `container compose events --json [SERVICE...]`, and keeps `--since` / `--until` rejected until the runtime has replay/filter semantics. The source/dependency docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`. The optional Docker Compose V2 parity check is `make docker-compose-events-parity`; it is deliberately not part of CI.
 
 Follow-up on 2026-06-22: the next selected event-slab slice is runtime replay/time filtering for `--since` and `--until` as a separate `apple/container` PR-shaped primitive. A targeted live search on 2026-06-22 found no matching open Apple issue or PR for `since` / `until` / replay events in `apple/container` or `apple/containerization`; use [apple/container#484](https://github.com/apple/container/issues/484), Docker `system events`, and Docker Compose `events` behavior as the source references. Keep non-JSON Compose event formatting as a later plugin-only follow-up.
+
+Follow-up on 2026-06-22: before any final Apple PR push, perform the final upstream review gate now documented in `docs/upstream/README.md`. Once the intended `container-compose` functionality and supporting fork code are all implemented, review every potential PR independently for fit, narrowness, code-owner suitability, source issue/PR references, commit-ID accuracy, validation evidence, and any Compose-specific policy leaking into Apple runtime code; fix findings before raising or refreshing upstream PRs.
 
 This file parks the current cross-repo work so it can be resumed on another MBP. The current completed feature slice is runtime event streaming / `container compose events --json [SERVICE...]` support across:
 
