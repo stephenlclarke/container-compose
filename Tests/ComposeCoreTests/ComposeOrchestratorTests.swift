@@ -5054,6 +5054,43 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
     }
 
+    @Test("up maps deploy restart policy to container create flags")
+    func upMapsDeployRestartPolicyToContainerCreateFlags() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deployRestartPolicy = ComposeDeployRestartPolicy(
+                        condition: "on-failure",
+                        maxAttempts: 3
+                    )
+                    $0.restart = "unless-stopped"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(runArguments.contains("--restart"))
+        #expect(runArguments.contains("on-failure:3"))
+        #expect(!runArguments.contains("unless-stopped"))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+    }
+
     @Test("up rejects invalid restart policies before creating resources")
     func upRejectsInvalidRestartPoliciesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -5076,6 +5113,70 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected invalid restart policy error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'api' uses restart policy 'sometimes'; supported values are no, always, on-failure[:max-retries], and unless-stopped"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects deploy restart delay before creating resources")
+    func upRejectsDeployRestartDelayBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deployRestartPolicy = ComposeDeployRestartPolicy(
+                        condition: "on-failure",
+                        delayNanoseconds: 5_000_000_000
+                    )
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected deploy restart delay error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses deploy.restart_policy.delay; apple/container restart policies do not expose configurable restart delay yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects deploy restart max attempts without on-failure")
+    func upRejectsDeployRestartMaxAttemptsWithoutOnFailure() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deployRestartPolicy = ComposeDeployRestartPolicy(
+                        condition: "any",
+                        maxAttempts: 3
+                    )
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected deploy restart max attempts error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses deploy.restart_policy.max_attempts with condition 'any'; apple/container retry limits are only available for on-failure restart policies"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -12918,31 +13019,30 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported deploy fields before creating resources")
-    func runRejectsUnsupportedDeployFieldsBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("run does not inherit deploy restart policy for one-off containers")
+    func runDoesNotInheritDeployRestartPolicyForOneOffContainers() async throws {
+        let runner = RecordingRunner(responses: [.success])
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.unsupportedDeployFields = ["restart_policy"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.deployRestartPolicy = ComposeDeployRestartPolicy(
+                        condition: "on-failure",
+                        maxAttempts: 3
+                    )
                 },
             ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported deploy field error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses deploy.restart_policy; deploy restart policy support needs a container-compose model slice and any remaining apple/container delay/window primitives"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            command: ["true"],
+            remove: true
+        )
 
-        #expect(runner.commands.isEmpty)
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(!runArguments.contains("--restart"))
     }
 
     @Test("run rejects start-first deploy updates as an apple/container runtime gap")

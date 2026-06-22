@@ -1004,11 +1004,16 @@ services:
 	want := []string{
 		"resources.limits.pids",
 		"resources.reservations.devices",
-		"restart_policy",
 		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(api.UnsupportedDeployFields, want) {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want %#v", api.UnsupportedDeployFields, want)
+	}
+	if api.DeployRestartPolicy == nil {
+		t.Fatal("api.DeployRestartPolicy = nil, want deploy restart policy")
+	}
+	if api.DeployRestartPolicy.Condition != "on-failure" {
+		t.Fatalf("api.DeployRestartPolicy.Condition = %q, want on-failure", api.DeployRestartPolicy.Condition)
 	}
 }
 
@@ -1535,11 +1540,55 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 		"mode",
 		"resources.limits.pids",
 		"resources.reservations.generic_resources",
-		"restart_policy",
 		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupportedDeployFields = %#v, want %#v", got, want)
+	}
+}
+
+func TestDeployRestartPolicyValue(t *testing.T) {
+	delay := types.Duration(5 * time.Second)
+	window := types.Duration(30 * time.Second)
+	maxAttempts := uint64(3)
+
+	got := deployRestartPolicyValue(&types.DeployConfig{
+		RestartPolicy: &types.RestartPolicy{
+			Condition:   "on-failure",
+			Delay:       &delay,
+			MaxAttempts: &maxAttempts,
+			Window:      &window,
+		},
+	})
+	if got == nil {
+		t.Fatal("deployRestartPolicyValue returned nil")
+	}
+	if got.Condition != "on-failure" {
+		t.Fatalf("Condition = %q, want on-failure", got.Condition)
+	}
+	if got.DelayNanos != int64(5*time.Second) {
+		t.Fatalf("DelayNanos = %d, want %d", got.DelayNanos, int64(5*time.Second))
+	}
+	if got.MaxAttempts == nil || *got.MaxAttempts != 3 {
+		t.Fatalf("MaxAttempts = %#v, want 3", got.MaxAttempts)
+	}
+	if got.WindowNanos != int64(30*time.Second) {
+		t.Fatalf("WindowNanos = %d, want %d", got.WindowNanos, int64(30*time.Second))
+	}
+
+	emptyPolicy := deployRestartPolicyValue(&types.DeployConfig{RestartPolicy: &types.RestartPolicy{}})
+	if emptyPolicy == nil {
+		t.Fatal("deployRestartPolicyValue(empty policy) returned nil")
+	}
+	if emptyPolicy.Condition != "" || emptyPolicy.DelayNanos != 0 || emptyPolicy.MaxAttempts != nil || emptyPolicy.WindowNanos != 0 {
+		t.Fatalf("deployRestartPolicyValue(empty policy) = %#v, want zero-valued policy", emptyPolicy)
+	}
+
+	if deployRestartPolicyValue(nil) != nil {
+		t.Fatal("deployRestartPolicyValue(nil) returned non-nil")
+	}
+	if deployRestartPolicyValue(&types.DeployConfig{}) != nil {
+		t.Fatal("deployRestartPolicyValue(without policy) returned non-nil")
 	}
 }
 

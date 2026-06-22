@@ -172,13 +172,13 @@ Reference targets:
       <td colspan="4">Notes: `container-compose` now validates service `restart` values and maps service containers to `container run --restart &lt;policy&gt;` for `no`, `always`, `unless-stopped`, `on-failure`, and `on-failure:&lt;max-retries&gt;` when the fork-backed runtime is present. One-off `compose run` containers intentionally do not inherit service restart policy, matching Docker's one-off lifecycle expectations and avoiding `--rm` conflicts. Handoff files are `ISSUE-service-restart-policy.md` and `PR-service-restart-policy.md` in this repository.</td>
     </tr>
     <tr>
-      <td><img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square"> Add normalized `deploy.restart_policy` mapping</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add normalized `deploy.restart_policy` mapping</td>
       <td>2026-06-22 02:20:38 BST</td>
-      <td></td>
-      <td></td>
+      <td>2026-06-22 02:36:27 BST</td>
+      <td>2026-06-22 02:40:15 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: the normalizer currently reports `deploy.restart_policy` through `unsupportedDeployFields` without exposing the structured `condition`, `delay`, `max_attempts`, and `window` values to Swift orchestration. The next restart-policy slice should add a normalized model for that field, map `condition: on-failure` and `max_attempts` to the forked `--restart on-failure:&lt;max-retries&gt;` path where Docker Compose local behavior allows it, and keep `delay` / `window` as documented apple/container runtime gaps until matching restart-timing primitives exist.</td>
+      <td colspan="4">Notes: `container-compose` now preserves `deploy.restart_policy` as structured normalizer output instead of reporting the whole field through `unsupportedDeployFields`. Swift orchestration gives deploy restart policy precedence over service-level `restart`, maps `condition: none` to `--restart no`, `condition: any` or an empty policy to `--restart always`, and maps `condition: on-failure` with optional `max_attempts` to `--restart on-failure[:max-retries]` against the fork-backed restart runtime. One-off `compose run` containers still do not inherit restart policies. Docker Compose `delay` and `window` remain documented apple/container runtime gaps because the current restart primitives do not expose configurable restart delay or success-window semantics. Handoff files are `ISSUE-deploy-restart-policy.md` and `PR-deploy-restart-policy.md` in this repository; upstream context remains [`apple/container#286`](https://github.com/apple/container/issues/286) and [`apple/container#1258`](https://github.com/apple/container/pull/1258).</td>
     </tr>
   </tbody>
 </table>

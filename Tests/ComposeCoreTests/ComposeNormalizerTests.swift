@@ -550,6 +550,44 @@ struct ComposeNormalizerTests {
         ])
     }
 
+    @Test("normalizes deploy restart policy through compose-go")
+    func normalizesDeployRestartPolicyThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            deploy:
+              restart_policy:
+                condition: on-failure
+                delay: 5s
+                max_attempts: 3
+                window: 30s
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        let policy = try #require(api.deployRestartPolicy)
+        #expect(policy.condition == "on-failure")
+        #expect(policy.delayNanoseconds == 5_000_000_000)
+        #expect(policy.maxAttempts == 3)
+        #expect(policy.windowNanoseconds == 30_000_000_000)
+        #expect(api.unsupportedDeployFields == nil)
+    }
+
     @Test("normalizes deploy job modes as unsupported through compose-go")
     func normalizesDeployJobModesAsUnsupportedThroughComposeGo() async throws {
         let fileManager = FileManager.default

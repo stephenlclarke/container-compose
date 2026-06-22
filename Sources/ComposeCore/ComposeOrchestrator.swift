@@ -2670,9 +2670,6 @@ private extension ComposeOrchestrator {
         guard let fields = service.unsupportedDeployFields, !fields.isEmpty else {
             return
         }
-        if fields.contains("restart_policy") {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy; deploy restart policy support needs a container-compose model slice and any remaining apple/container delay/window primitives")
-        }
         if fields.contains("endpoint_mode") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR")
         }
@@ -3598,8 +3595,68 @@ private extension ComposeOrchestrator {
     }
 
     /// Returns the Docker-compatible apple/container restart policy argument
-    /// for service containers.
+    /// for service containers. Compose Deploy restart policy takes precedence
+    /// over the service-level `restart` key, matching Docker Compose.
     func runtimeRestartPolicyArgument(service: ComposeService) throws -> String? {
+        if let policy = service.deployRestartPolicy {
+            return try runtimeDeployRestartPolicyArgument(service: service, policy: policy)
+        }
+        return try runtimeServiceRestartPolicyArgument(service: service)
+    }
+
+    /// Returns the runtime restart argument for a Compose Deploy restart policy.
+    func runtimeDeployRestartPolicyArgument(
+        service: ComposeService,
+        policy: ComposeDeployRestartPolicy
+    ) throws -> String {
+        let condition = policy.condition?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let restartCondition = condition.flatMap { $0.isEmpty ? nil : $0 } ?? "any"
+
+        switch restartCondition {
+        case "none":
+            try validateDeployRestartPolicyTiming(service: service, policy: policy)
+            if policy.maxAttempts != nil {
+                throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'none'; apple/container retry limits are only available for on-failure restart policies")
+            }
+            return "no"
+        case "any":
+            try validateDeployRestartPolicyTiming(service: service, policy: policy)
+            if policy.maxAttempts != nil {
+                throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'any'; apple/container retry limits are only available for on-failure restart policies")
+            }
+            return "always"
+        case "on-failure":
+            try validateDeployRestartPolicyTiming(service: service, policy: policy)
+            guard let maxAttempts = policy.maxAttempts else {
+                return "on-failure"
+            }
+            guard maxAttempts <= UInt64(UInt32.max) else {
+                throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.max_attempts must be between 0 and \(UInt32.max)")
+            }
+            return "on-failure:\(maxAttempts)"
+        default:
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.condition '\(restartCondition)'; supported values are none, on-failure, and any")
+        }
+    }
+
+    /// Rejects Deploy restart timing fields until apple/container exposes
+    /// restart delay/window primitives compatible with Docker Compose.
+    func validateDeployRestartPolicyTiming(
+        service: ComposeService,
+        policy: ComposeDeployRestartPolicy
+    ) throws {
+        if let delay = policy.delayNanoseconds, delay > 0 {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.delay; apple/container restart policies do not expose configurable restart delay yet")
+        }
+        if let window = policy.windowNanoseconds, window > 0 {
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.window; apple/container restart policies do not expose configurable success window yet")
+        }
+    }
+
+    /// Returns the runtime restart argument for the service-level `restart` key.
+    func runtimeServiceRestartPolicyArgument(service: ComposeService) throws -> String? {
         guard let restart = service.restart?.trimmingCharacters(in: .whitespacesAndNewlines),
               !restart.isEmpty else {
             return nil

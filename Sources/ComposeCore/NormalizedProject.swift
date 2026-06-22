@@ -109,6 +109,7 @@ public struct ComposeService: Codable, Equatable {
     public var unsupportedDeployFields: [String]? = nil
     public var deployLabels: [String: String]? = nil
     public var deployUpdateDelayNanoseconds: Int64? = nil
+    public var deployRestartPolicy: ComposeDeployRestartPolicy? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -214,6 +215,7 @@ public struct ComposeService: Codable, Equatable {
         case unsupportedDeployFields
         case deployLabels
         case deployUpdateDelayNanoseconds
+        case deployRestartPolicy
         case build
         case command
         case entrypoint
@@ -289,6 +291,27 @@ public struct ComposeService: Codable, Equatable {
         case configs
         case secrets
         case extensions
+    }
+}
+
+/// Compose Deploy Specification restart policy values used by local service
+/// orchestration when apple/container exposes matching restart primitives.
+public struct ComposeDeployRestartPolicy: Codable, Equatable {
+    public var condition: String? = nil
+    public var delayNanoseconds: Int64? = nil
+    public var maxAttempts: UInt64? = nil
+    public var windowNanoseconds: Int64? = nil
+
+    public init(
+        condition: String? = nil,
+        delayNanoseconds: Int64? = nil,
+        maxAttempts: UInt64? = nil,
+        windowNanoseconds: Int64? = nil
+    ) {
+        self.condition = condition
+        self.delayNanoseconds = delayNanoseconds
+        self.maxAttempts = maxAttempts
+        self.windowNanoseconds = windowNanoseconds
     }
 }
 
