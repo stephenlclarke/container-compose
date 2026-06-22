@@ -210,6 +210,105 @@ Reference targets:
   </tbody>
 </table>
 
+## Runtime Data Slab: Process Listing / Compose Top
+
+This slab closes the first process-listing slice needed by Docker Compose v2 `top`. It intentionally starts with PID-only runtime data so the API remains small, while leaving Docker's richer process columns such as user, elapsed CPU time, command, and arguments as a later runtime metadata slice.
+
+Reference targets:
+
+- Docker Compose CLI `top`: [`docker compose top`](https://docs.docker.com/reference/cli/docker/compose/top/)
+- Docker container CLI `top`: [`docker container top`](https://docs.docker.com/reference/cli/docker/container/top/)
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Expose PID process identifiers in the containerization fork</td>
+      <td>2026-06-22 10:13 BST</td>
+      <td>2026-06-22 10:13 BST</td>
+      <td>2026-06-22 10:13 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `stephenlclarke/containerization` branch `integration/blkio-runtime` now exposes PID-only process identifiers through `ContainerProcesses`, VM agent, `vminitd`, `LinuxContainer`, `Cgroup2Manager`, and `ManagedContainer` as commits `d69f7e5` and `aaa143b`. The follow-up fix allows process listing for paused containers as well as started containers.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Expose process listing through the container fork</td>
+      <td>2026-06-22 10:13 BST</td>
+      <td>2026-06-22 10:13 BST</td>
+      <td>2026-06-22 10:13 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `stephenlclarke/container` branch `logs-integration-chris` now exposes `ContainerClient.processes(id:)`, API/XPC/runtime routes, runtime Linux service wiring, and PID-only `container top &lt;container&gt;` table output as commit `14a3067`. Released upstream support remains blocked until an equivalent process-listing API is accepted.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `top` to fork-backed process listing</td>
+      <td>2026-06-22 10:13 BST</td>
+      <td>2026-06-22 10:13 BST</td>
+      <td>2026-06-22 10:13 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` branch `logs-integration` now implements `container compose top [SERVICES...]` through service-container selection and direct `ContainerClient.processes(id:)` fan-out as commit `b44ba55`. The supported fork-backed shape is PID-only; full Docker process metadata remains a later runtime gap rather than Compose policy.</td>
+    </tr>
+  </tbody>
+</table>
+
+## Runtime Data Slab: Container Events / Compose Events
+
+This slab starts the event-streaming path needed by Docker Compose v2 `events`. The first slice stays in `apple/container` and exposes a generic container lifecycle event primitive; the Compose mapping remains a separate plugin slice so project/service filtering and Docker Compose output policy do not leak into the Apple runtime PR.
+
+Reference targets:
+
+- Docker Compose CLI `events`: [`docker compose events`](https://docs.docker.com/reference/cli/docker/compose/events/)
+- Docker engine CLI `events`: [`docker system events`](https://docs.docker.com/reference/cli/docker/system/events/)
+- Upstream issue: [`apple/container#484`](https://github.com/apple/container/issues/484)
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Expose container lifecycle events through the container fork</td>
+      <td>2026-06-22 10:30 BST</td>
+      <td>2026-06-22 10:45 BST</td>
+      <td>2026-06-22 11:13 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `stephenlclarke/container` branch `logs-integration-chris` now exposes `ContainerEvent`, `ContainerClient.events()`, API-service lifecycle event emission for create/start/stop/pause/unpause/delete, non-blocking event subscribers, and `container events` JSON Lines output as code commits `b71e4bb323e3` and `0da7890b2632`. The handoff docs are in container commits `48b763c` and `24dcfbc` and mirrored under `docs/upstream/events/` and `docs/upstream/apple-container/`. No `apple/containerization` change was needed for this first slice because the event source lives at the API-service lifecycle boundary. Released upstream support remains blocked until an equivalent event-stream API is accepted against [apple/container#484](https://github.com/apple/container/issues/484).</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `events --json [SERVICE...]` to fork-backed event stream</td>
+      <td>2026-06-22 11:13 BST</td>
+      <td>2026-06-22 11:20 BST</td>
+      <td>2026-06-22 11:42 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps `container compose events --json [SERVICE...]` to the fork-backed `ContainerClient.events()` stream as code commit `113be38063ea`. The plugin keeps Docker Compose policy here: filter to Compose project/service labels, skip one-off containers, apply selected-service arguments, strip Compose-private attributes, and render JSON Lines fields `time`, `type`, `service`, `id`, `action`, and `attributes`. The slice deliberately requires `--json` and rejects `--since`/`--until` until the runtime event primitive has replay or timestamp filtering. Handoff docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`; the optional local-only Docker parity check is `make docker-compose-events-parity`. Do not include this mapping in the Apple runtime PR.</td>
+    </tr>
+    <tr>
+      <td><img alt="TODO" src="https://img.shields.io/badge/TODO-616161?style=flat-square"> Add runtime event replay/time filters for `--since` / `--until`</td>
+      <td>2026-06-22 11:56 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: this is the next selected slice from the event slab. It should start as a narrow `apple/container` PR-shaped primitive before the plugin enables `container compose events --since` or `--until`. A targeted live search on 2026-06-22 for open `since` / `until` / replay event issues and PRs found no matching open work in `apple/container` or `apple/containerization`, so the slice should reference [apple/container#484](https://github.com/apple/container/issues/484) plus Docker `system events` / Compose `events` behavior rather than stack on an existing Apple PR. Keep non-JSON Compose formatting separate as a plugin-only follow-up.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Adjacent Slab: Exit Metadata And Completed Dependencies
 
 This slab tracks the first non-log lifecycle capability needed by real Compose projects: `depends_on.condition: service_completed_successfully` and stopped-container `wait` replay. It intentionally reuses existing upstream work rather than inventing a new runtime contract.

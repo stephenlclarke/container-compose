@@ -1,10 +1,18 @@
-# Resume: Process Listing / Compose Top Slice
+# Resume: Runtime Events / Compose Events Slice
 
 <!-- markdownlint-disable MD013 -->
 
-Last updated: 2026-06-22 10:18 BST
+Last updated: 2026-06-22 11:55 BST
 
-This file parks the current cross-repo work so it can be resumed on another MBP. The active feature slice is process listing / `top` support across:
+Follow-up on 2026-06-22: `COMPATIBILITY.md` now documents fork-backed PID-only `container compose top`, and `PLAN.md` now records the completed process-listing / Compose `top` slab. The process-list handoff docs mentioned below were not present as untracked files in the `container` or `containerization` working trees on this machine after refreshing the forks.
+
+Follow-up on 2026-06-22: the first runtime event-streaming slice is implemented in `/Users/sclarke/github/container` on `logs-integration-chris`. The constructible Apple code commits are `b71e4bb323e3 feat(events): stream container lifecycle events` and `0da7890b2632 fix(events): avoid blocking slow event subscribers`; the local handoff-doc commits are `48b763c` and `24dcfbc`. `container-compose` now mirrors those ISSUE/PR drafts under `docs/upstream/events/` and `docs/upstream/apple-container/`, and `COMPATIBILITY.md`/`PLAN.md` record that `container compose events` remains the next plugin slice rather than part of the Apple runtime PR.
+
+Follow-up on 2026-06-22: the Compose-side event mapping slice is implemented in `/Users/sclarke/github/container-compose` on `logs-integration` as commit `113be38063ea` (`feat(events): map compose events`). The slice adds `ContainerEventsAdapter.swift`, injects an `eventsManager`, replaces the `Events` placeholder with `container compose events --json [SERVICE...]`, and keeps `--since` / `--until` rejected until the runtime has replay/filter semantics. The source/dependency docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`. The optional Docker Compose V2 parity check is `make docker-compose-events-parity`; it is deliberately not part of CI.
+
+Follow-up on 2026-06-22: the next selected event-slab slice is runtime replay/time filtering for `--since` and `--until` as a separate `apple/container` PR-shaped primitive. A targeted live search on 2026-06-22 found no matching open Apple issue or PR for `since` / `until` / replay events in `apple/container` or `apple/containerization`; use [apple/container#484](https://github.com/apple/container/issues/484), Docker `system events`, and Docker Compose `events` behavior as the source references. Keep non-JSON Compose event formatting as a later plugin-only follow-up.
+
+This file parks the current cross-repo work so it can be resumed on another MBP. The current completed feature slice is runtime event streaming / `container compose events --json [SERVICE...]` support across:
 
 - `stephenlclarke/containerization`
 - `stephenlclarke/container`
@@ -204,26 +212,16 @@ All four searches returned no open matching issues or PRs.
 
 ## Work Still Outstanding
 
-1. Update `container-compose` `COMPATIBILITY.md`.
-
-   Current docs still say `top` is blocked. Change that to:
-
-   - fork-backed `container compose top` is supported as a PID-only table through `ContainerClient.processes(id:)`;
-   - released upstream `apple/container` still needs an accepted process-listing API;
-   - full Docker `top` columns still need richer process metadata.
-
-2. Update `container-compose` `PLAN.md`.
-
-   Add a completed row for the process-listing / `compose top` slice with timestamps around `2026-06-22 10:13 BST`, commit IDs `d69f7e5`, `aaa143b`, `14a3067`, and `b44ba55`, and the note that full Docker process metadata remains a later runtime gap.
-
-3. Decide what to do with the untracked handoff files in `containerization` and `container`.
+1. Decide what to do with the upstream handoff files for `containerization` and `container`.
 
    Options:
 
    - commit and push them to the user fork branches; or
    - delete/recreate them when preparing the upstream PRs.
 
-4. Run broader validation if desired before the next feature slice.
+   Follow-up note: after refreshing this machine, those files were not present as untracked working-tree files under `docs/upstream/process-list/`.
+
+2. Run broader validation if desired before the next feature slice.
 
    Suggested local commands:
 
@@ -234,7 +232,7 @@ All four searches returned no open matching issues or PRs.
    swift test
    ```
 
-5. Continue the larger goal after this parked slice.
+3. Continue the larger goal after this parked slice.
 
    The next work should pick one Compose topic and carry it through until implemented or blocked. Candidate topics from the previous direction:
 

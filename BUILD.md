@@ -173,6 +173,14 @@ make docker-log-fixtures
 
 This runs `examples/logging/compose.yml` through Docker Compose and compares the captured rotated log tail behavior with `Tests/ComposeCoreTests/Fixtures/logging/docker-compose-rotated-tail.expected`. The fixture currently records `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all` for rotated `json-file` and `local` logging drivers.
 
+For the local-only `events` parity check added with the fork-backed event-stream slice, run:
+
+```sh
+make docker-compose-events-parity
+```
+
+This runs Docker Compose V2 against a temporary project and validates the event behavior mirrored by `container-compose`: JSON output, container-event scope, selected-service filtering, internal Compose label stripping, and one-off container suppression. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
 Refresh the checked fixture after intentionally changing the example or adopting a newer Docker behavior with:
 
 ```sh
