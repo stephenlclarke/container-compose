@@ -27,6 +27,8 @@ gh pr list --repo apple/containerization --state open --limit 1000 --json number
 | `apple/container` | [apple/container#484](https://github.com/apple/container/issues/484), `[Request]: Add container events stream` | Open issue | Requests an event channel for container stop/start and image pull/remove style notifications. No comments were present at query time. |
 | `apple/container` | Open PR search for event/event-stream/events | No matching open PR | The next event slice should reference #484 rather than open an unrelated duplicate issue. |
 | `apple/containerization` | Open issue and PR search for event/event-stream/events | No matching open issue or PR | First event slice should start in `apple/container` unless implementation proves lower-runtime state is required. |
+| `apple/container` | Open issue and PR search for event replay / `since` / `until` | No matching open issue or PR | The event time-filter slice should stack on #484 and the event-stream primitive rather than open a duplicate top-level event issue. |
+| `apple/containerization` | Open issue and PR search for event replay / `since` / `until` | No matching open issue or PR | No lower-runtime dependency was identified for bounded API-service replay and filtering. |
 
 ## Adjacent Runtime-Data Items
 
@@ -42,6 +44,10 @@ The selected slab was runtime event streaming for `container compose events`. Th
 
 The second slice is the `container-compose` `events --json [SERVICE...]` mapping. It is intentionally not part of the Apple runtime PR: the plugin slice consumes `ContainerClient.events()` while keeping Compose project/service filtering, selected service arguments, one-off suppression, private label stripping, and Docker Compose JSON rendering policy in this repository. Its constructible code commit is `113be38063ea` (`feat(events): map compose events`) in `stephenlclarke/container-compose`; handoff drafts are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`.
 
+The third slice is the `apple/container` event replay/time-filter primitive. It stacks on [apple/container#484](https://github.com/apple/container/issues/484) and the event-stream PR, adds `ContainerEventOptions`, bounded in-memory event replay, and `container events --since/--until`, and remains independent of `apple/containerization`. Its constructible code commit is `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270` (`feat(events): add event time filters`) in `stephenlclarke/container`; handoff drafts are `docs/upstream/events/ISSUE-container-event-time-filters.md` and `docs/upstream/events/PR-container-event-time-filters.md`, mirrored under `docs/upstream/apple-container/`.
+
+The fourth slice is the `container-compose` `events --json --since/--until [SERVICE...]` mapping. It consumes `ContainerEventOptions` while keeping Compose parsing, project/service filtering, one-off suppression, private label stripping, and JSON output policy in this repository. Its constructible code commit is `3a3387d7dbea301eec3a7f1fcc3f954dec80276c` (`feat(events): support compose event time filters`) in `stephenlclarke/container-compose`; handoff drafts are `docs/upstream/events/ISSUE-compose-event-time-filters.md` and `docs/upstream/events/PR-compose-event-time-filters.md`.
+
 ## Docker And Docker Compose Guidance
 
 - Docker CLI reference for `docker compose events`: [Docker Compose events docs](https://docs.docker.com/reference/cli/docker/compose/events/)
@@ -56,5 +62,5 @@ Key guidance for this slice:
 - `docker compose events` streams project container events, supports service arguments, and exposes `--json`, `--since`, and `--until`.
 - Docker engine events cover more object types and actions than Compose currently emits. The first `apple/container` slice should choose a generic event payload while letting the later Compose slice filter down to Compose-compatible container events.
 - Docker Compose's source filters project events to container events, skips one-off containers, applies selected-service filtering, strips `com.docker.compose.*` attributes, and formats JSON as `time`, `type`, `service`, `id`, `action`, and `attributes`.
-- The local `container-compose` slice mirrors that current Docker Compose behavior for `events --json [SERVICE...]` and keeps the optional Docker parity check outside CI so Apple-facing repositories do not depend on Docker.
+- The local `container-compose` slices mirror that current Docker Compose behavior for `events --json [SERVICE...]` and `events --json --since/--until [SERVICE...]`, and keep the optional Docker parity check outside CI so Apple-facing repositories do not depend on Docker.
 - The open Docker Compose issue about dropped non-container events argues for making the Apple runtime event payload generic enough for later network, volume, and image events, even while the first Compose mapping stays container-focused.

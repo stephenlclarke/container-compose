@@ -298,13 +298,22 @@ Reference targets:
       <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps `container compose events --json [SERVICE...]` to the fork-backed `ContainerClient.events()` stream as code commit `113be38063ea`. The plugin keeps Docker Compose policy here: filter to Compose project/service labels, skip one-off containers, apply selected-service arguments, strip Compose-private attributes, and render JSON Lines fields `time`, `type`, `service`, `id`, `action`, and `attributes`. The slice deliberately requires `--json` and rejects `--since`/`--until` until the runtime event primitive has replay or timestamp filtering. Handoff docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`; the optional local-only Docker parity check is `make docker-compose-events-parity`. Do not include this mapping in the Apple runtime PR.</td>
     </tr>
     <tr>
-      <td><img alt="TODO" src="https://img.shields.io/badge/TODO-616161?style=flat-square"> Add runtime event replay/time filters for `--since` / `--until`</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add runtime event replay/time filters for `--since` / `--until`</td>
       <td>2026-06-22 11:56 BST</td>
-      <td></td>
-      <td></td>
+      <td>2026-06-22 12:05 BST</td>
+      <td>2026-06-22 12:21 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: this is the next selected slice from the event slab. It should start as a narrow `apple/container` PR-shaped primitive before the plugin enables `container compose events --since` or `--until`. A targeted live search on 2026-06-22 for open `since` / `until` / replay event issues and PRs found no matching open work in `apple/container` or `apple/containerization`, so the slice should reference [apple/container#484](https://github.com/apple/container/issues/484) plus Docker `system events` / Compose `events` behavior rather than stack on an existing Apple PR. Keep non-JSON Compose formatting separate as a plugin-only follow-up.</td>
+      <td colspan="4">Notes: `stephenlclarke/container` branch `logs-integration-chris` now adds `ContainerEventOptions(since:until:)`, bounded API-service event replay, live event time filtering, `eventSince` / `eventUntil` XPC keys, and `container events --since/--until` as code commit `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270`. Handoff docs are `docs/upstream/events/ISSUE-container-event-time-filters.md` and `docs/upstream/events/PR-container-event-time-filters.md`, mirrored under `docs/upstream/apple-container/`. The slice remains a narrow `apple/container` PR-shaped primitive stacked on [apple/container#484](https://github.com/apple/container/issues/484) and the first event-stream PR; no `apple/containerization` change is needed.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `events --json --since/--until [SERVICE...]` to runtime event filters</td>
+      <td>2026-06-22 12:21 BST</td>
+      <td>2026-06-22 12:22 BST</td>
+      <td>2026-06-22 12:28 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps `container compose events --json --since VALUE --until VALUE [SERVICE...]` to `ContainerClient.events(options:)` as code commit `3a3387d7dbea301eec3a7f1fcc3f954dec80276c`. The plugin parses RFC 3339 timestamps, Unix timestamps, and relative durations, keeps `--json` required, and leaves non-JSON formatting as a later plugin-only follow-up. Handoff docs are `docs/upstream/events/ISSUE-compose-event-time-filters.md` and `docs/upstream/events/PR-compose-event-time-filters.md`; the optional local-only Docker parity target now includes a bounded `--since/--until` replay-window check.</td>
     </tr>
   </tbody>
 </table>

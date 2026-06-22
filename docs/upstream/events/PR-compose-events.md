@@ -25,6 +25,7 @@ Existing source and dependency decisions:
 
 - **Base issue:** [apple/container#484](https://github.com/apple/container/issues/484) is the upstream source request for a generic event stream.
 - **Runtime dependency:** `docs/upstream/events/PR-container-events-stream.md` is the required `apple/container` PR-shaped dependency. Its constructible code commits are `b71e4bb323e3` and `0da7890b2632` in `stephenlclarke/container`.
+- **Time-filter follow-up:** `docs/upstream/events/PR-compose-event-time-filters.md` now tracks `events --json --since/--until` as a separate Compose PR stacked on `docs/upstream/events/PR-container-event-time-filters.md`.
 - **No lower-runtime dependency:** no `apple/containerization` change is required for this first Compose mapping because the runtime event source is already exposed by `ContainerClient.events()`.
 - **Not based on Docker Compose code:** Docker Compose is Go code over Docker engine events and Docker label keys. This PR uses Docker Compose as behavioral guidance, not as a source-code base.
 - **Docker behavioral reference:** Docker Compose source at `docker/compose@9b55a6e9c1016fd3c31859b7e09260378d45a783` filters to container events, skips one-off containers, applies selected-service filtering, strips internal labels, and renders `time`, `type`, `service`, `id`, `action`, and `attributes`.
@@ -40,6 +41,9 @@ Existing source and dependency decisions:
 - Container handoff-doc commits:
   - `48b763c docs(events): record container event stream handoff`
   - `24dcfbc docs(events): update event stream commit tracking`
+- Follow-up event time-filter commits, not part of this first Compose PR:
+  - `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270 feat(events): add event time filters` in `stephenlclarke/container`
+  - `3a3387d7dbea301eec3a7f1fcc3f954dec80276c feat(events): support compose event time filters` in `stephenlclarke/container-compose`
 - Lower runtime code commit: not required
 
 Use the Compose code commit as one future `container-compose` PR. Use the container code commits as the separate future `apple/container` PR. Do not squash the Compose mapping into the Apple runtime PR.
@@ -57,7 +61,7 @@ Use the Compose code commit as one future `container-compose` PR. Use the contai
 - Added `ComposeOrchestrator.events(project:options:)`.
 - Replaced the `Events` placeholder in `ComposePlugin.swift` with an async project-backed command.
 - `--json` is required for this first slice; non-JSON formatting remains a later plugin feature.
-- `--since` and `--until` are rejected with explicit runtime-gap messages because the local `ContainerClient.events()` primitive is a live stream without replay or timestamp-filter semantics.
+- `--since` and `--until` were intentionally left to the separate event time-filter follow-up rather than mixed into this first Compose mapping PR.
 - Dry-run renders the generic runtime command `container events`.
 - Added focused tests for service selection, dry-run behavior, option gating, and event-stream JSON filtering/rendering.
 - Added `Tools/parity/check-compose-events.sh` and `make docker-compose-events-parity` as an opt-in Docker Compose V2 comparison that is intentionally not part of CI.
@@ -68,6 +72,7 @@ Supported on the fork-backed integration stack:
 
 - `container compose events --json`
 - `container compose events --json SERVICE...`
+- `container compose events --json --since/--until SERVICE...` is now covered by the follow-up `PR-compose-event-time-filters.md`.
 - Project label filtering
 - Selected-service filtering
 - One-off container suppression
@@ -77,8 +82,6 @@ Supported on the fork-backed integration stack:
 Explicitly not supported in this slice:
 
 - Non-JSON event formatting
-- Event replay or historical filtering through `--since`
-- Automatic stop at `--until`
 - Network, volume, image, health, and restart-policy metadata events beyond the container lifecycle transitions emitted by the runtime dependency
 
 ## Testing
@@ -128,5 +131,5 @@ This optional parity target is not run by CI and should stay out of Apple-facing
 ## Remaining Risks
 
 - Released upstream `apple/container` still needs an accepted event-stream API before this support can move from fork-backed to released-upstream compatible.
-- Runtime events are live-only. Users asking for `--since` / `--until` should receive clear errors until a replay/filter contract exists.
+- Runtime replay/time filtering is now a separate follow-up PR, so keep that commit out of this first Compose mapping PR when constructing upstream review branches.
 - Event timestamps come from the API-service runtime primitive, not Docker engine event time. This is acceptable for the local stack but should be called out if Apple maintainers choose a lower-level event source later.

@@ -37,6 +37,7 @@ Docker guidance checked for this slice:
   - `0da7890b2632 fix(events): avoid blocking slow event subscribers`
 - Lower runtime code commit: none; this slice does not require `apple/containerization`.
 - Compose mapping code commit: `113be38063ea feat(events): map compose events` in `stephenlclarke/container-compose`, tracked in `docs/upstream/events/PR-compose-events.md`, not part of this Apple PR.
+- Follow-up event time-filter code commit: `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270 feat(events): add event time filters`, tracked in `docs/upstream/events/PR-container-event-time-filters.md`, not part of this first Apple event-stream PR.
 
 Use these commits as the code candidates for one upstream `apple/container` PR.
 
@@ -90,5 +91,6 @@ Released `container-compose` branches must continue treating `events` as runtime
 ## Remaining Risks
 
 - The stream currently uses an in-memory subscriber list and does not replay events from before subscription. Disconnected or slow subscribers are pruned when the non-blocking write side cannot accept the next record.
+- The follow-up `PR-container-event-time-filters.md` adds bounded in-memory replay and `--since` / `--until` support. Keep it separate when constructing this first event-stream PR.
 - Event timestamps are observed at the API-service boundary rather than at a lower runtime source. That is intentional for this first slice because the included lifecycle transitions are already serialized through the API service.
 - The CLI intentionally streams JSON Lines only. Human-readable formatting can be reviewed separately if maintainers want a richer `container events` presentation.

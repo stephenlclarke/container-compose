@@ -33,9 +33,9 @@ Refreshed on 2026-06-22.
 | Compose-owned compatibility slices | `ISSUE-*.md`, `PR-*.md` at the repository root | Historical plugin PR drafts. New or moved drafts should prefer a topic folder under `docs/upstream/`. |
 | Copy slices | `docs/upstream/copy/` | Compose-facing copy follow-link and archive drafts with commit tracking. |
 | Process listing / `top` slice | `docs/upstream/process-list/` | Compose-facing PID-only `top` drafts with commit tracking. |
-| Mirrored `apple/container` runtime drafts | `docs/upstream/apple-container/` | 52 issue/PR drafts mirrored from `/Users/sclarke/github/container` so runtime PR text is available from this repo. |
-| Mirrored `apple/containerization` runtime drafts | `docs/upstream/apple-containerization/` | 6 issue/PR drafts mirrored from `/Users/sclarke/github/containerization`. |
-| Event-stream slab | `docs/upstream/events/` | Current handoff drafts for the Apple runtime event primitive and Compose-owned `events --json [SERVICE...]` mapping slice. |
+| Mirrored `apple/container` runtime drafts | `docs/upstream/apple-container/` | Issue/PR drafts mirrored from `/Users/sclarke/github/container` so runtime PR text is available from this repo. |
+| Mirrored `apple/containerization` runtime drafts | `docs/upstream/apple-containerization/` | Issue/PR drafts mirrored from `/Users/sclarke/github/containerization`. |
+| Event-stream slab | `docs/upstream/events/` | Current handoff drafts for the Apple runtime event primitive, event time filters, Compose-owned `events --json [SERVICE...]`, and Compose-owned `events --json --since/--until [SERVICE...]` mapping slices. |
 
 ## Refresh Commands
 

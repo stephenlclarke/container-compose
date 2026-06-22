@@ -8,7 +8,7 @@ Do not open a duplicate issue unless Apple maintainers ask for a fresh, narrower
 
 ## Feature Or Enhancement Request Details
 
-`container-compose` currently exposes the `container compose events` command name, but it rejects because released upstream `apple/container` does not expose an event stream. Docker Compose users expect project-scoped event output for container lifecycle changes, and the plugin needs a generic runtime event primitive before it can add Compose service filtering and formatting.
+`container-compose` exposed the `container compose events` command name before released upstream `apple/container` had an event stream. Docker Compose users expect project-scoped event output for container lifecycle changes, and the plugin needs a generic runtime event primitive before it can add Compose service filtering and formatting.
 
 The existing upstream issue asks for an event channel for container stop/start and image pull/remove style notifications. The first slice satisfies the container lifecycle subset without trying to solve every possible future event source.
 
@@ -54,7 +54,7 @@ services:
     command: ["sh", "-c", "sleep 3600"]
 ```
 
-The dependent `container-compose` behavior is now tracked separately in `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`:
+The dependent `container-compose` behavior is tracked separately in `docs/upstream/events/ISSUE-compose-events.md` / `docs/upstream/events/PR-compose-events.md`, with `--since` / `--until` follow-up tracking in `docs/upstream/events/ISSUE-compose-event-time-filters.md` / `docs/upstream/events/PR-compose-event-time-filters.md`:
 
 ```sh
 container compose events --json api
