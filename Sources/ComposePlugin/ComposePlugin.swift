@@ -818,9 +818,9 @@ struct Events: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("json"), help: "Output events as a stream of JSON objects.")
     var json = false
-    @Option(name: .customLong("since"), help: "Accepted for Docker Compose compatibility; currently requires a future runtime replay/filter primitive.")
+    @Option(name: .customLong("since"), help: "Show events after the specified RFC 3339 timestamp, UNIX timestamp, or relative duration.")
     var since: String?
-    @Option(name: .customLong("until"), help: "Accepted for Docker Compose compatibility; currently requires a future runtime stop/filter primitive.")
+    @Option(name: .customLong("until"), help: "Stream events until the specified RFC 3339 timestamp, UNIX timestamp, or relative duration.")
     var until: String?
     @Argument(help: "Optional service names.")
     var services: [String] = []

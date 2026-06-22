@@ -47,7 +47,7 @@ public struct ComposeEventRecord: Sendable, Equatable, Codable {
 /// Low-level apple/container event stream used by `ContainerClientEventsManager`.
 public protocol ContainerEventsAPIClienting: Sendable {
     /// Returns the newline-delimited `ContainerEvent` stream.
-    func events() async throws -> FileHandle
+    func events(options: ContainerEventOptions) async throws -> FileHandle
 }
 
 /// Direct apple/container API used for Compose project events.
@@ -56,23 +56,25 @@ public protocol ContainerEventsManaging: Sendable {
     func events(
         projectName: String,
         services: [String],
+        since: Date?,
+        until: Date?,
         emit: @escaping @Sendable (String) -> Void
     ) async throws
 }
 
 /// Thin apple/container client wrapper around the event stream API.
 public struct ContainerEventsAPIClient: ContainerEventsAPIClienting {
-    public typealias Events = @Sendable () async throws -> FileHandle
+    public typealias Events = @Sendable (ContainerEventOptions) async throws -> FileHandle
 
     private let eventsOperation: Events
 
-    public init(events: @escaping Events = { try await ContainerClient().events() }) {
+    public init(events: @escaping Events = { try await ContainerClient().events(options: $0) }) {
         self.eventsOperation = events
     }
 
     /// Opens the runtime event stream through `ContainerClient`.
-    public func events() async throws -> FileHandle {
-        try await eventsOperation()
+    public func events(options: ContainerEventOptions = .default) async throws -> FileHandle {
+        try await eventsOperation(options)
     }
 }
 
@@ -88,9 +90,13 @@ public struct ContainerClientEventsManager: ContainerEventsManaging {
     public func events(
         projectName: String,
         services: [String],
+        since: Date?,
+        until: Date?,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        let eventStream = try await client.events()
+        let eventStream = try await client.events(
+            options: ContainerEventOptions(since: since, until: until)
+        )
         defer {
             try? eventStream.close()
         }

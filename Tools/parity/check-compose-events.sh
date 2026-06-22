@@ -26,7 +26,8 @@
 # This script is intentionally local-only and is not part of CI. It verifies the
 # Docker Compose V2 event semantics used by container-compose: JSON output is
 # container-scoped, selected service filtering excludes other services, internal
-# Compose labels are stripped, and one-off run containers are not emitted.
+# Compose labels are stripped, one-off run containers are not emitted, and
+# --since/--until can replay a bounded project event window.
 
 set -euo pipefail
 
@@ -38,6 +39,7 @@ STRICT=0
 TMPDIR=""
 COMPOSE_FILE=""
 EVENTS_FILE=""
+FILTERED_EVENTS_FILE=""
 PROJECT_NAME="container-compose-events-$RANDOM-$$"
 EVENTS_PID=""
 
@@ -106,6 +108,7 @@ create_fixture() {
     TMPDIR="$(mktemp -d)"
     COMPOSE_FILE="$TMPDIR/compose.yml"
     EVENTS_FILE="$TMPDIR/events.jsonl"
+    FILTERED_EVENTS_FILE="$TMPDIR/events-filtered.jsonl"
 
     cat >"$COMPOSE_FILE" <<'YAML'
 services:
@@ -234,6 +237,75 @@ if before_one_off != after_one_off:
 PY
 }
 
+# Extract the first and last captured API event timestamps for replay filters.
+event_time_window() {
+    python3 - "$EVENTS_FILE" <<'PY'
+import json
+import sys
+
+times = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    if not line.strip():
+        continue
+    event = json.loads(line)
+    if event.get("type") == "container" and event.get("service") == "api":
+        times.append(event["time"])
+
+if not times:
+    raise SystemExit("no API container events captured for time-filter replay")
+
+print(times[0])
+print(times[-1])
+PY
+}
+
+# Run a Docker Compose event replay command with a bounded wait.
+run_filtered_replay() {
+    local since="$1"
+    local until="$2"
+    local replay_pid
+    local deadline
+
+    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json --since "$since" --until "$until" api >"$FILTERED_EVENTS_FILE" &
+    replay_pid="$!"
+    ((deadline = SECONDS + 30))
+
+    while kill -0 "$replay_pid" >/dev/null 2>&1; do
+        if ((SECONDS >= deadline)); then
+            kill "$replay_pid" >/dev/null 2>&1 || true
+            wait "$replay_pid" >/dev/null 2>&1 || true
+            error 'timed out waiting for docker compose events --since/--until replay'
+            return 1
+        fi
+        sleep 1
+    done
+
+    wait "$replay_pid"
+}
+
+# Validate that Docker Compose time-filtered replay keeps the same event shape.
+validate_time_filtered_events() {
+    python3 - "$FILTERED_EVENTS_FILE" <<'PY'
+import json
+import sys
+
+events = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    if not line.strip():
+        continue
+    events.append(json.loads(line))
+
+if not events:
+    raise SystemExit("no Docker Compose events were captured by --since/--until replay")
+
+for index, event in enumerate(events, start=1):
+    if event.get("type") != "container":
+        raise SystemExit(f"replayed event {index} is not container-scoped: {event.get('type')!r}")
+    if event.get("service") != "api":
+        raise SystemExit(f"replayed selected-service filter leaked service {event.get('service')!r}")
+PY
+}
+
 # Run the local-only Docker Compose V2 parity check.
 main() {
     parse_args "$@"
@@ -254,6 +326,14 @@ main() {
 
     stop_events_watcher
     validate_events "$before_one_off" "$after_one_off"
+    local window
+    local since
+    local until
+    window="$(event_time_window)"
+    since="$(printf '%s\n' "$window" | sed -n '1p')"
+    until="$(printf '%s\n' "$window" | sed -n '2p')"
+    run_filtered_replay "$since" "$until"
+    validate_time_filtered_events
     printf 'Docker Compose events parity check passed for project %s\n' "$PROJECT_NAME"
 }
 

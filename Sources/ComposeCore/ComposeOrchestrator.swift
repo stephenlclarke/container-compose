@@ -2285,14 +2285,18 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func events(project: ComposeProject, options events: ComposeEventsOptions) async throws {
         try validate(project: project)
         try validateEventsOptions(events)
+        let runtimeSince = try runtimeEventTimestamp(events.since)
+        let runtimeUntil = try runtimeEventTimestamp(events.until)
         let services = try selectedServices(project: project, selected: events.services)
         if options.dryRun {
-            try await runContainer(["events"])
+            try await runContainer(eventRuntimeArguments(since: events.since, until: events.until))
             return
         }
         try await eventsManager.events(
             projectName: project.name,
             services: services.map(\.name),
+            since: runtimeSince,
+            until: runtimeUntil,
             emit: options.emit
         )
     }
@@ -2591,12 +2595,18 @@ private extension ComposeOrchestrator {
         guard events.json else {
             throw ComposeError.unsupported("events: this slice supports Docker Compose JSON output only; pass --json")
         }
-        if let since = events.since, !since.isEmpty {
-            throw ComposeError.unsupported("events --since '\(since)': apple/container event streams do not replay or filter historical events yet")
+    }
+
+    /// Builds the underlying runtime event command for dry-run output.
+    func eventRuntimeArguments(since: String?, until: String?) -> [String] {
+        var args = ["events"]
+        if let since, !since.isEmpty {
+            args.append(contentsOf: ["--since", since])
         }
-        if let until = events.until, !until.isEmpty {
-            throw ComposeError.unsupported("events --until '\(until)': apple/container event streams do not stop at a filtered timestamp yet")
+        if let until, !until.isEmpty {
+            args.append(contentsOf: ["--until", until])
         }
+        return args
     }
 
     /// Adds active legacy-link aliases to the target services they reference.
@@ -5904,6 +5914,17 @@ private extension ComposeOrchestrator {
             return date
         }
         throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
+    }
+
+    /// Converts Compose event timestamp filters to absolute dates.
+    func runtimeEventTimestamp(_ value: String?) throws -> Date? {
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+        if let date = ContainerLogTimestampParser.parse(value, relativeTo: options.currentDate()) {
+            return date
+        }
+        throw ComposeError.invalidProject("events time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
     }
 
     /// Waits for Compose dependency conditions that require runtime state.
