@@ -314,6 +314,7 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
 /// Container lifecycle collaborators used by the Compose orchestrator.
 public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public var discoveryManager: ContainerDiscoveryManaging
+    public var eventsManager: ContainerEventsManaging
     public var lifecycleManager: ContainerLifecycleManaging
     public var resourceManager: ContainerResourceManaging
     public var statsManager: ContainerStatsManaging
@@ -321,12 +322,14 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
 
     public init(
         discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
+        eventsManager: ContainerEventsManaging = ContainerClientEventsManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
         statsManager: ContainerStatsManaging = ContainerClientStatsManager(),
         topManager: ContainerTopManaging = ContainerClientTopManager()
     ) {
         self.discoveryManager = discoveryManager
+        self.eventsManager = eventsManager
         self.lifecycleManager = lifecycleManager
         self.resourceManager = resourceManager
         self.statsManager = statsManager
@@ -361,6 +364,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var discoveryManager: ContainerDiscoveryManaging {
         get { runtime.discoveryManager }
         set { runtime.discoveryManager = newValue }
+    }
+
+    public var eventsManager: ContainerEventsManaging {
+        get { runtime.eventsManager }
+        set { runtime.eventsManager = newValue }
     }
 
     public var execManager: ContainerExecManaging {
@@ -597,6 +605,21 @@ public struct ComposeTopOptions {
 
     public init(services: [String] = []) {
         self.services = services
+    }
+}
+
+/// Options for `compose events`.
+public struct ComposeEventsOptions {
+    public var services: [String]
+    public var json: Bool
+    public var since: String?
+    public var until: String?
+
+    public init(services: [String] = [], json: Bool = false, since: String? = nil, until: String? = nil) {
+        self.services = services
+        self.json = json
+        self.since = since
+        self.until = until
     }
 }
 
@@ -1010,6 +1033,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let options: ComposeExecutionOptions
     private let copier: ContainerCopying
     private let discoveryManager: ContainerDiscoveryManaging
+    private let eventsManager: ContainerEventsManaging
     private let execManager: ContainerExecManaging
     private let exporter: ContainerExporting
     private let imageManager: ContainerImageManaging
@@ -1029,6 +1053,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.options = options
         self.copier = dependencies.copier
         self.discoveryManager = dependencies.discoveryManager
+        self.eventsManager = dependencies.eventsManager
         self.execManager = dependencies.execManager
         self.exporter = dependencies.exporter
         self.imageManager = dependencies.imageManager
@@ -2256,6 +2281,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
     }
 
+    /// Streams project container lifecycle events in Docker Compose JSON format.
+    public func events(project: ComposeProject, options events: ComposeEventsOptions) async throws {
+        try validate(project: project)
+        try validateEventsOptions(events)
+        let services = try selectedServices(project: project, selected: events.services)
+        if options.dryRun {
+            try await runContainer(["events"])
+            return
+        }
+        try await eventsManager.events(
+            projectName: project.name,
+            services: services.map(\.name),
+            emit: options.emit
+        )
+    }
+
     /// Sends a signal to selected service containers.
     public func kill(project: ComposeProject, services selected: [String], signal: String?) async throws {
         let services = try selectedServices(project: project, selected: selected)
@@ -2542,6 +2583,19 @@ private extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("unknown service '\(name)'")
             }
             return service
+        }
+    }
+
+    /// Validates the currently implemented Compose events option subset.
+    func validateEventsOptions(_ events: ComposeEventsOptions) throws {
+        guard events.json else {
+            throw ComposeError.unsupported("events: this slice supports Docker Compose JSON output only; pass --json")
+        }
+        if let since = events.since, !since.isEmpty {
+            throw ComposeError.unsupported("events --since '\(since)': apple/container event streams do not replay or filter historical events yet")
+        }
+        if let until = events.until, !until.isEmpty {
+            throw ComposeError.unsupported("events --until '\(until)': apple/container event streams do not stop at a filtered timestamp yet")
         }
     }
 
@@ -6624,15 +6678,15 @@ private struct ComposeLabelOverride {
     }
 }
 
-private let projectLabel = "com.apple.container.compose.project"
-private let serviceLabel = "com.apple.container.compose.service"
-private let oneOffLabel = "com.apple.container.compose.oneoff"
+let projectLabel = "com.apple.container.compose.project"
+let serviceLabel = "com.apple.container.compose.service"
+let oneOffLabel = "com.apple.container.compose.oneoff"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesLabel = "com.apple.container.compose.project.config-files"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
-private let reservedComposeLabelPrefix = "com.apple.container.compose."
-private let reservedDockerComposeLabelPrefix = "com.docker.compose."
+let reservedComposeLabelPrefix = "com.apple.container.compose."
+let reservedDockerComposeLabelPrefix = "com.docker.compose."
 private let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
 private let supportedHealthCheckKeys = Set([
     "disable",

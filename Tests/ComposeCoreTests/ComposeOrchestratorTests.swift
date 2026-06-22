@@ -210,6 +210,7 @@ private func orchestratorDependencies(
     var dependencies = ComposeOrchestratorDependencies()
     dependencies.copier = RecordingContainerCopier()
     dependencies.discoveryManager = RecordingContainerDiscoveryManager()
+    dependencies.eventsManager = RecordingContainerEventsManager()
     dependencies.execManager = RecordingContainerExecManager()
     dependencies.exporter = RecordingContainerExporter()
     dependencies.imageManager = RecordingContainerImageManager()
@@ -355,6 +356,14 @@ private extension ComposeOrchestrator {
     }
 
     convenience init(
+        runner: CommandRunning = RecordingRunner(),
+        options: ComposeExecutionOptions = ComposeExecutionOptions(),
+        eventsManager: ContainerEventsManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.eventsManager = eventsManager })
+    }
+
+    convenience init(
         runner: CommandRunning,
         options: ComposeExecutionOptions,
         execManager: ContainerExecManaging
@@ -469,6 +478,7 @@ struct ComposeOrchestratorTests {
     func dependencyGroupsPreserveIndividuallyConfiguredCollaborators() {
         let copier = RecordingContainerCopier()
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let eventsManager = RecordingContainerEventsManager()
         let execManager = RecordingContainerExecManager()
         let exporter = RecordingContainerExporter()
         let imageManager = RecordingContainerImageManager()
@@ -486,6 +496,7 @@ struct ComposeOrchestratorTests {
             ),
             runtime: ComposeOrchestratorRuntimeDependencies(
                 discoveryManager: discoveryManager,
+                eventsManager: eventsManager,
                 lifecycleManager: lifecycleManager,
                 resourceManager: resourceManager,
                 statsManager: statsManager,
@@ -496,6 +507,7 @@ struct ComposeOrchestratorTests {
 
         expectSameInstance(dependencies.copier, copier, "copier")
         expectSameInstance(dependencies.discoveryManager, discoveryManager, "discoveryManager")
+        expectSameInstance(dependencies.eventsManager, eventsManager, "eventsManager")
         expectSameInstance(dependencies.execManager, execManager, "execManager")
         expectSameInstance(dependencies.exporter, exporter, "exporter")
         expectSameInstance(dependencies.imageManager, imageManager, "imageManager")
@@ -6508,6 +6520,200 @@ struct ComposeOrchestratorTests {
             "+ container top custom-db",
         ])
         #expect(await topManager.requests.isEmpty)
+    }
+
+    @Test("events passes selected services to direct runtime event manager")
+    func eventsPassesSelectedServicesToDirectRuntimeEventManager() async throws {
+        let emitted = MessageRecorder()
+        let eventsManager = RecordingContainerEventsManager(outputs: ["event-output"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            eventsManager: eventsManager
+        ).events(
+            project: project,
+            options: ComposeEventsOptions(services: ["api"], json: true)
+        )
+
+        #expect(await eventsManager.requests == [
+            ComposeEventsRequest(projectName: "demo", services: ["api"]),
+        ])
+        #expect(emitted.messages == ["event-output"])
+    }
+
+    @Test("events requires JSON output in the first runtime-backed slice")
+    func eventsRequiresJSONOutputInFirstRuntimeBackedSlice() async throws {
+        let eventsManager = RecordingContainerEventsManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        do {
+            try await ComposeOrchestrator(eventsManager: eventsManager).events(
+                project: project,
+                options: ComposeEventsOptions(services: ["api"])
+            )
+            Issue.record("Expected unsupported events format failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("events: this slice supports Docker Compose JSON output only; pass --json"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(await eventsManager.requests.isEmpty)
+    }
+
+    @Test("events rejects time filters until runtime event replay exists")
+    func eventsRejectsTimeFiltersUntilRuntimeEventReplayExists() async throws {
+        let eventsManager = RecordingContainerEventsManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        do {
+            try await ComposeOrchestrator(eventsManager: eventsManager).events(
+                project: project,
+                options: ComposeEventsOptions(services: ["api"], json: true, since: "2026-06-22T10:00:00Z")
+            )
+            Issue.record("Expected unsupported events since failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("events --since '2026-06-22T10:00:00Z': apple/container event streams do not replay or filter historical events yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            try await ComposeOrchestrator(eventsManager: eventsManager).events(
+                project: project,
+                options: ComposeEventsOptions(services: ["api"], json: true, until: "2026-06-22T10:05:00Z")
+            )
+            Issue.record("Expected unsupported events until failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("events --until '2026-06-22T10:05:00Z': apple/container event streams do not stop at a filtered timestamp yet"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(await eventsManager.requests.isEmpty)
+    }
+
+    @Test("events dry run emits generic runtime event command")
+    func eventsDryRunEmitsGenericRuntimeEventCommand() async throws {
+        let emitted = MessageRecorder()
+        let eventsManager = RecordingContainerEventsManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            eventsManager: eventsManager
+        ).events(
+            project: project,
+            options: ComposeEventsOptions(services: ["api"], json: true)
+        )
+
+        #expect(emitted.messages == ["+ container events"])
+        #expect(await eventsManager.requests.isEmpty)
+    }
+
+    @Test("event manager filters runtime stream to Compose JSON service events")
+    func eventManagerFiltersRuntimeStreamToComposeJSONServiceEvents() async throws {
+        let emitted = MessageRecorder()
+        let events = [
+            ContainerEvent(
+                time: date("2026-06-22T10:00:00Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "start",
+                attributes: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    "com.apple.container.compose.config-hash": "hash",
+                    "com.docker.compose.project": "demo",
+                    "image": "example/api",
+                    "status": "running",
+                    "custom": "visible",
+                ]
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:01Z"),
+                type: "container",
+                id: "demo-db-1",
+                action: "start",
+                attributes: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "db",
+                    composeOneOffLabel: "false",
+                    "image": "postgres",
+                ]
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:02Z"),
+                type: "container",
+                id: "demo-api-run-1",
+                action: "start",
+                attributes: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "true",
+                ]
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:03Z"),
+                type: "container",
+                id: "other-api-1",
+                action: "start",
+                attributes: [
+                    composeProjectLabel: "other",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ]
+            ),
+            ContainerEvent(
+                time: date("2026-06-22T10:00:04Z"),
+                type: "image",
+                id: "example/api",
+                action: "pull",
+                attributes: [composeProjectLabel: "demo"]
+            ),
+        ]
+        let manager = ContainerClientEventsManager(
+            client: RecordingContainerEventsAPIClient(data: try containerEventData(events, trailingNewline: false))
+        )
+
+        try await manager.events(
+            projectName: "demo",
+            services: ["api"],
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages.count == 1)
+        let output = try #require(emitted.messages.first)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let record = try decoder.decode(ComposeEventRecord.self, from: Data(output.utf8))
+        #expect(record == ComposeEventRecord(
+            time: date("2026-06-22T10:00:00Z"),
+            type: "container",
+            service: "api",
+            id: "demo-api-1",
+            action: "start",
+            attributes: [
+                "custom": "visible",
+                "image": "example/api",
+                "status": "running",
+            ]
+        ))
     }
 
     @Test("ls lists compose projects with grouped status")
@@ -17165,6 +17371,20 @@ private func logRecordData(_ records: [ContainerLogRecord]) throws -> Data {
     return data
 }
 
+private func containerEventData(_ events: [ContainerEvent], trailingNewline: Bool = true) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    var data = Data()
+    for event in events {
+        data.append(try encoder.encode(event))
+        data.append(UInt8(ascii: "\n"))
+    }
+    if !trailingNewline, data.last == UInt8(ascii: "\n") {
+        data.removeLast()
+    }
+    return data
+}
+
 private func logRecords(from data: Data) throws -> [ContainerLogRecord] {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
@@ -18099,6 +18319,50 @@ private actor RecordingContainerTopManager: ContainerTopManaging {
         for output in outputs {
             emit(output)
         }
+    }
+}
+
+private struct ComposeEventsRequest: Equatable {
+    var projectName: String
+    var services: [String]
+}
+
+private actor RecordingContainerEventsManager: ContainerEventsManaging {
+    private let outputs: [String]
+    private var storage: [ComposeEventsRequest] = []
+
+    init(outputs: [String] = []) {
+        self.outputs = outputs
+    }
+
+    var requests: [ComposeEventsRequest] {
+        storage
+    }
+
+    func events(
+        projectName: String,
+        services: [String],
+        emit: @escaping @Sendable (String) -> Void
+    ) async throws {
+        storage.append(ComposeEventsRequest(projectName: projectName, services: services))
+        for output in outputs {
+            emit(output)
+        }
+    }
+}
+
+private struct RecordingContainerEventsAPIClient: ContainerEventsAPIClienting {
+    var data: Data
+
+    func events() async throws -> FileHandle {
+        let pipe = Pipe()
+        let writer = pipe.fileHandleForWriting
+        let data = data
+        Task {
+            try? writer.write(contentsOf: data)
+            try? writer.close()
+        }
+        return pipe.fileHandleForReading
     }
 }
 

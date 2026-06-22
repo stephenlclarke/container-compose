@@ -67,7 +67,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-events-parity coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -500,9 +500,8 @@ cli-smoke-built:
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \
 	[[ "$$top_output" == *"unsupported compose feature: top:"* ]]; \
 	[[ "$$top_output" == *"apple/container does not expose a process-list command yet"* ]]; \
-	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json 2>&1 || true)"; \
-	[[ "$$events_output" == *"unsupported compose feature: events:"* ]]; \
-	[[ "$$events_output" == *"apple/container does not expose an event stream yet"* ]]; \
+	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json)"; \
+	[[ "$$events_output" == *"+ container events"* ]]; \
 	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 80)"; \
 	[[ "$$port_output" == *"0.0.0.0:8080"* ]]; \
 	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api 2>&1 || true)"; \
@@ -534,6 +533,9 @@ docker-log-fixtures:
 
 docker-log-fixtures-update:
 	./scripts/capture-docker-compose-log-fixtures.sh --update
+
+docker-compose-events-parity:
+	./Tools/parity/check-compose-events.sh --strict
 
 coverage: swift-coverage go-test
 

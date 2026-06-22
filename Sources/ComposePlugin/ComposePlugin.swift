@@ -812,14 +812,30 @@ struct Top: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose events` until apple/container exposes event streams.
+/// Implements `compose events`.
 struct Events: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "events", abstract: "Stream project events.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for event streaming.
-    func run() throws {
-        try global.orchestrator().unsupported("events", reason: "apple/container does not expose an event stream yet")
+    @Flag(name: .customLong("json"), help: "Output events as a stream of JSON objects.")
+    var json = false
+    @Option(name: .customLong("since"), help: "Accepted for Docker Compose compatibility; currently requires a future runtime replay/filter primitive.")
+    var since: String?
+    @Option(name: .customLong("until"), help: "Accepted for Docker Compose compatibility; currently requires a future runtime stop/filter primitive.")
+    var until: String?
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Streams Docker Compose-style project container events.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().events(
+            project: loadedProject,
+            options: ComposeEventsOptions(
+                services: services,
+                json: json,
+                since: since,
+                until: until
+            )
+        )
     }
 }
 
