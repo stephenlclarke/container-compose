@@ -220,7 +220,7 @@ private struct ComposeEventRenderer {
     /// Formats the event timestamp like Docker Compose's `api.Event.String()`.
     private func formattedTimestamp(_ date: Date) -> String {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        calendar.timeZone = .current
         let components = calendar.dateComponents(
             [.year, .month, .day, .hour, .minute, .second, .nanosecond],
             from: date

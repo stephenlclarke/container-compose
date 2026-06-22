@@ -35,6 +35,27 @@ private func date(_ value: String) -> Date {
     return formatter.date(from: value)!
 }
 
+private func composeTextEventTimestamp(_ value: String) -> String {
+    let eventDate = date(value)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    let components = calendar.dateComponents(
+        [.year, .month, .day, .hour, .minute, .second, .nanosecond],
+        from: eventDate
+    )
+    let microseconds = (components.nanosecond ?? 0) / 1_000
+    return String(
+        format: "%04d-%02d-%02d %02d:%02d:%02d.%06d",
+        components.year ?? 0,
+        components.month ?? 0,
+        components.day ?? 0,
+        components.hour ?? 0,
+        components.minute ?? 0,
+        components.second ?? 0,
+        microseconds
+    )
+}
+
 private func composeService(
     name: String,
     image: String? = nil,
@@ -6769,7 +6790,7 @@ struct ComposeOrchestratorTests {
 
         #expect(await client.options == [.default])
         #expect(emitted.messages == [
-            "2026-06-22 10:00:00.000000 container die demo-api-1 (custom=visible, exitCode=0, image=example/api)",
+            "\(composeTextEventTimestamp("2026-06-22T10:00:00Z")) container die demo-api-1 (custom=visible, exitCode=0, image=example/api)",
         ])
     }
 
