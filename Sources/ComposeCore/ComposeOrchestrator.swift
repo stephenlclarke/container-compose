@@ -736,32 +736,51 @@ private struct RuntimeRestartPolicyArguments {
     var arguments: [String] {
         var result = ["--restart", policy]
         if let delayNanoseconds, policy != "no" {
-            result.append(contentsOf: ["--restart-delay", Self.durationArgument(delayNanoseconds)])
+            result.append(contentsOf: ["--restart-delay", runtimeDurationArgument(delayNanoseconds)])
         }
         if let windowNanoseconds, policy != "no" {
-            result.append(contentsOf: ["--restart-window", Self.durationArgument(windowNanoseconds)])
+            result.append(contentsOf: ["--restart-window", runtimeDurationArgument(windowNanoseconds)])
         }
         return result
     }
+}
 
-    private static func durationArgument(_ nanoseconds: Int64) -> String {
-        let seconds = nanoseconds / 1_000_000_000
-        let remainder = nanoseconds % 1_000_000_000
-        guard remainder != 0 else {
-            return "\(seconds)s"
-        }
-        let paddedRemainder = String(format: "%09d", remainder)
-        let trimmedRemainder = dropTrailingZeros(from: paddedRemainder)
-        return "\(seconds).\(trimmedRemainder)s"
-    }
+private actor ComposeImageHealthCheckCache {
+    private var storage: [String: ComposeImageHealthCheck?] = [:]
 
-    private static func dropTrailingZeros(from value: String) -> Substring {
-        var end = value.endIndex
-        while end > value.startIndex, value[value.index(before: end)] == "0" {
-            end = value.index(before: end)
+    /// Returns cached image healthcheck metadata for one image/platform pair.
+    func healthCheck(
+        reference: String,
+        platform: String?,
+        imageManager: ContainerImageManaging
+    ) async throws -> ComposeImageHealthCheck? {
+        let key = "\(reference)|\(platform ?? "")"
+        if storage.keys.contains(key) {
+            return storage[key] ?? nil
         }
-        return value[..<end]
+        let healthCheck = try await imageManager.imageHealthCheck(reference, platform: platform)
+        storage[key] = healthCheck
+        return healthCheck
     }
+}
+
+private func runtimeDurationArgument(_ nanoseconds: Int64) -> String {
+    let seconds = nanoseconds / 1_000_000_000
+    let remainder = nanoseconds % 1_000_000_000
+    guard remainder != 0 else {
+        return "\(seconds)s"
+    }
+    let paddedRemainder = String(format: "%09d", remainder)
+    let trimmedRemainder = dropTrailingZeros(from: paddedRemainder)
+    return "\(seconds).\(trimmedRemainder)s"
+}
+
+private func dropTrailingZeros(from value: String) -> Substring {
+    var end = value.endIndex
+    while end > value.startIndex, value[value.index(before: end)] == "0" {
+        end = value.index(before: end)
+    }
+    return value[..<end]
 }
 
 private struct MountRenderContext {
@@ -826,6 +845,7 @@ private struct ServiceContainerReconcileRequest {
     var name: String
     var runOptions: RunArgumentOptions
     var externalVolumeMounts: ExternalVolumeMounts = [:]
+    var imageHealthCheckCache: ComposeImageHealthCheckCache?
     var forceRecreate: Bool
     var noRecreate: Bool
     var dependencyRecreateServices: Set<String>
@@ -1027,8 +1047,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
         let attachedForegroundService = try foregroundServiceTarget(project: project, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
         try validateAttachedPostStartSupport(target: attachedForegroundService)
-
-        try await ensureResources(project: project)
+        let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
         try await applyPullPolicy(
             up.pullPolicy,
@@ -1042,6 +1061,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if up.build {
             try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
         }
+
+        try await validateRuntimeHealthChecks(project: project, services: services, cache: imageHealthCheckCache)
+        try await ensureResources(project: project)
 
         var changedServices = Set<String>()
         for serviceReference in services {
@@ -1083,6 +1105,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                                 $0.replicaCount = replicaCount
                             },
                             externalVolumeMounts: externalVolumeMounts,
+                            imageHealthCheckCache: imageHealthCheckCache,
                             forceRecreate: up.forceRecreate,
                             noRecreate: up.noRecreate,
                             dependencyRecreateServices: dependencyRecreateServices,
@@ -1157,11 +1180,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             didRecreate = true
         }
 
-        try await runContainer(try runArguments(
+        try await runContainer(try await runArguments(
             project: project,
             service: service,
             options: request.runOptions,
-            externalVolumeMounts: request.externalVolumeMounts
+            externalVolumeMounts: request.externalVolumeMounts,
+            imageHealthCheckCache: request.imageHealthCheckCache
         ))
         if request.runOptions.command == "run" {
             try await runPostStartHooks(service: service, containerID: name)
@@ -1228,10 +1252,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: project, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
-
-        try await ensureResources(project: project)
+        let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
         try await applyCreateImagePolicy(create, project: project, services: services)
+        try await validateRuntimeHealthChecks(project: project, services: services, cache: imageHealthCheckCache)
+
+        try await ensureResources(project: project)
 
         for service in services {
             if shouldBuildServiceForCreate(create, service: service) {
@@ -1254,6 +1280,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                                 $0.replicaCount = replicaCount
                             },
                             externalVolumeMounts: externalVolumeMounts,
+                            imageHealthCheckCache: imageHealthCheckCache,
                             forceRecreate: create.forceRecreate,
                             noRecreate: create.noRecreate,
                             dependencyRecreateServices: dependencyRecreateServices,
@@ -1914,16 +1941,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try validatePublishedPorts(publishedPorts, serviceName: service.name)
+        let imageHealthCheckCache = ComposeImageHealthCheckCache()
         let externalVolumeMounts = try await resolveExternalVolumeMounts(
             project: runProject,
             services: dependencyServices + [service]
         )
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
+        try await validateRuntimeHealthChecks(project: runProject, services: dependencyServices + [service], cache: imageHealthCheckCache)
         try await ensureResources(project: runProject)
         runProject = try await startDependencyServices(
             project: runProject,
             services: dependencyServices,
-            externalVolumeMounts: externalVolumeMounts
+            externalVolumeMounts: externalVolumeMounts,
+            imageHealthCheckCache: imageHealthCheckCache
         )
         service = runProject.services[serviceName] ?? service
         if !run.noDeps {
@@ -1931,7 +1961,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         let containerName = oneOffRunContainerName(project: runProject, service: service, requestedName: run.containerName)
         try await runContainer(
-            try runArguments(
+            try await runArguments(
                 project: runProject,
                 service: service,
                 options: RunArgumentOptions {
@@ -1942,7 +1972,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     $0.containerNameOverride = containerName
                     $0.labelOverrides = labelOverrides
                 },
-                externalVolumeMounts: externalVolumeMounts
+                externalVolumeMounts: externalVolumeMounts,
+                imageHealthCheckCache: imageHealthCheckCache
             ),
             inheritedIO: !run.detach && (service.tty == true || service.stdinOpen == true)
         )
@@ -2647,7 +2678,7 @@ private extension ComposeOrchestrator {
         if let sysctls = service.sysctls, !sysctls.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
         }
-        _ = try runtimeHealthCheckArguments(service: service)
+        try validateHealthCheckSupport(service: service)
         _ = try serviceConfigSecretMounts(project: project, service: service)
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
             throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>")
@@ -3732,11 +3763,90 @@ private extension ComposeOrchestrator {
         return RuntimeRestartPolicyArguments(policy: restart)
     }
 
+    /// Validates service healthcheck fields without requiring image metadata.
+    func validateHealthCheckSupport(service: ComposeService) throws {
+        let fields = try healthCheckFields(service: service)
+        guard fields["disable"]?.boolValue != true else {
+            return
+        }
+        if let test = fields["test"] {
+            _ = try runtimeHealthCheckCommand(test: test, serviceName: service.name)
+        }
+        for field in healthCheckDurationFields {
+            if let value = fields[field.composeName] {
+                _ = try healthCheckDuration(value, field: field.composeName, serviceName: service.name)
+            }
+        }
+        if let retries = fields["retries"] {
+            _ = try healthCheckRetries(retries, serviceName: service.name)
+        }
+    }
+
     /// Returns Docker-compatible apple/container healthcheck arguments for
     /// service create/run.
-    func runtimeHealthCheckArguments(service: ComposeService) throws -> [String] {
-        guard let healthcheck = service.healthcheck else {
+    func runtimeHealthCheckArguments(
+        project: ComposeProject,
+        service: ComposeService,
+        cache: ComposeImageHealthCheckCache?
+    ) async throws -> [String] {
+        let fields = try healthCheckFields(service: service)
+        guard fields["disable"]?.boolValue != true else {
+            return ["--no-healthcheck"]
+        }
+        if let test = fields["test"] {
+            return try explicitHealthCheckArguments(test: test, fields: fields, serviceName: service.name)
+        }
+
+        guard !options.dryRun else {
+            if healthCheckRequiresInheritedCommand(fields) {
+                throw ComposeError.unsupported("service '\(service.name)' tunes an image healthcheck; dry-run cannot resolve image HEALTHCHECK metadata")
+            }
             return []
+        }
+
+        let imageHealthCheck: ComposeImageHealthCheck?
+        do {
+            imageHealthCheck = try await inheritedImageHealthCheck(project: project, service: service, cache: cache)
+        } catch {
+            guard healthCheckRequiresInheritedCommand(fields) else {
+                return []
+            }
+            throw error
+        }
+
+        guard let imageHealthCheck else {
+            if healthCheckRequiresInheritedCommand(fields) {
+                let image = serviceImage(project: project, service: service) ?? "<none>"
+                throw ComposeError.unsupported("service '\(service.name)' tunes an image healthcheck, but image '\(image)' does not expose Dockerfile HEALTHCHECK metadata")
+            }
+            return []
+        }
+
+        return try inheritedHealthCheckArguments(
+            imageHealthCheck,
+            fields: fields,
+            serviceName: service.name
+        )
+    }
+
+    /// Resolves healthcheck runtime arguments before creating project resources.
+    func validateRuntimeHealthChecks(
+        project: ComposeProject,
+        services: [ComposeService],
+        cache: ComposeImageHealthCheckCache
+    ) async throws {
+        for service in services {
+            guard serviceImage(project: project, service: service) != nil else {
+                continue
+            }
+            _ = try await runtimeHealthCheckArguments(project: project, service: service, cache: cache)
+        }
+    }
+
+    /// Returns validated Compose healthcheck fields.
+    func healthCheckFields(service: ComposeService) throws -> [String: ComposeValue] {
+        guard let healthcheck = service.healthcheck else {
+            return [:]
         }
         guard case .object(let fields) = healthcheck else {
             throw ComposeError.invalidProject("service '\(service.name)' healthcheck must be an object")
@@ -3745,37 +3855,144 @@ private extension ComposeOrchestrator {
             let unsupported = fields.keys.filter { !supportedHealthCheckKeys.contains($0) }.sorted().joined(separator: ", ")
             throw ComposeError.unsupported("service '\(service.name)' uses unsupported healthcheck fields \(unsupported)")
         }
-        if fields["disable"]?.boolValue == true {
-            return ["--no-healthcheck"]
-        }
-        guard let test = fields["test"] else {
-            if fields.isEmpty || fields.keys.allSatisfy({ $0 == "disable" }) {
-                return []
-            }
-            throw ComposeError.unsupported("service '\(service.name)' tunes an image healthcheck; apple/container image healthcheck metadata is not exposed yet")
-        }
+        return fields
+    }
 
+    /// Returns whether Compose overrides require an image-level healthcheck command.
+    func healthCheckRequiresInheritedCommand(_ fields: [String: ComposeValue]) -> Bool {
+        fields.keys.contains { $0 != "disable" }
+    }
+
+    /// Reads inherited Dockerfile healthcheck metadata for the service image.
+    func inheritedImageHealthCheck(
+        project: ComposeProject,
+        service: ComposeService,
+        cache: ComposeImageHealthCheckCache?
+    ) async throws -> ComposeImageHealthCheck? {
+        guard let image = serviceImage(project: project, service: service) else {
+            return nil
+        }
+        if let cache {
+            return try await cache.healthCheck(reference: image, platform: service.platform, imageManager: imageManager)
+        }
+        return try await imageManager.imageHealthCheck(image, platform: service.platform)
+    }
+
+    /// Converts explicit Compose healthcheck fields to runtime arguments.
+    func explicitHealthCheckArguments(
+        test: ComposeValue,
+        fields: [String: ComposeValue],
+        serviceName: String
+    ) throws -> [String] {
         var args: [String]
-        switch try runtimeHealthCheckCommand(test: test, serviceName: service.name) {
+        switch try runtimeHealthCheckCommand(test: test, serviceName: serviceName) {
         case .disabled:
             args = ["--no-healthcheck"]
         case .command(let command):
             args = ["--health-cmd", command]
         }
 
+        try appendHealthCheckOverrides(fields: fields, serviceName: serviceName, args: &args)
+        return args
+    }
+
+    /// Converts Dockerfile healthcheck metadata plus Compose overrides to runtime arguments.
+    func inheritedHealthCheckArguments(
+        _ imageHealthCheck: ComposeImageHealthCheck,
+        fields: [String: ComposeValue],
+        serviceName: String
+    ) throws -> [String] {
+        guard let test = imageHealthCheck.test, !test.isEmpty else {
+            return try handleMissingInheritedHealthCheckCommand(fields: fields, serviceName: serviceName)
+        }
+
+        let testValue = ComposeValue.array(test.map { .string($0) })
+        var args: [String]
+        switch try runtimeHealthCheckCommand(test: testValue, serviceName: serviceName) {
+        case .disabled:
+            return try handleMissingInheritedHealthCheckCommand(fields: fields, serviceName: serviceName)
+        case .command(let command):
+            args = ["--health-cmd", command]
+        }
+
+        try appendInheritedHealthCheckDefaults(imageHealthCheck, fields: fields, serviceName: serviceName, args: &args)
+        try appendHealthCheckOverrides(fields: fields, serviceName: serviceName, args: &args)
+        return args
+    }
+
+    /// Returns the no-op or error result for an image without an inherited command.
+    func handleMissingInheritedHealthCheckCommand(
+        fields: [String: ComposeValue],
+        serviceName: String
+    ) throws -> [String] {
+        guard healthCheckRequiresInheritedCommand(fields) else {
+            return []
+        }
+        throw ComposeError.unsupported("service '\(serviceName)' tunes an image healthcheck, but the image disables Dockerfile HEALTHCHECK")
+    }
+
+    /// Appends image-level healthcheck defaults that are not overridden by Compose.
+    func appendInheritedHealthCheckDefaults(
+        _ imageHealthCheck: ComposeImageHealthCheck,
+        fields: [String: ComposeValue],
+        serviceName: String,
+        args: inout [String]
+    ) throws {
+        for field in healthCheckDurationFields where fields[field.composeName] == nil {
+            guard let duration = try inheritedHealthCheckDuration(imageHealthCheck, field: field.composeName, serviceName: serviceName) else {
+                continue
+            }
+            args.append(contentsOf: [field.runtimeName, duration])
+        }
+        if fields["retries"] == nil, let retries = imageHealthCheck.retries, retries > 0 {
+            args.append(contentsOf: ["--health-retries", String(retries)])
+        }
+    }
+
+    /// Appends Compose healthcheck overrides.
+    func appendHealthCheckOverrides(
+        fields: [String: ComposeValue],
+        serviceName: String,
+        args: inout [String]
+    ) throws {
         for field in healthCheckDurationFields {
             if let value = fields[field.composeName] {
-                let duration = try healthCheckDuration(value, field: field.composeName, serviceName: service.name)
+                let duration = try healthCheckDuration(value, field: field.composeName, serviceName: serviceName)
                 args.append(contentsOf: [field.runtimeName, duration])
             }
         }
 
         if let retries = fields["retries"] {
-            let value = try healthCheckRetries(retries, serviceName: service.name)
+            let value = try healthCheckRetries(retries, serviceName: serviceName)
             args.append(contentsOf: ["--health-retries", String(value)])
         }
+    }
 
-        return args
+    /// Returns an image-level healthcheck duration for one Compose field.
+    func inheritedHealthCheckDuration(
+        _ imageHealthCheck: ComposeImageHealthCheck,
+        field: String,
+        serviceName: String
+    ) throws -> String? {
+        let nanoseconds: Int64? = switch field {
+        case "interval":
+            imageHealthCheck.intervalInNanoseconds
+        case "timeout":
+            imageHealthCheck.timeoutInNanoseconds
+        case "start_period":
+            imageHealthCheck.startPeriodInNanoseconds
+        case "start_interval":
+            imageHealthCheck.startIntervalInNanoseconds
+        default:
+            nil
+        }
+        guard let nanoseconds, nanoseconds != 0 else {
+            return nil
+        }
+        guard nanoseconds > 0 else {
+            throw ComposeError.invalidProject("service '\(serviceName)' inherited healthcheck.\(field) must be non-negative")
+        }
+        return runtimeDurationArgument(nanoseconds)
     }
 
     /// Converts Compose healthcheck `test` to the container CLI command form.
@@ -4846,8 +5063,9 @@ private extension ComposeOrchestrator {
         project: ComposeProject,
         service: ComposeService,
         options run: RunArgumentOptions = RunArgumentOptions(),
-        externalVolumeMounts: ExternalVolumeMounts = [:]
-    ) throws -> [String] {
+        externalVolumeMounts: ExternalVolumeMounts = [:],
+        imageHealthCheckCache: ComposeImageHealthCheckCache? = nil
+    ) async throws -> [String] {
         var args = [run.command]
         let runtimeName: String
         if let containerNameOverride = run.containerNameOverride {
@@ -4893,7 +5111,11 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--log-driver", logDriver])
         }
         args.append(contentsOf: runtimeLogOptionArguments(service: service))
-        args.append(contentsOf: try runtimeHealthCheckArguments(service: service))
+        args.append(contentsOf: try await runtimeHealthCheckArguments(
+            project: project,
+            service: service,
+            cache: imageHealthCheckCache
+        ))
         if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArguments(service: service) {
             args.append(contentsOf: restartPolicy.arguments)
         }
@@ -5061,7 +5283,8 @@ private extension ComposeOrchestrator {
     func startDependencyServices(
         project: ComposeProject,
         services: [ComposeService],
-        externalVolumeMounts: ExternalVolumeMounts = [:]
+        externalVolumeMounts: ExternalVolumeMounts = [:],
+        imageHealthCheckCache: ComposeImageHealthCheckCache = ComposeImageHealthCheckCache()
     ) async throws -> ComposeProject {
         var workingProject = project
         try await applyServicePullPolicies(project: workingProject, services: services)
@@ -5099,13 +5322,14 @@ private extension ComposeOrchestrator {
             }
 
             try await runContainer(
-                try runArguments(
+                try await runArguments(
                     project: workingProject,
                     service: service,
                     options: RunArgumentOptions {
                         $0.detach = true
                     },
-                    externalVolumeMounts: externalVolumeMounts
+                    externalVolumeMounts: externalVolumeMounts,
+                    imageHealthCheckCache: imageHealthCheckCache
                 )
             )
             try await runPostStartHooks(service: service, containerID: name)

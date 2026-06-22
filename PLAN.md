@@ -74,6 +74,8 @@ Existing PRs and branches to leverage:
 - <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [`apple/container#1764`](https://github.com/apple/container/pull/1764): tail and until retrieval filters. Use it as the baseline for line-based filter semantics.
 - <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [`apple/container#1765`](https://github.com/apple/container/pull/1765): Docker-compatible timestamp and duration parser. Use it as the shared parser for container CLI, runtime API, and `container-compose`.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [`apple/container#1758`](https://github.com/apple/container/pull/1758): SwiftLog handler deprecation cleanup. Keep it as log-stack hygiene, but do not treat it as a Compose feature dependency.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [`apple/container#440`](https://github.com/apple/container/issues/440): native builder/parser support for Dockerfile `HEALTHCHECK`. Keep this linked to image metadata inheritance because Compose needs either Dockerfile metadata from built images or an accepted runtime image model exposing the same probe data.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [`apple/container#1502`](https://github.com/apple/container/issues/1502) and [`apple/container#1504`](https://github.com/apple/container/pull/1504): health status and snapshot API direction. These are the compatibility anchor for explicit healthcheck runtime state; the fork's image-healthcheck metadata slice complements them by exposing the image-level probe defaults Compose inherits.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [`logs-structured-record-storage`](https://github.com/stephenlclarke/container/tree/logs-structured-record-storage) and [`logs-structured-record-api`](https://github.com/stephenlclarke/container/tree/logs-structured-record-api): PR-ready fork branches that add active structured log storage and active structured record retrieval. They expose `stdio.log`, `stdio.jsonl`, `ContainerLogRecord`, `ContainerClient.logRecords(id:options:)`, and `ContainerClient.logRecordFile(id:)`; the local integration branch now adds static rotated replay and structured rotation-aware follow as separate later upstream slices.
 - <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11): the fork-side precursor to #1592. Continue comparing API names and behavior so the two Compose efforts converge rather than fork the log contract.
 - <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`apple/container#1736`](https://github.com/apple/container/pull/1736): peer Compose implementation. Use it for examples, test ideas, and CLI expectation comparison only; do not move Compose-specific policy into apple/container runtime PRs.
@@ -142,7 +144,7 @@ Reference targets:
       <td>2026-06-22 01:48:48 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now maps explicit service `healthcheck.test`, `interval`, `timeout`, `start_period`, `start_interval`, `retries`, `disable: true`, and `test: ["NONE"]` to the forked runtime creation flags. `depends_on.condition: service_healthy` waits for all dependency replicas to report `healthy`, continues polling while they are `starting`, fails on `unhealthy`, and rejects missing health status clearly. Dockerfile-inherited healthchecks remain an upstream image-config parsing gap because `apple/container` does not yet expose image `HEALTHCHECK` metadata through the runtime model.</td>
+      <td colspan="4">Notes: `container-compose` now maps explicit service `healthcheck.test`, `interval`, `timeout`, `start_period`, `start_interval`, `retries`, `disable: true`, and `test: ["NONE"]` to the forked runtime creation flags. `depends_on.condition: service_healthy` waits for all dependency replicas to report `healthy`, continues polling while they are `starting`, fails on `unhealthy`, and rejects missing health status clearly. Dockerfile-inherited healthchecks are handled by the later image metadata slice below and remain fork-backed until that upstream image-config API is accepted.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add restart policy create options to the container fork</td>
@@ -188,6 +190,24 @@ Reference targets:
     </tr>
     <tr>
       <td colspan="4">Notes: implemented locally as two signed PR-shaped commits. The `stephenlclarke/container` `logs-integration-chris` branch commit `7251c1b` (`feat(runtime): add restart policy timing`) adds optional `ContainerRestartPolicy.retryDelayInNanoseconds` and `successfulRunDurationInNanoseconds`, fixed-delay tracker behavior when configured, configured stable-run reset windows, parser coverage, hidden integration flags, and `ISSUE-restart-policy-timing.md` / `PR-restart-policy-timing.md`. The compose side now passes normalized `deploy.restart_policy.delay` and `window` to those timing flags for service containers. Released upstream support remains partial until equivalent restart timing primitives are accepted in [`apple/container`](https://github.com/apple/container).</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Expose Docker image `HEALTHCHECK` metadata in the container fork</td>
+      <td>2026-06-22 03:02:43 BST</td>
+      <td>2026-06-22 03:02:43 BST</td>
+      <td>2026-06-22 03:12:12 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch as signed commit `831a013` (`feat(api): expose image healthcheck metadata`). The slice references [`apple/container#440`](https://github.com/apple/container/issues/440), [`apple/container#1502`](https://github.com/apple/container/issues/1502), and [`apple/container#1504`](https://github.com/apple/container/pull/1504), decodes Docker image config `Healthcheck` metadata from the existing image config content blob, projects it as `ImageResource.Variant.healthCheck`, and documents the PR shape in `ISSUE-image-healthcheck-metadata.md` / `PR-image-healthcheck-metadata.md` in the container fork.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Dockerfile-inherited image healthchecks in container-compose</td>
+      <td>2026-06-22 03:12:43 BST</td>
+      <td>2026-06-22 03:12:43 BST</td>
+      <td>2026-06-22 03:28:20 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now uses the direct image API to read fork-exposed Docker image healthcheck metadata. Services without an explicit Compose `healthcheck.test` can inherit Dockerfile `HEALTHCHECK` command, interval, timeout, start period, start interval, and retries; timing-only Compose overrides merge over image defaults. Explicit `disable: true` still maps to `--no-healthcheck`. Timing-only overrides reject before resources are created when the image does not expose a Dockerfile healthcheck command. Handoff files are `ISSUE-image-healthcheck-inheritance.md` and `PR-image-healthcheck-inheritance.md` in this repository.</td>
     </tr>
   </tbody>
 </table>

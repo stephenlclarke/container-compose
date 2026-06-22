@@ -1448,6 +1448,8 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests == [
             .pullMissing("example/api"),
             .pullMissing("postgres"),
+            .healthCheck(reference: "example/api", platform: nil),
+            .healthCheck(reference: "postgres", platform: nil),
         ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
     }
@@ -2881,6 +2883,8 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests == [
             .pullMissing("example/api"),
             .pullMissing("postgres"),
+            .healthCheck(reference: "example/api", platform: nil),
+            .healthCheck(reference: "postgres", platform: nil),
         ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
     }
@@ -2906,7 +2910,10 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(await imageManager.requests == [.pullMissing("example/api")])
+        #expect(await imageManager.requests == [
+            .pullMissing("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
+        ])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
@@ -2932,7 +2939,10 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1"]))
-        #expect(await imageManager.requests == [.pull("example/api")])
+        #expect(await imageManager.requests == [
+            .pull("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
+        ])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
@@ -2969,6 +2979,9 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .pullMissing("example/worker"),
+            .healthCheck(reference: "example/api", platform: nil),
+            .healthCheck(reference: "postgres", platform: nil),
+            .healthCheck(reference: "example/worker", platform: nil),
         ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1", "demo-worker-1"])
     }
@@ -3005,6 +3018,7 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests == [
             .exists("example/api"),
             .pull("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
         ])
         #expect(await metadataStore.recordedDate(for: "example/api") == now)
         #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
@@ -3039,7 +3053,10 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.up(project: project, options: ComposeUpOptions())
 
-        #expect(await imageManager.requests == [.exists("example/api")])
+        #expect(await imageManager.requests == [
+            .exists("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
+        ])
         #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
     }
 
@@ -3075,6 +3092,7 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests == [
             .exists("example/api"),
             .pull("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
         ])
         #expect(await metadataStore.recordedDate(for: "example/api") == now)
         #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
@@ -4937,6 +4955,123 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
         #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
         #expect(command.contains("--no-healthcheck"))
+    }
+
+    @Test("up maps inherited image healthchecks to container flags")
+    func upMapsInheritedImageHealthchecksToContainerFlags() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(healthChecks: [
+            "example/api": ComposeImageHealthCheck(
+                test: ["CMD-SHELL", "curl -fsS http://localhost/health || exit 1"],
+                intervalInNanoseconds: 30_000_000_000,
+                timeoutInNanoseconds: 3_000_000_000,
+                startPeriodInNanoseconds: 10_000_000_000,
+                startIntervalInNanoseconds: 1_500_000_000,
+                retries: 4
+            ),
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            imageManager: imageManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(await imageManager.requests == [.healthCheck(reference: "example/api", platform: nil)])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(command.containsSequence(["--health-cmd", "curl -fsS http://localhost/health || exit 1"]))
+        #expect(command.containsSequence(["--health-interval", "30s"]))
+        #expect(command.containsSequence(["--health-timeout", "3s"]))
+        #expect(command.containsSequence(["--health-start-period", "10s"]))
+        #expect(command.containsSequence(["--health-start-interval", "1.5s"]))
+        #expect(command.containsSequence(["--health-retries", "4"]))
+    }
+
+    @Test("up merges timing-only healthcheck overrides with image metadata")
+    func upMergesTimingOnlyHealthcheckOverridesWithImageMetadata() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(healthChecks: [
+            "example/api": ComposeImageHealthCheck(
+                test: ["CMD", "/usr/local/bin/health"],
+                intervalInNanoseconds: 30_000_000_000,
+                timeoutInNanoseconds: 3_000_000_000,
+                retries: 4
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.healthcheck = .object([
+                        "interval": .string("5s"),
+                        "retries": .number(2),
+                    ])
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(await imageManager.requests == [.healthCheck(reference: "example/api", platform: nil)])
+        #expect(command.containsSequence(["--health-cmd", "/usr/local/bin/health"]))
+        #expect(command.containsSequence(["--health-interval", "5s"]))
+        #expect(command.containsSequence(["--health-timeout", "3s"]))
+        #expect(command.containsSequence(["--health-retries", "2"]))
+        #expect(!command.containsSequence(["--health-interval", "30s"]))
+        #expect(!command.containsSequence(["--health-retries", "4"]))
+    }
+
+    @Test("up rejects timing-only healthchecks without image metadata before creating resources")
+    func upRejectsTimingOnlyHealthchecksWithoutImageMetadataBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.healthcheck = .object(["interval": .string("5s")])
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: imageManager,
+                resourceManager: resourceManager
+            ).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported inherited healthcheck error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' tunes an image healthcheck, but image 'example/api' does not expose Dockerfile HEALTHCHECK metadata"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await imageManager.requests == [.healthCheck(reference: "example/api", platform: nil)])
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("up maps file-backed configs and secrets to read-only bind mounts")
@@ -9336,6 +9471,26 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("image manager returns image healthchecks through direct API")
+    func imageManagerReturnsImageHealthchecksThroughDirectAPI() async throws {
+        let healthCheck = ComposeImageHealthCheck(
+            test: ["CMD-SHELL", "test -f /ready"],
+            intervalInNanoseconds: 5_000_000_000,
+            retries: 2
+        )
+        let client = RecordingContainerImageAPIClient(platformHealthChecks: [
+            ImageHealthCheckRequestKey(reference: "example/api", platform: "linux/arm64"): healthCheck,
+        ])
+        let manager = ContainerClientImageManager(client: client)
+
+        let resolved = try await manager.imageHealthCheck("example/api", platform: "linux/arm64")
+
+        #expect(resolved == healthCheck)
+        #expect(await client.requests == [
+            .healthCheck(reference: "example/api", platform: "linux/arm64"),
+        ])
+    }
+
     @Test("file pull metadata store persists pull dates")
     func filePullMetadataStorePersistsPullDates() async throws {
         let directory = FileManager.default.temporaryDirectory
@@ -9390,21 +9545,25 @@ struct ComposeOrchestratorTests {
         )
         let client = ContainerImageAPIClient(
             exists: { try await recorder.imageExists(reference: $0) },
+            healthCheck: { try await recorder.imageHealthCheck(reference: $0, platform: $1) },
             pull: { try await recorder.pullImage(reference: $0) },
             push: { try await recorder.pushImage(reference: $0) },
             delete: { try await recorder.deleteImage(reference: $0, force: $1) }
         )
 
         let exists = try await client.imageExists(reference: "example/api:latest")
+        let healthCheck = try await client.imageHealthCheck(reference: "example/api:latest", platform: nil)
         try await client.pullImage(reference: "example/api:latest")
         let pushed = try await client.pushImage(reference: "example/api:latest")
         let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
 
         #expect(exists == true)
+        #expect(healthCheck == nil)
         #expect(pushed == "registry.example.com/example/api:latest")
         #expect(deleted == "example/api:latest")
         #expect(await recorder.requests == [
             .exists("example/api:latest"),
+            .healthCheck(reference: "example/api:latest", platform: nil),
             .pull("example/api:latest"),
             .push("example/api:latest"),
             .delete(reference: "example/api:latest", force: true),
@@ -9421,15 +9580,18 @@ struct ComposeOrchestratorTests {
         let client = ContainerImageAPIClient(client: recorder)
 
         let exists = try await client.imageExists(reference: "example/api:latest")
+        let healthCheck = try await client.imageHealthCheck(reference: "example/api:latest", platform: nil)
         try await client.pullImage(reference: "example/api:latest")
         let pushed = try await client.pushImage(reference: "example/api:latest")
         let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
 
         #expect(exists == true)
+        #expect(healthCheck == nil)
         #expect(pushed == "registry.example.com/example/api:latest")
         #expect(deleted == "example/api:latest")
         #expect(await recorder.requests == [
             .exists("example/api:latest"),
+            .healthCheck(reference: "example/api:latest", platform: nil),
             .pull("example/api:latest"),
             .push("example/api:latest"),
             .delete(reference: "example/api:latest", force: true),
@@ -12332,6 +12494,46 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 
+    @Test("run rejects dependency timing-only healthchecks before creating resources")
+    func runRejectsDependencyTimingOnlyHealthchecksBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.healthcheck = .object(["interval": .string("5s")])
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "data", target: "/var/lib/postgresql/data")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: imageManager,
+                resourceManager: resourceManager
+            ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported inherited healthcheck error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'db' tunes an image healthcheck, but image 'postgres' does not expose Dockerfile HEALTHCHECK metadata"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await imageManager.requests == [.healthCheck(reference: "postgres", platform: nil)])
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("run starts dependencies before one-off container")
     func runStartsDependenciesBeforeOneOffContainer() async throws {
         let runner = RecordingRunner(responses: [
@@ -12580,7 +12782,10 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
-        #expect(await imageManager.requests == [.pull("alpine")])
+        #expect(await imageManager.requests == [
+            .pull("alpine"),
+            .healthCheck(reference: "alpine", platform: nil),
+        ])
         #expect(commands[0].starts(with: ["container", "run", "--name"]))
     }
 
@@ -13699,7 +13904,10 @@ struct ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(await imageManager.requests == [.pull("alpine")])
+        #expect(await imageManager.requests == [
+            .pull("alpine"),
+            .healthCheck(reference: "alpine", platform: nil),
+        ])
         #expect(commands[0].starts(with: ["container", "run"]))
         #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
@@ -13731,10 +13939,16 @@ struct ComposeOrchestratorTests {
         )
 
         let presentCommands = presentRunner.commands.map(\.arguments)
-        #expect(await presentImages.requests == [.pullMissing("alpine")])
+        #expect(await presentImages.requests == [
+            .pullMissing("alpine"),
+            .healthCheck(reference: "alpine", platform: nil),
+        ])
         #expect(presentCommands[0].starts(with: ["container", "run"]))
         let absentCommands = absentRunner.commands.map(\.arguments)
-        #expect(await absentImages.requests == [.pullMissing("alpine")])
+        #expect(await absentImages.requests == [
+            .pullMissing("alpine"),
+            .healthCheck(reference: "alpine", platform: nil),
+        ])
         #expect(absentCommands[0].starts(with: ["container", "run"]))
     }
 
@@ -13756,7 +13970,10 @@ struct ComposeOrchestratorTests {
         )
 
         let commands = runner.commands.map(\.arguments)
-        #expect(await imageManager.requests == [.pullMissing("alpine")])
+        #expect(await imageManager.requests == [
+            .pullMissing("alpine"),
+            .healthCheck(reference: "alpine", platform: nil),
+        ])
         #expect(commands[0].starts(with: ["container", "run"]))
         #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
@@ -15785,10 +16002,16 @@ private struct ContainerStatsRequest: Equatable {
 
 private enum ContainerImageRequest: Equatable {
     case exists(String)
+    case healthCheck(reference: String, platform: String?)
     case pull(String)
     case pullMissing(String)
     case push(String)
     case delete(reference: String, force: Bool)
+}
+
+private struct ImageHealthCheckRequestKey: Hashable {
+    var reference: String
+    var platform: String?
 }
 
 private enum ContainerResourceRequest: Equatable {
@@ -16595,6 +16818,7 @@ private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
 private actor RecordingContainerImageManager: ContainerImageManaging {
     private var storage: [ContainerImageRequest] = []
     private var existingReferences: Set<String>
+    private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private let pullFailures: Set<String>
     private let pullMissingFailures: Set<String>
     private var pushOutputs: [String: String]
@@ -16604,6 +16828,8 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
 
     init(
         existingReferences: Set<String> = [],
+        healthChecks: [String: ComposeImageHealthCheck] = [:],
+        platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
         pullFailures: Set<String> = [],
         pullMissingFailures: Set<String> = [],
         pushOutputs: [String: String] = [:],
@@ -16612,6 +16838,11 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         failure: ComposeError? = nil
     ) {
         self.existingReferences = existingReferences
+        var mappedHealthChecks = platformHealthChecks
+        for (reference, healthCheck) in healthChecks {
+            mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
+        }
+        self.healthChecks = mappedHealthChecks
         self.pullFailures = pullFailures
         self.pullMissingFailures = pullMissingFailures
         self.pushOutputs = pushOutputs
@@ -16630,6 +16861,14 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         }
         storage.append(.exists(reference))
         return existingReferences.contains(reference)
+    }
+
+    func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
+        if let failure {
+            throw failure
+        }
+        storage.append(.healthCheck(reference: reference, platform: platform))
+        return healthChecks[ImageHealthCheckRequestKey(reference: reference, platform: platform)]
     }
 
     func pullImage(_ reference: String) async throws {
@@ -16684,16 +16923,24 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
 
 private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var existingReferences: Set<String>
+    private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private var pushOutputs: [String: String]
     private var deleteOutputs: [String: String?]
     private var storage: [ContainerImageRequest] = []
 
     init(
         existingReferences: Set<String> = [],
+        healthChecks: [String: ComposeImageHealthCheck] = [:],
+        platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
         pushOutputs: [String: String] = [:],
         deleteOutputs: [String: String?] = [:]
     ) {
         self.existingReferences = existingReferences
+        var mappedHealthChecks = platformHealthChecks
+        for (reference, healthCheck) in healthChecks {
+            mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
+        }
+        self.healthChecks = mappedHealthChecks
         self.pushOutputs = pushOutputs
         self.deleteOutputs = deleteOutputs
     }
@@ -16705,6 +16952,11 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     func imageExists(reference: String) async throws -> Bool {
         storage.append(.exists(reference))
         return existingReferences.contains(reference)
+    }
+
+    func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
+        storage.append(.healthCheck(reference: reference, platform: platform))
+        return healthChecks[ImageHealthCheckRequestKey(reference: reference, platform: platform)]
     }
 
     func pullImage(reference: String) async throws {

@@ -16,6 +16,7 @@
 
 import ContainerAPIClient
 import ContainerPersistence
+import ContainerResource
 import ContainerizationOCI
 
 /// Live apple/container image API bridge used by production orchestration.
@@ -29,6 +30,16 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let config = try await ConfigurationLoader.load()
         let result = try await ClientImage.get(names: [reference], containerSystemConfig: config)
         return result.error.isEmpty
+    }
+
+    /// Resolves Docker image healthcheck metadata from the image config for the requested platform.
+    public func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
+        let config = try await ConfigurationLoader.load()
+        let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
+        let resource = try await image.toImageResource(containerSystemConfig: config)
+        let requestedPlatform = try Self.requestedPlatform(platform)
+        let variant = Self.variant(in: resource, matching: requestedPlatform, allowFallback: platform == nil)
+        return variant?.healthCheck.map(ComposeImageHealthCheck.init)
     }
 
     /// Pulls and unpacks using the same default platform resolution as the apple/container CLI.
@@ -73,5 +84,36 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
     /// Resolves `CONTAINER_DEFAULT_PLATFORM` for image operations.
     private static func defaultPlatform() throws -> ContainerizationOCI.Platform? {
         try DefaultPlatform.resolve(platform: nil, os: nil, arch: nil)
+    }
+
+    /// Resolves the platform used for image metadata lookups.
+    private static func requestedPlatform(_ platform: String?) throws -> ContainerizationOCI.Platform {
+        if let platform, !platform.isEmpty {
+            return try ContainerizationOCI.Platform(from: platform)
+        }
+        return try defaultPlatform() ?? .current
+    }
+
+    /// Selects the requested platform variant, with optional default-platform fallback.
+    private static func variant(
+        in resource: ImageResource,
+        matching platform: ContainerizationOCI.Platform,
+        allowFallback: Bool
+    ) -> ImageResource.Variant? {
+        resource.variants.first { $0.platform == platform } ?? (allowFallback ? resource.variants.first : nil)
+    }
+}
+
+private extension ComposeImageHealthCheck {
+    /// Projects apple/container image metadata into Compose's runtime model.
+    init(_ healthCheck: ImageResource.HealthCheck) {
+        self.init(
+            test: healthCheck.test,
+            intervalInNanoseconds: healthCheck.intervalInNanoseconds,
+            timeoutInNanoseconds: healthCheck.timeoutInNanoseconds,
+            startPeriodInNanoseconds: healthCheck.startPeriodInNanoseconds,
+            startIntervalInNanoseconds: healthCheck.startIntervalInNanoseconds,
+            retries: healthCheck.retries
+        )
     }
 }
