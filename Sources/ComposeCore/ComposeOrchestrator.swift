@@ -2616,9 +2616,7 @@ private extension ComposeOrchestrator {
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
             throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>")
         }
-        if let restart = service.restart, !restart.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
-        }
+        _ = try runtimeRestartPolicyArgument(service: service)
     }
 
     /// Rejects project network fields that are not mapped to apple/container network creation.
@@ -2673,7 +2671,7 @@ private extension ComposeOrchestrator {
             return
         }
         if fields.contains("restart_policy") {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy; restart policy support needs an apple/container runtime gap PR")
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy; deploy restart policy support needs a container-compose model slice and any remaining apple/container delay/window primitives")
         }
         if fields.contains("endpoint_mode") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR")
@@ -3597,6 +3595,38 @@ private extension ComposeOrchestrator {
         return options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
             ["--log-opt", "\(key)=\(value)"]
         }
+    }
+
+    /// Returns the Docker-compatible apple/container restart policy argument
+    /// for service containers.
+    func runtimeRestartPolicyArgument(service: ComposeService) throws -> String? {
+        guard let restart = service.restart?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !restart.isEmpty else {
+            return nil
+        }
+
+        let parts = restart.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let mode = parts.first, !mode.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' has invalid restart policy '\(restart)'")
+        }
+
+        switch mode {
+        case "no", "always", "unless-stopped":
+            guard parts.count == 1 else {
+                throw ComposeError.invalidProject("service '\(service.name)' restart retry count is only supported with on-failure")
+            }
+        case "on-failure":
+            if parts.count == 2 {
+                let retryValue = String(parts[1])
+                guard !retryValue.isEmpty, UInt32(retryValue) != nil else {
+                    throw ComposeError.invalidProject("service '\(service.name)' has invalid restart policy '\(restart)'")
+                }
+            }
+        default:
+            throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; supported values are no, always, on-failure[:max-retries], and unless-stopped")
+        }
+
+        return restart
     }
 
     /// Returns Docker-compatible apple/container healthcheck arguments for
@@ -4761,6 +4791,9 @@ private extension ComposeOrchestrator {
         }
         args.append(contentsOf: runtimeLogOptionArguments(service: service))
         args.append(contentsOf: try runtimeHealthCheckArguments(service: service))
+        if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArgument(service: service) {
+            args.append(contentsOf: ["--restart", restartPolicy])
+        }
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
             if let value {
                 args.append(contentsOf: ["--env", "\(key)=\(value)"])

@@ -1,19 +1,19 @@
 # Mission Control
 
-Last updated: 2026-06-22 01:48:48 BST.
+Last updated: 2026-06-22 02:20:38 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
 ## Current Objective
 
-Complete Docker Compose v2 local-development behavior where `apple/container` can expose matching runtime primitives. The log slabs retargeted raw `container-compose logs --follow` to `ContainerClient.followLogs(id:options:)` and structured/timestamped followed logs to `ContainerClient.followLogRecords(id:options:)` on the forked runtime, so the plugin no longer polls merged snapshots or active record files while following. The active lifecycle slab now uses fork-backed `ContainerSnapshot.exitCode` metadata for stopped-container `wait` replay, `depends_on.condition: service_completed_successfully`, explicit service healthchecks, and `depends_on.condition: service_healthy`.
+Complete Docker Compose v2 local-development behavior where `apple/container` can expose matching runtime primitives. The log slabs retargeted raw `container-compose logs --follow` to `ContainerClient.followLogs(id:options:)` and structured/timestamped followed logs to `ContainerClient.followLogRecords(id:options:)` on the forked runtime, so the plugin no longer polls merged snapshots or active record files while following. The active lifecycle slab now uses fork-backed `ContainerSnapshot.exitCode` metadata for stopped-container `wait` replay, `depends_on.condition: service_completed_successfully`, explicit service healthchecks, `depends_on.condition: service_healthy`, and service-level `restart` policies.
 
 ## Branch Map
 
 | Repository | Branch | Purpose | Current state |
 | --- | --- | --- | --- |
-| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log and lifecycle behavior against the forked runtime | Active local worktree with Docker rotated-tail fixture updates, raw follow retargeting to `ContainerClient.followLogs(id:options:)`, structured follow retargeting to `ContainerClient.followLogRecords(id:options:)`, stopped-container `wait` replay, `service_completed_successfully`, explicit service healthcheck flag mapping, and `service_healthy` dependency gates |
-| `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction plus lifecycle primitives needed by Compose | Active local worktree with static rotated tail, policy model, disabled-capture, local driver/options, writer rotation, raw rotation-aware follow, structured rotation-aware follow handoff files, the #1562 exit-metadata cherry-pick, and health status/configuration/observer/CLI handoff slices |
+| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log and lifecycle behavior against the forked runtime | Active local worktree with Docker rotated-tail fixture updates, raw follow retargeting to `ContainerClient.followLogs(id:options:)`, structured follow retargeting to `ContainerClient.followLogRecords(id:options:)`, stopped-container `wait` replay, `service_completed_successfully`, explicit service healthcheck flag mapping, `service_healthy` dependency gates, and service `restart` mapping |
+| `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction plus lifecycle primitives needed by Compose | Active local worktree with static rotated tail, policy model, disabled-capture, local driver/options, writer rotation, raw rotation-aware follow, structured rotation-aware follow handoff files, the #1562 exit-metadata cherry-pick, health status/configuration/observer/CLI handoff slices, and restart policy create/runtime slices |
 | `stephenlclarke/container` | `logs-structured-record-storage` | Apple-facing structured log storage slice | PR-ready local/fork branch, not yet accepted upstream |
 | `stephenlclarke/container` | `logs-structured-record-api` | Apple-facing structured record retrieval slice | PR-ready local/fork branch plus local cleanup commit, not yet accepted upstream |
 | `apple/container` | `main` | Upstream runtime | Runtime primitives are still pending upstream review |
@@ -35,6 +35,8 @@ Complete Docker Compose v2 local-development behavior where `apple/container` ca
 13. The exit-metadata slab cherry-picks [`apple/container#1562`](https://github.com/apple/container/pull/1562) into the fork as signed commit `9b6f743`, exposing `ContainerSnapshot.exitCode` and `exitedDate` for stopped containers.
 14. The health status slab aligns with [`apple/container#1502`](https://github.com/apple/container/issues/1502) and [`apple/container#1504`](https://github.com/apple/container/pull/1504), then adds `HealthStatus`, `ContainerSnapshot.health`, `ContainerHealthCheck`, `ContainerConfiguration.healthCheck`, and runtime health observation through separate local fork handoffs.
 15. The healthcheck CLI slab adds Docker-style `container run/create --health-*` and `--no-healthcheck` flags. Its handoff files are `ISSUE-healthcheck-cli.md` and `PR-healthcheck-cli.md` in the container fork.
+16. The restart-policy create-options slab adds `ContainerRestartPolicy`, `ContainerCreateOptions.restartPolicy`, Docker-style `container run/create --restart` parsing, and `--rm` conflict validation. Its handoff files are `ISSUE-restart-policy-create-options.md` and `PR-restart-policy-create-options.md` in the container fork.
+17. The restart-policy runtime slab adds fork-owned restart scheduling for `no`, `always`, `unless-stopped`, and `on-failure[:max-retries]`. Its handoff files are `ISSUE-restart-policy-runtime.md` and `PR-restart-policy-runtime.md` in the container fork.
 
 ## Docker/Compose Reference Targets
 
@@ -54,7 +56,7 @@ Complete Docker Compose v2 local-development behavior where `apple/container` ca
 
 ## Active Slab
 
-Lifecycle dependency support across the container fork and compose plugin, covering `service_completed_successfully`, stopped-container `wait` replay, explicit service healthchecks, and `service_healthy`.
+Lifecycle dependency support across the container fork and compose plugin, covering `service_completed_successfully`, stopped-container `wait` replay, explicit service healthchecks, `service_healthy`, and service-level `restart`.
 
 Done:
 
@@ -86,10 +88,12 @@ Completed locally:
 - Projected runtime health through `ComposeContainerSummary`.
 - Implemented explicit Compose `healthcheck` mapping to `container run/create --health-*` and `--no-healthcheck` flags.
 - Implemented `depends_on.condition: service_healthy`, including `starting` polling, `healthy` success, `unhealthy` failure, and clear rejection when a dependency has no runtime health status.
+- Added fork-side Docker-compatible `container run/create --restart` create options and restart scheduling for service containers.
+- Implemented service-level Compose `restart` mapping to `container run --restart` for service containers. One-off `compose run` containers intentionally do not inherit service restart policy.
 
 Next:
 
-- Continue the lifecycle topic with service `restart` / `deploy.restart_policy`, comparing [`apple/container#286`](https://github.com/apple/container/issues/286) and [`apple/container#1258`](https://github.com/apple/container/pull/1258) before mapping Compose restart behavior.
+- Continue the lifecycle topic with `deploy.restart_policy`. Service-level `restart` is mapped on the fork-backed branch; `deploy.restart_policy` still needs a normalized model slice and any remaining apple/container primitives for Docker Compose `delay` and `window` semantics.
 - Track Dockerfile-inherited image healthchecks separately; the fork can run configured healthchecks, but image config parsing still needs an upstream slice before timing-only overrides can tune an image-provided probe.
 - Keep the log comparison fixtures as a parallel backlog item, but do not switch away from the lifecycle topic until health/restart are implemented or blocked.
 
@@ -102,7 +106,8 @@ Next:
 - `apple/container` still needs accepted exit metadata before released `container-compose` can rely on stopped-container `wait` replay or `service_completed_successfully` without depending on the fork.
 - `apple/container` still needs accepted health status, healthcheck configuration, health observation, and CLI/direct creation support before released `container-compose` can rely on explicit service healthchecks or `service_healthy` without depending on the fork.
 - `apple/container` still needs image-config parsing for Dockerfile-inherited `HEALTHCHECK` metadata before Compose can tune image healthchecks without declaring `healthcheck.test`.
-- `apple/container` still needs restart-policy primitives before service `restart` or `deploy.restart_policy` can move out of rejected runtime gaps.
+- `apple/container` still needs accepted restart-policy create/runtime primitives before released `container-compose` branches can rely on service-level `restart` without depending on the fork.
+- `container-compose` still needs a deploy restart-policy model slice before it can map `deploy.restart_policy.condition` and `max_attempts`; Docker Compose `delay` and `window` semantics may need additional apple/container runtime state.
 
 ## Checkpoint Format
 

@@ -5022,9 +5022,11 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported restart policies before creating resources")
-    func upRejectsUnsupportedRestartPoliciesBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps service restart policies to container create flags")
+    func upMapsServiceRestartPoliciesToContainerCreateFlags() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -5039,11 +5041,41 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(runArguments.contains("--restart"))
+        #expect(runArguments.contains("unless-stopped"))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+    }
+
+    @Test("up rejects invalid restart policies before creating resources")
+    func upRejectsInvalidRestartPoliciesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.restart = "sometimes"
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
         do {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported restart policy error")
+            Issue.record("Expected invalid restart policy error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses restart policy 'unless-stopped'; restart policy support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' uses restart policy 'sometimes'; supported values are no, always, on-failure[:max-retries], and unless-stopped"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -12905,7 +12937,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported deploy field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses deploy.restart_policy; restart policy support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'job' uses deploy.restart_policy; deploy restart policy support needs a container-compose model slice and any remaining apple/container delay/window primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -13644,9 +13676,10 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported restart policies before creating resources")
-    func runRejectsUnsupportedRestartPoliciesBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("run does not inherit service restart policies for one-off containers")
+    func runDoesNotInheritServiceRestartPoliciesForOneOffContainers() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -13661,16 +13694,14 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported restart policy error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses restart policy 'on-failure'; restart policy support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            resourceManager: resourceManager
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let runArguments = try #require(runner.commands.last?.arguments)
+        #expect(runArguments.starts(with: ["container", "run"]))
+        #expect(!runArguments.contains("--restart"))
     }
 
     @Test("run assigns unique names to one-off containers")
