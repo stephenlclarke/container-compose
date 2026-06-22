@@ -2317,30 +2317,37 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             index: copy.index,
             includeOneOff: copy.all && !options.dryRun
         )
+        let transferOptions = ContainerCopyTransferOptions(followSymlink: copy.followLink)
         switch (source, destination) {
         case (.containers(let sources), .local(let localPath)):
             guard let source = sources.first else {
                 throw ComposeError.invalidProject("no source container found for cp")
             }
             if options.dryRun {
-                try await runContainer(["cp", source.runtimeArgument, localPath])
+                try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: localPath, options: copy))
                 return
             }
-            try await copier.copyFromContainer(id: source.id, source: source.path, destination: localPath)
+            try await copier.copyFromContainer(id: source.id, source: source.path, destination: localPath, options: transferOptions)
         case (.local(let localPath), .containers(let destinations)):
             if options.dryRun {
                 for destination in destinations {
-                    try await runContainer(["cp", localPath, destination.runtimeArgument])
+                    try await runContainer(copyCommandArguments(source: localPath, destination: destination.runtimeArgument, options: copy))
                 }
                 return
             }
             for destination in destinations {
-                try await copier.copyIntoContainer(id: destination.id, source: localPath, destination: destination.path)
+                try await copier.copyIntoContainer(id: destination.id, source: localPath, destination: destination.path, options: transferOptions)
             }
         case (.containers(let sources), .containers(let destinations)):
-            try await copyBetweenContainerTargets(sources: sources, destinations: destinations, allDestinations: copy.all)
+            try await copyBetweenContainerTargets(
+                sources: sources,
+                destinations: destinations,
+                allDestinations: copy.all,
+                copy: copy,
+                transferOptions: transferOptions
+            )
         case (.local, .local):
-            try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+            try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: destination.runtimeArgument, options: copy))
         }
     }
 
@@ -2348,7 +2355,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private func copyBetweenContainerTargets(
         sources: [ComposeCopyContainerTarget],
         destinations: [ComposeCopyContainerTarget],
-        allDestinations: Bool
+        allDestinations: Bool,
+        copy: ComposeCopyOptions,
+        transferOptions: ContainerCopyTransferOptions
     ) async throws {
         guard let source = sources.first else {
             throw ComposeError.invalidProject("no source or destination container found for cp")
@@ -2360,7 +2369,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         if options.dryRun {
             for destination in selectedDestinations {
-                try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+                try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: destination.runtimeArgument, options: copy))
             }
             return
         }
@@ -2370,9 +2379,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 sourceID: source.id,
                 source: source.path,
                 destinationID: destination.id,
-                destination: destination.path
+                destination: destination.path,
+                options: transferOptions
             )
         }
+    }
+
+    private func copyCommandArguments(source: String, destination: String, options: ComposeCopyOptions) -> [String] {
+        var arguments = ["cp"]
+        if options.followLink {
+            arguments.append("--follow-link")
+        }
+        arguments.append(contentsOf: [source, destination])
+        return arguments
     }
 
     /// Exports an existing service container filesystem as a tar archive.
@@ -3460,7 +3479,7 @@ private extension ComposeOrchestrator {
                 if !quiet {
                     options.emit("compose: watch sync \(service.name)[\(target.index)] \(entry.sourcePath) -> \(destination)")
                 }
-                try await copier.copyIntoContainer(id: target.name, source: entry.sourcePath, destination: destination)
+                try await copier.copyIntoContainer(id: target.name, source: entry.sourcePath, destination: destination, options: ContainerCopyTransferOptions())
             }
         }
     }
@@ -4905,9 +4924,6 @@ private extension ComposeOrchestrator {
     func validateCopyOptions(_ options: ComposeCopyOptions) throws {
         if options.archive {
             throw ComposeError.unsupported("cp --archive: apple/container cp does not expose archive mode")
-        }
-        if options.followLink {
-            throw ComposeError.unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
         }
     }
 

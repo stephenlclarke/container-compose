@@ -12288,6 +12288,59 @@ struct ComposeOrchestratorTests {
             .into(id: "custom-db", source: "./seed.sql", destination: "/docker-entrypoint-initdb.d/seed.sql"),
             .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "custom-db", destination: "/restore/report.txt"),
         ])
+        #expect(await copier.options == [
+            ContainerCopyTransferOptions(),
+            ContainerCopyTransferOptions(),
+            ContainerCopyTransferOptions(),
+        ])
+    }
+
+    @Test("cp follow link passes source symlink option to direct copy APIs")
+    func cpFollowLinkPassesSourceSymlinkOptionToDirectCopyAPIs() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report-link", "./report.txt"]
+                $0.followLink = true
+            }
+        )
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["./seed-link", "db:/tmp/seed.sql"]
+                $0.followLink = true
+            }
+        )
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report-link", "db:/tmp/report.txt"]
+                $0.followLink = true
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests == [
+            .from(id: "demo-api-1", source: "/tmp/report-link", destination: "./report.txt"),
+            .into(id: "demo-db-1", source: "./seed-link", destination: "/tmp/seed.sql"),
+            .between(sourceID: "demo-api-1", source: "/tmp/report-link", destinationID: "demo-db-1", destination: "/tmp/report.txt"),
+        ])
+        #expect(await copier.options == [
+            ContainerCopyTransferOptions(followSymlink: true),
+            ContainerCopyTransferOptions(followSymlink: true),
+            ContainerCopyTransferOptions(followSymlink: true),
+        ])
     }
 
     @Test("cp copies between service containers through direct copy APIs")
@@ -12522,15 +12575,46 @@ struct ComposeOrchestratorTests {
         #expect(await copier.requests.isEmpty)
     }
 
+    @Test("cp dry run renders follow link flag")
+    func cpDryRunRendersFollowLinkFlag() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            copier: copier
+        ).copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report-link", "./report.txt"]
+                $0.followLink = true
+            }
+        )
+
+        #expect(emitted.messages == [
+            "+ container cp --follow-link demo-api-1:/tmp/report-link ./report.txt",
+        ])
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests.isEmpty)
+    }
+
     @Test("container copier stages service-to-service copies on the host")
     func containerCopierStagesServiceToServiceCopiesOnTheHost() async throws {
         let operations = RecordingContainerCopyOperations()
         let copier = ContainerClientCopier(
-            copyInto: { id, source, destination in
-                try await operations.copyInto(id: id, source: source, destination: destination)
+            copyInto: { id, source, destination, options in
+                try await operations.copyInto(id: id, source: source, destination: destination, options: options)
             },
-            copyFrom: { id, source, destination in
-                try await operations.copyFrom(id: id, source: source, destination: destination)
+            copyFrom: { id, source, destination, options in
+                try await operations.copyFrom(id: id, source: source, destination: destination, options: options)
             }
         )
 
@@ -12560,15 +12644,41 @@ struct ComposeOrchestratorTests {
         #expect(!FileManager.default.fileExists(atPath: (stagedPath as NSString).deletingLastPathComponent))
     }
 
+    @Test("container copier follows source link only when staging service-to-service copies")
+    func containerCopierFollowsSourceLinkOnlyWhenStagingServiceToServiceCopies() async throws {
+        let operations = RecordingContainerCopyOperations()
+        let copier = ContainerClientCopier(
+            copyInto: { id, source, destination, options in
+                try await operations.copyInto(id: id, source: source, destination: destination, options: options)
+            },
+            copyFrom: { id, source, destination, options in
+                try await operations.copyFrom(id: id, source: source, destination: destination, options: options)
+            }
+        )
+
+        try await copier.copyBetweenContainers(
+            sourceID: "demo-api-1",
+            source: "/tmp/report-link",
+            destinationID: "demo-worker-1",
+            destination: "/var/lib/report.txt",
+            options: ContainerCopyTransferOptions(followSymlink: true)
+        )
+
+        #expect(await operations.options == [
+            ContainerCopyTransferOptions(followSymlink: true),
+            ContainerCopyTransferOptions(),
+        ])
+    }
+
     @Test("container copier rejects root source for service-to-service copies")
     func containerCopierRejectsRootSourceForServiceToServiceCopies() async throws {
         let operations = RecordingContainerCopyOperations()
         let copier = ContainerClientCopier(
-            copyInto: { id, source, destination in
-                try await operations.copyInto(id: id, source: source, destination: destination)
+            copyInto: { id, source, destination, options in
+                try await operations.copyInto(id: id, source: source, destination: destination, options: options)
             },
-            copyFrom: { id, source, destination in
-                try await operations.copyFrom(id: id, source: source, destination: destination)
+            copyFrom: { id, source, destination, options in
+                try await operations.copyFrom(id: id, source: source, destination: destination, options: options)
             }
         )
 
@@ -12589,47 +12699,34 @@ struct ComposeOrchestratorTests {
         #expect(await operations.requests.isEmpty)
     }
 
-    @Test("cp rejects unsupported command options before runtime copy")
-    func cpRejectsUnsupportedCommandOptionsBeforeRuntimeCopy() async throws {
+    @Test("cp rejects archive option before runtime copy")
+    func cpRejectsArchiveOptionBeforeRuntimeCopy() async throws {
         let project = ComposeProject(
             name: "demo",
             services: [
                 "api": ComposeService(name: "api", image: "example/api"),
             ]
         )
-        let cases: [(name: String, options: ComposeCopyOptions, expected: ComposeError)] = [
-            (
-                name: "--archive",
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+
+        do {
+            try await ComposeOrchestrator(runner: runner, copier: copier).copy(
+                project: project,
                 options: ComposeCopyOptions {
                     $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
                     $0.archive = true
-                },
-                expected: .unsupported("cp --archive: apple/container cp does not expose archive mode")
-            ),
-            (
-                name: "--follow-link",
-                options: ComposeCopyOptions {
-                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
-                    $0.followLink = true
-                },
-                expected: .unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
-            ),
-        ]
-
-        for testCase in cases {
-            let runner = RecordingRunner()
-            let copier = RecordingContainerCopier()
-            do {
-                try await ComposeOrchestrator(runner: runner, copier: copier).copy(project: project, options: testCase.options)
-                Issue.record("Expected unsupported cp \(testCase.name) error")
-            } catch let error as ComposeError {
-                #expect(error == testCase.expected)
-            } catch {
-                Issue.record("Unexpected error for cp \(testCase.name): \(error)")
-            }
-            #expect(runner.commands.isEmpty)
-            #expect(await copier.requests.isEmpty)
+                }
+            )
+            Issue.record("Expected unsupported cp --archive error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("cp --archive: apple/container cp does not expose archive mode"))
+        } catch {
+            Issue.record("Unexpected error for cp --archive: \(error)")
         }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests.isEmpty)
     }
 
     @Test("cp all stages service to service copies into every destination container")
@@ -17065,40 +17162,55 @@ private enum ContainerResourceAPIRequest: Equatable {
 
 private actor RecordingContainerCopier: ContainerCopying {
     private var storage: [ContainerCopyRequest] = []
+    private var optionStorage: [ContainerCopyTransferOptions] = []
 
     var requests: [ContainerCopyRequest] {
         storage
     }
 
-    func copyIntoContainer(id: String, source: String, destination: String) async throws {
+    var options: [ContainerCopyTransferOptions] {
+        optionStorage
+    }
+
+    func copyIntoContainer(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws {
         storage.append(.into(id: id, source: source, destination: destination))
+        optionStorage.append(options)
     }
 
-    func copyFromContainer(id: String, source: String, destination: String) async throws {
+    func copyFromContainer(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws {
         storage.append(.from(id: id, source: source, destination: destination))
+        optionStorage.append(options)
     }
 
-    func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String) async throws {
+    func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String, options: ContainerCopyTransferOptions) async throws {
         storage.append(.between(sourceID: sourceID, source: source, destinationID: destinationID, destination: destination))
+        optionStorage.append(options)
     }
 }
 
 private actor RecordingContainerCopyOperations {
     private var storage: [ContainerCopyRequest] = []
+    private var optionStorage: [ContainerCopyTransferOptions] = []
 
     var requests: [ContainerCopyRequest] {
         storage
     }
 
-    func copyInto(id: String, source: String, destination: String) async throws {
+    var options: [ContainerCopyTransferOptions] {
+        optionStorage
+    }
+
+    func copyInto(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws {
         guard FileManager.default.fileExists(atPath: source) else {
             throw ComposeError.invalidProject("source path does not exist: \(source)")
         }
         storage.append(.into(id: id, source: source, destination: destination))
+        optionStorage.append(options)
     }
 
-    func copyFrom(id: String, source: String, destination: String) async throws {
+    func copyFrom(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws {
         storage.append(.from(id: id, source: source, destination: destination))
+        optionStorage.append(options)
         let destinationURL = URL(fileURLWithPath: destination)
         try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("staged".utf8).write(to: destinationURL)

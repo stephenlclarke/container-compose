@@ -778,7 +778,7 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     var all = false
     @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Not supported by apple/container cp yet.")
     var archive = false
-    @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path. Not supported by apple/container cp yet.")
+    @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path.")
     var followLink = false
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1

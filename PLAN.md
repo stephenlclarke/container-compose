@@ -131,6 +131,56 @@ Reference targets:
   </tbody>
 </table>
 
+## Runtime Data Slab: Copy Follow-Link
+
+This slab closes the next narrow copy-command gap after basic service-aware copy support. Docker defines `cp --follow-link` as source-path symlink dereferencing; this work keeps that behavior in the generic runtime copy API and lets `container-compose` pass it through without adding Compose-specific behavior to `apple/container`.
+
+Reference targets:
+
+- Docker Compose CLI `cp --follow-link`: [`docker compose cp`](https://docs.docker.com/reference/cli/docker/compose/cp/)
+- Docker CLI `container cp --follow-link`: [`docker container cp`](https://docs.docker.com/reference/cli/docker/container/cp/)
+- Local runtime handoffs: `ISSUE-containerization-copy-follow-link.md` / `PR-containerization-copy-follow-link.md` in `containerization`, `ISSUE-copy-follow-link.md` / `PR-copy-follow-link.md` in `container`, and `ISSUE-cp-follow-link.md` / `PR-cp-follow-link.md` in this repository.
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-218739?style=flat-square"> Add copy follow-link to the containerization copy control plane</td>
+      <td>2026-06-22 08:57:04 BST</td>
+      <td>2026-06-22 08:57:04 BST</td>
+      <td>2026-06-22 09:07:45 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: the forked `containerization` branch adds `CopyRequest.follow_symlink`, regenerates Swift protobuf bindings, adds defaulted `followSymlink` parameters to `Vminitd.copy`, `LinuxContainer.copyIn`, and `LinuxContainer.copyOut`, and resolves final guest source symlinks under the mounted rootfs for Docker-style `COPY_OUT` behavior.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-218739?style=flat-square"> Expose copy follow-link through the container fork</td>
+      <td>2026-06-22 08:57:04 BST</td>
+      <td>2026-06-22 08:57:04 BST</td>
+      <td>2026-06-22 09:07:45 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: the forked `container` branch adds defaulted `followSymlink` direct API parameters, propagates the flag through API-server and runtime-plugin XPC, adds `container copy -L, --follow-link`, updates command docs, and keeps Compose-specific service lookup out of the runtime repository.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-218739?style=flat-square"> Map Compose `cp --follow-link` to direct copy APIs</td>
+      <td>2026-06-22 08:57:04 BST</td>
+      <td>2026-06-22 08:57:04 BST</td>
+      <td>2026-06-22 09:07:45 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` maps `ComposeCopyOptions.followLink` to direct copy transfer options, renders `--follow-link` in dry-runs, scopes service-to-service follow-link behavior to the source copy-out leg, and keeps `cp --archive` as the remaining copy-mode runtime gap.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Adjacent Slab: Exit Metadata And Completed Dependencies
 
 This slab tracks the first non-log lifecycle capability needed by real Compose projects: `depends_on.condition: service_completed_successfully` and stopped-container `wait` replay. It intentionally reuses existing upstream work rather than inventing a new runtime contract.
