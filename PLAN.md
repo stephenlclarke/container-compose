@@ -295,7 +295,7 @@ Reference targets:
       <td>2026-06-22 11:42 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps `container compose events --json [SERVICE...]` to the fork-backed `ContainerClient.events()` stream as code commit `113be38063ea`. The plugin keeps Docker Compose policy here: filter to Compose project/service labels, skip one-off containers, apply selected-service arguments, strip Compose-private attributes, and render JSON Lines fields `time`, `type`, `service`, `id`, `action`, and `attributes`. The slice deliberately requires `--json` and rejects `--since`/`--until` until the runtime event primitive has replay or timestamp filtering. Handoff docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`; the optional local-only Docker parity check is `make docker-compose-events-parity`. Do not include this mapping in the Apple runtime PR.</td>
+      <td colspan="4">Notes: `container-compose` branch `logs-integration` maps `container compose events --json [SERVICE...]` to the fork-backed `ContainerClient.events()` stream as code commit `113be38063ea`. The plugin keeps Docker Compose policy here: filter to Compose project/service labels, skip one-off containers, apply selected-service arguments, strip Compose-private attributes, and render JSON Lines fields `time`, `type`, `service`, `id`, `action`, and `attributes`. This initial slice deliberately required `--json` and rejected `--since`/`--until`; follow-up slices below add runtime time filters and default text output. Handoff docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`; the optional local-only Docker parity check is `make docker-compose-events-parity`. Do not include this mapping in the Apple runtime PR.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add runtime event replay/time filters for `--since` / `--until`</td>
@@ -313,7 +313,16 @@ Reference targets:
       <td>2026-06-22 12:28 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps `container compose events --json --since VALUE --until VALUE [SERVICE...]` to `ContainerClient.events(options:)` as code commit `3a3387d7dbea301eec3a7f1fcc3f954dec80276c`. The plugin parses RFC 3339 timestamps, Unix timestamps, and relative durations, keeps `--json` required, and leaves non-JSON formatting as a later plugin-only follow-up. Handoff docs are `docs/upstream/events/ISSUE-compose-event-time-filters.md` and `docs/upstream/events/PR-compose-event-time-filters.md`; the optional local-only Docker parity target now includes a bounded `--since/--until` replay-window check.</td>
+      <td colspan="4">Notes: `container-compose` branch `logs-integration` maps `container compose events --json --since VALUE --until VALUE [SERVICE...]` to `ContainerClient.events(options:)` as code commit `3a3387d7dbea301eec3a7f1fcc3f954dec80276c`. The plugin parses RFC 3339 timestamps, Unix timestamps, and relative durations. This slice kept `--json` required; the follow-up text-format slice below makes default text output available without changing the Apple runtime API. Handoff docs are `docs/upstream/events/ISSUE-compose-event-time-filters.md` and `docs/upstream/events/PR-compose-event-time-filters.md`; the optional local-only Docker parity target includes a bounded `--since/--until` replay-window check.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose default text `events [--since/--until] [SERVICE...]` output</td>
+      <td>2026-06-22 12:39 BST</td>
+      <td>2026-06-22 12:39 BST</td>
+      <td>2026-06-22 12:45 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps default `container compose events [SERVICE...]` and `container compose events --since VALUE --until VALUE [SERVICE...]` to Docker Compose-style text output as code commit `fd3d94824f23cd3255a812faed9e3972906b4ab5`. `--json` keeps the prior JSON Lines renderer. This is a plugin-only PR-shaped slice: no `apple/container` or `apple/containerization` code is needed because the Apple runtime should keep emitting generic events. Handoff docs are `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`; the optional local-only Docker parity target now includes default text replay shape validation.</td>
     </tr>
   </tbody>
 </table>

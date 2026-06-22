@@ -46,12 +46,14 @@ This Compose slice stacks on the local `apple/container` PR-shaped runtime primi
 
 That runtime slice adds `ContainerEvent`, `ContainerClient.events()`, API-service lifecycle event emission, non-blocking subscribers, and a raw `container events` JSON Lines CLI. It intentionally does not include Compose project/service filtering, selected-service filtering, one-off suppression, or Docker Compose output formatting.
 
-The follow-up time-filter slice is tracked separately in:
+Follow-up event slices are tracked separately in:
 
 - `docs/upstream/events/ISSUE-container-event-time-filters.md`
 - `docs/upstream/events/PR-container-event-time-filters.md`
 - `docs/upstream/events/ISSUE-compose-event-time-filters.md`
 - `docs/upstream/events/PR-compose-event-time-filters.md`
+- `docs/upstream/events/ISSUE-compose-events-text-format.md`
+- `docs/upstream/events/PR-compose-events-text-format.md`
 
 This repository did not choose Docker Compose source code as a base because it is Go code tied to the Docker engine event API, Docker actor attributes, and `com.docker.compose.*` label keys. The usable source is the behavioral contract and filtering order. `container-compose` implements the equivalent policy against this plugin's Apple-specific labels, `com.apple.container.compose.*`, while preserving the same public JSON shape.
 
@@ -69,7 +71,7 @@ With this slice on the local fork-backed integration stack:
 - Compose-private attributes using `com.apple.container.compose.*` or `com.docker.compose.*` are stripped from the public JSON payload.
 - The output is newline-delimited JSON with `time`, `type`, `service`, `id`, `action`, and `attributes`.
 - `--since` and `--until` are supported on the local integration stack through the separate runtime and Compose time-filter slices.
-- Non-JSON event formatting remains out of scope for this first plugin slice.
+- Non-JSON event formatting was out of scope for this first plugin slice and is now tracked by the follow-up text-format slice.
 
 ## Likely Owner
 
@@ -87,7 +89,7 @@ This repository now includes an optional, non-CI Docker Compose V2 parity check:
 make docker-compose-events-parity
 ```
 
-The script requires a local Docker daemon and Docker Compose V2. It is intentionally not wired into CI so Apple-facing repositories do not depend on Docker. The check validates the Docker behavior this slice mirrors: container-scoped JSON events, selected-service filtering, internal Compose label stripping, one-off container suppression, and, after the time-filter follow-up, `--since` / `--until` replay-window shape.
+The script requires a local Docker daemon and Docker Compose V2. It is intentionally not wired into CI so Apple-facing repositories do not depend on Docker. The check validates the Docker behavior this slice mirrors: container-scoped JSON events, selected-service filtering, internal Compose label stripping, one-off container suppression, and, after follow-up slices, `--since` / `--until` replay-window shape plus default text event shape.
 
 ## Minimal Example
 

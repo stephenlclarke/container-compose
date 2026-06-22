@@ -50,11 +50,11 @@ With this slice on the local fork-backed integration stack:
 - The plugin passes typed `Date` bounds through `ContainerEventOptions` to `ContainerClient.events(options:)`.
 - Dry-run renders the runtime command with `container events --since VALUE --until VALUE`.
 - The existing Compose policy remains unchanged: project filtering, selected-service filtering, one-off suppression, Compose-private label stripping, and JSON Lines output stay in this repository.
-- Non-JSON event formatting remains out of scope.
+- Default text event formatting is tracked by the separate follow-up docs `ISSUE-compose-events-text-format.md` and `PR-compose-events-text-format.md`.
 
 ## Local Docker Compose Parity Evidence
 
-`Tools/parity/check-compose-events.sh` remains optional and outside CI. It now checks Docker Compose V2 `--since` / `--until` replay shape in addition to container scope, selected-service filtering, internal label stripping, and one-off suppression:
+`Tools/parity/check-compose-events.sh` remains optional and outside CI. It now checks Docker Compose V2 `--since` / `--until` replay shape and default text replay shape in addition to container scope, selected-service filtering, internal label stripping, and one-off suppression:
 
 ```sh
 make docker-compose-events-parity

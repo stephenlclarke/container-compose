@@ -33,6 +33,8 @@ The local `apple/container` fork now has a separate PR-shaped primitive for boun
 
 - Compose code commit to squash:
   - `3a3387d7dbea301eec3a7f1fcc3f954dec80276c feat(events): support compose event time filters`
+- Follow-up Compose text-format commit:
+  - `fd3d94824f23cd3255a812faed9e3972906b4ab5 feat(events): support compose text events`
 - Container runtime dependency commit:
   - `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270 feat(events): add event time filters`
 - Container event-stream dependency commits:
@@ -40,13 +42,13 @@ The local `apple/container` fork now has a separate PR-shaped primitive for boun
   - `0da7890b2632 fix(events): avoid blocking slow event subscribers`
 - Lower runtime code commit: not required
 
-Use the Compose code commit as one future `container-compose` PR. Keep it stacked after the Apple runtime time-filter PR; do not squash it into the Apple PR.
+Use the Compose code commit as one future `container-compose` PR. Keep it stacked after the Apple runtime time-filter PR; do not squash it into the Apple PR. Keep the text-format follow-up as its own later Compose PR.
 
 ## Implementation Details
 
 - Updates `ContainerEventsAPIClienting` and `ContainerEventsManaging` to carry `ContainerEventOptions`.
 - Parses `ComposeEventsOptions.since` and `.until` with the existing Docker-compatible `ContainerLogTimestampParser`.
-- Leaves `--json` required; non-JSON formatting remains a later plugin-owned slice.
+- Leaves `--json` required in this slice; default text formatting is handled by the later `PR-compose-events-text-format.md` slice.
 - Updates dry-run output to include `container events --since ... --until ...`.
 - Extends focused tests to verify:
   - selected services plus time filters reach the event manager;
@@ -66,7 +68,7 @@ Supported on the fork-backed integration stack:
 
 Still out of scope:
 
-- Non-JSON event formatting
+- Default text event formatting in this repository is handled by the follow-up `PR-compose-events-text-format.md` slice.
 - Persistent event history across API-service restarts
 - Network, volume, image, health, and restart-policy metadata events beyond the container lifecycle transitions emitted by the runtime dependency
 

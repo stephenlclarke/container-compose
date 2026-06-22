@@ -26,6 +26,7 @@ Existing source and dependency decisions:
 - **Base issue:** [apple/container#484](https://github.com/apple/container/issues/484) is the upstream source request for a generic event stream.
 - **Runtime dependency:** `docs/upstream/events/PR-container-events-stream.md` is the required `apple/container` PR-shaped dependency. Its constructible code commits are `b71e4bb323e3` and `0da7890b2632` in `stephenlclarke/container`.
 - **Time-filter follow-up:** `docs/upstream/events/PR-compose-event-time-filters.md` now tracks `events --json --since/--until` as a separate Compose PR stacked on `docs/upstream/events/PR-container-event-time-filters.md`.
+- **Text-format follow-up:** `docs/upstream/events/PR-compose-events-text-format.md` now tracks default text output as a separate Compose-owned PR stacked after the JSON/time-filter mappings.
 - **No lower-runtime dependency:** no `apple/containerization` change is required for this first Compose mapping because the runtime event source is already exposed by `ContainerClient.events()`.
 - **Not based on Docker Compose code:** Docker Compose is Go code over Docker engine events and Docker label keys. This PR uses Docker Compose as behavioral guidance, not as a source-code base.
 - **Docker behavioral reference:** Docker Compose source at `docker/compose@9b55a6e9c1016fd3c31859b7e09260378d45a783` filters to container events, skips one-off containers, applies selected-service filtering, strips internal labels, and renders `time`, `type`, `service`, `id`, `action`, and `attributes`.
@@ -44,6 +45,8 @@ Existing source and dependency decisions:
 - Follow-up event time-filter commits, not part of this first Compose PR:
   - `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270 feat(events): add event time filters` in `stephenlclarke/container`
   - `3a3387d7dbea301eec3a7f1fcc3f954dec80276c feat(events): support compose event time filters` in `stephenlclarke/container-compose`
+- Follow-up Compose text-format commit, not part of this first Compose PR:
+  - `fd3d94824f23cd3255a812faed9e3972906b4ab5 feat(events): support compose text events` in `stephenlclarke/container-compose`
 - Lower runtime code commit: not required
 
 Use the Compose code commit as one future `container-compose` PR. Use the container code commits as the separate future `apple/container` PR. Do not squash the Compose mapping into the Apple runtime PR.
@@ -60,7 +63,7 @@ Use the Compose code commit as one future `container-compose` PR. Use the contai
 - Added `eventsManager` dependency injection through `ComposeOrchestratorRuntimeDependencies`.
 - Added `ComposeOrchestrator.events(project:options:)`.
 - Replaced the `Events` placeholder in `ComposePlugin.swift` with an async project-backed command.
-- `--json` is required for this first slice; non-JSON formatting remains a later plugin feature.
+- `--json` is required for this first slice; default text formatting is handled by the follow-up `PR-compose-events-text-format.md` slice.
 - `--since` and `--until` were intentionally left to the separate event time-filter follow-up rather than mixed into this first Compose mapping PR.
 - Dry-run renders the generic runtime command `container events`.
 - Added focused tests for service selection, dry-run behavior, option gating, and event-stream JSON filtering/rendering.
@@ -81,7 +84,7 @@ Supported on the fork-backed integration stack:
 
 Explicitly not supported in this slice:
 
-- Non-JSON event formatting
+- Default text event formatting in this repository is handled by the follow-up `PR-compose-events-text-format.md` slice.
 - Network, volume, image, health, and restart-policy metadata events beyond the container lifecycle transitions emitted by the runtime dependency
 
 ## Testing
