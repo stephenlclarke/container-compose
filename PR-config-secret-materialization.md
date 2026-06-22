@@ -20,7 +20,7 @@ Docker Compose supports file-like runtime config and secret sources that can be 
 
 `apple/container` already exposes the runtime primitive needed for local file-like grants: read-only bind mounts. This plugin can therefore support inline config content and environment-backed config/secret values without adding Compose-specific policy to `apple/container`.
 
-External configs/secrets and strict `uid`/`gid`/`mode` ownership semantics remain separate runtime gaps because they need a lookup/store or ownership primitive rather than a simple local source file.
+External configs/secrets and strict `uid`/`gid` ownership semantics remain separate runtime gaps because they need a lookup/store or ownership primitive rather than a simple local source file.
 
 ## Implementation Details
 
@@ -29,8 +29,8 @@ External configs/secrets and strict `uid`/`gid`/`mode` ownership semantics remai
   - existing `file` sources as direct read-only bind mounts;
   - `configs.content` as generated config files with `0444` permissions;
   - `configs.environment` as generated config files with `0444` permissions;
-  - `secrets.environment` as generated secret files with `0400` permissions.
-- Included generated content hashes in materialized file names so content changes affect the service config hash and trigger recreation.
+  - `secrets.environment` as generated secret files with Compose default `0444` permissions.
+- Included generated content in materialized file names so content changes affect the service config hash and trigger recreation. A follow-up slice also includes grant modes in the materialized file identity.
 - Kept validation and dry-run paths side-effect free: dry-run renders the planned bind mount paths without writing local files.
 - Removed project-scoped materialized files in `down` after containers are stopped and deleted.
 - Kept content-backed secrets rejected because Docker Compose secrets document only `file` and `environment` sources.
@@ -41,7 +41,7 @@ External configs/secrets and strict `uid`/`gid`/`mode` ownership semantics remai
 - Supported now: runtime service grants for file-backed configs/secrets, `configs.content`, `configs.environment`, and `secrets.environment`.
 - Supported now: Docker Compose default mount targets, including `/<config-name>` for configs and `/run/secrets/<secret-name>` for secrets.
 - Remaining gap: `external: true` configs/secrets still need an `apple/container` store or lookup primitive.
-- Remaining gap: strict service-level `uid`, `gid`, and `mode` materialization needs runtime ownership/mode support beyond bind-mounting a host file.
+- Remaining gap: strict service-level `uid` and `gid` materialization needs runtime ownership support beyond bind-mounting a host file.
 
 ## Testing
 

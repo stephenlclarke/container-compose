@@ -5192,10 +5192,10 @@ struct ComposeOrchestratorTests {
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.configs = [
-                        .object(["source": .string("inline_config"), "target": .string("/etc/inline.conf")]),
-                        .object(["source": .string("env_config"), "target": .string("env.conf")]),
+                        .object(["source": .string("inline_config"), "target": .string("/etc/inline.conf"), "mode": .string("0555")]),
+                        .object(["source": .string("env_config"), "target": .string("env.conf"), "mode": .string("0666")]),
                     ]
-                    $0.secrets = [.object(["source": .string("app_secret"), "target": .string("runtime-token")])]
+                    $0.secrets = [.object(["source": .string("app_secret"), "target": .string("runtime-token"), "mode": .string("0440")])]
                 },
             ]
         ) {
@@ -5223,9 +5223,9 @@ struct ComposeOrchestratorTests {
         #expect(try String(contentsOfFile: inlineConfig, encoding: .utf8) == "inline config\n")
         #expect(try String(contentsOfFile: environmentConfig, encoding: .utf8) == "from environment\n")
         #expect(try String(contentsOfFile: secret, encoding: .utf8) == "super-secret")
-        #expect(try posixPermissions(at: inlineConfig) == 0o444)
+        #expect(try posixPermissions(at: inlineConfig) == 0o555)
         #expect(try posixPermissions(at: environmentConfig) == 0o444)
-        #expect(try posixPermissions(at: secret) == 0o400)
+        #expect(try posixPermissions(at: secret) == 0o440)
     }
 
     @Test("down removes materialized config and secret files")
@@ -5304,6 +5304,71 @@ struct ComposeOrchestratorTests {
 
         #expect(!FileManager.default.fileExists(atPath: stateRoot.path))
         #expect(emitted.snapshot.contains { $0.contains("--volume") && $0.contains(":/etc/inline.conf:ro") })
+    }
+
+    @Test("up rejects generated config ownership remapping before creating resources")
+    func upRejectsGeneratedConfigOwnershipRemappingBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [.object(["source": .string("inline_config"), "target": .string("/etc/inline.conf"), "uid": .string("103"), "gid": .string("103")])]
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            $0.configs = ["inline_config": .object(["content": .string("inline config\n")])]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected generated config ownership remapping to fail")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses uid/gid on generated config 'inline_config'; apple/container bind mounts do not expose config/secret ownership remapping"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects invalid generated secret mode before creating resources")
+    func upRejectsInvalidGeneratedSecretModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let secretEnvironment = "BAD_MODE_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        setenv(secretEnvironment, "secret", 1)
+        defer {
+            unsetenv(secretEnvironment)
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.secrets = [.object(["source": .string("app_secret"), "target": .string("runtime-token"), "mode": .string("0999")])]
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            $0.secrets = ["app_secret": .object(["environment": .string(secretEnvironment)])]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid generated secret mode to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' secret 'app_secret' mode '0999' must be an octal file mode between 0000 and 0777"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects external configs before creating resources")
@@ -14063,7 +14128,7 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first?.arguments)
         let secret = try #require(readOnlyVolumeSource(target: "/run/secrets/runtime-token", in: command))
         #expect(try String(contentsOfFile: secret, encoding: .utf8) == "run-secret")
-        #expect(try posixPermissions(at: secret) == 0o400)
+        #expect(try posixPermissions(at: secret) == 0o444)
         #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 

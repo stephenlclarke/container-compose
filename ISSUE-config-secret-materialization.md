@@ -42,7 +42,7 @@ With this change, `container-compose` materializes Docker Compose local file-lik
 
 ## Likely Owner
 
-`container-compose` owns this local-development behavior because the runtime already supports read-only file bind mounts. `apple/container` should still own any future first-class external config/secret store, lookup, or ownership/mode primitive.
+`container-compose` owns this local-development behavior because the runtime already supports read-only file bind mounts. `apple/container` should still own any future first-class external config/secret store, lookup, or ownership-remapping primitive.
 
 ## Minimal Example
 

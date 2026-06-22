@@ -6375,12 +6375,12 @@ private enum ComposeFileMountKind {
         }
     }
 
-    var materializedPermissions: Int {
+    var defaultMaterializedPermissions: Int {
         switch self {
         case .config:
             0o444
         case .secret:
-            0o400
+            0o444
         }
     }
 
@@ -6399,6 +6399,9 @@ private enum ComposeFileMountKind {
 private struct ComposeFileGrant {
     var source: String
     var target: String?
+    var uid: String?
+    var gid: String?
+    var mode: ComposeValue?
 }
 
 /// Project-local file content staged for runtime config or secret bind mounts.
@@ -6756,7 +6759,10 @@ private func parseComposeFileGrant(
         }
         return ComposeFileGrant(
             source: source,
-            target: fields["target"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            target: fields["target"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+            uid: fields["uid"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+            gid: fields["gid"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+            mode: fields["mode"]
         )
     default:
         throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) reference must be a string or object")
@@ -6786,6 +6792,7 @@ private func composeFileGrantSourcePath(
         return resolvedProjectPath(file, project: project)
     }
     if let environment = fields["environment"] {
+        try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
         let name = try composeFileGrantEnvironmentVariable(
             environment,
             grant: grant,
@@ -6800,6 +6807,7 @@ private func composeFileGrantSourcePath(
             grant: grant,
             kind: kind,
             contents: contents,
+            permissions: try composeFileGrantPermissions(grant: grant, kind: kind, service: service),
             root: materializedConfigSecretRoot
         )
         if materialize {
@@ -6811,6 +6819,7 @@ private func composeFileGrantSourcePath(
         guard kind == .config else {
             throw ComposeError.unsupported("service '\(service.name)' uses content-backed secret '\(grant.source)'; Docker Compose secrets support file or environment sources")
         }
+        try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
         guard let contents = content.stringValue else {
             throw ComposeError.invalidProject("config '\(grant.source)' content must be a string")
         }
@@ -6819,6 +6828,7 @@ private func composeFileGrantSourcePath(
             grant: grant,
             kind: kind,
             contents: contents,
+            permissions: try composeFileGrantPermissions(grant: grant, kind: kind, service: service),
             root: materializedConfigSecretRoot
         )
         if materialize {
@@ -6827,6 +6837,59 @@ private func composeFileGrantSourcePath(
         return materialized.url.path
     }
     throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' must define \(kind.supportedDefinitionFields) for runtime mounting")
+}
+
+/// Rejects generated grants that need an ownership-remapping runtime primitive.
+private func validateMaterializedGrantOwnership(
+    grant: ComposeFileGrant,
+    service: ComposeService,
+    kind: ComposeFileMountKind
+) throws {
+    let fields = [
+        nonEmpty(grant.uid) == nil ? nil : "uid",
+        nonEmpty(grant.gid) == nil ? nil : "gid",
+    ].compactMap { $0 }
+    guard !fields.isEmpty else {
+        return
+    }
+    throw ComposeError.unsupported("service '\(service.name)' uses \(fields.joined(separator: "/")) on generated \(kind.singularName) '\(grant.source)'; apple/container bind mounts do not expose config/secret ownership remapping")
+}
+
+/// Returns the file permissions used for a generated config or secret grant.
+private func composeFileGrantPermissions(
+    grant: ComposeFileGrant,
+    kind: ComposeFileMountKind,
+    service: ComposeService
+) throws -> Int {
+    guard let mode = grant.mode else {
+        return kind.defaultMaterializedPermissions
+    }
+    return try parseComposeFileGrantMode(mode, grant: grant, kind: kind, service: service) & ~0o222
+}
+
+/// Parses Compose's octal grant mode, leaving write bits to be ignored later.
+private func parseComposeFileGrantMode(
+    _ value: ComposeValue,
+    grant: ComposeFileGrant,
+    kind: ComposeFileMountKind,
+    service: ComposeService
+) throws -> Int {
+    if let rawValue = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) {
+        let normalized = rawValue.lowercased().hasPrefix("0o") ? String(rawValue.dropFirst(2)) : rawValue
+        if !normalized.isEmpty,
+           normalized.allSatisfy({ ("0"..."7").contains($0) }),
+           let parsed = Int(normalized, radix: 8),
+           parsed <= 0o777 {
+            return parsed
+        }
+        throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) '\(grant.source)' mode '\(rawValue)' must be an octal file mode between 0000 and 0777")
+    }
+
+    if let parsed = value.intValue, (0...0o777).contains(parsed) {
+        return parsed
+    }
+
+    throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) '\(grant.source)' mode must be an octal file mode between 0000 and 0777")
 }
 
 /// Extracts the host environment variable name for an environment-backed grant.
@@ -6848,16 +6911,17 @@ private func materializedComposeFile(
     grant: ComposeFileGrant,
     kind: ComposeFileMountKind,
     contents: String,
+    permissions: Int,
     root: URL
 ) -> ComposeMaterializedFile {
-    let digest = stableHash(contents)
+    let digest = stableHash("\(String(permissions, radix: 8))\n\(contents)")
     let directory = materializedProjectDirectory(project: project, root: root)
         .appendingPathComponent(kind.pluralName, isDirectory: true)
     let filename = "\(slug(grant.source))-\(digest.prefix(16))"
     return ComposeMaterializedFile(
         url: directory.appendingPathComponent(filename, isDirectory: false),
         contents: contents,
-        permissions: kind.materializedPermissions
+        permissions: permissions
     )
 }
 

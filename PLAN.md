@@ -216,7 +216,16 @@ Reference targets:
       <td>2026-06-22 03:59:34 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now materializes Docker Compose top-level `configs.content`, `configs.environment`, and `secrets.environment` definitions into deterministic project-scoped local files under the per-user state root, then mounts them read-only through existing apple/container bind-mount primitives. Generated config files use mode `0444`; generated secret files use mode `0400`; dry-runs render the target bind mounts without writing secret material; `down` removes the project-scoped materialized files after containers are removed. File-backed definitions continue to mount their source paths directly. External configs/secrets and strict service-level `uid`/`gid`/`mode` ownership semantics remain separate apple/container/runtime boundary work. Handoff files are `ISSUE-config-secret-materialization.md` and `PR-config-secret-materialization.md` in this repository.</td>
+      <td colspan="4">Notes: `container-compose` now materializes Docker Compose top-level `configs.content`, `configs.environment`, and `secrets.environment` definitions into deterministic project-scoped local files under the per-user state root, then mounts them read-only through existing apple/container bind-mount primitives. Generated files use Compose default mode `0444` unless a later service grant mode overrides it; dry-runs render the target bind mounts without writing secret material; `down` removes the project-scoped materialized files after containers are removed. File-backed definitions continue to mount their source paths directly. External configs/secrets and strict service-level `uid`/`gid` ownership semantics remain separate apple/container/runtime boundary work. Handoff files are `ISSUE-config-secret-materialization.md` and `PR-config-secret-materialization.md` in this repository.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Apply service-level modes to generated config and secret grants</td>
+      <td>2026-06-22 04:16:00 BST</td>
+      <td>2026-06-22 04:16:00 BST</td>
+      <td>2026-06-22 04:16:00 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: generated runtime config/secret files now honor service grant `mode` values preserved by compose-go, parse octal strings such as `0440`, `0555`, and `0o400`, ignore writable bits per Compose semantics, and include the effective permission mode in the materialized file name so config-hash recreation detects mode-only changes. File-backed grants keep Docker Compose's bind-mount behavior and do not mutate source file metadata. `uid`/`gid` requests on generated grants still reject clearly because apple/container bind mounts do not expose config/secret ownership remapping. Handoff files are `ISSUE-config-secret-grant-mode.md` and `PR-config-secret-grant-mode.md` in this repository.</td>
     </tr>
   </tbody>
 </table>

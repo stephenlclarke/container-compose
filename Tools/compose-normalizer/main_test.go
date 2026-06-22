@@ -329,11 +329,14 @@ services:
     configs:
       - source: inline_config
         target: /etc/inline.conf
+        mode: 0555
       - source: env_config
         target: env.conf
+        mode: "0440"
     secrets:
       - source: env_secret
         target: runtime-token
+        mode: 0o400
 configs:
   inline_config:
     content: |
@@ -366,12 +369,21 @@ secrets:
 	if got, want := types.FileReferenceConfig(configs[0]).Target, "/etc/inline.conf"; got != want {
 		t.Fatalf("api inline config target = %q, want %q", got, want)
 	}
+	if got, want := types.FileReferenceConfig(configs[0]).Mode.String(), "0555"; got != want {
+		t.Fatalf("api inline config mode = %q, want %q", got, want)
+	}
 	if got, want := types.FileReferenceConfig(configs[1]).Target, "env.conf"; got != want {
 		t.Fatalf("api environment config target = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(configs[1]).Mode.String(), "0440"; got != want {
+		t.Fatalf("api environment config mode = %q, want %q", got, want)
 	}
 	secrets := project.Services["api"].Secrets.([]types.ServiceSecretConfig)
 	if got, want := types.FileReferenceConfig(secrets[0]).Target, "runtime-token"; got != want {
 		t.Fatalf("api environment secret target = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(secrets[0]).Mode.String(), "0400"; got != want {
+		t.Fatalf("api environment secret mode = %q, want %q", got, want)
 	}
 }
 
