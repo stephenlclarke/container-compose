@@ -18,6 +18,12 @@ import ContainerAPIClient
 import ContainerResource
 import Foundation
 
+/// Event output formats supported by `compose events`.
+public enum ComposeEventsOutputFormat: Sendable, Equatable {
+    case text
+    case json
+}
+
 /// One Docker Compose-style event rendered by `compose events --json`.
 public struct ComposeEventRecord: Sendable, Equatable, Codable {
     public var time: Date
@@ -52,10 +58,11 @@ public protocol ContainerEventsAPIClienting: Sendable {
 
 /// Direct apple/container API used for Compose project events.
 public protocol ContainerEventsManaging: Sendable {
-    /// Emits Docker Compose-style JSON event records for selected services.
+    /// Emits Docker Compose-style event records for selected services.
     func events(
         projectName: String,
         services: [String],
+        format: ComposeEventsOutputFormat,
         since: Date?,
         until: Date?,
         emit: @escaping @Sendable (String) -> Void
@@ -90,6 +97,7 @@ public struct ContainerClientEventsManager: ContainerEventsManaging {
     public func events(
         projectName: String,
         services: [String],
+        format: ComposeEventsOutputFormat,
         since: Date?,
         until: Date?,
         emit: @escaping @Sendable (String) -> Void
@@ -102,7 +110,7 @@ public struct ContainerClientEventsManager: ContainerEventsManaging {
         }
 
         let decoder = ContainerEventJSONLDecoder()
-        let renderer = ComposeEventJSONLRenderer(projectName: projectName, services: services)
+        let renderer = ComposeEventRenderer(projectName: projectName, services: services, format: format)
         for try await chunk in eventChunks(eventStream) {
             for event in try decoder.append(chunk) {
                 if let line = try renderer.render(event) {
@@ -139,16 +147,18 @@ public struct ContainerClientEventsManager: ContainerEventsManaging {
 }
 
 /// Applies Docker Compose's project/service event filtering policy.
-private struct ComposeEventJSONLRenderer {
+private struct ComposeEventRenderer {
     var projectName: String
     var selectedServices: Set<String>
+    var format: ComposeEventsOutputFormat
 
-    init(projectName: String, services: [String]) {
+    init(projectName: String, services: [String], format: ComposeEventsOutputFormat) {
         self.projectName = projectName
         self.selectedServices = Set(services)
+        self.format = format
     }
 
-    /// Returns one JSON line when the runtime event belongs to the selected Compose services.
+    /// Returns one output line when the runtime event belongs to the selected Compose services.
     func render(_ event: ContainerEvent) throws -> String? {
         guard event.type == "container" else {
             return nil
@@ -174,7 +184,12 @@ private struct ComposeEventJSONLRenderer {
             action: event.action,
             attributes: publicAttributes(event.attributes)
         )
-        return try encode(record)
+        switch format {
+        case .json:
+            return try encode(record)
+        case .text:
+            return renderText(record)
+        }
     }
 
     /// Removes Compose-private tracking labels from the public event payload.
@@ -191,6 +206,36 @@ private struct ComposeEventJSONLRenderer {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         return String(decoding: try encoder.encode(record), as: UTF8.self)
+    }
+
+    /// Renders Docker Compose's default text event shape without embedding a trailing newline.
+    private func renderText(_ record: ComposeEventRecord) -> String {
+        let attributes = record.attributes
+            .sorted { lhs, rhs in lhs.key < rhs.key }
+            .map { key, value in "\(key)=\(value)" }
+            .joined(separator: ", ")
+        return "\(formattedTimestamp(record.time)) container \(record.action) \(record.id) (\(attributes))"
+    }
+
+    /// Formats the event timestamp like Docker Compose's `api.Event.String()`.
+    private func formattedTimestamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let components = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second, .nanosecond],
+            from: date
+        )
+        let microseconds = (components.nanosecond ?? 0) / 1_000
+        return String(
+            format: "%04d-%02d-%02d %02d:%02d:%02d.%06d",
+            components.year ?? 0,
+            components.month ?? 0,
+            components.day ?? 0,
+            components.hour ?? 0,
+            components.minute ?? 0,
+            components.second ?? 0,
+            microseconds
+        )
     }
 }
 

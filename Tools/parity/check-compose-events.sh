@@ -24,10 +24,10 @@
 #   -h, --help  Show this help.
 #
 # This script is intentionally local-only and is not part of CI. It verifies the
-# Docker Compose V2 event semantics used by container-compose: JSON output is
-# container-scoped, selected service filtering excludes other services, internal
-# Compose labels are stripped, one-off run containers are not emitted, and
-# --since/--until can replay a bounded project event window.
+# Docker Compose V2 event semantics used by container-compose: default text and
+# JSON output are container-scoped, selected service filtering excludes other
+# services, internal Compose labels are stripped, one-off run containers are not
+# emitted, and --since/--until can replay a bounded project event window.
 
 set -euo pipefail
 
@@ -40,6 +40,7 @@ TMPDIR=""
 COMPOSE_FILE=""
 EVENTS_FILE=""
 FILTERED_EVENTS_FILE=""
+TEXT_EVENTS_FILE=""
 PROJECT_NAME="container-compose-events-$RANDOM-$$"
 EVENTS_PID=""
 
@@ -109,6 +110,7 @@ create_fixture() {
     COMPOSE_FILE="$TMPDIR/compose.yml"
     EVENTS_FILE="$TMPDIR/events.jsonl"
     FILTERED_EVENTS_FILE="$TMPDIR/events-filtered.jsonl"
+    TEXT_EVENTS_FILE="$TMPDIR/events.txt"
 
     cat >"$COMPOSE_FILE" <<'YAML'
 services:
@@ -283,6 +285,30 @@ run_filtered_replay() {
     wait "$replay_pid"
 }
 
+# Run Docker Compose default text event replay with a bounded wait.
+run_text_replay() {
+    local since="$1"
+    local until="$2"
+    local replay_pid
+    local deadline
+
+    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --since "$since" --until "$until" api >"$TEXT_EVENTS_FILE" &
+    replay_pid="$!"
+    ((deadline = SECONDS + 30))
+
+    while kill -0 "$replay_pid" >/dev/null 2>&1; do
+        if ((SECONDS >= deadline)); then
+            kill "$replay_pid" >/dev/null 2>&1 || true
+            wait "$replay_pid" >/dev/null 2>&1 || true
+            error 'timed out waiting for docker compose events text replay'
+            return 1
+        fi
+        sleep 1
+    done
+
+    wait "$replay_pid"
+}
+
 # Validate that Docker Compose time-filtered replay keeps the same event shape.
 validate_time_filtered_events() {
     python3 - "$FILTERED_EVENTS_FILE" <<'PY'
@@ -303,6 +329,26 @@ for index, event in enumerate(events, start=1):
         raise SystemExit(f"replayed event {index} is not container-scoped: {event.get('type')!r}")
     if event.get("service") != "api":
         raise SystemExit(f"replayed selected-service filter leaked service {event.get('service')!r}")
+PY
+}
+
+# Validate Docker Compose's default text event shape.
+validate_text_events() {
+    python3 - "$TEXT_EVENTS_FILE" <<'PY'
+import re
+import sys
+
+lines = [line.strip() for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
+
+if not lines:
+    raise SystemExit("no Docker Compose text events were captured")
+
+event_line = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} container \S+ \S+ \(")
+for index, line in enumerate(lines, start=1):
+    if not event_line.search(line):
+        raise SystemExit(f"text event {index} has unexpected shape: {line!r}")
+    if "com.docker.compose." in line:
+        raise SystemExit(f"text event {index} retained internal Compose label: {line!r}")
 PY
 }
 
@@ -334,6 +380,8 @@ main() {
     until="$(printf '%s\n' "$window" | sed -n '2p')"
     run_filtered_replay "$since" "$until"
     validate_time_filtered_events
+    run_text_replay "$since" "$until"
+    validate_text_events
     printf 'Docker Compose events parity check passed for project %s\n' "$PROJECT_NAME"
 }
 

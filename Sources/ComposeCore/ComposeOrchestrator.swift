@@ -621,6 +621,10 @@ public struct ComposeEventsOptions {
         self.since = since
         self.until = until
     }
+
+    public var outputFormat: ComposeEventsOutputFormat {
+        json ? .json : .text
+    }
 }
 
 /// Options for `compose wait` commands.
@@ -2281,10 +2285,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
     }
 
-    /// Streams project container lifecycle events in Docker Compose JSON format.
+    /// Streams project container lifecycle events in Docker Compose format.
     public func events(project: ComposeProject, options events: ComposeEventsOptions) async throws {
         try validate(project: project)
-        try validateEventsOptions(events)
         let runtimeSince = try runtimeEventTimestamp(events.since)
         let runtimeUntil = try runtimeEventTimestamp(events.until)
         let services = try selectedServices(project: project, selected: events.services)
@@ -2295,6 +2298,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try await eventsManager.events(
             projectName: project.name,
             services: services.map(\.name),
+            format: events.outputFormat,
             since: runtimeSince,
             until: runtimeUntil,
             emit: options.emit
@@ -2587,13 +2591,6 @@ private extension ComposeOrchestrator {
                 throw ComposeError.invalidProject("unknown service '\(name)'")
             }
             return service
-        }
-    }
-
-    /// Validates the currently implemented Compose events option subset.
-    func validateEventsOptions(_ events: ComposeEventsOptions) throws {
-        guard events.json else {
-            throw ComposeError.unsupported("events: this slice supports Docker Compose JSON output only; pass --json")
         }
     }
 

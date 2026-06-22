@@ -6556,6 +6556,7 @@ struct ComposeOrchestratorTests {
             ComposeEventsRequest(
                 projectName: "demo",
                 services: ["api"],
+                format: .json,
                 since: date("2026-06-22T10:00:00Z"),
                 until: date("2026-06-22T11:30:00Z")
             ),
@@ -6563,26 +6564,27 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["event-output"])
     }
 
-    @Test("events requires JSON output in the first runtime-backed slice")
-    func eventsRequiresJSONOutputInFirstRuntimeBackedSlice() async throws {
-        let eventsManager = RecordingContainerEventsManager(outputs: ["ignored"])
+    @Test("events defaults to Docker Compose text output")
+    func eventsDefaultsToDockerComposeTextOutput() async throws {
+        let emitted = MessageRecorder()
+        let eventsManager = RecordingContainerEventsManager(outputs: ["event-output"])
         let project = ComposeProject(
             name: "demo",
             services: ["api": ComposeService(name: "api", image: "example/api")]
         )
 
-        do {
-            try await ComposeOrchestrator(eventsManager: eventsManager).events(
-                project: project,
-                options: ComposeEventsOptions(services: ["api"])
-            )
-            Issue.record("Expected unsupported events format failure")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("events: this slice supports Docker Compose JSON output only; pass --json"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-        #expect(await eventsManager.requests.isEmpty)
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            eventsManager: eventsManager
+        ).events(
+            project: project,
+            options: ComposeEventsOptions(services: ["api"])
+        )
+
+        #expect(await eventsManager.requests == [
+            ComposeEventsRequest(projectName: "demo", services: ["api"], format: .text),
+        ])
+        #expect(emitted.messages == ["event-output"])
     }
 
     @Test("events rejects invalid time filters")
@@ -6703,6 +6705,7 @@ struct ComposeOrchestratorTests {
         try await manager.events(
             projectName: "demo",
             services: ["api"],
+            format: .json,
             since: date("2026-06-22T09:59:00Z"),
             until: date("2026-06-22T10:01:00Z"),
             emit: { emitted.append($0) }
@@ -6731,6 +6734,43 @@ struct ComposeOrchestratorTests {
                 "status": "running",
             ]
         ))
+    }
+
+    @Test("event manager renders Docker Compose text service events by default")
+    func eventManagerRendersDockerComposeTextServiceEventsByDefault() async throws {
+        let emitted = MessageRecorder()
+        let events = [
+            ContainerEvent(
+                time: date("2026-06-22T10:00:00.123456Z"),
+                type: "container",
+                id: "demo-api-1",
+                action: "die",
+                attributes: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                    "custom": "visible",
+                    "exitCode": "0",
+                    "image": "example/api",
+                ]
+            ),
+        ]
+        let client = RecordingContainerEventsAPIClient(data: try containerEventData(events))
+        let manager = ContainerClientEventsManager(client: client)
+
+        try await manager.events(
+            projectName: "demo",
+            services: [],
+            format: .text,
+            since: nil,
+            until: nil,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(await client.options == [.default])
+        #expect(emitted.messages == [
+            "2026-06-22 10:00:00.000000 container die demo-api-1 (custom=visible, exitCode=0, image=example/api)",
+        ])
     }
 
     @Test("ls lists compose projects with grouped status")
@@ -18342,6 +18382,7 @@ private actor RecordingContainerTopManager: ContainerTopManaging {
 private struct ComposeEventsRequest: Equatable {
     var projectName: String
     var services: [String]
+    var format: ComposeEventsOutputFormat
     var since: Date? = nil
     var until: Date? = nil
 }
@@ -18361,6 +18402,7 @@ private actor RecordingContainerEventsManager: ContainerEventsManaging {
     func events(
         projectName: String,
         services: [String],
+        format: ComposeEventsOutputFormat,
         since: Date?,
         until: Date?,
         emit: @escaping @Sendable (String) -> Void
@@ -18368,6 +18410,7 @@ private actor RecordingContainerEventsManager: ContainerEventsManaging {
         storage.append(ComposeEventsRequest(
             projectName: projectName,
             services: services,
+            format: format,
             since: since,
             until: until
         ))
