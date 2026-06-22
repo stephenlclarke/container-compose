@@ -3828,33 +3828,29 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
-    @Test("up rejects unsupported sysctls before creating resources")
-    func upRejectsUnsupportedSysctlsBeforeCreatingResources() async throws {
+    @Test("up maps sysctls to runtime arguments")
+    func upMapsSysctlsToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.sysctls = ["net.core.somaxconn": "1024"]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.sysctls = [
+                        "net.core.somaxconn": "1024",
+                        "net.ipv4.ip_forward": "1",
+                    ]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported sysctls error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses sysctls; sysctl support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--sysctl", "net.core.somaxconn=1024"]))
+        #expect(command.containsSequence(["--sysctl", "net.ipv4.ip_forward=1"]))
     }
 
     @Test("up maps network aliases to single network attachment")
@@ -13782,28 +13778,41 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--dns-option", "use-vc"]))
     }
 
-    @Test("run rejects unsupported sysctls before creating resources")
-    func runRejectsUnsupportedSysctlsBeforeCreatingResources() async throws {
+    @Test("run maps sysctls to runtime arguments")
+    func runMapsSysctlsToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.sysctls = ["net.core.somaxconn": "1024"]
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--sysctl", "net.core.somaxconn=1024"]))
+    }
+
+    @Test("run rejects invalid sysctl names before runtime commands")
+    func runRejectsInvalidSysctlNamesBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.sysctls = ["bad=name": "1"]
+                },
+            ]
+        )
 
         do {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported sysctls error")
+            Issue.record("Expected invalid sysctl name error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses sysctls; sysctl support needs an apple/container runtime gap PR"))
+            #expect(error == .invalidProject("service 'job' uses sysctl name 'bad=name'; sysctl names must not contain '='"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

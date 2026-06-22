@@ -2866,9 +2866,7 @@ private extension ComposeOrchestrator {
         _ = try runtimeExtraHostArguments(service: service)
         _ = try runtimeHostnameArgument(service: service)
         _ = try runtimeDomainnameArgument(service: service)
-        if let sysctls = service.sysctls, !sysctls.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
-        }
+        _ = try runtimeSysctlArguments(service: service)
         try validateHealthCheckSupport(service: service)
         _ = try serviceConfigSecretMounts(project: project, service: service)
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
@@ -3895,6 +3893,22 @@ private extension ComposeOrchestrator {
         try (service.extraHosts ?? []).map { raw in
             try runtimeExtraHostArgument(raw, service: service)
         }
+    }
+
+    /// Returns runtime sysctl arguments for Compose `sysctls`.
+    func runtimeSysctlArguments(service: ComposeService) throws -> [String] {
+        try (service.sysctls ?? [:])
+            .sorted(by: { $0.key < $1.key })
+            .map { name, value in
+                let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedName.isEmpty else {
+                    throw ComposeError.invalidProject("service '\(service.name)' uses sysctls with an empty name")
+                }
+                guard !trimmedName.contains("=") else {
+                    throw ComposeError.invalidProject("service '\(service.name)' uses sysctl name '\(trimmedName)'; sysctl names must not contain '='")
+                }
+                return "\(trimmedName)=\(value)"
+            }
     }
 
     /// Converts Compose `blkio_config` into apple/container#1595 `--blkio`
@@ -5549,6 +5563,9 @@ private extension ComposeOrchestrator {
         }
         for extraHost in try runtimeExtraHostArguments(service: service) {
             args.append(contentsOf: ["--add-host", extraHost])
+        }
+        for sysctl in try runtimeSysctlArguments(service: service) {
+            args.append(contentsOf: ["--sysctl", sysctl])
         }
         for blkio in try runtimeBlkioArguments(service: service) {
             args.append(contentsOf: ["--blkio", blkio])

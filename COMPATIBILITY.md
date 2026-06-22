@@ -271,9 +271,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
   - Process options: `command`, `entrypoint`, one-off `run --entrypoint`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, and `stdin_open`.
-  - Runtime options: `container_name`, `read_only`, `init`, `platform`, `runtime`, DNS settings, capabilities, CPU/memory local limits, `shm_size`, `ulimits`, `stop_signal`, and `stop_grace_period`.
-- **apple/container path:** Supported `container create/run` flags and `ContainerClient.stop(id:opts:)`.
-- **container-compose status:** Supported for the listed local-development runtime options.
+  - Runtime options: `container_name`, `read_only`, `init`, `platform`, `runtime`, DNS settings, capabilities, CPU/memory local limits, `shm_size`, `ulimits`, `sysctls`, `stop_signal`, and `stop_grace_period`.
+- **apple/container path:** Supported `container create/run` flags and `ContainerClient.stop(id:opts:)`. `sysctls` use the fork-backed `container create/run --sysctl name=value` slice documented in `ISSUE-sysctl-cli.md` / `PR-sysctl-cli.md` until an equivalent upstream CLI primitive is accepted.
+- **container-compose status:** Supported for the listed local-development runtime options on the integration branch. Released upstream support for `sysctls` is pending the new `--sysctl` CLI/runtime bridge.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Environment and metadata
@@ -323,8 +323,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 #### User, security, devices, and kernel tuning
 
 - **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
-- **Compose surface:** `group_add`, `security_opt`, service `privileged`, `exec --privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`, and `sysctls`.
-- **Missing apple/container primitive:** Supplemental groups, security profiles beyond supported `cap_add`/`cap_drop`, privileged mode, host devices, GPUs, per-container sysctls, and privileged exec processes.
+- **Compose surface:** `group_add`, `security_opt`, service `privileged`, `exec --privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, and `gpus`.
+- **Missing apple/container primitive:** Supplemental groups, security profiles beyond supported `cap_add`/`cap_drop`, privileged mode, host devices, GPUs, and privileged exec processes.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A3](#a3-apple-gap-runtime-controls).
 
@@ -1000,13 +1000,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### A3: Apple Gap, Runtime Controls
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs namespace, resource controls beyond the supported local CPU/memory/ulimit subset, deploy resource reservation guarantees, privileged/device, and sysctl primitives. `container compose exec --privileged` is rejected because privileged exec processes need an [`apple/container`][apple-container] primitive.
+Expected result: `container compose up` maps `sysctls` to `container run/create --sysctl` on the fork-backed integration branch, then rejects this example because [`apple/container`][apple-container] still needs namespace selection, resource controls beyond the supported local CPU/memory/ulimit subset, deploy resource reservation guarantees, and privileged/device primitives. `container compose exec --privileged` is rejected because privileged exec processes need an [`apple/container`][apple-container] primitive.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these runtime controls.
-- [`apple/container`][apple-container]: missing the required namespace, privileged/device, resource controls beyond supported `cpus`, `mem_limit`, `shm_size`, and `ulimits`, deploy PID-limit and reservation primitives, sysctl, and privileged exec primitives.
-- `container-compose`: detects those fields and reports the apple/container runtime gap.
+- [`apple/container`][apple-container]: missing the required namespace, privileged/device, resource controls beyond supported `cpus`, `mem_limit`, `shm_size`, and `ulimits`, deploy PID-limit and reservation primitives, and privileged exec primitives. The local fork exposes `--sysctl name=value` through `ISSUE-sysctl-cli.md` / `PR-sysctl-cli.md`.
+- `container-compose`: maps `sysctls` on the integration branch, then detects the remaining fields and reports the apple/container runtime gap.
 
 The related exec form is also rejected:
 

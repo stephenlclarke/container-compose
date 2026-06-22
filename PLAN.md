@@ -362,6 +362,15 @@ Reference targets:
     <tr>
       <td colspan="4">Notes: `container-compose` now preserves compose-go normalized `blkio_config.weight`, `weight_device`, `device_read_bps`, `device_write_bps`, `device_read_iops`, and `device_write_iops`, validates weights/rates before runtime commands, and renders them as repeatable `container run/create --blkio` specs matching Chris George's [apple/container#1595](https://github.com/apple/container/pull/1595) CLI contract. This intentionally reuses #1595 rather than duplicating the runtime PR. The integration stack now pins to `stephenlclarke/containerization@integration/blkio-runtime`, which carries Chris George's [apple/containerization#739](https://github.com/apple/containerization/pull/739), so local end-to-end validation can proceed while released support still waits on upstream merges. Handoff files are `ISSUE-blkio-config.md` and `PR-blkio-config.md` in this repository.</td>
     </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `sysctls` to the fork-backed apple/container `--sysctl` runtime bridge</td>
+      <td>2026-06-22 07:52 BST</td>
+      <td>2026-06-22 07:52 BST</td>
+      <td>2026-06-22 07:52 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now validates compose-go normalized service `sysctls`, renders deterministic repeatable `container run/create --sysctl name=value` arguments, and rejects malformed sysctl names before issuing runtime commands. The matching apple/container fork slice exposes the already-present `ContainerConfiguration.sysctls` model through CLI create/run management flags so local Compose validation can proceed. Released upstream compatibility still waits on acceptance of the CLI bridge; full Docker parity for unsupported kernel namespaces remains runtime policy in apple/container rather than plugin behavior. Handoff files are `ISSUE-sysctls.md` and `PR-sysctls.md` in this repository, with `ISSUE-sysctl-cli.md` and `PR-sysctl-cli.md` in the container fork.</td>
+    </tr>
   </tbody>
 </table>
 
