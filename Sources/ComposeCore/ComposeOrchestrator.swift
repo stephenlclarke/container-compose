@@ -966,6 +966,12 @@ private struct ComposeLinkReference {
     var alias: String
 }
 
+/// One Compose external link reference after validation.
+private struct ComposeExternalLinkReference {
+    var containerName: String
+    var alias: String
+}
+
 /// One legacy-link alias projected onto a target service attachment.
 private struct ComposeProjectedLinkAlias {
     var serviceName: String
@@ -1055,7 +1061,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
         var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
-        let services = try selectedServiceReferences.map { service in
+        var services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
             }
@@ -1072,6 +1078,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
         try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
+        workingProject = try await projectByResolvingExternalLinks(project: workingProject, services: services)
+        services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
@@ -1269,8 +1282,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let selectedServiceReferences = try create.noDeps && !create.services.isEmpty
             ? selectedServices(project: project, selected: create.services)
             : orderedServices(project: project, selected: create.services)
-        let workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
-        let services = try selectedServiceReferences.map { service in
+        var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        var services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
             }
@@ -1287,6 +1300,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let validateDependencies = !(create.noDeps && !create.services.isEmpty)
         try validateCreatePullPolicy(create.pullPolicy)
         try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
+        workingProject = try await projectByResolvingExternalLinks(project: workingProject, services: services)
+        services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
@@ -1985,13 +2005,21 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         activeServiceNames.insert(serviceName)
         runProject = try projectByApplyingLinks(project: runProject, activeServiceNames: activeServiceNames)
         service = runProject.services[serviceName] ?? service
-        let dependencyServices = try selectedDependencyServices.map { service in
+        var dependencyServices = try selectedDependencyServices.map { service in
             guard let activeService = runProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
             }
             return activeService
         }
         try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
+        runProject = try await projectByResolvingExternalLinks(project: runProject, services: dependencyServices + [service])
+        service = runProject.services[serviceName] ?? service
+        dependencyServices = try selectedDependencyServices.map { service in
+            guard let activeService = runProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         try validateOneOffRunLifecycleHooks(service: service, options: run)
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
@@ -2461,6 +2489,53 @@ private extension ComposeOrchestrator {
         return result
     }
 
+    /// Resolves Compose `external_links` into runtime host entries for the supported local subset.
+    func projectByResolvingExternalLinks(project: ComposeProject, services: [ComposeService]) async throws -> ComposeProject {
+        var result = project
+        for serviceReference in services.sorted(by: { $0.name < $1.name }) {
+            guard var service = result.services[serviceReference.name] else {
+                continue
+            }
+            let hostEntries = try await runtimeExternalLinkHostArguments(project: result, service: service)
+            guard !hostEntries.isEmpty else {
+                continue
+            }
+            service.extraHosts = (service.extraHosts ?? []) + hostEntries
+            result.services[service.name] = service
+        }
+        return result
+    }
+
+    /// Returns generated `extra_hosts`-compatible values for Compose `external_links`.
+    func runtimeExternalLinkHostArguments(project: ComposeProject, service: ComposeService) async throws -> [String] {
+        let references = try serviceExternalLinkReferences(service: service)
+        guard !references.isEmpty else {
+            return []
+        }
+        let network = try externalLinkRuntimeNetwork(project: project, service: service)
+        var entries: [String] = []
+        for reference in references {
+            guard let container = try await discoveryManager.getContainer(id: reference.containerName) else {
+                throw ComposeError.invalidProject("service '\(service.name)' external_links references missing container '\(reference.containerName)'")
+            }
+            let attachments = container.networks.filter { $0.network == network }
+            guard attachments.count == 1, let attachment = attachments.first else {
+                throw ComposeError.unsupported("service '\(service.name)' external_links to '\(reference.containerName)'; external container must share exactly one runtime network with the service")
+            }
+            entries.append("\(reference.alias)=\(attachment.ipv4Address)")
+        }
+        return entries
+    }
+
+    /// Returns the single runtime network that can safely back legacy external links.
+    func externalLinkRuntimeNetwork(project: ComposeProject, service: ComposeService) throws -> String {
+        let networks = service.networks ?? []
+        guard networks.count == 1, let network = networks.first else {
+            throw ComposeError.unsupported("service '\(service.name)' uses external_links; external links require exactly one Compose network until apple/container exposes source-scoped DNS links")
+        }
+        return networkRuntimeName(project: project, composeName: network)
+    }
+
     /// Returns the single shared network a legacy link can use.
     func linkNetwork(source: ComposeService, target: ComposeService, link: ComposeLinkReference) throws -> String {
         let sourceNetworks = Set(source.networks ?? [])
@@ -2784,9 +2859,7 @@ private extension ComposeOrchestrator {
             }
         }
         _ = try serviceLinkReferences(service: service, project: project)
-        if let externalLinks = service.externalLinks, !externalLinks.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses external_links; legacy link support needs an apple/container runtime gap PR")
-        }
+        _ = try serviceExternalLinkReferences(service: service)
         _ = try runtimeExtraHostArguments(service: service)
         _ = try runtimeHostnameArgument(service: service)
         _ = try runtimeDomainnameArgument(service: service)
@@ -6823,6 +6896,35 @@ private func serviceLinkReference(_ rawValue: String, service: ComposeService) t
         throw ComposeError.invalidProject("service '\(service.name)' link alias '\(rawAlias)' is not a valid RFC1123 hostname")
     }
     return ComposeLinkReference(serviceName: serviceName, alias: alias)
+}
+
+/// Returns parsed legacy `external_links` references for validation and lookup.
+private func serviceExternalLinkReferences(service: ComposeService) throws -> [ComposeExternalLinkReference] {
+    try (service.externalLinks ?? []).map { rawValue in
+        try serviceExternalLinkReference(rawValue, service: service)
+    }
+}
+
+/// Parses one Compose `external_links` entry of the form `CONTAINER` or `CONTAINER:ALIAS`.
+private func serviceExternalLinkReference(_ rawValue: String, service: ComposeService) throws -> ComposeExternalLinkReference {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' contains an empty external_links entry")
+    }
+
+    let parts = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+    let containerName = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !containerName.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' external_links entry '\(rawValue)' is missing a container name")
+    }
+
+    let alias = parts.count == 2
+        ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        : containerName
+    guard !alias.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' external_links entry '\(rawValue)' is missing an alias")
+    }
+    return ComposeExternalLinkReference(containerName: containerName, alias: alias)
 }
 
 /// Returns service names referenced by legacy links for dependency ordering.

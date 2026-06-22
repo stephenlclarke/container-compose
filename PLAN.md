@@ -335,6 +335,15 @@ Reference targets:
     <tr>
       <td colspan="4">Notes: compose-go normalizes undeclared service networks into a project-scoped `default` network, so the existing single-network link alias projection already covers Docker Compose's implicit default-network `links` behavior. Added regression coverage and corrected docs that previously described this as blocked. Handoff files are `ISSUE-links-default-network.md` and `PR-links-default-network.md` in this repository.</td>
     </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map legacy Compose `external_links` to generated host entries</td>
+      <td>2026-06-22 06:40 BST</td>
+      <td>2026-06-22 06:40 BST</td>
+      <td>2026-06-22 06:40 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now supports the safe local `external_links` subset where the source service has exactly one Compose network and the referenced existing apple/container container has exactly one attachment on the matching runtime network. `CONTAINER` and `CONTAINER:ALIAS` entries are resolved through the direct `ContainerClient.get` snapshot path, rendered as generated `--add-host ALIAS:IP` values, and folded into the transient service model so config-hash recreation detects external IP changes. Missing external containers, services without exactly one Compose network, and external containers without exactly one shared runtime attachment are rejected before resources are created. Full Docker parity still needs apple/container source-scoped DNS/link lookup and shared-alias semantics. Handoff files are `ISSUE-external-links.md` and `PR-external-links.md` in this repository.</td>
+    </tr>
   </tbody>
 </table>
 

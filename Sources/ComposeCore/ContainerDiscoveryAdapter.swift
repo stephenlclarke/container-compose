@@ -42,6 +42,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     public var platform: String
     public var publishedPorts: [ComposeContainerPublishedPort]
     public var mounts: [ComposeMount]
+    public var networks: [ComposeContainerNetworkAttachment]
     public var exitCode: Int32?
     public var exitedDate: Date?
     public var health: String?
@@ -53,6 +54,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         image: Image = Image(),
         publishedPorts: [ComposeContainerPublishedPort] = [],
         mounts: [ComposeMount] = [],
+        networks: [ComposeContainerNetworkAttachment] = [],
         exitCode: Int32? = nil,
         exitedDate: Date? = nil,
         health: String? = nil
@@ -65,9 +67,21 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         self.platform = image.platform
         self.publishedPorts = publishedPorts
         self.mounts = mounts
+        self.networks = networks
         self.exitCode = exitCode
         self.exitedDate = exitedDate
         self.health = health
+    }
+}
+
+/// Stable network-attachment data projected from apple/container snapshots.
+public struct ComposeContainerNetworkAttachment: Sendable, Equatable, Codable {
+    public var network: String
+    public var ipv4Address: String
+
+    public init(network: String, ipv4Address: String) {
+        self.network = network
+        self.ipv4Address = ipv4Address
     }
 }
 
@@ -188,6 +202,12 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
                 )
             },
             mounts: snapshot.configuration.mounts.map(Self.mount(from:)),
+            networks: snapshot.networks.map {
+                ComposeContainerNetworkAttachment(
+                    network: $0.network,
+                    ipv4Address: String(describing: $0.ipv4Address.address)
+                )
+            },
             exitCode: snapshot.exitCode,
             exitedDate: snapshot.exitedDate,
             health: snapshot.health?.rawValue

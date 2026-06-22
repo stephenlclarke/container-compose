@@ -3498,6 +3498,96 @@ struct ComposeOrchestratorTests {
         #expect(commands[1].containsSequence(["--network", "demo_default"]))
     }
 
+    @Test("up maps external links to generated host entries")
+    func upMapsExternalLinksToGeneratedHostEntries() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy_db",
+                status: "running",
+                networks: [
+                    ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                ]
+            ),
+            ComposeContainerSummary(
+                id: "legacy_cache",
+                status: "running",
+                networks: [
+                    ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.21"),
+                ]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.externalLinks = ["legacy_db:db", "legacy_cache"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--network", "demo_backend"]))
+        #expect(command.containsSequence(["--add-host", "db:192.168.64.20"]))
+        #expect(command.containsSequence(["--add-host", "legacy_cache:192.168.64.21"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(await discoveryManager.getRequests.contains("legacy_db"))
+        #expect(await discoveryManager.getRequests.contains("legacy_cache"))
+    }
+
+    @Test("up rejects external links without a shared runtime network")
+    func upRejectsExternalLinksWithoutSharedRuntimeNetwork() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy_db",
+                status: "running",
+                networks: [
+                    ComposeContainerNetworkAttachment(network: "other", ipv4Address: "192.168.64.20"),
+                ]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.externalLinks = ["legacy_db:db"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                discoveryManager: discoveryManager,
+                resourceManager: resourceManager
+            ).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported external links error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' external_links to 'legacy_db'; external container must share exactly one runtime network with the service"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up rejects invalid link aliases before creating resources")
     func upRejectsInvalidLinkAliasesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -8560,6 +8650,17 @@ struct ComposeOrchestratorTests {
                     Filesystem.virtiofs(source: "/tmp/seed", destination: "/seed", options: []),
                     Filesystem.tmpfs(destination: "/scratch", options: ["ro"]),
                 ],
+                networks: [
+                    ContainerResource.Attachment(
+                        network: "demo_backend",
+                        hostname: "demo-api-1",
+                        aliases: ["api"],
+                        ipv4Address: try CIDRv4("192.168.64.20/24"),
+                        ipv4Gateway: try IPv4Address("192.168.64.1"),
+                        ipv6Address: nil,
+                        macAddress: nil
+                    ),
+                ],
                 health: .healthy
             ),
             containerSnapshot(
@@ -8608,6 +8709,9 @@ struct ComposeOrchestratorTests {
                 ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", readOnly: true),
                 ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed"),
                 ComposeMount(type: "tmpfs", target: "/scratch", readOnly: true),
+            ],
+            networks: [
+                ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
             ],
             health: "healthy"
         ))
@@ -13392,31 +13496,78 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported external links before creating resources")
-    func runRejectsUnsupportedExternalLinksBeforeCreatingResources() async throws {
+    @Test("run rejects missing external links before creating resources")
+    func runRejectsMissingExternalLinksBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.externalLinks = ["legacy_db:db"]
+                    $0.networks = ["backend"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
         ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
         do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported external links error")
+            try await ComposeOrchestrator(
+                runner: runner,
+                discoveryManager: discoveryManager,
+                resourceManager: resourceManager
+            ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected missing external links error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses external_links; legacy link support needs an apple/container runtime gap PR"))
+            #expect(error == .invalidProject("service 'job' external_links references missing container 'legacy_db'"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("run maps external links to generated host entries")
+    func runMapsExternalLinksToGeneratedHostEntries() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "legacy_db",
+                status: "running",
+                networks: [
+                    ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                ]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.externalLinks = ["legacy_db:db"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "demo_backend"]))
+        #expect(command.containsSequence(["--add-host", "db:192.168.64.20"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(await discoveryManager.getRequests.contains("legacy_db"))
     }
 
     @Test("run maps links to dependency network aliases")
@@ -16405,6 +16556,7 @@ private func containerSnapshot(
     platform: String,
     publishedPorts: [PublishPort] = [],
     mounts: [Filesystem] = [],
+    networks: [ContainerResource.Attachment] = [],
     exitCode: Int32? = nil,
     exitedDate: Date? = nil,
     health: HealthStatus? = nil
@@ -16428,7 +16580,7 @@ private func containerSnapshot(
     return ContainerSnapshot(
         configuration: configuration,
         status: status,
-        networks: [],
+        networks: networks,
         exitCode: exitCode,
         exitedDate: exitedDate,
         health: health
