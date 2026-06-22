@@ -799,14 +799,16 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose top` until apple/container exposes process listing.
+/// Implements `compose top`.
 struct Top: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "top", abstract: "Display running processes.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for process listing.
-    func run() throws {
-        try global.orchestrator().unsupported("top", reason: "apple/container does not expose a process-list command yet")
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Displays process identifiers for selected service containers.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().top(project: loadedProject, options: ComposeTopOptions(services: services))
     }
 }
 

@@ -317,17 +317,20 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public var lifecycleManager: ContainerLifecycleManaging
     public var resourceManager: ContainerResourceManaging
     public var statsManager: ContainerStatsManaging
+    public var topManager: ContainerTopManaging
 
     public init(
         discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
-        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
+        statsManager: ContainerStatsManaging = ContainerClientStatsManager(),
+        topManager: ContainerTopManaging = ContainerClientTopManager()
     ) {
         self.discoveryManager = discoveryManager
         self.lifecycleManager = lifecycleManager
         self.resourceManager = resourceManager
         self.statsManager = statsManager
+        self.topManager = topManager
     }
 }
 
@@ -388,6 +391,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var statsManager: ContainerStatsManaging {
         get { runtime.statsManager }
         set { runtime.statsManager = newValue }
+    }
+
+    public var topManager: ContainerTopManaging {
+        get { runtime.topManager }
+        set { runtime.topManager = newValue }
     }
 }
 
@@ -580,6 +588,15 @@ public struct ComposeStatsOptions {
         self.format = format
         self.noStream = noStream
         self.noTrunc = noTrunc
+    }
+}
+
+/// Options for `compose top`.
+public struct ComposeTopOptions {
+    public var services: [String]
+
+    public init(services: [String] = []) {
+        self.services = services
     }
 }
 
@@ -1001,6 +1018,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let pullMetadataStore: ComposePullMetadataStoring
     private let resourceManager: ContainerResourceManaging
     private let statsManager: ContainerStatsManaging
+    private let topManager: ContainerTopManaging
 
     public init(
         runner: CommandRunning = ProcessRunner(),
@@ -1019,6 +1037,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.pullMetadataStore = dependencies.pullMetadataStore
         self.resourceManager = dependencies.resourceManager
         self.statsManager = dependencies.statsManager
+        self.topManager = dependencies.topManager
     }
 
     /// Returns whether a service declares `post_start` hooks.
@@ -2216,6 +2235,23 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             format: stats.format,
             noStream: stats.noStream,
             includeStopped: stats.all,
+            emit: options.emit
+        )
+    }
+
+    /// Displays running process identifiers for selected service containers.
+    public func top(project: ComposeProject, options top: ComposeTopOptions = ComposeTopOptions()) async throws {
+        try validate(project: project)
+        let services = try selectedServices(project: project, selected: top.services)
+        let targets = try await serviceContainerTargets(project: project, services: services)
+        if options.dryRun {
+            for target in targets {
+                try await runContainer(["top", target.name])
+            }
+            return
+        }
+        try await topManager.top(
+            targets: targets.map { ComposeTopTarget(service: $0.service.name, containerID: $0.name) },
             emit: options.emit
         )
     }

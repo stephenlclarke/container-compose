@@ -218,6 +218,7 @@ private func orchestratorDependencies(
     dependencies.pullMetadataStore = RecordingPullMetadataStore()
     dependencies.resourceManager = RecordingContainerResourceManager()
     dependencies.statsManager = RecordingContainerStatsManager()
+    dependencies.topManager = RecordingContainerTopManager()
     configure(&dependencies)
     return dependencies
 }
@@ -410,6 +411,18 @@ private extension ComposeOrchestrator {
     }
 
     convenience init(
+        runner: CommandRunning = RecordingRunner(),
+        options: ComposeExecutionOptions = ComposeExecutionOptions(),
+        discoveryManager: ContainerDiscoveryManaging = RecordingContainerDiscoveryManager(),
+        topManager: ContainerTopManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.topManager = topManager
+        })
+    }
+
+    convenience init(
         runner: CommandRunning,
         discoveryManager: ContainerDiscoveryManaging,
         lifecycleManager: ContainerLifecycleManaging,
@@ -463,6 +476,7 @@ struct ComposeOrchestratorTests {
         let logManager = RecordingContainerLogManager()
         let resourceManager = RecordingContainerResourceManager()
         let statsManager = RecordingContainerStatsManager()
+        let topManager = RecordingContainerTopManager()
         var dependencies = ComposeOrchestratorDependencies(
             commands: ComposeOrchestratorCommandDependencies(
                 copier: copier,
@@ -474,7 +488,8 @@ struct ComposeOrchestratorTests {
                 discoveryManager: discoveryManager,
                 lifecycleManager: lifecycleManager,
                 resourceManager: resourceManager,
-                statsManager: statsManager
+                statsManager: statsManager,
+                topManager: topManager
             ),
             imageManager: imageManager
         )
@@ -488,6 +503,7 @@ struct ComposeOrchestratorTests {
         expectSameInstance(dependencies.logManager, logManager, "logManager")
         expectSameInstance(dependencies.resourceManager, resourceManager, "resourceManager")
         expectSameInstance(dependencies.statsManager, statsManager, "statsManager")
+        expectSameInstance(dependencies.topManager, topManager, "topManager")
 
         let replacementLogManager = RecordingContainerLogManager()
         dependencies.logManager = replacementLogManager
@@ -6431,6 +6447,69 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("top targets discovered project service containers")
+    func topTargetsDiscoveredProjectServiceContainers() async throws {
+        let emitted = MessageRecorder()
+        let topManager = RecordingContainerTopManager(outputs: ["top-output"])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-2", status: "running", labels: [composeProjectLabel: "demo", composeServiceLabel: "api"]),
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeProjectLabel: "demo", composeServiceLabel: "api"]),
+            ComposeContainerSummary(id: "custom-db", status: "running", labels: [composeProjectLabel: "demo", composeServiceLabel: "db"]),
+            ComposeContainerSummary(id: "other-api-1", status: "running", labels: [composeProjectLabel: "other", composeServiceLabel: "api"]),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.containerName = "custom-db"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager,
+            topManager: topManager
+        ).top(project: project)
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await topManager.requests == [[
+            ComposeTopTarget(service: "api", containerID: "demo-api-1"),
+            ComposeTopTarget(service: "api", containerID: "demo-api-2"),
+            ComposeTopTarget(service: "db", containerID: "custom-db"),
+        ]])
+        #expect(emitted.messages == ["top-output"])
+    }
+
+    @Test("top dry run emits runtime commands instead of direct API process listing")
+    func topDryRunEmitsRuntimeCommandsInsteadOfDirectAPIProcessListing() async throws {
+        let emitted = MessageRecorder()
+        let topManager = RecordingContainerTopManager(outputs: ["ignored"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.containerName = "custom-db"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            topManager: topManager
+        ).top(project: project, options: ComposeTopOptions(services: ["api", "db"]))
+
+        #expect(emitted.messages == [
+            "+ container top demo-api-1",
+            "+ container top custom-db",
+        ])
+        #expect(await topManager.requests.isEmpty)
+    }
+
     @Test("ls lists compose projects with grouped status")
     func lsListsComposeProjectsWithGroupedStatus() async throws {
         let emitted = MessageRecorder()
@@ -10092,6 +10171,42 @@ struct ComposeOrchestratorTests {
         #expect(stats.cpuUsageUsec == 42)
         #expect(await recorder.listRequests == [["demo-api-1"]])
         #expect(await recorder.statsRequests == ["demo-api-1"])
+    }
+
+    @Test("top manager renders process identifiers from direct API")
+    func topManagerRendersProcessIdentifiersFromDirectAPI() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerTopAPIClient(responses: [
+            "demo-api-1": ContainerProcesses(id: "demo-api-1", processIdentifiers: [42, 99]),
+            "demo-db-1": ContainerProcesses(id: "demo-db-1", processIdentifiers: [7]),
+        ])
+        let manager = ContainerClientTopManager(client: client)
+
+        try await manager.top(
+            targets: [
+                ComposeTopTarget(service: "api", containerID: "demo-api-1"),
+                ComposeTopTarget(service: "db", containerID: "demo-db-1"),
+            ],
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == [
+            "Service  Container ID  PID\napi      demo-api-1    42\napi      demo-api-1    99\ndb       demo-db-1     7",
+        ])
+        #expect(await client.requests == ["demo-api-1", "demo-db-1"])
+    }
+
+    @Test("top API client forwards configured operation")
+    func topAPIClientForwardsConfiguredOperation() async throws {
+        let recorder = RecordingContainerTopAPIClient(
+            responses: ["demo-api-1": ContainerProcesses(id: "demo-api-1", processIdentifiers: [42])]
+        )
+        let client = ContainerTopAPIClient(processes: { id in try await recorder.processes(id: id) })
+
+        let processes = try await client.processes(id: "demo-api-1")
+
+        #expect(processes == ContainerProcesses(id: "demo-api-1", processIdentifiers: [42]))
+        #expect(await recorder.requests == ["demo-api-1"])
     }
 
     @Test("detached exec manager maps request to direct process API")
@@ -17172,6 +17287,10 @@ private struct ContainerStatsRequest: Equatable {
     var includeStopped: Bool
 }
 
+private struct ContainerTopRequest: Equatable {
+    var targets: [ComposeTopTarget]
+}
+
 private enum ContainerImageRequest: Equatable {
     case exists(String)
     case healthCheck(reference: String, platform: String?)
@@ -17963,6 +18082,26 @@ private actor RecordingContainerStatsManager: ContainerStatsManaging {
     }
 }
 
+private actor RecordingContainerTopManager: ContainerTopManaging {
+    private let outputs: [String]
+    private var storage: [ContainerTopRequest] = []
+
+    init(outputs: [String] = []) {
+        self.outputs = outputs
+    }
+
+    var requests: [[ComposeTopTarget]] {
+        storage.map(\.targets)
+    }
+
+    func top(targets: [ComposeTopTarget], emit: @escaping @Sendable (String) -> Void) async throws {
+        storage.append(ContainerTopRequest(targets: targets))
+        for output in outputs {
+            emit(output)
+        }
+    }
+}
+
 private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
     private let targets: [ComposeStatsTarget]
     private var statsResponses: [String: [ContainerStats]]
@@ -18006,6 +18145,32 @@ private actor RecordingContainerStatsAPIClient: ContainerStatsAPIClienting {
         }
         responses.removeFirst()
         statsResponses[id] = responses.isEmpty ? [response] : responses
+        return response
+    }
+}
+
+private actor RecordingContainerTopAPIClient: ContainerTopAPIClienting {
+    private let responses: [String: ContainerProcesses]
+    private let error: (any Error)?
+    private var storage: [String] = []
+
+    init(responses: [String: ContainerProcesses] = [:], error: (any Error)? = nil) {
+        self.responses = responses
+        self.error = error
+    }
+
+    var requests: [String] {
+        storage
+    }
+
+    func processes(id: String) async throws -> ContainerProcesses {
+        storage.append(id)
+        if let error {
+            throw error
+        }
+        guard let response = responses[id] else {
+            throw ComposeError.invalidProject("missing process fixture for \(id)")
+        }
         return response
     }
 }
