@@ -322,7 +322,7 @@ Reference targets:
       <td>2026-06-22 12:45 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps default `container compose events [SERVICE...]` and `container compose events --since VALUE --until VALUE [SERVICE...]` to Docker Compose-style text output as code commit `fd3d94824f23cd3255a812faed9e3972906b4ab5`. `--json` keeps the prior JSON Lines renderer. This is a plugin-only PR-shaped slice: no `apple/container` or `apple/containerization` code is needed because the Apple runtime should keep emitting generic events. Handoff docs are `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`; the optional local-only Docker parity target now includes default text replay shape validation.</td>
+      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps default `container compose events [SERVICE...]` and `container compose events --since VALUE --until VALUE [SERVICE...]` to Docker Compose-style text output as code commits `fd3d94824f23cd3255a812faed9e3972906b4ab5` and `4cfb39e9531a84b496e1dcc76a84ac7654df943f`. `--json` keeps the prior JSON Lines renderer. This is a plugin-only PR-shaped slice: no `apple/container` or `apple/containerization` code is needed because the Apple runtime should keep emitting generic events. Handoff docs are `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`; the optional local-only Docker parity target now includes default text replay shape validation.</td>
     </tr>
   </tbody>
 </table>

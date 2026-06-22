@@ -33,8 +33,9 @@ This PR closes that Compose-owned presentation gap without adding Docker Compose
 
 ## Commit Tracking
 
-- Compose code commit to squash:
+- Compose code commits to squash:
   - `fd3d94824f23cd3255a812faed9e3972906b4ab5 feat(events): support compose text events`
+  - `4cfb39e9531a84b496e1dcc76a84ac7654df943f fix(events): match compose text event timestamps`
 - Compose dependency commits:
   - `113be38063ea feat(events): map compose events`
   - `3a3387d7dbea301eec3a7f1fcc3f954dec80276c feat(events): support compose event time filters`
@@ -53,7 +54,7 @@ Use the Compose code commit as one future `container-compose` PR. Keep it stacke
 - Passes the selected format through `ContainerEventsManaging`.
 - Keeps the existing JSON Lines renderer for `--json`.
 - Adds Docker Compose-style text rendering:
-  - UTC timestamp in `YYYY-MM-DD HH:MM:SS.ffffff` shape;
+  - local-time timestamp in `YYYY-MM-DD HH:MM:SS.ffffff` shape, matching Docker Compose's Go `time.Unix(...).Format(...)` path;
   - `container ACTION CONTAINER`;
   - public attributes as `key=value` pairs.
 - Sorts text attributes for deterministic output.

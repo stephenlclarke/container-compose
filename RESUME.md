@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD013 -->
 
-Last updated: 2026-06-22 12:45 BST
+Last updated: 2026-06-22 12:54 BST
 
 Follow-up on 2026-06-22: `COMPATIBILITY.md` now documents fork-backed PID-only `container compose top`, and `PLAN.md` now records the completed process-listing / Compose `top` slab. The process-list handoff docs mentioned below were not present as untracked files in the `container` or `containerization` working trees on this machine after refreshing the forks.
 
@@ -14,7 +14,7 @@ Follow-up on 2026-06-22: the next selected event-slab slice was runtime replay/t
 
 Follow-up on 2026-06-22: the event replay/time-filter slice is now implemented. The `apple/container` runtime primitive is commit `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270` (`feat(events): add event time filters`), adding `ContainerEventOptions`, bounded in-memory replay, `--since`/`--until`, and focused event tests. The Compose mapping is commit `3a3387d7dbea301eec3a7f1fcc3f954dec80276c` (`feat(events): support compose event time filters`), adding `container compose events --json --since/--until [SERVICE...]` on top of the runtime primitive. New handoff docs are `docs/upstream/events/ISSUE-container-event-time-filters.md`, `docs/upstream/events/PR-container-event-time-filters.md`, `docs/upstream/events/ISSUE-compose-event-time-filters.md`, and `docs/upstream/events/PR-compose-event-time-filters.md`, with Apple runtime mirrors under `docs/upstream/apple-container/`.
 
-Follow-up on 2026-06-22: the Compose-owned default text event formatting slice is implemented in `/Users/sclarke/github/container-compose` on `logs-integration` as commit `fd3d94824f23cd3255a812faed9e3972906b4ab5` (`feat(events): support compose text events`). The slice makes `container compose events [--since/--until] [SERVICE...]` emit Docker Compose-style text lines by default while preserving `--json`, and extends the optional local-only `Tools/parity/check-compose-events.sh` script with text replay validation. Handoff docs are `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`. No Apple runtime PR is needed for this slice.
+Follow-up on 2026-06-22: the Compose-owned default text event formatting slice is implemented in `/Users/sclarke/github/container-compose` on `logs-integration` as commits `fd3d94824f23cd3255a812faed9e3972906b4ab5` (`feat(events): support compose text events`) and `4cfb39e9531a84b496e1dcc76a84ac7654df943f` (`fix(events): match compose text event timestamps`). The slice makes `container compose events [--since/--until] [SERVICE...]` emit Docker Compose-style text lines by default while preserving `--json`, and extends the optional local-only `Tools/parity/check-compose-events.sh` script with text replay validation. Handoff docs are `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`. No Apple runtime PR is needed for this slice.
 
 Follow-up on 2026-06-22: before any final Apple PR push, perform the final upstream review gate now documented in `docs/upstream/README.md`. Once the intended `container-compose` functionality and supporting fork code are all implemented, review every potential PR independently for fit, narrowness, code-owner suitability, source issue/PR references, commit-ID accuracy, validation evidence, and any Compose-specific policy leaking into Apple runtime code; fix findings before raising or refreshing upstream PRs.
 
