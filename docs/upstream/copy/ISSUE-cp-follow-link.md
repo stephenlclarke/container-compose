@@ -1,5 +1,7 @@
 # Feature request: support `container compose cp --follow-link`
 
+<!-- markdownlint-disable MD013 -->
+
 ## Feature or enhancement request details
 
 Docker Compose exposes `docker compose cp -L, --follow-link` to copy the target of a symbolic link in `SRC_PATH`. `container-compose` previously rejected this option because released upstream `apple/container` did not expose copy follow-link controls.
@@ -10,15 +12,24 @@ References:
 
 - Docker Compose `cp --follow-link`: <https://docs.docker.com/reference/cli/docker/compose/cp/>
 - Docker `container cp --follow-link`: <https://docs.docker.com/reference/cli/docker/container/cp/>
-- Runtime handoff files in the container fork: `ISSUE-copy-follow-link.md` and `PR-copy-follow-link.md`
-- Lower runtime handoff files in the containerization fork: `ISSUE-containerization-copy-follow-link.md` and `PR-containerization-copy-follow-link.md`
+- Runtime handoff files in the container fork: `docs/upstream/copy/ISSUE-copy-follow-link.md` and `docs/upstream/copy/PR-copy-follow-link.md`
+- Lower runtime handoff files in the containerization fork: `docs/upstream/copy/ISSUE-containerization-copy-follow-link.md` and `docs/upstream/copy/PR-containerization-copy-follow-link.md`
+
+Existing upstream context:
+
+- `apple/container#232` requested the original `container cp` command.
+- `apple/container#1190` merged the current host-container copy command.
+- `apple/container#1579` and `apple/container#1580` added copy coverage and FilePath cleanup.
+- `apple/container#1738`, `apple/container#1741`, `apple/container#1743`, and `apple/container#1749` cover nearby host path resolution behavior.
+- `apple/container#963` and `apple/container#895` cover volume copy, which is adjacent but not a replacement for source symlink dereference.
+- No open upstream issue or PR found for `container cp --follow-link` or `container compose cp --follow-link` as of 2026-06-22.
 
 ## Proposed behavior
 
 - Accept `container compose cp --follow-link` / `-L`.
 - Pass the option through direct `ContainerClient.copyIn` / `copyOut` calls.
 - Apply the option to service-to-service copies only for the source container copy-out leg.
-- Keep `cp --archive` rejected until the runtime exposes archive ownership controls.
+- Keep default copy behavior unchanged when the flag is not provided.
 
 ## Minimal example
 
