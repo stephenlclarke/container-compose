@@ -1211,6 +1211,7 @@ struct ComposeOrchestratorTests {
                     $0.networks = ["default"]
                     $0.platform = "linux/amd64"
                     $0.dnsOptions = ["use-vc"]
+                    $0.hostname = "custom-api"
                     $0.extraHosts = ["db=10.0.0.5", "myhostv6=[::1]"]
                 },
             ]
@@ -1245,6 +1246,7 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--network", "demo_default"]))
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
         #expect(create.containsSequence(["--dns-option", "use-vc"]))
+        #expect(create.containsSequence(["--hostname", "custom-api"]))
         #expect(create.containsSequence(["--add-host", "db:10.0.0.5"]))
         #expect(create.containsSequence(["--add-host", "myhostv6:::1"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
@@ -3425,28 +3427,43 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported hostnames before creating resources")
-    func upRejectsUnsupportedHostnamesBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps hostnames to runtime arguments")
+    func upMapsHostnamesToRuntimeArguments() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.hostname = "custom-api"
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--hostname", "custom-api"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("up rejects invalid hostnames before creating resources")
+    func upRejectsInvalidHostnamesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.hostname = "bad_name"
+                },
+            ]
+        )
 
         do {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported hostname error")
+            Issue.record("Expected invalid hostname error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses hostname; custom hostname support needs an apple/container runtime gap PR"))
+            #expect(error == .invalidProject("service 'api' hostname 'bad_name' is not a valid RFC1123 hostname"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -12534,6 +12551,7 @@ struct ComposeOrchestratorTests {
                     $0.dns = ["1.1.1.1"]
                     $0.dnsSearch = ["local"]
                     $0.dnsOptions = ["use-vc"]
+                    $0.hostname = "custom-job"
                     $0.extraHosts = ["db=10.0.0.5"]
                     $0.capAdd = ["NET_ADMIN"]
                     $0.capDrop = ["MKNOD"]
@@ -12568,6 +12586,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--dns", "1.1.1.1"]))
         #expect(command.containsSequence(["--dns-search", "local"]))
         #expect(command.containsSequence(["--dns-option", "use-vc"]))
+        #expect(command.containsSequence(["--hostname", "custom-job"]))
         #expect(command.containsSequence(["--add-host", "db:10.0.0.5"]))
         #expect(command.containsSequence(["--memory", "1024"]))
         #expect(command.containsSequence(["--cpus", "2"]))
@@ -13164,33 +13183,22 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported hostnames before creating resources")
-    func runRejectsUnsupportedHostnamesBeforeCreatingResources() async throws {
+    @Test("run maps hostnames to runtime arguments")
+    func runMapsHostnamesToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.hostname = "custom-job"
-                    $0.networks = ["backend"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
-        ) {
-            $0.networks = ["backend": ComposeNetwork(name: "backend")]
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported hostname error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses hostname; custom hostname support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--hostname", "custom-job"]))
     }
 
     @Test("run rejects unsupported domain names before creating resources")

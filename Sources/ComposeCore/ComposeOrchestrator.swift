@@ -2686,9 +2686,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses external_links; legacy link support needs an apple/container runtime gap PR")
         }
         _ = try runtimeExtraHostArguments(service: service)
-        if let hostname = service.hostname, !hostname.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses hostname; custom hostname support needs an apple/container runtime gap PR")
-        }
+        _ = try runtimeHostnameArgument(service: service)
         if let domainName = service.domainName, !domainName.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses domainname; custom domain name support needs an apple/container runtime gap PR")
         }
@@ -3676,6 +3674,29 @@ private extension ComposeOrchestrator {
         return options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
             ["--log-opt", "\(key)=\(value)"]
         }
+    }
+
+    /// Returns the runtime hostname argument for Compose `hostname`.
+    func runtimeHostnameArgument(service: ComposeService) throws -> String? {
+        guard let hostname = service.hostname?.trimmingCharacters(in: .whitespacesAndNewlines), !hostname.isEmpty else {
+            return nil
+        }
+        return try validatedRFC1123Hostname(hostname, field: "hostname", service: service)
+    }
+
+    /// Validates a Compose hostname using RFC1123 label rules.
+    func validatedRFC1123Hostname(_ raw: String, field: String, service: ComposeService) throws -> String {
+        let hostname = raw.hasSuffix(".") ? String(raw.dropLast()) : raw
+        guard !hostname.isEmpty, hostname.utf8.count <= 253 else {
+            throw ComposeError.invalidProject("service '\(service.name)' \(field) '\(raw)' is not a valid RFC1123 hostname")
+        }
+        let labelPattern = #"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"#
+        for label in hostname.split(separator: ".", omittingEmptySubsequences: false) {
+            guard label.range(of: labelPattern, options: .regularExpression) != nil else {
+                throw ComposeError.invalidProject("service '\(service.name)' \(field) '\(raw)' is not a valid RFC1123 hostname")
+            }
+        }
+        return hostname
     }
 
     /// Returns runtime host-entry arguments for Compose `extra_hosts`.
@@ -5239,6 +5260,9 @@ private extension ComposeOrchestrator {
         }
         if service.stdinOpen == true {
             args.append("--interactive")
+        }
+        if let hostname = try runtimeHostnameArgument(service: service) {
+            args.append(contentsOf: ["--hostname", hostname])
         }
         for cap in service.capAdd ?? [] {
             args.append(contentsOf: ["--cap-add", cap])

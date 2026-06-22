@@ -33,7 +33,8 @@ With this change, `container-compose` accepts static IP-literal `extra_hosts`, v
 ## Remaining Gaps
 
 - Docker's `host-gateway` magic value still needs an `apple/container` runtime gateway-resolution primitive.
-- `hostname` and `domainname` still need runtime host identity controls.
+- `domainname` still needs runtime host identity controls.
+- `hostname` is handled by the separate `ISSUE-service-hostname.md` / `PR-service-hostname.md` slice on the fork-backed branch.
 - `links` and `external_links` still need legacy link/alias semantics, or an explicit decision to keep them unsupported.
 - Released upstream support remains blocked until `apple/container` accepts an explicit host-entry API such as [apple/container#1340](https://github.com/apple/container/pull/1340), [apple/container#1563](https://github.com/apple/container/pull/1563), or an equivalent shape.
 
