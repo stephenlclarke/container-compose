@@ -5,7 +5,7 @@
 - Map Compose service `extra_hosts` to fork-backed `container run/create --add-host` arguments.
 - Accept compose-go normalized `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms.
 - Validate static IP-literal entries before side effects.
-- Keep Docker `host-gateway`, `domainname`, `links`, and `external_links` as explicit remaining runtime gaps.
+- Keep `domainname`, `links`, and `external_links` as explicit remaining runtime gaps.
 
 ## Type of Change
 
@@ -28,7 +28,7 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 - Canonicalized `HOST=IP` and `HOST:IP` to `HOST:IP`.
 - Removed IPv6 brackets accepted by Compose before passing arguments to the runtime.
 - Validated IP literals with `IPAddress`.
-- Added a precise unsupported error for Docker's `host-gateway` magic value.
+- Added a precise unsupported error for Docker's `host-gateway` magic value before the runtime resolver existed.
 - Appended `--add-host` arguments in the shared service create/run argument builder, so service containers and one-off `run` containers inherit the same host entries.
 - Extended Swift and Go normalizer tests to cover compose-go canonical `extra_hosts` output.
 - Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
@@ -37,7 +37,7 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 
 - Supported now on the fork-backed integration branch: static `extra_hosts` entries with IPv4, IPv6, and bracketed IPv6 source forms.
 - Supported now: service `up`, `create`, and one-off `run` host entries.
-- Remaining gap: `host-gateway` needs runtime gateway resolution.
+- Separate slice: Docker `host-gateway` is handled by `ISSUE-host-gateway.md` / `PR-host-gateway.md`.
 - Remaining gap: custom `domainname` and legacy `links` / `external_links` are still separate runtime or compatibility surfaces.
 - Separate slice: service `hostname` is handled by `ISSUE-service-hostname.md` / `PR-service-hostname.md`.
 

@@ -3722,8 +3722,8 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has an empty IP address")
         }
 
-        if rawAddress == "host-gateway" {
-            throw ComposeError.unsupported("service '\(service.name)' uses extra_hosts value 'host-gateway'; Docker host-gateway resolution needs an apple/container runtime gateway primitive")
+        if rawAddress == ContainerConfiguration.HostEntry.hostGatewayAddress {
+            return "\(hostname):\(ContainerConfiguration.HostEntry.hostGatewayAddress)"
         }
 
         let ipAddress = unbracketedIPAddress(rawAddress)

@@ -3541,9 +3541,10 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
-    @Test("up rejects host-gateway extra hosts before creating resources")
-    func upRejectsHostGatewayExtraHostsBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("up maps host-gateway extra hosts to runtime host entries")
+    func upMapsHostGatewayExtraHostsToRuntimeHostEntries() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -3553,16 +3554,11 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected host-gateway extra_hosts failure")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses extra_hosts value 'host-gateway'; Docker host-gateway resolution needs an apple/container runtime gateway primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--add-host", "host.docker.internal:host-gateway"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
     @Test("up rejects unsupported sysctls before creating resources")
@@ -15578,9 +15574,6 @@ struct ComposeOrchestratorTests {
         let unsupportedProjects = [
             ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
                 $0.networks = ["a", "b"]
-            }]),
-            ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
-                $0.extraHosts = ["host.docker.internal=host-gateway"]
             }]),
             ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
                 $0.privileged = true

@@ -243,7 +243,25 @@ Reference targets:
       <td>2026-06-22 04:33:28 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now accepts compose-go normalized static `extra_hosts` values, including `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms, validates IP literals before side effects, and maps service and one-off containers to `container run/create --add-host`. Docker's `host-gateway` magic value remains a separate apple/container gateway-resolution gap, while `domainname`, `links`, and `external_links` remain separate host-identity gaps. Handoff files are `ISSUE-extra-hosts.md` and `PR-extra-hosts.md` in this repository.</td>
+      <td colspan="4">Notes: `container-compose` now accepts compose-go normalized static `extra_hosts` values, including `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms, validates IP literals before side effects, and maps service and one-off containers to `container run/create --add-host`. Docker's `host-gateway` magic value is handled by the separate host-gateway slice, while `domainname`, `links`, and `external_links` remain separate host-identity gaps. Handoff files are `ISSUE-extra-hosts.md` and `PR-extra-hosts.md` in this repository.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Resolve Docker `host-gateway` in the container fork</td>
+      <td>2026-06-22 05:07:50 BST</td>
+      <td>2026-06-22 05:07:50 BST</td>
+      <td>2026-06-22 05:07:50 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by accepting `host-gateway` as the address side of `--add-host`, storing it as a runtime-resolved host-entry marker, and resolving it to the first runtime network IPv4 gateway when generating `/etc/hosts`. Containers without an IPv4 gateway fail clearly. Handoff files are `ISSUE-host-gateway.md` and `PR-host-gateway.md` in the container fork.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `host-gateway` extra_hosts to runtime host entries</td>
+      <td>2026-06-22 05:07:50 BST</td>
+      <td>2026-06-22 05:07:50 BST</td>
+      <td>2026-06-22 05:07:50 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now passes Compose `extra_hosts` values such as `host.docker.internal:host-gateway` through to fork-backed `container run/create --add-host`, leaving gateway address resolution to the runtime. Handoff files are `ISSUE-host-gateway.md` and `PR-host-gateway.md` in this repository.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add explicit container hostnames to the container fork</td>
@@ -261,7 +279,7 @@ Reference targets:
       <td>2026-06-22 04:54:29 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now validates Compose service `hostname` with RFC1123 label rules and maps it to `container run/create --hostname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Compose `domainname` remains blocked until `apple/container` and the lower runtime expose a domain-name primitive; Docker's `host-gateway`, `links`, and `external_links` remain separate networking identity gaps. Handoff files are `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.</td>
+      <td colspan="4">Notes: `container-compose` now validates Compose service `hostname` with RFC1123 label rules and maps it to `container run/create --hostname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Compose `domainname` remains blocked until `apple/container` and the lower runtime expose a domain-name primitive; `links` and `external_links` remain separate networking identity gaps. Handoff files are `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.</td>
     </tr>
   </tbody>
 </table>
