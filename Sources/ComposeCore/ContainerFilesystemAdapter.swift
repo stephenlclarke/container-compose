@@ -20,9 +20,11 @@ import Foundation
 /// Runtime copy options that apply to one source-to-destination transfer.
 public struct ContainerCopyTransferOptions: Equatable, Sendable {
     public var followSymlink = false
+    public var preserveOwnership = false
 
-    public init(followSymlink: Bool = false) {
+    public init(followSymlink: Bool = false, preserveOwnership: Bool = false) {
         self.followSymlink = followSymlink
+        self.preserveOwnership = preserveOwnership
     }
 }
 
@@ -59,10 +61,23 @@ public struct ContainerClientCopier: ContainerCopying {
 
     public init(
         copyInto: @escaping CopyInto = { id, source, destination, options in
-            try await ContainerClient().copyIn(id: id, source: source, destination: destination, createParents: true, followSymlink: options.followSymlink)
+            try await ContainerClient().copyIn(
+                id: id,
+                source: source,
+                destination: destination,
+                createParents: true,
+                followSymlink: options.followSymlink,
+                preserveOwnership: options.preserveOwnership
+            )
         },
         copyFrom: @escaping CopyFrom = { id, source, destination, options in
-            try await ContainerClient().copyOut(id: id, source: source, destination: destination, followSymlink: options.followSymlink)
+            try await ContainerClient().copyOut(
+                id: id,
+                source: source,
+                destination: destination,
+                followSymlink: options.followSymlink,
+                preserveOwnership: options.preserveOwnership
+            )
         }
     ) {
         self.copyIntoOperation = copyInto
@@ -125,7 +140,8 @@ public struct ContainerClientCopier: ContainerCopying {
 
         let stagedSource = tempDirectory.appendingPathComponent(lastComponent).path
         try await copyFromContainer(id: sourceID, source: source, destination: stagedSource, options: options)
-        try await copyIntoContainer(id: destinationID, source: stagedSource, destination: destination)
+        let destinationOptions = ContainerCopyTransferOptions(preserveOwnership: options.preserveOwnership)
+        try await copyIntoContainer(id: destinationID, source: stagedSource, destination: destination, options: destinationOptions)
     }
 }
 

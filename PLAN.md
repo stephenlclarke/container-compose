@@ -131,15 +131,17 @@ Reference targets:
   </tbody>
 </table>
 
-## Runtime Data Slab: Copy Follow-Link
+## Runtime Data Slab: Copy Follow-Link And Archive
 
-This slab closes the next narrow copy-command gap after basic service-aware copy support. Docker defines `cp --follow-link` as source-path symlink dereferencing; this work keeps that behavior in the generic runtime copy API and lets `container-compose` pass it through without adding Compose-specific behavior to `apple/container`.
+This slab closes the next narrow copy-command gaps after basic service-aware copy support. Docker defines `cp --follow-link` as source-path symlink dereferencing and `cp --archive` as preserving UID/GID information where possible. This work keeps those behaviors in the generic runtime copy API and lets `container-compose` pass them through without adding Compose-specific behavior to `apple/container`.
 
 Reference targets:
 
 - Docker Compose CLI `cp --follow-link`: [`docker compose cp`](https://docs.docker.com/reference/cli/docker/compose/cp/)
 - Docker CLI `container cp --follow-link`: [`docker container cp`](https://docs.docker.com/reference/cli/docker/container/cp/)
-- Local runtime handoffs: `ISSUE-containerization-copy-follow-link.md` / `PR-containerization-copy-follow-link.md` in `containerization`, `ISSUE-copy-follow-link.md` / `PR-copy-follow-link.md` in `container`, and `ISSUE-cp-follow-link.md` / `PR-cp-follow-link.md` in this repository.
+- Docker Compose CLI `cp --archive`: [`docker compose cp`](https://docs.docker.com/reference/cli/docker/compose/cp/)
+- Docker CLI `container cp --archive`: [`docker container cp`](https://docs.docker.com/reference/cli/docker/container/cp/)
+- Local runtime handoffs: copy handoff files in `docs/upstream/copy/` where available, plus the current root-level handoff files in repos that have not yet moved older notes.
 
 <table>
   <thead>
@@ -176,7 +178,34 @@ Reference targets:
       <td>2026-06-22 09:07:45 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` maps `ComposeCopyOptions.followLink` to direct copy transfer options, renders `--follow-link` in dry-runs, scopes service-to-service follow-link behavior to the source copy-out leg, and keeps `cp --archive` as the remaining copy-mode runtime gap.</td>
+      <td colspan="4">Notes: `container-compose` maps `ComposeCopyOptions.followLink` to direct copy transfer options, renders `--follow-link` in dry-runs, and scopes service-to-service follow-link behavior to the source copy-out leg.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-218739?style=flat-square"> Add copy archive ownership metadata to the containerization copy control plane</td>
+      <td>2026-06-22 09:29:41 BST</td>
+      <td>2026-06-22 09:29:41 BST</td>
+      <td>2026-06-22 09:29:41 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: the forked `containerization` branch adds `CopyRequest.preserve_ownership`, UID/GID request fields, UID/GID/mode response metadata, and raw single-file ownership application so archive mode has an explicit runtime contract instead of relying only on directory tar behavior.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-218739?style=flat-square"> Expose copy archive mode through the container fork</td>
+      <td>2026-06-22 09:29:41 BST</td>
+      <td>2026-06-22 09:29:41 BST</td>
+      <td>2026-06-22 09:29:41 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: the forked `container` branch adds defaulted `preserveOwnership` direct API parameters, propagates the flag through API-server and runtime-plugin XPC, adds `container copy -a, --archive`, and updates command docs and parser tests.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-218739?style=flat-square"> Map Compose `cp --archive` to direct copy APIs</td>
+      <td>2026-06-22 09:29:41 BST</td>
+      <td>2026-06-22 09:29:41 BST</td>
+      <td>2026-06-22 09:29:41 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` maps `ComposeCopyOptions.archive` to direct copy ownership preservation, renders `--archive` in dry-runs, and requests ownership preservation across both host-staging legs for service-to-service copies while keeping `--follow-link` source-only.</td>
     </tr>
   </tbody>
 </table>

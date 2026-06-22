@@ -12343,6 +12343,54 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("cp archive passes ownership preservation option to direct copy APIs")
+    func cpArchivePassesOwnershipPreservationOptionToDirectCopyAPIs() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                $0.archive = true
+            }
+        )
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["./seed.sql", "db:/tmp/seed.sql"]
+                $0.archive = true
+            }
+        )
+        try await orchestrator.copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "db:/tmp/report.txt"]
+                $0.archive = true
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests == [
+            .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
+            .into(id: "demo-db-1", source: "./seed.sql", destination: "/tmp/seed.sql"),
+            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-db-1", destination: "/tmp/report.txt"),
+        ])
+        #expect(await copier.options == [
+            ContainerCopyTransferOptions(preserveOwnership: true),
+            ContainerCopyTransferOptions(preserveOwnership: true),
+            ContainerCopyTransferOptions(preserveOwnership: true),
+        ])
+    }
+
     @Test("cp copies between service containers through direct copy APIs")
     func cpCopiesBetweenServiceContainersThroughDirectAPIs() async throws {
         let runner = RecordingRunner()
@@ -12606,6 +12654,37 @@ struct ComposeOrchestratorTests {
         #expect(await copier.requests.isEmpty)
     }
 
+    @Test("cp dry run renders archive flag")
+    func cpDryRunRendersArchiveFlag() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            copier: copier
+        ).copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
+                $0.archive = true
+            }
+        )
+
+        #expect(emitted.messages == [
+            "+ container cp --archive demo-api-1:/tmp/report.txt ./report.txt",
+        ])
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests.isEmpty)
+    }
+
     @Test("container copier stages service-to-service copies on the host")
     func containerCopierStagesServiceToServiceCopiesOnTheHost() async throws {
         let operations = RecordingContainerCopyOperations()
@@ -12670,6 +12749,32 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("container copier requests ownership preservation when staging service-to-service copies")
+    func containerCopierRequestsOwnershipPreservationWhenStagingServiceToServiceCopies() async throws {
+        let operations = RecordingContainerCopyOperations()
+        let copier = ContainerClientCopier(
+            copyInto: { id, source, destination, options in
+                try await operations.copyInto(id: id, source: source, destination: destination, options: options)
+            },
+            copyFrom: { id, source, destination, options in
+                try await operations.copyFrom(id: id, source: source, destination: destination, options: options)
+            }
+        )
+
+        try await copier.copyBetweenContainers(
+            sourceID: "demo-api-1",
+            source: "/tmp/report.txt",
+            destinationID: "demo-worker-1",
+            destination: "/var/lib/report.txt",
+            options: ContainerCopyTransferOptions(followSymlink: true, preserveOwnership: true)
+        )
+
+        #expect(await operations.options == [
+            ContainerCopyTransferOptions(followSymlink: true, preserveOwnership: true),
+            ContainerCopyTransferOptions(preserveOwnership: true),
+        ])
+    }
+
     @Test("container copier rejects root source for service-to-service copies")
     func containerCopierRejectsRootSourceForServiceToServiceCopies() async throws {
         let operations = RecordingContainerCopyOperations()
@@ -12697,36 +12802,6 @@ struct ComposeOrchestratorTests {
         }
 
         #expect(await operations.requests.isEmpty)
-    }
-
-    @Test("cp rejects archive option before runtime copy")
-    func cpRejectsArchiveOptionBeforeRuntimeCopy() async throws {
-        let project = ComposeProject(
-            name: "demo",
-            services: [
-                "api": ComposeService(name: "api", image: "example/api"),
-            ]
-        )
-        let runner = RecordingRunner()
-        let copier = RecordingContainerCopier()
-
-        do {
-            try await ComposeOrchestrator(runner: runner, copier: copier).copy(
-                project: project,
-                options: ComposeCopyOptions {
-                    $0.arguments = ["api:/tmp/report.txt", "./report.txt"]
-                    $0.archive = true
-                }
-            )
-            Issue.record("Expected unsupported cp --archive error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("cp --archive: apple/container cp does not expose archive mode"))
-        } catch {
-            Issue.record("Unexpected error for cp --archive: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-        #expect(await copier.requests.isEmpty)
     }
 
     @Test("cp all stages service to service copies into every destination container")

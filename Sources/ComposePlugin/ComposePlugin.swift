@@ -776,7 +776,7 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("all"), help: "Include containers created by the run command.")
     var all = false
-    @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Not supported by apple/container cp yet.")
+    @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Preserve source UID/GID information.")
     var archive = false
     @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path.")
     var followLink = false

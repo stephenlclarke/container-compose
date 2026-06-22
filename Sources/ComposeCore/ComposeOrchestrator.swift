@@ -2300,7 +2300,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Copies files between a Compose service container and the local host with Compose options.
     public func copy(project: ComposeProject, options copy: ComposeCopyOptions) async throws {
-        try validateCopyOptions(copy)
         guard copy.arguments.count == 2 else {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
@@ -2317,7 +2316,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             index: copy.index,
             includeOneOff: copy.all && !options.dryRun
         )
-        let transferOptions = ContainerCopyTransferOptions(followSymlink: copy.followLink)
+        let transferOptions = ContainerCopyTransferOptions(followSymlink: copy.followLink, preserveOwnership: copy.archive)
         switch (source, destination) {
         case (.containers(let sources), .local(let localPath)):
             guard let source = sources.first else {
@@ -2387,6 +2386,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     private func copyCommandArguments(source: String, destination: String, options: ComposeCopyOptions) -> [String] {
         var arguments = ["cp"]
+        if options.archive {
+            arguments.append("--archive")
+        }
         if options.followLink {
             arguments.append("--follow-link")
         }
@@ -4917,13 +4919,6 @@ private extension ComposeOrchestrator {
     func validateExecOptions(_ options: ComposeExecOptions) throws {
         if options.privileged {
             throw ComposeError.unsupported("exec --privileged: apple/container exec does not expose privileged process execution")
-        }
-    }
-
-    /// Validates `compose cp` options before invoking runtime copy.
-    func validateCopyOptions(_ options: ComposeCopyOptions) throws {
-        if options.archive {
-            throw ComposeError.unsupported("cp --archive: apple/container cp does not expose archive mode")
         }
     }
 
