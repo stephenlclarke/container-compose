@@ -3590,15 +3590,43 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported network aliases before creating resources")
-    func upRejectsUnsupportedNetworkAliasesBeforeCreatingResources() async throws {
+    @Test("up maps network aliases to single network attachment")
+    func upMapsNetworkAliasesToSingleNetworkAttachment() async throws {
         let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.networks = ["backend"]
-                    $0.networkAliases = ["backend": ["api.internal"]]
+                    $0.networkAliases = ["backend": ["api", "api.internal"]]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=api,alias=api.internal"]))
+    }
+
+    @Test("up rejects invalid network aliases before creating resources")
+    func upRejectsInvalidNetworkAliasesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkAliases = ["backend": ["bad_alias"]]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -3608,15 +3636,50 @@ struct ComposeOrchestratorTests {
         }
 
         do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported network alias error")
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid network alias error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses network aliases; network alias support needs an apple/container runtime gap PR"))
+            #expect(error == .invalidProject("service 'api' network alias 'bad_alias' is not a valid RFC1123 hostname"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up rejects aliases on unattached networks before creating resources")
+    func upRejectsAliasesOnUnattachedNetworksBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkAliases = ["frontend": ["api"]]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(name: "backend"),
+                "frontend": ComposeNetwork(name: "frontend"),
+            ]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unattached network alias error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' sets network aliases on unattached network 'frontend'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
     }
 
     @Test("up rejects multiple networks with apple/container runtime gap before creating resources")
@@ -13273,15 +13336,16 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported network aliases before creating resources")
-    func runRejectsUnsupportedNetworkAliasesBeforeCreatingResources() async throws {
+    @Test("run maps network aliases to single network attachment")
+    func runMapsNetworkAliasesToSingleNetworkAttachment() async throws {
         let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.networks = ["backend"]
-                    $0.networkAliases = ["backend": ["job.internal"]]
+                    $0.networkAliases = ["backend": ["job", "job.internal"]]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -13290,16 +13354,13 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported network alias error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses network aliases; network alias support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=job,alias=job.internal"]))
     }
 
     @Test("run rejects unsupported network options before creating resources")

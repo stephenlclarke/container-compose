@@ -2611,10 +2611,7 @@ private extension ComposeOrchestrator {
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; apple/container does not expose network connect yet")
         }
-        if let networkAliases = service.networkAliases,
-           networkAliases.contains(where: { !$0.value.isEmpty }) {
-            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network alias support needs an apple/container runtime gap PR")
-        }
+        try validateNetworkAliasSupport(service: service, networks: networks)
         if let networkOptions = service.networkOptions {
             for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {
                 let fields = try options.unsupportedFieldNames()
@@ -2736,6 +2733,28 @@ private extension ComposeOrchestrator {
            serviceMACAddress != networkMACAddress {
             throw ComposeError.invalidProject("service '\(service.name)' sets conflicting mac_address values '\(serviceMACAddress)' and '\(networkMACAddress)' on network '\(network)'")
         }
+    }
+
+    /// Allows aliases only for the single-network attachment that apple/container
+    /// `container --network name,alias=...` can represent.
+    func validateNetworkAliasSupport(service: ComposeService, networks: [String]) throws {
+        guard let networkAliases = service.networkAliases else {
+            return
+        }
+        let aliasNetworks = networkAliases
+            .filter { !$0.value.isEmpty }
+            .map(\.key)
+            .sorted()
+        guard !aliasNetworks.isEmpty else {
+            return
+        }
+        guard networks.count == 1, let network = networks.first else {
+            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network aliases require exactly one Compose network until apple/container exposes multi-network alias attachment")
+        }
+        for aliasNetwork in aliasNetworks where aliasNetwork != network {
+            throw ComposeError.invalidProject("service '\(service.name)' sets network aliases on unattached network '\(aliasNetwork)'")
+        }
+        _ = try networkAliasValues(service: service, network: network)
     }
 
     /// Rejects build fields that apple/container `container build` cannot represent yet.
@@ -3686,15 +3705,8 @@ private extension ComposeOrchestrator {
 
     /// Validates a Compose hostname using RFC1123 label rules.
     func validatedRFC1123Hostname(_ raw: String, field: String, service: ComposeService) throws -> String {
-        let hostname = raw.hasSuffix(".") ? String(raw.dropLast()) : raw
-        guard !hostname.isEmpty, hostname.utf8.count <= 253 else {
-            throw ComposeError.invalidProject("service '\(service.name)' \(field) '\(raw)' is not a valid RFC1123 hostname")
-        }
-        let labelPattern = #"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"#
-        for label in hostname.split(separator: ".", omittingEmptySubsequences: false) {
-            guard label.range(of: labelPattern, options: .regularExpression) != nil else {
-                throw ComposeError.invalidProject("service '\(service.name)' \(field) '\(raw)' is not a valid RFC1123 hostname")
-            }
+        guard let hostname = canonicalRFC1123Hostname(raw) else {
+            throw invalidRFC1123HostnameError(raw, field: field, service: service)
         }
         return hostname
     }
@@ -6273,6 +6285,7 @@ private let networkMTUDriverOptionKeys = [
     "com.docker.network.driver.mtu",
     "mtu",
 ]
+private let rfc1123LabelPattern = #"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"#
 
 private extension ComposeContainerSummary {
     /// Compose project label attached to a runtime container.
@@ -6375,6 +6388,9 @@ private func networkRuntimeName(project: ComposeProject, composeName: String) ->
 private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
     var argument = networkRuntimeName(project: project, composeName: network)
     var options: [String] = []
+    for alias in try networkAliasValues(service: service, network: network) {
+        options.append("alias=\(alias)")
+    }
     if let macAddress = networkMACAddress(service: service, network: network) {
         options.append("mac=\(macAddress)")
     }
@@ -6390,6 +6406,41 @@ private func networkAttachmentArgument(project: ComposeProject, service: Compose
 /// Resolves the effective MAC address for a supported single-network service.
 private func networkMACAddress(service: ComposeService, network: String) -> String? {
     nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
+}
+
+/// Returns canonical network aliases for a supported single-network attachment.
+private func networkAliasValues(service: ComposeService, network: String) throws -> [String] {
+    var aliases: [String] = []
+    var seen = Set<String>()
+    for raw in service.networkAliases?[network] ?? [] {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let alias = canonicalRFC1123Hostname(value) else {
+            throw invalidRFC1123HostnameError(raw, field: "network alias", service: service)
+        }
+        if seen.insert(alias).inserted {
+            aliases.append(alias)
+        }
+    }
+    return aliases
+}
+
+/// Canonicalizes a Docker-compatible RFC1123 hostname.
+private func canonicalRFC1123Hostname(_ raw: String) -> String? {
+    let hostname = raw.hasSuffix(".") ? String(raw.dropLast()) : raw
+    guard !hostname.isEmpty, hostname.utf8.count <= 253 else {
+        return nil
+    }
+    for label in hostname.split(separator: ".", omittingEmptySubsequences: false) {
+        guard label.range(of: rfc1123LabelPattern, options: .regularExpression) != nil else {
+            return nil
+        }
+    }
+    return hostname
+}
+
+/// Builds the shared invalid-hostname error used by hostname-like Compose fields.
+private func invalidRFC1123HostnameError(_ raw: String, field: String, service: ComposeService) -> ComposeError {
+    .invalidProject("service '\(service.name)' \(field) '\(raw)' is not a valid RFC1123 hostname")
 }
 
 /// Returns a string value only when it contains meaningful content.

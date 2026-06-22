@@ -281,6 +281,24 @@ Reference targets:
     <tr>
       <td colspan="4">Notes: `container-compose` now validates Compose service `hostname` with RFC1123 label rules and maps it to `container run/create --hostname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Compose `domainname` remains blocked until `apple/container` and the lower runtime expose a domain-name primitive; `links` and `external_links` remain separate networking identity gaps. Handoff files are `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.</td>
     </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add network attachment aliases to the container fork</td>
+      <td>2026-06-22 05:31:11 BST</td>
+      <td>2026-06-22 05:31:11 BST</td>
+      <td>2026-06-22 05:31:11 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by adding `AttachmentOptions.aliases`, repeatable `container run/create --network name,alias=...` parsing, XPC allocation payload support, allocator alias reservation/lookup/release behavior, and create-time collision checks. The slice intentionally keeps alias names unique because the current lookup API is hostname-like and not source-network-scoped; Docker-compatible shared aliases and DNSRR behavior remain future networking work. Handoff files are `ISSUE-network-aliases.md` and `PR-network-aliases.md` in the container fork.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose service network aliases to runtime aliases</td>
+      <td>2026-06-22 05:31:11 BST</td>
+      <td>2026-06-22 05:31:11 BST</td>
+      <td>2026-06-22 05:31:11 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now supports `services.*.networks.*.aliases` for the current single-network local subset by validating compose-go normalized aliases, de-duplicating them, and rendering `container run/create --network project_network,alias=name`. Aliases on unattached networks, invalid hostname values, and services with multiple networks are rejected before resources are created. Full Docker parity still needs multi-network attach/connect and source-network-aware DNS behavior in apple/container. Handoff files are `ISSUE-network-aliases.md` and `PR-network-aliases.md` in this repository.</td>
+    </tr>
   </tbody>
 </table>
 
