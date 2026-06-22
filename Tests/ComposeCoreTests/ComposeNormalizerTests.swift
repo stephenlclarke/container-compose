@@ -597,8 +597,8 @@ struct ComposeNormalizerTests {
         #expect(api.unsupportedDeployFields == nil)
     }
 
-    @Test("normalizes deploy job modes as unsupported through compose-go")
-    func normalizesDeployJobModesAsUnsupportedThroughComposeGo() async throws {
+    @Test("normalizes deploy job modes through compose-go")
+    func normalizesDeployJobModesThroughComposeGo() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -625,7 +625,8 @@ struct ComposeNormalizerTests {
 
         let api = try #require(project.services["api"])
         #expect(api.scale == 2)
-        #expect(api.unsupportedDeployFields == ["mode.replicated-job"])
+        #expect(api.deployMode == "replicated-job")
+        #expect(api.unsupportedDeployFields == nil)
     }
 
     @Test("normalizes start-first deploy update through compose-go")

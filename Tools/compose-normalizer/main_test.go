@@ -962,8 +962,40 @@ services:
 	if api.Scale == nil || *api.Scale != 2 {
 		t.Fatalf("api.Scale = %#v, want 2", api.Scale)
 	}
+	if api.DeployMode != "replicated" {
+		t.Fatalf("api.DeployMode = %q, want replicated", api.DeployMode)
+	}
 	if len(api.UnsupportedDeployFields) != 0 {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
+func TestLoadProjectAcceptsReplicatedJobDeployMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  migrate:
+    image: alpine
+    deploy:
+      mode: replicated-job
+      replicas: 2
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	migrate := project.Services["migrate"]
+	if migrate.Scale == nil || *migrate.Scale != 2 {
+		t.Fatalf("migrate.Scale = %#v, want 2", migrate.Scale)
+	}
+	if migrate.DeployMode != "replicated-job" {
+		t.Fatalf("migrate.DeployMode = %q, want replicated-job", migrate.DeployMode)
+	}
+	if len(migrate.UnsupportedDeployFields) != 0 {
+		t.Fatalf("migrate.UnsupportedDeployFields = %#v, want empty", migrate.UnsupportedDeployFields)
 	}
 }
 
@@ -1473,11 +1505,14 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(global) = %#v, want empty", fields)
 	}
-	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated-job"}); !reflect.DeepEqual(fields, []string{"mode.replicated-job"}) {
-		t.Fatalf("unsupportedDeployFields(replicated-job) = %#v, want [mode.replicated-job]", fields)
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated-job"}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(replicated-job) = %#v, want empty", fields)
 	}
-	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global-job"}); !reflect.DeepEqual(fields, []string{"mode.global-job"}) {
-		t.Fatalf("unsupportedDeployFields(global-job) = %#v, want [mode.global-job]", fields)
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global-job"}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(global-job) = %#v, want empty", fields)
+	}
+	if mode := deployMode(&types.DeployConfig{Mode: " Replicated-Job "}); mode != "replicated-job" {
+		t.Fatalf("deployMode() = %q, want replicated-job", mode)
 	}
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "custom"}); !reflect.DeepEqual(fields, []string{"mode"}) {
 		t.Fatalf("unsupportedDeployFields(custom mode) = %#v, want [mode]", fields)

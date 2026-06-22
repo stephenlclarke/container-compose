@@ -4258,28 +4258,79 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects deploy job modes as apple/container completion gaps")
-    func upRejectsDeployJobModesAsAppleContainerCompletionGaps() async throws {
-        let runner = RecordingRunner()
+    @Test("up waits for deploy job mode replicas")
+    func upWaitsForDeployJobModeReplicas() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
+            "demo-migrate-1": 0,
+            "demo-migrate-2": 0,
+        ])
         let project = composeProject(
             name: "demo",
             services: [
+                "migrate": composeService(name: "migrate", image: "example/migrate") {
+                    $0.deployMode = "replicated-job"
+                    $0.scale = 2
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-migrate-1"]))
+        #expect(commands[0].contains("--detach"))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-migrate-2"]))
+        #expect(commands[1].contains("--detach"))
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-migrate-1"),
+            .wait(id: "demo-migrate-2"),
+        ])
+    }
+
+    @Test("up fails deploy job mode on nonzero exit")
+    func upFailsDeployJobModeOnNonzeroExit() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
+            "demo-migrate-1": 0,
+            "demo-migrate-2": 7,
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "migrate": composeService(name: "migrate", image: "example/migrate") {
+                    $0.deployMode = "replicated-job"
+                    $0.scale = 2
+                },
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.unsupportedDeployFields = ["mode.replicated-job"]
+                    $0.dependsOn = ["migrate": ComposeDependency(condition: "service_started")]
                 },
             ]
         )
 
         do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported deploy job mode error")
+            try await ComposeOrchestrator(
+                runner: runner,
+                lifecycleManager: lifecycleManager
+            ).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected deploy job failure")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses deploy.mode 'replicated-job'; deploy job modes need apple/container completion metadata and job lifecycle primitives"))
+            #expect(error == .invalidProject("service 'migrate' job container 'demo-migrate-2' exited with status 7"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
-        #expect(runner.commands.isEmpty)
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands.allSatisfy { $0.containsSequence(["example/migrate"]) })
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-migrate-1"),
+            .wait(id: "demo-migrate-2"),
+        ])
     }
 
     @Test("up rejects unsupported deploy update order as apple/container orchestration gap")
@@ -5859,6 +5910,58 @@ struct ComposeOrchestratorTests {
         #expect(!runArguments.contains("unless-stopped"))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+    }
+
+    @Test("up maps deploy job restart condition any to on failure")
+    func upMapsDeployJobRestartConditionAnyToOnFailure() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-migrate-1": 0])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "migrate": composeService(name: "migrate", image: "example/migrate") {
+                    $0.deployMode = "replicated-job"
+                    $0.deployRestartPolicy = ComposeDeployRestartPolicy(
+                        condition: "any",
+                        maxAttempts: 3
+                    )
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(runArguments.containsSequence(["--restart", "on-failure:3"]))
+        #expect(await lifecycleManager.requests == [.wait(id: "demo-migrate-1")])
+    }
+
+    @Test("up rejects successful restart policies for deploy jobs")
+    func upRejectsSuccessfulRestartPoliciesForDeployJobs() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "migrate": composeService(name: "migrate", image: "example/migrate") {
+                    $0.deployMode = "replicated-job"
+                    $0.restart = "always"
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected deploy job restart policy error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'migrate' uses restart policy 'always' with deploy.mode 'replicated-job'; job services can only restart on failure"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects invalid restart policies before creating resources")

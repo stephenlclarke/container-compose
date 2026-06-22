@@ -87,6 +87,7 @@ type normalizedService struct {
 	CPUShares               int64                               `json:"cpuShares,omitempty"`
 	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
+	DeployMode              string                              `json:"deployMode,omitempty"`
 	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
 	DeployUpdateDelayNanos  int64                               `json:"deployUpdateDelayNanoseconds,omitempty"`
 	DeployRestartPolicy     *normalizedDeployRestartPolicy      `json:"deployRestartPolicy,omitempty"`
@@ -490,6 +491,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CPUShares:               service.CPUShares,
 		Develop:                 developValues(service.Develop),
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
+		DeployMode:              deployMode(service.Deploy),
 		DeployLabels:            deployLabels(service.Deploy),
 		DeployUpdateDelayNanos:  deployUpdateDelayNanoseconds(service.Deploy),
 		DeployRestartPolicy:     deployRestartPolicyValue(service.Deploy),
@@ -724,6 +726,15 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	return fields
 }
 
+// deployMode preserves the Compose Deploy mode so Swift orchestration can
+// distinguish long-running services from completion-oriented local jobs.
+func deployMode(deploy *types.DeployConfig) string {
+	if deploy == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(deploy.Mode))
+}
+
 // deployLabels returns Compose deploy service metadata without treating it as
 // container labels.
 func deployLabels(deploy *types.DeployConfig) map[string]string {
@@ -766,18 +777,15 @@ func deployRestartPolicyValue(deploy *types.DeployConfig) *normalizedDeployResta
 }
 
 // unsupportedDeployModeField allows Compose deployment modes that Docker Compose
-// local orchestration accepts without changing the local replica algorithm and
-// reports job modes separately because they require completion semantics.
+// local orchestration accepts with the local replica algorithm.
 func unsupportedDeployModeField(mode string) string {
 	if mode == "" {
 		return ""
 	}
 	normalized := strings.ToLower(mode)
 	switch normalized {
-	case "replicated", "global":
+	case "replicated", "global", "replicated-job", "global-job":
 		return ""
-	case "replicated-job", "global-job":
-		return "mode." + normalized
 	default:
 		return "mode"
 	}

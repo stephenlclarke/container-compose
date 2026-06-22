@@ -1133,17 +1133,21 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             var serviceChanged = false
+            var jobTargets: [ServiceContainerTarget] = []
             if replicaCount > 0 {
                 var priorReplicaRecreated = false
                 for replicaIndex in 1...replicaCount {
                     let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
+                    if isDeployJobService(service) {
+                        jobTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
+                    }
                     let reconcileOutcome = try await reconcileServiceContainer(
                         project: workingProject,
                         service: service,
                         request: ServiceContainerReconcileRequest(
                             name: name,
                             runOptions: RunArgumentOptions {
-                                $0.detach = up.detach || attachedForegroundService?.name != name
+                                $0.detach = up.detach || isDeployJobService(service) || attachedForegroundService?.name != name
                                 $0.containerIndex = replicaIndex
                                 $0.replicaCount = replicaCount
                             },
@@ -1165,6 +1169,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
                 try await removeServiceReplicasAbove(project: workingProject, service: service, desiredCount: replicaCount, timeout: up.timeout)
             }
+            try await waitForDeployJobService(service: service, targets: jobTargets)
 
             if serviceChanged {
                 changedServices.insert(service.name)
@@ -2953,9 +2958,6 @@ private extension ComposeOrchestrator {
         if fields.contains("update_config.order.start-first") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive")
         }
-        if let mode = unsupportedDeployJobModeField(in: fields) {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.mode '\(mode)'; deploy job modes need apple/container completion metadata and job lifecycle primitives")
-        }
         if fields.contains("mode") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.mode; deploy modes outside local replicated/global behavior need apple/container scheduler or job lifecycle primitives")
         }
@@ -2970,11 +2972,6 @@ private extension ComposeOrchestrator {
         }
         let fieldList = fields.joined(separator: ", ")
         throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); remaining Compose Deploy Specification fields need Docker Compose compatible apple/container deploy or runtime primitives")
-    }
-
-    /// Returns a Compose Deploy job mode that needs completion semantics.
-    func unsupportedDeployJobModeField(in fields: [String]) -> String? {
-        fields.first { $0.hasPrefix("mode.") }?.replacingOccurrences(of: "mode.", with: "")
     }
 
     /// Returns unsupported deploy resource limits that need apple/container runtime support.
@@ -3944,7 +3941,10 @@ private extension ComposeOrchestrator {
         if let policy = service.deployRestartPolicy {
             return try runtimeDeployRestartPolicyArguments(service: service, policy: policy)
         }
-        return try runtimeServiceRestartPolicyArguments(service: service)
+        return try runtimeServiceRestartPolicyArguments(
+            service: service,
+            allowSuccessfulRestart: !isDeployJobService(service)
+        )
     }
 
     /// Returns the runtime restart arguments for a Compose Deploy restart policy.
@@ -3956,9 +3956,12 @@ private extension ComposeOrchestrator {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         let restartCondition = condition.flatMap { $0.isEmpty ? nil : $0 } ?? "any"
+        let effectiveRestartCondition = isDeployJobService(service) && restartCondition == "any"
+            ? "on-failure"
+            : restartCondition
         let timing = try deployRestartTiming(service: service, policy: policy)
 
-        switch restartCondition {
+        switch effectiveRestartCondition {
         case "none":
             if policy.maxAttempts != nil {
                 throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'none'; apple/container retry limits are only available for on-failure restart policies")
@@ -4008,8 +4011,19 @@ private extension ComposeOrchestrator {
         return (policy.delayNanoseconds, policy.windowNanoseconds)
     }
 
+    /// Returns true for Compose Deploy modes that represent completion-oriented jobs.
+    func isDeployJobService(_ service: ComposeService) -> Bool {
+        guard let mode = service.deployMode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+            return false
+        }
+        return mode == "replicated-job" || mode == "global-job"
+    }
+
     /// Returns the runtime restart arguments for the service-level `restart` key.
-    func runtimeServiceRestartPolicyArguments(service: ComposeService) throws -> RuntimeRestartPolicyArguments? {
+    func runtimeServiceRestartPolicyArguments(
+        service: ComposeService,
+        allowSuccessfulRestart: Bool = true
+    ) throws -> RuntimeRestartPolicyArguments? {
         guard let restart = service.restart?.trimmingCharacters(in: .whitespacesAndNewlines),
               !restart.isEmpty else {
             return nil
@@ -4024,6 +4038,9 @@ private extension ComposeOrchestrator {
         case "no", "always", "unless-stopped":
             guard parts.count == 1 else {
                 throw ComposeError.invalidProject("service '\(service.name)' restart retry count is only supported with on-failure")
+            }
+            if !allowSuccessfulRestart, mode != "no" {
+                throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(mode)' with deploy.mode '\(service.deployMode ?? "")'; job services can only restart on failure")
             }
         case "on-failure":
             if parts.count == 2 {
@@ -5706,6 +5723,25 @@ private extension ComposeOrchestrator {
                 try await waitForHealthyDependency(project: project, service: service, dependency: dependency)
             default:
                 continue
+            }
+        }
+    }
+
+    /// Waits for a local Compose Deploy job service to finish successfully.
+    func waitForDeployJobService(service: ComposeService, targets: [ServiceContainerTarget]) async throws {
+        guard isDeployJobService(service), !targets.isEmpty else {
+            return
+        }
+        for target in targets {
+            let exitCode: Int32
+            if options.dryRun {
+                try await runContainer(["wait", target.name])
+                exitCode = 0
+            } else {
+                exitCode = try await lifecycleManager.waitContainer(id: target.name)
+            }
+            guard exitCode == 0 else {
+                throw ComposeError.invalidProject("service '\(service.name)' job container '\(target.name)' exited with status \(exitCode)")
             }
         }
     }

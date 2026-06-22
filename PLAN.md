@@ -344,6 +344,15 @@ Reference targets:
     <tr>
       <td colspan="4">Notes: `container-compose` now supports the safe local `external_links` subset where the source service has exactly one Compose network and the referenced existing apple/container container has exactly one attachment on the matching runtime network. `CONTAINER` and `CONTAINER:ALIAS` entries are resolved through the direct `ContainerClient.get` snapshot path, rendered as generated `--add-host ALIAS:IP` values, and folded into the transient service model so config-hash recreation detects external IP changes. Missing external containers, services without exactly one Compose network, and external containers without exactly one shared runtime attachment are rejected before resources are created. Full Docker parity still needs apple/container source-scoped DNS/link lookup and shared-alias semantics. Handoff files are `ISSUE-external-links.md` and `PR-external-links.md` in this repository.</td>
     </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Support local Compose deploy job modes</td>
+      <td>2026-06-22 06:58 BST</td>
+      <td>2026-06-22 06:58 BST</td>
+      <td>2026-06-22 06:58 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now preserves compose-go normalized `deploy.mode` values and supports Docker Compose local `replicated-job` / `global-job` behavior on the fork-backed integration branch. `up` starts each selected job replica detached, waits every job container through the direct lifecycle adapter, and fails before later services start if any job exits non-zero. Deploy job `restart_policy.condition: any` is rendered as `on-failure` because Docker jobs are never restarted after reaching the completed state. Service-level `restart: always` and `restart: unless-stopped` are rejected for job services before resources are created. Released upstream still needs accepted stopped-container exit metadata, such as [apple/container#1562](https://github.com/apple/container/pull/1562), before this can work against upstream `apple/container` without the fork. Handoff files are `ISSUE-deploy-job-modes.md` and `PR-deploy-job-modes.md` in this repository.</td>
+    </tr>
   </tbody>
 </table>
 
