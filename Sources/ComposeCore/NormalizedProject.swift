@@ -84,6 +84,53 @@ public enum ComposeValue: Codable, Equatable, Sendable {
     }
 }
 
+/// Compose block I/O controls normalized for the apple/container `--blkio`
+/// runtime flag proposed in apple/container#1595.
+public struct ComposeBlkioConfig: Codable, Equatable {
+    public var weight: Int? = nil
+    public var weightDevice: [ComposeBlkioWeightDevice]? = nil
+    public var deviceReadBps: [ComposeBlkioThrottleDevice]? = nil
+    public var deviceReadIOps: [ComposeBlkioThrottleDevice]? = nil
+    public var deviceWriteBps: [ComposeBlkioThrottleDevice]? = nil
+    public var deviceWriteIOps: [ComposeBlkioThrottleDevice]? = nil
+
+    public init(
+        weight: Int? = nil,
+        weightDevice: [ComposeBlkioWeightDevice]? = nil,
+        deviceReadBps: [ComposeBlkioThrottleDevice]? = nil,
+        deviceReadIOps: [ComposeBlkioThrottleDevice]? = nil,
+        deviceWriteBps: [ComposeBlkioThrottleDevice]? = nil,
+        deviceWriteIOps: [ComposeBlkioThrottleDevice]? = nil
+    ) {
+        self.weight = weight
+        self.weightDevice = weightDevice
+        self.deviceReadBps = deviceReadBps
+        self.deviceReadIOps = deviceReadIOps
+        self.deviceWriteBps = deviceWriteBps
+        self.deviceWriteIOps = deviceWriteIOps
+    }
+}
+
+public struct ComposeBlkioWeightDevice: Codable, Equatable {
+    public var path: String
+    public var weight: Int
+
+    public init(path: String, weight: Int) {
+        self.path = path
+        self.weight = weight
+    }
+}
+
+public struct ComposeBlkioThrottleDevice: Codable, Equatable {
+    public var path: String
+    public var rate: String
+
+    public init(path: String, rate: String) {
+        self.path = path
+        self.rate = rate
+    }
+}
+
 /// Canonical service definition used by the Swift orchestrator.
 public struct ComposeService: Codable, Equatable {
     public var name: String
@@ -92,7 +139,7 @@ public struct ComposeService: Codable, Equatable {
     public var platform: String? = nil
     public var annotations: [String: String]? = nil
     public var attach: Bool? = nil
-    public var blkioConfig: Bool? = nil
+    public var blkioConfig: ComposeBlkioConfig? = nil
     public var macAddress: String? = nil
     public var runtime: String? = nil
     public var cgroup: String? = nil

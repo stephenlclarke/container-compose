@@ -2820,9 +2820,7 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedMemoryAndProcessResourceFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
-        if service.blkioConfig == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls need apple/container runtime resource primitives for blkio weight and throttling")
-        }
+        _ = try runtimeBlkioArguments(service: service)
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
@@ -3896,6 +3894,60 @@ private extension ComposeOrchestrator {
     func runtimeExtraHostArguments(service: ComposeService) throws -> [String] {
         try (service.extraHosts ?? []).map { raw in
             try runtimeExtraHostArgument(raw, service: service)
+        }
+    }
+
+    /// Converts Compose `blkio_config` into apple/container#1595 `--blkio`
+    /// specifications. Device path resolution stays inside apple/container.
+    func runtimeBlkioArguments(service: ComposeService) throws -> [String] {
+        guard let blkio = service.blkioConfig else {
+            return []
+        }
+        var result: [String] = []
+        if let weight = blkio.weight {
+            try validateBlockIOWeight(weight, serviceName: service.name, field: "blkio_config.weight")
+            result.append("weight=\(weight)")
+        }
+        for device in blkio.weightDevice ?? [] {
+            try validateBlockIODevicePath(device.path, serviceName: service.name, field: "blkio_config.weight_device.path")
+            try validateBlockIOWeight(device.weight, serviceName: service.name, field: "blkio_config.weight_device.weight")
+            result.append("device=\(device.path),weight=\(device.weight)")
+        }
+        try appendThrottleArguments(blkio.deviceReadBps, key: "read-bps", field: "blkio_config.device_read_bps", serviceName: service.name, to: &result)
+        try appendThrottleArguments(blkio.deviceWriteBps, key: "write-bps", field: "blkio_config.device_write_bps", serviceName: service.name, to: &result)
+        try appendThrottleArguments(blkio.deviceReadIOps, key: "read-iops", field: "blkio_config.device_read_iops", serviceName: service.name, to: &result)
+        try appendThrottleArguments(blkio.deviceWriteIOps, key: "write-iops", field: "blkio_config.device_write_iops", serviceName: service.name, to: &result)
+        return result
+    }
+
+    private func appendThrottleArguments(
+        _ devices: [ComposeBlkioThrottleDevice]?,
+        key: String,
+        field: String,
+        serviceName: String,
+        to result: inout [String]
+    ) throws {
+        for device in devices ?? [] {
+            try validateBlockIODevicePath(device.path, serviceName: serviceName, field: "\(field).path")
+            guard UInt64(device.rate) != nil else {
+                throw ComposeError.invalidProject("service '\(serviceName)' uses \(field).rate '\(device.rate)'; block I/O throttle rates must be non-negative integers")
+            }
+            result.append("device=\(device.path),\(key)=\(device.rate)")
+        }
+    }
+
+    private func validateBlockIOWeight(_ weight: Int, serviceName: String, field: String) throws {
+        guard (10...1000).contains(weight) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) \(weight); block I/O weight must be between 10 and 1000")
+        }
+    }
+
+    private func validateBlockIODevicePath(_ path: String, serviceName: String, field: String) throws {
+        guard !path.isEmpty else {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) with an empty device path")
+        }
+        if path.contains(",") {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(path)'; block I/O device paths must not contain commas")
         }
     }
 
@@ -5497,6 +5549,9 @@ private extension ComposeOrchestrator {
         }
         for extraHost in try runtimeExtraHostArguments(service: service) {
             args.append(contentsOf: ["--add-host", extraHost])
+        }
+        for blkio in try runtimeBlkioArguments(service: service) {
+            args.append(contentsOf: ["--blkio", blkio])
         }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])

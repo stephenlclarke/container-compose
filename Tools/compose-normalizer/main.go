@@ -72,7 +72,7 @@ type normalizedService struct {
 	Platform                string                              `json:"platform,omitempty"`
 	Annotations             map[string]string                   `json:"annotations,omitempty"`
 	Attach                  *bool                               `json:"attach,omitempty"`
-	BlkioConfig             bool                                `json:"blkioConfig,omitempty"`
+	BlkioConfig             *normalizedBlkioConfig              `json:"blkioConfig,omitempty"`
 	MacAddress              string                              `json:"macAddress,omitempty"`
 	Runtime                 string                              `json:"runtime,omitempty"`
 	Cgroup                  string                              `json:"cgroup,omitempty"`
@@ -166,6 +166,29 @@ type normalizedService struct {
 	Configs                 any                                 `json:"configs,omitempty"`
 	Secrets                 any                                 `json:"secrets,omitempty"`
 	Extensions              map[string]any                      `json:"extensions,omitempty"`
+}
+
+// normalizedBlkioConfig preserves Compose block I/O controls for the runtime
+// CLI shape proposed in apple/container#1595.
+type normalizedBlkioConfig struct {
+	Weight          *uint16                    `json:"weight,omitempty"`
+	WeightDevice    []normalizedWeightDevice   `json:"weightDevice,omitempty"`
+	DeviceReadBps   []normalizedThrottleDevice `json:"deviceReadBps,omitempty"`
+	DeviceReadIOps  []normalizedThrottleDevice `json:"deviceReadIOps,omitempty"`
+	DeviceWriteBps  []normalizedThrottleDevice `json:"deviceWriteBps,omitempty"`
+	DeviceWriteIOps []normalizedThrottleDevice `json:"deviceWriteIOps,omitempty"`
+}
+
+// normalizedWeightDevice stores one per-device block I/O weight.
+type normalizedWeightDevice struct {
+	Path   string `json:"path"`
+	Weight uint16 `json:"weight"`
+}
+
+// normalizedThrottleDevice stores one per-device block I/O throttle.
+type normalizedThrottleDevice struct {
+	Path string `json:"path"`
+	Rate string `json:"rate"`
 }
 
 // normalizedDeployRestartPolicy preserves the Compose Deploy restart policy
@@ -476,7 +499,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Platform:                service.Platform,
 		Annotations:             mapMapping(service.Annotations),
 		Attach:                  service.Attach,
-		BlkioConfig:             service.BlkioConfig != nil,
+		BlkioConfig:             blkioConfigValue(service.BlkioConfig),
 		MacAddress:              service.MacAddress,
 		Runtime:                 service.Runtime,
 		Cgroup:                  service.Cgroup,
@@ -1347,6 +1370,59 @@ func appendUnsupportedBuildField(fields *[]string, name string, present bool) {
 	if present {
 		*fields = append(*fields, name)
 	}
+}
+
+// blkioConfigValue converts Compose block I/O controls into the Swift wire
+// model without resolving host devices. apple/container#1595 owns device
+// path/literal validation at runtime.
+func blkioConfigValue(config *types.BlkioConfig) *normalizedBlkioConfig {
+	if config == nil {
+		return nil
+	}
+	result := normalizedBlkioConfig{
+		WeightDevice:    weightDeviceValues(config.WeightDevice),
+		DeviceReadBps:   throttleDeviceValues(config.DeviceReadBps),
+		DeviceReadIOps:  throttleDeviceValues(config.DeviceReadIOps),
+		DeviceWriteBps:  throttleDeviceValues(config.DeviceWriteBps),
+		DeviceWriteIOps: throttleDeviceValues(config.DeviceWriteIOps),
+	}
+	if config.Weight != 0 {
+		weight := config.Weight
+		result.Weight = &weight
+	}
+	return &result
+}
+
+// weightDeviceValues converts per-device weights while preserving Compose
+// order.
+func weightDeviceValues(devices []types.WeightDevice) []normalizedWeightDevice {
+	if len(devices) == 0 {
+		return nil
+	}
+	result := make([]normalizedWeightDevice, 0, len(devices))
+	for _, device := range devices {
+		result = append(result, normalizedWeightDevice{
+			Path:   device.Path,
+			Weight: device.Weight,
+		})
+	}
+	return result
+}
+
+// throttleDeviceValues converts per-device byte/iops throttles while
+// preserving explicit zero rates.
+func throttleDeviceValues(devices []types.ThrottleDevice) []normalizedThrottleDevice {
+	if len(devices) == 0 {
+		return nil
+	}
+	result := make([]normalizedThrottleDevice, 0, len(devices))
+	for _, device := range devices {
+		result = append(result, normalizedThrottleDevice{
+			Path: device.Path,
+			Rate: fmt.Sprint(int64(device.Rate)),
+		})
+	}
+	return result
 }
 
 // unitBytesValue emits byte counts only when Compose supplied a limit.

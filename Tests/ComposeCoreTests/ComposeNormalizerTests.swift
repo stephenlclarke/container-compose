@@ -517,6 +517,55 @@ struct ComposeNormalizerTests {
         #expect(worker.unsupportedDeployFields == nil)
     }
 
+    @Test("normalizes block IO config through compose-go")
+    func normalizesBlockIOConfigThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            blkio_config:
+              weight: 300
+              weight_device:
+                - path: "8:0"
+                  weight: 700
+              device_read_bps:
+                - path: "8:0"
+                  rate: 1048576
+              device_read_iops:
+                - path: "8:0"
+                  rate: 1000
+              device_write_bps:
+                - path: "8:0"
+                  rate: 2097152
+              device_write_iops:
+                - path: "8:0"
+                  rate: 2000
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let blkio = try #require(project.services["api"]?.blkioConfig)
+        #expect(blkio.weight == 300)
+        #expect(blkio.weightDevice == [ComposeBlkioWeightDevice(path: "8:0", weight: 700)])
+        #expect(blkio.deviceReadBps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "1048576")])
+        #expect(blkio.deviceReadIOps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "1000")])
+        #expect(blkio.deviceWriteBps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "2097152")])
+        #expect(blkio.deviceWriteIOps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "2000")])
+    }
+
     @Test("normalizes unsupported deploy resource fields through compose-go")
     func normalizesUnsupportedDeployResourceFieldsThroughComposeGo() async throws {
         let fileManager = FileManager.default

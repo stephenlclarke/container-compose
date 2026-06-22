@@ -26,7 +26,7 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "container", path: "../container"),
-        .package(url: "https://github.com/apple/containerization.git", exact: "0.33.4"),
+        .package(url: "https://github.com/stephenlclarke/containerization.git", branch: "integration/blkio-runtime"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
     ],

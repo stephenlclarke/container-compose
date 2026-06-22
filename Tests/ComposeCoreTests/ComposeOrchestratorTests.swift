@@ -4148,31 +4148,31 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("up rejects unsupported block IO config before creating resources")
-    func upRejectsUnsupportedBlockIOConfigBeforeCreatingResources() async throws {
+    @Test("up maps block IO config to runtime arguments")
+    func upMapsBlockIOConfigToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.blkioConfig = true
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.blkioConfig = ComposeBlkioConfig(
+                        weight: 300,
+                        weightDevice: [ComposeBlkioWeightDevice(path: "8:0", weight: 700)],
+                        deviceReadBps: [ComposeBlkioThrottleDevice(path: "8:0", rate: "1048576")]
+                    )
                 },
             ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported block IO config error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses blkio_config; block I/O controls need apple/container runtime resource primitives for blkio weight and throttling"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--blkio", "weight=300"]))
+        #expect(command.containsSequence(["--blkio", "device=8:0,weight=700"]))
+        #expect(command.containsSequence(["--blkio", "device=8:0,read-bps=1048576"]))
     }
 
     @Test("up treats develop watch metadata as harmless")
@@ -13983,26 +13983,53 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("run rejects unsupported block IO config before creating resources")
-    func runRejectsUnsupportedBlockIOConfigBeforeCreatingResources() async throws {
+    @Test("run maps block IO config to runtime arguments")
+    func runMapsBlockIOConfigToRuntimeArguments() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.blkioConfig = true
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.blkioConfig = ComposeBlkioConfig(
+                        weight: 300,
+                        weightDevice: [ComposeBlkioWeightDevice(path: "8:0", weight: 700)],
+                        deviceReadBps: [ComposeBlkioThrottleDevice(path: "8:0", rate: "1048576")],
+                        deviceReadIOps: [ComposeBlkioThrottleDevice(path: "8:0", rate: "1000")],
+                        deviceWriteBps: [ComposeBlkioThrottleDevice(path: "8:0", rate: "2097152")],
+                        deviceWriteIOps: [ComposeBlkioThrottleDevice(path: "8:0", rate: "2000")]
+                    )
                 },
             ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--blkio", "weight=300"]))
+        #expect(command.containsSequence(["--blkio", "device=8:0,weight=700"]))
+        #expect(command.containsSequence(["--blkio", "device=8:0,read-bps=1048576"]))
+        #expect(command.containsSequence(["--blkio", "device=8:0,read-iops=1000"]))
+        #expect(command.containsSequence(["--blkio", "device=8:0,write-bps=2097152"]))
+        #expect(command.containsSequence(["--blkio", "device=8:0,write-iops=2000"]))
+    }
+
+    @Test("run rejects invalid block IO config before runtime commands")
+    func runRejectsInvalidBlockIOConfigBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.blkioConfig = ComposeBlkioConfig(weight: 1)
+                },
+            ]
+        )
 
         do {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported block IO config error")
+            Issue.record("Expected invalid block IO config error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses blkio_config; block I/O controls need apple/container runtime resource primitives for blkio weight and throttling"))
+            #expect(error == .invalidProject("service 'job' uses blkio_config.weight 1; block I/O weight must be between 10 and 1000"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

@@ -500,6 +500,21 @@ services:
     attach: false
     blkio_config:
       weight: 300
+      weight_device:
+        - path: "8:0"
+          weight: 700
+      device_read_bps:
+        - path: "8:0"
+          rate: 1048576
+      device_read_iops:
+        - path: "8:0"
+          rate: 1000
+      device_write_bps:
+        - path: "8:0"
+          rate: 2097152
+      device_write_iops:
+        - path: "8:0"
+          rate: 2000
     mac_address: 02:42:ac:11:00:03
     runtime: container-runtime-linux
     cgroup: host
@@ -661,8 +676,26 @@ volumes:
 	if api.Attach == nil || *api.Attach {
 		t.Fatalf("api.Attach = %#v, want false", api.Attach)
 	}
-	if !api.BlkioConfig {
-		t.Fatal("api.BlkioConfig = false, want true")
+	if api.BlkioConfig == nil {
+		t.Fatal("api.BlkioConfig = nil, want normalized config")
+	}
+	if api.BlkioConfig.Weight == nil || *api.BlkioConfig.Weight != 300 {
+		t.Fatalf("api.BlkioConfig.Weight = %#v, want 300", api.BlkioConfig.Weight)
+	}
+	if got, want := api.BlkioConfig.WeightDevice, []normalizedWeightDevice{{Path: "8:0", Weight: 700}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.WeightDevice = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceReadBps, []normalizedThrottleDevice{{Path: "8:0", Rate: "1048576"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceReadBps = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceReadIOps, []normalizedThrottleDevice{{Path: "8:0", Rate: "1000"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceReadIOps = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceWriteBps, []normalizedThrottleDevice{{Path: "8:0", Rate: "2097152"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceWriteBps = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceWriteIOps, []normalizedThrottleDevice{{Path: "8:0", Rate: "2000"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceWriteIOps = %#v, want %#v", got, want)
 	}
 	if api.MacAddress != "02:42:ac:11:00:03" {
 		t.Fatalf("api.MacAddress = %q, want 02:42:ac:11:00:03", api.MacAddress)

@@ -353,6 +353,15 @@ Reference targets:
     <tr>
       <td colspan="4">Notes: `container-compose` now preserves compose-go normalized `deploy.mode` values and supports Docker Compose local `replicated-job` / `global-job` behavior on the fork-backed integration branch. `up` starts each selected job replica detached, waits every job container through the direct lifecycle adapter, and fails before later services start if any job exits non-zero. Deploy job `restart_policy.condition: any` is rendered as `on-failure` because Docker jobs are never restarted after reaching the completed state. Service-level `restart: always` and `restart: unless-stopped` are rejected for job services before resources are created. Released upstream still needs accepted stopped-container exit metadata, such as [apple/container#1562](https://github.com/apple/container/pull/1562), before this can work against upstream `apple/container` without the fork. Handoff files are `ISSUE-deploy-job-modes.md` and `PR-deploy-job-modes.md` in this repository.</td>
     </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `blkio_config` to the active apple/container `--blkio` contract</td>
+      <td>2026-06-22 07:16 BST</td>
+      <td>2026-06-22 07:16 BST</td>
+      <td>2026-06-22 07:16 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now preserves compose-go normalized `blkio_config.weight`, `weight_device`, `device_read_bps`, `device_write_bps`, `device_read_iops`, and `device_write_iops`, validates weights/rates before runtime commands, and renders them as repeatable `container run/create --blkio` specs matching Chris George's [apple/container#1595](https://github.com/apple/container/pull/1595) CLI contract. This intentionally reuses #1595 rather than duplicating the runtime PR. The integration stack now pins to `stephenlclarke/containerization@integration/blkio-runtime`, which carries Chris George's [apple/containerization#739](https://github.com/apple/containerization/pull/739), so local end-to-end validation can proceed while released support still waits on upstream merges. Handoff files are `ISSUE-blkio-config.md` and `PR-blkio-config.md` in this repository.</td>
+    </tr>
   </tbody>
 </table>
 
