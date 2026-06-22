@@ -1211,6 +1211,7 @@ struct ComposeOrchestratorTests {
                     $0.networks = ["default"]
                     $0.platform = "linux/amd64"
                     $0.dnsOptions = ["use-vc"]
+                    $0.extraHosts = ["db=10.0.0.5", "myhostv6=[::1]"]
                 },
             ]
         ) {
@@ -1244,6 +1245,8 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--network", "demo_default"]))
         #expect(create.containsSequence(["--platform", "linux/amd64"]))
         #expect(create.containsSequence(["--dns-option", "use-vc"]))
+        #expect(create.containsSequence(["--add-host", "db:10.0.0.5"]))
+        #expect(create.containsSequence(["--add-host", "myhostv6:::1"]))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
@@ -3498,6 +3501,51 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.last?.arguments)
         #expect(command.containsSequence(["--dns-option", "use-vc"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("up maps extra hosts to runtime host entries")
+    func upMapsExtraHostsToRuntimeHostEntries() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.extraHosts = ["db=10.0.0.5", "myhostv6=[::1]"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--add-host", "db:10.0.0.5"]))
+        #expect(command.containsSequence(["--add-host", "myhostv6:::1"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("up rejects host-gateway extra hosts before creating resources")
+    func upRejectsHostGatewayExtraHostsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.extraHosts = ["host.docker.internal=host-gateway"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected host-gateway extra_hosts failure")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses extra_hosts value 'host-gateway'; Docker host-gateway resolution needs an apple/container runtime gateway primitive"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects unsupported sysctls before creating resources")
@@ -12486,6 +12534,7 @@ struct ComposeOrchestratorTests {
                     $0.dns = ["1.1.1.1"]
                     $0.dnsSearch = ["local"]
                     $0.dnsOptions = ["use-vc"]
+                    $0.extraHosts = ["db=10.0.0.5"]
                     $0.capAdd = ["NET_ADMIN"]
                     $0.capDrop = ["MKNOD"]
                     $0.memLimit = "1024"
@@ -12519,6 +12568,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--dns", "1.1.1.1"]))
         #expect(command.containsSequence(["--dns-search", "local"]))
         #expect(command.containsSequence(["--dns-option", "use-vc"]))
+        #expect(command.containsSequence(["--add-host", "db:10.0.0.5"]))
         #expect(command.containsSequence(["--memory", "1024"]))
         #expect(command.containsSequence(["--cpus", "2"]))
         #expect(command.containsSequence(["--shm-size", "67108864"]))
@@ -15522,7 +15572,7 @@ struct ComposeOrchestratorTests {
                 $0.networks = ["a", "b"]
             }]),
             ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
-                $0.extraHosts = ["db:127.0.0.1"]
+                $0.extraHosts = ["host.docker.internal=host-gateway"]
             }]),
             ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
                 $0.privileged = true

@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -553,6 +554,10 @@ services:
     command: ["nginx", "-g", "daemon off;"]
     environment:
       FOO: bar
+    extra_hosts:
+      - "somehost=162.242.195.82"
+      - "myhostv6=[::1]"
+      - "colonhost:10.0.0.5"
     dns_opt:
       - use-vc
     security_opt:
@@ -756,6 +761,9 @@ volumes:
 	}
 	if api.Environment["FOO"] == nil || *api.Environment["FOO"] != "bar" {
 		t.Fatalf("api.Environment[FOO] = %#v, want bar", api.Environment["FOO"])
+	}
+	if got, want := sortedStrings(api.ExtraHosts), []string{"colonhost:10.0.0.5", "myhostv6:::1", "somehost:162.242.195.82"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.ExtraHosts = %#v, want %#v", got, want)
 	}
 	if got, want := api.DNSOptions, []string{"use-vc"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DNSOptions = %#v, want %#v", got, want)
@@ -1825,4 +1833,10 @@ func boolPointer(value bool) *bool {
 
 func stringPointer(value string) *string {
 	return &value
+}
+
+func sortedStrings(values []string) []string {
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	return sorted
 }

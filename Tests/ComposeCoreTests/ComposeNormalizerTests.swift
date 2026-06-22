@@ -66,6 +66,10 @@ struct ComposeNormalizerTests {
               - "8080:80"
             environment:
               LOG_LEVEL: debug
+            extra_hosts:
+              - "somehost=162.242.195.82"
+              - "myhostv6=[::1]"
+              - "colonhost:10.0.0.5"
             dns_opt:
               - use-vc
             expose:
@@ -153,6 +157,11 @@ struct ComposeNormalizerTests {
             ),
         ])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
+        #expect(project.services["api"]?.extraHosts?.sorted() == [
+            "colonhost:10.0.0.5",
+            "myhostv6:::1",
+            "somehost:162.242.195.82",
+        ])
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])
         #expect(project.services["api"]?.memReservation == "134217728")

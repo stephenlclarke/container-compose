@@ -227,6 +227,24 @@ Reference targets:
     <tr>
       <td colspan="4">Notes: generated runtime config/secret files now honor service grant `mode` values preserved by compose-go, parse octal strings such as `0440`, `0555`, and `0o400`, ignore writable bits per Compose semantics, and include the effective permission mode in the materialized file name so config-hash recreation detects mode-only changes. File-backed grants keep Docker Compose's bind-mount behavior and do not mutate source file metadata. `uid`/`gid` requests on generated grants still reject clearly because apple/container bind mounts do not expose config/secret ownership remapping. Handoff files are `ISSUE-config-secret-grant-mode.md` and `PR-config-secret-grant-mode.md` in this repository.</td>
     </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add explicit host entries to the container fork</td>
+      <td>2026-06-22 04:33:28 BST</td>
+      <td>2026-06-22 04:33:28 BST</td>
+      <td>2026-06-22 04:33:28 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by combining the resource-level direction from [`apple/container#1340`](https://github.com/apple/container/pull/1340) with the Docker-compatible `--add-host` CLI surface from [`apple/container#1563`](https://github.com/apple/container/pull/1563). The fork now has `ContainerConfiguration.HostEntry`, defaulted `hosts` decoding, repeatable `container run/create --add-host`, static IPv4/IPv6 validation, and runtime `/etc/hosts` injection before workload start. This remains fork-backed until one accepted upstream host-entry API lands. Handoff files are `ISSUE-host-entries.md` and `PR-host-entries.md` in the container fork.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `extra_hosts` to runtime host entries</td>
+      <td>2026-06-22 04:33:28 BST</td>
+      <td>2026-06-22 04:33:28 BST</td>
+      <td>2026-06-22 04:33:28 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now accepts compose-go normalized static `extra_hosts` values, including `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms, validates IP literals before side effects, and maps service and one-off containers to `container run/create --add-host`. Docker's `host-gateway` magic value remains a separate apple/container gateway-resolution gap, and `hostname`, `domainname`, `links`, and `external_links` remain unsupported. Handoff files are `ISSUE-extra-hosts.md` and `PR-extra-hosts.md` in this repository.</td>
+    </tr>
   </tbody>
 </table>
 

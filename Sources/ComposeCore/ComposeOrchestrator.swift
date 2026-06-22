@@ -21,6 +21,7 @@ import Darwin
 import Glibc
 #endif
 import ContainerResource
+import ContainerizationExtras
 import Foundation
 
 /// Runtime settings used while translating Compose operations to `container`.
@@ -2684,9 +2685,7 @@ private extension ComposeOrchestrator {
         if let externalLinks = service.externalLinks, !externalLinks.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses external_links; legacy link support needs an apple/container runtime gap PR")
         }
-        if let extraHosts = service.extraHosts, !extraHosts.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses extra_hosts; host-entry support needs an apple/container runtime gap PR")
-        }
+        _ = try runtimeExtraHostArguments(service: service)
         if let hostname = service.hostname, !hostname.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses hostname; custom hostname support needs an apple/container runtime gap PR")
         }
@@ -3677,6 +3676,48 @@ private extension ComposeOrchestrator {
         return options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
             ["--log-opt", "\(key)=\(value)"]
         }
+    }
+
+    /// Returns runtime host-entry arguments for Compose `extra_hosts`.
+    func runtimeExtraHostArguments(service: ComposeService) throws -> [String] {
+        try (service.extraHosts ?? []).map { raw in
+            try runtimeExtraHostArgument(raw, service: service)
+        }
+    }
+
+    /// Canonicalizes one Compose host entry into the runtime `--add-host` form.
+    func runtimeExtraHostArgument(_ raw: String, service: ComposeService) throws -> String {
+        let separator = raw.firstIndex(of: "=") ?? raw.firstIndex(of: ":")
+        guard let separator else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' must use HOST=IP or HOST:IP")
+        }
+
+        let hostname = String(raw[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawAddress = String(raw[raw.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !hostname.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has an empty hostname")
+        }
+        guard !rawAddress.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has an empty IP address")
+        }
+
+        if rawAddress == "host-gateway" {
+            throw ComposeError.unsupported("service '\(service.name)' uses extra_hosts value 'host-gateway'; Docker host-gateway resolution needs an apple/container runtime gateway primitive")
+        }
+
+        let ipAddress = unbracketedIPAddress(rawAddress)
+        guard (try? IPAddress(ipAddress)) != nil else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has invalid IP address '\(rawAddress)'")
+        }
+        return "\(hostname):\(ipAddress)"
+    }
+
+    /// Removes brackets accepted by Compose around IPv6 literals.
+    func unbracketedIPAddress(_ value: String) -> String {
+        if value.hasPrefix("["), value.hasSuffix("]") {
+            return String(value.dropFirst().dropLast())
+        }
+        return value
     }
 
     /// Returns Docker-compatible apple/container restart policy arguments
@@ -5213,6 +5254,9 @@ private extension ComposeOrchestrator {
         }
         for dnsOption in service.dnsOptions ?? [] {
             args.append(contentsOf: ["--dns-option", dnsOption])
+        }
+        for extraHost in try runtimeExtraHostArguments(service: service) {
+            args.append(contentsOf: ["--add-host", extraHost])
         }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])
