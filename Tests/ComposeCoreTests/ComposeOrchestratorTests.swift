@@ -3400,26 +3400,153 @@ struct ComposeOrchestratorTests {
         #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
     }
 
-    @Test("up rejects unsupported links before creating resources")
-    func upRejectsUnsupportedLinksBeforeCreatingResources() async throws {
+    @Test("up maps links to target network aliases")
+    func upMapsLinksToTargetNetworkAliases() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["backend"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:cache"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-redis-1"]))
+        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=cache"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[1].containsSequence(["--network", "demo_backend"]))
+    }
+
+    @Test("up maps link without alias to target service name")
+    func upMapsLinkWithoutAliasToTargetServiceName() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["backend"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-redis-1"]))
+        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=redis"]))
+    }
+
+    @Test("up rejects invalid link aliases before creating resources")
+    func upRejectsInvalidLinkAliasesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["backend"]
+                },
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.links = ["redis:cache"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.links = ["redis:bad_alias"]
+                    $0.networks = ["backend"]
                 },
             ]
         ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
         }
 
         do {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid link alias error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' link alias 'bad_alias' is not a valid RFC1123 hostname"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects links without one explicit shared network")
+    func upRejectsLinksWithoutOneExplicitSharedNetwork() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": ComposeService(name: "redis", image: "redis:7"),
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:cache"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
             Issue.record("Expected unsupported links error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses links; legacy link support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' links to 'redis'; links require both services to share exactly one explicit Compose network until apple/container exposes source-scoped DNS links"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects shared link aliases before creating resources")
+    func upRejectsSharedLinkAliasesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "cache": composeService(name: "cache", image: "redis:7") {
+                    $0.networks = ["backend"]
+                    $0.networkAliases = ["backend": ["database"]]
+                },
+                "db": composeService(name: "db", image: "postgres:18") {
+                    $0.networks = ["backend"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["db:database"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected shared alias error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("services 'cache' and 'db' share network alias 'database' on network 'backend'; shared aliases need apple/container source-scoped DNS support"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -13240,6 +13367,37 @@ struct ComposeOrchestratorTests {
         }
 
         #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run maps links to dependency network aliases")
+    func runMapsLinksToDependencyNetworkAliases() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "db": composeService(name: "db", image: "postgres:18") {
+                    $0.networks = ["backend"]
+                },
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.links = ["db:database"]
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend"])
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(commands[0].containsSequence(["--network", "demo_backend,alias=database"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name"]))
+        #expect(commands[1].containsSequence(["--network", "demo_backend"]))
     }
 
     @Test("run maps hostnames to runtime arguments")

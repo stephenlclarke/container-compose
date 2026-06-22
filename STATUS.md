@@ -1,18 +1,18 @@
 # Mission Control
 
-Last updated: 2026-06-22 05:31:11 BST.
+Last updated: 2026-06-22 05:52:10 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
 ## Current Objective
 
-Complete Docker Compose v2 local-development behavior where `apple/container` can expose matching runtime primitives. The log slabs retargeted raw `container-compose logs --follow` to `ContainerClient.followLogs(id:options:)` and structured/timestamped followed logs to `ContainerClient.followLogRecords(id:options:)` on the forked runtime, so the plugin no longer polls merged snapshots or active record files while following. The active lifecycle/config/network slab now uses fork-backed `ContainerSnapshot.exitCode` metadata for stopped-container `wait` replay, `depends_on.condition: service_completed_successfully`, explicit service healthchecks, Dockerfile-inherited image healthchecks, `depends_on.condition: service_healthy`, service-level `restart`, fork-backed `deploy.restart_policy` mode/retry/timing support, plugin-side materialization for Docker Compose runtime configs/secrets that can be represented as read-only local file mounts, fork-backed static `extra_hosts` mappings including `host-gateway`, fork-backed Compose `hostname` mapping, and fork-backed single-network Compose alias mapping.
+Complete Docker Compose v2 local-development behavior where `apple/container` can expose matching runtime primitives. The log slabs retargeted raw `container-compose logs --follow` to `ContainerClient.followLogs(id:options:)` and structured/timestamped followed logs to `ContainerClient.followLogRecords(id:options:)` on the forked runtime, so the plugin no longer polls merged snapshots or active record files while following. The active lifecycle/config/network slab now uses fork-backed `ContainerSnapshot.exitCode` metadata for stopped-container `wait` replay, `depends_on.condition: service_completed_successfully`, explicit service healthchecks, Dockerfile-inherited image healthchecks, `depends_on.condition: service_healthy`, service-level `restart`, fork-backed `deploy.restart_policy` mode/retry/timing support, plugin-side materialization for Docker Compose runtime configs/secrets that can be represented as read-only local file mounts, fork-backed static `extra_hosts` mappings including `host-gateway`, fork-backed Compose `hostname` mapping, fork-backed single-network Compose alias mapping, and the safe explicit-single-network `links` subset.
 
 ## Branch Map
 
 | Repository | Branch | Purpose | Current state |
 | --- | --- | --- | --- |
-| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log and lifecycle behavior against the forked runtime | Active local worktree with Docker rotated-tail fixture updates, raw follow retargeting to `ContainerClient.followLogs(id:options:)`, structured follow retargeting to `ContainerClient.followLogRecords(id:options:)`, stopped-container `wait` replay, `service_completed_successfully`, explicit and Dockerfile-inherited healthcheck flag mapping, `service_healthy` dependency gates, service `restart` mapping, `deploy.restart_policy` condition/max-attempt/timing mapping, local materialization for runtime `configs.content`, `configs.environment`, and `secrets.environment` grants, generated grant mode handling, static and `host-gateway` `extra_hosts` mapping, service `hostname` mapping, and single-network service alias mapping |
+| `stephenlclarke/container-compose` | `logs-integration` | Compose-side proving branch for log and lifecycle behavior against the forked runtime | Active local worktree with Docker rotated-tail fixture updates, raw follow retargeting to `ContainerClient.followLogs(id:options:)`, structured follow retargeting to `ContainerClient.followLogRecords(id:options:)`, stopped-container `wait` replay, `service_completed_successfully`, explicit and Dockerfile-inherited healthcheck flag mapping, `service_healthy` dependency gates, service `restart` mapping, `deploy.restart_policy` condition/max-attempt/timing mapping, local materialization for runtime `configs.content`, `configs.environment`, and `secrets.environment` grants, generated grant mode handling, static and `host-gateway` `extra_hosts` mapping, service `hostname` mapping, single-network service alias mapping, and the explicit-single-network `links` subset |
 | `stephenlclarke/container` | `logs-integration-chris` | Fork integration branch layered around Chris George's log retrieval direction plus lifecycle primitives needed by Compose | Active local worktree with static rotated tail, policy model, disabled-capture, local driver/options, writer rotation, raw rotation-aware follow, structured rotation-aware follow handoff files, the #1562 exit-metadata cherry-pick, health status/configuration/observer/CLI handoff slices, image healthcheck metadata, restart policy create/runtime slices, restart policy timing support, explicit host entries, explicit host-gateway resolution, explicit container hostnames, and single-network attachment aliases |
 | `stephenlclarke/container` | `logs-structured-record-storage` | Apple-facing structured log storage slice | PR-ready local/fork branch, not yet accepted upstream |
 | `stephenlclarke/container` | `logs-structured-record-api` | Apple-facing structured record retrieval slice | PR-ready local/fork branch plus local cleanup commit, not yet accepted upstream |
@@ -48,6 +48,7 @@ Complete Docker Compose v2 local-development behavior where `apple/container` ca
 26. The hostname runtime/plugin slab adds fork-side `container run/create -h, --hostname`, preserves existing default hostname derivation, maps Compose service `hostname` to the runtime, and leaves `domainname` as a separate lower-runtime API gap. Its handoff files are `ISSUE-hostname.md` and `PR-hostname.md` in the container fork, plus `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.
 27. The host-gateway runtime/plugin slab adds fork-side `container run/create --add-host host:host-gateway` resolution to the first network IPv4 gateway and maps Compose `extra_hosts` `host-gateway` entries to that runtime primitive. Its handoff files are `ISSUE-host-gateway.md` and `PR-host-gateway.md` in both repositories.
 28. The network-alias runtime/plugin slab adds fork-side `AttachmentOptions.aliases` plus `container run/create --network name,alias=...`, then maps Compose `services.*.networks.*.aliases` for the current single-network subset. Its handoff files are `ISSUE-network-aliases.md` and `PR-network-aliases.md` in both repositories.
+29. The legacy-links plugin slab maps Compose `links` to implicit dependency ordering plus target-service aliases for services that share exactly one explicit Compose network. Its handoff files are `ISSUE-links.md` and `PR-links.md` in this repository.
 
 ## Docker/Compose Reference Targets
 
@@ -63,6 +64,7 @@ Complete Docker Compose v2 local-development behavior where `apple/container` ca
 - Compose service `extra_hosts` documents static host-to-IP entries using `HOST=IP`, `HOST:IP`, bracketed IPv6, and mapping syntax: [Compose extra_hosts](https://docs.docker.com/reference/compose-file/services/#extra_hosts).
 - Compose service `hostname` documents custom service hostnames, and Docker exposes the matching runtime primitive through `docker container run --hostname`: [Compose hostname](https://docs.docker.com/reference/compose-file/services/#hostname), [Docker run hostname](https://docs.docker.com/reference/cli/docker/container/run/).
 - Compose service network `aliases` documents network-scoped alternative service hostnames, and Docker exposes the matching runtime primitive through `docker network connect --alias`: [Compose aliases](https://docs.docker.com/reference/compose-file/services/#aliases), [Docker network connect alias](https://docs.docker.com/reference/cli/docker/network/connect/).
+- Compose service `links` documents legacy service references as alias-capable links plus implicit dependencies: [Compose links](https://docs.docker.com/reference/compose-file/services/#links).
 
 ## What Belongs Where
 
@@ -118,10 +120,11 @@ Completed locally:
 - Added fork-side explicit container hostname support and plugin-side Compose `hostname` mapping for service containers and one-off `run` containers.
 - Added fork-side Docker `host-gateway` resolution and plugin-side Compose `extra_hosts` mapping for `host.docker.internal:host-gateway`.
 - Added fork-side network attachment aliases and plugin-side Compose `networks.<name>.aliases` mapping for the current single-network local subset.
+- Added plugin-side legacy `links` mapping for the explicit-single-network local subset, including implicit dependency ordering, target-service alias projection, and early rejection for projected link aliases that collide with another service alias or for links missing explicit shared networks.
 
 Next:
 
-- Continue the lifecycle/network topic with remaining job-mode, external config/secret-store, `domainname`, multi-network DNS/alias behavior, and legacy link gaps, or move to the next highest-value Compose surface that has matching fork/runtime primitives.
+- Continue the lifecycle/network topic with remaining job-mode, external config/secret-store, `domainname`, `external_links`, implicit default-network service discovery, multi-network DNS/alias behavior, and shared alias gaps, or move to the next highest-value Compose surface that has matching fork/runtime primitives.
 - Keep Dockerfile-inherited healthchecks marked fork-backed until equivalent image config parsing and `ImageResource` metadata are accepted upstream.
 - Keep the log comparison fixtures as a parallel backlog item, but do not switch away from the lifecycle topic until health/restart are implemented or blocked.
 
@@ -142,7 +145,8 @@ Next:
 - `apple/container` still needs accepted host-gateway resolution before released `container-compose` branches can rely on Docker `host-gateway` extra-host values without depending on the fork.
 - `apple/container` still needs accepted explicit hostname support before released `container-compose` branches can rely on Compose `hostname` without depending on the fork.
 - `apple/container` still needs accepted network attachment alias support before released `container-compose` branches can rely on single-network Compose aliases without depending on the fork.
-- `apple/container` still needs multi-network attach/connect and source-network-aware DNS before released `container-compose` can support aliases on multi-network services or Docker-compatible shared alias resolution.
+- `apple/container` still needs multi-network attach/connect and source-network-aware DNS before released `container-compose` can support aliases on multi-network services, Docker-compatible shared alias resolution, or full legacy-link behavior.
+- `apple/container` still needs accepted source-scoped DNS and default service-name alias behavior before released `container-compose` can support implicit-default-network links and Docker-compatible shared aliases without depending on explicit single-network alias projection.
 - `apple/container` still needs a lower-runtime domain-name primitive before Compose `domainname` can be mapped safely.
 
 ## Checkpoint Format

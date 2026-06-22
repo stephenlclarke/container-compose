@@ -279,7 +279,7 @@ Reference targets:
       <td>2026-06-22 04:54:29 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now validates Compose service `hostname` with RFC1123 label rules and maps it to `container run/create --hostname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Compose `domainname` remains blocked until `apple/container` and the lower runtime expose a domain-name primitive; `links` and `external_links` remain separate networking identity gaps. Handoff files are `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.</td>
+      <td colspan="4">Notes: `container-compose` now validates Compose service `hostname` with RFC1123 label rules and maps it to `container run/create --hostname` for service containers, `create`, and one-off `run` containers on the fork-backed integration branch. Compose `domainname` remains blocked until `apple/container` and the lower runtime expose a domain-name primitive; `external_links` remains a separate networking identity gap. Handoff files are `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add network attachment aliases to the container fork</td>
@@ -298,6 +298,15 @@ Reference targets:
     </tr>
     <tr>
       <td colspan="4">Notes: `container-compose` now supports `services.*.networks.*.aliases` for the current single-network local subset by validating compose-go normalized aliases, de-duplicating them, and rendering `container run/create --network project_network,alias=name`. Aliases on unattached networks, invalid hostname values, and services with multiple networks are rejected before resources are created. Full Docker parity still needs multi-network attach/connect and source-network-aware DNS behavior in apple/container. Handoff files are `ISSUE-network-aliases.md` and `PR-network-aliases.md` in this repository.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map legacy Compose `links` to dependency order and target aliases</td>
+      <td>2026-06-22 05:52:10 BST</td>
+      <td>2026-06-22 05:52:10 BST</td>
+      <td>2026-06-22 05:52:10 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now supports the safe local `links` subset where source and target services share exactly one explicit Compose network. Link targets are included as implicit `service_started` dependencies, `SERVICE:ALIAS` entries project the alias onto the linked target service, and `SERVICE` entries project the target service name as the alias. Invalid aliases, missing targets, missing explicit shared networks, and projected link aliases that collide with another active service alias are rejected before resources are created because current apple/container DNS lookup cannot model Docker's source-scoped or ambiguous shared-alias behavior yet. Handoff files are `ISSUE-links.md` and `PR-links.md` in this repository.</td>
     </tr>
   </tbody>
 </table>

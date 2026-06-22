@@ -245,9 +245,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - One service network, default project networks, external networks, `network_mode: none`, project network `internal`, and one IPv4 plus one IPv6 project network IPAM `subnet`.
   - Explicit host-published ports, target-only dynamically allocated host ports, and host-bound dynamic ports for `create`, `up`, and one-off `run`.
   - Scaled published-port ranges with enough explicit host ports for every replica, plus target-only and host-bound dynamic allocation per service replica.
-  - Single-network `mac_address`, `networks.<name>.aliases`, and MTU through `driver_opts.com.docker.network.driver.mtu`.
-- **apple/container path:** Direct `NetworkClient.create`, `NetworkConfiguration`, `NetworkClient.delete`, plus supported `container create/run --network` and explicit `--publish` flags where a direct adapter is not available yet. Target-only and host-bound Compose ports are allocated by the plugin before invoking apple/container. Single-network aliases require the fork-backed `container --network name,alias=...` primitive until an equivalent surface is accepted upstream.
-- **container-compose status:** Supported for the listed single-network local subset on the fork-backed integration branch; released upstream support for aliases is pending `ISSUE-network-aliases.md` / `PR-network-aliases.md` or an equivalent apple/container primitive.
+  - Single-network `mac_address`, `networks.<name>.aliases`, legacy `links` on one explicit shared network, and MTU through `driver_opts.com.docker.network.driver.mtu`.
+- **apple/container path:** Direct `NetworkClient.create`, `NetworkConfiguration`, `NetworkClient.delete`, plus supported `container create/run --network` and explicit `--publish` flags where a direct adapter is not available yet. Target-only and host-bound Compose ports are allocated by the plugin before invoking apple/container. Single-network aliases and link aliases require the fork-backed `container --network name,alias=...` primitive until an equivalent surface is accepted upstream.
+- **container-compose status:** Supported for the listed single-network local subset on the fork-backed integration branch; released upstream support for aliases is pending `ISSUE-network-aliases.md` / `PR-network-aliases.md` or an equivalent apple/container primitive. Legacy `links` are supported when the linked services share exactly one explicit Compose network; implicit default-network links, multi-network links, projected link aliases that collide with another service alias, Docker-compatible shared aliases, and `external_links` remain runtime/DNS gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Default storage
@@ -308,8 +308,8 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:** `hostname`, `domainname`, `extra_hosts`, `links`, and `external_links`.
-- **Missing apple/container primitive:** Released upstream still needs accepted explicit host entries, host-gateway resolution, explicit hostname controls, domain-name controls, and legacy link/alias semantics. The local fork now exposes static and host-gateway host-entry injection through `ContainerConfiguration.HostEntry`, `container run/create --add-host`, and explicit hostnames through `container run/create --hostname`.
-- **container-compose status:** Static IP-literal and `host-gateway` `extra_hosts` entries are supported on the fork-backed integration branch and map to `--add-host`. Compose service `hostname` is supported on the fork-backed integration branch and maps to `--hostname`. `domainname`, `links`, and `external_links` still reject before resources are created.
+- **Missing apple/container primitive:** Released upstream still needs accepted explicit host entries, host-gateway resolution, explicit hostname controls, domain-name controls, source-scoped DNS links, shared aliases, and external-service link lookup. The local fork now exposes static and host-gateway host-entry injection through `ContainerConfiguration.HostEntry`, `container run/create --add-host`, explicit hostnames through `container run/create --hostname`, and single-network aliases through `container run/create --network name,alias=...`.
+- **container-compose status:** Static IP-literal and `host-gateway` `extra_hosts` entries are supported on the fork-backed integration branch and map to `--add-host`. Compose service `hostname` is supported on the fork-backed integration branch and maps to `--hostname`. Legacy `links` are supported for services that share exactly one explicit Compose network by using implicit dependency ordering and target-service aliases. `domainname`, `external_links`, implicit default-network links, multi-network links, and projected link aliases that collide with another service alias still reject before resources are created; full Docker-compatible shared aliases remain a runtime/DNS gap.
 - **Example:** [A2](#a2-apple-gap-host-identity-and-links).
 
 #### Namespace and resource controls
@@ -492,7 +492,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, file-backed service configs/secrets, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
 - <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [S2: Supported Provider Service](#s2-supported-provider-service): Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases on a multi-network service, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
-- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A2: Partial, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates fork-backed static host entries, `host-gateway`, and service hostname mapping plus remaining domain name and legacy link gaps.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A2: Partial, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates fork-backed static host entries, `host-gateway`, service hostname mapping, and explicit single-network `links` plus remaining domain name, `external_links`, and richer DNS gaps.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A4: Partial, Health, Config And Secret Stores, And Restart](#a4-partial-health-config-and-secret-stores-and-restart): Demonstrates explicit healthchecks, healthy dependency gates, deploy job modes, external configs/secrets, inline and environment-backed configs, environment-backed secrets, and restart policies. The explicit `healthcheck`, `service_healthy`, and `service_completed_successfully` gates in that example are supported on the fork-backed branch, but the file still rejects because of the remaining apple/container gaps.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
@@ -945,13 +945,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### A2: Apple Gap, Host Identity And Links
 
-Expected result: on the fork-backed integration branch, static IP-literal and `host-gateway` `extra_hosts` entries are accepted and mapped to `container run/create --add-host`, and service `hostname` is accepted and mapped to `container run/create --hostname`. This complete example still rejects because [`apple/container`][apple-container] needs domain-name controls and legacy link semantics.
+Expected result: on the fork-backed integration branch, static IP-literal and `host-gateway` `extra_hosts` entries are accepted and mapped to `container run/create --add-host`, service `hostname` is accepted and mapped to `container run/create --hostname`, and the explicit single-network `links` entry is mapped to a target-service alias plus implicit dependency ordering. This complete example still rejects because [`apple/container`][apple-container] needs domain-name controls.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes host identity, static host entries, `host-gateway`, and legacy link fields.
-- [`apple/container`][apple-container]: the local fork supports static and `host-gateway` host-entry injection through `ContainerConfiguration.HostEntry` and `--add-host`, plus explicit container hostnames through `--hostname`; released upstream still needs accepted host-entry, host-gateway, and hostname support, domain-name controls, and legacy link semantics.
-- `container-compose`: maps static IP-literal and `host-gateway` `extra_hosts` to `--add-host` and service `hostname` to `--hostname` on the fork-backed integration branch, then reports the remaining apple/container runtime gaps before resources are created.
+- [`apple/container`][apple-container]: the local fork supports static and `host-gateway` host-entry injection through `ContainerConfiguration.HostEntry` and `--add-host`, explicit container hostnames through `--hostname`, and single-network aliases through `--network name,alias=...`; released upstream still needs accepted host-entry, host-gateway, hostname, and alias support plus domain-name controls and richer DNS/link behavior.
+- `container-compose`: maps static IP-literal and `host-gateway` `extra_hosts` to `--add-host`, service `hostname` to `--hostname`, and explicit single-network `links` to dependency ordering plus target-service aliases on the fork-backed integration branch, then reports the remaining apple/container runtime gaps before resources are created.
 
 ```yaml
 # compose.yaml
@@ -969,10 +969,17 @@ services:
       - "host.docker.internal:host-gateway"
     links:
       - db:database
+    networks:
+      - backend
 
   db:
     build:
       context: ./db
+    networks:
+      - backend
+
+networks:
+  backend: {}
 ```
 
 Dockerfile: `api/Dockerfile`

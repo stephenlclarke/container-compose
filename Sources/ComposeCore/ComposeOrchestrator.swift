@@ -960,6 +960,19 @@ private struct ParsedVolumesFromReference {
     var rawValue: String
 }
 
+/// One Compose legacy link reference after validation.
+private struct ComposeLinkReference {
+    var serviceName: String
+    var alias: String
+}
+
+/// One legacy-link alias projected onto a target service attachment.
+private struct ComposeProjectedLinkAlias {
+    var serviceName: String
+    var network: String
+    var alias: String
+}
+
 /// External `volumes_from` container reference that needs runtime inspection.
 private struct ExternalVolumesFromReference {
     var serviceName: String
@@ -1038,13 +1051,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             )
             return
         }
-        var workingProject = project
-        let services = try up.noDeps && !up.services.isEmpty
+        let selectedServiceReferences = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
+        var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        let services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         let scaleOverrides = try parseScaleOverrides(project: project, scales: up.scales)
         let dependencyRecreateServices = try servicesToRecreateBecauseDependencies(
-            project: project,
+            project: workingProject,
             selected: up.services,
             noDeps: up.noDeps,
             alwaysRecreateDeps: up.alwaysRecreateDeps,
@@ -1052,17 +1071,17 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
         let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
-        try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
-        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: project, services: services)
+        try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
+        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
-        let attachedForegroundService = try foregroundServiceTarget(project: project, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
+        let attachedForegroundService = try foregroundServiceTarget(project: workingProject, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
         try validateAttachedPostStartSupport(target: attachedForegroundService)
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
         try await applyPullPolicy(
             up.pullPolicy,
-            project: project,
+            project: workingProject,
             services: services,
             quiet: up.quietPull,
             quietBuild: up.quietBuild,
@@ -1070,11 +1089,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
 
         if up.build {
-            try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
+            try await build(project: workingProject, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
         }
 
-        try await validateRuntimeHealthChecks(project: project, services: services, cache: imageHealthCheckCache)
-        try await ensureResources(project: project)
+        try await validateRuntimeHealthChecks(project: workingProject, services: services, cache: imageHealthCheckCache)
+        try await ensureResources(project: workingProject)
 
         var changedServices = Set<String>()
         for serviceReference in services {
@@ -1131,7 +1150,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 }
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
-                try await removeServiceReplicasAbove(project: project, service: service, desiredCount: replicaCount, timeout: up.timeout)
+                try await removeServiceReplicasAbove(project: workingProject, service: service, desiredCount: replicaCount, timeout: up.timeout)
             }
 
             if serviceChanged {
@@ -1139,7 +1158,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 continue
             }
             if shouldRestartAfterDependencyChange(service: service, changedServices: changedServices) {
-                let targets = try await serviceContainerTargets(project: project, services: [service])
+                let targets = try await serviceContainerTargets(project: workingProject, services: [service])
                 for target in targets {
                     try await restartContainer(service: service, containerName: target.name, timeout: up.timeout)
                 }
@@ -1150,10 +1169,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         if up.removeOrphans {
-            let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: scaleOverrides)
-            let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: scaleOverrides)
+            let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
+            let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
             try await removeRemainingProjectContainers(
-                project: project,
+                project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
                 timeout: up.timeout
@@ -1247,12 +1266,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     ) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
-        let services = try create.noDeps && !create.services.isEmpty
+        let selectedServiceReferences = try create.noDeps && !create.services.isEmpty
             ? selectedServices(project: project, selected: create.services)
             : orderedServices(project: project, selected: create.services)
+        let workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        let services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         let scaleOverrides = try parseScaleOverrides(project: project, scales: create.scales)
         let dependencyRecreateServices = try servicesToRecreateBecauseDependencies(
-            project: project,
+            project: workingProject,
             selected: create.services,
             noDeps: create.noDeps,
             alwaysRecreateDeps: alwaysRecreateDeps,
@@ -1260,16 +1286,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
         let validateDependencies = !(create.noDeps && !create.services.isEmpty)
         try validateCreatePullPolicy(create.pullPolicy)
-        try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
-        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: project, services: services)
+        try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
+        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
-        try await applyCreateImagePolicy(create, project: project, services: services)
-        try await validateRuntimeHealthChecks(project: project, services: services, cache: imageHealthCheckCache)
+        try await applyCreateImagePolicy(create, project: workingProject, services: services)
+        try await validateRuntimeHealthChecks(project: workingProject, services: services, cache: imageHealthCheckCache)
 
-        try await ensureResources(project: project)
+        try await ensureResources(project: workingProject)
 
         for service in services {
             if shouldBuildServiceForCreate(create, service: service) {
@@ -1280,9 +1306,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if replicaCount > 0 {
                 var priorReplicaRecreated = false
                 for replicaIndex in 1...replicaCount {
-                    let name = try serviceContainerName(project: project, service: service, index: replicaIndex)
+                    let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
                     let reconcileOutcome = try await reconcileServiceContainer(
-                        project: project,
+                        project: workingProject,
                         service: service,
                         request: ServiceContainerReconcileRequest(
                             name: name,
@@ -1306,15 +1332,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 }
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
-                try await removeServiceReplicasAbove(project: project, service: service, desiredCount: replicaCount, timeout: recreateTimeout)
+                try await removeServiceReplicasAbove(project: workingProject, service: service, desiredCount: replicaCount, timeout: recreateTimeout)
             }
         }
 
         if create.removeOrphans {
-            let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: scaleOverrides)
-            let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: scaleOverrides)
+            let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
+            let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
             try await removeRemainingProjectContainers(
-                project: project,
+                project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
                 timeout: recreateTimeout
@@ -1952,9 +1978,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validateRunLabelOverridesAgainstAnnotations(labelOverrides, service: service)
         try validatePullPolicy(run.pullPolicy)
-        let dependencyServices = try run.noDeps
+        let selectedDependencyServices = try run.noDeps
             ? []
             : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
+        var activeServiceNames = Set(selectedDependencyServices.map(\.name))
+        activeServiceNames.insert(serviceName)
+        runProject = try projectByApplyingLinks(project: runProject, activeServiceNames: activeServiceNames)
+        service = runProject.services[serviceName] ?? service
+        let dependencyServices = try selectedDependencyServices.map { service in
+            guard let activeService = runProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
         try validateOneOffRunLifecycleHooks(service: service, options: run)
         try validatePublishedPorts(services: dependencyServices)
@@ -2393,6 +2429,77 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Adds active legacy-link aliases to the target services they reference.
+    func projectByApplyingLinks(project: ComposeProject, activeServiceNames: Set<String>) throws -> ComposeProject {
+        var result = project
+        var projectedAliases: [ComposeProjectedLinkAlias] = []
+        for sourceName in activeServiceNames.sorted() {
+            guard let source = project.services[sourceName] else {
+                continue
+            }
+            for link in try serviceLinkReferences(service: source, project: project) where activeServiceNames.contains(link.serviceName) {
+                guard var target = result.services[link.serviceName] else {
+                    continue
+                }
+                let network = try linkNetwork(source: source, target: target, link: link)
+                var aliasesByNetwork = target.networkAliases ?? [:]
+                var aliases = aliasesByNetwork[network] ?? []
+                projectedAliases.append(ComposeProjectedLinkAlias(serviceName: target.name, network: network, alias: link.alias))
+                if !aliases.contains(link.alias) {
+                    aliases.append(link.alias)
+                }
+                aliasesByNetwork[network] = aliases
+                target.networkAliases = aliasesByNetwork
+                result.services[target.name] = target
+            }
+        }
+        try validateProjectedLinkAliases(
+            project: project,
+            aliases: projectedAliases,
+            activeServiceNames: activeServiceNames
+        )
+        return result
+    }
+
+    /// Returns the single explicit shared network a legacy link can use.
+    func linkNetwork(source: ComposeService, target: ComposeService, link: ComposeLinkReference) throws -> String {
+        let sourceNetworks = Set(source.networks ?? [])
+        let targetNetworks = Set(target.networks ?? [])
+        let sharedNetworks = sourceNetworks.intersection(targetNetworks).sorted()
+        guard sharedNetworks.count == 1 else {
+            throw ComposeError.unsupported("service '\(source.name)' links to '\(link.serviceName)'; links require both services to share exactly one explicit Compose network until apple/container exposes source-scoped DNS links")
+        }
+        return sharedNetworks[0]
+    }
+
+    /// Rejects projected link aliases the current apple/container DNS lookup cannot disambiguate.
+    func validateProjectedLinkAliases(
+        project: ComposeProject,
+        aliases projectedAliases: [ComposeProjectedLinkAlias],
+        activeServiceNames: Set<String>
+    ) throws {
+        var ownersByNetwork: [String: [String: String]] = [:]
+        for projectedAlias in projectedAliases {
+            if let existingOwner = ownersByNetwork[projectedAlias.network]?[projectedAlias.alias],
+               existingOwner != projectedAlias.serviceName {
+                throw ComposeError.unsupported("services '\(existingOwner)' and '\(projectedAlias.serviceName)' share network alias '\(projectedAlias.alias)' on network '\(projectedAlias.network)'; shared aliases need apple/container source-scoped DNS support")
+            }
+            ownersByNetwork[projectedAlias.network, default: [:]][projectedAlias.alias] = projectedAlias.serviceName
+
+            for serviceName in activeServiceNames.sorted() where serviceName != projectedAlias.serviceName {
+                guard let service = project.services[serviceName],
+                      service.networks?.count == 1,
+                      service.networks?.first == projectedAlias.network
+                else {
+                    continue
+                }
+                if try networkAliasValues(service: service, network: projectedAlias.network).contains(projectedAlias.alias) {
+                    throw ComposeError.unsupported("services '\(service.name)' and '\(projectedAlias.serviceName)' share network alias '\(projectedAlias.alias)' on network '\(projectedAlias.network)'; shared aliases need apple/container source-scoped DNS support")
+                }
+            }
+        }
+    }
+
     /// Returns services that are dependencies of explicitly selected services
     /// and should be recreated even when their config hash still matches.
     func servicesToRecreateBecauseDependencies(
@@ -2676,9 +2783,7 @@ private extension ComposeOrchestrator {
                 }
             }
         }
-        if let links = service.links, !links.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses links; legacy link support needs an apple/container runtime gap PR")
-        }
+        _ = try serviceLinkReferences(service: service, project: project)
         if let externalLinks = service.externalLinks, !externalLinks.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses external_links; legacy link support needs an apple/container runtime gap PR")
         }
@@ -6669,7 +6774,62 @@ private func serviceDependencies(
     for name in serviceVolumesFromDependencyNames(service) where dependencies[name] == nil {
         dependencies[name] = ComposeDependency(condition: "service_started")
     }
+    for name in serviceLinkDependencyNames(service) where dependencies[name] == nil {
+        dependencies[name] = ComposeDependency(condition: "service_started")
+    }
     return dependencies.sorted(by: { $0.key < $1.key })
+}
+
+/// Returns parsed legacy `links` references for validation and alias mapping.
+private func serviceLinkReferences(service: ComposeService, project: ComposeProject) throws -> [ComposeLinkReference] {
+    try (service.links ?? []).map { rawValue in
+        let reference = try serviceLinkReference(rawValue, service: service)
+        guard project.services[reference.serviceName] != nil else {
+            throw ComposeError.invalidProject("service '\(service.name)' links to unknown service '\(reference.serviceName)'")
+        }
+        return reference
+    }
+}
+
+/// Parses one Compose `links` entry of the form `SERVICE` or `SERVICE:ALIAS`.
+private func serviceLinkReference(_ rawValue: String, service: ComposeService) throws -> ComposeLinkReference {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' contains an empty link")
+    }
+
+    let parts = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+    let serviceName = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !serviceName.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' link '\(rawValue)' is missing a service name")
+    }
+
+    let rawAlias = parts.count == 2
+        ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        : serviceName
+    guard !rawAlias.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' link '\(rawValue)' is missing an alias")
+    }
+    guard let alias = canonicalRFC1123Hostname(rawAlias) else {
+        throw ComposeError.invalidProject("service '\(service.name)' link alias '\(rawAlias)' is not a valid RFC1123 hostname")
+    }
+    return ComposeLinkReference(serviceName: serviceName, alias: alias)
+}
+
+/// Returns service names referenced by legacy links for dependency ordering.
+private func serviceLinkDependencyNames(_ service: ComposeService) -> [String] {
+    (service.links ?? []).compactMap { rawValue in
+        let serviceName = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let serviceName, !serviceName.isEmpty else {
+            return nil
+        }
+        return serviceName
+    }
 }
 
 /// Returns service names referenced by `volumes_from`, ignoring external
