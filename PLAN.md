@@ -324,7 +324,16 @@ Reference targets:
       <td>2026-06-22 05:52:10 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now supports the safe local `links` subset where source and target services share exactly one explicit Compose network. Link targets are included as implicit `service_started` dependencies, `SERVICE:ALIAS` entries project the alias onto the linked target service, and `SERVICE` entries project the target service name as the alias. Invalid aliases, missing targets, missing explicit shared networks, and projected link aliases that collide with another active service alias are rejected before resources are created because current apple/container DNS lookup cannot model Docker's source-scoped or ambiguous shared-alias behavior yet. Handoff files are `ISSUE-links.md` and `PR-links.md` in this repository.</td>
+      <td colspan="4">Notes: `container-compose` now supports the safe local `links` subset where source and target services share exactly one Compose network, including the compose-go normalized implicit `default` network. Link targets are included as implicit `service_started` dependencies, `SERVICE:ALIAS` entries project the alias onto the linked target service, and `SERVICE` entries project the target service name as the alias. Invalid aliases, missing targets, missing shared networks, multi-network links, and projected link aliases that collide with another active service alias are rejected before resources are created because current apple/container DNS lookup cannot model Docker's source-scoped or ambiguous shared-alias behavior yet. Handoff files are `ISSUE-links.md` and `PR-links.md` in this repository.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add default-network `links` regression coverage</td>
+      <td>2026-06-22 06:27 BST</td>
+      <td>2026-06-22 06:27 BST</td>
+      <td>2026-06-22 06:27 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: compose-go normalizes undeclared service networks into a project-scoped `default` network, so the existing single-network link alias projection already covers Docker Compose's implicit default-network `links` behavior. Added regression coverage and corrected docs that previously described this as blocked. Handoff files are `ISSUE-links-default-network.md` and `PR-links-default-network.md` in this repository.</td>
     </tr>
   </tbody>
 </table>

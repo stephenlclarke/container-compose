@@ -2461,13 +2461,13 @@ private extension ComposeOrchestrator {
         return result
     }
 
-    /// Returns the single explicit shared network a legacy link can use.
+    /// Returns the single shared network a legacy link can use.
     func linkNetwork(source: ComposeService, target: ComposeService, link: ComposeLinkReference) throws -> String {
         let sourceNetworks = Set(source.networks ?? [])
         let targetNetworks = Set(target.networks ?? [])
         let sharedNetworks = sourceNetworks.intersection(targetNetworks).sorted()
         guard sharedNetworks.count == 1 else {
-            throw ComposeError.unsupported("service '\(source.name)' links to '\(link.serviceName)'; links require both services to share exactly one explicit Compose network until apple/container exposes source-scoped DNS links")
+            throw ComposeError.unsupported("service '\(source.name)' links to '\(link.serviceName)'; links require both services to share exactly one Compose network until apple/container exposes source-scoped DNS links")
         }
         return sharedNetworks[0]
     }

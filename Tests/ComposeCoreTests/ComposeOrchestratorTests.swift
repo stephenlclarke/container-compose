@@ -3465,6 +3465,39 @@ struct ComposeOrchestratorTests {
         #expect(commands[0].containsSequence(["--network", "demo_backend,alias=redis"]))
     }
 
+    @Test("up maps links on the normalized default network")
+    func upMapsLinksOnNormalizedDefaultNetwork() async throws {
+        let runner = RecordingRunner(responses: [.success, .success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "redis": composeService(name: "redis", image: "redis:7") {
+                    $0.networks = ["default"]
+                },
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.links = ["redis:cache"]
+                    $0.networks = ["default"]
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "demo_default")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+            })
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-redis-1"]))
+        #expect(commands[0].containsSequence(["--network", "demo_default,alias=cache"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[1].containsSequence(["--network", "demo_default"]))
+    }
+
     @Test("up rejects invalid link aliases before creating resources")
     func upRejectsInvalidLinkAliasesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -3495,8 +3528,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects links without one explicit shared network")
-    func upRejectsLinksWithoutOneExplicitSharedNetwork() async throws {
+    @Test("up rejects links without one shared network")
+    func upRejectsLinksWithoutOneSharedNetwork() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -3514,7 +3547,7 @@ struct ComposeOrchestratorTests {
             })
             Issue.record("Expected unsupported links error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' links to 'redis'; links require both services to share exactly one explicit Compose network until apple/container exposes source-scoped DNS links"))
+            #expect(error == .unsupported("service 'api' links to 'redis'; links require both services to share exactly one Compose network until apple/container exposes source-scoped DNS links"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

@@ -1,6 +1,6 @@
 # Mission Control
 
-Last updated: 2026-06-22 06:15 BST.
+Last updated: 2026-06-22 06:27 BST.
 
 This file is the first stop before starting a `container-compose` capability slice. It keeps the runtime fork, upstream `apple/container` work, Docker Compose target behavior, and plugin branch state in one place so the active plan is not held in memory.
 
@@ -48,7 +48,7 @@ Complete Docker Compose v2 local-development behavior where `apple/container` ca
 26. The hostname runtime/plugin slab adds fork-side `container run/create -h, --hostname`, preserves existing default hostname derivation, and maps Compose service `hostname` to the runtime. Its handoff files are `ISSUE-hostname.md` and `PR-hostname.md` in the container fork, plus `ISSUE-service-hostname.md` and `PR-service-hostname.md` in this repository.
 27. The host-gateway runtime/plugin slab adds fork-side `container run/create --add-host host:host-gateway` resolution to the first network IPv4 gateway and maps Compose `extra_hosts` `host-gateway` entries to that runtime primitive. Its handoff files are `ISSUE-host-gateway.md` and `PR-host-gateway.md` in both repositories.
 28. The network-alias runtime/plugin slab adds fork-side `AttachmentOptions.aliases` plus `container run/create --network name,alias=...`, then maps Compose `services.*.networks.*.aliases` for the current single-network subset. Its handoff files are `ISSUE-network-aliases.md` and `PR-network-aliases.md` in both repositories.
-29. The legacy-links plugin slab maps Compose `links` to implicit dependency ordering plus target-service aliases for services that share exactly one explicit Compose network. Its handoff files are `ISSUE-links.md` and `PR-links.md` in this repository.
+29. The legacy-links plugin slab maps Compose `links` to implicit dependency ordering plus target-service aliases for services that share exactly one Compose network, including the compose-go normalized implicit `default` network. Its handoff files are `ISSUE-links.md` and `PR-links.md` in this repository.
 30. The domainname runtime/plugin slab adds fork-side `ContainerConfiguration.domainname`, `container run/create --domainname`, runtime `kernel.domainname` mapping, and Compose service `domainname` translation. Its handoff files are `ISSUE-domainname.md` and `PR-domainname.md` in the container fork, plus `ISSUE-service-domainname.md` and `PR-service-domainname.md` in this repository.
 
 ## Docker/Compose Reference Targets
@@ -127,7 +127,7 @@ Completed locally:
 
 Next:
 
-- Continue the lifecycle/network topic with remaining job-mode, external config/secret-store, `external_links`, implicit default-network service discovery, multi-network DNS/alias behavior, and shared alias gaps, or move to the next highest-value Compose surface that has matching fork/runtime primitives.
+- Continue the lifecycle/network topic with remaining job-mode, external config/secret-store, `external_links`, multi-network DNS/alias behavior, and shared alias gaps, or move to the next highest-value Compose surface that has matching fork/runtime primitives.
 - Keep Dockerfile-inherited healthchecks marked fork-backed until equivalent image config parsing and `ImageResource` metadata are accepted upstream.
 - Keep the log comparison fixtures as a parallel backlog item, but do not switch away from the lifecycle topic until health/restart are implemented or blocked.
 
@@ -149,7 +149,7 @@ Next:
 - `apple/container` still needs accepted explicit hostname and domain-name support before released `container-compose` branches can rely on Compose `hostname` or `domainname` without depending on the fork.
 - `apple/container` still needs accepted network attachment alias support before released `container-compose` branches can rely on single-network Compose aliases without depending on the fork.
 - `apple/container` still needs multi-network attach/connect and source-network-aware DNS before released `container-compose` can support aliases on multi-network services, Docker-compatible shared alias resolution, or full legacy-link behavior.
-- `apple/container` still needs accepted source-scoped DNS and default service-name alias behavior before released `container-compose` can support implicit-default-network links and Docker-compatible shared aliases without depending on explicit single-network alias projection.
+- `apple/container` still needs accepted source-scoped DNS and default service-name alias behavior before released `container-compose` can support Docker-compatible multi-network links and shared aliases without depending on single-network alias projection.
 
 ## Checkpoint Format
 
