@@ -80,6 +80,57 @@ Existing PRs and branches to leverage:
 - <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11): the fork-side precursor to #1592. Continue comparing API names and behavior so the two Compose efforts converge rather than fork the log contract.
 - <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`apple/container#1736`](https://github.com/apple/container/pull/1736): peer Compose implementation. Use it for examples, test ideas, and CLI expectation comparison only; do not move Compose-specific policy into apple/container runtime PRs.
 
+## Adjacent Slab: Pause/Unpause Lifecycle Controls
+
+This slab tracks the runtime lifecycle primitive needed by Docker Compose v2 `pause` and `unpause`.
+
+Reference targets:
+
+- Docker Compose CLI `pause`: [`docker compose pause`](https://docs.docker.com/reference/cli/docker/compose/pause/)
+- Docker Compose CLI `unpause`: [`docker compose unpause`](https://docs.docker.com/reference/cli/docker/compose/unpause/)
+- Docker container CLI `pause`: [`docker container pause`](https://docs.docker.com/reference/cli/docker/container/pause/)
+- Docker container CLI `unpause`: [`docker container unpause`](https://docs.docker.com/reference/cli/docker/container/unpause/)
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Expose pause/resume in the containerization fork</td>
+      <td>2026-06-22 08:12:00 BST</td>
+      <td>2026-06-22 08:12:00 BST</td>
+      <td>2026-06-22 08:22:00 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: [`stephenlclarke/containerization`](https://github.com/stephenlclarke/containerization) branch `integration/blkio-runtime` now exposes `LinuxContainer.pause()` and `LinuxContainer.resume()` as commit `e172174` (`feat(runtime): add linux container pause controls`). The implementation bridges existing VM pause/resume hooks and validates state transitions with focused `LinuxContainerTests`.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Add pause/unpause lifecycle APIs to the container fork</td>
+      <td>2026-06-22 08:12:00 BST</td>
+      <td>2026-06-22 08:22:00 BST</td>
+      <td>2026-06-22 08:30:02 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: [`stephenlclarke/container`](https://github.com/stephenlclarke/container) branch `logs-integration-chris` now exposes `RuntimeStatus.paused`, runtime pause/resume routes, `ContainerClient.pause(id:)`, `ContainerClient.unpause(id:)`, and `container pause` / `container unpause` as signed commit `61a11f4` (`feat(runtime): add container pause controls`). Handoff files are `ISSUE-pause-unpause.md` and `PR-pause-unpause.md` in the container fork. Released upstream apple/container remains blocked until these surfaces are accepted.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Map Compose pause/unpause to direct lifecycle APIs</td>
+      <td>2026-06-22 08:34:54 BST</td>
+      <td>2026-06-22 08:34:54 BST</td>
+      <td>2026-06-22 08:34:54 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now routes `container compose pause [SERVICE...]` and `container compose unpause [SERVICE...]` through `ContainerClientLifecycleManager`, preserving Compose service selection, replicas, custom `container_name`, and dry-run rendering. This support is fork-backed until the matching apple/container and apple/containerization primitives are accepted upstream.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Adjacent Slab: Exit Metadata And Completed Dependencies
 
 This slab tracks the first non-log lifecycle capability needed by real Compose projects: `depends_on.condition: service_completed_successfully` and stopped-container `wait` replay. It intentionally reuses existing upstream work rather than inventing a new runtime contract.

@@ -2238,6 +2238,32 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Pauses selected service containers.
+    public func pause(project: ComposeProject, services selected: [String]) async throws {
+        let services = try selectedServices(project: project, selected: selected)
+        for target in try await serviceContainerTargets(project: project, services: services) {
+            let containerID = target.name
+            if options.dryRun {
+                try await runContainer(["pause", containerID], check: false)
+                continue
+            }
+            try await lifecycleManager.pauseContainer(id: containerID)
+        }
+    }
+
+    /// Resumes selected paused service containers.
+    public func unpause(project: ComposeProject, services selected: [String]) async throws {
+        let services = try selectedServices(project: project, selected: selected)
+        for target in try await serviceContainerTargets(project: project, services: services) {
+            let containerID = target.name
+            if options.dryRun {
+                try await runContainer(["unpause", containerID], check: false)
+                continue
+            }
+            try await lifecycleManager.unpauseContainer(id: containerID)
+        }
+    }
+
     /// Waits for selected service containers to exit and prints their exit codes.
     public func wait(project: ComposeProject, options wait: ComposeWaitOptions = ComposeWaitOptions()) async throws {
         let services = try selectedServices(project: project, selected: wait.services)

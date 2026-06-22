@@ -384,13 +384,13 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 - **container-compose status:** `blkio_config.weight`, `weight_device`, `device_read_bps`, `device_write_bps`, `device_read_iops`, and `device_write_iops` are preserved through compose-go normalization and rendered as repeatable `container run/create --blkio` arguments matching [apple/container#1595](https://github.com/apple/container/pull/1595). `use_api_socket` is still rejected before resources are created. Branches pinned to released upstream apple/container must keep treating `blkio_config` as runtime-gated until #1595 and the required `containerization` blockIO API are available.
 - **Example:** [A13](#a13-apple-gap-api-socket-and-block-io).
 
-#### Runtime data commands
+#### Runtime data and lifecycle control commands
 
-- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
-- **Compose surface:** `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
-- **Missing apple/container primitive:** Process listing, event stream, pause/unpause, stored process exit codes after container stop, and copy archive/follow-link controls.
-- **container-compose status:** Rejected before resources are created.
-- **Example:** [A5](#a5-apple-gap-runtime-data-commands).
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
+- **Compose surface:** `top`, `events`, fork-backed `pause`, fork-backed `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
+- **Missing apple/container primitive:** Process listing, event stream, upstream-accepted pause/unpause lifecycle controls, stored process exit codes after container stop, and copy archive/follow-link controls.
+- **container-compose status:** On the local integration stack, `pause` and `unpause` use direct `ContainerClient.pause(id:)` and `ContainerClient.unpause(id:)` calls from [`stephenlclarke/container` `logs-integration-chris`](https://github.com/stephenlclarke/container/tree/logs-integration-chris), backed by [`stephenlclarke/containerization` `integration/blkio-runtime`](https://github.com/stephenlclarke/containerization/tree/integration/blkio-runtime). Branches pinned to released upstream apple/container must still treat `pause` and `unpause` as runtime-gated until those primitives are accepted upstream. `top`, `events`, `cp --archive`, and `cp --follow-link` still reject before resources are created; stopped-container `wait` replay is fork-backed where exit metadata is available.
+- **Example:** [A5](#a5-partial-runtime-data-commands).
 
 #### Interactive init-process attach and foreground hook boundaries
 
@@ -451,7 +451,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 
 - Config and project: `config`, `convert`, and `ls`.
-- Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, and `wait` for running, stopping, or fork-backed stopped containers with stored exit metadata.
+- Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, fork-backed `pause`, fork-backed `unpause`, and `wait` for running, stopping, or fork-backed stopped containers with stored exit metadata.
 - Build and image: `build`, `pull`, `push`, `images`, and `down --rmi`.
 - Interaction: `ps`, `logs`, output-only `attach --no-stdin --sig-proxy=false`, `exec`, `cp`, `export`, published-port `port`, `stats`, `stats --no-trunc`, and `version`.
 - Develop: `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, and `watch --quiet`.
@@ -462,7 +462,7 @@ Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?
 
 Status: <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 
-- `top`, `events`, `pause`, and `unpause`.
+- `top` and `events`.
 - Already-stopped `wait` exit-code replay.
 - `cp --archive` and `cp --follow-link`.
 - Default interactive `attach`, including stdin forwarding, signal proxying, and detach-key handling.
@@ -495,7 +495,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A2: Partial, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates fork-backed static host entries, `host-gateway`, service hostname/domainname mapping, explicit single-network `links`, and the single-shared-runtime-network `external_links` subset plus remaining richer DNS gaps.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A4: Partial, Health, Config And Secret Stores, And Restart](#a4-partial-health-config-and-secret-stores-and-restart): Demonstrates explicit healthchecks, healthy dependency gates, deploy job modes, external configs/secrets, inline and environment-backed configs, environment-backed secrets, and restart policies. The explicit `healthcheck`, `service_healthy`, and `service_completed_successfully` gates in that example are supported on the fork-backed branch, but the file still rejects because of the remaining apple/container gaps.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A5: Partial Runtime Data Commands](#a5-partial-runtime-data-commands): Demonstrates fork-backed pause/unpause, process listing and event stream gaps, fork-backed stopped-container exit-code replay, and copy archive/follow-link controls.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
@@ -1149,15 +1149,15 @@ FROM alpine:3.20
 CMD ["sh", "-c", "printf 'done\n'"]
 ```
 
-### A5: Apple Gap, Runtime Data Commands
+### A5: Partial Runtime Data Commands
 
-Expected result: these commands and options reject because [`apple/container`][apple-container] needs richer runtime data and state controls. `container compose port` supports published bindings from runtime container snapshots, including explicit ranges, dynamically allocated ports after container creation, and indexed existing service containers. Plain service-aware `container compose cp` is supported, but `cp --archive` and `cp --follow-link` reject until [`apple/container`][apple-container] exposes copy archive and symlink-follow controls. `container compose wait` and `container compose wait --down-project` can wait for running or stopping service containers, but replaying exit codes for containers that were already stopped before the command starts still needs stored exit-code metadata from [`apple/container`][apple-container].
+Expected result: `container compose pause` and `container compose unpause` work on the local fork-backed integration stack by calling direct apple/container lifecycle APIs. Branches pinned to released upstream [`apple/container`][apple-container] must keep treating those commands as runtime-gated until pause/unpause primitives are accepted upstream. `container compose top`, `container compose events`, `cp --archive`, and `cp --follow-link` still reject because [`apple/container`][apple-container] needs richer runtime data and state controls. `container compose port` supports published bindings from runtime container snapshots, including explicit ranges, dynamically allocated ports after container creation, and indexed existing service containers. Plain service-aware `container compose cp` is supported, but `cp --archive` and `cp --follow-link` reject until [`apple/container`][apple-container] exposes copy archive and symlink-follow controls. `container compose wait` and `container compose wait --down-project` can wait for running or stopping service containers, and stopped-container replay is supported on fork-backed branches with stored exit metadata.
 
 Status path:
 
 - Docker Compose v2: supports these commands.
-- [`apple/container`][apple-container]: missing process listing, event streaming, pause/unpause, stored exit-code metadata for already-stopped containers, and copy archive/follow-link controls.
-- `container-compose`: exposes the command names, resolves published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports plugin-side dynamic host-port allocation, including `host_ip` bindings, before calling apple/container with explicit publish bindings, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `wait` and `wait --down-project` for running/stopping service containers, and reports the apple/container runtime gap for requests that need unavailable runtime state.
+- [`apple/container`][apple-container]: released upstream still misses process listing, event streaming, pause/unpause, stored exit-code metadata for already-stopped containers, and copy archive/follow-link controls. The local `stephenlclarke/container` integration branch exposes direct pause/unpause and stored exit metadata.
+- `container-compose`: exposes the command names, maps `pause` and `unpause` to direct lifecycle APIs on fork-backed branches, resolves published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports plugin-side dynamic host-port allocation, including `host_ip` bindings, before calling apple/container with explicit publish bindings, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `wait` and `wait --down-project` for running/stopping service containers and fork-backed stopped containers with exit metadata, and reports the apple/container runtime gap for requests that need unavailable runtime state.
 
 ```yaml
 # compose.yaml

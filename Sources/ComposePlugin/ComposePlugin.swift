@@ -1000,25 +1000,29 @@ struct Volumes: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose pause` until apple/container exposes pause.
+/// Implements `compose pause`.
 struct Pause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "pause", abstract: "Pause service containers.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for pausing containers.
-    func run() throws {
-        try global.orchestrator().unsupported("pause", reason: "apple/container does not expose pause yet")
+    @Argument(help: "Service names.")
+    var services: [String] = []
+    /// Pauses selected service containers.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().pause(project: loadedProject, services: services)
     }
 }
 
-/// Placeholder for `compose unpause` until apple/container exposes unpause.
+/// Implements `compose unpause`.
 struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "unpause", abstract: "Unpause service containers.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for unpausing containers.
-    func run() throws {
-        try global.orchestrator().unsupported("unpause", reason: "apple/container does not expose unpause yet")
+    @Argument(help: "Service names.")
+    var services: [String] = []
+    /// Resumes selected paused service containers.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().unpause(project: loadedProject, services: services)
     }
 }
 

@@ -8238,6 +8238,84 @@ struct ComposeOrchestratorTests {
         #expect(await dryRunLifecycleManager.requests.isEmpty)
     }
 
+    @Test("pause and unpause use direct runtime API")
+    func pauseAndUnpauseUseDirectRuntimeAPI() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "false",
+            ]),
+            ComposeContainerSummary(id: "demo-api-2", status: "running", labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "false",
+            ]),
+            ComposeContainerSummary(id: "custom-worker", status: "paused", labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "worker",
+                composeOneOffLabel: "false",
+            ]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.scale = 2
+                },
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.containerName = "custom-worker"
+                },
+            ]
+        )
+
+        try await orchestrator.pause(project: project, services: ["api"])
+        try await orchestrator.unpause(project: project, services: ["worker"])
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .pause(id: "demo-api-1"),
+            .pause(id: "demo-api-2"),
+            .unpause(id: "custom-worker"),
+        ])
+    }
+
+    @Test("pause and unpause dry run emit runtime commands")
+    func pauseAndUnpauseDryRunEmitRuntimeCommands() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            lifecycleManager: lifecycleManager
+        )
+
+        try await orchestrator.pause(project: project, services: ["api"])
+        try await orchestrator.unpause(project: project, services: ["api"])
+
+        #expect(emitted.messages == [
+            "+ container pause demo-api-1",
+            "+ container unpause demo-api-1",
+        ])
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
     @Test("kill uses direct runtime API with default and explicit signals")
     func killUsesDirectRuntimeAPIWithDefaultAndExplicitSignals() async throws {
         let runner = RecordingRunner()
@@ -8644,6 +8722,8 @@ struct ComposeOrchestratorTests {
         try await manager.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await manager.stopContainer(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12)
         try await manager.stopContainer(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)
+        try await manager.pauseContainer(id: "demo-api-1")
+        try await manager.unpauseContainer(id: "demo-api-1")
         let exitCode = try await manager.waitContainer(id: "demo-api-1")
         try await manager.deleteContainer(id: "demo-api-1", force: true)
 
@@ -8653,6 +8733,8 @@ struct ComposeOrchestratorTests {
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 12),
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: 5),
+            .pause(id: "demo-api-1"),
+            .unpause(id: "demo-api-1"),
             .wait(id: "demo-api-1"),
             .delete(id: "demo-api-1", force: true),
         ])
@@ -8697,6 +8779,12 @@ struct ComposeOrchestratorTests {
             stop: { id, options in
                 try await recorder.stopContainer(id: id, options: options)
             },
+            pause: { id in
+                try await recorder.pauseContainer(id: id)
+            },
+            unpause: { id in
+                try await recorder.unpauseContainer(id: id)
+            },
             wait: { id in
                 try await recorder.waitContainer(id: id)
             },
@@ -8709,6 +8797,8 @@ struct ComposeOrchestratorTests {
         try await client.startContainer(id: "demo-api-1")
         try await client.killContainer(id: "demo-api-1", signal: "SIGTERM")
         try await client.stopContainer(id: "demo-api-1", options: stopOptions)
+        try await client.pauseContainer(id: "demo-api-1")
+        try await client.unpauseContainer(id: "demo-api-1")
         _ = try await client.waitContainer(id: "demo-api-1")
         try await client.deleteContainer(id: "demo-api-1", force: false)
 
@@ -8716,6 +8806,8 @@ struct ComposeOrchestratorTests {
             .start(id: "demo-api-1"),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
             .stop(id: "demo-api-1", signal: "SIGQUIT", timeoutInSeconds: 15),
+            .pause(id: "demo-api-1"),
+            .unpause(id: "demo-api-1"),
             .wait(id: "demo-api-1"),
             .delete(id: "demo-api-1", force: false),
         ])
@@ -16859,6 +16951,8 @@ private enum ContainerLifecycleRequest: Equatable {
     case start(id: String)
     case kill(id: String, signal: String)
     case stop(id: String, signal: String?, timeoutInSeconds: Int?)
+    case pause(id: String)
+    case unpause(id: String)
     case wait(id: String)
     case delete(id: String, force: Bool)
 }
@@ -17040,6 +17134,14 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
         if let stopError {
             throw stopError
         }
+    }
+
+    func pauseContainer(id: String) async throws {
+        storage.append(.pause(id: id))
+    }
+
+    func unpauseContainer(id: String) async throws {
+        storage.append(.unpause(id: id))
     }
 
     func waitContainer(id: String) async throws -> Int32 {
@@ -17991,6 +18093,14 @@ private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienti
             signal: options.signal,
             timeoutInSeconds: Int(options.timeoutInSeconds)
         ))
+    }
+
+    func pauseContainer(id: String) async throws {
+        storage.append(.pause(id: id))
+    }
+
+    func unpauseContainer(id: String) async throws {
+        storage.append(.unpause(id: id))
     }
 
     func waitContainer(id: String) async throws -> Int32 {
