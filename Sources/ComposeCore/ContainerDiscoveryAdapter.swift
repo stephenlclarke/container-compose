@@ -44,6 +44,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     public var mounts: [ComposeMount]
     public var exitCode: Int32?
     public var exitedDate: Date?
+    public var health: String?
 
     public init(
         id: String,
@@ -53,7 +54,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         publishedPorts: [ComposeContainerPublishedPort] = [],
         mounts: [ComposeMount] = [],
         exitCode: Int32? = nil,
-        exitedDate: Date? = nil
+        exitedDate: Date? = nil,
+        health: String? = nil
     ) {
         self.id = id
         self.status = status
@@ -65,6 +67,7 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         self.mounts = mounts
         self.exitCode = exitCode
         self.exitedDate = exitedDate
+        self.health = health
     }
 }
 
@@ -186,7 +189,8 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
             },
             mounts: snapshot.configuration.mounts.map(Self.mount(from:)),
             exitCode: snapshot.exitCode,
-            exitedDate: snapshot.exitedDate
+            exitedDate: snapshot.exitedDate,
+            health: snapshot.health?.rawValue
         )
     }
 

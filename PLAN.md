@@ -127,13 +127,31 @@ Reference targets:
       <td colspan="4">Notes: `up` and one-off `run` now wait for completed dependencies before starting dependents. A dependency passes when every target container either has stored `exitCode == 0` or returns `0` from the direct runtime wait API; non-zero dependency exits fail before the dependent starts. `container compose wait` now replays stored exit codes for already-stopped service containers on the fork-backed runtime. Upstream release support remains pending acceptance of #1562 or an equivalent exit-metadata API.</td>
     </tr>
     <tr>
-      <td><img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Implement health and restart lifecycle primitives</td>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add health status, healthcheck configuration, and health observation to the container fork</td>
       <td>2026-06-22 01:07:02 BST</td>
+      <td>2026-06-22 01:07:02 BST</td>
+      <td>2026-06-22 01:48:48 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: aligned the fork with [`apple/container#1502`](https://github.com/apple/container/issues/1502) and [`apple/container#1504`](https://github.com/apple/container/pull/1504), then added separate health configuration and observer handoffs so `ContainerSnapshot.health` is populated from a configured runtime probe. The CLI handoff `ISSUE-healthcheck-cli.md` / `PR-healthcheck-cli.md` adds Docker-style `container run/create --health-*` flags without moving Compose dependency logic into `apple/container`. This is fork-supported and upstream-pending, not released upstream support.</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map explicit Compose healthchecks and `service_healthy` in container-compose</td>
+      <td>2026-06-22 01:07:02 BST</td>
+      <td>2026-06-22 01:07:02 BST</td>
+      <td>2026-06-22 01:48:48 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `container-compose` now maps explicit service `healthcheck.test`, `interval`, `timeout`, `start_period`, `start_interval`, `retries`, `disable: true`, and `test: ["NONE"]` to the forked runtime creation flags. `depends_on.condition: service_healthy` waits for all dependency replicas to report `healthy`, continues polling while they are `starting`, fails on `unhealthy`, and rejects missing health status clearly. Dockerfile-inherited healthchecks remain an upstream image-config parsing gap because `apple/container` does not yet expose image `HEALTHCHECK` metadata through the runtime model.</td>
+    </tr>
+    <tr>
+      <td><img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Implement restart lifecycle primitives</td>
+      <td>2026-06-22 01:48:48 BST</td>
       <td></td>
       <td></td>
     </tr>
     <tr>
-      <td colspan="4">Notes: next lifecycle work should stay in this topic until either implemented or blocked. Health status should align with [`apple/container#1502`](https://github.com/apple/container/issues/1502) and [`apple/container#1504`](https://github.com/apple/container/pull/1504) before enabling `depends_on.condition: service_healthy`. Restart policy work should compare [`apple/container#286`](https://github.com/apple/container/issues/286) and [`apple/container#1258`](https://github.com/apple/container/pull/1258) before mapping Compose `restart` and `deploy.restart_policy`.</td>
+      <td colspan="4">Notes: next lifecycle work should stay in this topic until either implemented or blocked. Restart policy work should compare [`apple/container#286`](https://github.com/apple/container/issues/286) and [`apple/container#1258`](https://github.com/apple/container/pull/1258) before mapping Compose service `restart` and `deploy.restart_policy`.</td>
     </tr>
   </tbody>
 </table>

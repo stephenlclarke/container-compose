@@ -1008,6 +1008,99 @@ struct ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
+    @Test("up waits for healthy dependencies before starting dependents")
+    func upWaitsForHealthyDependenciesBeforeStartingDependents() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-db-1": [
+                nil,
+                ComposeContainerSummary(id: "demo-db-1", status: "running", health: "starting"),
+                ComposeContainerSummary(id: "demo-db-1", status: "running", health: "healthy"),
+            ],
+            "demo-api-1": [nil],
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "db": ComposeService(name: "db", image: "postgres:16"),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_healthy")]
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            dependencies: dependencies
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.services = ["api"]
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-db-1", "demo-db-1", "demo-api-1"])
+    }
+
+    @Test("up rejects unhealthy dependencies before starting dependents")
+    func upRejectsUnhealthyDependenciesBeforeStartingDependents() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-db-1": [
+                nil,
+                ComposeContainerSummary(id: "demo-db-1", status: "running", health: "unhealthy"),
+            ],
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "db": ComposeService(name: "db", image: "postgres:16"),
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_healthy")]
+                },
+            ]
+        )
+        let dependencies = orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+        }
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions(sleep: { _ in }),
+                dependencies: dependencies
+            ).up(
+                project: project,
+                options: ComposeUpOptions {
+                    $0.services = ["api"]
+                }
+            )
+            Issue.record("Expected unhealthy dependency to stop dependent startup")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' dependency 'db' container 'demo-db-1' is unhealthy"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-db-1"])
+    }
+
     @Test("up rejects failed service-completed dependencies before starting dependents")
     func upRejectsFailedServiceCompletedDependenciesBeforeStartingDependents() async throws {
         let runner = RecordingRunner(responses: [
@@ -3047,10 +3140,6 @@ struct ComposeOrchestratorTests {
     func rejectsUnsupportedDependencyConditions() async throws {
         let cases = [
             (
-                condition: "service_healthy",
-                reason: "health status support needs an apple/container runtime gap PR"
-            ),
-            (
                 condition: "custom_condition",
                 reason: "dependency condition support needs an apple/container runtime gap PR"
             ),
@@ -3205,9 +3294,17 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("rejects unsupported conditions on present optional dependencies")
-    func rejectsUnsupportedConditionsOnPresentOptionalDependencies() async throws {
-        let runner = RecordingRunner()
+    @Test("rejects missing health status on present optional dependencies")
+    func rejectsMissingHealthStatusOnPresentOptionalDependencies() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-job-1": [
+                nil,
+                ComposeContainerSummary(id: "demo-job-1", status: "running"),
+            ],
+        ])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -3219,18 +3316,20 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await ComposeOrchestrator(runner: runner)
+            try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
                 .up(project: project, options: ComposeUpOptions {
                     $0.services = ["api"]
                 })
-            Issue.record("Expected unsupported dependency condition")
+            Issue.record("Expected missing health status")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' depends on 'job' with condition 'service_healthy'; health status support needs an apple/container runtime gap PR"))
+            #expect(error == .unsupported("service 'api' dependency 'job' container 'demo-job-1' has no health status"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
-        #expect(runner.commands.isEmpty)
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-job-1"]))
     }
 
     @Test("up rejects unsupported links before creating resources")
@@ -4809,9 +4908,11 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects unsupported healthchecks before creating resources")
-    func upRejectsUnsupportedHealthchecksBeforeCreatingResources() async throws {
+    @Test("up maps disabled healthchecks to container flags")
+    func upMapsDisabledHealthchecksToContainerFlags() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -4826,16 +4927,16 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported healthcheck error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses healthcheck; health status support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(command.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(command.contains("--no-healthcheck"))
     }
 
     @Test("up maps file-backed configs and secrets to read-only bind mounts")
@@ -7636,7 +7737,8 @@ struct ComposeOrchestratorTests {
                     Filesystem.volume(name: "legacy_data", format: "ext4", source: "/tmp/legacy-data", destination: "/data", options: ["ro"]),
                     Filesystem.virtiofs(source: "/tmp/seed", destination: "/seed", options: []),
                     Filesystem.tmpfs(destination: "/scratch", options: ["ro"]),
-                ]
+                ],
+                health: .healthy
             ),
             containerSnapshot(
                 id: "demo-worker-1",
@@ -7684,7 +7786,8 @@ struct ComposeOrchestratorTests {
                 ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", readOnly: true),
                 ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed"),
                 ComposeMount(type: "tmpfs", target: "/scratch", readOnly: true),
-            ]
+            ],
+            health: "healthy"
         ))
         #expect(all.map(\.status) == ["running", "stopped"])
         #expect(worker?.id == "demo-worker-1")
@@ -12122,6 +12225,45 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-db-1"])
     }
 
+    @Test("run waits for healthy dependencies before one-off container")
+    func runWaitsForHealthyDependenciesBeforeOneOffContainer() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(getResponses: [
+            "demo-db-1": [
+                nil,
+                ComposeContainerSummary(id: "demo-db-1", status: "running", health: "starting"),
+                ComposeContainerSummary(id: "demo-db-1", status: "running", health: "healthy"),
+            ],
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_healthy")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+            }
+        ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]))
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 2)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(commands[1].starts(with: ["container", "run", "--name"]))
+        #expect(commands[1][3].hasPrefix("demo-job-run-"))
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-db-1", "demo-db-1"])
+    }
+
     @Test("run starts provider dependencies and injects setenv into one-off service")
     func runStartsProviderDependenciesAndInjectsSetenvIntoOneOffService() async throws {
         let provider = try temporaryExecutable(name: "example-provider")
@@ -13289,14 +13431,23 @@ struct ComposeOrchestratorTests {
         #expect(Array(commands[0].suffix(2)) == ["alpine", "true"])
     }
 
-    @Test("run rejects unsupported healthchecks before creating resources")
-    func runRejectsUnsupportedHealthchecksBeforeCreatingResources() async throws {
+    @Test("run maps healthchecks to container flags")
+    func runMapsHealthchecksToContainerFlags() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.healthcheck = .object(["disable": .bool(true)])
+                    $0.healthcheck = .object([
+                        "interval": .string("5s"),
+                        "retries": .number(2),
+                        "start_interval": .string("500ms"),
+                        "start_period": .string("1m30s"),
+                        "test": .array([.string("CMD-SHELL"), .string("test -f /tmp/ready")]),
+                        "timeout": .string("250ms"),
+                    ])
                     $0.networks = ["backend"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -13306,16 +13457,20 @@ struct ComposeOrchestratorTests {
             $0.volumes = ["cache": ComposeVolume(name: "cache")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported healthcheck error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses healthcheck; health status support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(command.containsSequence(["--health-cmd", "test -f /tmp/ready"]))
+        #expect(command.containsSequence(["--health-interval", "5s"]))
+        #expect(command.containsSequence(["--health-retries", "2"]))
+        #expect(command.containsSequence(["--health-start-interval", "500ms"]))
+        #expect(command.containsSequence(["--health-start-period", "1m30s"]))
+        #expect(command.containsSequence(["--health-timeout", "250ms"]))
     }
 
     @Test("run maps file-backed configs and secrets to read-only bind mounts")
@@ -15279,7 +15434,8 @@ private func containerSnapshot(
     publishedPorts: [PublishPort] = [],
     mounts: [Filesystem] = [],
     exitCode: Int32? = nil,
-    exitedDate: Date? = nil
+    exitedDate: Date? = nil,
+    health: HealthStatus? = nil
 ) throws -> ContainerSnapshot {
     var configuration = ContainerConfiguration(
         id: id,
@@ -15302,7 +15458,8 @@ private func containerSnapshot(
         status: status,
         networks: [],
         exitCode: exitCode,
-        exitedDate: exitedDate
+        exitedDate: exitedDate,
+        health: health
     )
 }
 

@@ -762,6 +762,11 @@ private enum ComposeVolumesFormat {
     case json
 }
 
+private enum RuntimeHealthCheckCommand {
+    case disabled
+    case command(String)
+}
+
 private struct ComposeCopyContainerTarget {
     var id: String
     var path: String
@@ -2582,7 +2587,7 @@ private extension ComposeOrchestrator {
                     continue
                 }
                 let condition = metadata.condition
-                if condition != "service_started" && condition != "" && condition != "service_completed_successfully" {
+                if condition != "service_started" && condition != "" && condition != "service_completed_successfully" && condition != "service_healthy" {
                     let reason = unsupportedDependencyConditionReason(condition)
                     throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
                 }
@@ -2606,9 +2611,7 @@ private extension ComposeOrchestrator {
         if let sysctls = service.sysctls, !sysctls.isEmpty {
             throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
         }
-        if service.healthcheck != nil {
-            throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
-        }
+        _ = try runtimeHealthCheckArguments(service: service)
         _ = try serviceConfigSecretMounts(project: project, service: service)
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
             throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>")
@@ -3474,7 +3477,7 @@ private extension ComposeOrchestrator {
     func unsupportedDependencyConditionReason(_ condition: String) -> String {
         switch condition {
         case "service_healthy":
-            "health status support needs an apple/container runtime gap PR"
+            "health status support requires apple/container healthcheck runtime support"
         case "service_completed_successfully":
             "exit code and completion time need an apple/container runtime gap PR"
         default:
@@ -3594,6 +3597,107 @@ private extension ComposeOrchestrator {
         return options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
             ["--log-opt", "\(key)=\(value)"]
         }
+    }
+
+    /// Returns Docker-compatible apple/container healthcheck arguments for
+    /// service create/run.
+    func runtimeHealthCheckArguments(service: ComposeService) throws -> [String] {
+        guard let healthcheck = service.healthcheck else {
+            return []
+        }
+        guard case .object(let fields) = healthcheck else {
+            throw ComposeError.invalidProject("service '\(service.name)' healthcheck must be an object")
+        }
+        guard fields.keys.allSatisfy({ supportedHealthCheckKeys.contains($0) }) else {
+            let unsupported = fields.keys.filter { !supportedHealthCheckKeys.contains($0) }.sorted().joined(separator: ", ")
+            throw ComposeError.unsupported("service '\(service.name)' uses unsupported healthcheck fields \(unsupported)")
+        }
+        if fields["disable"]?.boolValue == true {
+            return ["--no-healthcheck"]
+        }
+        guard let test = fields["test"] else {
+            if fields.isEmpty || fields.keys.allSatisfy({ $0 == "disable" }) {
+                return []
+            }
+            throw ComposeError.unsupported("service '\(service.name)' tunes an image healthcheck; apple/container image healthcheck metadata is not exposed yet")
+        }
+
+        var args: [String]
+        switch try runtimeHealthCheckCommand(test: test, serviceName: service.name) {
+        case .disabled:
+            args = ["--no-healthcheck"]
+        case .command(let command):
+            args = ["--health-cmd", command]
+        }
+
+        for field in healthCheckDurationFields {
+            if let value = fields[field.composeName] {
+                let duration = try healthCheckDuration(value, field: field.composeName, serviceName: service.name)
+                args.append(contentsOf: [field.runtimeName, duration])
+            }
+        }
+
+        if let retries = fields["retries"] {
+            let value = try healthCheckRetries(retries, serviceName: service.name)
+            args.append(contentsOf: ["--health-retries", String(value)])
+        }
+
+        return args
+    }
+
+    /// Converts Compose healthcheck `test` to the container CLI command form.
+    func runtimeHealthCheckCommand(test: ComposeValue, serviceName: String) throws -> RuntimeHealthCheckCommand {
+        switch test {
+        case .string(let command):
+            return .command(command)
+        case .array(let values):
+            let parts = try values.map { value -> String in
+                guard let string = value.stringValue else {
+                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test entries must be strings")
+                }
+                return string
+            }
+            guard let directive = parts.first else {
+                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test cannot be empty")
+            }
+            switch directive {
+            case "NONE":
+                return .disabled
+            case "CMD-SHELL":
+                let command = parts.dropFirst().joined(separator: " ")
+                guard !command.isEmpty else {
+                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD-SHELL requires a command")
+                }
+                return .command(command)
+            case "CMD":
+                let command = Array(parts.dropFirst())
+                guard !command.isEmpty else {
+                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD requires a command")
+                }
+                return .command(shellQuoted(command))
+            default:
+                throw ComposeError.unsupported("service '\(serviceName)' healthcheck.test uses unsupported directive '\(directive)'")
+            }
+        default:
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test must be a string or list")
+        }
+    }
+
+    /// Returns a healthcheck duration string accepted by apple/container.
+    func healthCheckDuration(_ value: ComposeValue, field: String, serviceName: String) throws -> String {
+        guard let duration = value.stringValue,
+              ContainerLogTimestampParser.parseDuration(duration) != nil else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.\(field) must be a Compose duration")
+        }
+        return duration
+    }
+
+    /// Returns the Compose healthcheck retry count.
+    func healthCheckRetries(_ value: ComposeValue, serviceName: String) throws -> Int {
+        guard let retries = value.intValue, retries >= 0 else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.retries must be a non-negative integer")
+        }
+        return retries
     }
 
     /// Returns the service replica that should inherit foreground IO for `up`.
@@ -4656,6 +4760,7 @@ private extension ComposeOrchestrator {
             args.append(contentsOf: ["--log-driver", logDriver])
         }
         args.append(contentsOf: runtimeLogOptionArguments(service: service))
+        args.append(contentsOf: try runtimeHealthCheckArguments(service: service))
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
             if let value {
                 args.append(contentsOf: ["--env", "\(key)=\(value)"])
@@ -4939,16 +5044,20 @@ private extension ComposeOrchestrator {
     /// Waits for Compose dependency conditions that require runtime state.
     func waitForDependencyConditions(project: ComposeProject, service: ComposeService) async throws {
         for (dependencyName, metadata) in serviceDependencies(service) {
-            guard metadata.condition == "service_completed_successfully" else {
-                continue
-            }
             if metadata.required == false, project.services[dependencyName] == nil {
                 continue
             }
             guard let dependency = project.services[dependencyName] else {
                 throw ComposeError.invalidProject("service '\(service.name)' depends on unknown service '\(dependencyName)'")
             }
-            try await waitForCompletedDependency(project: project, service: service, dependency: dependency)
+            switch metadata.condition {
+            case "service_completed_successfully":
+                try await waitForCompletedDependency(project: project, service: service, dependency: dependency)
+            case "service_healthy":
+                try await waitForHealthyDependency(project: project, service: service, dependency: dependency)
+            default:
+                continue
+            }
         }
     }
 
@@ -4994,6 +5103,50 @@ private extension ComposeOrchestrator {
             return try await lifecycleManager.waitContainer(id: target.name)
         default:
             throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is \(container.status)")
+        }
+    }
+
+    /// Waits for every target container of a dependency service to report a
+    /// healthy status before starting the dependent service.
+    func waitForHealthyDependency(
+        project: ComposeProject,
+        service: ComposeService,
+        dependency: ComposeService
+    ) async throws {
+        let targets = try await serviceContainerTargets(project: project, services: [dependency])
+        guard !targets.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' dependency '\(dependency.name)' has no containers")
+        }
+        for target in targets {
+            try await waitForHealthyDependencyTarget(target, dependentService: service)
+        }
+    }
+
+    /// Waits for one dependency target to transition from starting to healthy.
+    func waitForHealthyDependencyTarget(
+        _ target: ServiceContainerTarget,
+        dependentService: ComposeService
+    ) async throws {
+        if options.dryRun {
+            try await runContainer(["inspect", target.name])
+            return
+        }
+        while true {
+            guard let container = try await discoveryManager.getContainer(id: target.name) else {
+                throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' does not exist")
+            }
+            switch container.health {
+            case "healthy":
+                return
+            case "starting":
+                try await options.sleep(.milliseconds(250))
+            case "unhealthy":
+                throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is unhealthy")
+            case "none", nil:
+                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' has no health status")
+            case let health?:
+                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' has unsupported health status '\(health)'")
+            }
         }
     }
 
@@ -5651,6 +5804,21 @@ private let configFilesHashLabel = "com.apple.container.compose.project.config-f
 private let reservedComposeLabelPrefix = "com.apple.container.compose."
 private let reservedDockerComposeLabelPrefix = "com.docker.compose."
 private let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
+private let supportedHealthCheckKeys = Set([
+    "disable",
+    "interval",
+    "retries",
+    "start_interval",
+    "start_period",
+    "test",
+    "timeout",
+])
+private let healthCheckDurationFields = [
+    (composeName: "interval", runtimeName: "--health-interval"),
+    (composeName: "timeout", runtimeName: "--health-timeout"),
+    (composeName: "start_period", runtimeName: "--health-start-period"),
+    (composeName: "start_interval", runtimeName: "--health-start-interval"),
+]
 private let networkMTUDriverOptionKeys = [
     "com.docker.network.driver.mtu",
     "mtu",
@@ -5846,6 +6014,22 @@ private extension ComposeValue {
             return nil
         }
         return value
+    }
+
+    var intValue: Int? {
+        switch self {
+        case .number(let value):
+            let number = NSDecimalNumber(decimal: value)
+            guard number.decimalValue == value else {
+                return nil
+            }
+            let int = number.intValue
+            return Decimal(int) == value ? int : nil
+        case .string(let value):
+            return Int(value)
+        default:
+            return nil
+        }
     }
 }
 
