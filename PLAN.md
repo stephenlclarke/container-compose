@@ -78,6 +78,66 @@ Existing PRs and branches to leverage:
 - <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11): the fork-side precursor to #1592. Continue comparing API names and behavior so the two Compose efforts converge rather than fork the log contract.
 - <img alt="PEER OVERLAP" src="https://img.shields.io/badge/PEER%20OVERLAP-0891B2?style=flat-square"> [`apple/container#1736`](https://github.com/apple/container/pull/1736): peer Compose implementation. Use it for examples, test ideas, and CLI expectation comparison only; do not move Compose-specific policy into apple/container runtime PRs.
 
+## Adjacent Slab: Exit Metadata And Completed Dependencies
+
+This slab tracks the first non-log lifecycle capability needed by real Compose projects: `depends_on.condition: service_completed_successfully` and stopped-container `wait` replay. It intentionally reuses existing upstream work rather than inventing a new runtime contract.
+
+Reference targets:
+
+- Compose file `depends_on.condition`: [`depends_on`](https://docs.docker.com/reference/compose-file/services/#depends_on)
+- Docker Compose CLI `wait`: [`docker compose wait`](https://docs.docker.com/reference/cli/docker/compose/wait/)
+- Upstream issue: [`apple/container#1501`](https://github.com/apple/container/issues/1501)
+- Upstream PR leveraged locally: [`apple/container#1562`](https://github.com/apple/container/pull/1562)
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Added</th>
+      <th>Started</th>
+      <th>Completed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Cherry-pick upstream exit metadata into the container fork</td>
+      <td>2026-06-22 00:48:00 BST</td>
+      <td>2026-06-22 00:48:00 BST</td>
+      <td>2026-06-22 00:56:18 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: cherry-picked and adapted [`apple/container#1562`](https://github.com/apple/container/pull/1562) onto `stephenlclarke/container` branch `logs-integration-chris` as signed commit `9b6f743` (`feat(api): expose container exit metadata`). The local adaptation preserves Martín Fernández as author, keeps the #1501/#1562 provenance, projects `exitCode`/`exitedDate` through `ManagedContainer`, clears stale exit metadata when the init process starts again, and validates with focused resource tests plus `make test`.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Project exit metadata through container-compose discovery</td>
+      <td>2026-06-22 01:00:00 BST</td>
+      <td>2026-06-22 01:00:00 BST</td>
+      <td>2026-06-22 01:06:26 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `ComposeContainerSummary` now carries `exitCode` and `exitedDate` from `ContainerSnapshot`, allowing Compose orchestration decisions to use the direct `apple/container` API instead of parsing CLI output or inventing plugin-side state.</td>
+    </tr>
+    <tr>
+      <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Implement `service_completed_successfully` and stopped `wait` replay</td>
+      <td>2026-06-22 01:00:00 BST</td>
+      <td>2026-06-22 01:00:00 BST</td>
+      <td>2026-06-22 01:06:26 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: `up` and one-off `run` now wait for completed dependencies before starting dependents. A dependency passes when every target container either has stored `exitCode == 0` or returns `0` from the direct runtime wait API; non-zero dependency exits fail before the dependent starts. `container compose wait` now replays stored exit codes for already-stopped service containers on the fork-backed runtime. Upstream release support remains pending acceptance of #1562 or an equivalent exit-metadata API.</td>
+    </tr>
+    <tr>
+      <td><img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> Implement health and restart lifecycle primitives</td>
+      <td>2026-06-22 01:07:02 BST</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: next lifecycle work should stay in this topic until either implemented or blocked. Health status should align with [`apple/container#1502`](https://github.com/apple/container/issues/1502) and [`apple/container#1504`](https://github.com/apple/container/pull/1504) before enabling `depends_on.condition: service_healthy`. Restart policy work should compare [`apple/container#286`](https://github.com/apple/container/issues/286) and [`apple/container#1258`](https://github.com/apple/container/pull/1258) before mapping Compose `restart` and `deploy.restart_policy`.</td>
+    </tr>
+  </tbody>
+</table>
+
 ### Container Runtime Slab
 
 <table>

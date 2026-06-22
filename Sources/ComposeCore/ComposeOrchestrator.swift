@@ -1005,6 +1005,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         var changedServices = Set<String>()
         for serviceReference in services {
             let service = workingProject.services[serviceReference.name] ?? serviceReference
+            if validateDependencies {
+                try await waitForDependencyConditions(project: workingProject, service: service)
+            }
             if service.provider != nil {
                 let variables = try await runProvider(project: workingProject, service: service, action: .up)
                 if !variables.isEmpty {
@@ -1882,6 +1885,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             externalVolumeMounts: externalVolumeMounts
         )
         service = runProject.services[serviceName] ?? service
+        if !run.noDeps {
+            try await waitForDependencyConditions(project: runProject, service: service)
+        }
         let containerName = oneOffRunContainerName(project: runProject, service: service, requestedName: run.containerName)
         try await runContainer(
             try runArguments(
@@ -2086,8 +2092,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await runContainer(["wait", containerID])
                 continue
             }
-            try await validateWaitTarget(target)
-            let exitCode = try await lifecycleManager.waitContainer(id: containerID)
+            let exitCode: Int32
+            if let stoppedExitCode = try await stoppedWaitExitCode(target) {
+                exitCode = stoppedExitCode
+            } else {
+                exitCode = try await lifecycleManager.waitContainer(id: containerID)
+            }
             options.emit(String(exitCode))
         }
     }
@@ -2572,7 +2582,7 @@ private extension ComposeOrchestrator {
                     continue
                 }
                 let condition = metadata.condition
-                if condition != "service_started" && condition != "" {
+                if condition != "service_started" && condition != "" && condition != "service_completed_successfully" {
                     let reason = unsupportedDependencyConditionReason(condition)
                     throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
                 }
@@ -4926,6 +4936,67 @@ private extension ComposeOrchestrator {
         throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
     }
 
+    /// Waits for Compose dependency conditions that require runtime state.
+    func waitForDependencyConditions(project: ComposeProject, service: ComposeService) async throws {
+        for (dependencyName, metadata) in serviceDependencies(service) {
+            guard metadata.condition == "service_completed_successfully" else {
+                continue
+            }
+            if metadata.required == false, project.services[dependencyName] == nil {
+                continue
+            }
+            guard let dependency = project.services[dependencyName] else {
+                throw ComposeError.invalidProject("service '\(service.name)' depends on unknown service '\(dependencyName)'")
+            }
+            try await waitForCompletedDependency(project: project, service: service, dependency: dependency)
+        }
+    }
+
+    /// Waits for every target container of a dependency service to finish
+    /// successfully before starting the dependent service.
+    func waitForCompletedDependency(
+        project: ComposeProject,
+        service: ComposeService,
+        dependency: ComposeService
+    ) async throws {
+        let targets = try await serviceContainerTargets(project: project, services: [dependency])
+        guard !targets.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' dependency '\(dependency.name)' has no containers")
+        }
+        for target in targets {
+            let exitCode = try await completedDependencyExitCode(for: target, dependentService: service)
+            guard exitCode == 0 else {
+                throw ComposeError.invalidProject("service '\(service.name)' dependency '\(dependency.name)' container '\(target.name)' exited with status \(exitCode)")
+            }
+        }
+    }
+
+    /// Resolves a dependency target's exit code, using stored exit metadata
+    /// for stopped containers and runtime wait for live containers.
+    func completedDependencyExitCode(
+        for target: ServiceContainerTarget,
+        dependentService: ComposeService
+    ) async throws -> Int32 {
+        if options.dryRun {
+            try await runContainer(["wait", target.name])
+            return 0
+        }
+        guard let container = try await discoveryManager.getContainer(id: target.name) else {
+            throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' does not exist")
+        }
+        switch container.status.lowercased() {
+        case "stopped":
+            guard let exitCode = container.exitCode else {
+                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is stopped but has no stored exit code")
+            }
+            return exitCode
+        case "running", "stopping":
+            return try await lifecycleManager.waitContainer(id: target.name)
+        default:
+            throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is \(container.status)")
+        }
+    }
+
     /// Validates that attach stays on the output-only log-follow path apple/container exposes today.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
         if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
@@ -4940,19 +5011,29 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Ensures `wait` only asks apple/container for live process state it can return.
-    func validateWaitTarget(_ target: ServiceContainerTarget) async throws {
+    /// Returns a stopped container's stored exit code, or nil when the target
+    /// is live and should be waited through apple/container.
+    func stoppedWaitExitCode(_ target: ServiceContainerTarget) async throws -> Int32? {
         guard let container = try await discoveryManager.getContainer(id: target.name) else {
             throw ComposeError.invalidProject("service '\(target.service.name)' container '\(target.name)' does not exist")
         }
-        try validateWaitTarget(container, service: target.service)
+        return try stoppedWaitExitCode(container, service: target.service)
     }
 
-    /// Ensures `wait` only asks apple/container for live process state it can return.
-    func validateWaitTarget(_ container: ComposeContainerSummary, service: ComposeService) throws {
+    /// Returns a stopped container's stored exit code, or nil when the target
+    /// is live and should be waited through apple/container.
+    func stoppedWaitExitCode(_ container: ComposeContainerSummary, service: ComposeService) throws -> Int32? {
         let status = container.status.lowercased()
-        guard status == "running" || status == "stopping" else {
-            throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is \(container.status); apple/container does not expose stored exit codes for already-stopped containers")
+        switch status {
+        case "stopped":
+            guard let exitCode = container.exitCode else {
+                throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is stopped but has no stored exit code")
+            }
+            return exitCode
+        case "running", "stopping":
+            return nil
+        default:
+            throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is \(container.status)")
         }
     }
 
@@ -4966,7 +5047,11 @@ private extension ComposeOrchestrator {
             return
         }
         for target in targets {
-            try await validateWaitTarget(target)
+            if let exitCode = try await stoppedWaitExitCode(target) {
+                options.emit(String(exitCode))
+                try await down(project: project, options: ComposeDownOptions())
+                return
+            }
         }
         let result = try await waitForFirstServiceContainerExit(targets)
         options.emit(String(result.exitCode))

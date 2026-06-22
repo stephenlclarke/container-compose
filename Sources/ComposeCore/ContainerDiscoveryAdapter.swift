@@ -17,6 +17,7 @@
 import ContainerAPIClient
 import ContainerResource
 import ContainerizationError
+import Foundation
 
 /// Stable container data used by Compose project discovery and projections.
 public struct ComposeContainerSummary: Sendable, Equatable, Codable {
@@ -41,6 +42,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
     public var platform: String
     public var publishedPorts: [ComposeContainerPublishedPort]
     public var mounts: [ComposeMount]
+    public var exitCode: Int32?
+    public var exitedDate: Date?
 
     public init(
         id: String,
@@ -48,7 +51,9 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         labels: [String: String] = [:],
         image: Image = Image(),
         publishedPorts: [ComposeContainerPublishedPort] = [],
-        mounts: [ComposeMount] = []
+        mounts: [ComposeMount] = [],
+        exitCode: Int32? = nil,
+        exitedDate: Date? = nil
     ) {
         self.id = id
         self.status = status
@@ -58,6 +63,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         self.platform = image.platform
         self.publishedPorts = publishedPorts
         self.mounts = mounts
+        self.exitCode = exitCode
+        self.exitedDate = exitedDate
     }
 }
 
@@ -177,7 +184,9 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
                     count: $0.count
                 )
             },
-            mounts: snapshot.configuration.mounts.map(Self.mount(from:))
+            mounts: snapshot.configuration.mounts.map(Self.mount(from:)),
+            exitCode: snapshot.exitCode,
+            exitedDate: snapshot.exitedDate
         )
     }
 
