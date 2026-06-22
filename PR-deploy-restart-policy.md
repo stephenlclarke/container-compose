@@ -5,7 +5,7 @@
 - Normalize Compose Deploy `restart_policy` as structured JSON from the compose-go helper.
 - Map supported deploy restart policy conditions to fork-backed `apple/container` `--restart` create flags.
 - Keep Docker Compose precedence by using deploy restart policy before service-level `restart`.
-- Document `deploy.restart_policy.delay` and `deploy.restart_policy.window` as remaining apple/container runtime gaps.
+- Map `deploy.restart_policy.delay` and `deploy.restart_policy.window` when the fork-backed timing primitive is present.
 
 ## Type of Change
 
@@ -25,25 +25,31 @@ The local `stephenlclarke/container` `logs-integration-chris` branch now carries
 
 With those fork primitives available, this plugin can map the subset of deploy restart policy that is expressible by the current runtime without adding Compose-specific code to `apple/container`.
 
+The local `stephenlclarke/container` branch also now carries
+`feat(runtime): add restart policy timing` (`7251c1b`), documented by
+`ISSUE-restart-policy-timing.md` / `PR-restart-policy-timing.md`, so the plugin
+can pass deploy restart `delay` and `window` to the fork-backed runtime.
+
 ## Implementation Details
 
 - The Go normalizer adds `deployRestartPolicy` with `condition`, `delayNanoseconds`, `maxAttempts`, and `windowNanoseconds`.
 - The normalizer stops reporting the whole `deploy.restart_policy` surface as an unsupported deploy field.
 - `ComposeService` adds `ComposeDeployRestartPolicy`.
-- `runtimeRestartPolicyArgument(service:)` now checks deploy restart policy before service-level `restart`.
+- `runtimeRestartPolicyArguments(service:)` now checks deploy restart policy before service-level `restart`.
 - Supported mappings are:
   - `condition: none` -> `--restart no`
   - `condition: any` or an empty deploy policy -> `--restart always`
   - `condition: on-failure` -> `--restart on-failure`
   - `condition: on-failure` with `max_attempts` -> `--restart on-failure:<max-retries>`
 - One-off `compose run` containers still do not receive `--restart`, even when the service has deploy restart policy.
-- `delay` and `window` reject with precise apple/container runtime-gap messages.
 - `max_attempts` with `condition: any` or `condition: none` rejects because the current fork-backed retry limit is only expressible for `on-failure`.
+- `delay` and `window` are passed as `--restart-delay` and `--restart-window`
+  for service containers when the fork-backed timing primitive is present.
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed branch: deploy restart `condition` values `none`, `any`, and `on-failure`, plus `max_attempts` with `on-failure`.
-- Remaining gap: `deploy.restart_policy.delay` and `deploy.restart_policy.window` need additional `apple/container` restart timing primitives.
+- Supported now on the fork-backed branch: deploy restart `condition` values `none`, `any`, and `on-failure`, `max_attempts` with `on-failure`, and `delay` / `window` timing.
+- Remaining released-upstream gap: equivalent `apple/container` restart create/runtime/timing primitives must be accepted upstream.
 - Released-upstream caveat: this remains fork-backed until equivalent restart-policy create/runtime primitives are accepted in `apple/container`.
 - Compose-specific model normalization, precedence, and one-off lifecycle behavior remain in this plugin.
 
@@ -57,10 +63,10 @@ Focused validation:
 
 ```sh
 go test ./...
-swift test --filter 'ComposeNormalizerTests/normalizesDeployRestartPolicyThroughComposeGo|ComposeOrchestratorTests/upMapsDeployRestartPolicyToContainerCreateFlags|ComposeOrchestratorTests/upRejectsDeployRestartDelayBeforeCreatingResources|ComposeOrchestratorTests/upRejectsDeployRestartMaxAttemptsWithoutOnFailure|ComposeOrchestratorTests/runDoesNotInheritDeployRestartPolicyForOneOffContainers'
+swift test --filter 'ComposeNormalizerTests/normalizesDeployRestartPolicyThroughComposeGo|ComposeOrchestratorTests/upMapsDeployRestartPolicyToContainerCreateFlags|ComposeOrchestratorTests/upMapsDeployRestartTimingToContainerCreateFlags|ComposeOrchestratorTests/upRejectsDeployRestartMaxAttemptsWithoutOnFailure|ComposeOrchestratorTests/runDoesNotInheritDeployRestartPolicyForOneOffContainers'
 ```
 
-Results: passed locally on 2026-06-22. The focused Swift run executed 5 selected tests.
+Results: passed locally on 2026-06-22. The latest focused timing run executed 4 selected orchestrator tests after the earlier normalizer/model run.
 
 Repository checks:
 

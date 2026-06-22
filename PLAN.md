@@ -178,7 +178,16 @@ Reference targets:
       <td>2026-06-22 02:40:15 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` now preserves `deploy.restart_policy` as structured normalizer output instead of reporting the whole field through `unsupportedDeployFields`. Swift orchestration gives deploy restart policy precedence over service-level `restart`, maps `condition: none` to `--restart no`, `condition: any` or an empty policy to `--restart always`, and maps `condition: on-failure` with optional `max_attempts` to `--restart on-failure[:max-retries]` against the fork-backed restart runtime. One-off `compose run` containers still do not inherit restart policies. Docker Compose `delay` and `window` remain documented apple/container runtime gaps because the current restart primitives do not expose configurable restart delay or success-window semantics. Handoff files are `ISSUE-deploy-restart-policy.md` and `PR-deploy-restart-policy.md` in this repository; upstream context remains [`apple/container#286`](https://github.com/apple/container/issues/286) and [`apple/container#1258`](https://github.com/apple/container/pull/1258).</td>
+      <td colspan="4">Notes: `container-compose` now preserves `deploy.restart_policy` as structured normalizer output instead of reporting the whole field through `unsupportedDeployFields`. Swift orchestration gives deploy restart policy precedence over service-level `restart`, maps `condition: none` to `--restart no`, `condition: any` or an empty policy to `--restart always`, and maps `condition: on-failure` with optional `max_attempts` to `--restart on-failure[:max-retries]` against the fork-backed restart runtime. One-off `compose run` containers still do not inherit restart policies. At completion of this slice, Docker Compose `delay` and `window` were still documented apple/container runtime gaps; the follow-up timing slice below adds local fork support for those fields. Handoff files are `ISSUE-deploy-restart-policy.md` and `PR-deploy-restart-policy.md` in this repository; upstream context remains [`apple/container#286`](https://github.com/apple/container/issues/286) and [`apple/container#1258`](https://github.com/apple/container/pull/1258).</td>
+    </tr>
+    <tr>
+      <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add restart timing support for `deploy.restart_policy.delay` and `window`</td>
+      <td>2026-06-22 02:40:15 BST</td>
+      <td>2026-06-22 02:45:37 BST</td>
+      <td>2026-06-22 02:54:50 BST</td>
+    </tr>
+    <tr>
+      <td colspan="4">Notes: implemented locally as two signed PR-shaped commits. The `stephenlclarke/container` `logs-integration-chris` branch commit `7251c1b` (`feat(runtime): add restart policy timing`) adds optional `ContainerRestartPolicy.retryDelayInNanoseconds` and `successfulRunDurationInNanoseconds`, fixed-delay tracker behavior when configured, configured stable-run reset windows, parser coverage, hidden integration flags, and `ISSUE-restart-policy-timing.md` / `PR-restart-policy-timing.md`. The compose side now passes normalized `deploy.restart_policy.delay` and `window` to those timing flags for service containers. Released upstream support remains partial until equivalent restart timing primitives are accepted in [`apple/container`](https://github.com/apple/container).</td>
     </tr>
   </tbody>
 </table>

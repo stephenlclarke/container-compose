@@ -14,7 +14,10 @@ services:
         max_attempts: 3
 ```
 
-This slice supports the subset that can be represented by the current fork-backed `apple/container` restart runtime: `condition: none`, `condition: any` or an empty policy, and `condition: on-failure` with optional `max_attempts`.
+This slice supports the subset that can be represented by the current
+fork-backed `apple/container` restart runtime: `condition: none`,
+`condition: any` or an empty policy, `condition: on-failure` with optional
+`max_attempts`, and deploy restart timing fields `delay` and `window`.
 
 ## Docker Compose v2 Behavior
 
@@ -36,7 +39,7 @@ With the fork-backed runtime restart slices present, `container-compose` can now
 Both:
 
 - `container-compose` owns Compose model normalization, deploy-over-service precedence, one-off `run` behavior, and early validation for unsupported deploy restart fields.
-- `apple/container` needs accepted restart-policy create/runtime primitives before released upstream branches can rely on the behavior. It also needs future restart timing primitives before `deploy.restart_policy.delay` and `deploy.restart_policy.window` can be supported instead of rejected.
+- `apple/container` needs accepted restart-policy create/runtime/timing primitives before released upstream branches can rely on the behavior.
 
 ## Minimal Example
 
@@ -61,7 +64,7 @@ container run --restart on-failure:3 ...
 
 The deploy restart policy wins over `restart: unless-stopped`, matching Docker Compose precedence.
 
-## Remaining apple/container Gap Example
+## Runtime Timing Example
 
 ```yaml
 services:
@@ -74,7 +77,10 @@ services:
         window: 30s
 ```
 
-Expected result for now: `container-compose` rejects `deploy.restart_policy.delay` and `deploy.restart_policy.window` before creating resources because the current `apple/container` restart policy model does not expose configurable restart delay or success-window semantics.
+Expected result on the fork-backed integration branch: `container-compose`
+passes `delay` and `window` through to the fork's restart-policy timing
+primitive for service containers. Released upstream support is pending an
+equivalent `apple/container` timing API.
 
 ## References
 
@@ -82,6 +88,7 @@ Expected result for now: `container-compose` rejects `deploy.restart_policy.dela
 - Existing restart-policy PR reference: [apple/container#1258](https://github.com/apple/container/pull/1258)
 - Fork handoff: `ISSUE-restart-policy-create-options.md` and `PR-restart-policy-create-options.md` in `stephenlclarke/container`
 - Fork handoff: `ISSUE-restart-policy-runtime.md` and `PR-restart-policy-runtime.md` in `stephenlclarke/container`
+- Fork handoff: `ISSUE-restart-policy-timing.md` and `PR-restart-policy-timing.md` in `stephenlclarke/container`
 - Previous plugin handoff: `ISSUE-service-restart-policy.md` and `PR-service-restart-policy.md`
 
 ## Code Of Conduct And Documentation

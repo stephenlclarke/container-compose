@@ -728,6 +728,42 @@ private struct RunArgumentOptions {
     }
 }
 
+private struct RuntimeRestartPolicyArguments {
+    var policy: String
+    var delayNanoseconds: Int64?
+    var windowNanoseconds: Int64?
+
+    var arguments: [String] {
+        var result = ["--restart", policy]
+        if let delayNanoseconds, policy != "no" {
+            result.append(contentsOf: ["--restart-delay", Self.durationArgument(delayNanoseconds)])
+        }
+        if let windowNanoseconds, policy != "no" {
+            result.append(contentsOf: ["--restart-window", Self.durationArgument(windowNanoseconds)])
+        }
+        return result
+    }
+
+    private static func durationArgument(_ nanoseconds: Int64) -> String {
+        let seconds = nanoseconds / 1_000_000_000
+        let remainder = nanoseconds % 1_000_000_000
+        guard remainder != 0 else {
+            return "\(seconds)s"
+        }
+        let paddedRemainder = String(format: "%09d", remainder)
+        let trimmedRemainder = dropTrailingZeros(from: paddedRemainder)
+        return "\(seconds).\(trimmedRemainder)s"
+    }
+
+    private static func dropTrailingZeros(from value: String) -> Substring {
+        var end = value.endIndex
+        while end > value.startIndex, value[value.index(before: end)] == "0" {
+            end = value.index(before: end)
+        }
+        return value[..<end]
+    }
+}
+
 private struct MountRenderContext {
     var project: ComposeProject
     var service: ComposeService
@@ -2616,7 +2652,7 @@ private extension ComposeOrchestrator {
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
             throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>")
         }
-        _ = try runtimeRestartPolicyArgument(service: service)
+        _ = try runtimeRestartPolicyArguments(service: service)
     }
 
     /// Rejects project network fields that are not mapped to apple/container network creation.
@@ -3594,69 +3630,79 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Returns the Docker-compatible apple/container restart policy argument
+    /// Returns Docker-compatible apple/container restart policy arguments
     /// for service containers. Compose Deploy restart policy takes precedence
     /// over the service-level `restart` key, matching Docker Compose.
-    func runtimeRestartPolicyArgument(service: ComposeService) throws -> String? {
+    func runtimeRestartPolicyArguments(service: ComposeService) throws -> RuntimeRestartPolicyArguments? {
         if let policy = service.deployRestartPolicy {
-            return try runtimeDeployRestartPolicyArgument(service: service, policy: policy)
+            return try runtimeDeployRestartPolicyArguments(service: service, policy: policy)
         }
-        return try runtimeServiceRestartPolicyArgument(service: service)
+        return try runtimeServiceRestartPolicyArguments(service: service)
     }
 
-    /// Returns the runtime restart argument for a Compose Deploy restart policy.
-    func runtimeDeployRestartPolicyArgument(
+    /// Returns the runtime restart arguments for a Compose Deploy restart policy.
+    func runtimeDeployRestartPolicyArguments(
         service: ComposeService,
         policy: ComposeDeployRestartPolicy
-    ) throws -> String {
+    ) throws -> RuntimeRestartPolicyArguments {
         let condition = policy.condition?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         let restartCondition = condition.flatMap { $0.isEmpty ? nil : $0 } ?? "any"
+        let timing = try deployRestartTiming(service: service, policy: policy)
 
         switch restartCondition {
         case "none":
-            try validateDeployRestartPolicyTiming(service: service, policy: policy)
             if policy.maxAttempts != nil {
                 throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'none'; apple/container retry limits are only available for on-failure restart policies")
             }
-            return "no"
+            return RuntimeRestartPolicyArguments(policy: "no")
         case "any":
-            try validateDeployRestartPolicyTiming(service: service, policy: policy)
             if policy.maxAttempts != nil {
                 throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'any'; apple/container retry limits are only available for on-failure restart policies")
             }
-            return "always"
+            return RuntimeRestartPolicyArguments(
+                policy: "always",
+                delayNanoseconds: timing.delayNanoseconds,
+                windowNanoseconds: timing.windowNanoseconds
+            )
         case "on-failure":
-            try validateDeployRestartPolicyTiming(service: service, policy: policy)
-            guard let maxAttempts = policy.maxAttempts else {
-                return "on-failure"
+            let restartPolicy: String
+            if let maxAttempts = policy.maxAttempts {
+                guard maxAttempts <= UInt64(UInt32.max) else {
+                    throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.max_attempts must be between 0 and \(UInt32.max)")
+                }
+                restartPolicy = "on-failure:\(maxAttempts)"
+            } else {
+                restartPolicy = "on-failure"
             }
-            guard maxAttempts <= UInt64(UInt32.max) else {
-                throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.max_attempts must be between 0 and \(UInt32.max)")
-            }
-            return "on-failure:\(maxAttempts)"
+            return RuntimeRestartPolicyArguments(
+                policy: restartPolicy,
+                delayNanoseconds: timing.delayNanoseconds,
+                windowNanoseconds: timing.windowNanoseconds
+            )
         default:
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.condition '\(restartCondition)'; supported values are none, on-failure, and any")
         }
     }
 
-    /// Rejects Deploy restart timing fields until apple/container exposes
-    /// restart delay/window primitives compatible with Docker Compose.
-    func validateDeployRestartPolicyTiming(
+    /// Returns Compose Deploy restart timing values backed by apple/container
+    /// restart policy timing primitives.
+    func deployRestartTiming(
         service: ComposeService,
         policy: ComposeDeployRestartPolicy
-    ) throws {
-        if let delay = policy.delayNanoseconds, delay > 0 {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.delay; apple/container restart policies do not expose configurable restart delay yet")
+    ) throws -> (delayNanoseconds: Int64?, windowNanoseconds: Int64?) {
+        if let delay = policy.delayNanoseconds, delay < 0 {
+            throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.delay must be non-negative")
         }
-        if let window = policy.windowNanoseconds, window > 0 {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.window; apple/container restart policies do not expose configurable success window yet")
+        if let window = policy.windowNanoseconds, window < 0 {
+            throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.window must be non-negative")
         }
+        return (policy.delayNanoseconds, policy.windowNanoseconds)
     }
 
-    /// Returns the runtime restart argument for the service-level `restart` key.
-    func runtimeServiceRestartPolicyArgument(service: ComposeService) throws -> String? {
+    /// Returns the runtime restart arguments for the service-level `restart` key.
+    func runtimeServiceRestartPolicyArguments(service: ComposeService) throws -> RuntimeRestartPolicyArguments? {
         guard let restart = service.restart?.trimmingCharacters(in: .whitespacesAndNewlines),
               !restart.isEmpty else {
             return nil
@@ -3683,7 +3729,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; supported values are no, always, on-failure[:max-retries], and unless-stopped")
         }
 
-        return restart
+        return RuntimeRestartPolicyArguments(policy: restart)
     }
 
     /// Returns Docker-compatible apple/container healthcheck arguments for
@@ -4848,8 +4894,8 @@ private extension ComposeOrchestrator {
         }
         args.append(contentsOf: runtimeLogOptionArguments(service: service))
         args.append(contentsOf: try runtimeHealthCheckArguments(service: service))
-        if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArgument(service: service) {
-            args.append(contentsOf: ["--restart", restartPolicy])
+        if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArguments(service: service) {
+            args.append(contentsOf: restartPolicy.arguments)
         }
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
             if let value {
