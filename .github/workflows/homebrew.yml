@@ -17,7 +17,6 @@
 name: Homebrew
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - release
