@@ -57,7 +57,7 @@ jobs:
           path: container-compose
           fetch-depth: 0
 
-      - name: Read apple/container ref
+      - name: Read container ref
         id: apple-container-ref
         shell: bash
         run: |
@@ -71,10 +71,10 @@ jobs:
           fi
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout apple/container dependency
+      - name: Checkout container dependency
         uses: actions/checkout@v6
         with:
-          repository: apple/container
+          repository: stephenlclarke/container
           path: container
           ref: ${{ steps.apple-container-ref.outputs.ref }}
 
