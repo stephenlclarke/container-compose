@@ -1,10 +1,12 @@
 .build/
 .swiftpm/
 .local/
+.vscode/
 .DS_Store
 __pycache__/
 bin/
 dist/
+CODEX-SCHEDULE.md
 container-compose-plugin.tar.gz
 coverage.report
 coverage.lcov

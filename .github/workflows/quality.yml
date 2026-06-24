@@ -100,6 +100,12 @@ jobs:
           swift --version
           xcodebuild -version
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
       - name: Run Swift tests with Address Sanitizer
         run: swift test --disable-automatic-resolution --sanitize=address
         working-directory: container-compose
@@ -164,6 +170,12 @@ jobs:
         run: |
           swift --version
           xcodebuild -version
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
       - name: Run Swift tests with Thread Sanitizer
         run: swift test --disable-automatic-resolution --sanitize=thread

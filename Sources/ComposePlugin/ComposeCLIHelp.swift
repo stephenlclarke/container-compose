@@ -30,6 +30,10 @@ enum ComposeCLIHelp {
             print(bridgeHelp)
             return true
         }
+        if let help = nestedCommandHelp(for: command) {
+            print(help)
+            return true
+        }
         if command.count == 1, let help = commandHelp[command[0]] {
             print(help)
             return true
@@ -50,10 +54,7 @@ enum ComposeCLIHelp {
             if commandNames.contains(argument) {
                 path.append(argument)
                 if argument == "bridge", arguments.indices.contains(index + 1) {
-                    let next = arguments[index + 1]
-                    if !next.hasPrefix("-"), next != "--help", next != "-h" {
-                        path.append(next)
-                    }
+                    path.append(contentsOf: bridgeCommandPath(in: arguments, startingAt: index + 1))
                 }
                 break
             }
@@ -62,6 +63,26 @@ enum ComposeCLIHelp {
             } else {
                 index += 1
             }
+        }
+        return path
+    }
+
+    private static func bridgeCommandPath(in arguments: [String], startingAt startIndex: Int) -> [String] {
+        var path: [String] = []
+        var index = startIndex
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "--help" || argument == "-h" {
+                break
+            }
+            if consumesBridgeValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+                index += 2
+                continue
+            }
+            if !argument.hasPrefix("-") {
+                path.append(argument)
+            }
+            index += 1
         }
         return path
     }
@@ -80,6 +101,32 @@ enum ComposeCLIHelp {
             "-f",
             "-p",
         ].contains(name)
+    }
+
+    private static func consumesBridgeValue(_ argument: String) -> Bool {
+        let name = argument.split(separator: "=", maxSplits: 1).first.map(String.init) ?? argument
+        return [
+            "--format",
+            "--from",
+            "--output",
+            "--templates",
+            "--transformation",
+            "-f",
+            "-o",
+            "-t",
+        ].contains(name)
+    }
+
+    private static func nestedCommandHelp(for path: [String]) -> String? {
+        var candidate = path
+        while !candidate.isEmpty {
+            let key = candidate.joined(separator: " ")
+            if let help = bridgeCommandHelp[key] {
+                return help
+            }
+            candidate.removeLast()
+        }
+        return nil
     }
 
     private static let commandNames: Set<String> = [
@@ -196,6 +243,76 @@ enum ComposeCLIHelp {
 
     Run 'container compose bridge COMMAND --help' for more information on a command.
     """
+
+    private static let bridgeCommandHelp: [String: String] = [
+        "bridge convert": """
+        Usage:  container compose bridge convert
+
+        Convert compose files to Kubernetes manifests, Helm charts, or another model
+
+        Options:
+              --dry-run                      Execute command in dry run mode
+          -o, --output string                The output directory for the
+                                             Kubernetes resources (default "out")
+              --templates string             Directory containing transformation
+                                             templates
+          -t, --transformation stringArray   Transformation to apply to compose
+                                             model (default:
+                                             docker/compose-bridge-kubernetes)
+        """,
+        "bridge transformations": """
+        Usage:  container compose bridge transformations [OPTIONS] COMMAND
+
+        Manage transformation images
+
+        Options:
+              --dry-run   Execute command in dry run mode
+
+        Commands:
+          create      Create a new transformation
+          list        List available transformations
+
+        Run 'container compose bridge transformations COMMAND --help' for more information on a command.
+        """,
+        "bridge transformations create": """
+        Usage:  container compose bridge transformations create [OPTION] PATH
+
+        Create a new transformation
+
+        Options:
+              --dry-run       Execute command in dry run mode
+          -f, --from string   Existing transformation to copy (default:
+                              docker/compose-bridge-kubernetes)
+        """,
+        "bridge transformations list": """
+        Usage:  container compose bridge transformations list
+
+        List available transformations
+
+        Aliases:
+          container compose bridge transformations list, container compose bridge transformations ls
+
+        Options:
+              --dry-run         Execute command in dry run mode
+              --format string   Format the output. Values: [table | json]
+                                (default "table")
+          -q, --quiet           Only display transformer names
+        """,
+        "bridge transformations ls": """
+        Usage:  container compose bridge transformations list
+
+        List available transformations
+
+        Aliases:
+          container compose bridge transformations list, container compose bridge transformations ls
+
+        Options:
+              --dry-run         Execute command in dry run mode
+              --format string   Format the output. Values: [table | json]
+                                (default "table")
+          -q, --quiet           Only display transformer names
+        """,
+    ]
 
     private static let commandHelp: [String: String] = [
         "attach": """

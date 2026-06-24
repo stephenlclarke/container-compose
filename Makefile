@@ -153,6 +153,15 @@ cli-smoke-built:
 	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \
 	bridge_help_output="$$(".build/debug/compose" bridge --help)"; \
 	[[ "$$bridge_help_output" == *"Management Commands:"* ]]; \
+	bridge_convert_help_output="$$(".build/debug/compose" bridge convert --help)"; \
+	[[ "$$bridge_convert_help_output" == *"Usage:  container compose bridge convert"* ]]; \
+	[[ "$$bridge_convert_help_output" == *"-o, --output string"* ]]; \
+	bridge_transformations_help_output="$$(".build/debug/compose" bridge transformations --help)"; \
+	[[ "$$bridge_transformations_help_output" == *"Usage:  container compose bridge transformations [OPTIONS] COMMAND"* ]]; \
+	bridge_transformations_create_help_output="$$(".build/debug/compose" bridge transformations create --help)"; \
+	[[ "$$bridge_transformations_create_help_output" == *"Usage:  container compose bridge transformations create [OPTION] PATH"* ]]; \
+	bridge_transformations_list_help_output="$$(".build/debug/compose" bridge transformations list --help)"; \
+	[[ "$$bridge_transformations_list_help_output" == *"Usage:  container compose bridge transformations list"* ]]; \
 	commit_output="$$(".build/debug/compose" commit api example/api:latest)"; \
 	[[ "$$commit_output" == "Not implemented yet" ]]; \
 	tmpdir="$$(mktemp -d)"; \

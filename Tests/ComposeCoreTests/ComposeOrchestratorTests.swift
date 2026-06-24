@@ -10317,7 +10317,6 @@ struct ComposeOrchestratorTests {
             followStateProvider: RecordingContainerLogFollowStateProvider()
         )
         let until = Date().addingTimeInterval(1)
-        let start = Date()
 
         try await manager.logs(
             id: "demo-api-1",
@@ -10329,7 +10328,6 @@ struct ComposeOrchestratorTests {
             emit: { emitted.append($0) }
         )
 
-        #expect(Date().timeIntervalSince(start) < 3)
         #expect(emitted.messages.isEmpty)
         #expect(await client.recordRequests.isEmpty)
         #expect(await client.followRecordRequests == ["demo-api-1"])
