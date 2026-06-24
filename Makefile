@@ -147,16 +147,22 @@ cli-smoke-built:
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mpause$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32m--file$${ansi_escape}[0m"* ]]; \
-	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208m--parallel$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[31m--parallel$${ansi_escape}[0m"* ]]; \
 	plain_help_output="$$(".build/debug/compose" --ansi never --help)"; \
 	[[ "$$plain_help_output" == *"Support: supported | partially supported | not supported"* ]]; \
 	[[ "$$plain_help_output" != *"$${ansi_escape}["* ]]; \
 	version_help_output="$$(".build/debug/compose" version --help)"; \
 	[[ "$$version_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$version_help_output" == *"$${ansi_escape}[31m--dry-run$${ansi_escape}[0m"* ]]; \
 	[[ "$$version_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	commit_help_output="$$(".build/debug/compose" commit --help)"; \
 	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[31mnot supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$commit_help_output" == *"$${ansi_escape}[31m--author$${ansi_escape}[0m"* ]]; \
+	config_help_output="$$(".build/debug/compose" config --help)"; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[31m--format$${ansi_escape}[0m"* ]]; \
+	build_help_output="$$(".build/debug/compose" build --help)"; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[31m--build-arg$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
@@ -172,12 +178,17 @@ cli-smoke-built:
 	[[ "$$logs_plain_misordered_help_output" != *"$${ansi_escape}["* ]]; \
 	run_help_output="$$(".build/debug/compose" run --help)"; \
 	[[ "$$run_help_output" == *"-p, --publish stringArray"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[31m--build$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--publish$${ansi_escape}[0m"* ]]; \
 	up_help_output="$$(".build/debug/compose" up --help)"; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[31m--no-color$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[38;5;208m--yes$${ansi_escape}[0m"* ]]; \
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \
 	[[ "$$rm_help_output" == *"-f, --force"* ]]; \
+	start_help_output="$$(".build/debug/compose" start --help)"; \
+	[[ "$$start_help_output" == *"$${ansi_escape}[31m--wait$${ansi_escape}[0m"* ]]; \
 	wait_help_output="$$(".build/debug/compose" wait --help)"; \
 	[[ "$$wait_help_output" == *"--down-project"* ]]; \
 	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \

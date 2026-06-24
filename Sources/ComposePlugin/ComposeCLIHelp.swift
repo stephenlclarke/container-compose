@@ -181,15 +181,15 @@ enum ComposeCLIHelp {
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
         "": [
-            "--all-resources": .partiallySupported,
+            "--all-resources": .notSupported,
             "--ansi": .supported,
-            "--compatibility": .partiallySupported,
+            "--compatibility": .notSupported,
             "--dry-run": .supported,
             "--env-file": .supported,
             "--file": .supported,
-            "--parallel": .partiallySupported,
+            "--parallel": .notSupported,
             "--profile": .supported,
-            "--progress": .partiallySupported,
+            "--progress": .notSupported,
             "--project-directory": .supported,
             "--project-name": .supported,
         ],
@@ -227,7 +227,7 @@ enum ComposeCLIHelp {
             "--quiet": .notSupported,
         ],
         "build": [
-            "--build-arg": .supported,
+            "--build-arg": .notSupported,
             "--builder": .notSupported,
             "--check": .notSupported,
             "--dry-run": .supported,
@@ -252,7 +252,25 @@ enum ComposeCLIHelp {
         ],
         "config": [
             "--dry-run": .supported,
-            "--format": .supported,
+            "--environment": .notSupported,
+            "--format": .notSupported,
+            "--hash": .notSupported,
+            "--images": .notSupported,
+            "--lock-image-digests": .notSupported,
+            "--models": .notSupported,
+            "--networks": .notSupported,
+            "--no-consistency": .notSupported,
+            "--no-env-resolution": .notSupported,
+            "--no-interpolate": .notSupported,
+            "--no-normalize": .notSupported,
+            "--no-path-resolution": .notSupported,
+            "--output": .notSupported,
+            "--profiles": .notSupported,
+            "--quiet": .notSupported,
+            "--resolve-image-digests": .notSupported,
+            "--services": .notSupported,
+            "--variables": .notSupported,
+            "--volumes": .notSupported,
         ],
         "cp": [
             "--all": .supported,
@@ -308,7 +326,7 @@ enum ComposeCLIHelp {
         ],
         "kill": [
             "--dry-run": .supported,
-            "--remove-orphans": .supported,
+            "--remove-orphans": .notSupported,
             "--signal": .supported,
         ],
         "logs": [
@@ -338,9 +356,9 @@ enum ComposeCLIHelp {
             "--all": .supported,
             "--dry-run": .supported,
             "--filter": .partiallySupported,
-            "--format": .partiallySupported,
-            "--no-trunc": .supported,
-            "--orphans": .supported,
+            "--format": .notSupported,
+            "--no-trunc": .notSupported,
+            "--orphans": .notSupported,
             "--quiet": .supported,
             "--services": .supported,
             "--status": .partiallySupported,
@@ -379,7 +397,7 @@ enum ComposeCLIHelp {
             "--volumes": .supported,
         ],
         "run": [
-            "--build": .supported,
+            "--build": .notSupported,
             "--cap-add": .supported,
             "--cap-drop": .supported,
             "--detach": .supported,
@@ -387,20 +405,20 @@ enum ComposeCLIHelp {
             "--entrypoint": .supported,
             "--env": .supported,
             "--env-from-file": .supported,
-            "--interactive": .supported,
+            "--interactive": .notSupported,
             "--label": .supported,
             "--name": .supported,
             "--no-TTY": .supported,
             "--no-deps": .supported,
             "--publish": .supported,
             "--pull": .supported,
-            "--quiet": .supported,
-            "--quiet-build": .supported,
-            "--quiet-pull": .supported,
-            "--remove-orphans": .supported,
+            "--quiet": .notSupported,
+            "--quiet-build": .notSupported,
+            "--quiet-pull": .notSupported,
+            "--remove-orphans": .notSupported,
             "--rm": .supported,
             "--service-ports": .supported,
-            "--use-aliases": .supported,
+            "--use-aliases": .notSupported,
             "--user": .supported,
             "--volume": .supported,
             "--workdir": .supported,
@@ -411,8 +429,8 @@ enum ComposeCLIHelp {
         ],
         "start": [
             "--dry-run": .supported,
-            "--wait": .supported,
-            "--wait-timeout": .supported,
+            "--wait": .notSupported,
+            "--wait-timeout": .notSupported,
         ],
         "stats": [
             "--all": .supported,
@@ -439,26 +457,26 @@ enum ComposeCLIHelp {
             "--menu": .notSupported,
             "--no-attach": .notSupported,
             "--no-build": .supported,
-            "--no-color": .supported,
+            "--no-color": .notSupported,
             "--no-deps": .supported,
-            "--no-log-prefix": .supported,
+            "--no-log-prefix": .notSupported,
             "--no-recreate": .supported,
             "--no-start": .supported,
             "--pull": .supported,
             "--quiet-build": .supported,
             "--quiet-pull": .supported,
             "--remove-orphans": .supported,
-            "--renew-anon-volumes": .supported,
+            "--renew-anon-volumes": .notSupported,
             "--scale": .supported,
             "--timeout": .supported,
             "--timestamps": .notSupported,
-            "--wait": .supported,
-            "--wait-timeout": .supported,
-            "--watch": .supported,
+            "--wait": .notSupported,
+            "--wait-timeout": .notSupported,
+            "--watch": .notSupported,
             "--yes": .partiallySupported,
         ],
         "version": [
-            "--dry-run": .supported,
+            "--dry-run": .notSupported,
             "--format": .supported,
             "--short": .supported,
         ],
@@ -644,11 +662,13 @@ enum ComposeCLIHelp {
 
     private static func supportLevel(forOptions options: [String], commandPath: [String]) -> SupportLevel {
         let commandKey = commandPath.joined(separator: " ")
-        let commandOptions = supportByOption[commandKey] ?? [:]
-        for option in options {
-            if let support = commandOptions[option] {
-                return support
+        if let commandOptions = supportByOption[commandKey] {
+            for option in options {
+                if let support = commandOptions[option] {
+                    return support
+                }
             }
+            return .notSupported
         }
         if let rootSupport = supportByOption[""]?.first(where: { key, _ in options.contains(key) })?.value {
             return rootSupport
