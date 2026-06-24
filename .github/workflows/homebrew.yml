@@ -19,11 +19,11 @@ name: Homebrew
 on:
   push:
     branches:
-      - release
+      - main
       - develop
   pull_request:
     branches:
-      - release
+      - main
       - develop
     types:
       - opened

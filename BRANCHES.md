@@ -1,19 +1,19 @@
 # Branch Guide
 
-This repository now keeps two public environments: `release` for people who want to test a frozen plugin build, and `develop` for active integration work that can move quickly. The companion [`stephenlclarke/container`](https://github.com/stephenlclarke/container) fork uses the same branch names so testers and contributors can check out a matching plugin/runtime pair.
+This repository keeps two public environments: `main` for people who want to test a frozen plugin build, and `develop` for active integration work that can move quickly. The companion [`stephenlclarke/container`](https://github.com/stephenlclarke/container) fork uses the same branch names so testers and contributors can check out a matching plugin/runtime pair.
 
 ## Environment Branches
 
 | Environment | `container-compose` branch | `container` fork branch | Audience | Movement rule |
 | --- | --- | --- | --- | --- |
-| Release | `release` | `release` | People trying the app/plugin without chasing active development | Move only after a validation pass. Treat this as frozen between promoted snapshots. |
+| Release | `main` | `main` | People trying the app/plugin without chasing active development | Move only after a validation pass. Treat this as frozen between promoted snapshots. |
 | Development | `develop` | `develop` | Day-to-day development and integration testing | Move freely as work lands, including fork-backed runtime work that has not been accepted upstream. |
 
-`Package.swift` references the `container` checkout as a sibling path dependency at `../container`, so the active branch in that checkout is part of the selected environment. For the frozen tester environment, use `release` in both repositories. For active development, use `develop` in both repositories.
+`Package.swift` references the `container` checkout as a sibling path dependency at `../container`, so the active branch in that checkout is part of the selected environment. For the frozen tester environment, use `main` in both repositories. For active development, use `develop` in both repositories.
 
 ```sh
-git -C ~/github/container-compose checkout release
-git -C ~/github/container checkout release
+git -C ~/github/container-compose checkout main
+git -C ~/github/container checkout main
 ```
 
 ```sh
@@ -27,11 +27,12 @@ The current integration stack still pins [`stephenlclarke/containerization`](htt
 
 | Branch | Purpose |
 | --- | --- |
-| `main` | Default repository branch and upstream-compatible baseline. It should not require fork-only runtime behavior unless it is intentionally promoted to become the release lane later. |
+| `main` | Default repository branch and public release lane. It may require the matching `stephenlclarke/container` `main` branch when the released plugin snapshot depends on fork-backed runtime primitives. |
 | `apple-container-compatible` | Upstream-only compatibility branch for users who want behavior available from released or accepted [`apple/container`](https://github.com/apple/container) primitives. |
 | `regression` | Short-lived upstream compatibility, dependency, CodeQL, and canary work. It should stay close to `main` or `develop` depending on the issue being checked. |
+| `release` | Legacy frozen-branch name kept only as a transition alias. Do not land work here independently of `main`. |
 
-If `main` becomes the public release lane later, promote `release` into `main` deliberately after the same validation gate. Do not maintain two silently divergent frozen branches.
+Do not maintain two silently divergent frozen branches. Future promotions should move validated `develop` snapshots into `main`; if the legacy `release` branch is retained, update it only as an alias of the same promoted commit.
 
 ## Integration And Archive Branches
 
@@ -39,8 +40,8 @@ If `main` becomes the public release lane later, promote `release` into `main` d
 | --- | --- | --- |
 | `logs-integration` | Superseded by `develop` as the public development lane | Existing `container-compose` proving branch for log, lifecycle, copy, event, and runtime-control behavior against the forked runtime. Keep it as a history and work-in-progress reference while the current uncommitted cleanup is drained. |
 | `logs-integration-chris` | Superseded by `develop` as the public development lane in the `container` fork | Existing runtime proving branch layered around Chris George's log retrieval direction plus the lifecycle primitives needed by Compose. |
-| `full-compose-preview` | Legacy preview archive | Older fork-backed visitor branch. Prefer `release` for testers and `develop` for active work. |
-| `full-compose-runtime` | Legacy runtime preview archive in the `container` fork | Older fork-backed runtime visitor branch. Prefer the fork `release` branch for testers and fork `develop` for active work. |
+| `full-compose-preview` | Legacy preview archive | Older fork-backed visitor branch. Prefer `main` for testers and `develop` for active work. |
+| `full-compose-runtime` | Legacy runtime preview archive in the `container` fork | Older fork-backed runtime visitor branch. Prefer the fork `main` branch for testers and fork `develop` for active work. |
 | `compose-v2-preview` | Legacy preview archive | Preserves older preview harness and handoff state. Do not treat this as the current compatibility target. |
 
 ## Upstreaming Rule

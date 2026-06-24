@@ -130,7 +130,7 @@ GitHub Actions keeps the expensive and security-oriented checks in separate work
 
 | Workflow | Trigger | Coverage |
 | --- | --- | --- |
-| `CI / Validate` | Pushes to `main`, PRs to `main` or `develop`, and manual runs | Runs `make ci`, including Swift Testing/XCTest through SwiftPM, Go tests, Markdown linting, Hawkeye license-header validation, coverage gates, and the CLI smoke test. |
+| `CI / Validate` | Pushes to `main` or `develop`, PRs to `main` or `develop`, and manual runs | Runs `make ci`, including Swift Testing/XCTest through SwiftPM, Go tests, Markdown linting, Hawkeye license-header validation, coverage gates, and the CLI smoke test. |
 | `Quality / Swift ASan` | Pushes to `main` or `develop`, every PR, and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=address` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
 | `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=thread` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
 | `Quality / SwiftLint/SwiftFormat Advisory` | Pushes to `main` or `develop`, every PR, and manual runs | Runs `swiftlint lint --strict --quiet Package.swift Sources Tests` and `swiftformat Package.swift Sources Tests --lint --swift-version 6.2`. These checks are advisory until a repo-owned SwiftLint and SwiftFormat baseline/configuration lands, because the current default tools report existing repository-wide style drift. |

@@ -20,13 +20,11 @@ on:
   push:
     branches:
       - main
-      - release
       - develop
       - regression
   pull_request:
     branches:
       - main
-      - release
       - develop
       - regression
     types:
