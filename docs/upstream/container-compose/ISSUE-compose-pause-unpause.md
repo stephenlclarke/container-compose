@@ -5,7 +5,7 @@
 The local integration stack now has the required runtime path:
 
 - [`stephenlclarke/containerization`](https://github.com/stephenlclarke/containerization) branch `integration/blkio-runtime` exposes `LinuxContainer.pause()` and `LinuxContainer.resume()`.
-- [`stephenlclarke/container`](https://github.com/stephenlclarke/container) branch `logs-integration-chris` exposes `ContainerClient.pause(id:)`, `ContainerClient.unpause(id:)`, `container pause`, and `container unpause`.
+- [`stephenlclarke/container`](https://github.com/stephenlclarke/container) `develop` fork integration lane exposes `ContainerClient.pause(id:)`, `ContainerClient.unpause(id:)`, `container pause`, and `container unpause`.
 
 Expected Compose behavior:
 

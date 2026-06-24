@@ -24,7 +24,7 @@ References:
 - Compose service network `aliases`: <https://docs.docker.com/reference/compose-file/services/#aliases>
 - Docker `network connect --alias`: <https://docs.docker.com/reference/cli/docker/network/connect/>
 - Docker networking overview: <https://docs.docker.com/engine/network/>
-- Runtime handoff files in the container fork: `ISSUE-network-aliases.md` and `PR-network-aliases.md`
+- Runtime handoff files in the container fork: `docs/upstream/container-compose/ISSUE-network-aliases.md` and `docs/upstream/container-compose/PR-network-aliases.md`
 - Related apple/container networking discussions: [apple/container#1283](https://github.com/apple/container/issues/1283), [apple/container#457](https://github.com/apple/container/issues/457), [apple/container#456](https://github.com/apple/container/issues/456), [apple/container#500](https://github.com/apple/container/issues/500), [apple/container#1320](https://github.com/apple/container/issues/1320), [apple/container#282](https://github.com/apple/container/issues/282)
 
 ## Implementation Details

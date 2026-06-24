@@ -89,7 +89,7 @@ equivalent `apple/container` timing API.
 - Fork handoff: `ISSUE-restart-policy-create-options.md` and `PR-restart-policy-create-options.md` in `stephenlclarke/container`
 - Fork handoff: `ISSUE-restart-policy-runtime.md` and `PR-restart-policy-runtime.md` in `stephenlclarke/container`
 - Fork handoff: `ISSUE-restart-policy-timing.md` and `PR-restart-policy-timing.md` in `stephenlclarke/container`
-- Previous plugin handoff: `ISSUE-service-restart-policy.md` and `PR-service-restart-policy.md`
+- Previous plugin handoff: `docs/upstream/container-compose/ISSUE-service-restart-policy.md` and `docs/upstream/container-compose/PR-service-restart-policy.md`
 
 ## Code Of Conduct And Documentation
 

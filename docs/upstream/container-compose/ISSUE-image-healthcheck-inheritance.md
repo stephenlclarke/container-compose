@@ -75,7 +75,7 @@ container run --health-cmd "test -f /tmp/ready" --health-interval 5s --health-ti
 - apple/container health status issue: [apple/container#1502](https://github.com/apple/container/issues/1502)
 - apple/container health status PR: [apple/container#1504](https://github.com/apple/container/pull/1504)
 - Fork handoff: `ISSUE-image-healthcheck-metadata.md` and `PR-image-healthcheck-metadata.md` in `stephenlclarke/container`
-- Previous plugin handoff: `ISSUE-service-restart-policy.md` and `PR-service-restart-policy.md`
+- Previous plugin handoff: `docs/upstream/container-compose/ISSUE-service-restart-policy.md` and `docs/upstream/container-compose/PR-service-restart-policy.md`
 
 ## Code Of Conduct And Documentation
 

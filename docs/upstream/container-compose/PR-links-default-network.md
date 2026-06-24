@@ -23,7 +23,7 @@ References:
 
 - Compose service `links`: <https://docs.docker.com/reference/compose-file/services/#links>
 - Compose default network behavior: <https://docs.docker.com/reference/compose-file/networks/#the-default-network>
-- Existing links handoff files: `ISSUE-links.md` and `PR-links.md`
+- Existing links handoff files: `docs/upstream/container-compose/ISSUE-links.md` and `docs/upstream/container-compose/PR-links.md`
 
 ## Implementation Details
 
@@ -54,7 +54,7 @@ Additional local checks:
 ```sh
 make check
 make coverage-check
-markdownlint --disable MD013 MD041 -- COMPATIBILITY.md PLAN.md STATUS.md ISSUE-links-default-network.md PR-links-default-network.md
+markdownlint --disable MD013 MD041 -- COMPATIBILITY.md PLAN.md STATUS.md docs/upstream/container-compose/ISSUE-links-default-network.md docs/upstream/container-compose/PR-links-default-network.md
 git diff --check
 ```
 

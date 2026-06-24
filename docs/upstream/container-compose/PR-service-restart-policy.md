@@ -17,7 +17,7 @@
 
 Service-level `restart` is part of common local-development Compose workflows. `container-compose` previously rejected all restart policies because upstream `apple/container` did not expose matching runtime primitives.
 
-The local `stephenlclarke/container` `logs-integration-chris` branch now carries two small, upstream-shaped runtime slices that reference [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258):
+The current `stephenlclarke/container` `develop` fork integration lane carries two small, upstream-shaped runtime slices that reference [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258):
 
 - `feat(api): add restart policy create options` (`fcbccbb`), documented by `ISSUE-restart-policy-create-options.md` / `PR-restart-policy-create-options.md`.
 - `feat(runtime): restart containers from policy` (`a20d6a3`), documented by `ISSUE-restart-policy-runtime.md` / `PR-restart-policy-runtime.md`.
@@ -57,7 +57,7 @@ Repository checks:
 ```sh
 make swift-test
 make check
-markdownlint ISSUE-service-restart-policy.md PR-service-restart-policy.md
+markdownlint docs/upstream/container-compose/ISSUE-service-restart-policy.md docs/upstream/container-compose/PR-service-restart-policy.md
 git diff --check
 ```
 

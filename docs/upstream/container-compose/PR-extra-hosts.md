@@ -37,9 +37,9 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 
 - Supported now on the fork-backed integration branch: static `extra_hosts` entries with IPv4, IPv6, and bracketed IPv6 source forms.
 - Supported now: service `up`, `create`, and one-off `run` host entries.
-- Separate slice: Docker `host-gateway` is handled by `ISSUE-host-gateway.md` / `PR-host-gateway.md`.
+- Separate slice: Docker `host-gateway` is handled by `docs/upstream/container-compose/ISSUE-host-gateway.md` / `docs/upstream/container-compose/PR-host-gateway.md`.
 - Remaining gap: custom `domainname` and legacy `links` / `external_links` are still separate runtime or compatibility surfaces.
-- Separate slice: service `hostname` is handled by `ISSUE-service-hostname.md` / `PR-service-hostname.md`.
+- Separate slice: service `hostname` is handled by `docs/upstream/container-compose/ISSUE-service-hostname.md` / `docs/upstream/container-compose/PR-service-hostname.md`.
 
 ## Testing
 

@@ -23,7 +23,7 @@ References:
 
 - Compose service `extra_hosts`: <https://docs.docker.com/reference/compose-file/services/#extra_hosts>
 - Docker `container run --add-host` and `host-gateway`: <https://docs.docker.com/reference/cli/docker/container/run/#add-entries-to-container-hosts-file---add-host>
-- Runtime handoff files in the container fork: `ISSUE-host-gateway.md` and `PR-host-gateway.md`
+- Runtime handoff files in the container fork: `docs/upstream/container-compose/ISSUE-host-gateway.md` and `docs/upstream/container-compose/PR-host-gateway.md`
 
 ## Implementation Details
 

@@ -18,7 +18,7 @@
 
 `deploy.restart_policy` is part of the Compose Deploy Specification and appears in real Compose files even when the workflow is local development. Docker Compose v2 gives deploy restart policy precedence over service-level `restart`, but this plugin previously rejected the whole field because the normalizer did not expose the structured policy to Swift.
 
-The local `stephenlclarke/container` `logs-integration-chris` branch now carries restart create/runtime slices that reference [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258):
+The current `stephenlclarke/container` `develop` fork integration lane carries restart create/runtime slices that reference [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258):
 
 - `feat(api): add restart policy create options` (`fcbccbb`), documented by `ISSUE-restart-policy-create-options.md` / `PR-restart-policy-create-options.md`.
 - `feat(runtime): restart containers from policy` (`a20d6a3`), documented by `ISSUE-restart-policy-runtime.md` / `PR-restart-policy-runtime.md`.
@@ -73,7 +73,7 @@ Repository checks:
 ```sh
 make swift-test
 make check
-markdownlint ISSUE-deploy-restart-policy.md PR-deploy-restart-policy.md
+markdownlint docs/upstream/container-compose/ISSUE-deploy-restart-policy.md docs/upstream/container-compose/PR-deploy-restart-policy.md
 git diff --check
 ```
 
