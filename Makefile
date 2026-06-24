@@ -67,7 +67,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-events-parity coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -537,6 +537,9 @@ docker-log-fixtures-update:
 docker-compose-events-parity:
 	./Tools/parity/check-compose-events.sh --strict
 
+docker-compose-restart-policy-parity:
+	./Tools/parity/check-compose-restart-policy.sh --strict
+
 coverage: swift-coverage go-test
 
 coverage-check: coverage
@@ -587,7 +590,7 @@ check: lint check-licenses
 lint: coverage-tools-test
 	@while IFS= read -r -d '' script; do \
 		bash -n "$$script"; \
-	done < <(find scripts -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)
+	done < <(find scripts Tools/parity -type f \( -name '*.sh' -o -name 'pre-commit.fmt' \) -print0)
 	@if command -v "$(MARKDOWNLINT)" >/dev/null 2>&1; then \
 		"$(MARKDOWNLINT)" $(MARKDOWN_FILES); \
 	elif command -v markdownlint-cli2 >/dev/null 2>&1; then \

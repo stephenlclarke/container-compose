@@ -22,6 +22,7 @@ import Glibc
 #endif
 import ContainerResource
 import ContainerizationExtras
+import ContainerizationOCI
 import Foundation
 
 /// Runtime settings used while translating Compose operations to `container`.
@@ -797,6 +798,43 @@ private struct RuntimeRestartPolicyArguments {
             result.append(contentsOf: ["--restart-window", runtimeDurationArgument(windowNanoseconds)])
         }
         return result
+    }
+
+    func restartPolicy() throws -> ContainerRestartPolicy {
+        let components = policy.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let modeValue = components.first,
+              let mode = ContainerRestartPolicy.Mode(rawValue: String(modeValue)) else {
+            throw ComposeError.invalidProject("invalid restart policy '\(policy)'")
+        }
+
+        let retryCount: UInt32?
+        if components.count == 2 {
+            guard mode == .onFailure,
+                  !components[1].isEmpty,
+                  let parsedRetryCount = UInt32(components[1]) else {
+                throw ComposeError.invalidProject("invalid restart policy '\(policy)'")
+            }
+            retryCount = parsedRetryCount
+        } else {
+            retryCount = nil
+        }
+
+        return ContainerRestartPolicy(
+            mode: mode,
+            maximumRetryCount: retryCount,
+            retryDelayInNanoseconds: try unsignedNanoseconds(delayNanoseconds, field: "restart delay"),
+            successfulRunDurationInNanoseconds: try unsignedNanoseconds(windowNanoseconds, field: "restart window")
+        )
+    }
+
+    private func unsignedNanoseconds(_ value: Int64?, field: String) throws -> UInt64? {
+        guard let value else {
+            return nil
+        }
+        guard value >= 0 else {
+            throw ComposeError.invalidProject("\(field) must be non-negative")
+        }
+        return UInt64(value)
     }
 }
 
@@ -1695,7 +1733,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     until: logOptions.until,
                     timestamps: logOptions.timestamps
                 )
-                try await runContainer(args)
+                emitComposeRuntimeOperation(args)
             }
             return
         }
@@ -1913,7 +1951,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let id = try await serviceContainerID(project: project, service: service, index: attach.index)
         let args = ["logs", "--follow", id]
         if options.dryRun {
-            try await runContainer(args)
+            emitComposeRuntimeOperation(args)
         } else {
             try await logManager.logs(
                 id: id,
@@ -2256,7 +2294,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let ids = services.map { containerName(project: project, service: $0, oneOff: false) }
         args.append(contentsOf: ids)
         if options.dryRun {
-            try await runContainer(args)
+            emitComposeRuntimeOperation(args)
             return
         }
         try await statsManager.stats(
@@ -2275,7 +2313,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let targets = try await serviceContainerTargets(project: project, services: services)
         if options.dryRun {
             for target in targets {
-                try await runContainer(["top", target.name])
+                emitComposeRuntimeOperation(["top", target.name])
             }
             return
         }
@@ -2292,7 +2330,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let runtimeUntil = try runtimeEventTimestamp(events.until)
         let services = try selectedServices(project: project, selected: events.services)
         if options.dryRun {
-            try await runContainer(eventRuntimeArguments(since: events.since, until: events.until))
+            emitComposeRuntimeEventRead(since: events.since, until: events.until)
             return
         }
         try await eventsManager.events(
@@ -2316,7 +2354,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             let containerID = target.name
             args.append(containerID)
             if options.dryRun {
-                try await runContainer(args, check: false)
+                emitComposeRuntimeOperation(args)
                 continue
             }
             try await lifecycleManager.killContainer(id: containerID, signal: signal ?? "KILL")
@@ -2329,7 +2367,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         for target in try await serviceContainerTargets(project: project, services: services) {
             let containerID = target.name
             if options.dryRun {
-                try await runContainer(["pause", containerID], check: false)
+                emitComposeRuntimeOperation(["pause", containerID])
                 continue
             }
             try await lifecycleManager.pauseContainer(id: containerID)
@@ -2342,7 +2380,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         for target in try await serviceContainerTargets(project: project, services: services) {
             let containerID = target.name
             if options.dryRun {
-                try await runContainer(["unpause", containerID], check: false)
+                emitComposeRuntimeOperation(["unpause", containerID])
                 continue
             }
             try await lifecycleManager.unpauseContainer(id: containerID)
@@ -2360,7 +2398,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         for target in targets {
             let containerID = target.name
             if options.dryRun {
-                try await runContainer(["wait", containerID])
+                emitComposeRuntimeOperation(["wait", containerID])
                 continue
             }
             let exitCode: Int32
@@ -2408,14 +2446,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 throw ComposeError.invalidProject("no source container found for cp")
             }
             if options.dryRun {
-                try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: localPath, options: copy))
+                emitComposeRuntimeOperation(copyCommandArguments(source: source.runtimeArgument, destination: localPath, options: copy))
                 return
             }
             try await copier.copyFromContainer(id: source.id, source: source.path, destination: localPath, options: transferOptions)
         case (.local(let localPath), .containers(let destinations)):
             if options.dryRun {
                 for destination in destinations {
-                    try await runContainer(copyCommandArguments(source: localPath, destination: destination.runtimeArgument, options: copy))
+                    emitComposeRuntimeOperation(copyCommandArguments(source: localPath, destination: destination.runtimeArgument, options: copy))
                 }
                 return
             }
@@ -2453,7 +2491,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         if options.dryRun {
             for destination in selectedDestinations {
-                try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: destination.runtimeArgument, options: copy))
+                emitComposeRuntimeOperation(copyCommandArguments(source: source.runtimeArgument, destination: destination.runtimeArgument, options: copy))
             }
             return
         }
@@ -2494,7 +2532,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let containerID = try await serviceContainerID(project: project, service: service, index: export.index)
         args.append(containerID)
         if options.dryRun {
-            try await runContainer(args, inheritedIO: export.output == nil)
+            emitComposeRuntimeOperation(args)
             return
         }
         try await exporter.exportContainer(id: containerID, output: export.output)
@@ -2594,8 +2632,13 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Builds the underlying runtime event command for dry-run output.
-    func eventRuntimeArguments(since: String?, until: String?) -> [String] {
+    /// Emits the Compose-owned direct runtime event read used by dry-run output.
+    func emitComposeRuntimeEventRead(since: String?, until: String?) {
+        emitComposeRuntimeOperation(composeRuntimeEventReadArguments(since: since, until: until))
+    }
+
+    /// Builds the Compose-owned runtime event read for dry-run output.
+    func composeRuntimeEventReadArguments(since: String?, until: String?) -> [String] {
         var args = ["events"]
         if let since, !since.isEmpty {
             args.append(contentsOf: ["--since", since])
@@ -3980,17 +4023,52 @@ private extension ComposeOrchestrator {
         key == "max-size" || key == "max-file"
     }
 
-    /// Returns the runtime log driver override needed for non-default Compose logging.
-    func runtimeLogDriverArgument(service: ComposeService) -> String? {
-        if case .object(let fields)? = service.logging,
-           let driver = fields["driver"]?.stringValue {
-            return driver == "none" ? "none" : nil
+    /// Returns the Compose-owned typed logging policy for service create/run.
+    func runtimeLogConfiguration(service: ComposeService) throws -> ContainerLogConfiguration {
+        let driver = runtimeLogDriver(service: service)
+        var configuration: ContainerLogConfiguration
+        switch driver {
+        case nil, "", "json-file", "local":
+            configuration = .default
+        case "none":
+            configuration = ContainerLogConfiguration(storage: .none)
+        case let driver?:
+            throw ComposeError.unsupported("service '\(service.name)' uses unsupported logging driver '\(driver)'; supported drivers are json-file, local, and none")
         }
-        return service.logDriver == "none" ? "none" : nil
+
+        let options = runtimeLogOptions(service: service)
+        guard options.isEmpty else {
+            guard configuration.storage == .local else {
+                let driverName = driver ?? "local"
+                throw ComposeError.unsupported("service '\(service.name)' uses logging options with driver '\(driverName)'; log options are only supported with local logging")
+            }
+            for (key, value) in options {
+                switch key {
+                case "max-size":
+                    configuration.maxSizeInBytes = try logOptionSizeInBytes(value, serviceName: service.name)
+                case "max-file":
+                    configuration.maxFileCount = try logOptionFileCount(value, serviceName: service.name)
+                default:
+                    throw ComposeError.unsupported("service '\(service.name)' uses unsupported logging option '\(key)'; supported options are max-size and max-file")
+                }
+            }
+            return configuration
+        }
+
+        return configuration
     }
 
-    /// Returns local apple/container logging options for service create/run.
-    func runtimeLogOptionArguments(service: ComposeService) -> [String] {
+    /// Returns the runtime log driver name from Compose's legacy and structured fields.
+    func runtimeLogDriver(service: ComposeService) -> String? {
+        if case .object(let fields)? = service.logging,
+           let driver = fields["driver"]?.stringValue {
+            return driver
+        }
+        return service.logDriver
+    }
+
+    /// Returns normalized local logging options from Compose's legacy and structured fields.
+    func runtimeLogOptions(service: ComposeService) -> [String: String] {
         var options: [String: String] = [:]
         if case .object(let fields)? = service.logging,
            case .object(let logOptions)? = fields["options"] {
@@ -4003,9 +4081,42 @@ private extension ComposeOrchestrator {
         for (key, value) in service.logOptions ?? [:] {
             options[key] = value
         }
-        return options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
+        return options
+    }
+
+    /// Returns the runtime log driver override needed for non-default Compose logging.
+    func runtimeLogDriverArgument(service: ComposeService) throws -> String? {
+        try runtimeLogConfiguration(service: service).storage == .none ? "none" : nil
+    }
+
+    /// Returns local apple/container logging options for service create/run.
+    func runtimeLogOptionArguments(service: ComposeService) throws -> [String] {
+        _ = try runtimeLogConfiguration(service: service)
+        return runtimeLogOptions(service: service).sorted(by: { $0.key < $1.key }).flatMap { key, value in
             ["--log-opt", "\(key)=\(value)"]
         }
+    }
+
+    /// Parses a Compose log size option into bytes.
+    func logOptionSizeInBytes(_ value: String, serviceName: String) throws -> UInt64 {
+        let bytes: Double
+        do {
+            bytes = try Measurement<UnitInformationStorage>.parse(parsing: value).converted(to: .bytes).value
+        } catch {
+            throw ComposeError.invalidProject("service '\(serviceName)' logging option max-size '\(value)' must be a size")
+        }
+        guard bytes.isFinite, bytes > 0, bytes <= Double(UInt64.max) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' logging option max-size '\(value)' is outside the supported range")
+        }
+        return UInt64(bytes)
+    }
+
+    /// Parses a Compose log file-count option.
+    func logOptionFileCount(_ value: String, serviceName: String) throws -> Int {
+        guard let count = Int(value), count > 0 else {
+            throw ComposeError.invalidProject("service '\(serviceName)' logging option max-file '\(value)' must be a positive integer")
+        }
+        return count
     }
 
     /// Returns the runtime hostname argument for Compose `hostname`.
@@ -4034,25 +4145,41 @@ private extension ComposeOrchestrator {
 
     /// Returns runtime host-entry arguments for Compose `extra_hosts`.
     func runtimeExtraHostArguments(service: ComposeService) throws -> [String] {
+        try runtimeHostEntries(service: service).flatMap { entry in
+            entry.hostnames.map { hostname in
+                "\(hostname):\(entry.ipAddress)"
+            }
+        }
+    }
+
+    /// Returns typed host entries for Compose `extra_hosts`.
+    func runtimeHostEntries(service: ComposeService) throws -> [ContainerConfiguration.HostEntry] {
         try (service.extraHosts ?? []).map { raw in
-            try runtimeExtraHostArgument(raw, service: service)
+            try runtimeHostEntry(raw, service: service)
         }
     }
 
     /// Returns runtime sysctl arguments for Compose `sysctls`.
     func runtimeSysctlArguments(service: ComposeService) throws -> [String] {
-        try (service.sysctls ?? [:])
+        try runtimeSysctls(service: service)
             .sorted(by: { $0.key < $1.key })
             .map { name, value in
-                let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmedName.isEmpty else {
-                    throw ComposeError.invalidProject("service '\(service.name)' uses sysctls with an empty name")
-                }
-                guard !trimmedName.contains("=") else {
-                    throw ComposeError.invalidProject("service '\(service.name)' uses sysctl name '\(trimmedName)'; sysctl names must not contain '='")
-                }
-                return "\(trimmedName)=\(value)"
+                "\(name)=\(value)"
             }
+    }
+
+    /// Returns typed sysctl values for `ContainerConfiguration.sysctls`.
+    func runtimeSysctls(service: ComposeService) throws -> [String: String] {
+        try (service.sysctls ?? [:]).reduce(into: [String: String]()) { result, item in
+            let trimmedName = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedName.isEmpty else {
+                throw ComposeError.invalidProject("service '\(service.name)' uses sysctls with an empty name")
+            }
+            guard !trimmedName.contains("=") else {
+                throw ComposeError.invalidProject("service '\(service.name)' uses sysctl name '\(trimmedName)'; sysctl names must not contain '='")
+            }
+            result[trimmedName] = item.value
+        }
     }
 
     /// Converts Compose `blkio_config` into apple/container#1595 `--blkio`
@@ -4076,6 +4203,86 @@ private extension ComposeOrchestrator {
         try appendThrottleArguments(blkio.deviceReadIOps, key: "read-iops", field: "blkio_config.device_read_iops", serviceName: service.name, to: &result)
         try appendThrottleArguments(blkio.deviceWriteIOps, key: "write-iops", field: "blkio_config.device_write_iops", serviceName: service.name, to: &result)
         return result
+    }
+
+    /// Converts Compose `blkio_config` into typed OCI block I/O runtime data.
+    func runtimeBlockIO(service: ComposeService) throws -> LinuxBlockIO? {
+        guard let blkio = service.blkioConfig else {
+            return nil
+        }
+        var weight: UInt16?
+        if let rawWeight = blkio.weight {
+            try validateBlockIOWeight(rawWeight, serviceName: service.name, field: "blkio_config.weight")
+            weight = UInt16(rawWeight)
+        }
+
+        let weightDevices = try (blkio.weightDevice ?? []).map { device in
+            try validateBlockIODevicePath(device.path, serviceName: service.name, field: "blkio_config.weight_device.path")
+            try validateBlockIOWeight(device.weight, serviceName: service.name, field: "blkio_config.weight_device.weight")
+            let id = try blockIODeviceID(device.path, serviceName: service.name)
+            return LinuxWeightDevice(major: id.major, minor: id.minor, weight: UInt16(device.weight), leafWeight: nil)
+        }
+
+        return LinuxBlockIO(
+            weight: weight,
+            leafWeight: nil,
+            weightDevice: weightDevices,
+            throttleReadBpsDevice: try blockIOThrottleDevices(blkio.deviceReadBps, field: "blkio_config.device_read_bps", serviceName: service.name, parseRate: blockIOByteRate),
+            throttleWriteBpsDevice: try blockIOThrottleDevices(blkio.deviceWriteBps, field: "blkio_config.device_write_bps", serviceName: service.name, parseRate: blockIOByteRate),
+            throttleReadIOPSDevice: try blockIOThrottleDevices(blkio.deviceReadIOps, field: "blkio_config.device_read_iops", serviceName: service.name, parseRate: blockIOIntegerRate),
+            throttleWriteIOPSDevice: try blockIOThrottleDevices(blkio.deviceWriteIOps, field: "blkio_config.device_write_iops", serviceName: service.name, parseRate: blockIOIntegerRate)
+        )
+    }
+
+    private func blockIOThrottleDevices(
+        _ devices: [ComposeBlkioThrottleDevice]?,
+        field: String,
+        serviceName: String,
+        parseRate: (String, String, String) throws -> UInt64
+    ) throws -> [LinuxThrottleDevice] {
+        try (devices ?? []).map { device in
+            try validateBlockIODevicePath(device.path, serviceName: serviceName, field: "\(field).path")
+            let id = try blockIODeviceID(device.path, serviceName: serviceName)
+            let rate = try parseRate(device.rate, "\(field).rate", serviceName)
+            return LinuxThrottleDevice(major: id.major, minor: id.minor, rate: rate)
+        }
+    }
+
+    private func blockIODeviceID(_ value: String, serviceName: String) throws -> (major: Int64, minor: Int64) {
+        if value.hasPrefix("/") {
+            var info = stat()
+            guard stat(value, &info) == 0 else {
+                throw ComposeError.invalidProject("service '\(serviceName)' uses blkio_config device path '\(value)', but the path could not be statted")
+            }
+            let rawDevice = UInt32(bitPattern: info.st_rdev)
+            return (Int64((rawDevice >> 24) & 0xff), Int64(rawDevice & 0x00ff_ffff))
+        }
+
+        let parts = value.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, let major = Int64(parts[0]), let minor = Int64(parts[1]) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses blkio_config device '\(value)'; device must be an absolute path or '<major>:<minor>'")
+        }
+        return (major, minor)
+    }
+
+    private func blockIOByteRate(_ value: String, field: String, serviceName: String) throws -> UInt64 {
+        let bytes: Double
+        do {
+            bytes = try Measurement<UnitInformationStorage>.parse(parsing: value).converted(to: .bytes).value
+        } catch {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(value)'; block I/O byte rates must be sizes")
+        }
+        guard bytes.isFinite, bytes >= 0, bytes <= Double(UInt64.max) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(value)'; block I/O byte rate is outside the supported range")
+        }
+        return UInt64(bytes)
+    }
+
+    private func blockIOIntegerRate(_ value: String, field: String, serviceName: String) throws -> UInt64 {
+        guard let rate = UInt64(value) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(value)'; block I/O throttle rates must be non-negative integers")
+        }
+        return rate
     }
 
     private func appendThrottleArguments(
@@ -4109,8 +4316,8 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Canonicalizes one Compose host entry into the runtime `--add-host` form.
-    func runtimeExtraHostArgument(_ raw: String, service: ComposeService) throws -> String {
+    /// Canonicalizes one Compose host entry into the typed runtime hosts entry.
+    func runtimeHostEntry(_ raw: String, service: ComposeService) throws -> ContainerConfiguration.HostEntry {
         let separator = raw.firstIndex(of: "=") ?? raw.firstIndex(of: ":")
         guard let separator else {
             throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' must use HOST=IP or HOST:IP")
@@ -4126,14 +4333,20 @@ private extension ComposeOrchestrator {
         }
 
         if rawAddress == ContainerConfiguration.HostEntry.hostGatewayAddress {
-            return "\(hostname):\(ContainerConfiguration.HostEntry.hostGatewayAddress)"
+            return ContainerConfiguration.HostEntry(ipAddress: ContainerConfiguration.HostEntry.hostGatewayAddress, hostnames: [hostname])
         }
 
         let ipAddress = unbracketedIPAddress(rawAddress)
         guard (try? IPAddress(ipAddress)) != nil else {
             throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has invalid IP address '\(rawAddress)'")
         }
-        return "\(hostname):\(ipAddress)"
+        return ContainerConfiguration.HostEntry(ipAddress: ipAddress, hostnames: [hostname])
+    }
+
+    /// Canonicalizes one Compose host entry into the runtime `--add-host` form.
+    func runtimeExtraHostArgument(_ raw: String, service: ComposeService) throws -> String {
+        let entry = try runtimeHostEntry(raw, service: service)
+        return entry.hostnames.map { "\($0):\(entry.ipAddress)" }.joined(separator: " ")
     }
 
     /// Removes brackets accepted by Compose around IPv6 literals.
@@ -4157,6 +4370,11 @@ private extension ComposeOrchestrator {
         )
     }
 
+    /// Returns the typed restart policy used by direct apple/container create.
+    func runtimeRestartPolicy(service: ComposeService) throws -> ContainerRestartPolicy? {
+        try runtimeRestartPolicyArguments(service: service)?.restartPolicy()
+    }
+
     /// Returns the runtime restart arguments for a Compose Deploy restart policy.
     func runtimeDeployRestartPolicyArguments(
         service: ComposeService,
@@ -4166,15 +4384,18 @@ private extension ComposeOrchestrator {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         let restartCondition = condition.flatMap { $0.isEmpty ? nil : $0 } ?? "any"
-        let effectiveRestartCondition = isDeployJobService(service) && restartCondition == "any"
-            ? "on-failure"
-            : restartCondition
         let timing = try deployRestartTiming(service: service, policy: policy)
+        if isDeployJobService(service), restartCondition != "none" {
+            throw ComposeError.unsupported(jobRestartPolicyUnsupportedMessage(service: service, source: "deploy.restart_policy"))
+        }
 
-        switch effectiveRestartCondition {
+        switch restartCondition {
         case "none":
             if policy.maxAttempts != nil {
                 throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'none'; apple/container retry limits are only available for on-failure restart policies")
+            }
+            if timing.delayNanoseconds != nil || timing.windowNanoseconds != nil {
+                throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy timing with condition 'none'; restart timing only applies to restarting policies")
             }
             return RuntimeRestartPolicyArguments(policy: "no")
         case "any":
@@ -4192,7 +4413,7 @@ private extension ComposeOrchestrator {
                 guard maxAttempts <= UInt64(UInt32.max) else {
                     throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.max_attempts must be between 0 and \(UInt32.max)")
                 }
-                restartPolicy = "on-failure:\(maxAttempts)"
+                restartPolicy = maxAttempts == 0 ? "on-failure" : "on-failure:\(maxAttempts)"
             } else {
                 restartPolicy = "on-failure"
             }
@@ -4229,6 +4450,10 @@ private extension ComposeOrchestrator {
         return mode == "replicated-job" || mode == "global-job"
     }
 
+    func jobRestartPolicyUnsupportedMessage(service: ComposeService, source: String) -> String {
+        "service '\(service.name)' uses \(source) with deploy.mode '\(service.deployMode ?? "")'; job restart policies need a restart-aware apple/container wait primitive"
+    }
+
     /// Returns the runtime restart arguments for the service-level `restart` key.
     func runtimeServiceRestartPolicyArguments(
         service: ComposeService,
@@ -4249,9 +4474,6 @@ private extension ComposeOrchestrator {
             guard parts.count == 1 else {
                 throw ComposeError.invalidProject("service '\(service.name)' restart retry count is only supported with on-failure")
             }
-            if !allowSuccessfulRestart, mode != "no" {
-                throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(mode)' with deploy.mode '\(service.deployMode ?? "")'; job services can only restart on failure")
-            }
         case "on-failure":
             if parts.count == 2 {
                 let retryValue = String(parts[1])
@@ -4261,6 +4483,10 @@ private extension ComposeOrchestrator {
             }
         default:
             throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; supported values are no, always, on-failure[:max-retries], and unless-stopped")
+        }
+
+        if !allowSuccessfulRestart, mode != "no" {
+            throw ComposeError.unsupported(jobRestartPolicyUnsupportedMessage(service: service, source: "restart policy '\(restart)'"))
         }
 
         return RuntimeRestartPolicyArguments(policy: restart)
@@ -4346,6 +4572,47 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Returns the typed healthcheck used by direct apple/container create.
+    func runtimeHealthCheck(
+        project: ComposeProject,
+        service: ComposeService,
+        cache: ComposeImageHealthCheckCache?,
+        baseProcess: ProcessConfiguration
+    ) async throws -> ContainerHealthCheck? {
+        let fields = try healthCheckFields(service: service)
+        guard fields["disable"]?.boolValue != true else {
+            return nil
+        }
+        if let test = fields["test"] {
+            return try explicitHealthCheck(test: test, fields: fields, serviceName: service.name, baseProcess: baseProcess)
+        }
+
+        let imageHealthCheck: ComposeImageHealthCheck?
+        do {
+            imageHealthCheck = try await inheritedImageHealthCheck(project: project, service: service, cache: cache)
+        } catch {
+            guard healthCheckRequiresInheritedCommand(fields) else {
+                return nil
+            }
+            throw error
+        }
+
+        guard let imageHealthCheck else {
+            if healthCheckRequiresInheritedCommand(fields) {
+                let image = serviceImage(project: project, service: service) ?? "<none>"
+                throw ComposeError.unsupported("service '\(service.name)' tunes an image healthcheck, but image '\(image)' does not expose Dockerfile HEALTHCHECK metadata")
+            }
+            return nil
+        }
+
+        return try inheritedHealthCheck(
+            imageHealthCheck,
+            fields: fields,
+            serviceName: service.name,
+            baseProcess: baseProcess
+        )
+    }
+
     /// Returns validated Compose healthcheck fields.
     func healthCheckFields(service: ComposeService) throws -> [String: ComposeValue] {
         guard let healthcheck = service.healthcheck else {
@@ -4381,6 +4648,27 @@ private extension ComposeOrchestrator {
         return try await imageManager.imageHealthCheck(image, platform: service.platform)
     }
 
+    /// Converts explicit Compose healthcheck fields to a typed healthcheck.
+    func explicitHealthCheck(
+        test: ComposeValue,
+        fields: [String: ComposeValue],
+        serviceName: String,
+        baseProcess: ProcessConfiguration
+    ) throws -> ContainerHealthCheck? {
+        switch try runtimeHealthCheckCommand(test: test, serviceName: serviceName) {
+        case .disabled:
+            return nil
+        case .command(let command):
+            return try containerHealthCheck(
+                command: command,
+                fields: fields,
+                inherited: nil,
+                serviceName: serviceName,
+                baseProcess: baseProcess
+            )
+        }
+    }
+
     /// Converts explicit Compose healthcheck fields to runtime arguments.
     func explicitHealthCheckArguments(
         test: ComposeValue,
@@ -4397,6 +4685,34 @@ private extension ComposeOrchestrator {
 
         try appendHealthCheckOverrides(fields: fields, serviceName: serviceName, args: &args)
         return args
+    }
+
+    /// Converts Dockerfile healthcheck metadata plus Compose overrides to a typed healthcheck.
+    func inheritedHealthCheck(
+        _ imageHealthCheck: ComposeImageHealthCheck,
+        fields: [String: ComposeValue],
+        serviceName: String,
+        baseProcess: ProcessConfiguration
+    ) throws -> ContainerHealthCheck? {
+        guard let test = imageHealthCheck.test, !test.isEmpty else {
+            _ = try handleMissingInheritedHealthCheckCommand(fields: fields, serviceName: serviceName)
+            return nil
+        }
+
+        let testValue = ComposeValue.array(test.map { .string($0) })
+        switch try runtimeHealthCheckCommand(test: testValue, serviceName: serviceName) {
+        case .disabled:
+            _ = try handleMissingInheritedHealthCheckCommand(fields: fields, serviceName: serviceName)
+            return nil
+        case .command(let command):
+            return try containerHealthCheck(
+                command: command,
+                fields: fields,
+                inherited: imageHealthCheck,
+                serviceName: serviceName,
+                baseProcess: baseProcess
+            )
+        }
     }
 
     /// Converts Dockerfile healthcheck metadata plus Compose overrides to runtime arguments.
@@ -4432,6 +4748,63 @@ private extension ComposeOrchestrator {
             return []
         }
         throw ComposeError.unsupported("service '\(serviceName)' tunes an image healthcheck, but the image disables Dockerfile HEALTHCHECK")
+    }
+
+    /// Builds the typed container healthcheck from Compose overrides and optional image defaults.
+    func containerHealthCheck(
+        command: String,
+        fields: [String: ComposeValue],
+        inherited: ComposeImageHealthCheck?,
+        serviceName: String,
+        baseProcess: ProcessConfiguration
+    ) throws -> ContainerHealthCheck {
+        let interval = try healthCheckDurationNanoseconds(
+            fields["interval"],
+            inherited: inherited?.intervalInNanoseconds,
+            field: "interval",
+            serviceName: serviceName
+        ) ?? ContainerHealthCheck.defaultIntervalInNanoseconds
+        let timeout = try healthCheckDurationNanoseconds(
+            fields["timeout"],
+            inherited: inherited?.timeoutInNanoseconds,
+            field: "timeout",
+            serviceName: serviceName
+        ) ?? ContainerHealthCheck.defaultTimeoutInNanoseconds
+        let startPeriod = try healthCheckDurationNanoseconds(
+            fields["start_period"],
+            inherited: inherited?.startPeriodInNanoseconds,
+            field: "start_period",
+            serviceName: serviceName
+        ) ?? ContainerHealthCheck.defaultStartPeriodInNanoseconds
+        let startInterval = try healthCheckDurationNanoseconds(
+            fields["start_interval"],
+            inherited: inherited?.startIntervalInNanoseconds,
+            field: "start_interval",
+            serviceName: serviceName
+        )
+        let retries = try healthCheckRetries(
+            fields["retries"],
+            inherited: inherited?.retries,
+            serviceName: serviceName
+        )
+
+        return ContainerHealthCheck(
+            process: ProcessConfiguration(
+                executable: "/bin/sh",
+                arguments: ["-c", command],
+                environment: baseProcess.environment,
+                workingDirectory: baseProcess.workingDirectory,
+                terminal: false,
+                user: baseProcess.user,
+                supplementalGroups: baseProcess.supplementalGroups,
+                rlimits: baseProcess.rlimits
+            ),
+            intervalInNanoseconds: interval,
+            timeoutInNanoseconds: timeout,
+            startPeriodInNanoseconds: startPeriod,
+            startIntervalInNanoseconds: startInterval,
+            retries: retries
+        )
     }
 
     /// Appends image-level healthcheck defaults that are not overridden by Compose.
@@ -4536,21 +4909,65 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Returns a healthcheck duration string accepted by apple/container.
+    /// Returns a Compose healthcheck duration string to pass through to apple/container.
     func healthCheckDuration(_ value: ComposeValue, field: String, serviceName: String) throws -> String {
         guard let duration = value.stringValue,
-              ContainerLogTimestampParser.parseDuration(duration) != nil else {
+              ComposeTimeParser.parseDuration(duration) != nil else {
             throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.\(field) must be a Compose duration")
         }
         return duration
     }
 
+    /// Returns a Compose healthcheck duration in nanoseconds for typed create.
+    func healthCheckDurationNanoseconds(
+        _ value: ComposeValue?,
+        inherited inheritedNanoseconds: Int64?,
+        field: String,
+        serviceName: String
+    ) throws -> UInt64? {
+        if let value {
+            let duration = try healthCheckDuration(value, field: field, serviceName: serviceName)
+            guard let seconds = ComposeTimeParser.parseDuration(duration) else {
+                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.\(field) must be a Compose duration")
+            }
+            let nanoseconds = seconds * 1_000_000_000
+            guard nanoseconds.isFinite, nanoseconds >= 0, nanoseconds <= Double(UInt64.max) else {
+                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.\(field) is outside the supported range")
+            }
+            return UInt64(nanoseconds.rounded())
+        }
+
+        guard let inheritedNanoseconds, inheritedNanoseconds != 0 else {
+            return nil
+        }
+        guard inheritedNanoseconds > 0 else {
+            throw ComposeError.invalidProject("service '\(serviceName)' inherited healthcheck.\(field) must be non-negative")
+        }
+        return UInt64(inheritedNanoseconds)
+    }
+
     /// Returns the Compose healthcheck retry count.
     func healthCheckRetries(_ value: ComposeValue, serviceName: String) throws -> Int {
-        guard let retries = value.intValue, retries >= 0 else {
-            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.retries must be a non-negative integer")
+        guard let retries = value.intValue, retries >= 0, retries <= Int(UInt32.max) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.retries must be between 0 and \(UInt32.max)")
         }
         return retries
+    }
+
+    /// Returns the typed Compose healthcheck retry count.
+    func healthCheckRetries(_ value: ComposeValue?, inherited: Int?, serviceName: String) throws -> UInt32 {
+        let retries: Int
+        if let value {
+            retries = try healthCheckRetries(value, serviceName: serviceName)
+        } else if let inherited, inherited > 0 {
+            retries = inherited
+        } else {
+            return ContainerHealthCheck.defaultRetries
+        }
+        guard retries <= Int(UInt32.max) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.retries must be between 0 and \(UInt32.max)")
+        }
+        return UInt32(retries)
     }
 
     /// Returns the service replica that should inherit foreground IO for `up`.
@@ -5601,10 +6018,10 @@ private extension ComposeOrchestrator {
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
         }
-        if let logDriver = runtimeLogDriverArgument(service: service) {
+        if let logDriver = try runtimeLogDriverArgument(service: service) {
             args.append(contentsOf: ["--log-driver", logDriver])
         }
-        args.append(contentsOf: runtimeLogOptionArguments(service: service))
+        args.append(contentsOf: try runtimeLogOptionArguments(service: service))
         args.append(contentsOf: try await runtimeHealthCheckArguments(
             project: project,
             service: service,
@@ -5907,7 +6324,7 @@ private extension ComposeOrchestrator {
         guard let value, !value.isEmpty else {
             return nil
         }
-        if let date = ContainerLogTimestampParser.parse(value, relativeTo: options.currentDate()) {
+        if let date = ComposeTimeParser.parseTimestamp(value, relativeTo: options.currentDate()) {
             return date
         }
         throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
@@ -5918,7 +6335,7 @@ private extension ComposeOrchestrator {
         guard let value, !value.isEmpty else {
             return nil
         }
-        if let date = ContainerLogTimestampParser.parse(value, relativeTo: options.currentDate()) {
+        if let date = ComposeTimeParser.parseTimestamp(value, relativeTo: options.currentDate()) {
             return date
         }
         throw ComposeError.invalidProject("events time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
@@ -5952,7 +6369,7 @@ private extension ComposeOrchestrator {
         for target in targets {
             let exitCode: Int32
             if options.dryRun {
-                try await runContainer(["wait", target.name])
+                emitComposeRuntimeOperation(["wait", target.name])
                 exitCode = 0
             } else {
                 exitCode = try await lifecycleManager.waitContainer(id: target.name)
@@ -5989,7 +6406,7 @@ private extension ComposeOrchestrator {
         dependentService: ComposeService
     ) async throws -> Int32 {
         if options.dryRun {
-            try await runContainer(["wait", target.name])
+            emitComposeRuntimeOperation(["wait", target.name])
             return 0
         }
         guard let container = try await discoveryManager.getContainer(id: target.name) else {
@@ -6096,7 +6513,7 @@ private extension ComposeOrchestrator {
     func waitThenDownProject(project: ComposeProject, targets: [ServiceContainerTarget]) async throws {
         if options.dryRun {
             for target in targets {
-                try await runContainer(["wait", target.name])
+                emitComposeRuntimeOperation(["wait", target.name])
             }
             try await down(project: project, options: ComposeDownOptions())
             return
@@ -6617,6 +7034,11 @@ private extension ComposeOrchestrator {
             )
         }
         return result
+    }
+
+    /// Prints a Compose-owned direct runtime operation in dry-run mode.
+    func emitComposeRuntimeOperation(_ arguments: [String]) {
+        options.emit("+ " + shellQuoted(["compose-runtime"] + arguments))
     }
 }
 
