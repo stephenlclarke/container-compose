@@ -9848,7 +9848,7 @@ struct ComposeOrchestratorTests {
         ])
         let manager = ContainerClientLogManager(
             client: client,
-            followStateProvider: RecordingContainerLogFollowStateProvider(responses: [false])
+            followStateProvider: RecordingContainerLogFollowStateProvider(responses: [true, false])
         )
 
         try await manager.logs(id: "demo-api-1", tail: nil, follow: true, emit: { emitted.append($0) })
