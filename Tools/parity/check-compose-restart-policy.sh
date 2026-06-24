@@ -166,7 +166,7 @@ expected = {
 
 for service, (name, maximum_retry_count) in expected.items():
     container_id = subprocess.check_output(
-        ["docker", "compose", "-p", project, "-f", compose_file, "ps", "-q", service],
+        ["docker", "compose", "-p", project, "-f", compose_file, "ps", "--all", "-q", service],
         text=True,
     ).strip()
     if not container_id:
