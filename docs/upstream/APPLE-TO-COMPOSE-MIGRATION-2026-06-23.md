@@ -8,7 +8,9 @@ This review reclassifies the local `apple/containerization` and `apple/container
 
 ## 2026-06-23 Refresh Result
 
-The `container` and `container-compose` remotes were fetched before this audit. Every checked-out `container` worktree listed below is clean and exactly aligned with its tracked fork branch (`rev-list --left-right --count @{upstream}...HEAD` returned `0 0`), so there is no hidden uncommitted or unpublished Apple source work to rescue before moving functionality.
+The `container` and `container-compose` remotes were fetched before this audit. Every checked-out `container` worktree listed below was clean and exactly aligned with its tracked fork branch (`rev-list --left-right --count @{upstream}...HEAD` returned `0 0`), so there was no hidden uncommitted or unpublished Apple source work to rescue before moving functionality.
+
+Update from 2026-06-24: the earlier unsquashed log review worktree and its tracked fork branch were removed after the equivalent work was preserved in the current squashed `develop` history and handoff notes.
 
 The concrete functionality moved back into `container-compose` in the first pass is Docker/Compose time parsing. `ComposeTimeParser` now owns Docker-shaped log/event timestamp strings and Compose/Go-style duration strings before the runtime boundary, and the Compose tests cover RFC 3339/RFC 3339 nano, date-only timestamps, local Docker timestamp layouts, Unix timestamps with fractional seconds, fractional relative durations, malformed Unix timestamps, and malformed relative durations. That leaves `apple/container#1765` as optional Apple CLI parser work, not a dependency for this plugin.
 
@@ -21,14 +23,13 @@ No other local `container` source changes can be moved directly without replacin
 | Checkout | Branch or worktree | Status | Apple-bound contents found |
 | --- | --- | --- | --- |
 | `/Users/sclarke/github/containerization` | `integration/blkio-runtime` | Staged deletions only, tracking origin `0 0`: six handoff docs removed from the fork after being moved here | Committed lower-runtime block I/O resources, pause controls, copy symlink/archive options, and process identifiers |
-| `/Users/sclarke/github/container` | `logs-integration-chris` | Clean, tracking fork `0 0` | Broad squashed integration branch: logs, local log policy/rotation, exit metadata, health checks, restart policies, image healthcheck metadata, identity/network primitives, blkio, sysctls, pause, copy, process identifiers, events |
-| `/Users/sclarke/github/container-logs-integration-review` | `compose-v2-preview` | Clean, tracking fork `0 0` | Earlier unsquashed log retrieval, timestamp, structured record, local policy, rotation, and follow work |
+| `/Users/sclarke/github/container` | `develop` | Clean, tracking fork | Broad squashed integration branch: logs, local log policy/rotation, exit metadata, health checks, restart policies, image healthcheck metadata, identity/network primitives, blkio, sysctls, pause, copy, process identifiers, events |
 | `/Users/sclarke/github/container-logs-tail-until` | `logs-tail-until-delta` | Clean, tracking fork `0 0` | Narrow log retrieval options slice |
 | `/Users/sclarke/github/container-logs-unix-timestamps` | `logs-unix-timestamp-filters` | Clean, tracking fork `0 0` | Narrow log Unix timestamp parser slice; Docker string parsing is now mirrored and owned by `ComposeTimeParser` |
 | `/Users/sclarke/github/worktrees/container-restart-policy-create-options` | `restart-policy-create-options` | Clean, tracking fork `0 0` | Narrow create-time restart policy slice |
 | `/Users/sclarke/github/worktrees/container-restart-policy-runtime` | `restart-policy-runtime` | Clean, tracking fork `0 0` | Narrow runtime restart scheduler slice |
 | `/Users/sclarke/github/worktrees/container-restart-policy-timing` | `restart-policy-timing` | Clean, tracking fork `0 0` | Narrow restart delay/window slice |
-| `/Users/sclarke/github/container-compose` | `logs-integration` | Dirty with existing local docs/code work | Compose mappings for logs, health/dependencies, restart, configs/secrets, network identity, blkio, sysctls, pause, copy, top, and events |
+| `/Users/sclarke/github/container-compose` | `develop` | Dirty only with unrelated untracked local files after later branch cleanup | Compose mappings for logs, health/dependencies, restart, configs/secrets, network identity, blkio, sysctls, pause, copy, top, and events |
 
 ## Live Authored Apple PRs
 
@@ -91,5 +92,5 @@ The practical implementation move is to stop making `container-compose` depend o
 
 - The only dirty state found inside the Apple checkouts was staged deletion of handoff docs in `/Users/sclarke/github/containerization`. That matches the repo policy that upstream drafts live in `container-compose`.
 - No uncommitted Apple source changes were found in `/Users/sclarke/github/container` or its checked-out worktrees.
-- The broad `container-compose` `logs-integration` branch already contains most of the Compose-side migrations. The next code-heavy step is not another Apple PR; it is extracting typed creation/execution adapters in this repo so Docker-shaped Apple CLI flags stop being the plugin's runtime dependency.
+- The broad Compose-side migration work has been folded into `container-compose` `develop`. The next code-heavy step is not another Apple PR; it is extracting typed creation/execution adapters in this repo so Docker-shaped Apple CLI flags stop being the plugin's runtime dependency.
 - The 2026-06-23 documentation cleanup removed parser-only Apple drafts for healthcheck CLI flags, sysctl CLI flags, local logging driver/options, the stale pre-JLogan submission order, and duplicate event drafts under `docs/upstream/apple-container/`. The canonical event slab now lives under `docs/upstream/events/`, and the remaining Apple drafts are framed around typed primitives or native resource-management behavior. Compose-facing drafts may still mention current `container run/create` command-vector output, but only as a temporary bridge while typed service creation is wired in this repository.

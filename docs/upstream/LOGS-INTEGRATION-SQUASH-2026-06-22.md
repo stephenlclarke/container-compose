@@ -6,6 +6,8 @@ Snapshot date: 2026-06-22 17:30 BST.
 
 The pre-squash history is preserved at `stephenlclarke/container:backup/logs-integration-chris-pre-squash-20260622-171352`.
 
+Update from 2026-06-24: the broad squashed branch has since been folded into `stephenlclarke/container` `develop`, and the old review/proving branches were removed. Use the commit map below as historical provenance when constructing small Apple-facing PR branches.
+
 ## Current Squashed Commits
 
 | New commit | PR-sized slice | Pre-squash source |
@@ -27,7 +29,7 @@ The pre-squash history is preserved at `stephenlclarke/container:backup/logs-int
 
 ## PR Construction Notes
 
-- Use the new full commit IDs above when constructing future PR branches from `logs-integration-chris`.
+- Use the new full commit IDs above when constructing future PR branches from the current `develop` history.
 - Existing handoff drafts that mention pre-squash commit IDs should be read together with this map until each draft is refreshed in place.
 - The lower-runtime `stephenlclarke/containerization:integration/blkio-runtime` commits did not change in this squash; the branch still points at `aaa143b15f426912342cb4f29dc6a55065ba0651`.
-- The `container-compose` `logs-integration` commits did not change in this squash; that branch is still nine commits ahead of `origin/logs-integration`.
+- The Compose-side commits were later folded into `container-compose` `develop`; the old broad `logs-integration` branch has been removed.
