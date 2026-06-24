@@ -14,7 +14,7 @@ and package steps are covered in [BUILD.md](BUILD.md).
 
 ## Install With Homebrew
 
-The `develop` and `release` branches carry a local Homebrew formula that mirrors the source-build style used by Homebrew's `container` formula. It installs the plugin under the `container-compose` keg and leaves the final plugin registration as an explicit symlink into the active `container` install root.
+The `develop` and `main` branches carry a local Homebrew formula that mirrors the source-build style used by Homebrew's `container` formula. It installs the plugin under the `container-compose` keg and leaves the final plugin registration as an explicit symlink into the active `container` install root.
 
 Install the matching `container` fork branch first:
 
@@ -25,7 +25,7 @@ brew install --build-from-source --HEAD stephenlclarke/container/container
 brew services start container
 ```
 
-For the frozen tester lane, check out `release` instead of `develop` inside the tap.
+For the frozen tester lane, check out `main` instead of `develop` inside the tap.
 
 Install `container-compose` from the same lane:
 
@@ -38,7 +38,7 @@ ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" "
 brew services restart container
 ```
 
-For the frozen tester lane, check out `release` instead of `develop` inside the tap.
+For the frozen tester lane, check out `main` instead of `develop` inside the tap.
 
 Verify that `container` discovers the plugin:
 
