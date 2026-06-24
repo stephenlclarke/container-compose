@@ -26,7 +26,7 @@ Use pull requests for all changes.
 5. Add or update tests for behavior changes.
 6. Update documentation when behavior, commands, installation, or developer
    workflow changes.
-7. Update [COMPATIBILITY.md](COMPATIBILITY.md) when runtime primitive support
+7. Update [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md) when runtime primitive support
    changes.
 8. Run the validation described in [BUILD.md](BUILD.md) before requesting
    review.
@@ -90,7 +90,7 @@ Keep every contribution easy for apple/container maintainers to assess:
   where available and keep CLI compatibility fallbacks explicit.
 - Preserve the Swift orchestration and Go `compose-go` normalization boundary
   described in [DESIGN.md](DESIGN.md).
-- Keep unsupported Compose surfaces explicit in [COMPATIBILITY.md](COMPATIBILITY.md)
+- Keep unsupported Compose surfaces explicit in [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md)
   and [PLAN.md](PLAN.md), separating plugin gaps from apple/container runtime
   primitive gaps.
 - Follow the Apache License, Version 2.0, and keep license headers current with
@@ -107,7 +107,7 @@ Keep every contribution easy for apple/container maintainers to assess:
 - Keep orchestration logic in Swift and Compose normalization in the Go helper.
 - Prefer the existing project structure over new abstractions.
 - Keep unsupported Compose features explicit and actionable.
-- Keep [COMPATIBILITY.md](COMPATIBILITY.md) aligned with supported runtime
+- Keep [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md) aligned with supported runtime
   primitives.
 - Run `make check` for fast lint and license-header validation before larger
   test runs.

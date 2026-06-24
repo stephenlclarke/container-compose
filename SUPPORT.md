@@ -13,7 +13,7 @@ triage:
   might expose credentials, private registry information, or sensitive runtime
   details.
 
-Before opening an issue, check [COMPATIBILITY.md](COMPATIBILITY.md) and
+Before opening an issue, check [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md) and
 [PLAN.md](PLAN.md) to see whether the behavior is already tracked as a
 container-compose design gap or an
 [`apple/container`](https://github.com/apple/container) runtime gap.

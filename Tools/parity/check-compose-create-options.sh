@@ -26,11 +26,15 @@
 # ENVIRONMENT:
 #   CONTAINER_COMPOSE  Path to the container-compose binary. Defaults to the
 #                      local SwiftPM debug build at .build/debug/compose.
+#   DOCKER_COMPOSE_E2E_DIR
+#                      Sparse checkout path for docker/compose e2e fixtures.
+#                      Defaults to .build/parity/docker-compose-e2e.
 #
 # This script is intentionally local-only and is not part of CI. It first
 # validates Docker Compose V2's rendered create-time container configuration,
 # then runs the same fixture through container-compose so fork-backed runtime
-# option mapping is exercised before Apple-facing PR review.
+# option mapping is exercised before Apple-facing PR review. The build-backed
+# service uses a Dockerfile refreshed from docker/compose e2e fixtures.
 
 set -euo pipefail
 
@@ -47,6 +51,9 @@ DOCKER_PROJECT_NAME="container-compose-create-docker-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="container-compose-create-runtime-$RANDOM-$$"
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_PROJECT_TOUCHED=0
+DOCKER_COMPOSE_E2E_DIR="${DOCKER_COMPOSE_E2E_DIR:-$REPO_ROOT/.build/parity/docker-compose-e2e}"
+DOCKER_COMPOSE_E2E_FIXTURES="$DOCKER_COMPOSE_E2E_DIR/pkg/e2e/fixtures"
+DOCKER_COMPOSE_E2E_COMMIT=""
 
 # Print a warning message to stderr.
 warning() {
@@ -127,16 +134,50 @@ check_container_compose() {
     fi
 }
 
+# Refresh docker/compose e2e fixtures only when missing or upstream moved.
+sync_docker_compose_e2e_fixtures() {
+    local sync_args
+    local sync_output
+
+    sync_args=(--dest "$DOCKER_COMPOSE_E2E_DIR")
+    if ((STRICT == 1)); then
+        sync_args+=(--strict)
+    fi
+
+    if ! sync_output="$("$REPO_ROOT/Tools/parity/sync-docker-compose-e2e-fixtures.sh" "${sync_args[@]}" 2>&1)"; then
+        skip_or_fail "$sync_output"
+    fi
+
+    DOCKER_COMPOSE_E2E_COMMIT="$(printf '%s\n' "$sync_output" | tail -n 1)"
+}
+
 # Create a Compose fixture covering create-time options mapped by this repo.
 create_fixture() {
+    local upstream_dockerfile
+    local build_image_name
+
     mkdir -p "$REPO_ROOT/.build/parity"
     TMPDIR="$(mktemp -d "$REPO_ROOT/.build/parity/create-options.XXXXXX")"
     COMPOSE_FILE="$TMPDIR/compose.yml"
+    upstream_dockerfile="$DOCKER_COMPOSE_E2E_FIXTURES/build-test/minimal/Dockerfile"
+    build_image_name="$CONTAINER_PROJECT_NAME-built:latest"
+
+    if [[ ! -f "$upstream_dockerfile" ]]; then
+        skip_or_fail "Docker Compose e2e Dockerfile is missing: $upstream_dockerfile"
+    fi
 
     printf 'enabled=true\n' >"$TMPDIR/api.conf"
     printf 'secret\n' >"$TMPDIR/api-token.txt"
-    cat >"$COMPOSE_FILE" <<'YAML'
+    printf 'copied from docker/compose e2e commit %s\n' "$DOCKER_COMPOSE_E2E_COMMIT" >"$TMPDIR/source.txt"
+    cp "$upstream_dockerfile" "$TMPDIR/Dockerfile"
+    cat >"$COMPOSE_FILE" <<YAML
 services:
+  built:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: $build_image_name
+    command: ["true"]
   api:
     image: alpine:3.20
     command: ["sh", "-c", "sleep 60"]
@@ -285,6 +326,9 @@ worker = inspect("worker")
 worker_host = worker["HostConfig"]
 require(worker_host["LogConfig"]["Type"] == "none", "worker disabled logging was not rendered")
 require(worker_host["RestartPolicy"] == {"Name": "on-failure", "MaximumRetryCount": 4}, "worker deploy restart policy was not rendered")
+
+built = inspect("built")
+require(built["Config"]["Image"].endswith("-built:latest"), "build-backed service did not use the expected image tag")
 PY
 }
 
@@ -292,8 +336,11 @@ PY
 validate_container_compose_dry_run() {
     local dry_run_output
 
-    dry_run_output="$("$CONTAINER_COMPOSE" --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --force-recreate)"
+    dry_run_output="$("$CONTAINER_COMPOSE" --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --force-recreate)"
 
+    [[ "$dry_run_output" == *"container build --tag $CONTAINER_PROJECT_NAME-built:latest"* ]]
+    [[ "$dry_run_output" == *"--file Dockerfile $TMPDIR"* ]]
+    [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-built-1"* ]]
     [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-api-1"* ]]
     [[ "$dry_run_output" == *"--log-opt max-file=3"* ]]
     [[ "$dry_run_output" == *"--log-opt max-size=512b"* ]]
@@ -329,7 +376,7 @@ run_container_compose_create() {
     local create_output
 
     CONTAINER_PROJECT_TOUCHED=1
-    if ! create_output="$(with_timeout 120 "$CONTAINER_COMPOSE" -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --pull missing --force-recreate 2>&1)"; then
+    if ! create_output="$(with_timeout 120 "$CONTAINER_COMPOSE" -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --pull missing --force-recreate 2>&1)"; then
         skip_or_fail "container-compose create failed: $create_output"
     fi
 }
@@ -339,10 +386,11 @@ main() {
     parse_args "$@"
     check_docker
     check_container_compose
+    sync_docker_compose_e2e_fixtures
     create_fixture
     trap cleanup EXIT
 
-    docker compose -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" create --pull missing --force-recreate >/dev/null
+    docker compose -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --pull missing --force-recreate >/dev/null
     validate_docker_create
     validate_container_compose_dry_run
     run_container_compose_create

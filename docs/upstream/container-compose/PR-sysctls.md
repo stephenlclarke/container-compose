@@ -38,7 +38,7 @@ References:
 - Added validation for empty names and names containing `=`, because the runtime CLI syntax uses `name=value`.
 - Added `up` and one-off `run` command mapping tests.
 - Added an invalid-name regression test.
-- Updated `COMPATIBILITY.md` and `STATUS.md`.
+- Updated `DOCKER-COMPOSE-PARITY.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -68,7 +68,7 @@ git diff --check
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `DOCKER-COMPOSE-PARITY.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `STATUS.md` for active-slab changes, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

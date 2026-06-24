@@ -26,7 +26,7 @@ runtime orchestration.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md)
-- [COMPATIBILITY.md](COMPATIBILITY.md)
+- [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md)
 - [BRANCHES.md](BRANCHES.md)
 - [BUILD.md](BUILD.md)
 - [DESIGN.md](DESIGN.md)

@@ -201,6 +201,20 @@ make docker-compose-restart-policy-parity
 
 This runs Docker Compose V2 against a temporary project and validates the container `HostConfig.RestartPolicy` shape mirrored by `container-compose`: service-level `restart`, deploy-over-service precedence, deploy `condition: any`, deploy `condition: none`, and `on-failure:0` as an unlimited retry policy. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
 
+For the local-only create-options parity check, run:
+
+```sh
+make docker-compose-create-options-parity
+```
+
+This target refreshes a sparse checkout of Docker Compose's upstream e2e fixtures under `.build/parity/docker-compose-e2e` only when the checkout is missing or Docker Compose `main` has moved. The temporary parity project copies the current upstream `pkg/e2e/fixtures/build-test/minimal/Dockerfile`, then runs the same fixture through Docker Compose V2 and `container-compose`. The check covers build wiring plus create-time behavior for explicit healthchecks, local and disabled logging, restart policy, deploy restart timing, host-IP published ports, configs, secrets, DNS options, host identity, extra hosts, sysctls, blkio weight, and network aliases. The target is not used by `make ci`.
+
+To refresh only the Docker Compose e2e fixture checkout, run:
+
+```sh
+make docker-compose-e2e-fixtures
+```
+
 Refresh the checked fixture after intentionally changing the example or adopting a newer Docker behavior with:
 
 ```sh

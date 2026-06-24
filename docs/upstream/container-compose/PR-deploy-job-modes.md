@@ -39,7 +39,7 @@ References:
 - Forced job service containers to start detached so the plugin can own the completion wait.
 - Added `waitForDeployJobService(service:targets:)` to wait each job replica and fail on non-zero exit before later services start.
 - Rejected restart-capable service-level and deploy-level restart policies on job services before runtime side effects because the current wait primitive observes one exit and cannot yet report the final job result after runtime restart attempts. Explicit no-restart policies remain allowed.
-- Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
+- Updated `DOCKER-COMPOSE-PARITY.md`, `PLAN.md`, and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -83,7 +83,7 @@ This validates Docker Compose V2 `HostConfig.RestartPolicy` behavior for explici
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `DOCKER-COMPOSE-PARITY.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

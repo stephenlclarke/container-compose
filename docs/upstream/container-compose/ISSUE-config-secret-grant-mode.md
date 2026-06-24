@@ -86,11 +86,11 @@ Expected runtime behavior:
 - Docker Compose service configs: [services.configs](https://docs.docker.com/reference/compose-file/services/#configs)
 - Docker Compose service secrets: [services.secrets](https://docs.docker.com/reference/compose-file/services/#secrets)
 - Related materialization issue: `ISSUE-config-secret-materialization.md`
-- Related compatibility docs: `COMPATIBILITY.md`
+- Related compatibility docs: `DOCKER-COMPOSE-PARITY.md`
 - Related plan docs: `PLAN.md`
 
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `COMPATIBILITY.md`.
+- [x] I checked `DOCKER-COMPOSE-PARITY.md`.
 - [x] I checked `PLAN.md`.

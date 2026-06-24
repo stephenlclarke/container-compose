@@ -796,7 +796,7 @@ Reference targets:
       <td></td>
     </tr>
     <tr>
-      <td colspan="4">Notes: once each apple/container PR lands, update `COMPATIBILITY.md` on `apple-container-compatible`, `develop`, and `main` so released upstream support, fork-only support, and remaining runtime gaps stay distinct.</td>
+      <td colspan="4">Notes: once each apple/container PR lands, update `DOCKER-COMPOSE-PARITY.md` on `apple-container-compatible`, `develop`, and `main` so released upstream support, fork-only support, and remaining runtime gaps stay distinct.</td>
     </tr>
   </tbody>
 </table>
@@ -1114,7 +1114,7 @@ Current `container-compose` behavior:
 - Maps `logging.driver: none` and legacy `log_driver: none` without options to apple/container's local disabled-capture policy on the local integration stack.
 - Maps local `logging.options` and legacy `log_opt` keys `max-size` and `max-file` to apple/container `--log-opt` flags for the default, `json-file`, and `local` drivers.
 - Rejects remote or otherwise unsupported service logging drivers, unsupported logging options, and any logging options attached to `none` before creating resources.
-- Preserves the compatibility boundary in tests and `COMPATIBILITY.md`.
+- Preserves the compatibility boundary in tests and `DOCKER-COMPOSE-PARITY.md`.
 
 Current [`apple/container`](https://github.com/apple/container) behavior:
 

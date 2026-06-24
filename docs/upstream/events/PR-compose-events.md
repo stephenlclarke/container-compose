@@ -124,7 +124,7 @@ This optional parity target is not run by CI and should stay out of Apple-facing
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `DOCKER-COMPOSE-PARITY.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for the active slab.
 - [x] I updated `STATUS.md` and `RESUME.md`.
 - [x] This pull request is focused on one issue or one coherent change.

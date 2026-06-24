@@ -99,7 +99,7 @@ This optional parity target is not run by CI and should stay out of Apple-facing
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime mapping changes.
+- [x] I updated `DOCKER-COMPOSE-PARITY.md` for runtime mapping changes.
 - [x] I updated `STATUS.md` and `RESUME.md`.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I recorded source/reference issues and PRs, including why they were or were not used as a base.

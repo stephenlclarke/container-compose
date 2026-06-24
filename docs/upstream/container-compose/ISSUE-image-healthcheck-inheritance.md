@@ -82,5 +82,5 @@ This is the current command-vector bridge output; typed execution should pass `C
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `COMPATIBILITY.md`.
+- [x] I checked `DOCKER-COMPOSE-PARITY.md`.
 - [x] I checked `PLAN.md`.

@@ -23,7 +23,7 @@
 
 ## container-compose Checks
 
-- [ ] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [ ] I updated `DOCKER-COMPOSE-PARITY.md` for runtime primitive changes, or no update is needed.
 - [ ] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [ ] This pull request is focused on one issue or one coherent change.
 - [ ] I used Conventional Commits in commit messages and the pull request title.

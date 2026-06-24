@@ -52,7 +52,7 @@ SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
-MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
+MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md CONTRIBUTING.md DESIGN.md DOCKER-COMPOSE-PARITY.md INSTALL.md PLAN.md SECURITY.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
 
 # Some local toolchains can build Swift Testing targets without adding the
 # framework and interop library to SwiftPM's generated test runner. Derive
@@ -67,7 +67,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -533,6 +533,9 @@ docker-log-fixtures:
 
 docker-log-fixtures-update:
 	./scripts/capture-docker-compose-log-fixtures.sh --update
+
+docker-compose-e2e-fixtures:
+	./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
 docker-compose-create-options-parity:
 	./Tools/parity/check-compose-create-options.sh --strict
