@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import Foundation
 
 /// Docker Compose CLI help text captured from Docker Compose 5.2.0.
 enum ComposeCLIHelp {
@@ -178,6 +179,306 @@ enum ComposeCLIHelp {
         "watch": .partiallySupported,
     ]
 
+    private static let supportByOption: [String: [String: SupportLevel]] = [
+        "": [
+            "--all-resources": .partiallySupported,
+            "--ansi": .supported,
+            "--compatibility": .partiallySupported,
+            "--dry-run": .supported,
+            "--env-file": .supported,
+            "--file": .supported,
+            "--parallel": .partiallySupported,
+            "--profile": .supported,
+            "--progress": .partiallySupported,
+            "--project-directory": .supported,
+            "--project-name": .supported,
+        ],
+        "attach": [
+            "--detach-keys": .notSupported,
+            "--dry-run": .supported,
+            "--index": .supported,
+            "--no-stdin": .supported,
+            "--sig-proxy": .partiallySupported,
+        ],
+        "bridge": [
+            "--dry-run": .notSupported,
+        ],
+        "bridge convert": [
+            "--dry-run": .notSupported,
+            "--output": .notSupported,
+            "--templates": .notSupported,
+            "--transformation": .notSupported,
+        ],
+        "bridge transformations": [
+            "--dry-run": .notSupported,
+        ],
+        "bridge transformations create": [
+            "--dry-run": .notSupported,
+            "--from": .notSupported,
+        ],
+        "bridge transformations list": [
+            "--dry-run": .notSupported,
+            "--format": .notSupported,
+            "--quiet": .notSupported,
+        ],
+        "bridge transformations ls": [
+            "--dry-run": .notSupported,
+            "--format": .notSupported,
+            "--quiet": .notSupported,
+        ],
+        "build": [
+            "--build-arg": .supported,
+            "--builder": .notSupported,
+            "--check": .notSupported,
+            "--dry-run": .supported,
+            "--memory": .notSupported,
+            "--no-cache": .supported,
+            "--print": .notSupported,
+            "--provenance": .notSupported,
+            "--pull": .supported,
+            "--push": .supported,
+            "--quiet": .supported,
+            "--sbom": .notSupported,
+            "--ssh": .notSupported,
+            "--with-dependencies": .supported,
+        ],
+        "commit": [
+            "--author": .notSupported,
+            "--change": .notSupported,
+            "--dry-run": .notSupported,
+            "--index": .notSupported,
+            "--message": .notSupported,
+            "--pause": .notSupported,
+        ],
+        "config": [
+            "--dry-run": .supported,
+            "--format": .supported,
+        ],
+        "cp": [
+            "--all": .supported,
+            "--archive": .notSupported,
+            "--dry-run": .supported,
+            "--follow-link": .notSupported,
+            "--index": .supported,
+        ],
+        "create": [
+            "--build": .supported,
+            "--dry-run": .supported,
+            "--force-recreate": .supported,
+            "--no-build": .supported,
+            "--no-recreate": .supported,
+            "--pull": .supported,
+            "--quiet-pull": .supported,
+            "--remove-orphans": .supported,
+            "--scale": .supported,
+            "--yes": .partiallySupported,
+        ],
+        "down": [
+            "--dry-run": .supported,
+            "--remove-orphans": .supported,
+            "--rmi": .supported,
+            "--timeout": .supported,
+            "--volumes": .supported,
+        ],
+        "events": [
+            "--dry-run": .supported,
+            "--json": .supported,
+            "--since": .supported,
+            "--until": .supported,
+        ],
+        "exec": [
+            "--detach": .supported,
+            "--dry-run": .supported,
+            "--env": .supported,
+            "--index": .supported,
+            "--no-tty": .supported,
+            "--privileged": .notSupported,
+            "--user": .supported,
+            "--workdir": .supported,
+        ],
+        "export": [
+            "--dry-run": .supported,
+            "--index": .supported,
+            "--output": .supported,
+        ],
+        "images": [
+            "--dry-run": .supported,
+            "--format": .partiallySupported,
+            "--quiet": .supported,
+        ],
+        "kill": [
+            "--dry-run": .supported,
+            "--remove-orphans": .supported,
+            "--signal": .supported,
+        ],
+        "logs": [
+            "--dry-run": .supported,
+            "--follow": .partiallySupported,
+            "--index": .supported,
+            "--no-color": .supported,
+            "--no-log-prefix": .supported,
+            "--since": .partiallySupported,
+            "--tail": .supported,
+            "--timestamps": .notSupported,
+            "--until": .partiallySupported,
+        ],
+        "ls": [
+            "--all": .supported,
+            "--dry-run": .supported,
+            "--filter": .partiallySupported,
+            "--format": .partiallySupported,
+            "--quiet": .supported,
+        ],
+        "port": [
+            "--dry-run": .supported,
+            "--index": .supported,
+            "--protocol": .supported,
+        ],
+        "ps": [
+            "--all": .supported,
+            "--dry-run": .supported,
+            "--filter": .partiallySupported,
+            "--format": .partiallySupported,
+            "--no-trunc": .supported,
+            "--orphans": .supported,
+            "--quiet": .supported,
+            "--services": .supported,
+            "--status": .partiallySupported,
+        ],
+        "publish": [
+            "--app": .notSupported,
+            "--dry-run": .notSupported,
+            "--oci-version": .notSupported,
+            "--resolve-image-digests": .notSupported,
+            "--with-env": .notSupported,
+            "--yes": .notSupported,
+        ],
+        "pull": [
+            "--dry-run": .supported,
+            "--ignore-buildable": .supported,
+            "--ignore-pull-failures": .supported,
+            "--include-deps": .supported,
+            "--policy": .supported,
+            "--quiet": .supported,
+        ],
+        "push": [
+            "--dry-run": .supported,
+            "--ignore-push-failures": .supported,
+            "--include-deps": .supported,
+            "--quiet": .supported,
+        ],
+        "restart": [
+            "--dry-run": .supported,
+            "--no-deps": .supported,
+            "--timeout": .supported,
+        ],
+        "rm": [
+            "--dry-run": .supported,
+            "--force": .supported,
+            "--stop": .supported,
+            "--volumes": .supported,
+        ],
+        "run": [
+            "--build": .supported,
+            "--cap-add": .supported,
+            "--cap-drop": .supported,
+            "--detach": .supported,
+            "--dry-run": .supported,
+            "--entrypoint": .supported,
+            "--env": .supported,
+            "--env-from-file": .supported,
+            "--interactive": .supported,
+            "--label": .supported,
+            "--name": .supported,
+            "--no-TTY": .supported,
+            "--no-deps": .supported,
+            "--publish": .supported,
+            "--pull": .supported,
+            "--quiet": .supported,
+            "--quiet-build": .supported,
+            "--quiet-pull": .supported,
+            "--remove-orphans": .supported,
+            "--rm": .supported,
+            "--service-ports": .supported,
+            "--use-aliases": .supported,
+            "--user": .supported,
+            "--volume": .supported,
+            "--workdir": .supported,
+        ],
+        "scale": [
+            "--dry-run": .supported,
+            "--no-deps": .supported,
+        ],
+        "start": [
+            "--dry-run": .supported,
+            "--wait": .supported,
+            "--wait-timeout": .supported,
+        ],
+        "stats": [
+            "--all": .supported,
+            "--dry-run": .supported,
+            "--format": .partiallySupported,
+            "--no-stream": .supported,
+            "--no-trunc": .supported,
+        ],
+        "stop": [
+            "--dry-run": .supported,
+            "--timeout": .supported,
+        ],
+        "up": [
+            "--abort-on-container-exit": .notSupported,
+            "--abort-on-container-failure": .notSupported,
+            "--always-recreate-deps": .supported,
+            "--attach": .notSupported,
+            "--attach-dependencies": .notSupported,
+            "--build": .supported,
+            "--detach": .supported,
+            "--dry-run": .supported,
+            "--exit-code-from": .notSupported,
+            "--force-recreate": .supported,
+            "--menu": .notSupported,
+            "--no-attach": .notSupported,
+            "--no-build": .supported,
+            "--no-color": .supported,
+            "--no-deps": .supported,
+            "--no-log-prefix": .supported,
+            "--no-recreate": .supported,
+            "--no-start": .supported,
+            "--pull": .supported,
+            "--quiet-build": .supported,
+            "--quiet-pull": .supported,
+            "--remove-orphans": .supported,
+            "--renew-anon-volumes": .supported,
+            "--scale": .supported,
+            "--timeout": .supported,
+            "--timestamps": .notSupported,
+            "--wait": .supported,
+            "--wait-timeout": .supported,
+            "--watch": .supported,
+            "--yes": .partiallySupported,
+        ],
+        "version": [
+            "--dry-run": .supported,
+            "--format": .supported,
+            "--short": .supported,
+        ],
+        "volumes": [
+            "--dry-run": .supported,
+            "--format": .partiallySupported,
+            "--quiet": .supported,
+        ],
+        "wait": [
+            "--down-project": .supported,
+            "--dry-run": .supported,
+        ],
+        "watch": [
+            "--dry-run": .supported,
+            "--no-up": .supported,
+            "--prune": .supported,
+            "--quiet": .supported,
+        ],
+    ]
+
     private static func shouldUseANSI(arguments: [String]) -> Bool {
         var index = 0
         while index < arguments.count {
@@ -195,6 +496,7 @@ enum ComposeCLIHelp {
 
     private static func renderedHelp(_ help: String, commandPath: [String], useANSI: Bool) -> String {
         var rendered = colorizeCommandListings(in: help, commandPath: commandPath, useANSI: useANSI)
+        rendered = colorizeOptionListings(in: rendered, commandPath: commandPath, useANSI: useANSI)
         if commandPath.isEmpty || commandPath == ["bridge"] || commandPath == ["bridge", "transformations"] {
             rendered = insertSupportLegend(into: rendered, useANSI: useANSI)
         } else if let support = supportLevel(for: commandPath) {
@@ -246,6 +548,73 @@ enum ComposeCLIHelp {
         return [commandName]
     }
 
+    private static func colorizeOptionListings(in help: String, commandPath: [String], useANSI: Bool) -> String {
+        help
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                colorizeOptionLine(String(line), commandPath: commandPath, useANSI: useANSI)
+            }
+            .joined(separator: "\n")
+    }
+
+    private static func colorizeOptionLine(_ line: String, commandPath: [String], useANSI: Bool) -> String {
+        let options = optionNames(in: line)
+        guard !options.isEmpty else {
+            return line
+        }
+        let support = supportLevel(forOptions: options, commandPath: commandPath)
+        return replaceOptionNames(options, in: line, support: support, useANSI: useANSI)
+    }
+
+    private static func optionNames(in line: String) -> [String] {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("-") else {
+            return []
+        }
+        var options: [String] = []
+        for word in trimmed.split(separator: " ") {
+            let option = word.trimmingCharacters(in: CharacterSet(charactersIn: ","))
+            if option.hasPrefix("-") {
+                options.append(option)
+            } else if !options.isEmpty {
+                break
+            }
+        }
+        return options
+    }
+
+    private static func replaceOptionNames(
+        _ options: [String],
+        in line: String,
+        support: SupportLevel,
+        useANSI: Bool
+    ) -> String {
+        var rendered = ""
+        var index = line.startIndex
+        while index < line.endIndex {
+            if line[index].isWhitespace {
+                rendered.append(line[index])
+                index = line.index(after: index)
+                continue
+            }
+
+            let wordStart = index
+            while index < line.endIndex, !line[index].isWhitespace {
+                index = line.index(after: index)
+            }
+
+            let word = String(line[wordStart..<index])
+            let option = word.trimmingCharacters(in: CharacterSet(charactersIn: ","))
+            if options.contains(option) {
+                rendered += styled(option, support: support, useANSI: useANSI)
+                rendered += String(word.dropFirst(option.count))
+            } else {
+                rendered += word
+            }
+        }
+        return rendered
+    }
+
     private static func insertSupportLegend(into help: String, useANSI: Bool) -> String {
         let legend = [
             "Support:",
@@ -271,6 +640,20 @@ enum ComposeCLIHelp {
 
     private static func supportLevel(for commandPath: [String]) -> SupportLevel? {
         supportByCommand[commandPath.joined(separator: " ")]
+    }
+
+    private static func supportLevel(forOptions options: [String], commandPath: [String]) -> SupportLevel {
+        let commandKey = commandPath.joined(separator: " ")
+        let commandOptions = supportByOption[commandKey] ?? [:]
+        for option in options {
+            if let support = commandOptions[option] {
+                return support
+            }
+        }
+        if let rootSupport = supportByOption[""]?.first(where: { key, _ in options.contains(key) })?.value {
+            return rootSupport
+        }
+        return supportLevel(for: commandPath) ?? .partiallySupported
     }
 
     private static func styled(_ value: String, support: SupportLevel, useANSI: Bool) -> String {

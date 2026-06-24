@@ -29,7 +29,7 @@ The current create-options parity fixture copies Docker Compose's upstream `pkg/
 
 ## CLI Surface
 
-`container-compose` accepts the Docker Compose 5.2.0 root command list and global option surface. Help output is rendered from a Docker Compose 5.2.0 snapshot so that missing implementation work is visible without rejecting valid Docker Compose commands at parse time. Help marks supported commands in green, partially supported commands in orange, and unsupported commands in red; `--ansi never` keeps the same support text without color.
+`container-compose` accepts the Docker Compose 5.2.0 root command list and global option surface. Help output is rendered from a Docker Compose 5.2.0 snapshot so that missing implementation work is visible without rejecting valid Docker Compose commands at parse time. Help marks supported commands, subcommands, and options in green, partially supported surfaces in orange, and unsupported surfaces in red; `--ansi never` keeps the same support text without color.
 
 Command-level gaps currently return the literal placeholder `Not implemented yet` when there is no backing implementation. The current placeholders are `bridge`, `commit`, and `publish`. Some implemented commands also accept newer Docker Compose options that are parsed for surface compatibility but not yet behaviorally wired; those remain parity gaps until covered by a focused fixture or runtime primitive.
 

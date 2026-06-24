@@ -146,17 +146,24 @@ cli-smoke-built:
 	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mup$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mpause$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[32m--file$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208m--parallel$${ansi_escape}[0m"* ]]; \
 	plain_help_output="$$(".build/debug/compose" --ansi never --help)"; \
 	[[ "$$plain_help_output" == *"Support: supported | partially supported | not supported"* ]]; \
 	[[ "$$plain_help_output" != *"$${ansi_escape}["* ]]; \
 	version_help_output="$$(".build/debug/compose" version --help)"; \
 	[[ "$$version_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$version_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	commit_help_output="$$(".build/debug/compose" commit --help)"; \
 	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[31mnot supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$commit_help_output" == *"$${ansi_escape}[31m--author$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
 	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \
+	[[ "$$logs_help_output" == *"$${ansi_escape}[38;5;208m--follow$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--tail$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"$${ansi_escape}[31m--timestamps$${ansi_escape}[0m"* ]]; \
 	logs_misordered_help_output="$$(".build/debug/compose" logs help)"; \
 	[[ "$$logs_misordered_help_output" == *"Usage:  container compose logs [OPTIONS] [SERVICE...]"* ]]; \
 	[[ "$$logs_misordered_help_output" != *"compose-normalizer"* ]]; \
@@ -165,6 +172,10 @@ cli-smoke-built:
 	[[ "$$logs_plain_misordered_help_output" != *"$${ansi_escape}["* ]]; \
 	run_help_output="$$(".build/debug/compose" run --help)"; \
 	[[ "$$run_help_output" == *"-p, --publish stringArray"* ]]; \
+	up_help_output="$$(".build/debug/compose" up --help)"; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[38;5;208m--yes$${ansi_escape}[0m"* ]]; \
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \
 	[[ "$$rm_help_output" == *"-f, --force"* ]]; \
 	wait_help_output="$$(".build/debug/compose" wait --help)"; \
@@ -183,6 +194,7 @@ cli-smoke-built:
 	[[ "$$bridge_transformations_create_help_output" == *"Usage:  container compose bridge transformations create [OPTION] PATH"* ]]; \
 	bridge_transformations_list_help_output="$$(".build/debug/compose" bridge transformations list --help)"; \
 	[[ "$$bridge_transformations_list_help_output" == *"Usage:  container compose bridge transformations list"* ]]; \
+	[[ "$$bridge_transformations_list_help_output" == *"$${ansi_escape}[31m--format$${ansi_escape}[0m"* ]]; \
 	commit_output="$$(".build/debug/compose" commit api example/api:latest)"; \
 	[[ "$$commit_output" == "Not implemented yet" ]]; \
 	tmpdir="$$(mktemp -d)"; \
