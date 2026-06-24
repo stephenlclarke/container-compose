@@ -66,6 +66,10 @@ struct ComposeNormalizerTests {
               - "8080:80"
             environment:
               LOG_LEVEL: debug
+            extra_hosts:
+              - "somehost=162.242.195.82"
+              - "myhostv6=[::1]"
+              - "colonhost:10.0.0.5"
             dns_opt:
               - use-vc
             expose:
@@ -153,6 +157,11 @@ struct ComposeNormalizerTests {
             ),
         ])
         #expect(project.services["api"]?.environment?["LOG_LEVEL"] == "debug")
+        #expect(project.services["api"]?.extraHosts?.sorted() == [
+            "colonhost:10.0.0.5",
+            "myhostv6:::1",
+            "somehost:162.242.195.82",
+        ])
         #expect(project.services["api"]?.dnsOptions == ["use-vc"])
         #expect(project.services["api"]?.expose == ["9000"])
         #expect(project.services["api"]?.memReservation == "134217728")
@@ -188,6 +197,46 @@ struct ComposeNormalizerTests {
             ],
             labels: ["role": "state"]
         ))
+    }
+
+    @Test("normalizes logging fixture without losing shell variables")
+    func normalizesLoggingFixtureWithoutLosingShellVariables() async throws {
+        let composeFile = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("examples/logging/compose.yml")
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+
+        #expect(project.name == "compose-log-fixture")
+        #expect(project.services.count == 9)
+        #expect(project.services["replicas"]?.scale == 2)
+        #expect(project.services["disabled-capture"]?.logging == .object(["driver": .string("none")]))
+        #expect(project.services["rotating-json"]?.logging == .object([
+            "driver": .string("json-file"),
+            "options": .object([
+                "max-file": .string("3"),
+                "max-size": .string("2k"),
+            ]),
+        ]))
+        #expect(project.services["rotating-local"]?.logging == .object([
+            "driver": .string("local"),
+            "options": .object([
+                "max-file": .string("3"),
+                "max-size": .string("2k"),
+            ]),
+        ]))
+
+        let followCommand = try #require(project.services["follow"]?.command?.last)
+        #expect(followCommand.contains(#""$i" -le "${LOG_LINES}""#))
+        #expect(followCommand.contains(#"sleep "${LOG_DELAY}""#))
+
+        let tailCommand = try #require(project.services["tail"]?.command?.last)
+        #expect(tailCommand.contains(#""$i" -le 12"#))
+
+        let replicaCommand = try #require(project.services["replicas"]?.command?.last)
+        #expect(replicaCommand.contains(#""${HOSTNAME:-unknown}""#))
+
+        let fidelityCommand = try #require(project.services["fidelity"]?.command?.last)
+        #expect(fidelityCommand.contains(#"printf 'non-utf8:\377\376\n'"#))
     }
 
     @Test("normalizes dynamic host-bound ports through compose-go")
@@ -468,6 +517,55 @@ struct ComposeNormalizerTests {
         #expect(worker.unsupportedDeployFields == nil)
     }
 
+    @Test("normalizes block IO config through compose-go")
+    func normalizesBlockIOConfigThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            blkio_config:
+              weight: 300
+              weight_device:
+                - path: "8:0"
+                  weight: 700
+              device_read_bps:
+                - path: "8:0"
+                  rate: 1048576
+              device_read_iops:
+                - path: "8:0"
+                  rate: 1000
+              device_write_bps:
+                - path: "8:0"
+                  rate: 2097152
+              device_write_iops:
+                - path: "8:0"
+                  rate: 2000
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let blkio = try #require(project.services["api"]?.blkioConfig)
+        #expect(blkio.weight == 300)
+        #expect(blkio.weightDevice == [ComposeBlkioWeightDevice(path: "8:0", weight: 700)])
+        #expect(blkio.deviceReadBps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "1048576")])
+        #expect(blkio.deviceReadIOps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "1000")])
+        #expect(blkio.deviceWriteBps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "2097152")])
+        #expect(blkio.deviceWriteIOps == [ComposeBlkioThrottleDevice(path: "8:0", rate: "2000")])
+    }
+
     @Test("normalizes unsupported deploy resource fields through compose-go")
     func normalizesUnsupportedDeployResourceFieldsThroughComposeGo() async throws {
         let fileManager = FileManager.default
@@ -510,8 +608,46 @@ struct ComposeNormalizerTests {
         ])
     }
 
-    @Test("normalizes deploy job modes as unsupported through compose-go")
-    func normalizesDeployJobModesAsUnsupportedThroughComposeGo() async throws {
+    @Test("normalizes deploy restart policy through compose-go")
+    func normalizesDeployRestartPolicyThroughComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: nginx:latest
+            deploy:
+              restart_policy:
+                condition: on-failure
+                delay: 5s
+                max_attempts: 3
+                window: 30s
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        let policy = try #require(api.deployRestartPolicy)
+        #expect(policy.condition == "on-failure")
+        #expect(policy.delayNanoseconds == 5_000_000_000)
+        #expect(policy.maxAttempts == 3)
+        #expect(policy.windowNanoseconds == 30_000_000_000)
+        #expect(api.unsupportedDeployFields == nil)
+    }
+
+    @Test("normalizes deploy job modes through compose-go")
+    func normalizesDeployJobModesThroughComposeGo() async throws {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
@@ -538,7 +674,8 @@ struct ComposeNormalizerTests {
 
         let api = try #require(project.services["api"])
         #expect(api.scale == 2)
-        #expect(api.unsupportedDeployFields == ["mode.replicated-job"])
+        #expect(api.deployMode == "replicated-job")
+        #expect(api.unsupportedDeployFields == nil)
     }
 
     @Test("normalizes start-first deploy update through compose-go")

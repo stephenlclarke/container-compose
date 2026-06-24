@@ -1,0 +1,155 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+# Manual log regression fixture:
+#   compose_file="$PWD/examples/logging/compose.yml"
+#   container compose -f "$compose_file" up -d
+#   container compose -f "$compose_file" logs
+#   container compose -f "$compose_file" logs --tail 5 tail
+#   container compose -f "$compose_file" logs --index 2 replicas
+#   container compose -f "$compose_file" logs --timestamps follow
+#   container compose -f "$compose_file" logs --since 10s --until 1s follow
+#   container compose -f "$compose_file" logs --no-color --no-log-prefix fidelity
+#   container compose -f "$compose_file" down --volumes
+
+name: compose-log-fixture
+
+x-log-coverage:
+  replay: stdout-stderr, fidelity, tail, replicas
+  follow: follow, partial-final, replicas
+  filters: tail, follow
+  presentation: replicas, fidelity
+  rotation: rotating-json, rotating-local
+  disabled-capture: disabled-capture
+
+services:
+  stdout-stderr:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        printf 'stdout-one\n'
+        printf '\n'
+        printf 'stdout-three\n'
+        printf 'stderr-one\n' >&2
+
+  tail:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        i=1
+        while [ "$$i" -le 12 ]; do
+          printf 'tail-%02d\n' "$$i"
+          i=$((i + 1))
+        done
+
+  follow:
+    image: alpine:3.20
+    environment:
+      LOG_DELAY: "1"
+      LOG_LINES: "30"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        i=1
+        while [ "$$i" -le "$${LOG_LINES}" ]; do
+          printf 'follow-%02d\n' "$$i"
+          sleep "$${LOG_DELAY}"
+          i=$((i + 1))
+        done
+
+  replicas:
+    image: alpine:3.20
+    scale: 2
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        printf 'replica-start %s\n' "$${HOSTNAME:-unknown}"
+        sleep 2
+        printf 'replica-end %s\n' "$${HOSTNAME:-unknown}"
+
+  partial-final:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        printf 'partial-final-record'
+        sleep 1
+
+  fidelity:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        printf 'blank-before\n'
+        printf '\n'
+        printf 'blank-after\n'
+        printf 'stderr-record\n' >&2
+        printf 'crlf-record\r\n'
+        printf 'cr-record\r'
+        printf '\n'
+        printf 'non-utf8:\377\376\n'
+
+  rotating-json:
+    image: alpine:3.20
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: "2k"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        i=1
+        while [ "$$i" -le 250 ]; do
+          printf 'rotate-json-%03d abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n' "$$i"
+          i=$((i + 1))
+        done
+
+  rotating-local:
+    image: alpine:3.20
+    logging:
+      driver: local
+      options:
+        max-file: "3"
+        max-size: "2k"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        i=1
+        while [ "$$i" -le 250 ]; do
+          printf 'rotate-local-%03d abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n' "$$i"
+          i=$((i + 1))
+        done
+
+  disabled-capture:
+    image: alpine:3.20
+    logging:
+      driver: none
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        printf 'this should not be persisted by a compatible none driver\n'

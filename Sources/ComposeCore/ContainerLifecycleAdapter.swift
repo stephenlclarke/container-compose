@@ -29,6 +29,12 @@ public protocol ContainerLifecycleAPIClienting: Sendable {
     /// Stops container `id` with fully resolved stop options.
     func stopContainer(id: String, options: ContainerStopOptions) async throws
 
+    /// Pauses container `id`.
+    func pauseContainer(id: String) async throws
+
+    /// Resumes paused container `id`.
+    func unpauseContainer(id: String) async throws
+
     /// Waits for container `id`'s init process and returns its exit code.
     func waitContainer(id: String) async throws -> Int32
 
@@ -48,6 +54,12 @@ public protocol ContainerLifecycleManaging: Sendable {
     /// Stops container `id` with the supplied signal and timeout.
     func stopContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws
 
+    /// Pauses container `id`.
+    func pauseContainer(id: String) async throws
+
+    /// Resumes paused container `id`.
+    func unpauseContainer(id: String) async throws
+
     /// Waits for container `id`'s init process and returns its exit code.
     func waitContainer(id: String) async throws -> Int32
 
@@ -60,12 +72,16 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     public typealias Start = @Sendable (String) async throws -> Void
     public typealias Kill = @Sendable (String, String) async throws -> Void
     public typealias Stop = @Sendable (String, ContainerStopOptions) async throws -> Void
+    public typealias Pause = @Sendable (String) async throws -> Void
+    public typealias Unpause = @Sendable (String) async throws -> Void
     public typealias Wait = @Sendable (String) async throws -> Int32
     public typealias Delete = @Sendable (String, Bool) async throws -> Void
 
     private let startOperation: Start
     private let killOperation: Kill
     private let stopOperation: Stop
+    private let pauseOperation: Pause
+    private let unpauseOperation: Unpause
     private let waitOperation: Wait
     private let deleteOperation: Delete
 
@@ -73,12 +89,16 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
         start: @escaping Start = ContainerLifecycleLiveAdapter.start,
         kill: @escaping Kill = { try await ContainerClient().kill(id: $0, signal: $1) },
         stop: @escaping Stop = { try await ContainerClient().stop(id: $0, opts: $1) },
+        pause: @escaping Pause = { try await ContainerClient().pause(id: $0) },
+        unpause: @escaping Unpause = { try await ContainerClient().unpause(id: $0) },
         wait: @escaping Wait = ContainerLifecycleLiveAdapter.wait,
         delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) }
     ) {
         self.startOperation = start
         self.killOperation = kill
         self.stopOperation = stop
+        self.pauseOperation = pause
+        self.unpauseOperation = unpause
         self.waitOperation = wait
         self.deleteOperation = delete
     }
@@ -96,6 +116,16 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     /// Stops a container through `ContainerClient`.
     public func stopContainer(id: String, options: ContainerStopOptions) async throws {
         try await stopOperation(id, options)
+    }
+
+    /// Pauses a container through `ContainerClient`.
+    public func pauseContainer(id: String) async throws {
+        try await pauseOperation(id)
+    }
+
+    /// Resumes a paused container through `ContainerClient`.
+    public func unpauseContainer(id: String) async throws {
+        try await unpauseOperation(id)
     }
 
     /// Waits for a container init process through `ContainerClient`.
@@ -135,6 +165,16 @@ public struct ContainerClientLifecycleManager: ContainerLifecycleManaging {
             signal: signal
         )
         try await client.stopContainer(id: id, options: options)
+    }
+
+    /// Pauses a running container through `ContainerClient.pause(id:)`.
+    public func pauseContainer(id: String) async throws {
+        try await client.pauseContainer(id: id)
+    }
+
+    /// Resumes a paused container through `ContainerClient.unpause(id:)`.
+    public func unpauseContainer(id: String) async throws {
+        try await client.unpauseContainer(id: id)
     }
 
     /// Waits for a running container through `ContainerClient`.

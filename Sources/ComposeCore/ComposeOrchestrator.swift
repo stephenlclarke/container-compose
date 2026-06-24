@@ -20,6 +20,8 @@ import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
+import ContainerResource
+import ContainerizationExtras
 import Foundation
 
 /// Runtime settings used while translating Compose operations to `container`.
@@ -33,19 +35,22 @@ public struct ComposeExecutionOptions {
         public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
         public var sleep: @Sendable (Duration) async throws -> Void
         public var emit: @Sendable (String) -> Void
+        public var emitData: (@Sendable (Data) -> Void)?
 
         public init(
             oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
             currentDate: @escaping @Sendable () -> Date = Date.init,
             hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
             sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-            emit: @escaping @Sendable (String) -> Void = { print($0) }
+            emit: @escaping @Sendable (String) -> Void = { print($0) },
+            emitData: (@Sendable (Data) -> Void)? = nil
         ) {
             self.oneOffIdentifier = oneOffIdentifier
             self.currentDate = currentDate
             self.hostPortAllocator = hostPortAllocator
             self.sleep = sleep
             self.emit = emit
+            self.emitData = emitData
         }
     }
 
@@ -56,14 +61,17 @@ public struct ComposeExecutionOptions {
     public var currentDate: @Sendable () -> Date
     public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
     public var watchPollInterval: Duration
+    public var materializedConfigSecretDirectory: URL
     public var sleep: @Sendable (Duration) async throws -> Void
     public var emit: @Sendable (String) -> Void
+    public var emitData: @Sendable (Data) -> Void
 
     public init(
         dryRun: Bool = false,
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         watchPollInterval: Duration = .seconds(1),
+        materializedConfigSecretDirectory: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
         runtimeHooks: RuntimeHooks = RuntimeHooks()
     ) {
         self.dryRun = dryRun
@@ -73,12 +81,14 @@ public struct ComposeExecutionOptions {
         self.currentDate = runtimeHooks.currentDate
         self.hostPortAllocator = runtimeHooks.hostPortAllocator
         self.watchPollInterval = watchPollInterval
+        self.materializedConfigSecretDirectory = materializedConfigSecretDirectory
         self.sleep = runtimeHooks.sleep
         self.emit = runtimeHooks.emit
+        self.emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
     }
 
     public init(dryRun: Bool = false, emit: @escaping @Sendable (String) -> Void) {
-        self.init(dryRun: dryRun, runtimeHooks: RuntimeHooks(emit: emit))
+        self.init(dryRun: dryRun, runtimeHooks: RuntimeHooks(emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) }))
     }
 
     public init(hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16) {
@@ -119,7 +129,7 @@ public struct ComposeExecutionOptions {
         self.init(
             dryRun: dryRun,
             containerBinary: containerBinary,
-            runtimeHooks: RuntimeHooks(emit: emit)
+            runtimeHooks: RuntimeHooks(emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) })
         )
     }
 
@@ -130,12 +140,25 @@ public struct ComposeExecutionOptions {
     ) {
         self.init(
             dryRun: dryRun,
-            runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator, emit: emit)
+            runtimeHooks: RuntimeHooks(hostPortAllocator: hostPortAllocator, emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) })
         )
     }
 
     public static func defaultOneOffIdentifier() -> String {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+    }
+
+    /// Returns the per-user root for local config and secret materialization.
+    public static func defaultMaterializedConfigSecretDirectory() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".container-compose", isDirectory: true)
+            .appendingPathComponent("config-secrets", isDirectory: true)
+    }
+
+    /// Writes log bytes directly so container output can preserve non-UTF-8 payloads.
+    public static func defaultLogDataEmitter(_ data: Data) {
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data([UInt8(ascii: "\n")]))
     }
 
     /// Allocates an ephemeral host port compatible with apple/container's
@@ -291,20 +314,26 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
 /// Container lifecycle collaborators used by the Compose orchestrator.
 public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public var discoveryManager: ContainerDiscoveryManaging
+    public var eventsManager: ContainerEventsManaging
     public var lifecycleManager: ContainerLifecycleManaging
     public var resourceManager: ContainerResourceManaging
     public var statsManager: ContainerStatsManaging
+    public var topManager: ContainerTopManaging
 
     public init(
         discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
+        eventsManager: ContainerEventsManaging = ContainerClientEventsManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
-        statsManager: ContainerStatsManaging = ContainerClientStatsManager()
+        statsManager: ContainerStatsManaging = ContainerClientStatsManager(),
+        topManager: ContainerTopManaging = ContainerClientTopManager()
     ) {
         self.discoveryManager = discoveryManager
+        self.eventsManager = eventsManager
         self.lifecycleManager = lifecycleManager
         self.resourceManager = resourceManager
         self.statsManager = statsManager
+        self.topManager = topManager
     }
 }
 
@@ -337,6 +366,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
         set { runtime.discoveryManager = newValue }
     }
 
+    public var eventsManager: ContainerEventsManaging {
+        get { runtime.eventsManager }
+        set { runtime.eventsManager = newValue }
+    }
+
     public var execManager: ContainerExecManaging {
         get { commands.execManager }
         set { commands.execManager = newValue }
@@ -365,6 +399,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var statsManager: ContainerStatsManaging {
         get { runtime.statsManager }
         set { runtime.statsManager = newValue }
+    }
+
+    public var topManager: ContainerTopManaging {
+        get { runtime.topManager }
+        set { runtime.topManager = newValue }
     }
 }
 
@@ -444,6 +483,26 @@ public struct ComposeDownOptions {
         self.removeOrphans = removeOrphans
         self.timeout = timeout
         self.rmi = rmi
+    }
+}
+
+/// Options for `compose logs`.
+public struct ComposeLogsOptions: Sendable {
+    public var follow = false
+    public var tail: String?
+    public var index: Int?
+    public var since: String?
+    public var until: String?
+    public var timestamps = false
+    public var noLogPrefix = false
+    public var colorPrefixes = false
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default logs behavior.
+    }
+
+    public init(_ configure: (inout ComposeLogsOptions) -> Void) {
+        configure(&self)
     }
 }
 
@@ -537,6 +596,34 @@ public struct ComposeStatsOptions {
         self.format = format
         self.noStream = noStream
         self.noTrunc = noTrunc
+    }
+}
+
+/// Options for `compose top`.
+public struct ComposeTopOptions {
+    public var services: [String]
+
+    public init(services: [String] = []) {
+        self.services = services
+    }
+}
+
+/// Options for `compose events`.
+public struct ComposeEventsOptions {
+    public var services: [String]
+    public var json: Bool
+    public var since: String?
+    public var until: String?
+
+    public init(services: [String] = [], json: Bool = false, since: String? = nil, until: String? = nil) {
+        self.services = services
+        self.json = json
+        self.since = since
+        self.until = until
+    }
+
+    public var outputFormat: ComposeEventsOutputFormat {
+        json ? .json : .text
     }
 }
 
@@ -696,6 +783,61 @@ private struct RunArgumentOptions {
     }
 }
 
+private struct RuntimeRestartPolicyArguments {
+    var policy: String
+    var delayNanoseconds: Int64?
+    var windowNanoseconds: Int64?
+
+    var arguments: [String] {
+        var result = ["--restart", policy]
+        if let delayNanoseconds, policy != "no" {
+            result.append(contentsOf: ["--restart-delay", runtimeDurationArgument(delayNanoseconds)])
+        }
+        if let windowNanoseconds, policy != "no" {
+            result.append(contentsOf: ["--restart-window", runtimeDurationArgument(windowNanoseconds)])
+        }
+        return result
+    }
+}
+
+private actor ComposeImageHealthCheckCache {
+    private var storage: [String: ComposeImageHealthCheck?] = [:]
+
+    /// Returns cached image healthcheck metadata for one image/platform pair.
+    func healthCheck(
+        reference: String,
+        platform: String?,
+        imageManager: ContainerImageManaging
+    ) async throws -> ComposeImageHealthCheck? {
+        let key = "\(reference)|\(platform ?? "")"
+        if storage.keys.contains(key) {
+            return storage[key] ?? nil
+        }
+        let healthCheck = try await imageManager.imageHealthCheck(reference, platform: platform)
+        storage[key] = healthCheck
+        return healthCheck
+    }
+}
+
+private func runtimeDurationArgument(_ nanoseconds: Int64) -> String {
+    let seconds = nanoseconds / 1_000_000_000
+    let remainder = nanoseconds % 1_000_000_000
+    guard remainder != 0 else {
+        return "\(seconds)s"
+    }
+    let paddedRemainder = String(format: "%09d", remainder)
+    let trimmedRemainder = dropTrailingZeros(from: paddedRemainder)
+    return "\(seconds).\(trimmedRemainder)s"
+}
+
+private func dropTrailingZeros(from value: String) -> Substring {
+    var end = value.endIndex
+    while end > value.startIndex, value[value.index(before: end)] == "0" {
+        end = value.index(before: end)
+    }
+    return value[..<end]
+}
+
 private struct MountRenderContext {
     var project: ComposeProject
     var service: ComposeService
@@ -730,6 +872,11 @@ private enum ComposeVolumesFormat {
     case json
 }
 
+private enum RuntimeHealthCheckCommand {
+    case disabled
+    case command(String)
+}
+
 private struct ComposeCopyContainerTarget {
     var id: String
     var path: String
@@ -753,6 +900,7 @@ private struct ServiceContainerReconcileRequest {
     var name: String
     var runOptions: RunArgumentOptions
     var externalVolumeMounts: ExternalVolumeMounts = [:]
+    var imageHealthCheckCache: ComposeImageHealthCheckCache?
     var forceRecreate: Bool
     var noRecreate: Bool
     var dependencyRecreateServices: Set<String>
@@ -856,6 +1004,25 @@ private struct ParsedVolumesFromReference {
     var rawValue: String
 }
 
+/// One Compose legacy link reference after validation.
+private struct ComposeLinkReference {
+    var serviceName: String
+    var alias: String
+}
+
+/// One Compose external link reference after validation.
+private struct ComposeExternalLinkReference {
+    var containerName: String
+    var alias: String
+}
+
+/// One legacy-link alias projected onto a target service attachment.
+private struct ComposeProjectedLinkAlias {
+    var serviceName: String
+    var network: String
+    var alias: String
+}
+
 /// External `volumes_from` container reference that needs runtime inspection.
 private struct ExternalVolumesFromReference {
     var serviceName: String
@@ -870,6 +1037,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let options: ComposeExecutionOptions
     private let copier: ContainerCopying
     private let discoveryManager: ContainerDiscoveryManaging
+    private let eventsManager: ContainerEventsManaging
     private let execManager: ContainerExecManaging
     private let exporter: ContainerExporting
     private let imageManager: ContainerImageManaging
@@ -878,6 +1046,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let pullMetadataStore: ComposePullMetadataStoring
     private let resourceManager: ContainerResourceManaging
     private let statsManager: ContainerStatsManaging
+    private let topManager: ContainerTopManaging
 
     public init(
         runner: CommandRunning = ProcessRunner(),
@@ -888,6 +1057,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.options = options
         self.copier = dependencies.copier
         self.discoveryManager = dependencies.discoveryManager
+        self.eventsManager = dependencies.eventsManager
         self.execManager = dependencies.execManager
         self.exporter = dependencies.exporter
         self.imageManager = dependencies.imageManager
@@ -896,6 +1066,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.pullMetadataStore = dependencies.pullMetadataStore
         self.resourceManager = dependencies.resourceManager
         self.statsManager = dependencies.statsManager
+        self.topManager = dependencies.topManager
     }
 
     /// Returns whether a service declares `post_start` hooks.
@@ -934,13 +1105,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             )
             return
         }
-        var workingProject = project
-        let services = try up.noDeps && !up.services.isEmpty
+        let selectedServiceReferences = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
+        var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        var services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         let scaleOverrides = try parseScaleOverrides(project: project, scales: up.scales)
         let dependencyRecreateServices = try servicesToRecreateBecauseDependencies(
-            project: project,
+            project: workingProject,
             selected: up.services,
             noDeps: up.noDeps,
             alwaysRecreateDeps: up.alwaysRecreateDeps,
@@ -948,18 +1125,24 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
         let validateDependencies = !(up.noDeps && !up.services.isEmpty)
         try validatePullPolicy(up.pullPolicy)
-        try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
-        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: project, services: services)
+        try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
+        workingProject = try await projectByResolvingExternalLinks(project: workingProject, services: services)
+        services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
+        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
-        let attachedForegroundService = try foregroundServiceTarget(project: project, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
+        let attachedForegroundService = try foregroundServiceTarget(project: workingProject, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
         try validateAttachedPostStartSupport(target: attachedForegroundService)
-
-        try await ensureResources(project: project)
+        let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
         try await applyPullPolicy(
             up.pullPolicy,
-            project: project,
+            project: workingProject,
             services: services,
             quiet: up.quietPull,
             quietBuild: up.quietBuild,
@@ -967,12 +1150,18 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
 
         if up.build {
-            try await build(project: project, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
+            try await build(project: workingProject, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
         }
+
+        try await validateRuntimeHealthChecks(project: workingProject, services: services, cache: imageHealthCheckCache)
+        try await ensureResources(project: workingProject)
 
         var changedServices = Set<String>()
         for serviceReference in services {
             let service = workingProject.services[serviceReference.name] ?? serviceReference
+            if validateDependencies {
+                try await waitForDependencyConditions(project: workingProject, service: service)
+            }
             if service.provider != nil {
                 let variables = try await runProvider(project: workingProject, service: service, action: .up)
                 if !variables.isEmpty {
@@ -992,21 +1181,26 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             var serviceChanged = false
+            var jobTargets: [ServiceContainerTarget] = []
             if replicaCount > 0 {
                 var priorReplicaRecreated = false
                 for replicaIndex in 1...replicaCount {
                     let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
+                    if isDeployJobService(service) {
+                        jobTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
+                    }
                     let reconcileOutcome = try await reconcileServiceContainer(
                         project: workingProject,
                         service: service,
                         request: ServiceContainerReconcileRequest(
                             name: name,
                             runOptions: RunArgumentOptions {
-                                $0.detach = up.detach || attachedForegroundService?.name != name
+                                $0.detach = up.detach || isDeployJobService(service) || attachedForegroundService?.name != name
                                 $0.containerIndex = replicaIndex
                                 $0.replicaCount = replicaCount
                             },
                             externalVolumeMounts: externalVolumeMounts,
+                            imageHealthCheckCache: imageHealthCheckCache,
                             forceRecreate: up.forceRecreate,
                             noRecreate: up.noRecreate,
                             dependencyRecreateServices: dependencyRecreateServices,
@@ -1021,15 +1215,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 }
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
-                try await removeServiceReplicasAbove(project: project, service: service, desiredCount: replicaCount, timeout: up.timeout)
+                try await removeServiceReplicasAbove(project: workingProject, service: service, desiredCount: replicaCount, timeout: up.timeout)
             }
+            try await waitForDeployJobService(service: service, targets: jobTargets)
 
             if serviceChanged {
                 changedServices.insert(service.name)
                 continue
             }
             if shouldRestartAfterDependencyChange(service: service, changedServices: changedServices) {
-                let targets = try await serviceContainerTargets(project: project, services: [service])
+                let targets = try await serviceContainerTargets(project: workingProject, services: [service])
                 for target in targets {
                     try await restartContainer(service: service, containerName: target.name, timeout: up.timeout)
                 }
@@ -1040,10 +1235,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
 
         if up.removeOrphans {
-            let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: scaleOverrides)
-            let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: scaleOverrides)
+            let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
+            let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
             try await removeRemainingProjectContainers(
-                project: project,
+                project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
                 timeout: up.timeout
@@ -1070,7 +1265,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                existing.configHash == (try configHash(
                    project: project,
                    service: service,
-                   externalVolumeMounts: request.externalVolumeMounts
+                   externalVolumeMounts: request.externalVolumeMounts,
+                   materializedConfigSecretRoot: options.materializedConfigSecretDirectory
                )) {
                 options.emit("compose: reusing existing container \(name)")
                 return .unchanged
@@ -1081,11 +1277,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             didRecreate = true
         }
 
-        try await runContainer(try runArguments(
+        try await runContainer(try await runArguments(
             project: project,
             service: service,
             options: request.runOptions,
-            externalVolumeMounts: request.externalVolumeMounts
+            externalVolumeMounts: request.externalVolumeMounts,
+            imageHealthCheckCache: request.imageHealthCheckCache
         ))
         if request.runOptions.command == "run" {
             try await runPostStartHooks(service: service, containerID: name)
@@ -1135,12 +1332,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     ) async throws {
         try validate(project: project)
         try validateCreateOptions(create)
-        let services = try create.noDeps && !create.services.isEmpty
+        let selectedServiceReferences = try create.noDeps && !create.services.isEmpty
             ? selectedServices(project: project, selected: create.services)
             : orderedServices(project: project, selected: create.services)
+        var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        var services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         let scaleOverrides = try parseScaleOverrides(project: project, scales: create.scales)
         let dependencyRecreateServices = try servicesToRecreateBecauseDependencies(
-            project: project,
+            project: workingProject,
             selected: create.services,
             noDeps: create.noDeps,
             alwaysRecreateDeps: alwaysRecreateDeps,
@@ -1148,14 +1352,23 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
         let validateDependencies = !(create.noDeps && !create.services.isEmpty)
         try validateCreatePullPolicy(create.pullPolicy)
-        try validateRuntimeSupport(services: services, project: project, validateDependencies: validateDependencies)
-        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: project, services: services)
+        try validateRuntimeSupport(services: services, project: workingProject, validateDependencies: validateDependencies)
+        workingProject = try await projectByResolvingExternalLinks(project: workingProject, services: services)
+        services = try selectedServiceReferences.map { service in
+            guard let activeService = workingProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
+        let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
+        let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
-        try await ensureResources(project: project)
+        try await applyCreateImagePolicy(create, project: workingProject, services: services)
+        try await validateRuntimeHealthChecks(project: workingProject, services: services, cache: imageHealthCheckCache)
 
-        try await applyCreateImagePolicy(create, project: project, services: services)
+        try await ensureResources(project: workingProject)
 
         for service in services {
             if shouldBuildServiceForCreate(create, service: service) {
@@ -1166,9 +1379,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if replicaCount > 0 {
                 var priorReplicaRecreated = false
                 for replicaIndex in 1...replicaCount {
-                    let name = try serviceContainerName(project: project, service: service, index: replicaIndex)
+                    let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
                     let reconcileOutcome = try await reconcileServiceContainer(
-                        project: project,
+                        project: workingProject,
                         service: service,
                         request: ServiceContainerReconcileRequest(
                             name: name,
@@ -1178,6 +1391,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                                 $0.replicaCount = replicaCount
                             },
                             externalVolumeMounts: externalVolumeMounts,
+                            imageHealthCheckCache: imageHealthCheckCache,
                             forceRecreate: create.forceRecreate,
                             noRecreate: create.noRecreate,
                             dependencyRecreateServices: dependencyRecreateServices,
@@ -1191,15 +1405,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 }
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {
-                try await removeServiceReplicasAbove(project: project, service: service, desiredCount: replicaCount, timeout: recreateTimeout)
+                try await removeServiceReplicasAbove(project: workingProject, service: service, desiredCount: replicaCount, timeout: recreateTimeout)
             }
         }
 
         if create.removeOrphans {
-            let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: scaleOverrides)
-            let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: scaleOverrides)
+            let declaredContainers = try declaredServiceContainerNames(project: workingProject, scaleOverrides: scaleOverrides)
+            let preservedServices = orphanProtectedServiceNames(project: workingProject, scaleOverrides: scaleOverrides)
             try await removeRemainingProjectContainers(
-                project: project,
+                project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
                 timeout: recreateTimeout
@@ -1243,6 +1457,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if down.removeOrphans {
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers, timeout: down.timeout)
+        }
+
+        if !options.dryRun {
+            try removeMaterializedConfigSecrets(
+                project: project,
+                root: options.materializedConfigSecretDirectory
+            )
         }
 
         for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
@@ -1454,25 +1675,183 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Streams or prints logs for selected service containers.
-    public func logs(project: ComposeProject, services selected: [String], follow: Bool, tail: String?, index: Int = 1) async throws {
+    public func logs(
+        project: ComposeProject,
+        services selected: [String],
+        options logOptions: ComposeLogsOptions = ComposeLogsOptions()
+    ) async throws {
         let services = try selectedServices(project: project, selected: selected)
-        let runtimeTail = try runtimeLogTail(tail)
-        for service in services {
-            var args = ["logs"]
-            if follow {
-                args.append("--follow")
-            }
-            if let runtimeTail {
-                args.append(contentsOf: ["-n", String(runtimeTail)])
-            }
-            let id = try await serviceContainerID(project: project, service: service, index: index)
-            args.append(id)
-            if options.dryRun {
+        let runtimeTail = try runtimeLogTail(logOptions.tail)
+        let runtimeSince = try runtimeLogTimestamp(logOptions.since)
+        let runtimeUntil = try runtimeLogTimestamp(logOptions.until)
+        let targets = try await logTargets(project: project, services: services, index: logOptions.index)
+        if options.dryRun {
+            for target in targets {
+                let args = logRuntimeArguments(
+                    id: target.name,
+                    follow: logOptions.follow,
+                    tail: runtimeTail,
+                    since: logOptions.since,
+                    until: logOptions.until,
+                    timestamps: logOptions.timestamps
+                )
                 try await runContainer(args)
-            } else {
-                try await logManager.logs(id: id, tail: runtimeTail, follow: follow, emit: options.emit)
             }
+            return
         }
+        if logOptions.follow, targets.count > 1 {
+            try await followLogTargets(
+                targets,
+                tail: runtimeTail,
+                since: runtimeSince,
+                until: runtimeUntil,
+                timestamps: logOptions.timestamps,
+                noLogPrefix: logOptions.noLogPrefix,
+                colorPrefixes: logOptions.colorPrefixes
+            )
+            return
+        }
+        for target in targets {
+            try await emitLogs(
+                for: target,
+                follow: logOptions.follow,
+                tail: runtimeTail,
+                since: runtimeSince,
+                until: runtimeUntil,
+                timestamps: logOptions.timestamps,
+                noLogPrefix: logOptions.noLogPrefix,
+                colorPrefixes: logOptions.colorPrefixes
+            )
+        }
+    }
+
+    /// Renders direct runtime arguments for log dry-run output.
+    private func logRuntimeArguments(id: String, follow: Bool, tail: Int?, since: String?, until: String?, timestamps: Bool) -> [String] {
+        var args = ["logs"]
+        if follow {
+            args.append("--follow")
+        }
+        if let tail {
+            args.append(contentsOf: ["-n", String(tail)])
+        }
+        if let since {
+            args.append(contentsOf: ["--since", since])
+        }
+        if let until {
+            args.append(contentsOf: ["--until", until])
+        }
+        if timestamps {
+            args.append("--timestamps")
+        }
+        args.append(id)
+        return args
+    }
+
+    /// Follows all selected log targets concurrently.
+    private func followLogTargets(
+        _ targets: [ServiceContainerTarget],
+        tail: Int?,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
+        noLogPrefix: Bool,
+        colorPrefixes: Bool
+    ) async throws {
+        let logManager = logManager
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for target in targets {
+                let containerID = target.name
+                let emit = logEmitter(for: target, noLogPrefix: noLogPrefix, colorPrefixes: colorPrefixes)
+                group.addTask { [containerID, emit, logManager, since, tail, timestamps, until] in
+                    try await logManager.logs(
+                        id: containerID,
+                        tail: tail,
+                        follow: true,
+                        since: since,
+                        until: until,
+                        timestamps: timestamps,
+                        emit: emit
+                    )
+                }
+            }
+            while try await group.next() != nil {}
+        }
+    }
+
+    /// Emits static or single-target followed logs.
+    private func emitLogs(
+        for target: ServiceContainerTarget,
+        follow: Bool,
+        tail: Int?,
+        since: Date?,
+        until: Date?,
+        timestamps: Bool,
+        noLogPrefix: Bool,
+        colorPrefixes: Bool
+    ) async throws {
+        try await logManager.logs(
+            id: target.name,
+            tail: tail,
+            follow: follow,
+            since: since,
+            until: until,
+            timestamps: timestamps,
+            emit: logEmitter(for: target, noLogPrefix: noLogPrefix, colorPrefixes: colorPrefixes)
+        )
+    }
+
+    /// Returns the user-facing log emitter for a selected service target.
+    private func logEmitter(
+        for target: ServiceContainerTarget,
+        noLogPrefix: Bool,
+        colorPrefixes: Bool
+    ) -> @Sendable (Data) -> Void {
+        let emit = options.emitData
+        guard !noLogPrefix else {
+            return emit
+        }
+        let prefix = colorPrefixes ? colorizedLogPrefix(for: target) : logPrefix(for: target)
+        let prefixData = Data("\(prefix) | ".utf8)
+        return { output in
+            let lines = recordsForCompleteLogData(output)
+            var prefixed = Data()
+            for (index, line) in lines.enumerated() {
+                if index > 0 {
+                    prefixed.append(UInt8(ascii: "\n"))
+                }
+                prefixed.append(prefixData)
+                prefixed.append(line)
+            }
+            emit(prefixed)
+        }
+    }
+
+    /// Returns the ANSI-colored Compose log prefix for a selected service target.
+    private func colorizedLogPrefix(for target: ServiceContainerTarget) -> String {
+        let prefix = logPrefix(for: target)
+        let code = logColorCode(for: target)
+        return "\u{001B}[\(code)m\(prefix)\u{001B}[0m"
+    }
+
+    /// Returns the Compose log prefix for a selected service target.
+    private func logPrefix(for target: ServiceContainerTarget) -> String {
+        if let containerName = target.service.containerName, !containerName.isEmpty {
+            return containerName
+        }
+        guard target.index != Int.max else {
+            return target.name
+        }
+        return "\(target.service.name)-\(target.index)"
+    }
+
+    /// Returns a deterministic ANSI foreground color code for a log target.
+    private func logColorCode(for target: ServiceContainerTarget) -> String {
+        let palette = ["36", "32", "33", "35", "34", "31"]
+        let replicaSeed = target.index == Int.max ? 0 : target.index
+        let seed = target.service.name.unicodeScalars.reduce(replicaSeed) { partial, scalar in
+            partial + Int(scalar.value)
+        }
+        return palette[seed % palette.count]
     }
 
     /// Runs `compose watch` by applying initial syncs and polling watched paths
@@ -1536,7 +1915,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if options.dryRun {
             try await runContainer(args)
         } else {
-            try await logManager.logs(id: id, tail: nil, follow: true, emit: options.emit)
+            try await logManager.logs(
+                id: id,
+                tail: nil,
+                follow: true,
+                since: nil,
+                until: nil,
+                timestamps: false,
+                emit: options.emit
+            )
         }
     }
 
@@ -1664,29 +2051,53 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let labelOverrides = try parseRunLabelOverrides(run.labels)
         try validateRunLabelOverridesAgainstAnnotations(labelOverrides, service: service)
         try validatePullPolicy(run.pullPolicy)
-        let dependencyServices = try run.noDeps
+        let selectedDependencyServices = try run.noDeps
             ? []
             : orderedServices(project: runProject, selected: [serviceName]).filter { $0.name != serviceName }
+        var activeServiceNames = Set(selectedDependencyServices.map(\.name))
+        activeServiceNames.insert(serviceName)
+        runProject = try projectByApplyingLinks(project: runProject, activeServiceNames: activeServiceNames)
+        service = runProject.services[serviceName] ?? service
+        var dependencyServices = try selectedDependencyServices.map { service in
+            guard let activeService = runProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         try validateRuntimeSupport(services: dependencyServices + [service], project: runProject, validateDependencies: !run.noDeps)
+        runProject = try await projectByResolvingExternalLinks(project: runProject, services: dependencyServices + [service])
+        service = runProject.services[serviceName] ?? service
+        dependencyServices = try selectedDependencyServices.map { service in
+            guard let activeService = runProject.services[service.name] else {
+                throw ComposeError.invalidProject("unknown service '\(service.name)'")
+            }
+            return activeService
+        }
         try validateOneOffRunLifecycleHooks(service: service, options: run)
         try validatePublishedPorts(services: dependencyServices)
         let publishedPorts = (run.servicePorts ? service.ports ?? [] : []) + run.publish
         try validatePublishedPorts(publishedPorts, serviceName: service.name)
+        let imageHealthCheckCache = ComposeImageHealthCheckCache()
         let externalVolumeMounts = try await resolveExternalVolumeMounts(
             project: runProject,
             services: dependencyServices + [service]
         )
         try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
+        try await validateRuntimeHealthChecks(project: runProject, services: dependencyServices + [service], cache: imageHealthCheckCache)
         try await ensureResources(project: runProject)
         runProject = try await startDependencyServices(
             project: runProject,
             services: dependencyServices,
-            externalVolumeMounts: externalVolumeMounts
+            externalVolumeMounts: externalVolumeMounts,
+            imageHealthCheckCache: imageHealthCheckCache
         )
         service = runProject.services[serviceName] ?? service
+        if !run.noDeps {
+            try await waitForDependencyConditions(project: runProject, service: service)
+        }
         let containerName = oneOffRunContainerName(project: runProject, service: service, requestedName: run.containerName)
         try await runContainer(
-            try runArguments(
+            try await runArguments(
                 project: runProject,
                 service: service,
                 options: RunArgumentOptions {
@@ -1697,7 +2108,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     $0.containerNameOverride = containerName
                     $0.labelOverrides = labelOverrides
                 },
-                externalVolumeMounts: externalVolumeMounts
+                externalVolumeMounts: externalVolumeMounts,
+                imageHealthCheckCache: imageHealthCheckCache
             ),
             inheritedIO: !run.detach && (service.tty == true || service.stdinOpen == true)
         )
@@ -1856,6 +2268,43 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         )
     }
 
+    /// Displays running process identifiers for selected service containers.
+    public func top(project: ComposeProject, options top: ComposeTopOptions = ComposeTopOptions()) async throws {
+        try validate(project: project)
+        let services = try selectedServices(project: project, selected: top.services)
+        let targets = try await serviceContainerTargets(project: project, services: services)
+        if options.dryRun {
+            for target in targets {
+                try await runContainer(["top", target.name])
+            }
+            return
+        }
+        try await topManager.top(
+            targets: targets.map { ComposeTopTarget(service: $0.service.name, containerID: $0.name) },
+            emit: options.emit
+        )
+    }
+
+    /// Streams project container lifecycle events in Docker Compose format.
+    public func events(project: ComposeProject, options events: ComposeEventsOptions) async throws {
+        try validate(project: project)
+        let runtimeSince = try runtimeEventTimestamp(events.since)
+        let runtimeUntil = try runtimeEventTimestamp(events.until)
+        let services = try selectedServices(project: project, selected: events.services)
+        if options.dryRun {
+            try await runContainer(eventRuntimeArguments(since: events.since, until: events.until))
+            return
+        }
+        try await eventsManager.events(
+            projectName: project.name,
+            services: services.map(\.name),
+            format: events.outputFormat,
+            since: runtimeSince,
+            until: runtimeUntil,
+            emit: options.emit
+        )
+    }
+
     /// Sends a signal to selected service containers.
     public func kill(project: ComposeProject, services selected: [String], signal: String?) async throws {
         let services = try selectedServices(project: project, selected: selected)
@@ -1874,6 +2323,32 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
     }
 
+    /// Pauses selected service containers.
+    public func pause(project: ComposeProject, services selected: [String]) async throws {
+        let services = try selectedServices(project: project, selected: selected)
+        for target in try await serviceContainerTargets(project: project, services: services) {
+            let containerID = target.name
+            if options.dryRun {
+                try await runContainer(["pause", containerID], check: false)
+                continue
+            }
+            try await lifecycleManager.pauseContainer(id: containerID)
+        }
+    }
+
+    /// Resumes selected paused service containers.
+    public func unpause(project: ComposeProject, services selected: [String]) async throws {
+        let services = try selectedServices(project: project, selected: selected)
+        for target in try await serviceContainerTargets(project: project, services: services) {
+            let containerID = target.name
+            if options.dryRun {
+                try await runContainer(["unpause", containerID], check: false)
+                continue
+            }
+            try await lifecycleManager.unpauseContainer(id: containerID)
+        }
+    }
+
     /// Waits for selected service containers to exit and prints their exit codes.
     public func wait(project: ComposeProject, options wait: ComposeWaitOptions = ComposeWaitOptions()) async throws {
         let services = try selectedServices(project: project, selected: wait.services)
@@ -1888,8 +2363,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 try await runContainer(["wait", containerID])
                 continue
             }
-            try await validateWaitTarget(target)
-            let exitCode = try await lifecycleManager.waitContainer(id: containerID)
+            let exitCode: Int32
+            if let stoppedExitCode = try await stoppedWaitExitCode(target) {
+                exitCode = stoppedExitCode
+            } else {
+                exitCode = try await lifecycleManager.waitContainer(id: containerID)
+            }
             options.emit(String(exitCode))
         }
     }
@@ -1906,7 +2385,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Copies files between a Compose service container and the local host with Compose options.
     public func copy(project: ComposeProject, options copy: ComposeCopyOptions) async throws {
-        try validateCopyOptions(copy)
         guard copy.arguments.count == 2 else {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
@@ -1923,30 +2401,37 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             index: copy.index,
             includeOneOff: copy.all && !options.dryRun
         )
+        let transferOptions = ContainerCopyTransferOptions(followSymlink: copy.followLink, preserveOwnership: copy.archive)
         switch (source, destination) {
         case (.containers(let sources), .local(let localPath)):
             guard let source = sources.first else {
                 throw ComposeError.invalidProject("no source container found for cp")
             }
             if options.dryRun {
-                try await runContainer(["cp", source.runtimeArgument, localPath])
+                try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: localPath, options: copy))
                 return
             }
-            try await copier.copyFromContainer(id: source.id, source: source.path, destination: localPath)
+            try await copier.copyFromContainer(id: source.id, source: source.path, destination: localPath, options: transferOptions)
         case (.local(let localPath), .containers(let destinations)):
             if options.dryRun {
                 for destination in destinations {
-                    try await runContainer(["cp", localPath, destination.runtimeArgument])
+                    try await runContainer(copyCommandArguments(source: localPath, destination: destination.runtimeArgument, options: copy))
                 }
                 return
             }
             for destination in destinations {
-                try await copier.copyIntoContainer(id: destination.id, source: localPath, destination: destination.path)
+                try await copier.copyIntoContainer(id: destination.id, source: localPath, destination: destination.path, options: transferOptions)
             }
         case (.containers(let sources), .containers(let destinations)):
-            try await copyBetweenContainerTargets(sources: sources, destinations: destinations, allDestinations: copy.all)
+            try await copyBetweenContainerTargets(
+                sources: sources,
+                destinations: destinations,
+                allDestinations: copy.all,
+                copy: copy,
+                transferOptions: transferOptions
+            )
         case (.local, .local):
-            try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+            try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: destination.runtimeArgument, options: copy))
         }
     }
 
@@ -1954,7 +2439,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private func copyBetweenContainerTargets(
         sources: [ComposeCopyContainerTarget],
         destinations: [ComposeCopyContainerTarget],
-        allDestinations: Bool
+        allDestinations: Bool,
+        copy: ComposeCopyOptions,
+        transferOptions: ContainerCopyTransferOptions
     ) async throws {
         guard let source = sources.first else {
             throw ComposeError.invalidProject("no source or destination container found for cp")
@@ -1966,7 +2453,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         if options.dryRun {
             for destination in selectedDestinations {
-                try await runContainer(["cp", source.runtimeArgument, destination.runtimeArgument])
+                try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: destination.runtimeArgument, options: copy))
             }
             return
         }
@@ -1976,9 +2463,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 sourceID: source.id,
                 source: source.path,
                 destinationID: destination.id,
-                destination: destination.path
+                destination: destination.path,
+                options: transferOptions
             )
         }
+    }
+
+    private func copyCommandArguments(source: String, destination: String, options: ComposeCopyOptions) -> [String] {
+        var arguments = ["cp"]
+        if options.archive {
+            arguments.append("--archive")
+        }
+        if options.followLink {
+            arguments.append("--follow-link")
+        }
+        arguments.append(contentsOf: [source, destination])
+        return arguments
     }
 
     /// Exports an existing service container filesystem as a tar archive.
@@ -2094,6 +2594,136 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Builds the underlying runtime event command for dry-run output.
+    func eventRuntimeArguments(since: String?, until: String?) -> [String] {
+        var args = ["events"]
+        if let since, !since.isEmpty {
+            args.append(contentsOf: ["--since", since])
+        }
+        if let until, !until.isEmpty {
+            args.append(contentsOf: ["--until", until])
+        }
+        return args
+    }
+
+    /// Adds active legacy-link aliases to the target services they reference.
+    func projectByApplyingLinks(project: ComposeProject, activeServiceNames: Set<String>) throws -> ComposeProject {
+        var result = project
+        var projectedAliases: [ComposeProjectedLinkAlias] = []
+        for sourceName in activeServiceNames.sorted() {
+            guard let source = project.services[sourceName] else {
+                continue
+            }
+            for link in try serviceLinkReferences(service: source, project: project) where activeServiceNames.contains(link.serviceName) {
+                guard var target = result.services[link.serviceName] else {
+                    continue
+                }
+                let network = try linkNetwork(source: source, target: target, link: link)
+                var aliasesByNetwork = target.networkAliases ?? [:]
+                var aliases = aliasesByNetwork[network] ?? []
+                projectedAliases.append(ComposeProjectedLinkAlias(serviceName: target.name, network: network, alias: link.alias))
+                if !aliases.contains(link.alias) {
+                    aliases.append(link.alias)
+                }
+                aliasesByNetwork[network] = aliases
+                target.networkAliases = aliasesByNetwork
+                result.services[target.name] = target
+            }
+        }
+        try validateProjectedLinkAliases(
+            project: project,
+            aliases: projectedAliases,
+            activeServiceNames: activeServiceNames
+        )
+        return result
+    }
+
+    /// Resolves Compose `external_links` into runtime host entries for the supported local subset.
+    func projectByResolvingExternalLinks(project: ComposeProject, services: [ComposeService]) async throws -> ComposeProject {
+        var result = project
+        for serviceReference in services.sorted(by: { $0.name < $1.name }) {
+            guard var service = result.services[serviceReference.name] else {
+                continue
+            }
+            let hostEntries = try await runtimeExternalLinkHostArguments(project: result, service: service)
+            guard !hostEntries.isEmpty else {
+                continue
+            }
+            service.extraHosts = (service.extraHosts ?? []) + hostEntries
+            result.services[service.name] = service
+        }
+        return result
+    }
+
+    /// Returns generated `extra_hosts`-compatible values for Compose `external_links`.
+    func runtimeExternalLinkHostArguments(project: ComposeProject, service: ComposeService) async throws -> [String] {
+        let references = try serviceExternalLinkReferences(service: service)
+        guard !references.isEmpty else {
+            return []
+        }
+        let network = try externalLinkRuntimeNetwork(project: project, service: service)
+        var entries: [String] = []
+        for reference in references {
+            guard let container = try await discoveryManager.getContainer(id: reference.containerName) else {
+                throw ComposeError.invalidProject("service '\(service.name)' external_links references missing container '\(reference.containerName)'")
+            }
+            let attachments = container.networks.filter { $0.network == network }
+            guard attachments.count == 1, let attachment = attachments.first else {
+                throw ComposeError.unsupported("service '\(service.name)' external_links to '\(reference.containerName)'; external container must share exactly one runtime network with the service")
+            }
+            entries.append("\(reference.alias)=\(attachment.ipv4Address)")
+        }
+        return entries
+    }
+
+    /// Returns the single runtime network that can safely back legacy external links.
+    func externalLinkRuntimeNetwork(project: ComposeProject, service: ComposeService) throws -> String {
+        let networks = service.networks ?? []
+        guard networks.count == 1, let network = networks.first else {
+            throw ComposeError.unsupported("service '\(service.name)' uses external_links; external links require exactly one Compose network until apple/container exposes source-scoped DNS links")
+        }
+        return networkRuntimeName(project: project, composeName: network)
+    }
+
+    /// Returns the single shared network a legacy link can use.
+    func linkNetwork(source: ComposeService, target: ComposeService, link: ComposeLinkReference) throws -> String {
+        let sourceNetworks = Set(source.networks ?? [])
+        let targetNetworks = Set(target.networks ?? [])
+        let sharedNetworks = sourceNetworks.intersection(targetNetworks).sorted()
+        guard sharedNetworks.count == 1 else {
+            throw ComposeError.unsupported("service '\(source.name)' links to '\(link.serviceName)'; links require both services to share exactly one Compose network until apple/container exposes source-scoped DNS links")
+        }
+        return sharedNetworks[0]
+    }
+
+    /// Rejects projected link aliases the current apple/container DNS lookup cannot disambiguate.
+    func validateProjectedLinkAliases(
+        project: ComposeProject,
+        aliases projectedAliases: [ComposeProjectedLinkAlias],
+        activeServiceNames: Set<String>
+    ) throws {
+        var ownersByNetwork: [String: [String: String]] = [:]
+        for projectedAlias in projectedAliases {
+            if let existingOwner = ownersByNetwork[projectedAlias.network]?[projectedAlias.alias],
+               existingOwner != projectedAlias.serviceName {
+                throw ComposeError.unsupported("services '\(existingOwner)' and '\(projectedAlias.serviceName)' share network alias '\(projectedAlias.alias)' on network '\(projectedAlias.network)'; shared aliases need apple/container source-scoped DNS support")
+            }
+            ownersByNetwork[projectedAlias.network, default: [:]][projectedAlias.alias] = projectedAlias.serviceName
+
+            for serviceName in activeServiceNames.sorted() where serviceName != projectedAlias.serviceName {
+                guard let service = project.services[serviceName],
+                      service.networks?.count == 1,
+                      service.networks?.first == projectedAlias.network
+                else {
+                    continue
+                }
+                if try networkAliasValues(service: service, network: projectedAlias.network).contains(projectedAlias.alias) {
+                    throw ComposeError.unsupported("services '\(service.name)' and '\(projectedAlias.serviceName)' share network alias '\(projectedAlias.alias)' on network '\(projectedAlias.network)'; shared aliases need apple/container source-scoped DNS support")
+                }
+            }
+        }
+    }
+
     /// Returns services that are dependencies of explicitly selected services
     /// and should be recreated even when their config hash still matches.
     func servicesToRecreateBecauseDependencies(
@@ -2204,6 +2834,23 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Resolves service container targets for `compose logs`.
+    func logTargets(project: ComposeProject, services: [ComposeService], index: Int?) async throws -> [ServiceContainerTarget] {
+        guard let index else {
+            return try await serviceContainerTargets(project: project, services: services)
+        }
+        var targets: [ServiceContainerTarget] = []
+        for service in services {
+            let name = try await serviceContainerID(project: project, service: service, index: index)
+            targets.append(ServiceContainerTarget(
+                service: service,
+                index: index,
+                name: name
+            ))
+        }
+        return targets
+    }
+
     /// Returns configured service targets for dry-run rendering.
     func configuredServiceContainerTargets(project: ComposeProject, services: [ComposeService]) throws -> [ServiceContainerTarget] {
         try services.flatMap { service in
@@ -2295,10 +2942,7 @@ private extension ComposeOrchestrator {
         if networks.count > 1 {
             throw ComposeError.unsupported("service '\(service.name)' declares multiple networks; apple/container does not expose network connect yet")
         }
-        if let networkAliases = service.networkAliases,
-           networkAliases.contains(where: { !$0.value.isEmpty }) {
-            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network alias support needs an apple/container runtime gap PR")
-        }
+        try validateNetworkAliasSupport(service: service, networks: networks)
         if let networkOptions = service.networkOptions {
             for (network, options) in networkOptions.sorted(by: { $0.key < $1.key }) {
                 let fields = try options.unsupportedFieldNames()
@@ -2320,9 +2964,7 @@ private extension ComposeOrchestrator {
         if let gap = unsupportedMemoryAndProcessResourceFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
-        if service.blkioConfig == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses blkio_config; block I/O controls need apple/container runtime resource primitives for blkio weight and throttling")
-        }
+        _ = try runtimeBlkioArguments(service: service)
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
@@ -2357,40 +2999,24 @@ private extension ComposeOrchestrator {
                     continue
                 }
                 let condition = metadata.condition
-                if condition != "service_started" && condition != "" {
+                if condition != "service_started" && condition != "" && condition != "service_completed_successfully" && condition != "service_healthy" {
                     let reason = unsupportedDependencyConditionReason(condition)
                     throw ComposeError.unsupported("service '\(service.name)' depends on '\(dependency)' with condition '\(condition)'; \(reason)")
                 }
             }
         }
-        if let links = service.links, !links.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses links; legacy link support needs an apple/container runtime gap PR")
-        }
-        if let externalLinks = service.externalLinks, !externalLinks.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses external_links; legacy link support needs an apple/container runtime gap PR")
-        }
-        if let extraHosts = service.extraHosts, !extraHosts.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses extra_hosts; host-entry support needs an apple/container runtime gap PR")
-        }
-        if let hostname = service.hostname, !hostname.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses hostname; custom hostname support needs an apple/container runtime gap PR")
-        }
-        if let domainName = service.domainName, !domainName.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses domainname; custom domain name support needs an apple/container runtime gap PR")
-        }
-        if let sysctls = service.sysctls, !sysctls.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses sysctls; sysctl support needs an apple/container runtime gap PR")
-        }
-        if service.healthcheck != nil {
-            throw ComposeError.unsupported("service '\(service.name)' uses healthcheck; health status support needs an apple/container runtime gap PR")
-        }
+        _ = try serviceLinkReferences(service: service, project: project)
+        _ = try serviceExternalLinkReferences(service: service)
+        _ = try runtimeExtraHostArguments(service: service)
+        _ = try runtimeHostnameArgument(service: service)
+        _ = try runtimeDomainnameArgument(service: service)
+        _ = try runtimeSysctlArguments(service: service)
+        try validateHealthCheckSupport(service: service)
         _ = try serviceConfigSecretMounts(project: project, service: service)
         if let pullPolicy = service.pullPolicy, !pullPolicy.isEmpty, !isSupportedServicePullPolicy(pullPolicy) {
             throw ComposeError.unsupported("service '\(service.name)' uses pull_policy '\(pullPolicy)'; supported values are always, missing, if_not_present, never, build, daily, weekly, and every_<duration>")
         }
-        if let restart = service.restart, !restart.isEmpty {
-            throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; restart policy support needs an apple/container runtime gap PR")
-        }
+        _ = try runtimeRestartPolicyArguments(service: service)
     }
 
     /// Rejects project network fields that are not mapped to apple/container network creation.
@@ -2430,6 +3056,28 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Allows aliases only for the single-network attachment that apple/container
+    /// `container --network name,alias=...` can represent.
+    func validateNetworkAliasSupport(service: ComposeService, networks: [String]) throws {
+        guard let networkAliases = service.networkAliases else {
+            return
+        }
+        let aliasNetworks = networkAliases
+            .filter { !$0.value.isEmpty }
+            .map(\.key)
+            .sorted()
+        guard !aliasNetworks.isEmpty else {
+            return
+        }
+        guard networks.count == 1, let network = networks.first else {
+            throw ComposeError.unsupported("service '\(service.name)' uses network aliases; network aliases require exactly one Compose network until apple/container exposes multi-network alias attachment")
+        }
+        for aliasNetwork in aliasNetworks where aliasNetwork != network {
+            throw ComposeError.invalidProject("service '\(service.name)' sets network aliases on unattached network '\(aliasNetwork)'")
+        }
+        _ = try networkAliasValues(service: service, network: network)
+    }
+
     /// Rejects build fields that apple/container `container build` cannot represent yet.
     func validateBuildSupport(service: ComposeService) throws {
         guard let fields = service.build?.unsupportedFields, !fields.isEmpty else {
@@ -2444,17 +3092,11 @@ private extension ComposeOrchestrator {
         guard let fields = service.unsupportedDeployFields, !fields.isEmpty else {
             return
         }
-        if fields.contains("restart_policy") {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy; restart policy support needs an apple/container runtime gap PR")
-        }
         if fields.contains("endpoint_mode") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR")
         }
         if fields.contains("update_config.order.start-first") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive")
-        }
-        if let mode = unsupportedDeployJobModeField(in: fields) {
-            throw ComposeError.unsupported("service '\(service.name)' uses deploy.mode '\(mode)'; deploy job modes need apple/container completion metadata and job lifecycle primitives")
         }
         if fields.contains("mode") {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.mode; deploy modes outside local replicated/global behavior need apple/container scheduler or job lifecycle primitives")
@@ -2470,11 +3112,6 @@ private extension ComposeOrchestrator {
         }
         let fieldList = fields.joined(separator: ", ")
         throw ComposeError.unsupported("service '\(service.name)' uses unsupported deploy fields \(fieldList); remaining Compose Deploy Specification fields need Docker Compose compatible apple/container deploy or runtime primitives")
-    }
-
-    /// Returns a Compose Deploy job mode that needs completion semantics.
-    func unsupportedDeployJobModeField(in fields: [String]) -> String? {
-        fields.first { $0.hasPrefix("mode.") }?.replacingOccurrences(of: "mode.", with: "")
     }
 
     /// Returns unsupported deploy resource limits that need apple/container runtime support.
@@ -2941,7 +3578,7 @@ private extension ComposeOrchestrator {
                 if !quiet {
                     options.emit("compose: watch sync \(service.name)[\(target.index)] \(entry.sourcePath) -> \(destination)")
                 }
-                try await copier.copyIntoContainer(id: target.name, source: entry.sourcePath, destination: destination)
+                try await copier.copyIntoContainer(id: target.name, source: entry.sourcePath, destination: destination, options: ContainerCopyTransferOptions())
             }
         }
     }
@@ -3249,7 +3886,7 @@ private extension ComposeOrchestrator {
     func unsupportedDependencyConditionReason(_ condition: String) -> String {
         switch condition {
         case "service_healthy":
-            "health status support needs an apple/container runtime gap PR"
+            "health status support requires apple/container healthcheck runtime support"
         case "service_completed_successfully":
             "exit code and completion time need an apple/container runtime gap PR"
         default:
@@ -3260,19 +3897,660 @@ private extension ComposeOrchestrator {
     /// Returns logging and storage fields that need apple/container runtime primitives.
     func unsupportedServiceMetadataAndLoggingFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
-        if service.logging != nil {
-            fields.append(("logging", "service logging driver/options need an apple/container runtime gap PR"))
+        let loggingReason = "service logging driver/options need an apple/container runtime gap PR"
+        if !isSupportedRuntimeLogging(service.logging) {
+            fields.append(("logging", loggingReason))
         }
-        if let logDriver = service.logDriver, !logDriver.isEmpty {
-            fields.append(("log_driver", "service logging driver/options need an apple/container runtime gap PR"))
+        if let logDriver = service.logDriver,
+           !logDriver.isEmpty,
+           !isSupportedRuntimeLogDriver(logDriver) {
+            fields.append(("log_driver", loggingReason))
         }
-        if let logOptions = service.logOptions, !logOptions.isEmpty {
-            fields.append(("log_opt", "service logging driver/options need an apple/container runtime gap PR"))
+        if !isSupportedLegacyRuntimeLogOptions(service: service) {
+            fields.append(("log_opt", loggingReason))
         }
         if let storageOptions = service.storageOptions, !storageOptions.isEmpty {
             fields.append(("storage_opt", "per-container storage options need an apple/container rootfs storage runtime gap PR"))
         }
         return fields
+    }
+
+    /// Returns whether Compose logging maps to an apple/container runtime log policy.
+    func isSupportedRuntimeLogging(_ logging: ComposeValue?) -> Bool {
+        guard let logging else {
+            return true
+        }
+        switch logging {
+        case .null:
+            return true
+        case .object(let fields):
+            let knownKeys = Set(["driver", "options"])
+            guard fields.keys.allSatisfy({ knownKeys.contains($0) }) else {
+                return false
+            }
+            let driver = fields["driver"]?.stringValue
+            let options = fields["options"]
+            return isSupportedRuntimeLogDriver(driver) && isSupportedRuntimeLogOptions(options, driver: driver)
+        default:
+            return false
+        }
+    }
+
+    /// Returns whether a logging driver can be represented by apple/container.
+    func isSupportedRuntimeLogDriver(_ driver: String?) -> Bool {
+        driver == nil || driver == "json-file" || driver == "local" || driver == "none"
+    }
+
+    /// Returns whether Compose logging options map to local apple/container options.
+    func isSupportedRuntimeLogOptions(_ options: ComposeValue?, driver: String?) -> Bool {
+        guard let options else {
+            return true
+        }
+        switch options {
+        case .null:
+            return true
+        case .object(let fields):
+            if fields.isEmpty {
+                return true
+            }
+            guard driver != "none" else {
+                return false
+            }
+            return fields.allSatisfy { key, value in
+                isSupportedRuntimeLogOptionKey(key) && value.stringValue != nil
+            }
+        default:
+            return false
+        }
+    }
+
+    /// Returns whether legacy Compose log options map to local apple/container options.
+    func isSupportedLegacyRuntimeLogOptions(service: ComposeService) -> Bool {
+        guard let logOptions = service.logOptions, !logOptions.isEmpty else {
+            return true
+        }
+        guard isSupportedRuntimeLogDriver(service.logDriver), service.logDriver != "none" else {
+            return false
+        }
+        return logOptions.keys.allSatisfy(isSupportedRuntimeLogOptionKey)
+    }
+
+    /// Returns whether an option key is supported by apple/container local logging.
+    func isSupportedRuntimeLogOptionKey(_ key: String) -> Bool {
+        key == "max-size" || key == "max-file"
+    }
+
+    /// Returns the runtime log driver override needed for non-default Compose logging.
+    func runtimeLogDriverArgument(service: ComposeService) -> String? {
+        if case .object(let fields)? = service.logging,
+           let driver = fields["driver"]?.stringValue {
+            return driver == "none" ? "none" : nil
+        }
+        return service.logDriver == "none" ? "none" : nil
+    }
+
+    /// Returns local apple/container logging options for service create/run.
+    func runtimeLogOptionArguments(service: ComposeService) -> [String] {
+        var options: [String: String] = [:]
+        if case .object(let fields)? = service.logging,
+           case .object(let logOptions)? = fields["options"] {
+            for (key, value) in logOptions {
+                if let stringValue = value.stringValue {
+                    options[key] = stringValue
+                }
+            }
+        }
+        for (key, value) in service.logOptions ?? [:] {
+            options[key] = value
+        }
+        return options.sorted(by: { $0.key < $1.key }).flatMap { key, value in
+            ["--log-opt", "\(key)=\(value)"]
+        }
+    }
+
+    /// Returns the runtime hostname argument for Compose `hostname`.
+    func runtimeHostnameArgument(service: ComposeService) throws -> String? {
+        guard let hostname = service.hostname?.trimmingCharacters(in: .whitespacesAndNewlines), !hostname.isEmpty else {
+            return nil
+        }
+        return try validatedRFC1123Hostname(hostname, field: "hostname", service: service)
+    }
+
+    /// Returns the runtime NIS domain-name argument for Compose `domainname`.
+    func runtimeDomainnameArgument(service: ComposeService) throws -> String? {
+        guard let domainName = service.domainName?.trimmingCharacters(in: .whitespacesAndNewlines), !domainName.isEmpty else {
+            return nil
+        }
+        return try validatedRFC1123Hostname(domainName, field: "domainname", service: service)
+    }
+
+    /// Validates a Compose hostname using RFC1123 label rules.
+    func validatedRFC1123Hostname(_ raw: String, field: String, service: ComposeService) throws -> String {
+        guard let hostname = canonicalRFC1123Hostname(raw) else {
+            throw invalidRFC1123HostnameError(raw, field: field, service: service)
+        }
+        return hostname
+    }
+
+    /// Returns runtime host-entry arguments for Compose `extra_hosts`.
+    func runtimeExtraHostArguments(service: ComposeService) throws -> [String] {
+        try (service.extraHosts ?? []).map { raw in
+            try runtimeExtraHostArgument(raw, service: service)
+        }
+    }
+
+    /// Returns runtime sysctl arguments for Compose `sysctls`.
+    func runtimeSysctlArguments(service: ComposeService) throws -> [String] {
+        try (service.sysctls ?? [:])
+            .sorted(by: { $0.key < $1.key })
+            .map { name, value in
+                let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedName.isEmpty else {
+                    throw ComposeError.invalidProject("service '\(service.name)' uses sysctls with an empty name")
+                }
+                guard !trimmedName.contains("=") else {
+                    throw ComposeError.invalidProject("service '\(service.name)' uses sysctl name '\(trimmedName)'; sysctl names must not contain '='")
+                }
+                return "\(trimmedName)=\(value)"
+            }
+    }
+
+    /// Converts Compose `blkio_config` into apple/container#1595 `--blkio`
+    /// specifications. Device path resolution stays inside apple/container.
+    func runtimeBlkioArguments(service: ComposeService) throws -> [String] {
+        guard let blkio = service.blkioConfig else {
+            return []
+        }
+        var result: [String] = []
+        if let weight = blkio.weight {
+            try validateBlockIOWeight(weight, serviceName: service.name, field: "blkio_config.weight")
+            result.append("weight=\(weight)")
+        }
+        for device in blkio.weightDevice ?? [] {
+            try validateBlockIODevicePath(device.path, serviceName: service.name, field: "blkio_config.weight_device.path")
+            try validateBlockIOWeight(device.weight, serviceName: service.name, field: "blkio_config.weight_device.weight")
+            result.append("device=\(device.path),weight=\(device.weight)")
+        }
+        try appendThrottleArguments(blkio.deviceReadBps, key: "read-bps", field: "blkio_config.device_read_bps", serviceName: service.name, to: &result)
+        try appendThrottleArguments(blkio.deviceWriteBps, key: "write-bps", field: "blkio_config.device_write_bps", serviceName: service.name, to: &result)
+        try appendThrottleArguments(blkio.deviceReadIOps, key: "read-iops", field: "blkio_config.device_read_iops", serviceName: service.name, to: &result)
+        try appendThrottleArguments(blkio.deviceWriteIOps, key: "write-iops", field: "blkio_config.device_write_iops", serviceName: service.name, to: &result)
+        return result
+    }
+
+    private func appendThrottleArguments(
+        _ devices: [ComposeBlkioThrottleDevice]?,
+        key: String,
+        field: String,
+        serviceName: String,
+        to result: inout [String]
+    ) throws {
+        for device in devices ?? [] {
+            try validateBlockIODevicePath(device.path, serviceName: serviceName, field: "\(field).path")
+            guard UInt64(device.rate) != nil else {
+                throw ComposeError.invalidProject("service '\(serviceName)' uses \(field).rate '\(device.rate)'; block I/O throttle rates must be non-negative integers")
+            }
+            result.append("device=\(device.path),\(key)=\(device.rate)")
+        }
+    }
+
+    private func validateBlockIOWeight(_ weight: Int, serviceName: String, field: String) throws {
+        guard (10...1000).contains(weight) else {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) \(weight); block I/O weight must be between 10 and 1000")
+        }
+    }
+
+    private func validateBlockIODevicePath(_ path: String, serviceName: String, field: String) throws {
+        guard !path.isEmpty else {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) with an empty device path")
+        }
+        if path.contains(",") {
+            throw ComposeError.invalidProject("service '\(serviceName)' uses \(field) '\(path)'; block I/O device paths must not contain commas")
+        }
+    }
+
+    /// Canonicalizes one Compose host entry into the runtime `--add-host` form.
+    func runtimeExtraHostArgument(_ raw: String, service: ComposeService) throws -> String {
+        let separator = raw.firstIndex(of: "=") ?? raw.firstIndex(of: ":")
+        guard let separator else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' must use HOST=IP or HOST:IP")
+        }
+
+        let hostname = String(raw[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawAddress = String(raw[raw.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !hostname.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has an empty hostname")
+        }
+        guard !rawAddress.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has an empty IP address")
+        }
+
+        if rawAddress == ContainerConfiguration.HostEntry.hostGatewayAddress {
+            return "\(hostname):\(ContainerConfiguration.HostEntry.hostGatewayAddress)"
+        }
+
+        let ipAddress = unbracketedIPAddress(rawAddress)
+        guard (try? IPAddress(ipAddress)) != nil else {
+            throw ComposeError.invalidProject("service '\(service.name)' extra_hosts entry '\(raw)' has invalid IP address '\(rawAddress)'")
+        }
+        return "\(hostname):\(ipAddress)"
+    }
+
+    /// Removes brackets accepted by Compose around IPv6 literals.
+    func unbracketedIPAddress(_ value: String) -> String {
+        if value.hasPrefix("["), value.hasSuffix("]") {
+            return String(value.dropFirst().dropLast())
+        }
+        return value
+    }
+
+    /// Returns Docker-compatible apple/container restart policy arguments
+    /// for service containers. Compose Deploy restart policy takes precedence
+    /// over the service-level `restart` key, matching Docker Compose.
+    func runtimeRestartPolicyArguments(service: ComposeService) throws -> RuntimeRestartPolicyArguments? {
+        if let policy = service.deployRestartPolicy {
+            return try runtimeDeployRestartPolicyArguments(service: service, policy: policy)
+        }
+        return try runtimeServiceRestartPolicyArguments(
+            service: service,
+            allowSuccessfulRestart: !isDeployJobService(service)
+        )
+    }
+
+    /// Returns the runtime restart arguments for a Compose Deploy restart policy.
+    func runtimeDeployRestartPolicyArguments(
+        service: ComposeService,
+        policy: ComposeDeployRestartPolicy
+    ) throws -> RuntimeRestartPolicyArguments {
+        let condition = policy.condition?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let restartCondition = condition.flatMap { $0.isEmpty ? nil : $0 } ?? "any"
+        let effectiveRestartCondition = isDeployJobService(service) && restartCondition == "any"
+            ? "on-failure"
+            : restartCondition
+        let timing = try deployRestartTiming(service: service, policy: policy)
+
+        switch effectiveRestartCondition {
+        case "none":
+            if policy.maxAttempts != nil {
+                throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'none'; apple/container retry limits are only available for on-failure restart policies")
+            }
+            return RuntimeRestartPolicyArguments(policy: "no")
+        case "any":
+            if policy.maxAttempts != nil {
+                throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.max_attempts with condition 'any'; apple/container retry limits are only available for on-failure restart policies")
+            }
+            return RuntimeRestartPolicyArguments(
+                policy: "always",
+                delayNanoseconds: timing.delayNanoseconds,
+                windowNanoseconds: timing.windowNanoseconds
+            )
+        case "on-failure":
+            let restartPolicy: String
+            if let maxAttempts = policy.maxAttempts {
+                guard maxAttempts <= UInt64(UInt32.max) else {
+                    throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.max_attempts must be between 0 and \(UInt32.max)")
+                }
+                restartPolicy = "on-failure:\(maxAttempts)"
+            } else {
+                restartPolicy = "on-failure"
+            }
+            return RuntimeRestartPolicyArguments(
+                policy: restartPolicy,
+                delayNanoseconds: timing.delayNanoseconds,
+                windowNanoseconds: timing.windowNanoseconds
+            )
+        default:
+            throw ComposeError.unsupported("service '\(service.name)' uses deploy.restart_policy.condition '\(restartCondition)'; supported values are none, on-failure, and any")
+        }
+    }
+
+    /// Returns Compose Deploy restart timing values backed by apple/container
+    /// restart policy timing primitives.
+    func deployRestartTiming(
+        service: ComposeService,
+        policy: ComposeDeployRestartPolicy
+    ) throws -> (delayNanoseconds: Int64?, windowNanoseconds: Int64?) {
+        if let delay = policy.delayNanoseconds, delay < 0 {
+            throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.delay must be non-negative")
+        }
+        if let window = policy.windowNanoseconds, window < 0 {
+            throw ComposeError.invalidProject("service '\(service.name)' deploy.restart_policy.window must be non-negative")
+        }
+        return (policy.delayNanoseconds, policy.windowNanoseconds)
+    }
+
+    /// Returns true for Compose Deploy modes that represent completion-oriented jobs.
+    func isDeployJobService(_ service: ComposeService) -> Bool {
+        guard let mode = service.deployMode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+            return false
+        }
+        return mode == "replicated-job" || mode == "global-job"
+    }
+
+    /// Returns the runtime restart arguments for the service-level `restart` key.
+    func runtimeServiceRestartPolicyArguments(
+        service: ComposeService,
+        allowSuccessfulRestart: Bool = true
+    ) throws -> RuntimeRestartPolicyArguments? {
+        guard let restart = service.restart?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !restart.isEmpty else {
+            return nil
+        }
+
+        let parts = restart.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let mode = parts.first, !mode.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' has invalid restart policy '\(restart)'")
+        }
+
+        switch mode {
+        case "no", "always", "unless-stopped":
+            guard parts.count == 1 else {
+                throw ComposeError.invalidProject("service '\(service.name)' restart retry count is only supported with on-failure")
+            }
+            if !allowSuccessfulRestart, mode != "no" {
+                throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(mode)' with deploy.mode '\(service.deployMode ?? "")'; job services can only restart on failure")
+            }
+        case "on-failure":
+            if parts.count == 2 {
+                let retryValue = String(parts[1])
+                guard !retryValue.isEmpty, UInt32(retryValue) != nil else {
+                    throw ComposeError.invalidProject("service '\(service.name)' has invalid restart policy '\(restart)'")
+                }
+            }
+        default:
+            throw ComposeError.unsupported("service '\(service.name)' uses restart policy '\(restart)'; supported values are no, always, on-failure[:max-retries], and unless-stopped")
+        }
+
+        return RuntimeRestartPolicyArguments(policy: restart)
+    }
+
+    /// Validates service healthcheck fields without requiring image metadata.
+    func validateHealthCheckSupport(service: ComposeService) throws {
+        let fields = try healthCheckFields(service: service)
+        guard fields["disable"]?.boolValue != true else {
+            return
+        }
+        if let test = fields["test"] {
+            _ = try runtimeHealthCheckCommand(test: test, serviceName: service.name)
+        }
+        for field in healthCheckDurationFields {
+            if let value = fields[field.composeName] {
+                _ = try healthCheckDuration(value, field: field.composeName, serviceName: service.name)
+            }
+        }
+        if let retries = fields["retries"] {
+            _ = try healthCheckRetries(retries, serviceName: service.name)
+        }
+    }
+
+    /// Returns Docker-compatible apple/container healthcheck arguments for
+    /// service create/run.
+    func runtimeHealthCheckArguments(
+        project: ComposeProject,
+        service: ComposeService,
+        cache: ComposeImageHealthCheckCache?
+    ) async throws -> [String] {
+        let fields = try healthCheckFields(service: service)
+        guard fields["disable"]?.boolValue != true else {
+            return ["--no-healthcheck"]
+        }
+        if let test = fields["test"] {
+            return try explicitHealthCheckArguments(test: test, fields: fields, serviceName: service.name)
+        }
+
+        guard !options.dryRun else {
+            if healthCheckRequiresInheritedCommand(fields) {
+                throw ComposeError.unsupported("service '\(service.name)' tunes an image healthcheck; dry-run cannot resolve image HEALTHCHECK metadata")
+            }
+            return []
+        }
+
+        let imageHealthCheck: ComposeImageHealthCheck?
+        do {
+            imageHealthCheck = try await inheritedImageHealthCheck(project: project, service: service, cache: cache)
+        } catch {
+            guard healthCheckRequiresInheritedCommand(fields) else {
+                return []
+            }
+            throw error
+        }
+
+        guard let imageHealthCheck else {
+            if healthCheckRequiresInheritedCommand(fields) {
+                let image = serviceImage(project: project, service: service) ?? "<none>"
+                throw ComposeError.unsupported("service '\(service.name)' tunes an image healthcheck, but image '\(image)' does not expose Dockerfile HEALTHCHECK metadata")
+            }
+            return []
+        }
+
+        return try inheritedHealthCheckArguments(
+            imageHealthCheck,
+            fields: fields,
+            serviceName: service.name
+        )
+    }
+
+    /// Resolves healthcheck runtime arguments before creating project resources.
+    func validateRuntimeHealthChecks(
+        project: ComposeProject,
+        services: [ComposeService],
+        cache: ComposeImageHealthCheckCache
+    ) async throws {
+        for service in services {
+            guard serviceImage(project: project, service: service) != nil else {
+                continue
+            }
+            _ = try await runtimeHealthCheckArguments(project: project, service: service, cache: cache)
+        }
+    }
+
+    /// Returns validated Compose healthcheck fields.
+    func healthCheckFields(service: ComposeService) throws -> [String: ComposeValue] {
+        guard let healthcheck = service.healthcheck else {
+            return [:]
+        }
+        guard case .object(let fields) = healthcheck else {
+            throw ComposeError.invalidProject("service '\(service.name)' healthcheck must be an object")
+        }
+        guard fields.keys.allSatisfy({ supportedHealthCheckKeys.contains($0) }) else {
+            let unsupported = fields.keys.filter { !supportedHealthCheckKeys.contains($0) }.sorted().joined(separator: ", ")
+            throw ComposeError.unsupported("service '\(service.name)' uses unsupported healthcheck fields \(unsupported)")
+        }
+        return fields
+    }
+
+    /// Returns whether Compose overrides require an image-level healthcheck command.
+    func healthCheckRequiresInheritedCommand(_ fields: [String: ComposeValue]) -> Bool {
+        fields.keys.contains { $0 != "disable" }
+    }
+
+    /// Reads inherited Dockerfile healthcheck metadata for the service image.
+    func inheritedImageHealthCheck(
+        project: ComposeProject,
+        service: ComposeService,
+        cache: ComposeImageHealthCheckCache?
+    ) async throws -> ComposeImageHealthCheck? {
+        guard let image = serviceImage(project: project, service: service) else {
+            return nil
+        }
+        if let cache {
+            return try await cache.healthCheck(reference: image, platform: service.platform, imageManager: imageManager)
+        }
+        return try await imageManager.imageHealthCheck(image, platform: service.platform)
+    }
+
+    /// Converts explicit Compose healthcheck fields to runtime arguments.
+    func explicitHealthCheckArguments(
+        test: ComposeValue,
+        fields: [String: ComposeValue],
+        serviceName: String
+    ) throws -> [String] {
+        var args: [String]
+        switch try runtimeHealthCheckCommand(test: test, serviceName: serviceName) {
+        case .disabled:
+            args = ["--no-healthcheck"]
+        case .command(let command):
+            args = ["--health-cmd", command]
+        }
+
+        try appendHealthCheckOverrides(fields: fields, serviceName: serviceName, args: &args)
+        return args
+    }
+
+    /// Converts Dockerfile healthcheck metadata plus Compose overrides to runtime arguments.
+    func inheritedHealthCheckArguments(
+        _ imageHealthCheck: ComposeImageHealthCheck,
+        fields: [String: ComposeValue],
+        serviceName: String
+    ) throws -> [String] {
+        guard let test = imageHealthCheck.test, !test.isEmpty else {
+            return try handleMissingInheritedHealthCheckCommand(fields: fields, serviceName: serviceName)
+        }
+
+        let testValue = ComposeValue.array(test.map { .string($0) })
+        var args: [String]
+        switch try runtimeHealthCheckCommand(test: testValue, serviceName: serviceName) {
+        case .disabled:
+            return try handleMissingInheritedHealthCheckCommand(fields: fields, serviceName: serviceName)
+        case .command(let command):
+            args = ["--health-cmd", command]
+        }
+
+        try appendInheritedHealthCheckDefaults(imageHealthCheck, fields: fields, serviceName: serviceName, args: &args)
+        try appendHealthCheckOverrides(fields: fields, serviceName: serviceName, args: &args)
+        return args
+    }
+
+    /// Returns the no-op or error result for an image without an inherited command.
+    func handleMissingInheritedHealthCheckCommand(
+        fields: [String: ComposeValue],
+        serviceName: String
+    ) throws -> [String] {
+        guard healthCheckRequiresInheritedCommand(fields) else {
+            return []
+        }
+        throw ComposeError.unsupported("service '\(serviceName)' tunes an image healthcheck, but the image disables Dockerfile HEALTHCHECK")
+    }
+
+    /// Appends image-level healthcheck defaults that are not overridden by Compose.
+    func appendInheritedHealthCheckDefaults(
+        _ imageHealthCheck: ComposeImageHealthCheck,
+        fields: [String: ComposeValue],
+        serviceName: String,
+        args: inout [String]
+    ) throws {
+        for field in healthCheckDurationFields where fields[field.composeName] == nil {
+            guard let duration = try inheritedHealthCheckDuration(imageHealthCheck, field: field.composeName, serviceName: serviceName) else {
+                continue
+            }
+            args.append(contentsOf: [field.runtimeName, duration])
+        }
+        if fields["retries"] == nil, let retries = imageHealthCheck.retries, retries > 0 {
+            args.append(contentsOf: ["--health-retries", String(retries)])
+        }
+    }
+
+    /// Appends Compose healthcheck overrides.
+    func appendHealthCheckOverrides(
+        fields: [String: ComposeValue],
+        serviceName: String,
+        args: inout [String]
+    ) throws {
+        for field in healthCheckDurationFields {
+            if let value = fields[field.composeName] {
+                let duration = try healthCheckDuration(value, field: field.composeName, serviceName: serviceName)
+                args.append(contentsOf: [field.runtimeName, duration])
+            }
+        }
+
+        if let retries = fields["retries"] {
+            let value = try healthCheckRetries(retries, serviceName: serviceName)
+            args.append(contentsOf: ["--health-retries", String(value)])
+        }
+    }
+
+    /// Returns an image-level healthcheck duration for one Compose field.
+    func inheritedHealthCheckDuration(
+        _ imageHealthCheck: ComposeImageHealthCheck,
+        field: String,
+        serviceName: String
+    ) throws -> String? {
+        let nanoseconds: Int64? = switch field {
+        case "interval":
+            imageHealthCheck.intervalInNanoseconds
+        case "timeout":
+            imageHealthCheck.timeoutInNanoseconds
+        case "start_period":
+            imageHealthCheck.startPeriodInNanoseconds
+        case "start_interval":
+            imageHealthCheck.startIntervalInNanoseconds
+        default:
+            nil
+        }
+        guard let nanoseconds, nanoseconds != 0 else {
+            return nil
+        }
+        guard nanoseconds > 0 else {
+            throw ComposeError.invalidProject("service '\(serviceName)' inherited healthcheck.\(field) must be non-negative")
+        }
+        return runtimeDurationArgument(nanoseconds)
+    }
+
+    /// Converts Compose healthcheck `test` to the container CLI command form.
+    func runtimeHealthCheckCommand(test: ComposeValue, serviceName: String) throws -> RuntimeHealthCheckCommand {
+        switch test {
+        case .string(let command):
+            return .command(command)
+        case .array(let values):
+            let parts = try values.map { value -> String in
+                guard let string = value.stringValue else {
+                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test entries must be strings")
+                }
+                return string
+            }
+            guard let directive = parts.first else {
+                throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test cannot be empty")
+            }
+            switch directive {
+            case "NONE":
+                return .disabled
+            case "CMD-SHELL":
+                let command = parts.dropFirst().joined(separator: " ")
+                guard !command.isEmpty else {
+                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD-SHELL requires a command")
+                }
+                return .command(command)
+            case "CMD":
+                let command = Array(parts.dropFirst())
+                guard !command.isEmpty else {
+                    throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test CMD requires a command")
+                }
+                return .command(shellQuoted(command))
+            default:
+                throw ComposeError.unsupported("service '\(serviceName)' healthcheck.test uses unsupported directive '\(directive)'")
+            }
+        default:
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.test must be a string or list")
+        }
+    }
+
+    /// Returns a healthcheck duration string accepted by apple/container.
+    func healthCheckDuration(_ value: ComposeValue, field: String, serviceName: String) throws -> String {
+        guard let duration = value.stringValue,
+              ContainerLogTimestampParser.parseDuration(duration) != nil else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.\(field) must be a Compose duration")
+        }
+        return duration
+    }
+
+    /// Returns the Compose healthcheck retry count.
+    func healthCheckRetries(_ value: ComposeValue, serviceName: String) throws -> Int {
+        guard let retries = value.intValue, retries >= 0 else {
+            throw ComposeError.invalidProject("service '\(serviceName)' healthcheck.retries must be a non-negative integer")
+        }
+        return retries
     }
 
     /// Returns the service replica that should inherit foreground IO for `up`.
@@ -3738,16 +5016,6 @@ private extension ComposeOrchestrator {
     func validateExecOptions(_ options: ComposeExecOptions) throws {
         if options.privileged {
             throw ComposeError.unsupported("exec --privileged: apple/container exec does not expose privileged process execution")
-        }
-    }
-
-    /// Validates `compose cp` options before invoking runtime copy.
-    func validateCopyOptions(_ options: ComposeCopyOptions) throws {
-        if options.archive {
-            throw ComposeError.unsupported("cp --archive: apple/container cp does not expose archive mode")
-        }
-        if options.followLink {
-            throw ComposeError.unsupported("cp --follow-link: apple/container cp does not expose follow-link mode")
         }
     }
 
@@ -4288,8 +5556,9 @@ private extension ComposeOrchestrator {
         project: ComposeProject,
         service: ComposeService,
         options run: RunArgumentOptions = RunArgumentOptions(),
-        externalVolumeMounts: ExternalVolumeMounts = [:]
-    ) throws -> [String] {
+        externalVolumeMounts: ExternalVolumeMounts = [:],
+        imageHealthCheckCache: ComposeImageHealthCheckCache? = nil
+    ) async throws -> [String] {
         var args = [run.command]
         let runtimeName: String
         if let containerNameOverride = run.containerNameOverride {
@@ -4311,7 +5580,8 @@ private extension ComposeOrchestrator {
             project: project,
             service: service,
             oneOff: run.oneOff,
-            externalVolumeMounts: externalVolumeMounts
+            externalVolumeMounts: externalVolumeMounts,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory
         ) {
             args.append(contentsOf: ["--label", label])
         }
@@ -4330,6 +5600,18 @@ private extension ComposeOrchestrator {
         }
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
+        }
+        if let logDriver = runtimeLogDriverArgument(service: service) {
+            args.append(contentsOf: ["--log-driver", logDriver])
+        }
+        args.append(contentsOf: runtimeLogOptionArguments(service: service))
+        args.append(contentsOf: try await runtimeHealthCheckArguments(
+            project: project,
+            service: service,
+            cache: imageHealthCheckCache
+        ))
+        if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArguments(service: service) {
+            args.append(contentsOf: restartPolicy.arguments)
         }
         for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
             if let value {
@@ -4359,7 +5641,9 @@ private extension ComposeOrchestrator {
         for mount in try effectiveServiceVolumes(
             project: project,
             service: service,
-            externalVolumeMounts: externalVolumeMounts
+            externalVolumeMounts: externalVolumeMounts,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+            materializeConfigSecrets: !options.dryRun
         ) {
             try appendMount(mount, context: mountContext, args: &args)
         }
@@ -4390,6 +5674,12 @@ private extension ComposeOrchestrator {
         if service.stdinOpen == true {
             args.append("--interactive")
         }
+        if let hostname = try runtimeHostnameArgument(service: service) {
+            args.append(contentsOf: ["--hostname", hostname])
+        }
+        if let domainName = try runtimeDomainnameArgument(service: service) {
+            args.append(contentsOf: ["--domainname", domainName])
+        }
         for cap in service.capAdd ?? [] {
             args.append(contentsOf: ["--cap-add", cap])
         }
@@ -4404,6 +5694,15 @@ private extension ComposeOrchestrator {
         }
         for dnsOption in service.dnsOptions ?? [] {
             args.append(contentsOf: ["--dns-option", dnsOption])
+        }
+        for extraHost in try runtimeExtraHostArguments(service: service) {
+            args.append(contentsOf: ["--add-host", extraHost])
+        }
+        for sysctl in try runtimeSysctlArguments(service: service) {
+            args.append(contentsOf: ["--sysctl", sysctl])
+        }
+        for blkio in try runtimeBlkioArguments(service: service) {
+            args.append(contentsOf: ["--blkio", blkio])
         }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])
@@ -4495,7 +5794,8 @@ private extension ComposeOrchestrator {
     func startDependencyServices(
         project: ComposeProject,
         services: [ComposeService],
-        externalVolumeMounts: ExternalVolumeMounts = [:]
+        externalVolumeMounts: ExternalVolumeMounts = [:],
+        imageHealthCheckCache: ComposeImageHealthCheckCache = ComposeImageHealthCheckCache()
     ) async throws -> ComposeProject {
         var workingProject = project
         try await applyServicePullPolicies(project: workingProject, services: services)
@@ -4522,7 +5822,8 @@ private extension ComposeOrchestrator {
             if let existing, existing.configHash == (try configHash(
                 project: workingProject,
                 service: service,
-                externalVolumeMounts: externalVolumeMounts
+                externalVolumeMounts: externalVolumeMounts,
+                materializedConfigSecretRoot: options.materializedConfigSecretDirectory
             )) {
                 options.emit("compose: reusing existing container \(name)")
                 continue
@@ -4533,13 +5834,14 @@ private extension ComposeOrchestrator {
             }
 
             try await runContainer(
-                try runArguments(
+                try await runArguments(
                     project: workingProject,
                     service: service,
                     options: RunArgumentOptions {
                         $0.detach = true
                     },
-                    externalVolumeMounts: externalVolumeMounts
+                    externalVolumeMounts: externalVolumeMounts,
+                    imageHealthCheckCache: imageHealthCheckCache
                 )
             )
             try await runPostStartHooks(service: service, containerID: name)
@@ -4600,6 +5902,156 @@ private extension ComposeOrchestrator {
         return lines
     }
 
+    /// Converts Compose log timestamp filters to absolute dates.
+    func runtimeLogTimestamp(_ value: String?) throws -> Date? {
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+        if let date = ContainerLogTimestampParser.parse(value, relativeTo: options.currentDate()) {
+            return date
+        }
+        throw ComposeError.invalidProject("logs time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
+    }
+
+    /// Converts Compose event timestamp filters to absolute dates.
+    func runtimeEventTimestamp(_ value: String?) throws -> Date? {
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+        if let date = ContainerLogTimestampParser.parse(value, relativeTo: options.currentDate()) {
+            return date
+        }
+        throw ComposeError.invalidProject("events time filters must be RFC 3339 timestamps, UNIX timestamps, or relative durations")
+    }
+
+    /// Waits for Compose dependency conditions that require runtime state.
+    func waitForDependencyConditions(project: ComposeProject, service: ComposeService) async throws {
+        for (dependencyName, metadata) in serviceDependencies(service) {
+            if metadata.required == false, project.services[dependencyName] == nil {
+                continue
+            }
+            guard let dependency = project.services[dependencyName] else {
+                throw ComposeError.invalidProject("service '\(service.name)' depends on unknown service '\(dependencyName)'")
+            }
+            switch metadata.condition {
+            case "service_completed_successfully":
+                try await waitForCompletedDependency(project: project, service: service, dependency: dependency)
+            case "service_healthy":
+                try await waitForHealthyDependency(project: project, service: service, dependency: dependency)
+            default:
+                continue
+            }
+        }
+    }
+
+    /// Waits for a local Compose Deploy job service to finish successfully.
+    func waitForDeployJobService(service: ComposeService, targets: [ServiceContainerTarget]) async throws {
+        guard isDeployJobService(service), !targets.isEmpty else {
+            return
+        }
+        for target in targets {
+            let exitCode: Int32
+            if options.dryRun {
+                try await runContainer(["wait", target.name])
+                exitCode = 0
+            } else {
+                exitCode = try await lifecycleManager.waitContainer(id: target.name)
+            }
+            guard exitCode == 0 else {
+                throw ComposeError.invalidProject("service '\(service.name)' job container '\(target.name)' exited with status \(exitCode)")
+            }
+        }
+    }
+
+    /// Waits for every target container of a dependency service to finish
+    /// successfully before starting the dependent service.
+    func waitForCompletedDependency(
+        project: ComposeProject,
+        service: ComposeService,
+        dependency: ComposeService
+    ) async throws {
+        let targets = try await serviceContainerTargets(project: project, services: [dependency])
+        guard !targets.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' dependency '\(dependency.name)' has no containers")
+        }
+        for target in targets {
+            let exitCode = try await completedDependencyExitCode(for: target, dependentService: service)
+            guard exitCode == 0 else {
+                throw ComposeError.invalidProject("service '\(service.name)' dependency '\(dependency.name)' container '\(target.name)' exited with status \(exitCode)")
+            }
+        }
+    }
+
+    /// Resolves a dependency target's exit code, using stored exit metadata
+    /// for stopped containers and runtime wait for live containers.
+    func completedDependencyExitCode(
+        for target: ServiceContainerTarget,
+        dependentService: ComposeService
+    ) async throws -> Int32 {
+        if options.dryRun {
+            try await runContainer(["wait", target.name])
+            return 0
+        }
+        guard let container = try await discoveryManager.getContainer(id: target.name) else {
+            throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' does not exist")
+        }
+        switch container.status.lowercased() {
+        case "stopped":
+            guard let exitCode = container.exitCode else {
+                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is stopped but has no stored exit code")
+            }
+            return exitCode
+        case "running", "stopping":
+            return try await lifecycleManager.waitContainer(id: target.name)
+        default:
+            throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is \(container.status)")
+        }
+    }
+
+    /// Waits for every target container of a dependency service to report a
+    /// healthy status before starting the dependent service.
+    func waitForHealthyDependency(
+        project: ComposeProject,
+        service: ComposeService,
+        dependency: ComposeService
+    ) async throws {
+        let targets = try await serviceContainerTargets(project: project, services: [dependency])
+        guard !targets.isEmpty else {
+            throw ComposeError.invalidProject("service '\(service.name)' dependency '\(dependency.name)' has no containers")
+        }
+        for target in targets {
+            try await waitForHealthyDependencyTarget(target, dependentService: service)
+        }
+    }
+
+    /// Waits for one dependency target to transition from starting to healthy.
+    func waitForHealthyDependencyTarget(
+        _ target: ServiceContainerTarget,
+        dependentService: ComposeService
+    ) async throws {
+        if options.dryRun {
+            try await runContainer(["inspect", target.name])
+            return
+        }
+        while true {
+            guard let container = try await discoveryManager.getContainer(id: target.name) else {
+                throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' does not exist")
+            }
+            switch container.health {
+            case "healthy":
+                return
+            case "starting":
+                try await options.sleep(.milliseconds(250))
+            case "unhealthy":
+                throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is unhealthy")
+            case "none", nil:
+                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' has no health status")
+            case let health?:
+                throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' has unsupported health status '\(health)'")
+            }
+        }
+    }
+
     /// Validates that attach stays on the output-only log-follow path apple/container exposes today.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
         if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
@@ -4614,19 +6066,29 @@ private extension ComposeOrchestrator {
         }
     }
 
-    /// Ensures `wait` only asks apple/container for live process state it can return.
-    func validateWaitTarget(_ target: ServiceContainerTarget) async throws {
+    /// Returns a stopped container's stored exit code, or nil when the target
+    /// is live and should be waited through apple/container.
+    func stoppedWaitExitCode(_ target: ServiceContainerTarget) async throws -> Int32? {
         guard let container = try await discoveryManager.getContainer(id: target.name) else {
             throw ComposeError.invalidProject("service '\(target.service.name)' container '\(target.name)' does not exist")
         }
-        try validateWaitTarget(container, service: target.service)
+        return try stoppedWaitExitCode(container, service: target.service)
     }
 
-    /// Ensures `wait` only asks apple/container for live process state it can return.
-    func validateWaitTarget(_ container: ComposeContainerSummary, service: ComposeService) throws {
+    /// Returns a stopped container's stored exit code, or nil when the target
+    /// is live and should be waited through apple/container.
+    func stoppedWaitExitCode(_ container: ComposeContainerSummary, service: ComposeService) throws -> Int32? {
         let status = container.status.lowercased()
-        guard status == "running" || status == "stopping" else {
-            throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is \(container.status); apple/container does not expose stored exit codes for already-stopped containers")
+        switch status {
+        case "stopped":
+            guard let exitCode = container.exitCode else {
+                throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is stopped but has no stored exit code")
+            }
+            return exitCode
+        case "running", "stopping":
+            return nil
+        default:
+            throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is \(container.status)")
         }
     }
 
@@ -4640,7 +6102,11 @@ private extension ComposeOrchestrator {
             return
         }
         for target in targets {
-            try await validateWaitTarget(target)
+            if let exitCode = try await stoppedWaitExitCode(target) {
+                options.emit(String(exitCode))
+                try await down(project: project, options: ComposeDownOptions())
+                return
+            }
         }
         let result = try await waitForFirstServiceContainerExit(targets)
         options.emit(String(result.exitCode))
@@ -5230,20 +6696,36 @@ private struct ComposeLabelOverride {
     }
 }
 
-private let projectLabel = "com.apple.container.compose.project"
-private let serviceLabel = "com.apple.container.compose.service"
-private let oneOffLabel = "com.apple.container.compose.oneoff"
+let projectLabel = "com.apple.container.compose.project"
+let serviceLabel = "com.apple.container.compose.service"
+let oneOffLabel = "com.apple.container.compose.oneoff"
 private let configHashLabel = "com.apple.container.compose.config-hash"
 private let workingDirectoryLabel = "com.apple.container.compose.project.working-directory"
 private let configFilesLabel = "com.apple.container.compose.project.config-files"
 private let configFilesHashLabel = "com.apple.container.compose.project.config-files-hash"
-private let reservedComposeLabelPrefix = "com.apple.container.compose."
-private let reservedDockerComposeLabelPrefix = "com.docker.compose."
+let reservedComposeLabelPrefix = "com.apple.container.compose."
+let reservedDockerComposeLabelPrefix = "com.docker.compose."
 private let reservedComposeLabelPrefixes = [reservedComposeLabelPrefix, reservedDockerComposeLabelPrefix]
+private let supportedHealthCheckKeys = Set([
+    "disable",
+    "interval",
+    "retries",
+    "start_interval",
+    "start_period",
+    "test",
+    "timeout",
+])
+private let healthCheckDurationFields = [
+    (composeName: "interval", runtimeName: "--health-interval"),
+    (composeName: "timeout", runtimeName: "--health-timeout"),
+    (composeName: "start_period", runtimeName: "--health-start-period"),
+    (composeName: "start_interval", runtimeName: "--health-start-interval"),
+]
 private let networkMTUDriverOptionKeys = [
     "com.docker.network.driver.mtu",
     "mtu",
 ]
+private let rfc1123LabelPattern = #"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"#
 
 private extension ComposeContainerSummary {
     /// Compose project label attached to a runtime container.
@@ -5346,6 +6828,9 @@ private func networkRuntimeName(project: ComposeProject, composeName: String) ->
 private func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
     var argument = networkRuntimeName(project: project, composeName: network)
     var options: [String] = []
+    for alias in try networkAliasValues(service: service, network: network) {
+        options.append("alias=\(alias)")
+    }
     if let macAddress = networkMACAddress(service: service, network: network) {
         options.append("mac=\(macAddress)")
     }
@@ -5361,6 +6846,41 @@ private func networkAttachmentArgument(project: ComposeProject, service: Compose
 /// Resolves the effective MAC address for a supported single-network service.
 private func networkMACAddress(service: ComposeService, network: String) -> String? {
     nonEmpty(service.networkOptions?[network]?.macAddress) ?? nonEmpty(service.macAddress)
+}
+
+/// Returns canonical network aliases for a supported single-network attachment.
+private func networkAliasValues(service: ComposeService, network: String) throws -> [String] {
+    var aliases: [String] = []
+    var seen = Set<String>()
+    for raw in service.networkAliases?[network] ?? [] {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let alias = canonicalRFC1123Hostname(value) else {
+            throw invalidRFC1123HostnameError(raw, field: "network alias", service: service)
+        }
+        if seen.insert(alias).inserted {
+            aliases.append(alias)
+        }
+    }
+    return aliases
+}
+
+/// Canonicalizes a Docker-compatible RFC1123 hostname.
+private func canonicalRFC1123Hostname(_ raw: String) -> String? {
+    let hostname = raw.hasSuffix(".") ? String(raw.dropLast()) : raw
+    guard !hostname.isEmpty, hostname.utf8.count <= 253 else {
+        return nil
+    }
+    for label in hostname.split(separator: ".", omittingEmptySubsequences: false) {
+        guard label.range(of: rfc1123LabelPattern, options: .regularExpression) != nil else {
+            return nil
+        }
+    }
+    return hostname
+}
+
+/// Builds the shared invalid-hostname error used by hostname-like Compose fields.
+private func invalidRFC1123HostnameError(_ raw: String, field: String, service: ComposeService) -> ComposeError {
+    .invalidProject("service '\(service.name)' \(field) '\(raw)' is not a valid RFC1123 hostname")
 }
 
 /// Returns a string value only when it contains meaningful content.
@@ -5413,6 +6933,24 @@ private enum ComposeFileMountKind {
             return "/run/secrets/\(target)"
         }
     }
+
+    var defaultMaterializedPermissions: Int {
+        switch self {
+        case .config:
+            0o444
+        case .secret:
+            0o444
+        }
+    }
+
+    var supportedDefinitionFields: String {
+        switch self {
+        case .config:
+            "file, environment, or content"
+        case .secret:
+            "file or environment"
+        }
+    }
 }
 
 /// Service-level config or secret grant after reading Compose's short or long
@@ -5420,6 +6958,43 @@ private enum ComposeFileMountKind {
 private struct ComposeFileGrant {
     var source: String
     var target: String?
+    var uid: String?
+    var gid: String?
+    var mode: ComposeValue?
+}
+
+/// Project-local file content staged for runtime config or secret bind mounts.
+private struct ComposeMaterializedFile {
+    var url: URL
+    var contents: String
+    var permissions: Int
+
+    /// Creates the backing file with restrictive directory permissions.
+    func write() throws {
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let data = Data(contents.utf8)
+        if fileManager.fileExists(atPath: url.path) {
+            if try Data(contentsOf: url) != data {
+                try data.write(to: url, options: .atomic)
+            }
+            try fileManager.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path)
+            return
+        }
+        guard fileManager.createFile(
+            atPath: url.path,
+            contents: data,
+            attributes: [.posixPermissions: permissions]
+        ) else {
+            throw ComposeError.invalidProject("failed to materialize Compose config or secret at '\(url.path)'")
+        }
+    }
 }
 
 private extension ComposeValue {
@@ -5436,6 +7011,53 @@ private extension ComposeValue {
         }
         return value
     }
+
+    var intValue: Int? {
+        switch self {
+        case .number(let value):
+            let number = NSDecimalNumber(decimal: value)
+            guard number.decimalValue == value else {
+                return nil
+            }
+            let int = number.intValue
+            return Decimal(int) == value ? int : nil
+        case .string(let value):
+            return Int(value)
+        default:
+            return nil
+        }
+    }
+}
+
+/// Reads the live host environment so tests and command invocations can
+/// materialize Compose environment-backed configs and secrets deterministically.
+private func hostEnvironmentValue(_ name: String) -> String? {
+    guard let value = getenv(name) else {
+        return nil
+    }
+    return String(cString: value)
+}
+
+/// Returns the deterministic project directory used for materialized grants.
+private func materializedProjectDirectory(project: ComposeProject, root: URL) -> URL {
+    let identity = [
+        project.name,
+        project.workingDirectory,
+        project.composeFiles.sorted().joined(separator: "\n"),
+    ].joined(separator: "\n")
+    return root.appendingPathComponent(
+        "\(slug(project.name))-\(stableHash(identity).prefix(12))",
+        isDirectory: true
+    )
+}
+
+/// Removes local materialized config and secret files for a project.
+private func removeMaterializedConfigSecrets(project: ComposeProject, root: URL) throws {
+    let directory = materializedProjectDirectory(project: project, root: root)
+    guard FileManager.default.fileExists(atPath: directory.path) else {
+        return
+    }
+    try FileManager.default.removeItem(at: directory)
 }
 
 /// Resolves a project-relative file path the same way Compose paths are loaded.
@@ -5487,7 +7109,91 @@ private func serviceDependencies(
     for name in serviceVolumesFromDependencyNames(service) where dependencies[name] == nil {
         dependencies[name] = ComposeDependency(condition: "service_started")
     }
+    for name in serviceLinkDependencyNames(service) where dependencies[name] == nil {
+        dependencies[name] = ComposeDependency(condition: "service_started")
+    }
     return dependencies.sorted(by: { $0.key < $1.key })
+}
+
+/// Returns parsed legacy `links` references for validation and alias mapping.
+private func serviceLinkReferences(service: ComposeService, project: ComposeProject) throws -> [ComposeLinkReference] {
+    try (service.links ?? []).map { rawValue in
+        let reference = try serviceLinkReference(rawValue, service: service)
+        guard project.services[reference.serviceName] != nil else {
+            throw ComposeError.invalidProject("service '\(service.name)' links to unknown service '\(reference.serviceName)'")
+        }
+        return reference
+    }
+}
+
+/// Parses one Compose `links` entry of the form `SERVICE` or `SERVICE:ALIAS`.
+private func serviceLinkReference(_ rawValue: String, service: ComposeService) throws -> ComposeLinkReference {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' contains an empty link")
+    }
+
+    let parts = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+    let serviceName = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !serviceName.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' link '\(rawValue)' is missing a service name")
+    }
+
+    let rawAlias = parts.count == 2
+        ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        : serviceName
+    guard !rawAlias.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' link '\(rawValue)' is missing an alias")
+    }
+    guard let alias = canonicalRFC1123Hostname(rawAlias) else {
+        throw ComposeError.invalidProject("service '\(service.name)' link alias '\(rawAlias)' is not a valid RFC1123 hostname")
+    }
+    return ComposeLinkReference(serviceName: serviceName, alias: alias)
+}
+
+/// Returns parsed legacy `external_links` references for validation and lookup.
+private func serviceExternalLinkReferences(service: ComposeService) throws -> [ComposeExternalLinkReference] {
+    try (service.externalLinks ?? []).map { rawValue in
+        try serviceExternalLinkReference(rawValue, service: service)
+    }
+}
+
+/// Parses one Compose `external_links` entry of the form `CONTAINER` or `CONTAINER:ALIAS`.
+private func serviceExternalLinkReference(_ rawValue: String, service: ComposeService) throws -> ComposeExternalLinkReference {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' contains an empty external_links entry")
+    }
+
+    let parts = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+    let containerName = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !containerName.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' external_links entry '\(rawValue)' is missing a container name")
+    }
+
+    let alias = parts.count == 2
+        ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+        : containerName
+    guard !alias.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' external_links entry '\(rawValue)' is missing an alias")
+    }
+    return ComposeExternalLinkReference(containerName: containerName, alias: alias)
+}
+
+/// Returns service names referenced by legacy links for dependency ordering.
+private func serviceLinkDependencyNames(_ service: ComposeService) -> [String] {
+    (service.links ?? []).compactMap { rawValue in
+        let serviceName = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let serviceName, !serviceName.isEmpty else {
+            return nil
+        }
+        return serviceName
+    }
 }
 
 /// Returns service names referenced by `volumes_from`, ignoring external
@@ -5551,12 +7257,16 @@ private func externalVolumesFromReferences(
 private func effectiveServiceVolumes(
     project: ComposeProject,
     service: ComposeService,
-    externalVolumeMounts: ExternalVolumeMounts? = nil
+    externalVolumeMounts: ExternalVolumeMounts? = nil,
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
+    materializeConfigSecrets: Bool = false
 ) throws -> [ComposeMount] {
     try effectiveServiceVolumes(
         project: project,
         service: service,
         externalVolumeMounts: externalVolumeMounts,
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materializeConfigSecrets: materializeConfigSecrets,
         stack: []
     )
 }
@@ -5567,6 +7277,8 @@ private func effectiveServiceVolumes(
     project: ComposeProject,
     service: ComposeService,
     externalVolumeMounts: ExternalVolumeMounts?,
+    materializedConfigSecretRoot: URL,
+    materializeConfigSecrets: Bool,
     stack: [String]
 ) throws -> [ComposeMount] {
     if stack.contains(service.name) {
@@ -5585,6 +7297,8 @@ private func effectiveServiceVolumes(
                 project: project,
                 service: sourceService,
                 externalVolumeMounts: externalVolumeMounts,
+                materializedConfigSecretRoot: materializedConfigSecretRoot,
+                materializeConfigSecrets: materializeConfigSecrets,
                 stack: stack + [service.name]
             )
             volumes.append(contentsOf: inherited.map {
@@ -5603,25 +7317,39 @@ private func effectiveServiceVolumes(
         }
     }
     volumes.append(contentsOf: service.volumes ?? [])
-    volumes.append(contentsOf: try serviceConfigSecretMounts(project: project, service: service))
+    volumes.append(contentsOf: try serviceConfigSecretMounts(
+        project: project,
+        service: service,
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materialize: materializeConfigSecrets
+    ))
     return volumes
 }
 
-/// Converts supported file-backed service configs and secrets into read-only
-/// bind mounts accepted by apple/container `container --volume`.
-private func serviceConfigSecretMounts(project: ComposeProject, service: ComposeService) throws -> [ComposeMount] {
+/// Converts supported service configs and secrets into read-only bind mounts
+/// accepted by apple/container `container --volume`.
+private func serviceConfigSecretMounts(
+    project: ComposeProject,
+    service: ComposeService,
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
+    materialize: Bool = false
+) throws -> [ComposeMount] {
     try serviceConfigSecretMounts(
         project: project,
         service: service,
         kind: .config,
         grants: service.configs ?? [],
-        definitions: project.configs ?? [:]
+        definitions: project.configs ?? [:],
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materialize: materialize
     ) + serviceConfigSecretMounts(
         project: project,
         service: service,
         kind: .secret,
         grants: service.secrets ?? [],
-        definitions: project.secrets ?? [:]
+        definitions: project.secrets ?? [:],
+        materializedConfigSecretRoot: materializedConfigSecretRoot,
+        materialize: materialize
     )
 }
 
@@ -5631,7 +7359,9 @@ private func serviceConfigSecretMounts(
     service: ComposeService,
     kind: ComposeFileMountKind,
     grants: [ComposeValue],
-    definitions: [String: ComposeValue]
+    definitions: [String: ComposeValue],
+    materializedConfigSecretRoot: URL,
+    materialize: Bool
 ) throws -> [ComposeMount] {
     try grants.map { value in
         let grant = try parseComposeFileGrant(value, kind: kind, service: service)
@@ -5640,7 +7370,9 @@ private func serviceConfigSecretMounts(
             definitions: definitions,
             project: project,
             service: service,
-            kind: kind
+            kind: kind,
+            materializedConfigSecretRoot: materializedConfigSecretRoot,
+            materialize: materialize
         )
         return ComposeMount(
             type: "bind",
@@ -5670,7 +7402,10 @@ private func parseComposeFileGrant(
         }
         return ComposeFileGrant(
             source: source,
-            target: fields["target"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            target: fields["target"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+            uid: fields["uid"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+            gid: fields["gid"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+            mode: fields["mode"]
         )
     default:
         throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) reference must be a string or object")
@@ -5683,7 +7418,9 @@ private func composeFileGrantSourcePath(
     definitions: [String: ComposeValue],
     project: ComposeProject,
     service: ComposeService,
-    kind: ComposeFileMountKind
+    kind: ComposeFileMountKind,
+    materializedConfigSecretRoot: URL,
+    materialize: Bool
 ) throws -> String {
     guard let definition = definitions[grant.source] else {
         throw ComposeError.invalidProject("service '\(service.name)' references undefined \(kind.singularName) '\(grant.source)'")
@@ -5697,13 +7434,138 @@ private func composeFileGrantSourcePath(
     if let file = fields["file"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !file.isEmpty {
         return resolvedProjectPath(file, project: project)
     }
-    if fields["environment"]?.stringValue != nil {
-        throw ComposeError.unsupported("service '\(service.name)' uses environment-backed \(kind.singularName) '\(grant.source)'; environment-backed \(kind.pluralName) need an apple/container \(kind.singularName) materialization primitive")
+    if let environment = fields["environment"] {
+        try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
+        let name = try composeFileGrantEnvironmentVariable(
+            environment,
+            grant: grant,
+            service: service,
+            kind: kind
+        )
+        guard let contents = hostEnvironmentValue(name) else {
+            throw ComposeError.invalidProject("service '\(service.name)' uses environment-backed \(kind.singularName) '\(grant.source)', but host environment variable '\(name)' is not set")
+        }
+        let materialized = materializedComposeFile(
+            project: project,
+            grant: grant,
+            kind: kind,
+            contents: contents,
+            permissions: try composeFileGrantPermissions(grant: grant, kind: kind, service: service),
+            root: materializedConfigSecretRoot
+        )
+        if materialize {
+            try materialized.write()
+        }
+        return materialized.url.path
     }
-    if fields["content"]?.stringValue != nil {
-        throw ComposeError.unsupported("service '\(service.name)' uses content-backed \(kind.singularName) '\(grant.source)'; inline \(kind.pluralName) need an apple/container \(kind.singularName) materialization primitive")
+    if let content = fields["content"] {
+        guard kind == .config else {
+            throw ComposeError.unsupported("service '\(service.name)' uses content-backed secret '\(grant.source)'; Docker Compose secrets support file or environment sources")
+        }
+        try validateMaterializedGrantOwnership(grant: grant, service: service, kind: kind)
+        guard let contents = content.stringValue else {
+            throw ComposeError.invalidProject("config '\(grant.source)' content must be a string")
+        }
+        let materialized = materializedComposeFile(
+            project: project,
+            grant: grant,
+            kind: kind,
+            contents: contents,
+            permissions: try composeFileGrantPermissions(grant: grant, kind: kind, service: service),
+            root: materializedConfigSecretRoot
+        )
+        if materialize {
+            try materialized.write()
+        }
+        return materialized.url.path
     }
-    throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' must define file for runtime mounting")
+    throw ComposeError.invalidProject("\(kind.singularName.capitalized) '\(grant.source)' must define \(kind.supportedDefinitionFields) for runtime mounting")
+}
+
+/// Rejects generated grants that need an ownership-remapping runtime primitive.
+private func validateMaterializedGrantOwnership(
+    grant: ComposeFileGrant,
+    service: ComposeService,
+    kind: ComposeFileMountKind
+) throws {
+    let fields = [
+        nonEmpty(grant.uid) == nil ? nil : "uid",
+        nonEmpty(grant.gid) == nil ? nil : "gid",
+    ].compactMap { $0 }
+    guard !fields.isEmpty else {
+        return
+    }
+    throw ComposeError.unsupported("service '\(service.name)' uses \(fields.joined(separator: "/")) on generated \(kind.singularName) '\(grant.source)'; apple/container bind mounts do not expose config/secret ownership remapping")
+}
+
+/// Returns the file permissions used for a generated config or secret grant.
+private func composeFileGrantPermissions(
+    grant: ComposeFileGrant,
+    kind: ComposeFileMountKind,
+    service: ComposeService
+) throws -> Int {
+    guard let mode = grant.mode else {
+        return kind.defaultMaterializedPermissions
+    }
+    return try parseComposeFileGrantMode(mode, grant: grant, kind: kind, service: service) & ~0o222
+}
+
+/// Parses Compose's octal grant mode, leaving write bits to be ignored later.
+private func parseComposeFileGrantMode(
+    _ value: ComposeValue,
+    grant: ComposeFileGrant,
+    kind: ComposeFileMountKind,
+    service: ComposeService
+) throws -> Int {
+    if let rawValue = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) {
+        let normalized = rawValue.lowercased().hasPrefix("0o") ? String(rawValue.dropFirst(2)) : rawValue
+        if !normalized.isEmpty,
+           normalized.allSatisfy({ ("0"..."7").contains($0) }),
+           let parsed = Int(normalized, radix: 8),
+           parsed <= 0o777 {
+            return parsed
+        }
+        throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) '\(grant.source)' mode '\(rawValue)' must be an octal file mode between 0000 and 0777")
+    }
+
+    if let parsed = value.intValue, (0...0o777).contains(parsed) {
+        return parsed
+    }
+
+    throw ComposeError.invalidProject("service '\(service.name)' \(kind.singularName) '\(grant.source)' mode must be an octal file mode between 0000 and 0777")
+}
+
+/// Extracts the host environment variable name for an environment-backed grant.
+private func composeFileGrantEnvironmentVariable(
+    _ value: ComposeValue,
+    grant: ComposeFileGrant,
+    service: ComposeService,
+    kind: ComposeFileMountKind
+) throws -> String {
+    guard let name = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+        throw ComposeError.invalidProject("service '\(service.name)' environment-backed \(kind.singularName) '\(grant.source)' must name a host environment variable")
+    }
+    return name
+}
+
+/// Builds a deterministic materialized file path for a config or secret value.
+private func materializedComposeFile(
+    project: ComposeProject,
+    grant: ComposeFileGrant,
+    kind: ComposeFileMountKind,
+    contents: String,
+    permissions: Int,
+    root: URL
+) -> ComposeMaterializedFile {
+    let digest = stableHash("\(String(permissions, radix: 8))\n\(contents)")
+    let directory = materializedProjectDirectory(project: project, root: root)
+        .appendingPathComponent(kind.pluralName, isDirectory: true)
+    let filename = "\(slug(grant.source))-\(digest.prefix(16))"
+    return ComposeMaterializedFile(
+        url: directory.appendingPathComponent(filename, isDirectory: false),
+        contents: contents,
+        permissions: permissions
+    )
 }
 
 /// Parses and validates supported `volumes_from` references.
@@ -5829,7 +7691,8 @@ private func serviceLabels(
     project: ComposeProject,
     service: ComposeService,
     oneOff: Bool,
-    externalVolumeMounts: ExternalVolumeMounts = [:]
+    externalVolumeMounts: ExternalVolumeMounts = [:],
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
 ) throws -> [String] {
     var labels = resourceLabels(project: project)
     labels.append("\(serviceLabel)=\(service.name)")
@@ -5837,7 +7700,8 @@ private func serviceLabels(
     let serviceConfigHash = try configHash(
         project: project,
         service: service,
-        externalVolumeMounts: externalVolumeMounts
+        externalVolumeMounts: externalVolumeMounts,
+        materializedConfigSecretRoot: materializedConfigSecretRoot
     )
     labels.append("\(configHashLabel)=\(serviceConfigHash)")
     if let firstFile = project.composeFiles.first {
@@ -5855,7 +7719,8 @@ private func composeFilesHash(_ composeFiles: [String]) -> String {
 private func configHash(
     project: ComposeProject,
     service: ComposeService,
-    externalVolumeMounts: ExternalVolumeMounts = [:]
+    externalVolumeMounts: ExternalVolumeMounts = [:],
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
 ) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -5866,7 +7731,8 @@ private func configHash(
     effectiveService.volumes = try effectiveServiceVolumes(
         project: project,
         service: service,
-        externalVolumeMounts: externalVolumeMounts
+        externalVolumeMounts: externalVolumeMounts,
+        materializedConfigSecretRoot: materializedConfigSecretRoot
     )
     let fingerprint = ServiceConfigFingerprint(
         service: effectiveService,
@@ -6656,6 +8522,41 @@ private func glob(_ pattern: String, matches value: String) -> Bool {
     }
     regex += "$"
     return value.range(of: regex, options: .regularExpression) != nil
+}
+
+/// Splits log output bytes into records without requiring UTF-8 decoding.
+private func recordsForCompleteLogData(_ output: Data) -> [Data] {
+    guard !output.isEmpty else {
+        return []
+    }
+
+    var records: [Data] = []
+    var current = Data()
+    var index = output.startIndex
+    while index < output.endIndex {
+        let byte = output[index]
+        if byte == UInt8(ascii: "\n") {
+            records.append(current)
+            current.removeAll()
+            index = output.index(after: index)
+        } else if byte == UInt8(ascii: "\r") {
+            records.append(current)
+            current.removeAll()
+            let next = output.index(after: index)
+            if next < output.endIndex, output[next] == UInt8(ascii: "\n") {
+                index = output.index(after: next)
+            } else {
+                index = next
+            }
+        } else {
+            current.append(byte)
+            index = output.index(after: index)
+        }
+    }
+    if !current.isEmpty {
+        records.append(current)
+    }
+    return records
 }
 
 /// Returns a SHA-256 hex digest for stable names and labels.

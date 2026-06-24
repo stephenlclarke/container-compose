@@ -47,6 +47,26 @@ feature cannot be upstreamed directly, the reason should be visible in the
 design notes, compatibility tables, or backlog so the eventual adoption path
 stays practical.
 
+## apple/container Log Direction
+
+The log integration branch is a proving ground for runtime behavior, not the
+shape to send upstream as one large PR. The intended apple/container direction
+is to preserve Chris George's retrieval-options direction while keeping
+retrieval filters, replay policy, and presentation flags on separate API
+boundaries. Small follow-on changes should cover line-correct
+`tail`/`since`/`until` filtering, Docker-compatible timestamp parsing,
+structured log records, static rotated replay, a bounded rotation-aware follow
+cursor or stream, and local logging policy support for `json-file`, `local`,
+`none`, `max-size`, and `max-file`.
+
+That boundary also decides what belongs in this repository. apple/container
+should expose generic runtime primitives that are useful outside Compose.
+`container-compose` should keep Compose-specific service selection, prefixing,
+color, replica fan-out, command formatting, and compatibility errors local.
+When a runtime primitive is only available in the local integration stack, the
+docs should call it out as scaffolding until the corresponding apple/container
+PR is accepted.
+
 ## Why Go Is Used
 
 Go is used only for the Compose normalization helper. The rest of the plugin is
@@ -204,7 +224,11 @@ Direct API paths currently include:
   `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and
   `ContainerClient.kill(id:signal:)`.
 - `compose logs` and output-only `compose attach --no-stdin --sig-proxy=false`
-  through `ContainerClient.logs(id:)`.
+  through `ContainerClient.logs(id:options:replay:)` for raw replay,
+  `ContainerClient.logRecords(id:options:replay:)` for timestamped static
+  replay, and active `ContainerClient.logRecordFile(id:)` access for
+  timestamped follow on the local integration stack. Strict Docker parity still
+  depends on apple/container accepting a rotation-aware follow cursor or stream.
 - Attached and detached `compose exec` through `ProcessIO`,
   `ContainerClient.createProcess`, `ProcessIO.handleProcess`, and
   `ClientProcess.start()`.

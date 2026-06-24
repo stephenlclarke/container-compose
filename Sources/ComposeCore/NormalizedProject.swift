@@ -84,6 +84,53 @@ public enum ComposeValue: Codable, Equatable, Sendable {
     }
 }
 
+/// Compose block I/O controls normalized for the apple/container `--blkio`
+/// runtime flag proposed in apple/container#1595.
+public struct ComposeBlkioConfig: Codable, Equatable {
+    public var weight: Int? = nil
+    public var weightDevice: [ComposeBlkioWeightDevice]? = nil
+    public var deviceReadBps: [ComposeBlkioThrottleDevice]? = nil
+    public var deviceReadIOps: [ComposeBlkioThrottleDevice]? = nil
+    public var deviceWriteBps: [ComposeBlkioThrottleDevice]? = nil
+    public var deviceWriteIOps: [ComposeBlkioThrottleDevice]? = nil
+
+    public init(
+        weight: Int? = nil,
+        weightDevice: [ComposeBlkioWeightDevice]? = nil,
+        deviceReadBps: [ComposeBlkioThrottleDevice]? = nil,
+        deviceReadIOps: [ComposeBlkioThrottleDevice]? = nil,
+        deviceWriteBps: [ComposeBlkioThrottleDevice]? = nil,
+        deviceWriteIOps: [ComposeBlkioThrottleDevice]? = nil
+    ) {
+        self.weight = weight
+        self.weightDevice = weightDevice
+        self.deviceReadBps = deviceReadBps
+        self.deviceReadIOps = deviceReadIOps
+        self.deviceWriteBps = deviceWriteBps
+        self.deviceWriteIOps = deviceWriteIOps
+    }
+}
+
+public struct ComposeBlkioWeightDevice: Codable, Equatable {
+    public var path: String
+    public var weight: Int
+
+    public init(path: String, weight: Int) {
+        self.path = path
+        self.weight = weight
+    }
+}
+
+public struct ComposeBlkioThrottleDevice: Codable, Equatable {
+    public var path: String
+    public var rate: String
+
+    public init(path: String, rate: String) {
+        self.path = path
+        self.rate = rate
+    }
+}
+
 /// Canonical service definition used by the Swift orchestrator.
 public struct ComposeService: Codable, Equatable {
     public var name: String
@@ -92,7 +139,7 @@ public struct ComposeService: Codable, Equatable {
     public var platform: String? = nil
     public var annotations: [String: String]? = nil
     public var attach: Bool? = nil
-    public var blkioConfig: Bool? = nil
+    public var blkioConfig: ComposeBlkioConfig? = nil
     public var macAddress: String? = nil
     public var runtime: String? = nil
     public var cgroup: String? = nil
@@ -107,8 +154,10 @@ public struct ComposeService: Codable, Equatable {
     public var cpuShares: Int? = nil
     public var develop: ComposeDevelop? = nil
     public var unsupportedDeployFields: [String]? = nil
+    public var deployMode: String? = nil
     public var deployLabels: [String: String]? = nil
     public var deployUpdateDelayNanoseconds: Int64? = nil
+    public var deployRestartPolicy: ComposeDeployRestartPolicy? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
     public var entrypoint: [String]? = nil
@@ -212,8 +261,10 @@ public struct ComposeService: Codable, Equatable {
         case cpuShares
         case develop
         case unsupportedDeployFields
+        case deployMode
         case deployLabels
         case deployUpdateDelayNanoseconds
+        case deployRestartPolicy
         case build
         case command
         case entrypoint
@@ -289,6 +340,27 @@ public struct ComposeService: Codable, Equatable {
         case configs
         case secrets
         case extensions
+    }
+}
+
+/// Compose Deploy Specification restart policy values used by local service
+/// orchestration when apple/container exposes matching restart primitives.
+public struct ComposeDeployRestartPolicy: Codable, Equatable {
+    public var condition: String? = nil
+    public var delayNanoseconds: Int64? = nil
+    public var maxAttempts: UInt64? = nil
+    public var windowNanoseconds: Int64? = nil
+
+    public init(
+        condition: String? = nil,
+        delayNanoseconds: Int64? = nil,
+        maxAttempts: UInt64? = nil,
+        windowNanoseconds: Int64? = nil
+    ) {
+        self.condition = condition
+        self.delayNanoseconds = delayNanoseconds
+        self.maxAttempts = maxAttempts
+        self.windowNanoseconds = windowNanoseconds
     }
 }
 

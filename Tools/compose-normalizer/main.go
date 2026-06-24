@@ -72,7 +72,7 @@ type normalizedService struct {
 	Platform                string                              `json:"platform,omitempty"`
 	Annotations             map[string]string                   `json:"annotations,omitempty"`
 	Attach                  *bool                               `json:"attach,omitempty"`
-	BlkioConfig             bool                                `json:"blkioConfig,omitempty"`
+	BlkioConfig             *normalizedBlkioConfig              `json:"blkioConfig,omitempty"`
 	MacAddress              string                              `json:"macAddress,omitempty"`
 	Runtime                 string                              `json:"runtime,omitempty"`
 	Cgroup                  string                              `json:"cgroup,omitempty"`
@@ -87,8 +87,10 @@ type normalizedService struct {
 	CPUShares               int64                               `json:"cpuShares,omitempty"`
 	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
+	DeployMode              string                              `json:"deployMode,omitempty"`
 	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
 	DeployUpdateDelayNanos  int64                               `json:"deployUpdateDelayNanoseconds,omitempty"`
+	DeployRestartPolicy     *normalizedDeployRestartPolicy      `json:"deployRestartPolicy,omitempty"`
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
 	Entrypoint              []string                            `json:"entrypoint,omitempty"`
@@ -164,6 +166,38 @@ type normalizedService struct {
 	Configs                 any                                 `json:"configs,omitempty"`
 	Secrets                 any                                 `json:"secrets,omitempty"`
 	Extensions              map[string]any                      `json:"extensions,omitempty"`
+}
+
+// normalizedBlkioConfig preserves Compose block I/O controls for the runtime
+// CLI shape proposed in apple/container#1595.
+type normalizedBlkioConfig struct {
+	Weight          *uint16                    `json:"weight,omitempty"`
+	WeightDevice    []normalizedWeightDevice   `json:"weightDevice,omitempty"`
+	DeviceReadBps   []normalizedThrottleDevice `json:"deviceReadBps,omitempty"`
+	DeviceReadIOps  []normalizedThrottleDevice `json:"deviceReadIOps,omitempty"`
+	DeviceWriteBps  []normalizedThrottleDevice `json:"deviceWriteBps,omitempty"`
+	DeviceWriteIOps []normalizedThrottleDevice `json:"deviceWriteIOps,omitempty"`
+}
+
+// normalizedWeightDevice stores one per-device block I/O weight.
+type normalizedWeightDevice struct {
+	Path   string `json:"path"`
+	Weight uint16 `json:"weight"`
+}
+
+// normalizedThrottleDevice stores one per-device block I/O throttle.
+type normalizedThrottleDevice struct {
+	Path string `json:"path"`
+	Rate string `json:"rate"`
+}
+
+// normalizedDeployRestartPolicy preserves the Compose Deploy restart policy
+// fields that Swift maps or rejects against apple/container runtime support.
+type normalizedDeployRestartPolicy struct {
+	Condition   string  `json:"condition,omitempty"`
+	DelayNanos  int64   `json:"delayNanoseconds,omitempty"`
+	MaxAttempts *uint64 `json:"maxAttempts,omitempty"`
+	WindowNanos int64   `json:"windowNanoseconds,omitempty"`
 }
 
 // normalizedProvider records the provider executable and options used by a
@@ -465,7 +499,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		Platform:                service.Platform,
 		Annotations:             mapMapping(service.Annotations),
 		Attach:                  service.Attach,
-		BlkioConfig:             service.BlkioConfig != nil,
+		BlkioConfig:             blkioConfigValue(service.BlkioConfig),
 		MacAddress:              service.MacAddress,
 		Runtime:                 service.Runtime,
 		Cgroup:                  service.Cgroup,
@@ -480,8 +514,10 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CPUShares:               service.CPUShares,
 		Develop:                 developValues(service.Develop),
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
+		DeployMode:              deployMode(service.Deploy),
 		DeployLabels:            deployLabels(service.Deploy),
 		DeployUpdateDelayNanos:  deployUpdateDelayNanoseconds(service.Deploy),
+		DeployRestartPolicy:     deployRestartPolicyValue(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
 		Provider:                providerValue(service.Provider),
@@ -709,9 +745,17 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	fields = append(fields, unsupportedUpdateConfigFields(deploy.UpdateConfig)...)
 	fields = append(fields, unsupportedDeployLimitFields(deploy.Resources.Limits)...)
 	fields = append(fields, unsupportedDeployReservationFields(deploy.Resources.Reservations)...)
-	appendUnsupportedDeployField(&fields, "restart_policy", restartPolicyHasFields(deploy.RestartPolicy))
 	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
 	return fields
+}
+
+// deployMode preserves the Compose Deploy mode so Swift orchestration can
+// distinguish long-running services from completion-oriented local jobs.
+func deployMode(deploy *types.DeployConfig) string {
+	if deploy == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(deploy.Mode))
 }
 
 // deployLabels returns Compose deploy service metadata without treating it as
@@ -732,19 +776,39 @@ func deployUpdateDelayNanoseconds(deploy *types.DeployConfig) int64 {
 	return int64(deploy.UpdateConfig.Delay)
 }
 
+// deployRestartPolicyValue returns the Compose Deploy restart policy exactly
+// enough for Swift orchestration to map Docker-compatible local semantics.
+func deployRestartPolicyValue(deploy *types.DeployConfig) *normalizedDeployRestartPolicy {
+	if deploy == nil || deploy.RestartPolicy == nil {
+		return nil
+	}
+	policy := deploy.RestartPolicy
+	result := normalizedDeployRestartPolicy{
+		Condition: policy.Condition,
+	}
+	if policy.Delay != nil {
+		result.DelayNanos = int64(*policy.Delay)
+	}
+	if policy.MaxAttempts != nil {
+		maxAttempts := *policy.MaxAttempts
+		result.MaxAttempts = &maxAttempts
+	}
+	if policy.Window != nil {
+		result.WindowNanos = int64(*policy.Window)
+	}
+	return &result
+}
+
 // unsupportedDeployModeField allows Compose deployment modes that Docker Compose
-// local orchestration accepts without changing the local replica algorithm and
-// reports job modes separately because they require completion semantics.
+// local orchestration accepts with the local replica algorithm.
 func unsupportedDeployModeField(mode string) string {
 	if mode == "" {
 		return ""
 	}
 	normalized := strings.ToLower(mode)
 	switch normalized {
-	case "replicated", "global":
+	case "replicated", "global", "replicated-job", "global-job":
 		return ""
-	case "replicated-job", "global-job":
-		return "mode." + normalized
 	default:
 		return "mode"
 	}
@@ -807,17 +871,6 @@ func unsupportedDeployReservationFields(resource *types.Resource) []string {
 	appendUnsupportedDeployField(&fields, "resources.reservations.devices", len(resource.Devices) > 0)
 	appendUnsupportedDeployField(&fields, "resources.reservations.generic_resources", len(resource.GenericResources) > 0)
 	return fields
-}
-
-// restartPolicyHasFields reports whether a deploy restart policy was configured.
-func restartPolicyHasFields(policy *types.RestartPolicy) bool {
-	if policy == nil {
-		return false
-	}
-	return policy.Condition != "" ||
-		policy.Delay != nil ||
-		policy.MaxAttempts != nil ||
-		policy.Window != nil
 }
 
 // jsonMap widens typed compose-go maps so they can be encoded without losing
@@ -1317,6 +1370,59 @@ func appendUnsupportedBuildField(fields *[]string, name string, present bool) {
 	if present {
 		*fields = append(*fields, name)
 	}
+}
+
+// blkioConfigValue converts Compose block I/O controls into the Swift wire
+// model without resolving host devices. apple/container#1595 owns device
+// path/literal validation at runtime.
+func blkioConfigValue(config *types.BlkioConfig) *normalizedBlkioConfig {
+	if config == nil {
+		return nil
+	}
+	result := normalizedBlkioConfig{
+		WeightDevice:    weightDeviceValues(config.WeightDevice),
+		DeviceReadBps:   throttleDeviceValues(config.DeviceReadBps),
+		DeviceReadIOps:  throttleDeviceValues(config.DeviceReadIOps),
+		DeviceWriteBps:  throttleDeviceValues(config.DeviceWriteBps),
+		DeviceWriteIOps: throttleDeviceValues(config.DeviceWriteIOps),
+	}
+	if config.Weight != 0 {
+		weight := config.Weight
+		result.Weight = &weight
+	}
+	return &result
+}
+
+// weightDeviceValues converts per-device weights while preserving Compose
+// order.
+func weightDeviceValues(devices []types.WeightDevice) []normalizedWeightDevice {
+	if len(devices) == 0 {
+		return nil
+	}
+	result := make([]normalizedWeightDevice, 0, len(devices))
+	for _, device := range devices {
+		result = append(result, normalizedWeightDevice{
+			Path:   device.Path,
+			Weight: device.Weight,
+		})
+	}
+	return result
+}
+
+// throttleDeviceValues converts per-device byte/iops throttles while
+// preserving explicit zero rates.
+func throttleDeviceValues(devices []types.ThrottleDevice) []normalizedThrottleDevice {
+	if len(devices) == 0 {
+		return nil
+	}
+	result := make([]normalizedThrottleDevice, 0, len(devices))
+	for _, device := range devices {
+		result = append(result, normalizedThrottleDevice{
+			Path: device.Path,
+			Rate: fmt.Sprint(int64(device.Rate)),
+		})
+	}
+	return result
 }
 
 // unitBytesValue emits byte counts only when Compose supplied a limit.

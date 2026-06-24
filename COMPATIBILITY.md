@@ -10,6 +10,12 @@ This file separates three different questions that are easy to blur together:
 
 Unsupported runtime features are rejected before resources are created. Harmless metadata can still appear in `container compose config` or `container compose convert` without implying that `container compose up` applies runtime behavior.
 
+## Local Docker Compose Parity Evidence
+
+Docker and Docker Compose remain optional local validation tools for this repository. They are not part of `make ci` and must not become required by Apple-facing CI.
+
+On 2026-06-22, the local Homebrew/Colima setup validated the Docker-backed parity checks with Docker CLI 29.6.0, Docker Compose 5.1.4, and a Colima Docker Engine 29.5.2 daemon. `make docker-compose-events-parity` passed for project-scoped `events --json` behavior, including container-event scope, selected-service filtering, internal Compose label stripping, and one-off container suppression. The optional parity target has since been extended to validate Docker Compose V2 `events --since/--until` replay-window shape and default text replay shape; rerun it before raising the event time-filter or text-events PRs because those extensions have not yet been rerun against Docker. `make docker-log-fixtures` passed after refreshing `Tests/ComposeCoreTests/Fixtures/logging/docker-compose-rotated-tail.expected` so its evidence header records Docker Engine 29.5.2 / Docker Compose 5.1.4. Colima was stopped after the validation run.
+
 ## How To Read This File
 
 Read every row as a three-step chain:
@@ -19,6 +25,65 @@ Read every row as a three-step chain:
 3. `container-compose` maps the normalized Compose model to [`apple/container`][apple-container] APIs or commands.
 
 The first unsupported step owns the gap.
+
+### Log Runtime Direction
+
+The log rows distinguish the local integration stack from the direction intended for [`apple/container`][apple-container]. The local [`logs-integration-chris` branch](https://github.com/stephenlclarke/container/tree/logs-integration-chris) is a proving branch built from Chris George's log retrieval direction, not a single upstream PR target. The intended runtime path is a sequence of small apple/container changes: keep retrieval filters separate from replay policy and presentation flags, add line-correct `tail`/`since`/`until` filtering after logical log-line reconstruction, add Docker-compatible timestamp parsing, add structured log records, add static rotated replay with bounded tail scans, add local logging policy support for `json-file`, `local`, `none`, `max-size`, and `max-file`, add writer-level local rotation for retained raw and structured files, add raw rotation-aware follow, then add structured/timestamped rotation-aware follow. The first structured-storage slice is the `logs-structured-record-storage` branch in the container fork; it adds the runtime `stdio.jsonl` JSON Lines sidecar format beside the existing raw `stdio.log` output. The next extracted slice is the `logs-structured-record-api` branch; it exposes `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, `ContainerLogRecord`, XPC routes `containerLogRecords` and `containerLogRecordFile`, active raw bytes in `stdio.log`, active structured JSON Lines records in `stdio.jsonl`, and `ContainerLogOptions.tail/since/until` retrieval filters. The static rotated-tail slice is tracked by `ISSUE-logs-static-rotated-tail.md` and `PR-logs-static-rotated-tail.md` in the container fork. The local logging policy model slice is tracked by `ISSUE-logs-local-policy-model.md` and `PR-logs-local-policy-model.md`; the disabled local capture slice is tracked by `ISSUE-logs-disabled-local-capture.md` and `PR-logs-disabled-local-capture.md`; the local driver/options parser slice is tracked by `ISSUE-logs-local-driver-options.md` and `PR-logs-local-driver-options.md`; the writer-level local rotation slice is tracked by `ISSUE-logs-local-writer-rotation.md` and `PR-logs-local-writer-rotation.md`; the raw rotation-aware follow slice is tracked by `ISSUE-logs-rotation-aware-follow.md` and `PR-logs-rotation-aware-follow.md`; the structured rotation-aware follow slice is tracked by `ISSUE-logs-structured-rotation-aware-follow.md` and `PR-logs-structured-rotation-aware-follow.md` in the container fork. These slices keep Compose-specific prefixing, service fan-out, and command formatting in this plugin.
+
+PR and issue design choices for the structured log slices are recorded in the container fork's [Structured Log Records PR Notes](https://github.com/stephenlclarke/container/blob/logs-structured-record-api/docs/structured-log-records-pr-notes.md). Those notes are the source for explaining why raw and structured logs are split, why retrieval filters stay separate from replay policy, and why Compose formatting remains outside `apple/container`.
+
+### Upstream Log PR Dependencies
+
+The local logging support depends on upstream `apple/container` changes that are still in review. Treat these PRs as dependency markers, not released runtime capabilities, until they merge upstream and this repository updates its pinned `apple/container` reference to an accepted release or commit.
+
+- **Chris George, [apple/container#1592](https://github.com/apple/container/pull/1592):** <img alt="UPSTREAM OPEN" src="https://img.shields.io/badge/UPSTREAM%20OPEN-B26A00?style=flat-square"> Adds the base container log retrieval-options direction. This is the upstream anchor for moving log filtering into `ContainerClient` instead of keeping Compose-only replay workarounds in the plugin. `container-compose` must keep the current guarded local integration path until the option shape and ownership are accepted upstream.
+- **Stephen Clarke, [apple/container#1764](https://github.com/apple/container/pull/1764):** <img alt="UPSTREAM OPEN" src="https://img.shields.io/badge/UPSTREAM%20OPEN-B26A00?style=flat-square"> Ready-for-review follow-up that adds `tail` and `until` retrieval filters on top of #1592. This is the proposed runtime surface for Docker Compose `logs --tail` and `logs --until`, but `container-compose` should continue marking release support as waiting on upstream until #1592/#1764 land with line-correct filtering semantics.
+- **Stephen Clarke, [apple/container#1765](https://github.com/apple/container/pull/1765):** <img alt="UPSTREAM OPEN" src="https://img.shields.io/badge/UPSTREAM%20OPEN-B26A00?style=flat-square"> Ready-for-review follow-up that adds Docker-compatible timestamp and duration parsing for log filters on top of #1592/#1764. This is the proposed shared parser for Docker-compatible `--since` and `--until` values. `container-compose` should not remove its compatibility parser or claim released upstream parity until the parser API is accepted and available through the pinned `apple/container` dependency.
+- **Stephen Clarke, [`logs-structured-record-storage`](https://github.com/stephenlclarke/container/tree/logs-structured-record-storage):** <img alt="FORK BRANCH" src="https://img.shields.io/badge/FORK%20BRANCH-2563EB?style=flat-square"> PR-ready local branch that adds runtime structured log storage without adding Compose policy to apple/container. The active bundle format becomes `stdio.log` for raw stdout/stderr bytes and `stdio.jsonl` for JSON Lines records shaped as `{ "timestamp": <ISO 8601>, "stream": "stdout" | "stderr", "data": <base64 bytes> }`. The branch covers newline records, final unterminated records, non-UTF-8 bytes, stdout/stderr identity, and Docker-like 16 KiB chunks for long unterminated records. `container-compose` should continue treating this as fork-only until it is submitted and accepted upstream.
+- **Stephen Clarke, [`logs-structured-record-api`](https://github.com/stephenlclarke/container/tree/logs-structured-record-api):** <img alt="FORK BRANCH" src="https://img.shields.io/badge/FORK%20BRANCH-2563EB?style=flat-square"> PR-ready local branch that adds active structured log retrieval without adding Compose policy to apple/container. It exposes `ContainerClient.logRecords(id:options:)` for decoded `ContainerLogRecord` snapshots, `ContainerClient.logRecordFile(id:)` for the active `stdio.jsonl` file handle, XPC routes `containerLogRecords` and `containerLogRecordFile`, and retrieval filters through `ContainerLogOptions.tail`, `ContainerLogOptions.since`, and `ContainerLogOptions.until`. Rotated structured replay, structured rotation-aware follow, and logging-driver policy remain separate fork branches or handoff slices.
+- **Stephen Clarke, local logging policy model handoff:** <img alt="FORK HANDOFF" src="https://img.shields.io/badge/FORK%20HANDOFF-2563EB?style=flat-square"> `ISSUE-logs-local-policy-model.md` and `PR-logs-local-policy-model.md` document the typed `ContainerLogConfiguration` model and `ContainerConfiguration.logging` default decoding slice. `container-compose` should treat this as fork-only until it is submitted and accepted upstream.
+- **Stephen Clarke, disabled local capture handoff:** <img alt="FORK HANDOFF" src="https://img.shields.io/badge/FORK%20HANDOFF-2563EB?style=flat-square"> `ISSUE-logs-disabled-local-capture.md` and `PR-logs-disabled-local-capture.md` document the runtime `.none` storage policy slice. It suppresses persisted local log writers while preserving attached stdio, but leaves `--log-driver none` and Compose `logging.driver: none` mapping to later CLI/plugin slices.
+- **Stephen Clarke, local driver/options handoff:** <img alt="FORK HANDOFF" src="https://img.shields.io/badge/FORK%20HANDOFF-2563EB?style=flat-square"> `ISSUE-logs-local-driver-options.md` and `PR-logs-local-driver-options.md` document the parser slice for `--log-driver json-file|local|none` and `--log-opt max-size|max-file`. It maps only local capture behavior to `ContainerLogConfiguration`; remote drivers, metadata options, delivery modes, compression, and Compose output policy remain out of scope.
+- **Stephen Clarke, local writer-rotation handoff:** <img alt="FORK HANDOFF" src="https://img.shields.io/badge/FORK%20HANDOFF-2563EB?style=flat-square"> `ISSUE-logs-local-writer-rotation.md` and `PR-logs-local-writer-rotation.md` document the runtime-writer slice for applying local `max-size` and `max-file` retention to raw `stdio.log` and structured `stdio.jsonl` files together. It keeps the on-disk format local to apple/container and leaves compression, remote drivers, and follow cursor behavior out of scope.
+- **Stephen Clarke, raw rotation-aware follow handoff:** <img alt="FORK HANDOFF" src="https://img.shields.io/badge/FORK%20HANDOFF-2563EB?style=flat-square"> `ISSUE-logs-rotation-aware-follow.md` and `PR-logs-rotation-aware-follow.md` document the raw stdio follow slice for `ContainerClient.followLogs(id:options:)`, XPC route `containerFollowLogs`, Docker-style initial tail replay, and rename-based active file follow. It keeps Compose service fan-out and formatting in this plugin.
+- **Stephen Clarke, structured rotation-aware follow handoff:** <img alt="FORK HANDOFF" src="https://img.shields.io/badge/FORK%20HANDOFF-2563EB?style=flat-square"> `ISSUE-logs-structured-rotation-aware-follow.md` and `PR-logs-structured-rotation-aware-follow.md` document the structured follow slice for `ContainerClient.followLogRecords(id:options:)`, XPC route `containerFollowLogRecords`, retained `stdio.jsonl` replay, logical-line `tail`/`since`/`until` filtering, and rename-based active file follow. It keeps Compose service fan-out and formatting in this plugin.
+
+Until those upstream changes are accepted, Compose-specific behavior stays in this repository: service fan-out, replica prefixes, color/no-prefix rendering, selected-service ordering, and Docker Compose CLI formatting. The `apple/container` PRs should remain runtime-only primitives so they can be adopted upstream without carrying `container-compose` policy into the core runtime.
+
+### Current apple/container PR And Issue Watchlist
+
+Reviewed against open [`apple/container`][apple-container] pull requests and issues on `2026-06-21`. A pull request is treated as non-stale when it is open and has recent activity, or when it is an active review branch tied to a Compose runtime primitive. Older issues are still listed when they define a runtime or API surface that directly unblocks Docker Compose v2 behavior in this repository.
+
+#### Pull Requests To Merge Or Track In The Fork
+
+- **Logs:** <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> [apple/container#1592](https://github.com/apple/container/pull/1592), [apple/container#1764](https://github.com/apple/container/pull/1764), and [apple/container#1765](https://github.com/apple/container/pull/1765) are the first log-runtime stack for Compose `logs --tail`, `logs --since`, `logs --until`, timestamp parsing, and a direct client-side filtering contract. The [`logs-structured-record-storage`](https://github.com/stephenlclarke/container/tree/logs-structured-record-storage) fork branch adds the `stdio.jsonl` record format needed by timestamped structured replay, and [`logs-structured-record-api`](https://github.com/stephenlclarke/container/tree/logs-structured-record-api) adds active structured retrieval through `ContainerClient.logRecords(id:options:)` and `ContainerClient.logRecordFile(id:)`. The local static rotated-tail, logging policy, disabled-capture, local driver/options, writer-rotation, raw follow, and structured follow handoffs document the runtime path toward Docker-compatible local `json-file`, `local`, `none`, `max-size`, `max-file`, retained replay, and followed streams without putting Compose formatting into apple/container. [apple/container#1758](https://github.com/apple/container/pull/1758) is low-risk log handler hygiene that should stay with the log stack but is not itself a Compose feature.
+- **Health, completion, restart, and events:** <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> [apple/container#1562](https://github.com/apple/container/pull/1562) is now cherry-picked into the local `logs-integration-chris` fork branch as `feat(api): expose container exit metadata`, and `container-compose` uses that fork-only `ContainerSnapshot.exitCode`/`exitedDate` surface for stopped-container `wait` replay and `depends_on.condition: service_completed_successfully`. The fork also carries health status/configuration/observer slices aligned with [apple/container#1502](https://github.com/apple/container/issues/1502) and [apple/container#1504](https://github.com/apple/container/pull/1504), plus the `ISSUE-healthcheck-cli.md` / `PR-healthcheck-cli.md` handoff for Docker-style `container run/create --health-*` flags. `container-compose` now uses those fork-only surfaces for explicit service `healthcheck` and `depends_on.condition: service_healthy`. The fork restart-policy stack references [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258), then adds `ISSUE-restart-policy-create-options.md` / `PR-restart-policy-create-options.md` and `ISSUE-restart-policy-runtime.md` / `PR-restart-policy-runtime.md`; `container-compose` maps service-level `restart` on top of those fork-only primitives. The fork event stack references [apple/container#484](https://github.com/apple/container/issues/484), adds the first event-stream PR-shaped commits `b71e4bb323e3` / `0da7890b2632`, then adds bounded event replay/time filters in `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270`; `container-compose` maps `events --json [SERVICE...]` in `113be38063ea`, `events --json --since/--until [SERVICE...]` in `3a3387d7dbea301eec3a7f1fcc3f954dec80276c`, and default text `events [--since/--until] [SERVICE...]` in `fd3d94824f23cd3255a812faed9e3972906b4ab5` / `4cfb39e9531a84b496e1dcc76a84ac7654df943f`. Upstream release branches must still treat completion, health, service restart, and events as pending until equivalent APIs are accepted.
+- **Runtime controls, process signals, and diagnostics:** <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> [apple/container#1595](https://github.com/apple/container/pull/1595) is the active blkio cgroup tuning PR and now matches this repository's Compose `blkio_config` mapping target. `container-compose` preserves normalized weights/throttles and renders the proposed repeatable `--blkio` key-value contract. The local integration stack pins to [stephenlclarke/containerization@integration/blkio-runtime](https://github.com/stephenlclarke/containerization/tree/integration/blkio-runtime), carrying [apple/containerization#739](https://github.com/apple/containerization/pull/739), while released runtime support still waits on #1595 and #739 upstream merges. [apple/container#1778](https://github.com/apple/container/pull/1778) fixes forwarded process signal encoding and should be tested with Compose `stop`, `kill`, and future interactive signal proxying. [apple/container#1777](https://github.com/apple/container/pull/1777) and [apple/container#1782](https://github.com/apple/container/pull/1782) are competing graceful-stop diagnostic fixes; merge only the upstream-chosen variant into the fork.
+- **Host entries, DNS, and network identity:** <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> [apple/container#1563](https://github.com/apple/container/pull/1563) and [apple/container#1340](https://github.com/apple/container/pull/1340) directly map to Compose `extra_hosts`; the local fork now combines those directions through `ISSUE-host-entries.md` / `PR-host-entries.md`, and `container-compose` maps static IP-literal `extra_hosts` through `ISSUE-extra-hosts.md` / `PR-extra-hosts.md`. The fork also resolves Docker `host-gateway` through `ISSUE-host-gateway.md` / `PR-host-gateway.md`, adds explicit `--hostname` support through `ISSUE-hostname.md` / `PR-hostname.md`, adds explicit `--domainname` support through `ISSUE-domainname.md` / `PR-domainname.md`, and adds single-network attachment aliases through `ISSUE-network-aliases.md` / `PR-network-aliases.md`, with Compose mapping tracked in `ISSUE-service-hostname.md` / `PR-service-hostname.md`, `ISSUE-service-domainname.md` / `PR-service-domainname.md`, and `ISSUE-network-aliases.md` / `PR-network-aliases.md`. [apple/container#1740](https://github.com/apple/container/pull/1740) helps deterministic address behavior across stop/start. [apple/container#1614](https://github.com/apple/container/pull/1614) helps service DNS configuration. [apple/container#1463](https://github.com/apple/container/pull/1463), [apple/container#1622](https://github.com/apple/container/pull/1622), and [apple/container#1661](https://github.com/apple/container/pull/1661) are competing or complementary bridge-networking directions; test only one coherent bridge direction in the fork after comparing API shape.
+- **Build, registry, and image parity:** <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> [apple/container#1768](https://github.com/apple/container/pull/1768) maps to local insecure registry workflows. [apple/container#1508](https://github.com/apple/container/pull/1508), [apple/container#1739](https://github.com/apple/container/pull/1739), and [apple/container#1391](https://github.com/apple/container/pull/1391) improve Compose build compatibility and performance. [apple/container#1215](https://github.com/apple/container/pull/1215), [apple/container#1335](https://github.com/apple/container/pull/1335), [apple/container#1598](https://github.com/apple/container/pull/1598), [apple/container#1769](https://github.com/apple/container/pull/1769), [apple/container#1772](https://github.com/apple/container/pull/1772), and [apple/container#1720](https://github.com/apple/container/pull/1720) improve image, registry, `info`, import/load, and `images` command parity used by Compose workflows.
+- **Copy, export, storage, and volumes:** <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> [apple/container#1741](https://github.com/apple/container/pull/1741) fixes relative host paths for Compose `cp`. The local forks add `cp --follow-link` and `cp --archive` through copy handoff files in `containerization`, `container`, and this repository; released upstream branches must still treat those flags as runtime-gated until equivalent APIs are accepted. [apple/container#1630](https://github.com/apple/container/pull/1630) improves live export workflows. [apple/container#1428](https://github.com/apple/container/pull/1428) adds network-backed volume drivers that can eventually map non-local Compose volume drivers.
+- **Plugin, runtime API shape, and runtime identity:** <img alt="WATCH" src="https://img.shields.io/badge/WATCH-6B7280?style=flat-square"> [apple/container#1701](https://github.com/apple/container/pull/1701), [apple/container#1618](https://github.com/apple/container/pull/1618), and [apple/container#717](https://github.com/apple/container/pull/717) can affect direct client dependencies, runtime abstraction, or external plugin installation. [apple/container#1770](https://github.com/apple/container/pull/1770) and [apple/container#1779](https://github.com/apple/container/pull/1779) improve container/runtime identity visibility for workloads and tests. These should be monitored for API/install-layout impact rather than merged blindly into the fork.
+- **Peer Compose implementation:** <img alt="COORDINATE" src="https://img.shields.io/badge/COORDINATE-0891B2?style=flat-square"> [apple/container#1736](https://github.com/apple/container/pull/1736) overlaps with Compose command behavior and examples. Do not merge it into this external-plugin branch wholesale; compare fixtures, CLI expectations, and maintainer feedback with this repository before copying any focused tests or examples.
+
+#### Issues That Would Progress container-compose If Addressed
+
+- **Logs and logging policy:** <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> [apple/container#1752](https://github.com/apple/container/issues/1752), [apple/container#1591](https://github.com/apple/container/issues/1591), and [apple/container#1754](https://github.com/apple/container/issues/1754) define the immediate log runtime work for Compose `logs`, line-correct replay, timestamp filters, rotated replay, follow cursors, and clean log handler APIs.
+- **Health, jobs, completion, events, and process control:** <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> [apple/container#1501](https://github.com/apple/container/issues/1501), [apple/container#1502](https://github.com/apple/container/issues/1502), [apple/container#286](https://github.com/apple/container/issues/286), [apple/container#484](https://github.com/apple/container/issues/484), [apple/container#378](https://github.com/apple/container/issues/378), [apple/container#1747](https://github.com/apple/container/issues/1747), [apple/container#1756](https://github.com/apple/container/issues/1756), and [apple/container#576](https://github.com/apple/container/issues/576) cover exit metadata, health metadata, restart policies, events, attach, terminal resize/signal forwarding, graceful-stop diagnostics, and frozen-container stops. The fork now proves explicit healthcheck configuration, health observation, service restart create options, runtime restart scheduling, container lifecycle event streaming, and bounded event replay/time filters, but these issues remain the upstream gates for released `depends_on` health/completion conditions, `events`, `attach`, `wait`, `stop`, `kill`, and restart-policy parity.
+- **Runtime resource and device controls:** <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> [apple/container#1512](https://github.com/apple/container/issues/1512), [apple/container#1511](https://github.com/apple/container/issues/1511), [apple/container#950](https://github.com/apple/container/issues/950), and [apple/container#1668](https://github.com/apple/container/issues/1668) cover blkio controls, GPU passthrough, granular block I/O stats, and CPU reporting. Compose `blkio_config` is now plugin-mapped against [apple/container#1595](https://github.com/apple/container/pull/1595), while `gpus`, richer `stats`, and resource-limit correctness remain open runtime/device-control work.
+- **Networks, DNS, aliases, and addresses:** <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> [apple/container#1283](https://github.com/apple/container/issues/1283), [apple/container#457](https://github.com/apple/container/issues/457), [apple/container#456](https://github.com/apple/container/issues/456), [apple/container#500](https://github.com/apple/container/issues/500), [apple/container#1320](https://github.com/apple/container/issues/1320), [apple/container#282](https://github.com/apple/container/issues/282), [apple/container#489](https://github.com/apple/container/issues/489), and [apple/container#670](https://github.com/apple/container/issues/670) cover the core networking primitives Compose still lacks: multi-network attach, multi-network aliases, interface DNS names, internal networks without host access, fixed IPs, bridge mode, and Docker-style container network modes. The local fork now proves unique aliases for the single-network subset, but Docker-compatible shared aliases and network-scoped multi-answer DNS remain future runtime work.
+- **Network reliability blockers:** <img alt="WATCH" src="https://img.shields.io/badge/WATCH-6B7280?style=flat-square"> [apple/container#1519](https://github.com/apple/container/issues/1519), [apple/container#1307](https://github.com/apple/container/issues/1307), [apple/container#1241](https://github.com/apple/container/issues/1241), [apple/container#817](https://github.com/apple/container/issues/817), [apple/container#856](https://github.com/apple/container/issues/856), [apple/container#402](https://github.com/apple/container/issues/402), [apple/container#989](https://github.com/apple/container/issues/989), and [apple/container#1737](https://github.com/apple/container/issues/1737) are not all new features, but they affect whether real Compose stacks can reliably reach DNS, host services, VPN-routed resources, or images with difficult `/etc` layouts.
+- **Build and Dockerfile parity:** <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> [apple/container#1766](https://github.com/apple/container/issues/1766), [apple/container#1472](https://github.com/apple/container/issues/1472), [apple/container#1515](https://github.com/apple/container/issues/1515), [apple/container#701](https://github.com/apple/container/issues/701), [apple/container#453](https://github.com/apple/container/issues/453), [apple/container#451](https://github.com/apple/container/issues/451), [apple/container#452](https://github.com/apple/container/issues/452), [apple/container#522](https://github.com/apple/container/issues/522), and [apple/container#440](https://github.com/apple/container/issues/440) cover build args, SSH mounts, context performance, BuildKit option passthrough, build secrets, cache import/export, platform args, and Dockerfile `HEALTHCHECK`.
+- **Registry, image, and platform parity:** <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> [apple/container#731](https://github.com/apple/container/issues/731), [apple/container#820](https://github.com/apple/container/issues/820), [apple/container#816](https://github.com/apple/container/issues/816), [apple/container#1707](https://github.com/apple/container/issues/1707), [apple/container#1334](https://github.com/apple/container/issues/1334), [apple/container#1426](https://github.com/apple/container/issues/1426), and [apple/container#913](https://github.com/apple/container/issues/913) cover insecure registries, credential helpers, private registry pull/push failures, all-tags push, legacy Docker archive load, and consistent multi-platform semantics.
+- **Storage, mounts, and volume drivers:** <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> [apple/container#1413](https://github.com/apple/container/issues/1413), [apple/container#895](https://github.com/apple/container/issues/895), [apple/container#729](https://github.com/apple/container/issues/729), [apple/container#889](https://github.com/apple/container/issues/889), and [apple/container#165](https://github.com/apple/container/issues/165) cover non-local volume drivers, volume copy/seed behavior, read-only shared named volumes, and UID/GID-sensitive bind mount behavior.
+- **Plugin, SDK, and command UX:** <img alt="WATCH" src="https://img.shields.io/badge/WATCH-6B7280?style=flat-square"> [apple/container#630](https://github.com/apple/container/issues/630), [apple/container#633](https://github.com/apple/container/issues/633), [apple/container#462](https://github.com/apple/container/issues/462), [apple/container#464](https://github.com/apple/container/issues/464), [apple/container#381](https://github.com/apple/container/issues/381), and [apple/container#642](https://github.com/apple/container/issues/642) help external plugin adoption, direct API documentation, system health diagnostics, and Docker-compatible stdout/stderr behavior.
+
+#### Recommended Fork Action List
+
+1. <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> Keep the fork's log branch aligned with Chris George's [apple/container#1592](https://github.com/apple/container/pull/1592), then layer [apple/container#1764](https://github.com/apple/container/pull/1764) and [apple/container#1765](https://github.com/apple/container/pull/1765) for end-to-end Compose log validation.
+2. <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> Keep the #1562 exit-metadata cherry-pick, healthcheck handoff slices, image healthcheck metadata slice, and restart-policy create/runtime/timing slices in the fork integration branch, then continue testing stopped-container `wait`, `service_completed_successfully`, explicit service `healthcheck`, Dockerfile-inherited image healthchecks, `service_healthy`, service `restart`, fork-backed `deploy.restart_policy` condition/max-attempt/timing mapping, and failed one-shot jobs there.
+3. <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square"> Continue testing static `extra_hosts`, explicit host entries, explicit hostnames, explicit domain names, single-network aliases, sticky IPs, DNS defaults, `host-gateway`, and one chosen bridge-networking direction together before exposing more networking fields in `container-compose`.
+4. <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square"> Slice new small apple/container PRs for the remaining unimplemented issue groups: event source expansion beyond container lifecycle, attach, process signal proxying, multi-network aliases, fixed IPs, BuildKit option passthrough, build `HEALTHCHECK`, GPU/device controls, and volume seed/copy behavior. Track [apple/container#1595](https://github.com/apple/container/pull/1595) rather than opening a duplicate blkio runtime PR.
+5. <img alt="COORDINATE" src="https://img.shields.io/badge/COORDINATE-0891B2?style=flat-square"> Compare the peer Compose PR [apple/container#1736](https://github.com/apple/container/pull/1736) and related plugin ergonomics work before copying code. Reuse only focused tests, examples, or API lessons that fit this repo's external-plugin architecture.
 
 ### Supported
 
@@ -41,7 +106,9 @@ Docker Compose v2 accepts the surface and runtime support is not needed for norm
 The lozenges use static flat badge images so the traffic-light colours render
 inside GitHub Markdown and HTML tables: green is supported/no-gap, yellow is
 partial, red is blocked by [`apple/container`][apple-container], orange is
-blocked in this repository, and gray is config-only.
+blocked in this repository, blue is a fork-merge candidate, purple is an
+implementation candidate, cyan is a coordination point, and gray is
+config-only or watch-only.
 
 - <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">: Docker Compose v2 accepts the surface, [`apple/container`][apple-container] has the required primitive, and `container-compose` maps it.
 - <img alt="NO PLUGIN GAP" src="https://img.shields.io/badge/NO%20PLUGIN%20GAP-2E7D32?style=flat-square">: no current runtime or command surface is blocked first by this repository.
@@ -49,6 +116,11 @@ blocked in this repository, and gray is config-only.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">: the first missing piece is an [`apple/container`][apple-container] runtime primitive.
 - <img alt="PLUGIN GAP" src="https://img.shields.io/badge/PLUGIN%20GAP-D97706?style=flat-square">: [`apple/container`][apple-container] is not known to be the blocker and this repository still needs implementation work.
 - <img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square">: normalized output is preserved, but runtime behavior is not applied.
+- <img alt="UPSTREAM OPEN" src="https://img.shields.io/badge/UPSTREAM%20OPEN-B26A00?style=flat-square">: the referenced [`apple/container`][apple-container] pull request is open and not yet a released dependency.
+- <img alt="FORK MERGE" src="https://img.shields.io/badge/FORK%20MERGE-2563EB?style=flat-square">: a candidate for the fork or a fork integration branch after local review and conflict checks.
+- <img alt="IMPLEMENT" src="https://img.shields.io/badge/IMPLEMENT-7C3AED?style=flat-square">: an upstream issue that can be implemented as a small [`apple/container`][apple-container] pull request or carried temporarily in the fork.
+- <img alt="COORDINATE" src="https://img.shields.io/badge/COORDINATE-0891B2?style=flat-square">: related peer work that should be compared or discussed before copying code or opening overlapping PRs.
+- <img alt="WATCH" src="https://img.shields.io/badge/WATCH-6B7280?style=flat-square">: useful upstream movement to monitor, but not a direct fork merge target yet.
 
 ## Compatibility Snapshot
 
@@ -133,7 +205,7 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - Options: `up --no-start`, `up --always-recreate-deps`, timeouts, service `attach: false`, `rm --force/-f`, `wait --down-project`, `run --rm`, `run --detach/-d`, and `run --name`.
   - Lifecycle hooks: service `post_start` and `pre_stop` for detached service starts, `start`, `stop`, `restart`, `down`, service recreation, and replica pruning; service `post_start` for detached one-off `run`; service `pre_stop` for detached one-off cleanup when `container-compose` later stops the one-off container through project cleanup.
 - **apple/container path:** `container create`, `container run`, `ContainerClient.bootstrap`, `ClientProcess.start`, `ClientProcess.wait`, `ContainerClient.get`, `ContainerClient.list`, `ContainerClient.stop`, `ContainerClient.delete`, `ContainerClient.kill`, and direct process exec through `ContainerClient.createProcess` / `ClientProcess.start`.
-- **container-compose status:** Supported for running or stopping service containers. `post_start` runs after service containers are started through a detached service lifecycle path and after detached one-off `run`; `pre_stop` runs before service-aware stops and before detached one-off containers are stopped through cleanup such as `up --remove-orphans` or `down --remove-orphans`. Compose job deploy modes, already-stopped wait replay, attached `up` with `post_start`, foreground one-off `run` with `post_start`, and foreground one-off `run` with `pre_stop` remain apple/container completion, scheduler, attach, or stop-boundary gaps.
+- **container-compose status:** Supported for running or stopping service containers, and supported for already-stopped service containers when the forked `apple/container` runtime exposes stored `exitCode` metadata from #1562. `post_start` runs after service containers are started through a detached service lifecycle path and after detached one-off `run`; `pre_stop` runs before service-aware stops and before detached one-off containers are stopped through cleanup such as `up --remove-orphans` or `down --remove-orphans`. Compose job deploy modes, attached `up` with `post_start`, foreground one-off `run` with `post_start`, and foreground one-off `run` with `pre_stop` remain apple/container scheduler, attach, or stop-boundary gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Project discovery
@@ -148,12 +220,12 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
-  - Discovery and output: `ps`, filtered `ps`, `logs`, indexed `logs`, harmless `logs --no-color` and `logs --no-log-prefix`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
+  - Discovery and output: `ps`, filtered `ps`, prefixed `logs` across selected service replicas, colored log prefixes when ANSI policy allows them, concurrent `logs --follow`, indexed `logs`, fixture-covered blank-line/trailing-newline handling, non-UTF-8-preserving log replay/follow, static and followed `logs --timestamps`, `logs --no-color`, `logs --no-log-prefix`, static and followed `logs --since` and `logs --until` with RFC 3339, Unix timestamp, and relative-duration filters, `events [--since/--until] [SERVICE...]`, `events --json [SERVICE...]`, `events --json --since/--until [SERVICE...]`, output-only `attach --no-stdin --sig-proxy=false`, and indexed attach.
   - Exec: default stdin/TTY behavior, `-T/--no-tty`, `--interactive=false`, detached exec, env/user/workdir overrides, and indexed service targets.
   - File movement: service-aware `cp`, service-to-service `cp`, indexed `cp`, `cp --all`, one-off copy target discovery, and `export`.
   - Runtime queries: published-port `port`, indexed `port`, dynamically allocated and host-bound port lookup after container creation, `stats`, `stats --all`, `stats --format table/json`, `stats --no-stream`, and `version`.
-- **apple/container path:** Direct `ContainerClient` list/get/logs/copy/export/stats APIs, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`.
-- **container-compose status:** Supported for the listed direct API paths. Rich log filtering and runtime process/event controls remain apple/container gaps.
+- **apple/container path:** Direct `ContainerClient` list/get/logs/logRecords/logRecordFile/followLogs/followLogRecords/events/copy/export/stats APIs, `ContainerEventOptions`, `ProcessIO`, `ContainerClient.createProcess`, and `ClientProcess.start`. Static `logs --since`, `logs --until`, and `logs --timestamps` use the local [`logs-integration-chris`](https://github.com/stephenlclarke/container/tree/logs-integration-chris) log-options and structured log-record API work, which keeps `ContainerLogOptions` focused on retrieval filters and `ContainerLogReplayOptions` focused on replay policy; the local apple/container CLI accepts RFC 3339, RFC 3339 nano, Unix timestamp, and relative-duration filters, renders static `container logs --timestamps`, renders followed `container logs --follow --timestamps/--since/--until` from a structured record stream, exposes static rotated raw and structured replay through replay options, exposes raw rotation-aware follow through `ContainerClient.followLogs(id:options:)`, and exposes structured rotation-aware follow through `ContainerClient.followLogRecords(id:options:)`. The fork event stream exposes `ContainerClient.events(options:)`, bounded API-service replay through `ContainerEventOptions.since/until`, and `container events --since/--until` as a separate PR-shaped slice stacked on [apple/container#484](https://github.com/apple/container/issues/484). The first extracted structured-storage slice is [`logs-structured-record-storage`](https://github.com/stephenlclarke/container/tree/logs-structured-record-storage), which stores active runtime records in `stdio.jsonl` as ISO 8601 timestamp, stdout/stderr stream, and base64 payload fields beside the existing raw `stdio.log`. The extracted active-retrieval slice is [`logs-structured-record-api`](https://github.com/stephenlclarke/container/tree/logs-structured-record-api), which exposes `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, `ContainerLogRecord`, XPC routes `containerLogRecords` and `containerLogRecordFile`, and `ContainerLogOptions.tail/since/until` retrieval filters. The raw follow handoff is `ISSUE-logs-rotation-aware-follow.md` / `PR-logs-rotation-aware-follow.md`, and the structured follow handoff is `ISSUE-logs-structured-rotation-aware-follow.md` / `PR-logs-structured-rotation-aware-follow.md` in the container fork. The open upstream log path starts with Chris George's [apple/container#1592](https://github.com/apple/container/pull/1592), then the ready-for-review [apple/container#1764](https://github.com/apple/container/pull/1764) and [apple/container#1765](https://github.com/apple/container/pull/1765) follow-ups, then structured-storage, retrieval, rotated replay, logging-policy, writer-rotation, raw-follow, and structured-follow PRs. The open upstream event path starts with [apple/container#484](https://github.com/apple/container/issues/484), then the event stream PR and event time-filter PR handoffs. This repository must wait for accepted upstream APIs before treating those local integration capabilities as released apple/container support.
+- **container-compose status:** Supported for the listed direct API paths on the local integration stack. Static raw/timestamped log replay requests can include rotated local log files where apple/container exposes them. Static timestamped and time-window rendering delegates `tail`, `since`, and `until` to the direct apple/container structured record API, then renders the returned line-correct records locally. Followed structured streams call the fork's runtime `ContainerClient.followLogRecords(id:options:)` stream, then keep only Compose line rendering, prefixes, colors, and service fan-out in this plugin. Raw rotated follow calls the fork's runtime `ContainerClient.followLogs(id:options:)` stream, then keeps only Compose line reconstruction, container-stop flushing, prefixes, colors, and service fan-out in this plugin. `container compose events [--json] [SERVICE...]` calls the fork's runtime `ContainerClient.events(options:)`, passes `since`/`until` through `ContainerEventOptions`, and keeps project/service filtering, one-off suppression, label stripping, JSON Lines output, and Docker Compose-style default text output in the plugin. Time filters accept RFC 3339 timestamps, RFC 3339 nano timestamps, Unix timestamps in seconds with optional fractional seconds, and relative durations. Line-boundary tests cover empty logs, blank records, final newlines, CRLF/CR separators, prefixed blank records, split structured records, followed raw stream chunks, followed structured record streams, and unterminated final records; event tests cover selected services, dry-run flags, invalid time filters, API option forwarding, Compose JSON rendering, and Compose text rendering. `make docker-log-fixtures` captures optional Docker Compose parity evidence for rotated `json-file` and `local` `logs --tail` behavior without adding Docker to the required CI path. `make docker-compose-events-parity` is also optional and now includes Docker Compose `events --since/--until` replay-window shape and text replay shape, but those extended checks still need a fresh Docker-backed run before PR. Released timestamped follow, filtered log follow, static rotated replay, raw rotation-aware follow, byte-preserving structured log support, and released event support wait for upstream apple/container acceptance of the #1592/#1764/#1765 retrieval/parser stack, subsequent structured record/logging policy APIs, and event-stream/event-filter APIs. Released structured stdout/stderr log identity semantics and runtime process controls remain apple/container gaps or compatibility decisions.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Develop watch workflows
@@ -179,9 +251,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
   - One service network, default project networks, external networks, `network_mode: none`, project network `internal`, and one IPv4 plus one IPv6 project network IPAM `subnet`.
   - Explicit host-published ports, target-only dynamically allocated host ports, and host-bound dynamic ports for `create`, `up`, and one-off `run`.
   - Scaled published-port ranges with enough explicit host ports for every replica, plus target-only and host-bound dynamic allocation per service replica.
-  - Single-network `mac_address` and MTU through `driver_opts.com.docker.network.driver.mtu`.
-- **apple/container path:** Direct `NetworkClient.create`, `NetworkConfiguration`, `NetworkClient.delete`, plus supported `container create/run --network` and explicit `--publish` flags where a direct adapter is not available yet. Target-only and host-bound Compose ports are allocated by the plugin before invoking apple/container.
-- **container-compose status:** Supported for the listed single-network local subset.
+  - Single-network `mac_address`, `networks.<name>.aliases`, legacy `links` on one shared network, legacy `external_links` to an existing container on one shared runtime network, and MTU through `driver_opts.com.docker.network.driver.mtu`.
+- **apple/container path:** Direct `NetworkClient.create`, `NetworkConfiguration`, `NetworkClient.delete`, `ContainerClient.get` snapshot inspection, plus supported `container create/run --network`, `--add-host`, and explicit `--publish` flags where a direct adapter is not available yet. Target-only and host-bound Compose ports are allocated by the plugin before invoking apple/container. Single-network aliases and link aliases require the fork-backed `container --network name,alias=...` primitive until an equivalent surface is accepted upstream. `external_links` use fork-backed `--add-host` host entries after the plugin proves the external container shares the service's single runtime network.
+- **container-compose status:** Supported for the listed single-network local subset on the fork-backed integration branch; released upstream support for aliases and external-link host entries is pending `ISSUE-network-aliases.md` / `PR-network-aliases.md`, `ISSUE-host-entries.md` / `PR-host-entries.md`, or equivalent apple/container primitives. Legacy `links` are supported when the linked services share exactly one Compose network, including the compose-go normalized implicit `default` network. Legacy `external_links` are supported when the referenced existing apple/container container can be inspected and has exactly one attachment on the service's single runtime network; the plugin generates `--add-host ALIAS:IP` entries and includes the resolved address in recreate hashing. Multi-network links, projected link aliases that collide with another service alias, Docker-compatible shared aliases, external links without one shared runtime network, and source-scoped DNS remain runtime/DNS gaps.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Default storage
@@ -205,9 +277,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:**
   - Process options: `command`, `entrypoint`, one-off `run --entrypoint`, `working_dir`, one-off `run --workdir`, `user`, one-off `run --user`, `tty`, one-off `run -T/--no-tty`, and `stdin_open`.
-  - Runtime options: `container_name`, `read_only`, `init`, `platform`, `runtime`, DNS settings, capabilities, CPU/memory local limits, `shm_size`, `ulimits`, `stop_signal`, and `stop_grace_period`.
-- **apple/container path:** Supported `container create/run` flags and `ContainerClient.stop(id:opts:)`.
-- **container-compose status:** Supported for the listed local-development runtime options.
+  - Runtime options: `container_name`, `read_only`, `init`, `platform`, `runtime`, DNS settings, capabilities, CPU/memory local limits, `shm_size`, `ulimits`, `sysctls`, `stop_signal`, and `stop_grace_period`.
+- **apple/container path:** Supported `container create/run` flags and `ContainerClient.stop(id:opts:)`. `sysctls` use the fork-backed `container create/run --sysctl name=value` slice documented in `ISSUE-sysctl-cli.md` / `PR-sysctl-cli.md` until an equivalent upstream CLI primitive is accepted.
+- **container-compose status:** Supported for the listed local-development runtime options on the integration branch. Released upstream support for `sysctls` is pending the new `--sysctl` CLI/runtime bridge.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 #### Environment and metadata
@@ -221,9 +293,9 @@ These surfaces have all three pieces: Docker Compose v2 model support, [`apple/c
 #### Simple ordering
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
-- **Compose surface:** `depends_on` with no condition or `condition: service_started`, same-project `volumes_from` implicit dependencies, optional dependencies, `depends_on.<service>.restart: true` for single-replica restarts, `up --always-recreate-deps`, `up --no-deps`, and `run --no-deps`.
-- **apple/container path:** Plugin dependency ordering, dependency-change tracking, `ContainerClient.stop(id:opts:)`, and `ContainerClient.start(id:)`.
-- **container-compose status:** Supported for service-started ordering and selected dependency traversal behavior.
+- **Compose surface:** `depends_on` with no condition, `condition: service_started`, `condition: service_completed_successfully`, same-project `volumes_from` implicit dependencies, optional dependencies, `depends_on.<service>.restart: true` for single-replica restarts, `up --always-recreate-deps`, `up --no-deps`, and `run --no-deps`.
+- **apple/container path:** Plugin dependency ordering, dependency-change tracking, `ContainerClient.stop(id:opts:)`, `ContainerClient.start(id:)`, `ContainerClient.wait` for live containers, and fork-only `ContainerSnapshot.exitCode` metadata from [apple/container#1562](https://github.com/apple/container/pull/1562) for already-stopped containers.
+- **container-compose status:** Supported for service-started ordering, selected dependency traversal behavior, stopped-container `wait` replay, and `service_completed_successfully` gates on the fork-backed integration branch. Released upstream support is pending acceptance of #1562 or an equivalent exit-metadata API.
 - **Example:** [S1](#s1-supported-local-web-stack).
 
 ### Blocked By apple/container
@@ -233,17 +305,17 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 #### Rich network attachment and IPAM controls
 
 - **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
-- **Compose surface:** Multiple service networks, aliases, service-name DNS for replicas, `deploy.endpoint_mode`, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
-- **Missing apple/container primitive:** Multi-network attach/connect, per-network aliases/options beyond MAC and MTU, VIP/DNSRR service endpoint discovery, multi-record DNS lookup for scaled service names, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
-- **container-compose status:** Rejected before resources are created.
+- **Compose surface:** Multiple service networks, aliases on multi-network services, service-name DNS for replicas, `deploy.endpoint_mode`, fixed addresses, network priority/interface fields, `network_mode` values other than `none`, and richer project IPAM fields.
+- **Missing apple/container primitive:** Multi-network attach/connect, source-network-aware aliases, Docker-compatible shared alias resolution, VIP/DNSRR service endpoint discovery, multi-record DNS lookup for scaled service names, fixed addresses, Docker-compatible namespace modes, and richer project network IPAM controls.
+- **container-compose status:** Single-network aliases are supported on the fork-backed integration branch. Multi-network aliases and the remaining rich network controls are rejected before resources are created.
 - **Example:** [A1](#a1-apple-gap-networking).
 
 #### Host identity and legacy links
 
-- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:** `hostname`, `domainname`, `extra_hosts`, `links`, and `external_links`.
-- **Missing apple/container primitive:** Hostname/domain controls, explicit host entries, and legacy link/alias semantics.
-- **container-compose status:** Rejected before resources are created.
+- **Missing apple/container primitive:** Released upstream still needs accepted explicit host entries, host-gateway resolution, explicit hostname and domain-name controls, source-scoped DNS links, shared aliases, and external-service link lookup. The local fork now exposes static and host-gateway host-entry injection through `ContainerConfiguration.HostEntry`, `container run/create --add-host`, explicit hostnames through `container run/create --hostname`, explicit domain names through `container run/create --domainname`, and single-network aliases through `container run/create --network name,alias=...`.
+- **container-compose status:** Static IP-literal and `host-gateway` `extra_hosts` entries are supported on the fork-backed integration branch and map to `--add-host`. Compose service `hostname` and `domainname` are supported on the fork-backed integration branch and map to `--hostname` and `--domainname`. Legacy `links` are supported for services that share exactly one Compose network, including the compose-go normalized implicit `default` network, by using dependency ordering and target-service aliases. Legacy `external_links` are supported for existing apple/container containers that can be inspected and share exactly one runtime network with the source service; the plugin maps `CONTAINER` and `CONTAINER:ALIAS` to generated `--add-host` entries. Multi-network links, external links without one shared runtime network, and projected link aliases that collide with another service alias still reject before resources are created; full Docker-compatible shared aliases remain a runtime/DNS gap.
 - **Example:** [A2](#a2-apple-gap-host-identity-and-links).
 
 #### Namespace and resource controls
@@ -257,18 +329,18 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 #### User, security, devices, and kernel tuning
 
 - **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
-- **Compose surface:** `group_add`, `security_opt`, service `privileged`, `exec --privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, `gpus`, and `sysctls`.
-- **Missing apple/container primitive:** Supplemental groups, security profiles beyond supported `cap_add`/`cap_drop`, privileged mode, host devices, GPUs, per-container sysctls, and privileged exec processes.
+- **Compose surface:** `group_add`, `security_opt`, service `privileged`, `exec --privileged`, `credential_spec`, `device_cgroup_rules`, `devices`, and `gpus`.
+- **Missing apple/container primitive:** Supplemental groups, security profiles beyond supported `cap_add`/`cap_drop`, privileged mode, host devices, GPUs, and privileged exec processes.
 - **container-compose status:** Rejected before resources are created.
 - **Example:** [A3](#a3-apple-gap-runtime-controls).
 
-#### Health, completion, config/secret stores, service restart
+#### Health, config/secret stores, restart policies, and job modes
 
-- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
-- **Compose surface:** `healthcheck`, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, `deploy.mode: replicated-job`, `deploy.mode: global-job`, external/content/environment-backed service `configs` and `secrets`, service `restart`, and `deploy.restart_policy`.
-- **Missing apple/container primitive:** Health status, exit code/completion-time metadata, Compose-compatible job lifecycle and scheduler semantics, first-class config/secret store or materialization primitives, ownership/mode controls for non-file-backed grants, and restart policy support.
-- **container-compose status:** Rejected before resources are created.
-- **Example:** [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart).
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
+- **Compose surface:** Explicit service `healthcheck`, Dockerfile-inherited image `HEALTHCHECK`, `depends_on.condition: service_healthy`, `deploy.mode: replicated-job`, `deploy.mode: global-job`, external configs/secrets, content-backed configs, environment-backed configs/secrets, service `restart`, and `deploy.restart_policy`.
+- **Missing apple/container primitive:** Released upstream `apple/container` still needs accepted health status/configuration/observer/create surfaces before explicit health support can leave the fork. Released upstream also needs accepted image config parsing for Dockerfile-inherited `HEALTHCHECK` metadata; the local fork exposes this through `ImageResource.Variant.healthCheck` in the image healthcheck metadata slice. First-class external config/secret lookup, ownership remapping for generated grants, accepted restart policy create/runtime/timing support, and accepted stopped-container exit metadata remain runtime gaps for released upstream use. Exit-code metadata for `service_completed_successfully`, `compose wait`, and local deploy job completion is implemented only on the local fork until [apple/container#1562](https://github.com/apple/container/pull/1562) or an equivalent upstream API lands.
+- **container-compose status:** Explicit service healthchecks, Dockerfile-inherited image healthchecks, timing-only Compose healthcheck overrides over image defaults, `depends_on.condition: service_healthy`, `depends_on.condition: service_completed_successfully`, service-level `restart`, the fork-backed subset of `deploy.restart_policy`, Docker Compose local `deploy.mode: replicated-job` / `global-job`, and Docker Compose local runtime config/secret file sources are supported on the integration branch. Supported deploy restart values are `condition: none`, `condition: any` or an empty policy, `condition: on-failure` with optional `max_attempts`, plus `delay` and `window` when the fork's restart-policy timing slice is present. For deploy job services, `condition: any` is rendered as `on-failure`, matching Docker's rule that completed jobs are not restarted. Timing-only healthcheck overrides reject before resources are created when the image does not expose Dockerfile `HEALTHCHECK` metadata. Generated config/secret grant `mode` values are honored with writable bits ignored; file-backed grant metadata follows Docker Compose bind-mount behavior. External configs/secrets and strict config/secret `uid`/`gid` ownership requests are still rejected before resources are created.
+- **Example:** [A4](#a4-partial-health-config-and-secret-stores-and-restart).
 
 #### Compose model runner
 
@@ -304,27 +376,27 @@ These are valid Docker Compose v2 surfaces. `container-compose` recognizes them,
 
 #### Service logging controls
 
-- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:** Service `logging`, `log_driver`, and `log_opt`.
-- **Missing apple/container primitive:** Compose-compatible service logging drivers, logging options, rotation policy, and log metadata controls. Current apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration.
-- **container-compose status:** Rejected before resources are created.
-- **Example:** [A10](#a10-apple-gap-service-logging-controls).
+- **Missing apple/container primitive:** Compose-compatible remote service logging drivers, log metadata controls, and released line-correct server-side replay/follow filters across all log record sources. Current released apple/container log APIs expose runtime log streams but not per-service logging driver/option configuration. The local integration stack treats `--log-driver json-file` and `--log-driver local` as local capture aliases, adds disabled persisted capture through `--log-driver none`, parses local `--log-opt max-size=<size>` and `--log-opt max-file=<count>`, has writer-level local rotation when a runtime logging policy supplies max size and file count, stores active raw bytes in `stdio.log`, stores structured runtime records in `stdio.jsonl`, exposes static rotated raw and structured replay, exposes raw rotation-aware follow through `ContainerClient.followLogs(id:options:)`, and exposes structured rotation-aware follow through `ContainerClient.followLogRecords(id:options:)`.
+- **container-compose status:** Accepts file-backed `json-file` and `local` logging as mappings to apple/container's local stdio log capture. On the local integration stack, `logging.driver: none` and legacy `log_driver: none` map to disabled persisted capture. Local `logging.options` and legacy `log_opt` values for `max-size` and `max-file` map to apple/container `--log-opt` flags for the default, `json-file`, and `local` drivers. Static `logs` / `logs --timestamps` requests include rotated files when apple/container supports them. The optional Docker parity fixture records that Docker Compose keeps `--tail` line-based over retained rotated `json-file` and `local` logs while each driver retains a different number of full-history lines; the fixture was refreshed on 2026-06-22 against Docker Engine 29.5.2 and Docker Compose 5.1.4. Followed structured logs use the fork's `ContainerClient.followLogRecords(id:options:)` stream; raw rotation-aware follow uses the fork's `ContainerClient.followLogs(id:options:)` stream on the local integration stack and remains fork-only until those APIs are accepted upstream. Remote drivers, non-local logging options, and options attached to `none` remain rejected until apple/container exposes the required runtime primitives.
+- **Example:** [A10](#a10-partial-service-logging-controls).
 
 #### API socket and block I/O controls
 
-- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
 - **Compose surface:** `use_api_socket` and `blkio_config`.
-- **Missing apple/container primitive:** A safe Docker-compatible or apple/container-compatible API socket boundary with credential handoff and least-privilege controls, plus block I/O resource controls for blkio weight and read/write throttling. apple/container can mount Unix sockets and report block I/O stats, but it does not expose the Docker Compose API-socket or blkio resource-control behavior that these fields require.
-- **container-compose status:** Rejected before resources are created.
+- **Missing apple/container primitive:** A safe Docker-compatible or apple/container-compatible API socket boundary with credential handoff and least-privilege controls remains missing for `use_api_socket`. [apple/container#1595](https://github.com/apple/container/pull/1595) proposes the block I/O runtime primitive and CLI contract needed by `blkio_config`, but released upstream apple/container does not yet expose accepted blkio resource-control behavior. The local integration branches pin to [stephenlclarke/containerization@integration/blkio-runtime](https://github.com/stephenlclarke/containerization/tree/integration/blkio-runtime) to test the lower-level API from [apple/containerization#739](https://github.com/apple/containerization/pull/739).
+- **container-compose status:** `blkio_config.weight`, `weight_device`, `device_read_bps`, `device_write_bps`, `device_read_iops`, and `device_write_iops` are preserved through compose-go normalization and rendered as repeatable `container run/create --blkio` arguments matching [apple/container#1595](https://github.com/apple/container/pull/1595). `use_api_socket` is still rejected before resources are created. Branches pinned to released upstream apple/container must keep treating `blkio_config` as runtime-gated until #1595 and the required `containerization` blockIO API are available.
 - **Example:** [A13](#a13-apple-gap-api-socket-and-block-io).
 
-#### Runtime data commands
+#### Runtime data and lifecycle control commands
 
-- **Status:** <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
-- **Compose surface:** `top`, `events`, `pause`, `unpause`, already-stopped `wait` exit-code replay, `cp --archive`, and `cp --follow-link`.
-- **Missing apple/container primitive:** Process listing, event stream, pause/unpause, stored process exit codes after container stop, and copy archive/follow-link controls.
-- **container-compose status:** Rejected before resources are created.
-- **Example:** [A5](#a5-apple-gap-runtime-data-commands).
+- **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
+- **Compose surface:** `top`, `events`, fork-backed `pause`, fork-backed `unpause`, already-stopped `wait` exit-code replay, fork-backed `cp --follow-link`, and fork-backed `cp --archive`.
+- **Missing apple/container primitive:** Released upstream apple/container still needs accepted process listing, event streaming/filtering, pause/unpause lifecycle controls, stored process exit codes after container stop, and copy follow-link/archive controls.
+- **container-compose status:** On the local integration stack, `pause` and `unpause` use direct `ContainerClient.pause(id:)` and `ContainerClient.unpause(id:)` calls from [`stephenlclarke/container` `logs-integration-chris`](https://github.com/stephenlclarke/container/tree/logs-integration-chris), backed by [`stephenlclarke/containerization` `integration/blkio-runtime`](https://github.com/stephenlclarke/containerization/tree/integration/blkio-runtime). `container compose cp --follow-link` and `container compose cp --archive` now map to fork-backed direct copy APIs. `top` now maps to the fork-backed PID-only `ContainerClient.processes(id:)` surface from container commit `14a3067`. The Apple-shaped event primitives now exist in the same container fork as code commits `b71e4bb323e3`, `0da7890b2632`, and `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270`, adding `ContainerEvent`, `ContainerClient.events(options:)`, lifecycle event emission, non-blocking event subscribers, bounded replay/time filters, and `container events --since/--until` without Compose filtering. `container compose events [--json] [--since/--until] [SERVICE...]` maps that stream in this repository as commits `113be38063ea`, `3a3387d7dbea301eec3a7f1fcc3f954dec80276c`, `fd3d94824f23cd3255a812faed9e3972906b4ab5`, and `4cfb39e9531a84b496e1dcc76a84ac7654df943f`: it filters to Compose project/service labels, skips one-off containers, applies selected-service arguments, strips Compose-private attributes, and renders Docker Compose compatible text or JSON Lines. The optional local-only `make docker-compose-events-parity` check passed on 2026-06-22 against Docker Compose 5.1.4 for the first JSON mapping, validating the Docker behavior without adding Docker to CI; the later time-filter and text replay extensions still need a fresh Docker-backed run before PR. Branches pinned to released upstream apple/container must continue treating event support as runtime-gated until equivalent event-stream and event-filter APIs are accepted.
+- **Example:** [A5](#a5-partial-runtime-data-commands).
 
 #### Interactive init-process attach and foreground hook boundaries
 
@@ -367,9 +439,9 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 #### Top-level `configs` and `secrets` definitions
 
 - **Status:** <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square">
-- **Current behavior:** Preserved by `config` and `convert`. File-backed definitions can feed service `configs` and `secrets` through read-only runtime bind mounts. File-backed and environment-backed secrets can feed supported `build.secrets`.
-- **Runtime boundary:** External definitions, inline `content`, environment-backed runtime grants, and strict `uid`/`gid`/`mode` materialization need first-class [`apple/container`][apple-container] config/secret store or materialization primitives.
-- **Examples:** [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata), [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart).
+- **Current behavior:** Preserved by `config` and `convert`. Runtime service grants support file-backed `configs` and `secrets` as direct read-only bind mounts. Runtime grants also support Docker Compose local sources that can be faithfully represented as files: `configs.content`, `configs.environment`, and `secrets.environment` are materialized into deterministic project-scoped files under the per-user `container-compose` state root, mounted read-only, skipped during dry-run, and removed by `down` after project containers are removed. Generated grant `mode` values are applied with writable bits ignored, while file-backed grant metadata follows Docker Compose bind-mount behavior and does not mutate source file metadata. File-backed and environment-backed secrets can feed supported `build.secrets`.
+- **Runtime boundary:** External definitions and strict service-level `uid`/`gid` ownership materialization still need first-class [`apple/container`][apple-container] config/secret store or ownership primitives. Docker Compose secrets support `file` and `environment`; content-backed secrets remain rejected as outside the Docker Compose secrets surface.
+- **Examples:** [S1](#s1-supported-local-web-stack), [O1](#o1-config-only-metadata), [A4](#a4-partial-health-config-and-secret-stores-and-restart).
 
 #### Top-level `models` definitions
 
@@ -385,7 +457,7 @@ These Compose surfaces are useful in normalized output, but they do not currentl
 Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square">
 
 - Config and project: `config`, `convert`, and `ls`.
-- Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, and running/stopping-container `wait`.
+- Lifecycle: `create`, `up`, `scale`, `down`, `run`, `start`, `stop`, `restart`, `rm`, `kill`, fork-backed `pause`, fork-backed `unpause`, and `wait` for running, stopping, or fork-backed stopped containers with stored exit metadata.
 - Build and image: `build`, `pull`, `push`, `images`, and `down --rmi`.
 - Interaction: `ps`, `logs`, output-only `attach --no-stdin --sig-proxy=false`, `exec`, `cp`, `export`, published-port `port`, `stats`, `stats --no-trunc`, and `version`.
 - Develop: `watch`, `watch --dry-run`, `watch --no-up`, `watch --no-prune`, and `watch --quiet`.
@@ -396,9 +468,8 @@ Status: <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?
 
 Status: <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square">
 
-- `top`, `events`, `pause`, and `unpause`.
+- `top` and `events`.
 - Already-stopped `wait` exit-code replay.
-- `cp --archive` and `cp --follow-link`.
 - Default interactive `attach`, including stdin forwarding, signal proxying, and detach-key handling.
 - `commit` container image snapshots.
 - `publish` Compose application OCI artifacts and `oci://` Compose file consumption.
@@ -425,19 +496,19 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 - <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [S1: Supported Local Web Stack](#s1-supported-local-web-stack): Demonstrates build, images, `create`, ports, static `port`, environment, one network, no-network services, single-network MAC addresses, volume mounts, file-backed service configs/secrets, `volumes`, labels, `label_file`, lifecycle, logs, exec, stats, copy, and `down --volumes`.
 - <img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> [S2: Supported Provider Service](#s2-supported-provider-service): Demonstrates provider lifecycle commands and provider `setenv` injection into dependent services.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A2: Apple Gap, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates hostname, domain name, explicit host entries, and legacy links.
+- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A1: Apple Gap, Networking](#a1-apple-gap-networking): Demonstrates multiple networks, aliases on a multi-network service, service-name DNS for replicas, deploy endpoint modes, fixed IP attachment options, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A2: Partial, Host Identity And Links](#a2-apple-gap-host-identity-and-links): Demonstrates fork-backed static host entries, `host-gateway`, service hostname/domainname mapping, explicit single-network `links`, and the single-shared-runtime-network `external_links` subset plus remaining richer DNS gaps.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A3: Apple Gap, Runtime Controls](#a3-apple-gap-runtime-controls): Demonstrates namespace controls, privileged/device access, resource controls beyond the supported local limits, and sysctls.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A4: Apple Gap, Health, Config And Secret Stores, And Restart](#a4-apple-gap-health-config-and-secret-stores-and-restart): Demonstrates healthchecks, healthy/completed dependency gates, deploy job modes, external/content/environment-backed service secrets/configs, and restart policies.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A5: Apple Gap, Runtime Data Commands](#a5-apple-gap-runtime-data-commands): Demonstrates process listing, event streams, pause/unpause, already-stopped exit-code replay, and copy archive/follow-link controls.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A4: Partial, Health, Config And Secret Stores, And Restart](#a4-partial-health-config-and-secret-stores-and-restart): Demonstrates explicit healthchecks, healthy dependency gates, deploy job modes, external configs/secrets, inline and environment-backed configs, environment-backed secrets, and restart policies. The explicit `healthcheck`, `service_healthy`, and `service_completed_successfully` gates in that example are supported on the fork-backed branch, but the file still rejects because of the remaining apple/container gaps.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A5: Partial Runtime Data Commands](#a5-partial-runtime-data-commands): Demonstrates fork-backed pause/unpause, process listing and event stream gaps, fork-backed stopped-container exit-code replay, and copy archive/follow-link controls.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A6: Apple Gap, Advanced Build Fields](#a6-apple-gap-advanced-build-fields): Demonstrates additional contexts, unsupported secret forms and metadata, SSH forwarding, and provenance/SBOM fields.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A7: Apple Gap, Image Commit And Compose Publish](#a7-apple-gap-image-commit-and-compose-publish): Demonstrates service-container image commit and Compose application OCI artifact publishing.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A8: Apple Gap, Advanced Mounts And Storage Controls](#a8-apple-gap-advanced-mounts-and-storage-controls): Demonstrates named-volume subpaths, image-backed service mounts, advanced bind options, non-local service volume drivers, and service storage options.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A9: Apple Gap, Interactive Attach](#a9-apple-gap-interactive-attach): Demonstrates default interactive attach behavior and foreground lifecycle hook ordering that need runtime reattach or stop-boundary primitives.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A10: Apple Gap, Service Logging Controls](#a10-apple-gap-service-logging-controls): Demonstrates service logging drivers and logging options.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A10: Partial, Service Logging Controls](#a10-partial-service-logging-controls): Demonstrates accepted local file-backed logging and remaining service logging driver/option gaps.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A11: Apple Gap, Compose Model Runner](#a11-apple-gap-compose-model-runner): Demonstrates Compose model definitions and service model bindings that need a model-runner backend.
 - <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A12: Apple Gap, Start-First Service Replacement](#a12-apple-gap-start-first-service-replacement): Demonstrates `deploy.update_config.order: start-first`, which needs a temporary replacement handoff through container rename or service alias movement.
-- <img alt="APPLE GAP" src="https://img.shields.io/badge/APPLE%20GAP-C62828?style=flat-square"> [A13: Apple Gap, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted.
+- <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [A13: Partial, API Socket And Block I/O](#a13-apple-gap-api-socket-and-block-io): Demonstrates Docker-compatible API socket exposure and block I/O controls after supported volume inheritance is accepted; `blkio_config` is plugin-mapped to [apple/container#1595](https://github.com/apple/container/pull/1595), while `use_api_socket` remains an apple/container gap.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [C1: Replica Scaling And Deploy Metadata](#c1-replica-scaling-and-deploy-metadata): Demonstrates supported scale forms, collision safeguards, local deploy metadata, and remaining [`apple/container`][apple-container] deploy/runtime gaps.
 - <img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> [C3: Partial, Develop, Providers, And Hooks](#c3-partial-develop-providers-and-hooks): Demonstrates supported watch/develop, supported providers, supported detached lifecycle hooks, and foreground hook apple/container gaps.
 - <img alt="CONFIG ONLY" src="https://img.shields.io/badge/CONFIG%20ONLY-6B7280?style=flat-square"> [O1: Config-Only Metadata](#o1-config-only-metadata): Demonstrates extension metadata, top-level models/secrets, and `expose` in normalized output.
@@ -446,7 +517,7 @@ Every example includes a Compose file or commands plus the matching Dockerfile s
 
 ### S1: Supported Local Web Stack
 
-Expected result: `container compose config`, `container compose convert`, `build --pull --with-dependencies --quiet`, `build --push`, `pull --include-deps --policy missing --quiet`, `push --include-deps --quiet`, `create`, `create --quiet-pull`, `up`, `up --quiet-build`, `up --quiet-pull`, `up --always-recreate-deps`, `up --timeout`, file-backed runtime configs/secrets, service `attach: false`, `ps`, `logs`, `exec`, `stats`, `wait` and `wait --down-project` for running/stopping service containers, `cp`, `volumes`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
+Expected result: `container compose config`, `container compose convert`, `build --pull --with-dependencies --quiet`, `build --push`, `pull --include-deps --policy missing --quiet`, `push --include-deps --quiet`, `create`, `create --quiet-pull`, `up`, `up --quiet-build`, `up --quiet-pull`, `up --always-recreate-deps`, `up --timeout`, file-backed runtime configs/secrets, service `attach: false`, `ps`, `logs`, timestamped and time-filtered logs on the local structured-record integration stack, `exec`, `stats`, `wait` and `wait --down-project` for running/stopping service containers, `cp`, `volumes`, `rm --force --volumes` for anonymous volumes, and `down --volumes` run through [`apple/container`][apple-container].
 
 Status path:
 
@@ -483,6 +554,8 @@ services:
           target: npm_token
     image: example/api:dev
     pull_policy: missing
+    logging:
+      driver: json-file
     command: ["sh", "-c", "printf 'ready\n'; sleep 3600"]
     environment:
       API_MODE: local
@@ -677,7 +750,13 @@ container compose ps --services
 container compose ps --status running
 container compose ps --filter status=exited
 container compose logs api
+container compose logs
 container compose logs --index 2 api
+container compose logs --since 2026-06-18T10:00:00Z --until 30m api
+container compose logs --since 1781776800 --until 1781782200.25 api
+container compose logs --follow --timestamps api
+container compose logs --follow --since 2026-06-18T10:00:00Z --until 30m api
+container compose --ansi always logs api
 container compose logs --no-color --no-log-prefix api
 container compose attach --no-stdin --sig-proxy=false api
 container compose attach --no-stdin --sig-proxy=false --index 2 api
@@ -789,13 +868,13 @@ container compose down
 
 ### A1: Apple Gap, Networking
 
-Expected result: `container compose up` rejects this before creating resources because [`apple/container`][apple-container] needs multi-network attach/connect, per-network aliases/options beyond MAC and MTU, VIP/DNSRR endpoint discovery, service-name DNS that can return multiple replica addresses, fixed addresses, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
+Expected result: `container compose up` rejects this before creating resources because [`apple/container`][apple-container] needs multi-network attach/connect, source-network-aware alias handling, VIP/DNSRR endpoint discovery, service-name DNS that can return multiple replica addresses, fixed addresses, network namespace modes other than no-network, and IPAM controls beyond one IPv4/IPv6 subnet.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these network attachments.
-- [`apple/container`][apple-container]: missing multi-network attach/connect, per-network aliases/options beyond MAC and MTU, service-name aliases, VIP/DNSRR endpoint discovery, multi-record DNS lookup for scaled replicas, fixed addresses, Docker-compatible namespace modes other than no-network, IPAM gateway/range/auxiliary-address controls, custom IPAM drivers, and multiple same-family IPAM subnets.
-- `container-compose`: detects those fields and fails before creating resources.
+- [`apple/container`][apple-container]: missing multi-network attach/connect, source-network-aware alias handling, Docker-compatible shared alias resolution, service-name aliases, VIP/DNSRR endpoint discovery, multi-record DNS lookup for scaled replicas, fixed addresses, Docker-compatible namespace modes other than no-network, IPAM gateway/range/auxiliary-address controls, custom IPAM drivers, and multiple same-family IPAM subnets.
+- `container-compose`: supports unique aliases for the current single-network subset on the fork-backed integration branch, and detects the richer fields in this example before creating resources.
 
 ```yaml
 # compose.yaml
@@ -871,13 +950,13 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### A2: Apple Gap, Host Identity And Links
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs host identity, explicit host-entry, and link semantics.
+Expected result: on the fork-backed integration branch, static IP-literal and `host-gateway` `extra_hosts` entries are accepted and mapped to `container run/create --add-host`, service `hostname` is accepted and mapped to `container run/create --hostname`, service `domainname` is accepted and mapped to `container run/create --domainname`, the explicit single-network `links` entry is mapped to a target-service alias plus implicit dependency ordering, and the `external_links` entry is mapped to a generated host entry when `legacy-db` already exists on the same runtime network. This remains a partial apple/container gap for released upstream until the underlying host-entry, host-gateway, hostname, domain-name, and alias primitives are accepted.
 
 Status path:
 
-- Docker Compose v2: accepts and normalizes host identity and legacy link fields.
-- [`apple/container`][apple-container]: missing hostname/domain controls, explicit host-entry support, and legacy link semantics.
-- `container-compose`: detects those fields and reports the apple/container runtime gap.
+- Docker Compose v2: accepts and normalizes host identity, static host entries, `host-gateway`, and legacy link fields.
+- [`apple/container`][apple-container]: the local fork supports static and `host-gateway` host-entry injection through `ContainerConfiguration.HostEntry` and `--add-host`, explicit container hostnames through `--hostname`, explicit domain names through `--domainname`, and single-network aliases through `--network name,alias=...`; released upstream still needs accepted host-entry, host-gateway, hostname, domain-name, and alias support plus richer DNS/link behavior.
+- `container-compose`: maps static IP-literal and `host-gateway` `extra_hosts` to `--add-host`, service `hostname` to `--hostname`, service `domainname` to `--domainname`, explicit single-network `links` to dependency ordering plus target-service aliases, and single-network `external_links` to generated host entries after direct container inspection on the fork-backed integration branch, then reports the remaining apple/container runtime gaps before resources are created.
 
 ```yaml
 # compose.yaml
@@ -890,13 +969,24 @@ services:
     hostname: api-01
     domainname: local.test
     extra_hosts:
+      - "db.local=10.0.0.15"
+      - "myhostv6=[::1]"
       - "host.docker.internal:host-gateway"
     links:
       - db:database
+    external_links:
+      - legacy-db:legacy
+    networks:
+      - backend
 
   db:
     build:
       context: ./db
+    networks:
+      - backend
+
+networks:
+  backend: {}
 ```
 
 Dockerfile: `api/Dockerfile`
@@ -915,13 +1005,13 @@ CMD ["sh", "-c", "sleep 3600"]
 
 ### A3: Apple Gap, Runtime Controls
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs namespace, resource controls beyond the supported local CPU/memory/ulimit subset, deploy resource reservation guarantees, privileged/device, and sysctl primitives. `container compose exec --privileged` is rejected because privileged exec processes need an [`apple/container`][apple-container] primitive.
+Expected result: `container compose up` maps `sysctls` to `container run/create --sysctl` on the fork-backed integration branch, then rejects this example because [`apple/container`][apple-container] still needs namespace selection, resource controls beyond the supported local CPU/memory/ulimit subset, deploy resource reservation guarantees, and privileged/device primitives. `container compose exec --privileged` is rejected because privileged exec processes need an [`apple/container`][apple-container] primitive.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these runtime controls.
-- [`apple/container`][apple-container]: missing the required namespace, privileged/device, resource controls beyond supported `cpus`, `mem_limit`, `shm_size`, and `ulimits`, deploy PID-limit and reservation primitives, sysctl, and privileged exec primitives.
-- `container-compose`: detects those fields and reports the apple/container runtime gap.
+- [`apple/container`][apple-container]: missing the required namespace, privileged/device, resource controls beyond supported `cpus`, `mem_limit`, `shm_size`, and `ulimits`, deploy PID-limit and reservation primitives, and privileged exec primitives. The local fork exposes `--sysctl name=value` through `ISSUE-sysctl-cli.md` / `PR-sysctl-cli.md`.
+- `container-compose`: maps `sysctls` on the integration branch, then detects the remaining fields and reports the apple/container runtime gap.
 
 The related exec form is also rejected:
 
@@ -968,15 +1058,15 @@ FROM alpine:3.20
 CMD ["sh", "-c", "sleep 3600"]
 ```
 
-### A4: Apple Gap, Health, Config And Secret Stores, And Restart
+### A4: Partial, Health, Config And Secret Stores, And Restart
 
-Expected result: `container compose up` rejects this because [`apple/container`][apple-container] needs health status, completion metadata, job lifecycle/scheduler semantics, first-class config/secret stores or materialization, and restart policies for both service `restart` and `deploy.restart_policy`. File-backed service configs/secrets are supported in [S1](#s1-supported-local-web-stack); this example uses inline and external definitions to show the remaining runtime store gap.
+Expected result: on the fork-backed integration branch, explicit service `healthcheck` definitions, Dockerfile-inherited image healthchecks, timing-only healthcheck overrides over image defaults, `depends_on.condition: service_healthy`, local deploy job modes, service-level `restart`, the `deploy.restart_policy` condition/max-attempt/timing subset, file-backed configs/secrets, inline config content, environment-backed configs, environment-backed secrets, and generated config/secret grant modes are accepted when the runtime health, image metadata, exit metadata, and restart slices are present. `container compose up` still rejects this complete file because [`apple/container`][apple-container] needs first-class external config/secret lookup. File-backed service configs/secrets are supported in [S1](#s1-supported-local-web-stack), inline and environment-backed runtime grants are supported by plugin-side local materialization, `service_completed_successfully` and deploy job completion are supported on the fork-backed integration branch through [apple/container#1562](https://github.com/apple/container/pull/1562), explicit health support depends on the fork's health status/configuration/observer/CLI handoff slices, Dockerfile-inherited healthchecks depend on the fork's image healthcheck metadata slice, and service restart depends on the fork's restart-policy create/runtime/timing slices.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes healthchecks, dependency conditions, configs, secrets, service restart policies, deploy restart policies, and deploy job modes.
-- [`apple/container`][apple-container]: missing health status, exit/completion metadata, job lifecycle/scheduler semantics, first-class config/secret store or materialization primitives, and restart policy support.
-- `container-compose`: detects those fields and reports the apple/container runtime gap.
+- [`apple/container`][apple-container]: the local fork can run configured healthchecks, publish `ContainerSnapshot.health`, expose image `HEALTHCHECK` metadata through `ImageResource.Variant.healthCheck`, parse service restart create options, restart containers from local policy, apply restart delay/window timing, and replay stopped-container exit metadata; released upstream does not yet expose that full surface. First-class external config/secret lookup remains a gap; exit metadata is available only on the local fork until #1562 or an equivalent API lands.
+- `container-compose`: maps explicit service healthchecks, Dockerfile-inherited image healthchecks, timing-only healthcheck overrides, `service_healthy`, `service_completed_successfully`, local deploy job modes, service-level `restart`, and `deploy.restart_policy` condition/max-attempt/timing values on the fork-backed branch. It materializes Docker Compose local runtime config/secret sources that can be expressed as files, applies generated grant modes, then detects the remaining fields before reporting the relevant apple/container runtime gap.
 
 ```yaml
 # compose.yaml
@@ -1011,7 +1101,9 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
+        delay: 5s
         max_attempts: 3
+        window: 30s
     depends_on:
       api:
         condition: service_healthy
@@ -1062,15 +1154,15 @@ FROM alpine:3.20
 CMD ["sh", "-c", "printf 'done\n'"]
 ```
 
-### A5: Apple Gap, Runtime Data Commands
+### A5: Partial Runtime Data Commands
 
-Expected result: these commands and options reject because [`apple/container`][apple-container] needs richer runtime data and state controls. `container compose port` supports published bindings from runtime container snapshots, including explicit ranges, dynamically allocated ports after container creation, and indexed existing service containers. Plain service-aware `container compose cp` is supported, but `cp --archive` and `cp --follow-link` reject until [`apple/container`][apple-container] exposes copy archive and symlink-follow controls. `container compose wait` and `container compose wait --down-project` can wait for running or stopping service containers, but replaying exit codes for containers that were already stopped before the command starts still needs stored exit-code metadata from [`apple/container`][apple-container].
+Expected result: `container compose pause` and `container compose unpause` work on the local fork-backed integration stack by calling direct apple/container lifecycle APIs. Branches pinned to released upstream [`apple/container`][apple-container] must keep treating those commands as runtime-gated until pause/unpause primitives are accepted upstream. `container compose top` works on the fork-backed integration stack as a PID-only table through `ContainerClient.processes(id:)`; released-upstream branches must keep treating it as runtime-gated until process-listing APIs are accepted, and full Docker `top` columns still need richer runtime process metadata. `container compose events [--json] [--since/--until] [SERVICE...]` works on the fork-backed integration stack by consuming `ContainerClient.events(options:)`, filtering by Compose project/service labels, skipping one-off containers, stripping Compose-private attributes, and rendering Docker Compose compatible text or JSON Lines. Released-upstream branches must keep treating events as runtime-gated until equivalent event-stream and event-filter APIs are accepted. `container compose port` supports published bindings from runtime container snapshots, including explicit ranges, dynamically allocated ports after container creation, and indexed existing service containers. Service-aware `container compose cp` is supported, and `cp --follow-link` and `cp --archive` are supported on the fork-backed integration stack by passing source symlink-follow and ownership-preservation options through the direct copy APIs. Branches pinned to released upstream [`apple/container`][apple-container] must keep treating `cp --follow-link` and `cp --archive` as runtime-gated until the copy APIs are accepted upstream. `container compose wait` and `container compose wait --down-project` can wait for running or stopping service containers, and stopped-container replay is supported on fork-backed branches with stored exit metadata.
 
 Status path:
 
 - Docker Compose v2: supports these commands.
-- [`apple/container`][apple-container]: missing process listing, event streaming, pause/unpause, stored exit-code metadata for already-stopped containers, and copy archive/follow-link controls.
-- `container-compose`: exposes the command names, resolves published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports plugin-side dynamic host-port allocation, including `host_ip` bindings, before calling apple/container with explicit publish bindings, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `wait` and `wait --down-project` for running/stopping service containers, and reports the apple/container runtime gap for requests that need unavailable runtime state.
+- [`apple/container`][apple-container]: released upstream still misses accepted process listing, event streaming/filtering, pause/unpause, stored exit-code metadata for already-stopped containers, and accepted copy follow-link/archive controls. The local `stephenlclarke/container` integration branch exposes PID-only `ContainerClient.processes(id:)`, `ContainerClient.events(options:)`, direct pause/unpause, stored exit metadata, and `ContainerClient.copyIn/copyOut(... followSymlink:preserveOwnership:)` on top of the forked `containerization` copy request.
+- `container-compose`: exposes the command names, maps `top` to fork-backed PID process listing, maps `events --json [SERVICE...]` to fork-backed runtime event streaming, maps `pause` and `unpause` to direct lifecycle APIs on fork-backed branches, resolves published-port lookups from runtime snapshots, supports indexed target lookup for existing Compose-managed service containers, supports plugin-side dynamic host-port allocation, including `host_ip` bindings, before calling apple/container with explicit publish bindings, supports `stats --all` by combining direct stats for running containers with stopped-container metadata from project discovery, supports `stats --no-trunc` because the direct renderer already emits full container IDs, supports `cp --follow-link` and `cp --archive` on fork-backed branches through direct copy APIs, and supports `wait` and `wait --down-project` for running/stopping service containers and fork-backed stopped containers with exit metadata. The local-only `make docker-compose-events-parity` target passed on 2026-06-22 with Docker Compose 5.1.4 and remains outside CI.
 
 ```yaml
 # compose.yaml
@@ -1116,7 +1208,7 @@ CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 
 ### C1: Replica Scaling And Deploy Metadata
 
-Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, local no-op `deploy.mode: global`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `delay`, Docker Compose local no-op update metadata, `deploy.rollback_config`, `deploy.placement`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses. Deploy job modes are tracked in [A4](#a4-apple-gap-health-config-and-secret-stores-and-restart), and start-first service replacement is tracked in [A12](#a12-apple-gap-start-first-service-replacement).
+Expected result: `container compose up` accepts simple local replica counts for services that can be safely duplicated, including `deploy.mode: replicated`, local no-op `deploy.mode: global`, `deploy.labels` service metadata, local stop-first `deploy.update_config` with `delay`, Docker Compose local no-op update metadata, `deploy.rollback_config`, `deploy.placement`, services with explicit host port ranges large enough to allocate one deterministic slice per replica, and services with anonymous volumes that can be named per replica. Scaled services reject before side effects when a Compose file would create duplicate runtime names, duplicate fixed published ports, or duplicate fixed MAC addresses. Deploy job modes are tracked in [A4](#a4-partial-health-config-and-secret-stores-and-restart), and start-first service replacement is tracked in [A12](#a12-apple-gap-start-first-service-replacement).
 
 Status path:
 
@@ -1397,13 +1489,13 @@ container compose watch --no-up --no-prune --quiet api
 
 ### A13: Apple Gap, API Socket And Block I/O
 
-Expected result: `container compose up` accepts same-project `volumes_from`, external `volumes_from` backed by apple/container volume/bind/tmpfs mount metadata, `volume_driver: local`, and `volume.nocopy` as supported storage behavior. This example then rejects because Docker-compatible API socket exposure and block I/O resource controls need apple/container runtime primitives. Logging driver/options are tracked in [A10](#a10-apple-gap-service-logging-controls), while advanced mount and storage controls are tracked in [A8](#a8-apple-gap-advanced-mounts-and-storage-controls).
+Expected result: `container compose up` accepts same-project `volumes_from`, external `volumes_from` backed by apple/container volume/bind/tmpfs mount metadata, `volume_driver: local`, `volume.nocopy`, and `blkio_config` mapping to the `--blkio` contract proposed by [apple/container#1595](https://github.com/apple/container/pull/1595) on an integration runtime that contains that PR. This example still rejects on the current released upstream runtime because Docker-compatible API socket exposure is missing, and because `blkio_config` needs #1595 plus the matching `containerization` blockIO runtime API before it is released support. Logging driver/options are tracked in [A10](#a10-partial-service-logging-controls), while advanced mount and storage controls are tracked in [A8](#a8-apple-gap-advanced-mounts-and-storage-controls).
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes these service fields.
-- [`apple/container`][apple-container]: can mount Unix sockets and report block I/O stats, but it does not expose a Docker-compatible API socket and credential handoff for `use_api_socket` or create/run resource controls for `blkio_config` weight and throttling.
-- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to apple/container runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, maps external `volumes_from` by inspecting the referenced container through direct apple/container APIs, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the apple/container volume mount path, and maps long-form tmpfs `size`/`mode` through `container --mount type=tmpfs`. It rejects `use_api_socket` and `blkio_config` before resources are created with precise apple/container runtime-gap messages.
+- [`apple/container`][apple-container]: can mount Unix sockets and report block I/O stats. [apple/container#1595](https://github.com/apple/container/pull/1595) proposes blkio cgroup tuning, but released upstream apple/container does not expose a Docker-compatible API socket and credential handoff for `use_api_socket` or an accepted create/run resource-control surface for `blkio_config` weight and throttling.
+- `container-compose`: maps service `pull_policy: daily`, `weekly`, and `every_<duration>` through direct image pulls and local pull timestamp metadata, maps service `pull_policy: build` through the existing build path, maps service annotations to apple/container runtime metadata labels, maps same-project service `volumes_from` for declared Compose mounts, maps external `volumes_from` by inspecting the referenced container through direct apple/container APIs, accepts `volume_driver: local`, accepts `volume.nocopy` as no-copy behavior already matched by the apple/container volume mount path, maps long-form tmpfs `size`/`mode` through `container --mount type=tmpfs`, and maps `blkio_config` to repeatable `--blkio` arguments for integration runtimes carrying [apple/container#1595](https://github.com/apple/container/pull/1595). It rejects `use_api_socket` before resources are created with a precise apple/container runtime-gap message.
 
 The external container reference assumes an existing apple/container container named `legacy-worker` with volume, bind, or tmpfs mounts that can be represented as `container --volume` or `--mount type=tmpfs` arguments.
 
@@ -1510,15 +1602,15 @@ FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
 ```
 
-### A10: Apple Gap, Service Logging Controls
+### A10: Partial, Service Logging Controls
 
-Expected result: `container compose up` rejects this before creating resources because apple/container does not expose Compose-compatible service logging driver or logging option primitives.
+Expected result: `container compose up api worker quiet rotated` accepts the file-backed `json-file` and `local` logging drivers, maps `none` to disabled persisted capture on the local integration stack, and maps `max-size`/`max-file` to apple/container local `--log-opt` flags. Static log replay can include rotated local raw and structured log files on the local integration stack. `container compose up shipper` rejects before creating resources because apple/container does not yet expose remote logging driver primitives.
 
 Status path:
 
 - Docker Compose v2: accepts and normalizes service logging configuration.
-- [`apple/container`][apple-container]: exposes runtime log streams, but not service logging driver selection, logging options, rotation policy, or driver-specific metadata controls.
-- `container-compose`: reports the apple/container runtime gap before resources are created.
+- [`apple/container`][apple-container]: exposes local runtime log streams. The local integration stack accepts `--log-driver json-file` and `--log-driver local` as local capture aliases, adds a disabled persisted-capture policy through `--log-driver none`, parses `--log-opt max-size=<size>` and `--log-opt max-file=<count>`, has writer-level local rotation when a runtime policy supplies max size and file count, stores structured records at Docker-like line boundaries, exposes line-correct static rotated raw and structured replay, exposes raw rotation-aware follow through `ContainerClient.followLogs(id:options:)`, and exposes structured rotation-aware follow through `ContainerClient.followLogRecords(id:options:)`. It still lacks remote drivers, driver-specific metadata controls, and upstream-accepted replay/filter/follow contracts.
+- `container-compose`: accepts `json-file` and `local` as local log capture behavior, maps `none` to disabled persisted capture on the local integration stack, maps local `max-size`/`max-file` options to runtime `--log-opt` flags, requests static rotated replay for raw and timestamped logs, uses `ContainerClient.followLogRecords(id:options:)` for structured/timestamped follow, uses `ContainerClient.followLogs(id:options:)` for raw rotation-aware follow on the local integration stack, and carries an optional Docker Compose fixture for rotated `logs --tail` parity. The fixture was refreshed on 2026-06-22 with Docker Engine 29.5.2 and Docker Compose 5.1.4, then `make docker-log-fixtures` passed. The remaining gap is remote drivers and upstream runtime cursor/filter acceptance.
 
 ```yaml
 # compose.yaml
@@ -1530,16 +1622,32 @@ services:
       context: ./api
     logging:
       driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   worker:
     build:
       context: ./worker
-    log_driver: json-file
-    log_opt:
-      max-size: "10m"
+    logging:
+      driver: local
+
+  quiet:
+    build:
+      context: ./quiet
+    logging:
+      driver: none
+
+  rotated:
+    build:
+      context: ./rotated
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  shipper:
+    build:
+      context: ./shipper
+    log_driver: syslog
 ```
 
 Dockerfile: `api/Dockerfile`
@@ -1554,6 +1662,27 @@ Dockerfile: `worker/Dockerfile`
 ```dockerfile
 FROM alpine:3.20
 CMD ["sh", "-c", "while true; do echo worker; sleep 30; done"]
+```
+
+Dockerfile: `quiet/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo quiet; sleep 30; done"]
+```
+
+Dockerfile: `rotated/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo rotated; sleep 30; done"]
+```
+
+Dockerfile: `shipper/Dockerfile`
+
+```dockerfile
+FROM alpine:3.20
+CMD ["sh", "-c", "while true; do echo shipper; sleep 30; done"]
 ```
 
 ### A11: Apple Gap, Compose Model Runner
@@ -1626,7 +1755,7 @@ CMD ["sh", "-c", "date && sleep 3600"]
 
 ### O1: Config-Only Metadata
 
-Expected result: `container compose config` preserves this metadata. Runtime commands do not publish `expose`, do not act on `x-*`, and reject service-level model bindings or config/secret grants only when they need unsupported runtime behavior such as a model runner or first-class config/secret store.
+Expected result: `container compose config` preserves this metadata. Runtime commands do not publish `expose`, do not act on `x-*`, and reject service-level model bindings or config/secret grants only when they need unsupported runtime behavior such as a model runner, external config/secret lookup, or strict ownership remapping.
 
 Status path:
 

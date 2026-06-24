@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -319,6 +320,74 @@ secrets:
 	}
 }
 
+func TestLoadProjectNormalizesInlineAndEnvironmentBackedConfigsAndSecrets(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: alpine
+    configs:
+      - source: inline_config
+        target: /etc/inline.conf
+        mode: 0555
+      - source: env_config
+        target: env.conf
+        mode: "0440"
+    secrets:
+      - source: env_secret
+        target: runtime-token
+        mode: 0o400
+configs:
+  inline_config:
+    content: |
+      inline=true
+  env_config:
+    environment: APP_CONFIG
+secrets:
+  env_secret:
+    environment: APP_SECRET
+`)
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "sample", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	inlineConfig := types.FileObjectConfig(project.Configs["inline_config"].(types.ConfigObjConfig))
+	if got, want := inlineConfig.Content, "inline=true\n"; got != want {
+		t.Fatalf("inline_config content = %q, want %q", got, want)
+	}
+	envConfig := types.FileObjectConfig(project.Configs["env_config"].(types.ConfigObjConfig))
+	if got, want := envConfig.Environment, "APP_CONFIG"; got != want {
+		t.Fatalf("env_config environment = %q, want %q", got, want)
+	}
+	envSecret := types.FileObjectConfig(project.Secrets["env_secret"].(types.SecretConfig))
+	if got, want := envSecret.Environment, "APP_SECRET"; got != want {
+		t.Fatalf("env_secret environment = %q, want %q", got, want)
+	}
+	configs := project.Services["api"].Configs.([]types.ServiceConfigObjConfig)
+	if got, want := types.FileReferenceConfig(configs[0]).Target, "/etc/inline.conf"; got != want {
+		t.Fatalf("api inline config target = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(configs[0]).Mode.String(), "0555"; got != want {
+		t.Fatalf("api inline config mode = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(configs[1]).Target, "env.conf"; got != want {
+		t.Fatalf("api environment config target = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(configs[1]).Mode.String(), "0440"; got != want {
+		t.Fatalf("api environment config mode = %q, want %q", got, want)
+	}
+	secrets := project.Services["api"].Secrets.([]types.ServiceSecretConfig)
+	if got, want := types.FileReferenceConfig(secrets[0]).Target, "runtime-token"; got != want {
+		t.Fatalf("api environment secret target = %q, want %q", got, want)
+	}
+	if got, want := types.FileReferenceConfig(secrets[0]).Mode.String(), "0400"; got != want {
+		t.Fatalf("api environment secret mode = %q, want %q", got, want)
+	}
+}
+
 func TestLoadProjectMarksUnsupportedVolumeOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "data"), "data\n")
@@ -431,6 +500,21 @@ services:
     attach: false
     blkio_config:
       weight: 300
+      weight_device:
+        - path: "8:0"
+          weight: 700
+      device_read_bps:
+        - path: "8:0"
+          rate: 1048576
+      device_read_iops:
+        - path: "8:0"
+          rate: 1000
+      device_write_bps:
+        - path: "8:0"
+          rate: 2097152
+      device_write_iops:
+        - path: "8:0"
+          rate: 2000
     mac_address: 02:42:ac:11:00:03
     runtime: container-runtime-linux
     cgroup: host
@@ -485,6 +569,10 @@ services:
     command: ["nginx", "-g", "daemon off;"]
     environment:
       FOO: bar
+    extra_hosts:
+      - "somehost=162.242.195.82"
+      - "myhostv6=[::1]"
+      - "colonhost:10.0.0.5"
     dns_opt:
       - use-vc
     security_opt:
@@ -588,8 +676,26 @@ volumes:
 	if api.Attach == nil || *api.Attach {
 		t.Fatalf("api.Attach = %#v, want false", api.Attach)
 	}
-	if !api.BlkioConfig {
-		t.Fatal("api.BlkioConfig = false, want true")
+	if api.BlkioConfig == nil {
+		t.Fatal("api.BlkioConfig = nil, want normalized config")
+	}
+	if api.BlkioConfig.Weight == nil || *api.BlkioConfig.Weight != 300 {
+		t.Fatalf("api.BlkioConfig.Weight = %#v, want 300", api.BlkioConfig.Weight)
+	}
+	if got, want := api.BlkioConfig.WeightDevice, []normalizedWeightDevice{{Path: "8:0", Weight: 700}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.WeightDevice = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceReadBps, []normalizedThrottleDevice{{Path: "8:0", Rate: "1048576"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceReadBps = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceReadIOps, []normalizedThrottleDevice{{Path: "8:0", Rate: "1000"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceReadIOps = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceWriteBps, []normalizedThrottleDevice{{Path: "8:0", Rate: "2097152"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceWriteBps = %#v, want %#v", got, want)
+	}
+	if got, want := api.BlkioConfig.DeviceWriteIOps, []normalizedThrottleDevice{{Path: "8:0", Rate: "2000"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.BlkioConfig.DeviceWriteIOps = %#v, want %#v", got, want)
 	}
 	if api.MacAddress != "02:42:ac:11:00:03" {
 		t.Fatalf("api.MacAddress = %q, want 02:42:ac:11:00:03", api.MacAddress)
@@ -688,6 +794,9 @@ volumes:
 	}
 	if api.Environment["FOO"] == nil || *api.Environment["FOO"] != "bar" {
 		t.Fatalf("api.Environment[FOO] = %#v, want bar", api.Environment["FOO"])
+	}
+	if got, want := sortedStrings(api.ExtraHosts), []string{"colonhost:10.0.0.5", "myhostv6:::1", "somehost:162.242.195.82"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.ExtraHosts = %#v, want %#v", got, want)
 	}
 	if got, want := api.DNSOptions, []string{"use-vc"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("api.DNSOptions = %#v, want %#v", got, want)
@@ -886,8 +995,40 @@ services:
 	if api.Scale == nil || *api.Scale != 2 {
 		t.Fatalf("api.Scale = %#v, want 2", api.Scale)
 	}
+	if api.DeployMode != "replicated" {
+		t.Fatalf("api.DeployMode = %q, want replicated", api.DeployMode)
+	}
 	if len(api.UnsupportedDeployFields) != 0 {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
+	}
+}
+
+func TestLoadProjectAcceptsReplicatedJobDeployMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  migrate:
+    image: alpine
+    deploy:
+      mode: replicated-job
+      replicas: 2
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	migrate := project.Services["migrate"]
+	if migrate.Scale == nil || *migrate.Scale != 2 {
+		t.Fatalf("migrate.Scale = %#v, want 2", migrate.Scale)
+	}
+	if migrate.DeployMode != "replicated-job" {
+		t.Fatalf("migrate.DeployMode = %q, want replicated-job", migrate.DeployMode)
+	}
+	if len(migrate.UnsupportedDeployFields) != 0 {
+		t.Fatalf("migrate.UnsupportedDeployFields = %#v, want empty", migrate.UnsupportedDeployFields)
 	}
 }
 
@@ -1004,11 +1145,16 @@ services:
 	want := []string{
 		"resources.limits.pids",
 		"resources.reservations.devices",
-		"restart_policy",
 		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(api.UnsupportedDeployFields, want) {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want %#v", api.UnsupportedDeployFields, want)
+	}
+	if api.DeployRestartPolicy == nil {
+		t.Fatal("api.DeployRestartPolicy = nil, want deploy restart policy")
+	}
+	if api.DeployRestartPolicy.Condition != "on-failure" {
+		t.Fatalf("api.DeployRestartPolicy.Condition = %q, want on-failure", api.DeployRestartPolicy.Condition)
 	}
 }
 
@@ -1392,11 +1538,14 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global"}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(global) = %#v, want empty", fields)
 	}
-	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated-job"}); !reflect.DeepEqual(fields, []string{"mode.replicated-job"}) {
-		t.Fatalf("unsupportedDeployFields(replicated-job) = %#v, want [mode.replicated-job]", fields)
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "replicated-job"}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(replicated-job) = %#v, want empty", fields)
 	}
-	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global-job"}); !reflect.DeepEqual(fields, []string{"mode.global-job"}) {
-		t.Fatalf("unsupportedDeployFields(global-job) = %#v, want [mode.global-job]", fields)
+	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "global-job"}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(global-job) = %#v, want empty", fields)
+	}
+	if mode := deployMode(&types.DeployConfig{Mode: " Replicated-Job "}); mode != "replicated-job" {
+		t.Fatalf("deployMode() = %q, want replicated-job", mode)
 	}
 	if fields := unsupportedDeployFields(&types.DeployConfig{Mode: "custom"}); !reflect.DeepEqual(fields, []string{"mode"}) {
 		t.Fatalf("unsupportedDeployFields(custom mode) = %#v, want [mode]", fields)
@@ -1535,11 +1684,55 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 		"mode",
 		"resources.limits.pids",
 		"resources.reservations.generic_resources",
-		"restart_policy",
 		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupportedDeployFields = %#v, want %#v", got, want)
+	}
+}
+
+func TestDeployRestartPolicyValue(t *testing.T) {
+	delay := types.Duration(5 * time.Second)
+	window := types.Duration(30 * time.Second)
+	maxAttempts := uint64(3)
+
+	got := deployRestartPolicyValue(&types.DeployConfig{
+		RestartPolicy: &types.RestartPolicy{
+			Condition:   "on-failure",
+			Delay:       &delay,
+			MaxAttempts: &maxAttempts,
+			Window:      &window,
+		},
+	})
+	if got == nil {
+		t.Fatal("deployRestartPolicyValue returned nil")
+	}
+	if got.Condition != "on-failure" {
+		t.Fatalf("Condition = %q, want on-failure", got.Condition)
+	}
+	if got.DelayNanos != int64(5*time.Second) {
+		t.Fatalf("DelayNanos = %d, want %d", got.DelayNanos, int64(5*time.Second))
+	}
+	if got.MaxAttempts == nil || *got.MaxAttempts != 3 {
+		t.Fatalf("MaxAttempts = %#v, want 3", got.MaxAttempts)
+	}
+	if got.WindowNanos != int64(30*time.Second) {
+		t.Fatalf("WindowNanos = %d, want %d", got.WindowNanos, int64(30*time.Second))
+	}
+
+	emptyPolicy := deployRestartPolicyValue(&types.DeployConfig{RestartPolicy: &types.RestartPolicy{}})
+	if emptyPolicy == nil {
+		t.Fatal("deployRestartPolicyValue(empty policy) returned nil")
+	}
+	if emptyPolicy.Condition != "" || emptyPolicy.DelayNanos != 0 || emptyPolicy.MaxAttempts != nil || emptyPolicy.WindowNanos != 0 {
+		t.Fatalf("deployRestartPolicyValue(empty policy) = %#v, want zero-valued policy", emptyPolicy)
+	}
+
+	if deployRestartPolicyValue(nil) != nil {
+		t.Fatal("deployRestartPolicyValue(nil) returned non-nil")
+	}
+	if deployRestartPolicyValue(&types.DeployConfig{}) != nil {
+		t.Fatal("deployRestartPolicyValue(without policy) returned non-nil")
 	}
 }
 
@@ -1708,4 +1901,10 @@ func boolPointer(value bool) *bool {
 
 func stringPointer(value string) *string {
 	return &value
+}
+
+func sortedStrings(values []string) []string {
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	return sorted
 }

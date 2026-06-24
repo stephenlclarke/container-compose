@@ -16,6 +16,11 @@
 
 import ArgumentParser
 import ComposeCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 
 private let composePluginVersionNumber = "0.1.0"
@@ -129,6 +134,30 @@ struct GlobalOptions: ParsableArguments {
     func orchestrator() -> ComposeOrchestrator {
         ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: dryRun))
     }
+
+    /// Returns whether log prefix color should be enabled for this invocation.
+    func shouldColorLogs(noColor: Bool) -> Bool {
+        guard !noColor else {
+            return false
+        }
+        switch ansi?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "always":
+            return true
+        case "never":
+            return false
+        default:
+            return stdoutSupportsANSI()
+        }
+    }
+}
+
+/// Returns whether stdout is an interactive terminal that can display ANSI color.
+private func stdoutSupportsANSI() -> Bool {
+#if canImport(Darwin) || canImport(Glibc)
+    isatty(STDOUT_FILENO) == 1
+#else
+    false
+#endif
 }
 
 /// Shared contract for subcommands that operate on a Compose project.
@@ -456,11 +485,17 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     var follow = false
     @Option(name: [.customShort("n"), .customLong("tail")], help: "Number of lines to show from the end of logs, or all.")
     var tail: String?
-    @Option(name: .customLong("index"), help: "Target service container index.")
-    var index = 1
-    @Flag(name: .customLong("no-color"), help: "Produce monochrome output. Accepted because container-compose log output is already monochrome.")
+    @Option(name: .customLong("since"), help: "Show logs after an RFC 3339 timestamp, UNIX timestamp, or relative duration.")
+    var since: String?
+    @Option(name: .customLong("until"), help: "Show logs before an RFC 3339 timestamp, UNIX timestamp, or relative duration.")
+    var until: String?
+    @Flag(name: [.customShort("t"), .customLong("timestamps")], help: "Show runtime capture timestamps.")
+    var timestamps = false
+    @Option(name: .customLong("index"), help: "Target one service container index instead of all matching replicas.")
+    var index: Int?
+    @Flag(name: .customLong("no-color"), help: "Produce monochrome log output.")
     var noColor = false
-    @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes. Accepted because container-compose log output is already prefix-free.")
+    @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes.")
     var noLogPrefix = false
     @Argument(help: "Optional services to show.")
     var services: [String] = []
@@ -468,7 +503,20 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
     /// Streams or prints logs for selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().logs(project: loadedProject, services: services, follow: follow, tail: tail, index: index)
+        try await orchestrator().logs(
+            project: loadedProject,
+            services: services,
+            options: ComposeLogsOptions {
+                $0.follow = follow
+                $0.tail = tail
+                $0.index = index
+                $0.since = since
+                $0.until = until
+                $0.timestamps = timestamps
+                $0.noLogPrefix = noLogPrefix
+                $0.colorPrefixes = global.shouldColorLogs(noColor: noColor)
+            }
+        )
     }
 }
 
@@ -728,9 +776,9 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("all"), help: "Include containers created by the run command.")
     var all = false
-    @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Not supported by apple/container cp yet.")
+    @Flag(name: [.customShort("a"), .customLong("archive")], help: "Archive mode. Preserve source UID/GID information.")
     var archive = false
-    @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path. Not supported by apple/container cp yet.")
+    @Flag(name: [.customShort("L"), .customLong("follow-link")], help: "Always follow symbolic links in the source path.")
     var followLink = false
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
@@ -751,25 +799,43 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose top` until apple/container exposes process listing.
+/// Implements `compose top`.
 struct Top: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "top", abstract: "Display running processes.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for process listing.
-    func run() throws {
-        try global.orchestrator().unsupported("top", reason: "apple/container does not expose a process-list command yet")
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Displays process identifiers for selected service containers.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().top(project: loadedProject, options: ComposeTopOptions(services: services))
     }
 }
 
-/// Placeholder for `compose events` until apple/container exposes event streams.
+/// Implements `compose events`.
 struct Events: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "events", abstract: "Stream project events.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for event streaming.
-    func run() throws {
-        try global.orchestrator().unsupported("events", reason: "apple/container does not expose an event stream yet")
+    @Flag(name: .customLong("json"), help: "Output events as a stream of JSON objects.")
+    var json = false
+    @Option(name: .customLong("since"), help: "Show events after the specified RFC 3339 timestamp, UNIX timestamp, or relative duration.")
+    var since: String?
+    @Option(name: .customLong("until"), help: "Stream events until the specified RFC 3339 timestamp, UNIX timestamp, or relative duration.")
+    var until: String?
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+    /// Streams Docker Compose-style project container events.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().events(
+            project: loadedProject,
+            options: ComposeEventsOptions(
+                services: services,
+                json: json,
+                since: since,
+                until: until
+            )
+        )
     }
 }
 
@@ -952,25 +1018,29 @@ struct Volumes: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose pause` until apple/container exposes pause.
+/// Implements `compose pause`.
 struct Pause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "pause", abstract: "Pause service containers.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for pausing containers.
-    func run() throws {
-        try global.orchestrator().unsupported("pause", reason: "apple/container does not expose pause yet")
+    @Argument(help: "Service names.")
+    var services: [String] = []
+    /// Pauses selected service containers.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().pause(project: loadedProject, services: services)
     }
 }
 
-/// Placeholder for `compose unpause` until apple/container exposes unpause.
+/// Implements `compose unpause`.
 struct Unpause: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "unpause", abstract: "Unpause service containers.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for unpausing containers.
-    func run() throws {
-        try global.orchestrator().unsupported("unpause", reason: "apple/container does not expose unpause yet")
+    @Argument(help: "Service names.")
+    var services: [String] = []
+    /// Resumes selected paused service containers.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().unpause(project: loadedProject, services: services)
     }
 }
 

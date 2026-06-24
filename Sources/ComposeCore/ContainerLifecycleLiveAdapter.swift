@@ -30,15 +30,22 @@ public enum ContainerLifecycleLiveAdapter {
         try await process.start()
     }
 
-    /// Waits for a running container's init process without replaying stopped
-    /// container state that apple/container snapshots do not expose yet.
+    /// Waits for a container's init process, replaying stored exit metadata
+    /// for containers that have already stopped.
     public static func wait(id: String) async throws -> Int32 {
         let client = ContainerClient()
         let container = try await client.get(id: id)
-        guard container.status == .running || container.status == .stopping else {
-            throw ComposeError.unsupported("wait: container '\(id)' is \(container.status.rawValue); apple/container does not expose stored exit codes for already-stopped containers")
+        switch container.status {
+        case .stopped:
+            guard let exitCode = container.exitCode else {
+                throw ComposeError.unsupported("wait: container '\(id)' is stopped but has no stored exit code")
+            }
+            return exitCode
+        case .running, .stopping:
+            let process = try await client.bootstrap(id: id, stdio: [], dynamicEnv: [:])
+            return try await process.wait()
+        default:
+            throw ComposeError.unsupported("wait: container '\(id)' is \(container.status.rawValue)")
         }
-        let process = try await client.bootstrap(id: id, stdio: [], dynamicEnv: [:])
-        return try await process.wait()
     }
 }

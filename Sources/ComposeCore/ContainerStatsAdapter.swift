@@ -261,18 +261,3 @@ private struct StatsSnapshot {
     var second: ContainerStats
     var refresh: Bool
 }
-
-/// Renders rows as a padded table.
-private func renderTable(_ rows: [[String]]) -> String {
-    guard let firstRow = rows.first else {
-        return ""
-    }
-    let widths = rows.reduce(Array(repeating: 0, count: firstRow.count)) { current, row in
-        zip(current, row).map { max($0, $1.count) }
-    }
-    return rows.map { row in
-        row.enumerated().map { index, value in
-            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
-        }.joined(separator: "  ")
-    }.joined(separator: "\n")
-}

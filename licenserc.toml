@@ -25,6 +25,7 @@ useDefaultMapping = false
 
 includes = [
     ".github/**/*.yml",
+    "examples/**/*.yml",
     "Makefile",
     "Package.swift",
     "Sources/**/*.swift",

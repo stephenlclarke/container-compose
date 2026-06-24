@@ -20,6 +20,7 @@ on:
   push:
     branches:
       - main
+      - develop
   pull_request:
     branches:
       - main
@@ -44,16 +45,31 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
         with:
           path: container-compose
           fetch-depth: 0
 
-      - name: Checkout apple/container dependency
-        uses: actions/checkout@v7
+      - name: Read container ref
+        id: container-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(
+            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
+          )"
+          if [[ -z "$ref" ]]; then
+            printf 'APPLE_CONTAINER_REF is empty\n' >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout container dependency
+        uses: actions/checkout@v6
         with:
-          repository: apple/container
+          repository: stephenlclarke/container
           path: container
+          ref: ${{ steps.container-ref.outputs.ref }}
 
       - name: Compute SwiftPM cache fingerprint
         id: swiftpm-cache
@@ -62,6 +78,7 @@ jobs:
           set -euo pipefail
           {
             swift --version 2>&1
+            shasum -a 256 container-compose/APPLE_CONTAINER_REF
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
             shasum -a 256 container-compose/Makefile
             shasum -a 256 container/Package.swift container/Package.resolved

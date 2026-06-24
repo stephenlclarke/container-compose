@@ -30,6 +30,9 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
 
 - Optional: `sonar-scanner` and either `SONAR_TOKEN` or `SONAR_TOKEN_PERSONAL`
   for local SonarQube scans.
+- Optional: Docker Engine plus either `docker compose` or `docker-compose` for
+  local Docker Compose parity fixture refreshes. Colima works well on macOS
+  when Docker Desktop is not used.
 
 If you need to force a specific Apple developer directory, set:
 
@@ -160,6 +163,32 @@ Tools/compose-normalizer/coverage.out
 *.profraw
 ```
 
+## Docker Compose Parity Fixtures
+
+The normal `make ci` path does not require Docker. For local parity checks against Docker Compose behavior, start a local Docker daemon and run:
+
+```sh
+make docker-log-fixtures
+```
+
+This runs `examples/logging/compose.yml` through Docker Compose and compares the captured rotated log tail behavior with `Tests/ComposeCoreTests/Fixtures/logging/docker-compose-rotated-tail.expected`. The fixture currently records `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all` for rotated `json-file` and `local` logging drivers.
+
+For the local-only `events` parity check added with the fork-backed event-stream slice, run:
+
+```sh
+make docker-compose-events-parity
+```
+
+This runs Docker Compose V2 against a temporary project and validates the event behavior mirrored by `container-compose`: JSON output, container-event scope, selected-service filtering, internal Compose label stripping, and one-off container suppression. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
+Refresh the checked fixture after intentionally changing the example or adopting a newer Docker behavior with:
+
+```sh
+make docker-log-fixtures-update
+```
+
+The fixture script skips cleanly when Docker, Docker Compose, or the daemon is unavailable. Use `./scripts/capture-docker-compose-log-fixtures.sh --strict` when an unavailable Docker dependency should fail the local run.
+
 ## Package Archive
 
 Build the plugin archive consumed by the install guide:
@@ -213,10 +242,12 @@ cleanly to a Compose operation.
 | Project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.list()`, and `ClientVolume.delete(name:)` |
 | Image pull, inspect, push, and delete | `ClientImage.pull`, `ClientImage.get`, `ClientImage.push`, `ClientImage.delete`, and `ClientImage.cleanUpOrphanedBlobs()` |
 | Service lifecycle | `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ClientProcess.wait()`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and `ContainerClient.kill(id:signal:)` |
-| Logs and output-only attach | `ContainerClient.logs(id:)` |
+| Logs and output-only attach | `ContainerClient.logs(id:options:replay:)` for raw static replay, `ContainerClient.logRecords(id:options:replay:)` for timestamped static replay on the local integration stack, active `ContainerClient.logRecordFile(id:)` access for structured follow, and plugin-side raw replay cursors until apple/container exposes a rotation-aware stream |
 | Attached and detached exec | `ProcessIO.create(tty:interactive:detach:)`, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)`, `ProcessIO.handleProcess(process:log:)`, and `ClientProcess.start()` |
 | Stats | `ContainerClient.stats(id:)` with stopped-container metadata from `ContainerClient.list(filters:)` |
 | Copy and export | `ContainerClient.copyIn`, `ContainerClient.copyOut`, and `ContainerClient.export(id:archive:)` |
+
+The log adapters currently assume the local `logs-integration-chris` apple/container branch when testing structured timestamped replay, rotated replay, and logging policy mapping. The upstream direction is smaller than that integration branch: keep retrieval filters, replay policy, and presentation flags separate, then land line-correct `tail`/`since`/`until` filtering, Docker timestamp parsing, structured records, static rotated replay, a bounded rotation-aware follow cursor or stream, and local logging policy support as separate apple/container changes. Until those runtime primitives are accepted upstream, plugin-side raw rotated polling and active structured record-file follow are treated as local validation scaffolding.
 
 ### CLI Compatibility Adapter
 

@@ -14,10 +14,45 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+/// Docker image healthcheck metadata resolved from an OCI image config.
+public struct ComposeImageHealthCheck: Sendable, Equatable {
+    /// Probe command encoded by Docker as `NONE`, `CMD`, or `CMD-SHELL`.
+    public var test: [String]?
+    /// Delay between health probes, in nanoseconds.
+    public var intervalInNanoseconds: Int64?
+    /// Maximum probe runtime, in nanoseconds.
+    public var timeoutInNanoseconds: Int64?
+    /// Grace period before failures count, in nanoseconds.
+    public var startPeriodInNanoseconds: Int64?
+    /// Delay between probes during the start period, in nanoseconds.
+    public var startIntervalInNanoseconds: Int64?
+    /// Number of consecutive failures before the container is unhealthy.
+    public var retries: Int?
+
+    public init(
+        test: [String]? = nil,
+        intervalInNanoseconds: Int64? = nil,
+        timeoutInNanoseconds: Int64? = nil,
+        startPeriodInNanoseconds: Int64? = nil,
+        startIntervalInNanoseconds: Int64? = nil,
+        retries: Int? = nil
+    ) {
+        self.test = test
+        self.intervalInNanoseconds = intervalInNanoseconds
+        self.timeoutInNanoseconds = timeoutInNanoseconds
+        self.startPeriodInNanoseconds = startPeriodInNanoseconds
+        self.startIntervalInNanoseconds = startIntervalInNanoseconds
+        self.retries = retries
+    }
+}
+
 /// Low-level apple/container image calls used by `ContainerClientImageManager`.
 public protocol ContainerImageAPIClienting: Sendable {
     /// Returns whether `reference` exists in the local image store.
     func imageExists(reference: String) async throws -> Bool
+
+    /// Returns Docker image healthcheck metadata for `reference` and `platform`.
+    func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck?
 
     /// Pulls and unpacks `reference`.
     func pullImage(reference: String) async throws
@@ -33,6 +68,9 @@ public protocol ContainerImageAPIClienting: Sendable {
 public protocol ContainerImageManaging: Sendable {
     /// Returns whether `reference` exists in the local image store.
     func imageExists(_ reference: String) async throws -> Bool
+
+    /// Returns Docker image healthcheck metadata for `reference` and `platform`.
+    func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck?
 
     /// Pulls `reference`.
     func pullImage(_ reference: String) async throws
@@ -50,11 +88,13 @@ public protocol ContainerImageManaging: Sendable {
 /// Thin apple/container client wrapper around image API calls.
 public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public typealias Exists = @Sendable (String) async throws -> Bool
+    public typealias HealthCheck = @Sendable (String, String?) async throws -> ComposeImageHealthCheck?
     public typealias Pull = @Sendable (String) async throws -> Void
     public typealias Push = @Sendable (String) async throws -> String
     public typealias Delete = @Sendable (String, Bool) async throws -> String?
 
     private let existsOperation: Exists
+    private let healthCheckOperation: HealthCheck
     private let pullOperation: Pull
     private let pushOperation: Push
     private let deleteOperation: Delete
@@ -63,6 +103,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public init(client: ContainerImageAPIClienting) {
         self.init(
             exists: { try await client.imageExists(reference: $0) },
+            healthCheck: { try await client.imageHealthCheck(reference: $0, platform: $1) },
             pull: { try await client.pullImage(reference: $0) },
             push: { try await client.pushImage(reference: $0) },
             delete: { try await client.deleteImage(reference: $0, force: $1) }
@@ -72,11 +113,13 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Creates a facade from explicit image operation closures.
     public init(
         exists: @escaping Exists,
+        healthCheck: @escaping HealthCheck = { _, _ in nil },
         pull: @escaping Pull,
         push: @escaping Push,
         delete: @escaping Delete
     ) {
         self.existsOperation = exists
+        self.healthCheckOperation = healthCheck
         self.pullOperation = pull
         self.pushOperation = push
         self.deleteOperation = delete
@@ -90,6 +133,11 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Checks the local image store through `ClientImage.get(names:)`.
     public func imageExists(reference: String) async throws -> Bool {
         try await existsOperation(reference)
+    }
+
+    /// Reads Docker image healthcheck metadata through `ClientImage`.
+    public func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
+        try await healthCheckOperation(reference, platform)
     }
 
     /// Pulls and unpacks an image through `ClientImage`.
@@ -119,6 +167,11 @@ public struct ContainerClientImageManager: ContainerImageManaging {
     /// Checks the local image store through the direct apple/container image API.
     public func imageExists(_ reference: String) async throws -> Bool {
         try await client.imageExists(reference: reference)
+    }
+
+    /// Reads Docker image healthcheck metadata through the direct apple/container image API.
+    public func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
+        try await client.imageHealthCheck(reference: reference, platform: platform)
     }
 
     /// Pulls an image through the direct apple/container image API.

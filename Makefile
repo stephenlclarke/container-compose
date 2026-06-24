@@ -52,7 +52,7 @@ SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
-MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md SUPPORT.md .github/pull_request_template.md
+MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md COMPATIBILITY.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
 
 # Some local toolchains can build Swift Testing targets without adding the
 # framework and interop library to SwiftPM's generated test runner. Derive
@@ -67,7 +67,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-events-parity coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -161,6 +161,7 @@ cli-smoke-built:
 	mkdir -p "$$tmpdir/src"; \
 	printf 'services:\n  api:\n    image: alpine\n    develop:\n      watch:\n        - path: ./src\n          action: rebuild\n' > "$$tmpdir/watch.yml"; \
 	printf 'services:\n  worker:\n    image: alpine\n' > "$$tmpdir/scale.yml"; \
+	printf 'services:\n  worker:\n    image: alpine\n    scale: 2\n' > "$$tmpdir/logs-scale.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - db\n  db:\n    image: alpine\n' > "$$tmpdir/scale-deps.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "8080-8081:80"\n' > "$$tmpdir/scale-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    volumes:\n      - /scratch\n' > "$$tmpdir/scale-volumes.yml"; \
@@ -382,6 +383,9 @@ cli-smoke-built:
 	[[ "$$detached_output" == *"--name demo-api-1 --detach"* ]]; \
 	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
+	logs_scaled_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/logs-scale.yml" logs worker)"; \
+	[[ "$$logs_scaled_output" == *"container logs demo-worker-1"* ]]; \
+	[[ "$$logs_scaled_output" == *"container logs demo-worker-2"* ]]; \
 	logs_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n 5 api)"; \
 	[[ "$$logs_tail_output" == *"container logs -n 5 demo-api-1"* ]]; \
 	logs_compact_tail_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -n5 api)"; \
@@ -389,6 +393,12 @@ cli-smoke-built:
 	logs_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --tail all api)"; \
 	[[ "$$logs_all_output" == *"container logs demo-api-1"* ]]; \
 	[[ "$$logs_all_output" != *" -n "* ]]; \
+	logs_filter_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --since 2026-06-18T10:00:00Z --until 30m api)"; \
+	[[ "$$logs_filter_output" == *"container logs --since 2026-06-18T10:00:00Z --until 30m demo-api-1"* ]]; \
+	logs_timestamp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --timestamps api 2>&1 || true)"; \
+	[[ "$$logs_timestamp_output" == *"unsupported compose feature: logs --timestamps: apple/container does not expose timestamped log records"* ]]; \
+	logs_filtered_follow_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --follow --since 2026-06-18T10:00:00Z api 2>&1 || true)"; \
+	[[ "$$logs_filtered_follow_output" == *"unsupported compose feature: logs --follow with --since/--until: apple/container does not expose filtered follow streams"* ]]; \
 	logs_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --index 2 api)"; \
 	[[ "$$logs_index_output" == *"container logs demo-api-2"* ]]; \
 	logs_display_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --no-color --no-log-prefix api)"; \
@@ -490,9 +500,8 @@ cli-smoke-built:
 	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \
 	[[ "$$top_output" == *"unsupported compose feature: top:"* ]]; \
 	[[ "$$top_output" == *"apple/container does not expose a process-list command yet"* ]]; \
-	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json 2>&1 || true)"; \
-	[[ "$$events_output" == *"unsupported compose feature: events:"* ]]; \
-	[[ "$$events_output" == *"apple/container does not expose an event stream yet"* ]]; \
+	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json)"; \
+	[[ "$$events_output" == *"+ container events"* ]]; \
 	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 80)"; \
 	[[ "$$port_output" == *"0.0.0.0:8080"* ]]; \
 	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api 2>&1 || true)"; \
@@ -518,6 +527,15 @@ cli-smoke-built:
 	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \
 	[[ "$$publish_output" == *"unsupported compose feature: publish:"* ]]; \
 	[[ "$$publish_output" == *"apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet"* ]]
+
+docker-log-fixtures:
+	./scripts/capture-docker-compose-log-fixtures.sh
+
+docker-log-fixtures-update:
+	./scripts/capture-docker-compose-log-fixtures.sh --update
+
+docker-compose-events-parity:
+	./Tools/parity/check-compose-events.sh --strict
 
 coverage: swift-coverage go-test
 
