@@ -1,0 +1,199 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Quality
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  swift-address-sanitizer:
+    name: Swift ASan
+    if: github.event_name != 'schedule'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v6
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Read container ref
+        id: apple-container-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(
+            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
+          )"
+          if [[ -z "$ref" ]]; then
+            printf 'APPLE_CONTAINER_REF is empty\n' >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout container dependency
+        uses: actions/checkout@v6
+        with:
+          repository: stephenlclarke/container
+          path: container
+          ref: ${{ steps.apple-container-ref.outputs.ref }}
+
+      - name: Compute SwiftPM sanitizer cache fingerprint
+        id: swiftpm-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            swift --version 2>&1
+            shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
+            shasum -a 256 container-compose/APPLE_CONTAINER_REF
+            shasum -a 256 container/Package.swift container/Package.resolved
+          } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM ASan artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            container-compose/.build
+            container-compose/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-asan-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-asan-v1-
+
+      - name: Print toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Run Swift tests with Address Sanitizer
+        run: swift test --disable-automatic-resolution --sanitize=address
+        working-directory: container-compose
+
+  swift-thread-sanitizer:
+    name: Swift TSan Nightly
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v6
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Read container ref
+        id: apple-container-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(
+            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
+          )"
+          if [[ -z "$ref" ]]; then
+            printf 'APPLE_CONTAINER_REF is empty\n' >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout container dependency
+        uses: actions/checkout@v6
+        with:
+          repository: stephenlclarke/container
+          path: container
+          ref: ${{ steps.apple-container-ref.outputs.ref }}
+
+      - name: Compute SwiftPM sanitizer cache fingerprint
+        id: swiftpm-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            swift --version 2>&1
+            shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
+            shasum -a 256 container-compose/APPLE_CONTAINER_REF
+            shasum -a 256 container/Package.swift container/Package.resolved
+          } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM TSan artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            container-compose/.build
+            container-compose/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-tsan-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-tsan-v1-
+
+      - name: Print toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Run Swift tests with Thread Sanitizer
+        run: swift test --disable-automatic-resolution --sanitize=thread
+        working-directory: container-compose
+
+  swift-style-advisory:
+    name: SwiftLint/SwiftFormat Advisory
+    if: github.event_name != 'schedule'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v6
+
+      - name: Install Swift style tools
+        run: |
+          set -euo pipefail
+          if ! command -v swiftlint >/dev/null 2>&1; then
+            brew install swiftlint
+          fi
+          if ! command -v swiftformat >/dev/null 2>&1; then
+            brew install swiftformat
+          fi
+          swiftlint version
+          swiftformat --version
+
+      - name: Run SwiftLint
+        continue-on-error: true
+        run: swiftlint lint --strict --quiet Package.swift Sources Tests
+
+      - name: Run SwiftFormat lint
+        continue-on-error: true
+        run: swiftformat Package.swift Sources Tests --lint --swift-version 6.2
