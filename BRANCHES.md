@@ -37,11 +37,9 @@ Do not maintain extra frozen branches. Future promotions should move validated `
 
 | Branch | Status | Notes |
 | --- | --- | --- |
-| `logs-integration` | Superseded by `develop` as the public development lane | Existing `container-compose` proving branch for log, lifecycle, copy, event, and runtime-control behavior against the forked runtime. Keep it as a history and work-in-progress reference while the current uncommitted cleanup is drained. |
-| `logs-integration-chris` | Superseded by `develop` as the public development lane in the `container` fork | Existing runtime proving branch layered around Chris George's log retrieval direction plus the lifecycle primitives needed by Compose. |
-| `full-compose-preview` | Legacy preview archive | Older fork-backed visitor branch. Prefer `main` for testers and `develop` for active work. |
-| `full-compose-runtime` | Legacy runtime preview archive in the `container` fork | Older fork-backed runtime visitor branch. Prefer the fork `main` branch for testers and fork `develop` for active work. |
 | `compose-v2-preview` | Legacy preview archive | Preserves older preview harness and handoff state. Do not treat this as the current compatibility target. |
+
+The former broad `logs-integration`, `logs-integration-chris`, `full-compose-preview`, and `full-compose-runtime` branches have been folded into the current `develop` / `main` lane model or deleted as stale archives. Historical handoff notes may still mention those names when they identify where a slice originally came from, but new work should not target them.
 
 ## Upstreaming Rule
 
