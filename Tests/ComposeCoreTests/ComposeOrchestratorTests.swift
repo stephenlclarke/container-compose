@@ -1362,6 +1362,114 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("service create plan maps logging to typed policy")
+    func serviceCreatePlanMapsLoggingToTypedPolicy() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = .object([
+                        "driver": .string("local"),
+                        "options": .object(["max-file": .string("3")]),
+                    ])
+                },
+            ]
+        )
+
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
+
+        #expect(plan.name == "demo-api-1")
+        #expect(plan.imageReference == "example/api")
+        #expect(plan.logging.storage == .local)
+        #expect(plan.logging.maxFileCount == 3)
+        #expect(plan.logging.maxSizeInBytes == nil)
+    }
+
+    @Test("service create plan maps disabled logging to typed policy")
+    func serviceCreatePlanMapsDisabledLoggingToTypedPolicy() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.logging = .object(["driver": .string("none")])
+                },
+            ]
+        )
+
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
+
+        #expect(plan.logging.storage == .none)
+        #expect(plan.logging.maxFileCount == nil)
+        #expect(plan.logging.maxSizeInBytes == nil)
+    }
+
+    @Test("service create plan maps create-time runtime primitives")
+    func serviceCreatePlanMapsCreateTimeRuntimePrimitives() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.restart = "on-failure:3"
+                    $0.hostname = "api-01"
+                    $0.domainName = "example.test"
+                    $0.extraHosts = ["db:10.0.0.5"]
+                    $0.sysctls = ["net.core.somaxconn": "1024"]
+                    $0.blkioConfig = ComposeBlkioConfig(
+                        weight: 300,
+                        weightDevice: [ComposeBlkioWeightDevice(path: "8:0", weight: 700)],
+                        deviceReadIOps: [ComposeBlkioThrottleDevice(path: "8:0", rate: "1000")]
+                    )
+                },
+            ]
+        )
+
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
+
+        #expect(plan.restartPolicy.mode == .onFailure)
+        #expect(plan.restartPolicy.maximumRetryCount == 3)
+        #expect(plan.hostname == "api-01")
+        #expect(plan.domainname == "example.test")
+        #expect(plan.hosts.map(\.ipAddress) == ["10.0.0.5"])
+        #expect(plan.hosts.flatMap(\.hostnames) == ["db"])
+        #expect(plan.sysctls == ["net.core.somaxconn": "1024"])
+        #expect(plan.blockIO?.weight == 300)
+        #expect(plan.blockIO?.weightDevice.first?.major == 8)
+        #expect(plan.blockIO?.weightDevice.first?.minor == 0)
+        #expect(plan.blockIO?.weightDevice.first?.weight == 700)
+        #expect(plan.blockIO?.throttleReadIOPSDevice.first?.rate == 1000)
+    }
+
+    @Test("service create plan maps explicit healthcheck to typed policy")
+    func serviceCreatePlanMapsExplicitHealthcheckToTypedPolicy() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.command = ["serve"]
+                    $0.environment = ["LOG_LEVEL": "debug"]
+                    $0.workingDir = "/srv"
+                    $0.user = "1000:1000"
+                    $0.healthcheck = .object([
+                        "test": .array([.string("CMD-SHELL"), .string("test -f /tmp/ready")]),
+                        "interval": .string("5s"),
+                        "retries": .number(2),
+                    ])
+                },
+            ]
+        )
+
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "api")
+        let healthCheck = try #require(plan.healthCheck)
+
+        #expect(healthCheck.process.executable == "/bin/sh")
+        #expect(healthCheck.process.arguments == ["-c", "test -f /tmp/ready"])
+        #expect(healthCheck.process.environment == ["LOG_LEVEL=debug"])
+        #expect(healthCheck.process.workingDirectory == "/srv")
+        #expect(healthCheck.process.user.description == "1000:1000")
+        #expect(healthCheck.intervalInNanoseconds == 5_000_000_000)
+        #expect(healthCheck.retries == 2)
+    }
+
     @Test("create surfaces network create failures before creating containers")
     func createSurfacesNetworkCreateFailuresBeforeCreatingContainers() async throws {
         let runner = RecordingRunner()

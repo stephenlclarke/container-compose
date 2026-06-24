@@ -2579,6 +2579,28 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 }
 
 public extension ComposeOrchestrator {
+    /// Builds the typed create-time plan for a service container without
+    /// invoking the current command-vector bridge.
+    func serviceCreatePlan(
+        project: ComposeProject,
+        serviceName: String,
+        options: ContainerServiceCreatePlanOptions = ContainerServiceCreatePlanOptions()
+    ) async throws -> ContainerServiceCreatePlan {
+        guard let service = project.services[serviceName] else {
+            throw ComposeError.invalidProject("unknown service '\(serviceName)'")
+        }
+        let runtimeName = options.name ?? containerName(project: project, service: service, oneOff: options.oneOff)
+        return try await serviceCreatePlan(
+            project: project,
+            service: service,
+            runtimeName: runtimeName,
+            planOptions: options,
+            externalVolumeMounts: [:],
+            labelOverrides: [],
+            imageHealthCheckCache: nil
+        )
+    }
+
     /// Returns selected services after their dependencies using a stable
     /// depth-first traversal. Optional dependencies are included when the
     /// service exists and skipped when the project does not define it.
@@ -2619,6 +2641,55 @@ public extension ComposeOrchestrator {
 }
 
 private extension ComposeOrchestrator {
+    /// Builds the Compose-owned typed projection that will feed direct
+    /// apple/container service creation once image/kernel resolution is wired.
+    func serviceCreatePlan(
+        project: ComposeProject,
+        service: ComposeService,
+        runtimeName: String,
+        planOptions: ContainerServiceCreatePlanOptions,
+        externalVolumeMounts: ExternalVolumeMounts,
+        labelOverrides: [ComposeLabelOverride],
+        imageHealthCheckCache: ComposeImageHealthCheckCache?
+    ) async throws -> ContainerServiceCreatePlan {
+        guard let image = serviceImage(project: project, service: service) else {
+            throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
+        }
+        let baseProcess = serviceCreateBaseProcess(service: service)
+        let healthCheck = planOptions.resolveHealthCheck
+            ? try await runtimeHealthCheck(
+                project: project,
+                service: service,
+                cache: imageHealthCheckCache,
+                baseProcess: baseProcess
+            )
+            : nil
+        let restartPolicy = planOptions.includeRestartPolicy
+            ? try runtimeRestartPolicy(service: service) ?? .no
+            : .no
+        return try ContainerServiceCreatePlan(
+            name: runtimeName,
+            imageReference: image,
+            oneOff: planOptions.oneOff,
+            autoRemove: planOptions.autoRemove,
+            labels: serviceCreateLabels(
+                project: project,
+                service: service,
+                oneOff: planOptions.oneOff,
+                externalVolumeMounts: externalVolumeMounts,
+                labelOverrides: labelOverrides
+            ),
+            logging: runtimeLogConfiguration(service: service),
+            healthCheck: healthCheck,
+            restartPolicy: restartPolicy,
+            hostname: runtimeHostnameArgument(service: service),
+            domainname: runtimeDomainnameArgument(service: service),
+            hosts: runtimeHostEntries(service: service),
+            sysctls: runtimeSysctls(service: service),
+            blockIO: runtimeBlockIO(service: service)
+        )
+    }
+
     /// Resolves an optional service selection into deterministic services.
     func selectedServices(project: ComposeProject, selected: [String]) throws -> [ComposeService] {
         if selected.isEmpty {
@@ -5985,6 +6056,21 @@ private extension ComposeOrchestrator {
         } else {
             runtimeName = containerName(project: project, service: service, oneOff: run.oneOff)
         }
+        let createPlan = try await serviceCreatePlan(
+            project: project,
+            service: service,
+            runtimeName: runtimeName,
+            planOptions: ContainerServiceCreatePlanOptions(
+                name: runtimeName,
+                oneOff: run.oneOff,
+                autoRemove: run.remove,
+                includeRestartPolicy: !run.oneOff,
+                resolveHealthCheck: !options.dryRun
+            ),
+            externalVolumeMounts: externalVolumeMounts,
+            labelOverrides: run.labelOverrides,
+            imageHealthCheckCache: imageHealthCheckCache
+        )
         args.append(contentsOf: ["--name", runtimeName])
         if run.detach {
             args.append("--detach")
@@ -6018,8 +6104,8 @@ private extension ComposeOrchestrator {
         for label in run.labelOverrides {
             args.append(contentsOf: ["--label", label.rawValue])
         }
-        if let logDriver = try runtimeLogDriverArgument(service: service) {
-            args.append(contentsOf: ["--log-driver", logDriver])
+        if createPlan.logging.storage == .none {
+            args.append(contentsOf: ["--log-driver", "none"])
         }
         args.append(contentsOf: try runtimeLogOptionArguments(service: service))
         args.append(contentsOf: try await runtimeHealthCheckArguments(
@@ -8130,6 +8216,86 @@ private func serviceLabels(
         labels.append("com.apple.container.compose.project.config-file=\(firstFile)")
     }
     return labels
+}
+
+/// Returns the typed metadata labels for direct service creation.
+private func serviceCreateLabels(
+    project: ComposeProject,
+    service: ComposeService,
+    oneOff: Bool,
+    externalVolumeMounts: ExternalVolumeMounts = [:],
+    labelOverrides: [ComposeLabelOverride] = [],
+    materializedConfigSecretRoot: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
+) throws -> [String: String] {
+    var labels = try serviceLabels(
+        project: project,
+        service: service,
+        oneOff: oneOff,
+        externalVolumeMounts: externalVolumeMounts,
+        materializedConfigSecretRoot: materializedConfigSecretRoot
+    ).reduce(into: [String: String]()) { result, raw in
+        let parsed = labelKeyValue(raw)
+        result[parsed.key] = parsed.value
+    }
+    let effectiveLabels = try effectiveServiceLabels(project: project, service: service)
+    let overriddenLabelKeys = Set(labelOverrides.map(\.key))
+    for (key, value) in effectiveLabels where !overriddenLabelKeys.contains(key) {
+        labels[key] = value
+    }
+    for (key, value) in try effectiveServiceAnnotations(
+        service: service,
+        conflictingLabelKeys: Set(effectiveLabels.keys),
+        conflictingOverrideKeys: overriddenLabelKeys
+    ) {
+        labels[key] = value
+    }
+    for override in labelOverrides {
+        labels[override.key] = override.value ?? ""
+    }
+    return labels
+}
+
+/// Splits a runtime label assignment into key/value metadata.
+private func labelKeyValue(_ raw: String) -> (key: String, value: String) {
+    guard let equals = raw.firstIndex(of: "=") else {
+        return (raw, "")
+    }
+    return (String(raw[..<equals]), String(raw[raw.index(after: equals)...]))
+}
+
+/// Builds enough of the init process shape for typed create-time projections.
+private func serviceCreateBaseProcess(service: ComposeService) -> ProcessConfiguration {
+    let executable: String
+    let arguments: [String]
+    if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
+        executable = entrypoint[0]
+        arguments = Array(entrypoint.dropFirst()) + (service.command ?? [])
+    } else if let command = service.command, !command.isEmpty {
+        executable = command[0]
+        arguments = Array(command.dropFirst())
+    } else {
+        executable = "/bin/sh"
+        arguments = []
+    }
+
+    let environment = (service.environment ?? [:])
+        .sorted(by: { $0.key < $1.key })
+        .map { key, value in
+            if let value {
+                return "\(key)=\(value)"
+            }
+            return key
+        }
+    let workingDirectory = service.workingDir ?? "/"
+    let user = service.user.map { ProcessConfiguration.User.raw(userString: $0) } ?? .id(uid: 0, gid: 0)
+    return ProcessConfiguration(
+        executable: executable,
+        arguments: arguments,
+        environment: environment,
+        workingDirectory: workingDirectory,
+        terminal: service.tty == true,
+        user: user
+    )
 }
 
 /// Hashes the compose file list in a stable order.
