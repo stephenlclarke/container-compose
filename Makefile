@@ -157,6 +157,12 @@ cli-smoke-built:
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
 	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \
+	logs_misordered_help_output="$$(".build/debug/compose" logs help)"; \
+	[[ "$$logs_misordered_help_output" == *"Usage:  container compose logs [OPTIONS] [SERVICE...]"* ]]; \
+	[[ "$$logs_misordered_help_output" != *"compose-normalizer"* ]]; \
+	logs_plain_misordered_help_output="$$(".build/debug/compose" --ansi never logs help)"; \
+	[[ "$$logs_plain_misordered_help_output" == *"Usage:  container compose logs [OPTIONS] [SERVICE...]"* ]]; \
+	[[ "$$logs_plain_misordered_help_output" != *"$${ansi_escape}["* ]]; \
 	run_help_output="$$(".build/debug/compose" run --help)"; \
 	[[ "$$run_help_output" == *"-p, --publish stringArray"* ]]; \
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \
@@ -166,6 +172,8 @@ cli-smoke-built:
 	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \
 	bridge_help_output="$$(".build/debug/compose" bridge --help)"; \
 	[[ "$$bridge_help_output" == *"Management Commands:"* ]]; \
+	bridge_misordered_help_output="$$(".build/debug/compose" bridge help)"; \
+	[[ "$$bridge_misordered_help_output" == *"Usage:  container compose bridge [OPTIONS] COMMAND"* ]]; \
 	bridge_convert_help_output="$$(".build/debug/compose" bridge convert --help)"; \
 	[[ "$$bridge_convert_help_output" == *"Usage:  container compose bridge convert"* ]]; \
 	[[ "$$bridge_convert_help_output" == *"-o, --output string"* ]]; \

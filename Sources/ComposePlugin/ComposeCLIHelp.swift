@@ -21,7 +21,7 @@ enum ComposeCLIHelp {
     /// Prints Docker Compose compatible help when the invocation asks for it.
     static func renderIfRequested(arguments: [String]) -> Bool {
         let rewritten = ComposeArgumentRewriter.rewrite(arguments)
-        guard rewritten.contains("--help") || rewritten.contains("-h") else {
+        guard isHelpRequested(arguments: rewritten) else {
             return false
         }
 
@@ -42,6 +42,67 @@ enum ComposeCLIHelp {
 
         print(renderedHelp(rootHelp, commandPath: [], useANSI: useANSI))
         return true
+    }
+
+    private static func isHelpRequested(arguments: [String]) -> Bool {
+        if arguments.contains("--help") || arguments.contains("-h") {
+            return true
+        }
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "help" {
+                return true
+            }
+            if commandNames.contains(argument) {
+                if argument == "bridge" {
+                    return bridgePathContainsHelp(in: arguments, startingAt: index + 1)
+                }
+                return commandPathContainsHelp(in: arguments, startingAt: index + 1)
+            }
+            index = nextGlobalArgumentIndex(arguments: arguments, currentIndex: index)
+        }
+        return false
+    }
+
+    private static func nextGlobalArgumentIndex(arguments: [String], currentIndex: Int) -> Int {
+        let argument = arguments[currentIndex]
+        if consumesGlobalValue(argument), !argument.contains("="), arguments.indices.contains(currentIndex + 1) {
+            return currentIndex + 2
+        }
+        return currentIndex + 1
+    }
+
+    private static func commandPathContainsHelp(in arguments: [String], startingAt startIndex: Int) -> Bool {
+        var index = startIndex
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "help" {
+                return true
+            }
+            if consumesGlobalValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+                index += 2
+                continue
+            }
+            return false
+        }
+        return false
+    }
+
+    private static func bridgePathContainsHelp(in arguments: [String], startingAt startIndex: Int) -> Bool {
+        var index = startIndex
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "help" {
+                return true
+            }
+            if consumesBridgeValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+                index += 2
+            } else {
+                index += 1
+            }
+        }
+        return false
     }
 
     private enum SupportLevel {
@@ -248,7 +309,7 @@ enum ComposeCLIHelp {
         var index = startIndex
         while index < arguments.count {
             let argument = arguments[index]
-            if argument == "--help" || argument == "-h" {
+            if argument == "--help" || argument == "-h" || argument == "help" {
                 break
             }
             if consumesBridgeValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
