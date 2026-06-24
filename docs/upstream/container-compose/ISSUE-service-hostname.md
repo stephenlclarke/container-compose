@@ -26,13 +26,13 @@ References:
 
 Before this change, any non-empty service `hostname` was rejected as an `apple/container` runtime gap.
 
-With this change, `container-compose` validates Compose `hostname` values before creating resources and maps valid values to the fork-backed `container run/create --hostname` runtime surface for service containers, `create`, and one-off `run` containers.
+With this change, `container-compose` validates Compose `hostname` values before creating resources and maps valid values to the plugin-owned runtime hostname projection for service containers, `create`, and one-off `run` containers. The current live execution path still renders `container run/create --hostname` through the command-vector bridge while typed service creation is being wired.
 
 ## Likely owner
 
 both
 
-`apple/container` owns the runtime hostname primitive. `container-compose` owns the Compose model validation and translation to the runtime argument.
+`apple/container` owns the typed runtime hostname primitive. `container-compose` owns the Compose model validation and translation to the runtime projection.
 
 ## Minimal example
 
@@ -48,7 +48,7 @@ services:
 
 Expected runtime behavior on the fork-backed integration branch:
 
-- `container-compose` emits `--hostname api-01`.
+- `container-compose` currently emits `--hostname api-01` through the command-vector bridge.
 - The runtime makes `api-01` visible inside the container.
 - `domainname` remains unsupported until `apple/container` and the lower runtime expose a domain-name primitive.
 

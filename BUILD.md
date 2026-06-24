@@ -126,6 +126,18 @@ make ci
 
 `make ci` runs required Markdown linting, Python coverage-tool tests, Go formatting checks, Hawkeye license-header checks, Swift and Go coverage, the coverage threshold gate, the Go helper build, and the CLI smoke test. Swift build and test targets use the checked-in `Package.resolved` by default so CI fails quickly if dependency versions need an intentional lockfile refresh. The CI smoke test reuses the debug `compose` executable emitted by the Swift coverage test build, while standalone `make cli-smoke` still builds the debug executable before exercising representative commands.
 
+GitHub Actions keeps the expensive and security-oriented checks in separate workflows so PR feedback stays narrow and Apple-facing upstream slices can adopt the same checks one at a time:
+
+| Workflow | Trigger | Coverage |
+| --- | --- | --- |
+| `CI / Validate` | Pushes to `main`, PRs to `main` or `develop`, and manual runs | Runs `make ci`, including Swift Testing/XCTest through SwiftPM, Go tests, Markdown linting, Hawkeye license-header validation, coverage gates, and the CLI smoke test. |
+| `Quality / Swift ASan` | Pushes to `main` or `develop`, every PR, and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=address` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
+| `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=thread` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
+| `Quality / SwiftLint/SwiftFormat Advisory` | Pushes to `main` or `develop`, every PR, and manual runs | Runs `swiftlint lint --strict --quiet Package.swift Sources Tests` and `swiftformat Package.swift Sources Tests --lint --swift-version 6.2`. These checks are advisory until a repo-owned SwiftLint and SwiftFormat baseline/configuration lands, because the current default tools report existing repository-wide style drift. |
+| `CodeQL / Analyze` | Pushes, PRs, weekly schedule, and manual runs | Runs the separate Swift and Go CodeQL analysis workflow. |
+
+SwiftPM on the current Apple Swift 6.3.2 toolchain exposes `address`, `thread`, `undefined`, `scudo`, and `fuzzer` sanitizer modes. It does not expose a separate `leak` mode, so there is no standalone Leak Sanitizer job yet; keep ASan as the PR sanitizer gate and add a dedicated LSan job only when the supported SwiftPM sanitizer list includes it.
+
 Run the faster non-coverage source checks with:
 
 ```sh
@@ -180,6 +192,14 @@ make docker-compose-events-parity
 ```
 
 This runs Docker Compose V2 against a temporary project and validates the event behavior mirrored by `container-compose`: JSON output, container-event scope, selected-service filtering, internal Compose label stripping, and one-off container suppression. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
+For the local-only restart-policy parity check added with the fork-backed lifecycle slice, run:
+
+```sh
+make docker-compose-restart-policy-parity
+```
+
+This runs Docker Compose V2 against a temporary project and validates the container `HostConfig.RestartPolicy` shape mirrored by `container-compose`: service-level `restart`, deploy-over-service precedence, deploy `condition: any`, deploy `condition: none`, and `on-failure:0` as an unlimited retry policy. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
 
 Refresh the checked fixture after intentionally changing the example or adopting a newer Docker behavior with:
 

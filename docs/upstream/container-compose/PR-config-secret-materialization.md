@@ -22,6 +22,12 @@ Docker Compose supports file-like runtime config and secret sources that can be 
 
 External configs/secrets and strict `uid`/`gid` ownership semantics remain separate runtime gaps because they need a lookup/store or ownership primitive rather than a simple local source file.
 
+## Commit Tracking
+
+- Compose code commit: `51be9a5` (`feat(configs): materialize compose config secrets`)
+- Container code commit: not required; this slice only changes `container-compose`
+- Lower runtime code commit: not required
+
 ## Implementation Details
 
 - Added a configurable `ComposeExecutionOptions.materializedConfigSecretDirectory`, defaulting under the per-user `.container-compose` state directory.

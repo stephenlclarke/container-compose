@@ -23,8 +23,8 @@ References:
 
 - Docker Compose `cp --follow-link`: <https://docs.docker.com/reference/cli/docker/compose/cp/>
 - Docker `container cp --follow-link`: <https://docs.docker.com/reference/cli/docker/container/cp/>
-- Runtime handoff files in the container fork: `docs/upstream/copy/ISSUE-copy-follow-link.md` and `docs/upstream/copy/PR-copy-follow-link.md`
-- Lower runtime handoff files in the containerization fork: `docs/upstream/copy/ISSUE-containerization-copy-follow-link.md` and `docs/upstream/copy/PR-containerization-copy-follow-link.md`
+- Runtime handoff files: `docs/upstream/apple-container/copy/ISSUE-copy-follow-link.md` and `docs/upstream/apple-container/copy/PR-copy-follow-link.md`
+- Lower runtime handoff files: `docs/upstream/apple-containerization/copy/ISSUE-containerization-copy-follow-link.md` and `docs/upstream/apple-containerization/copy/PR-containerization-copy-follow-link.md`
 
 Existing upstream context:
 

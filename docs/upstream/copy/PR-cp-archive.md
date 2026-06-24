@@ -23,8 +23,8 @@ References:
 
 - Docker Compose `cp --archive`: <https://docs.docker.com/reference/cli/docker/compose/cp/>
 - Docker `container cp --archive`: <https://docs.docker.com/reference/cli/docker/container/cp/>
-- Runtime handoff files in the container fork: `docs/upstream/copy/ISSUE-copy-archive.md` and `docs/upstream/copy/PR-copy-archive.md`
-- Lower runtime handoff files in the containerization fork: `docs/upstream/copy/ISSUE-containerization-copy-archive-ownership.md` and `docs/upstream/copy/PR-containerization-copy-archive-ownership.md`
+- Runtime handoff files: `docs/upstream/apple-container/copy/ISSUE-copy-archive.md` and `docs/upstream/apple-container/copy/PR-copy-archive.md`
+- Lower runtime handoff files: `docs/upstream/apple-containerization/copy/ISSUE-containerization-copy-archive-ownership.md` and `docs/upstream/apple-containerization/copy/PR-containerization-copy-archive-ownership.md`
 
 Existing upstream context:
 

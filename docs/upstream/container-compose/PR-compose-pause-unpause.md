@@ -20,13 +20,19 @@ References:
 - Docker container pause: <https://docs.docker.com/reference/cli/docker/container/pause/>
 - Docker container unpause: <https://docs.docker.com/reference/cli/docker/container/unpause/>
 
+## Commit Tracking
+
+- Compose code commit: `a114072` (`feat(lifecycle): support compose pause controls`)
+- Container code commit: `61a11f4` in `stephenlclarke/container` (`feat(runtime): add container pause controls`)
+- Lower runtime code commit: `e172174` in `stephenlclarke/containerization` (`feat(runtime): add linux container pause controls`)
+
 ## Implementation Details
 
 - Added `pauseContainer(id:)` and `unpauseContainer(id:)` to the lifecycle API and lifecycle manager protocols.
 - Added default direct `ContainerClient.pause(id:)` and `ContainerClient.unpause(id:)` operations to `ContainerLifecycleAPIClient`.
 - Added `ComposeOrchestrator.pause(project:services:)` and `ComposeOrchestrator.unpause(project:services:)`.
 - Changed the plugin `Pause` and `Unpause` commands from unsupported placeholders to async project commands.
-- Preserved dry-run behavior by rendering `container pause <id>` and `container unpause <id>`.
+- Preserved dry-run behavior with Compose-owned direct runtime markers, `compose-runtime pause <id>` and `compose-runtime unpause <id>`, instead of depending on Apple CLI command shapes.
 - Updated compatibility documentation and PLAN tracking to describe fork-backed support and upstream gating.
 - Updated `Package.resolved` to pin `containerization` to the same fork revision used by the matching `container` branch.
 
@@ -40,7 +46,7 @@ Focused validation:
 
 ```bash
 swift test --filter ComposeOrchestratorTests/pauseAndUnpauseUseDirectRuntimeAPI
-swift test --filter ComposeOrchestratorTests/pauseAndUnpauseDryRunEmitRuntimeCommands
+swift test --filter ComposeOrchestratorTests/pauseAndUnpauseDryRunEmitComposeRuntimeOperations
 swift test --filter ComposeOrchestratorTests/lifecycleManagerMapsComposeLifecycleToDirectAPIClient
 swift test --filter ComposeOrchestratorTests/lifecycleAPIClientForwardsConfiguredOperations
 swift build --product compose

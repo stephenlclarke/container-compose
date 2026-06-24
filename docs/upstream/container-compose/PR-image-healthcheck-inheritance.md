@@ -3,7 +3,7 @@
 ## Summary
 
 - Add a direct image healthcheck metadata API to the Compose image manager.
-- Map Dockerfile-inherited image healthchecks to `container run/create --health-*` flags.
+- Map Dockerfile-inherited image healthchecks to the plugin-owned healthcheck projection.
 - Merge timing-only Compose healthcheck overrides over image defaults.
 - Keep explicit `healthcheck.test` and `disable: true` behavior unchanged.
 
@@ -18,9 +18,16 @@
 
 Docker Compose inherits image-level Dockerfile `HEALTHCHECK` metadata when a service does not declare a replacement probe. It also allows services to tune image probes by setting timing fields such as `interval`, `timeout`, `start_period`, `start_interval`, or `retries` without repeating the probe command.
 
-The local `stephenlclarke/container` `logs-integration-chris` branch now carries `feat(api): expose image healthcheck metadata` (`831a013`), documented by `ISSUE-image-healthcheck-metadata.md` / `PR-image-healthcheck-metadata.md`. That runtime slice references [apple/container#440](https://github.com/apple/container/issues/440), [apple/container#1502](https://github.com/apple/container/issues/1502), and [apple/container#1504](https://github.com/apple/container/pull/1504), and exposes Docker image config `Healthcheck` metadata through `ImageResource.Variant.healthCheck`.
+The local `stephenlclarke/container` `logs-integration-chris` branch now carries `feat(api): expose image healthcheck metadata` (`831a013`), documented by `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` / `docs/upstream/apple-container/PR-image-healthcheck-metadata.md`. That runtime slice references [apple/container#440](https://github.com/apple/container/issues/440), [apple/container#1502](https://github.com/apple/container/issues/1502), and [apple/container#1504](https://github.com/apple/container/pull/1504), and exposes Docker image config `Healthcheck` metadata through `ImageResource.Variant.healthCheck`.
 
 With that fork primitive available, this plugin can implement Compose inheritance and override semantics without adding Compose-specific code to `apple/container`.
+
+## Commit Tracking
+
+- Compose code commit: `3f1f442` (`feat(health): inherit image healthchecks`)
+- Container code commit: `831a013` in `stephenlclarke/container` (`feat(api): expose image healthcheck metadata`)
+- Related healthcheck API commits: `d995767`, `f41c817`, `fa97154`, and `a4fb99e` in `stephenlclarke/container`
+- Lower runtime code commit: not required
 
 ## Implementation Details
 
@@ -35,6 +42,7 @@ With that fork primitive available, this plugin can implement Compose inheritanc
   - Explicit `healthcheck.test` maps exactly as before.
   - Missing service `healthcheck.test` inherits the image command when metadata is available.
   - Timing-only overrides replace corresponding image defaults.
+- The current live execution path still renders `--health-*` flags through the command-vector bridge while typed service creation is being wired; typed execution should pass `ContainerConfiguration.healthCheck` directly.
 - Plain image inheritance is best-effort when metadata lookup fails and the service did not explicitly tune healthcheck fields; timing-only overrides still fail clearly because a command is required.
 
 ## Docker Compose Compatibility Notes

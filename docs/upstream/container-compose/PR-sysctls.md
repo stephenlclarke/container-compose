@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Map compose-go normalized service `sysctls` to repeatable `container run/create --sysctl` arguments.
+- Map compose-go normalized service `sysctls` to the plugin-owned runtime sysctl projection.
 - Validate malformed sysctl names before runtime commands.
 - Update compatibility/status documentation to distinguish fork-backed support from released upstream support.
 
@@ -15,7 +15,7 @@
 
 ## Motivation and Context
 
-Docker Compose exposes service-level sysctls through `services.<name>.sysctls`. `container-compose` already receives that field from compose-go, and the local `apple/container` fork already has `ContainerConfiguration.sysctls` plus Linux runtime application. The missing piece was the small command bridge: `container run/create --sysctl name=value`.
+Docker Compose exposes service-level sysctls through `services.<name>.sysctls`. `container-compose` already receives that field from compose-go, and the local `apple/container` fork already has `ContainerConfiguration.sysctls` plus Linux runtime application. The plugin now owns the Compose normalization and can use the command-vector bridge until the typed service-create adapter passes `ContainerConfiguration.sysctls` directly.
 
 This change implements the Compose side of that bridge after the matching runtime slice in the local container fork.
 
@@ -23,11 +23,17 @@ References:
 
 - Compose service `sysctls`: <https://docs.docker.com/reference/compose-file/services/#sysctls>
 - Docker run `--sysctl`: <https://docs.docker.com/reference/cli/docker/container/run/#sysctl>
-- Runtime handoff in the local container fork: `ISSUE-sysctl-cli.md` / `PR-sysctl-cli.md`
+- Runtime primitive in the local container fork: typed `ContainerConfiguration.sysctls` plus Linux runtime application.
+
+## Commit Tracking
+
+- Compose code commit: `b578e8f` (`feat(runtime): map compose sysctls`)
+- Container code commit: `508e3a9` in `stephenlclarke/container` (`feat(runtime): add sysctl create flags`)
+- Lower runtime code commit: not required
 
 ## Implementation Details
 
-- Replaced the early unsupported-field rejection with `runtimeSysctlArguments(service:)`.
+- Replaced the early unsupported-field rejection with deterministic sysctl projection.
 - Rendered sysctls in sorted name order for deterministic command output and recreate hashes.
 - Added validation for empty names and names containing `=`, because the runtime CLI syntax uses `name=value`.
 - Added `up` and one-off `run` command mapping tests.
@@ -36,8 +42,8 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported by this plugin on the integration branch: service `sysctls` mapping to `--sysctl`.
-- Runtime support remains fork-backed until the `apple/container` `--sysctl` CLI/runtime bridge is accepted upstream.
+- Supported by this plugin on the integration branch: service `sysctls` normalization and typed projection, with the current live execution path still using `--sysctl` command-vector output.
+- Runtime support remains fork-backed until equivalent typed sysctl configuration is accepted upstream.
 - Non-goal: privileged containers, host devices, GPUs, supplemental groups, or security profile support.
 
 ## Testing

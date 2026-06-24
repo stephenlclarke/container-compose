@@ -17,7 +17,7 @@
 
 Docker Compose still accepts the legacy `external_links` field for linking a service container to a container or service managed outside the current Compose application. Docker Compose v2 keeps this as part of its `getLinks` path and passes `external:alias` entries to the Docker engine link surface.
 
-apple/container does not currently expose a Docker-compatible `HostConfig.Links` equivalent. The local fork does expose two narrower primitives that can model a useful local subset: direct container snapshot inspection and explicit host-entry injection through `container run/create --add-host`.
+apple/container does not currently expose a Docker-compatible `HostConfig.Links` equivalent. The local fork does expose two narrower primitives that can model a useful local subset: direct container snapshot inspection and explicit host-entry injection. The current live execution path still renders generated host entries through `container run/create --add-host` while typed service creation is being wired.
 
 This change keeps Compose-specific legacy-link policy in `container-compose`. It resolves `external_links` only when the external container is visible through the direct API and exactly one source runtime network can be matched. Anything more ambiguous still fails clearly instead of guessing.
 
@@ -30,6 +30,12 @@ References:
 - Related apple/container DNS/interface issues: [apple/container#456](https://github.com/apple/container/issues/456), [apple/container#457](https://github.com/apple/container/issues/457), [apple/container#310](https://github.com/apple/container/issues/310)
 - Related apple/container host-entry PR direction: [apple/container#1340](https://github.com/apple/container/pull/1340)
 
+## Commit Tracking
+
+- Compose code commit: `81c164d` (`feat(network): map compose external links`)
+- Container code dependency: `bf1d6b4` in `stephenlclarke/container` (`feat(api): add explicit host entries`)
+- Lower runtime code commit: not required
+
 ## Implementation Details
 
 - Added `ComposeContainerNetworkAttachment` and projected `ContainerSnapshot.networks` through `ContainerClientDiscoveryManager`.
@@ -38,7 +44,7 @@ References:
 - Resolved each external link through `discoveryManager.getContainer(id:)`.
 - Required the source service to have exactly one Compose network.
 - Required the referenced external container to have exactly one attachment on the source service's runtime network.
-- Generated `ALIAS=IP` transient host entries, letting the existing `extra_hosts` renderer produce `--add-host ALIAS:IP`.
+- Generated `ALIAS=IP` transient host entries, letting the existing `extra_hosts` projection currently produce `--add-host ALIAS:IP` through the command-vector bridge.
 - Kept multi-network, missing-container, and no-shared-network cases as clear pre-side-effect errors.
 - Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
 

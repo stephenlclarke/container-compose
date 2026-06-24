@@ -23,7 +23,14 @@ References:
 
 - Compose service `links`: <https://docs.docker.com/reference/compose-file/services/#links>
 - Compose default network behavior: <https://docs.docker.com/reference/compose-file/networks/#the-default-network>
-- Existing links handoff files: `ISSUE-links.md` and `PR-links.md`
+- Existing links handoff files: `docs/upstream/container-compose/ISSUE-links.md` and `docs/upstream/container-compose/PR-links.md`
+
+## Commit Tracking
+
+- Compose code commit: `87ef000` (`test(network): cover default links`)
+- Compose feature dependency: `48367c7` (`feat(network): map compose links`)
+- Container code dependency: `cf5e8d1` in `stephenlclarke/container` (`feat(network): add attachment aliases`)
+- Lower runtime code commit: not required
 
 ## Implementation Details
 
@@ -33,7 +40,7 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: `links` where linked services share exactly one normalized Compose network, including the implicit `default` network.
+- Supported now on the fork-backed integration branch: `links` where linked services share exactly one normalized Compose network, including the implicit `default` network, currently through the command-vector bridge.
 - Remaining gap: multi-network links, shared aliases, and `external_links` still need richer apple/container DNS and external-service lookup primitives.
 - Remaining gap: released upstream still needs accepted network alias support before branches pinned to upstream can enable the alias projection.
 
@@ -54,7 +61,7 @@ Additional local checks:
 ```sh
 make check
 make coverage-check
-markdownlint --disable MD013 MD041 -- COMPATIBILITY.md PLAN.md STATUS.md ISSUE-links-default-network.md PR-links-default-network.md
+markdownlint --disable MD013 MD041 -- COMPATIBILITY.md PLAN.md STATUS.md docs/upstream/container-compose/ISSUE-links-default-network.md docs/upstream/container-compose/PR-links-default-network.md
 git diff --check
 ```
 

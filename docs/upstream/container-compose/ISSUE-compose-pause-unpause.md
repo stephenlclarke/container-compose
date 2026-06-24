@@ -18,7 +18,7 @@ The implementation should:
 
 - Resolve Compose service names, replicas, and custom `container_name` values through the existing service-target logic.
 - Use direct `ContainerClient` lifecycle APIs through `ContainerClientLifecycleManager`.
-- Preserve dry-run output as equivalent `container pause` and `container unpause` commands.
+- Preserve dry-run output as Compose-owned direct runtime markers, `compose-runtime pause` and `compose-runtime unpause`, instead of depending on Apple CLI command shapes.
 - Keep Compose service selection in `container-compose`; do not move Compose-specific behavior into `apple/container`.
 - Keep compatibility docs explicit that this support is fork-backed until the corresponding `apple/container` and `apple/containerization` surfaces are accepted upstream.
 

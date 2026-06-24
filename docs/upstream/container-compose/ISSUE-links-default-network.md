@@ -37,7 +37,7 @@ Before this change, tests and documentation still described implicit default-net
 
 container-compose
 
-`container-compose` owns the Compose model translation and documentation. No new `apple/container` primitive is needed for the normalized single-network case beyond the existing fork-backed alias surface.
+`container-compose` owns the Compose model translation and documentation. No new `apple/container` primitive is needed for the normalized single-network case beyond the existing fork-backed alias surface. The current live execution path still renders aliases through the command-vector bridge while typed service creation is being wired.
 
 ## Minimal example
 
@@ -58,7 +58,7 @@ Expected runtime behavior on the fork-backed integration branch:
 
 - compose-go normalizes both services onto `default`.
 - `container-compose` creates `default-links-demo_default`.
-- `container-compose` starts `redis` before `api` and emits `--network default-links-demo_default,alias=cache` for the linked target service.
+- `container-compose` starts `redis` before `api` and currently emits `--network default-links-demo_default,alias=cache` for the linked target service through the command-vector bridge.
 
 ## Code of Conduct and documentation
 

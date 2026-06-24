@@ -39,7 +39,7 @@ With this change, `container-compose` supports the safe local subset that can be
 - The source service must have exactly one Compose network.
 - The referenced existing apple/container container must be discoverable through `ContainerClient.get`.
 - The referenced container must have exactly one attachment on the source service's runtime network.
-- `CONTAINER:ALIAS` maps `ALIAS` to the referenced container's IPv4 address by generating `--add-host ALIAS:IP`.
+- `CONTAINER:ALIAS` maps `ALIAS` to the referenced container's IPv4 address by generating a transient host entry. The current live execution path still renders that host entry as `--add-host ALIAS:IP` through the command-vector bridge.
 - `CONTAINER` maps the container name as the alias.
 - The resolved host entry is added to the transient service model, so config-hash recreate behavior detects external address changes.
 
@@ -82,7 +82,7 @@ Expected runtime behavior on the fork-backed integration branch:
 
 - `container-compose` inspects `legacy-db`.
 - `container-compose` verifies that `legacy-db` is attached to `external-links-demo_backend`.
-- The `api` service container receives `--add-host db:<legacy-db-ipv4>`.
+- The `api` service container currently receives `--add-host db:<legacy-db-ipv4>` through the command-vector bridge.
 - Multi-network external links, missing external containers, and external containers on a different network fail before resource creation.
 
 ## Code of Conduct and documentation

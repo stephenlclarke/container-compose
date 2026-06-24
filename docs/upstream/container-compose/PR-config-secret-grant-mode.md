@@ -22,6 +22,12 @@ The previous materialization slice gave `container-compose` control over generat
 
 `uid` and `gid` remain runtime gaps. A host bind mount cannot reliably project arbitrary in-container ownership, so generated grants that request ownership remapping fail before resources are created.
 
+## Commit Tracking
+
+- Compose code commit: `4d3bc2e` (`feat(configs): honor generated grant modes`)
+- Container code commit: not required; this slice only changes `container-compose`
+- Lower runtime code commit: not required
+
 ## Implementation Details
 
 - Extended the private service config/secret grant parser to retain `uid`, `gid`, and `mode`.

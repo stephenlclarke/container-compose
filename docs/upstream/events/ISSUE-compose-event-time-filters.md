@@ -29,8 +29,6 @@ This Compose slice stacks on the local Apple runtime time-filter primitive:
 
 - `docs/upstream/events/ISSUE-container-event-time-filters.md`
 - `docs/upstream/events/PR-container-event-time-filters.md`
-- `docs/upstream/apple-container/ISSUE-container-event-time-filters.md`
-- `docs/upstream/apple-container/PR-container-event-time-filters.md`
 
 It also depends on the first event-stream slice:
 
@@ -48,9 +46,9 @@ With this slice on the local fork-backed integration stack:
 - `container compose events --json --since VALUE --until VALUE [SERVICE...]` parses filters using the same Docker-compatible parser as logs.
 - Accepted filters include RFC 3339 timestamps, Unix timestamps, and relative durations.
 - The plugin passes typed `Date` bounds through `ContainerEventOptions` to `ContainerClient.events(options:)`.
-- Dry-run renders the runtime command with `container events --since VALUE --until VALUE`.
+- Dry-run renders the Compose-owned direct runtime read with `compose-runtime events --since VALUE --until VALUE`, so this plugin does not depend on an Apple `container events` CLI command shape.
 - The existing Compose policy remains unchanged: project filtering, selected-service filtering, one-off suppression, Compose-private label stripping, and JSON Lines output stay in this repository.
-- Default text event formatting is tracked by the separate follow-up docs `ISSUE-compose-events-text-format.md` and `PR-compose-events-text-format.md`.
+- Default text event formatting is tracked by the separate follow-up docs `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`.
 
 ## Local Docker Compose Parity Evidence
 

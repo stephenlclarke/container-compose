@@ -66,7 +66,7 @@ Use the Compose code commit as one future `container-compose` PR. Use the contai
 - Replaced the `Events` placeholder in `ComposePlugin.swift` with an async project-backed command.
 - `--json` is required for this first slice; default text formatting is handled by the follow-up `PR-compose-events-text-format.md` slice.
 - `--since` and `--until` were intentionally left to the separate event time-filter follow-up rather than mixed into this first Compose mapping PR.
-- Dry-run renders the generic runtime command `container events`.
+- Dry-run renders the Compose-owned direct runtime read, `compose-runtime events`, rather than depending on an Apple CLI command shape.
 - Added focused tests for service selection, dry-run behavior, option gating, and event-stream JSON filtering/rendering.
 - Added `Tools/parity/check-compose-events.sh` and `make docker-compose-events-parity` as an opt-in Docker Compose V2 comparison that is intentionally not part of CI.
 

@@ -21,7 +21,7 @@ References:
 
 - Compose service `sysctls`: <https://docs.docker.com/reference/compose-file/services/#sysctls>
 - Docker run `--sysctl`: <https://docs.docker.com/reference/cli/docker/container/run/#sysctl>
-- Runtime handoff in the local container fork: `ISSUE-sysctl-cli.md` / `PR-sysctl-cli.md`
+- Runtime primitive in the local container fork: typed `ContainerConfiguration.sysctls` plus Linux runtime application.
 
 ## Current container-compose behavior
 
@@ -30,14 +30,14 @@ Before this change, `container-compose` preserved compose-go normalized `sysctls
 With this change, `container-compose` supports the plugin-owned mapping:
 
 - compose-go normalized `sysctls` are rendered deterministically.
-- `up`, `create`, and one-off `run` render repeatable `container run/create --sysctl name=value` arguments.
+- `up`, `create`, and one-off `run` currently render repeatable `container run/create --sysctl name=value` arguments while the typed service-create adapter is still being wired.
 - Empty sysctl names and names containing `=` are rejected before runtime commands.
 
 ## Likely owner
 
 `container-compose` owns the Compose model validation and command rendering.
 
-`apple/container` owns the runtime `--sysctl` surface and Linux namespace support. The local fork already has `ContainerConfiguration.sysctls`; the new container handoff exposes it through repeatable `container run/create --sysctl name=value`.
+`apple/container` owns the typed sysctl configuration and Linux namespace support. The local fork already has `ContainerConfiguration.sysctls`; the command-vector bridge is temporary until `container-compose` can pass the typed field directly.
 
 ## Minimal example
 

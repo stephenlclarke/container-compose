@@ -32,7 +32,7 @@ Reference surfaces:
 
 ## Current container-compose Behavior
 
-Before this change, `container-compose` could map explicit service `healthcheck.test` definitions to fork-backed `apple/container` `--health-*` flags, but it rejected timing-only service healthchecks because `apple/container` did not expose image-level Dockerfile healthcheck metadata.
+Before this change, `container-compose` could map explicit service `healthcheck.test` definitions to the plugin-owned healthcheck projection, currently rendered as fork-backed `apple/container` `--health-*` flags through the command-vector bridge, but it rejected timing-only service healthchecks because `apple/container` did not expose image-level Dockerfile healthcheck metadata.
 
 With the fork-backed image metadata slice present, `container-compose` can now read image `HEALTHCHECK` metadata through the direct image API and merge Compose service overrides over those image defaults.
 
@@ -69,13 +69,15 @@ Expected runtime invocation on the fork-backed integration branch:
 container run --health-cmd "test -f /tmp/ready" --health-interval 5s --health-timeout 3s --health-retries 2 ...
 ```
 
+This is the current command-vector bridge output; typed execution should pass `ContainerConfiguration.healthCheck` directly.
+
 ## References
 
 - apple/container issue: [apple/container#440](https://github.com/apple/container/issues/440)
 - apple/container health status issue: [apple/container#1502](https://github.com/apple/container/issues/1502)
 - apple/container health status PR: [apple/container#1504](https://github.com/apple/container/pull/1504)
-- Fork handoff: `ISSUE-image-healthcheck-metadata.md` and `PR-image-healthcheck-metadata.md` in `stephenlclarke/container`
-- Previous plugin handoff: `ISSUE-service-restart-policy.md` and `PR-service-restart-policy.md`
+- Fork handoff: `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` and `docs/upstream/apple-container/PR-image-healthcheck-metadata.md` in `stephenlclarke/container`
+- Previous plugin handoff: `docs/upstream/container-compose/ISSUE-service-restart-policy.md` and `docs/upstream/container-compose/PR-service-restart-policy.md`
 
 ## Code Of Conduct And Documentation
 
