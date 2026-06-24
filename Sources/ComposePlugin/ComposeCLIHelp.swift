@@ -26,21 +26,197 @@ enum ComposeCLIHelp {
         }
 
         let command = commandPath(in: rewritten)
+        let useANSI = shouldUseANSI(arguments: rewritten)
         if command == ["bridge"] {
-            print(bridgeHelp)
+            print(renderedHelp(bridgeHelp, commandPath: command, useANSI: useANSI))
             return true
         }
         if let help = nestedCommandHelp(for: command) {
-            print(help)
+            print(renderedHelp(help, commandPath: command, useANSI: useANSI))
             return true
         }
         if command.count == 1, let help = commandHelp[command[0]] {
-            print(help)
+            print(renderedHelp(help, commandPath: command, useANSI: useANSI))
             return true
         }
 
-        print(rootHelp)
+        print(renderedHelp(rootHelp, commandPath: [], useANSI: useANSI))
         return true
+    }
+
+    private enum SupportLevel {
+        case supported
+        case partiallySupported
+        case notSupported
+
+        var label: String {
+            switch self {
+            case .supported:
+                "supported"
+            case .partiallySupported:
+                "partially supported"
+            case .notSupported:
+                "not supported"
+            }
+        }
+
+        var color: String {
+            switch self {
+            case .supported:
+                "\u{001B}[32m"
+            case .partiallySupported:
+                "\u{001B}[38;5;208m"
+            case .notSupported:
+                "\u{001B}[31m"
+            }
+        }
+    }
+
+    private static let resetColor = "\u{001B}[0m"
+
+    private static let supportByCommand: [String: SupportLevel] = [
+        "attach": .partiallySupported,
+        "bridge": .notSupported,
+        "bridge convert": .notSupported,
+        "bridge transformations": .notSupported,
+        "bridge transformations create": .notSupported,
+        "bridge transformations list": .notSupported,
+        "bridge transformations ls": .notSupported,
+        "build": .partiallySupported,
+        "commit": .notSupported,
+        "config": .partiallySupported,
+        "cp": .partiallySupported,
+        "create": .partiallySupported,
+        "down": .partiallySupported,
+        "events": .partiallySupported,
+        "exec": .partiallySupported,
+        "export": .partiallySupported,
+        "images": .partiallySupported,
+        "kill": .partiallySupported,
+        "logs": .partiallySupported,
+        "ls": .partiallySupported,
+        "pause": .notSupported,
+        "port": .partiallySupported,
+        "ps": .partiallySupported,
+        "publish": .notSupported,
+        "pull": .partiallySupported,
+        "push": .partiallySupported,
+        "restart": .partiallySupported,
+        "rm": .partiallySupported,
+        "run": .partiallySupported,
+        "scale": .partiallySupported,
+        "start": .partiallySupported,
+        "stats": .partiallySupported,
+        "stop": .partiallySupported,
+        "top": .notSupported,
+        "unpause": .notSupported,
+        "up": .partiallySupported,
+        "version": .supported,
+        "volumes": .partiallySupported,
+        "wait": .partiallySupported,
+        "watch": .partiallySupported,
+    ]
+
+    private static func shouldUseANSI(arguments: [String]) -> Bool {
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "--ansi", arguments.indices.contains(index + 1) {
+                return arguments[index + 1] != "never"
+            }
+            if argument.hasPrefix("--ansi=") {
+                return argument != "--ansi=never"
+            }
+            index += 1
+        }
+        return true
+    }
+
+    private static func renderedHelp(_ help: String, commandPath: [String], useANSI: Bool) -> String {
+        var rendered = colorizeCommandListings(in: help, commandPath: commandPath, useANSI: useANSI)
+        if commandPath.isEmpty || commandPath == ["bridge"] || commandPath == ["bridge", "transformations"] {
+            rendered = insertSupportLegend(into: rendered, useANSI: useANSI)
+        } else if let support = supportLevel(for: commandPath) {
+            rendered = insertSupportLine(into: rendered, support: support, useANSI: useANSI)
+        }
+        return rendered
+    }
+
+    private static func colorizeCommandListings(in help: String, commandPath: [String], useANSI: Bool) -> String {
+        help
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                let line = String(line)
+                guard let commandName = listedCommandName(in: line) else {
+                    return line
+                }
+                let path = listedCommandPath(commandName, commandPath: commandPath)
+                guard let support = supportLevel(for: path) else {
+                    return line
+                }
+                return line.replacingOccurrences(
+                    of: commandName,
+                    with: styled(commandName, support: support, useANSI: useANSI),
+                    options: [],
+                    range: line.range(of: commandName)
+                )
+            }
+            .joined(separator: "\n")
+    }
+
+    private static func listedCommandName(in line: String) -> String? {
+        guard line.hasPrefix("  ") else {
+            return nil
+        }
+        let trimmed = line.dropFirst(2)
+        guard let token = trimmed.split(whereSeparator: { $0 == " " || $0 == "\t" }).first else {
+            return nil
+        }
+        return String(token)
+    }
+
+    private static func listedCommandPath(_ commandName: String, commandPath: [String]) -> [String] {
+        if commandPath == ["bridge"] {
+            return ["bridge", commandName]
+        }
+        if commandPath == ["bridge", "transformations"] {
+            return ["bridge", "transformations", commandName]
+        }
+        return [commandName]
+    }
+
+    private static func insertSupportLegend(into help: String, useANSI: Bool) -> String {
+        let legend = [
+            "Support:",
+            styled("supported", support: .supported, useANSI: useANSI),
+            "|",
+            styled("partially supported", support: .partiallySupported, useANSI: useANSI),
+            "|",
+            styled("not supported", support: .notSupported, useANSI: useANSI),
+        ].joined(separator: " ")
+        if let range = help.range(of: "\n\nManagement Commands:") ?? help.range(of: "\n\nCommands:") {
+            return String(help[..<range.lowerBound]) + "\n\n" + legend + String(help[range.lowerBound...])
+        }
+        return help + "\n\n" + legend
+    }
+
+    private static func insertSupportLine(into help: String, support: SupportLevel, useANSI: Bool) -> String {
+        let line = "\n\nSupport: \(styled(support.label, support: support, useANSI: useANSI))"
+        if let range = help.range(of: "\n\nOptions:") {
+            return String(help[..<range.lowerBound]) + line + String(help[range.lowerBound...])
+        }
+        return help + line
+    }
+
+    private static func supportLevel(for commandPath: [String]) -> SupportLevel? {
+        supportByCommand[commandPath.joined(separator: " ")]
+    }
+
+    private static func styled(_ value: String, support: SupportLevel, useANSI: Bool) -> String {
+        guard useANSI else {
+            return value
+        }
+        return "\(support.color)\(value)\(resetColor)"
     }
 
     private static func commandPath(in arguments: [String]) -> [String] {

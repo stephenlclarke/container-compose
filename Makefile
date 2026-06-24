@@ -140,6 +140,19 @@ cli-smoke-built:
 	[[ "$$version_compact_format_output" == '{"version":"0.1.0"}' ]]; \
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
+	ansi_escape="$$(printf '\033')"; \
+	root_help_output="$$(".build/debug/compose" --help)"; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mup$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[31mpause$${ansi_escape}[0m"* ]]; \
+	plain_help_output="$$(".build/debug/compose" --ansi never --help)"; \
+	[[ "$$plain_help_output" == *"Support: supported | partially supported | not supported"* ]]; \
+	[[ "$$plain_help_output" != *"$${ansi_escape}["* ]]; \
+	version_help_output="$$(".build/debug/compose" version --help)"; \
+	[[ "$$version_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	commit_help_output="$$(".build/debug/compose" commit --help)"; \
+	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[31mnot supported$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
