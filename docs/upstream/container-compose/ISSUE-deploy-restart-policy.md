@@ -36,7 +36,7 @@ With the fork-backed runtime restart slices present, `container-compose` can now
 Both:
 
 - `container-compose` owns Compose model normalization, deploy-over-service precedence, one-off `run` behavior, and early validation for unsupported deploy restart fields.
-- `apple/container` needs accepted restart-policy create/runtime/timing primitives before released upstream branches can rely on the behavior.
+- `apple/container` needs accepted restart-policy create/runtime/timing primitives before upstream-compatible builds can rely on the behavior.
 
 ## Minimal Example
 

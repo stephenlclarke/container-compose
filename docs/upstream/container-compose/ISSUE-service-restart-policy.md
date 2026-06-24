@@ -32,7 +32,7 @@ With the fork-backed runtime restart slices present, `container-compose` can now
 
 Both:
 
-- `apple/container` needs accepted restart-policy create options and runtime restart scheduling before released upstream branches can rely on the behavior.
+- `apple/container` needs accepted restart-policy create options and runtime restart scheduling before upstream-compatible builds can rely on the behavior.
 - `container-compose` needs to validate and map service-level `restart` to typed runtime create options once that primitive exists.
 
 ## Minimal Example
