@@ -15,7 +15,7 @@ This PR draft follows `.github/pull_request_template.md`.
 
 ## Motivation and Context
 
-This is a small, upstream-shaped slice from the local `logs-integration-chris` proving branch. It builds on Chris George's log retrieval-options direction in [apple/container#1592](https://github.com/apple/container/pull/1592), the `tail` / `until` retrieval-filter follow-up in [apple/container#1764](https://github.com/apple/container/pull/1764), and the local raw rotation/replay slices already documented in this branch. Docker-shaped timestamp parsing is now owned by `container-compose`, so [apple/container#1765](https://github.com/apple/container/pull/1765) is optional Apple CLI convenience rather than a plugin dependency.
+This is a small, upstream-shaped slice from the current `stephenlclarke/container` `develop` fork integration lane. It builds on Chris George's log retrieval-options direction in [apple/container#1592](https://github.com/apple/container/pull/1592), the `tail` / `until` retrieval-filter follow-up in [apple/container#1764](https://github.com/apple/container/pull/1764), and the local raw rotation/replay slices already documented in this branch. Docker-shaped timestamp parsing is now owned by `container-compose`, so [apple/container#1765](https://github.com/apple/container/pull/1765) is optional Apple CLI convenience rather than a plugin dependency.
 
 Docker supports `container logs --follow --timestamps`, `--since`, `--until`, and `--tail`. Docker Compose exposes the same behavior for service logs through `docker compose logs`. `container-compose` needs the runtime to own structured followed replay because plugin-side polling of merged retained snapshots is expensive and can duplicate or miss records around rotation.
 

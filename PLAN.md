@@ -44,7 +44,7 @@ The cross-implementation lozenges are intentionally separate from the support-st
 
 `container-compose` currently calls `ContainerClient.logs(id:options:replay:)` through `ContainerClientLogManager` for static raw replay, calls `ContainerClient.followLogs(id:options:)` for raw followed logs, and calls `ContainerClient.followLogRecords(id:options:)` for followed structured/timestamped logs on the local integration stack. Static raw replay passes `tail` and rotated replay requests to apple/container where available. Static timestamped output and time-window rendering pass `tail`, `--since`, and `--until` to `ContainerClient.logRecords(id:options:replay:)`, then render the returned structured records locally. The local apple/container branch now applies structured replay and follow filters after logical log-line reconstruction, including split records, chunked records, final complete EOF records, retained `stdio.jsonl` replay, and active-file rotation. The extracted `logs-structured-record-api` branch exposes the active-file upstream surfaces as `ContainerClient.logRecords(id:options:)`, `ContainerClient.logRecordFile(id:)`, `ContainerLogRecord`, `ContainerLogOptions.tail/since/until`, XPC routes `containerLogRecords` and `containerLogRecordFile`, active raw bytes in `stdio.log`, and active structured JSON Lines records in `stdio.jsonl`. The local apple/container integration branch now also exposes `ContainerClient.followLogs(id:options:)` for raw stdio follow and `ContainerClient.followLogRecords(id:options:)` for structured/timestamped follow across rename-based local rotation. `container-compose` keeps Compose-specific service fan-out, prefix/color formatting, line reconstruction, and container-stop flushing in the plugin.
 
-[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local [`stephenlclarke/container` `logs-integration-chris`](https://github.com/stephenlclarke/container/tree/logs-integration-chris) branch is linear from upstream `main`, starts with Chris George's [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) / [`apple/container#1592`](https://github.com/apple/container/pull/1592) retrieval-options direction, then tightens the API boundary by keeping `ContainerLogOptions` focused on retrieval filters, `ContainerLogReplayOptions` focused on rotated replay policy, and timestamp rendering as command/plugin presentation. The branch layers tail/until, static filtered replay, byte-preserving raw log tail filtering, Apple CLI timestamp parsing, Docker-like line-framed structured log storage, `ContainerClient.logRecords(id:options:replay:)` with line-correct tail/since/until filtering, `ContainerClient.logRecordFile(id:)`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, raw rotation-aware follow through `ContainerClient.followLogs(id:options:)`, structured rotation-aware follow through `ContainerClient.followLogRecords(id:options:)`, static `container logs --timestamps` CLI rendering, and followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured record streams. It is an integration proving branch, not the intended upstream PR shape.
+[`apple/container`](https://github.com/apple/container) currently exposes `container logs [--boot] [--follow] [-n <n>] <container-id>` and `ContainerClient.logs(id:)` upstream. The local [`stephenlclarke/container` `develop`](https://github.com/stephenlclarke/container/tree/develop) branch is linear from upstream `main`, starts with Chris George's [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) / [`apple/container#1592`](https://github.com/apple/container/pull/1592) retrieval-options direction, then tightens the API boundary by keeping `ContainerLogOptions` focused on retrieval filters, `ContainerLogReplayOptions` focused on rotated replay policy, and timestamp rendering as command/plugin presentation. The branch layers tail/until, static filtered replay, byte-preserving raw log tail filtering, Apple CLI timestamp parsing, Docker-like line-framed structured log storage, `ContainerClient.logRecords(id:options:replay:)` with line-correct tail/since/until filtering, `ContainerClient.logRecordFile(id:)`, writer-level local log rotation for configured max size and file count, `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` local rotation policy parsing, static rotated raw and structured replay, raw rotation-aware follow through `ContainerClient.followLogs(id:options:)`, structured rotation-aware follow through `ContainerClient.followLogRecords(id:options:)`, static `container logs --timestamps` CLI rendering, and followed `container logs --follow --timestamps/--since/--until` CLI rendering from structured record streams. It is an integration proving branch, not the intended upstream PR shape.
 
 ## apple/container Log Direction
 
@@ -123,7 +123,7 @@ Reference targets:
       <td>2026-06-22 08:30:02 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: [`stephenlclarke/container`](https://github.com/stephenlclarke/container) branch `logs-integration-chris` now exposes `RuntimeStatus.paused`, runtime pause/resume routes, `ContainerClient.pause(id:)`, `ContainerClient.unpause(id:)`, and `container pause` / `container unpause` as signed commit `61a11f4` (`feat(runtime): add container pause controls`). Handoff files are `docs/upstream/apple-container/ISSUE-pause-unpause.md` and `docs/upstream/apple-container/PR-pause-unpause.md`. Released upstream apple/container remains blocked until these surfaces are accepted.</td>
+      <td colspan="4">Notes: [`stephenlclarke/container`](https://github.com/stephenlclarke/container) `develop` fork integration lane now exposes `RuntimeStatus.paused`, runtime pause/resume routes, `ContainerClient.pause(id:)`, `ContainerClient.unpause(id:)`, and `container pause` / `container unpause` as signed commit `61a11f4` (`feat(runtime): add container pause controls`). Handoff files are `docs/upstream/apple-container/ISSUE-pause-unpause.md` and `docs/upstream/apple-container/PR-pause-unpause.md`. Released upstream apple/container remains blocked until these surfaces are accepted.</td>
     </tr>
     <tr>
       <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Map Compose pause/unpause to direct lifecycle APIs</td>
@@ -251,7 +251,7 @@ Reference targets:
       <td>2026-06-22 10:13 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `stephenlclarke/container` branch `logs-integration-chris` now exposes `ContainerClient.processes(id:)`, API/XPC/runtime routes, runtime Linux service wiring, and PID-only `container top &lt;container&gt;` table output as commit `14a3067`. Released upstream support remains blocked until an equivalent process-listing API is accepted.</td>
+      <td colspan="4">Notes: `stephenlclarke/container` `develop` fork integration lane now exposes `ContainerClient.processes(id:)`, API/XPC/runtime routes, runtime Linux service wiring, and PID-only `container top &lt;container&gt;` table output as commit `14a3067`. Released upstream support remains blocked until an equivalent process-listing API is accepted.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `top` to fork-backed process listing</td>
@@ -260,7 +260,7 @@ Reference targets:
       <td>2026-06-22 10:13 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` branch `logs-integration` now implements `container compose top [SERVICES...]` through service-container selection and direct `ContainerClient.processes(id:)` fan-out as commit `b44ba55`. The supported fork-backed shape is PID-only; full Docker process metadata remains a later runtime gap rather than Compose policy.</td>
+      <td colspan="4">Notes: `container-compose` `develop` branch now implements `container compose top [SERVICES...]` through service-container selection and direct `ContainerClient.processes(id:)` fan-out as commit `b44ba55`. The supported fork-backed shape is PID-only; full Docker process metadata remains a later runtime gap rather than Compose policy.</td>
     </tr>
   </tbody>
 </table>
@@ -292,7 +292,7 @@ Reference targets:
       <td>2026-06-22 11:13 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `stephenlclarke/container` branch `logs-integration-chris` now exposes `ContainerEvent`, `ContainerClient.events()`, API-service lifecycle event emission for create/start/stop/pause/unpause/delete, non-blocking event subscribers, and `container events` JSON Lines output as code commits `b71e4bb323e3` and `0da7890b2632`. The handoff docs are in container commits `48b763c` and `24dcfbc` and now recorded under `docs/upstream/events/` and `docs/upstream/apple-container/`. No `apple/containerization` change was needed for this first slice because the event source lives at the API-service lifecycle boundary. Released upstream support remains blocked until an equivalent event-stream API is accepted against [apple/container#484](https://github.com/apple/container/issues/484).</td>
+      <td colspan="4">Notes: `stephenlclarke/container` `develop` fork integration lane now exposes `ContainerEvent`, `ContainerClient.events()`, API-service lifecycle event emission for create/start/stop/pause/unpause/delete, non-blocking event subscribers, and `container events` JSON Lines output as code commits `b71e4bb323e3` and `0da7890b2632`. The handoff docs are in container commits `48b763c` and `24dcfbc` and now recorded under `docs/upstream/events/` and `docs/upstream/apple-container/`. No `apple/containerization` change was needed for this first slice because the event source lives at the API-service lifecycle boundary. Released upstream support remains blocked until an equivalent event-stream API is accepted against [apple/container#484](https://github.com/apple/container/issues/484).</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `events --json [SERVICE...]` to fork-backed event stream</td>
@@ -301,7 +301,7 @@ Reference targets:
       <td>2026-06-22 11:42 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` branch `logs-integration` maps `container compose events --json [SERVICE...]` to the fork-backed `ContainerClient.events()` stream as code commit `113be38063ea`. The plugin keeps Docker Compose policy here: filter to Compose project/service labels, skip one-off containers, apply selected-service arguments, strip Compose-private attributes, and render JSON Lines fields `time`, `type`, `service`, `id`, `action`, and `attributes`. This initial slice deliberately required `--json` and rejected `--since`/`--until`; follow-up slices below add runtime time filters and default text output. Handoff docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`; the optional local-only Docker parity check is `make docker-compose-events-parity`. Do not include this mapping in the Apple runtime PR.</td>
+      <td colspan="4">Notes: `container-compose` `develop` branch maps `container compose events --json [SERVICE...]` to the fork-backed `ContainerClient.events()` stream as code commit `113be38063ea`. The plugin keeps Docker Compose policy here: filter to Compose project/service labels, skip one-off containers, apply selected-service arguments, strip Compose-private attributes, and render JSON Lines fields `time`, `type`, `service`, `id`, `action`, and `attributes`. This initial slice deliberately required `--json` and rejected `--since`/`--until`; follow-up slices below add runtime time filters and default text output. Handoff docs are `docs/upstream/events/ISSUE-compose-events.md` and `docs/upstream/events/PR-compose-events.md`; the optional local-only Docker parity check is `make docker-compose-events-parity`. Do not include this mapping in the Apple runtime PR.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Add runtime event replay/time filters for `--since` / `--until`</td>
@@ -310,7 +310,7 @@ Reference targets:
       <td>2026-06-22 12:21 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `stephenlclarke/container` branch `logs-integration-chris` now adds `ContainerEventOptions(since:until:)`, bounded API-service event replay, live event time filtering, `eventSince` / `eventUntil` XPC keys, and `container events --since/--until` as code commit `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270`. Handoff docs are `docs/upstream/events/ISSUE-container-event-time-filters.md` and `docs/upstream/events/PR-container-event-time-filters.md`, also recorded under `docs/upstream/apple-container/`. The slice remains a narrow `apple/container` PR-shaped primitive stacked on [apple/container#484](https://github.com/apple/container/issues/484) and the first event-stream PR; no `apple/containerization` change is needed.</td>
+      <td colspan="4">Notes: `stephenlclarke/container` `develop` fork integration lane now adds `ContainerEventOptions(since:until:)`, bounded API-service event replay, live event time filtering, `eventSince` / `eventUntil` XPC keys, and `container events --since/--until` as code commit `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270`. Handoff docs are `docs/upstream/events/ISSUE-container-event-time-filters.md` and `docs/upstream/events/PR-container-event-time-filters.md`, also recorded under `docs/upstream/apple-container/`. The slice remains a narrow `apple/container` PR-shaped primitive stacked on [apple/container#484](https://github.com/apple/container/issues/484) and the first event-stream PR; no `apple/containerization` change is needed.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `events --json --since/--until [SERVICE...]` to runtime event filters</td>
@@ -319,7 +319,7 @@ Reference targets:
       <td>2026-06-22 12:28 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` branch `logs-integration` maps `container compose events --json --since VALUE --until VALUE [SERVICE...]` to `ContainerClient.events(options:)` as code commit `3a3387d7dbea301eec3a7f1fcc3f954dec80276c`. The plugin parses RFC 3339 timestamps, Unix timestamps, and relative durations. This slice kept `--json` required; the follow-up text-format slice below makes default text output available without changing the Apple runtime API. Handoff docs are `docs/upstream/events/ISSUE-compose-event-time-filters.md` and `docs/upstream/events/PR-compose-event-time-filters.md`; the optional local-only Docker parity target includes a bounded `--since/--until` replay-window check.</td>
+      <td colspan="4">Notes: `container-compose` `develop` branch maps `container compose events --json --since VALUE --until VALUE [SERVICE...]` to `ContainerClient.events(options:)` as code commit `3a3387d7dbea301eec3a7f1fcc3f954dec80276c`. The plugin parses RFC 3339 timestamps, Unix timestamps, and relative durations. This slice kept `--json` required; the follow-up text-format slice below makes default text output available without changing the Apple runtime API. Handoff docs are `docs/upstream/events/ISSUE-compose-event-time-filters.md` and `docs/upstream/events/PR-compose-event-time-filters.md`; the optional local-only Docker parity target includes a bounded `--since/--until` replay-window check.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose default text `events [--since/--until] [SERVICE...]` output</td>
@@ -328,7 +328,7 @@ Reference targets:
       <td>2026-06-22 12:45 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: `container-compose` branch `logs-integration` now maps default `container compose events [SERVICE...]` and `container compose events --since VALUE --until VALUE [SERVICE...]` to Docker Compose-style text output as code commits `fd3d94824f23cd3255a812faed9e3972906b4ab5` and `4cfb39e9531a84b496e1dcc76a84ac7654df943f`. `--json` keeps the prior JSON Lines renderer. This is a plugin-only PR-shaped slice: no `apple/container` or `apple/containerization` code is needed because the Apple runtime should keep emitting generic events. Handoff docs are `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`; the optional local-only Docker parity target now includes default text replay shape validation.</td>
+      <td colspan="4">Notes: `container-compose` `develop` branch now maps default `container compose events [SERVICE...]` and `container compose events --since VALUE --until VALUE [SERVICE...]` to Docker Compose-style text output as code commits `fd3d94824f23cd3255a812faed9e3972906b4ab5` and `4cfb39e9531a84b496e1dcc76a84ac7654df943f`. `--json` keeps the prior JSON Lines renderer. This is a plugin-only PR-shaped slice: no `apple/container` or `apple/containerization` code is needed because the Apple runtime should keep emitting generic events. Handoff docs are `docs/upstream/events/ISSUE-compose-events-text-format.md` and `docs/upstream/events/PR-compose-events-text-format.md`; the optional local-only Docker parity target now includes default text replay shape validation.</td>
     </tr>
   </tbody>
 </table>
@@ -361,7 +361,7 @@ Reference targets:
       <td>2026-06-22 00:56:18 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: cherry-picked and adapted [`apple/container#1562`](https://github.com/apple/container/pull/1562) onto `stephenlclarke/container` branch `logs-integration-chris` as signed commit `9b6f743` (`feat(api): expose container exit metadata`). The local adaptation preserves Martín Fernández as author, keeps the #1501/#1562 provenance, projects `exitCode`/`exitedDate` through `ManagedContainer`, clears stale exit metadata when the init process starts again, and validates with focused resource tests plus `make test`.</td>
+      <td colspan="4">Notes: cherry-picked and adapted [`apple/container#1562`](https://github.com/apple/container/pull/1562) onto `stephenlclarke/container` `develop` fork integration lane as signed commit `9b6f743` (`feat(api): expose container exit metadata`). The local adaptation preserves Martín Fernández as author, keeps the #1501/#1562 provenance, projects `exitCode`/`exitedDate` through `ManagedContainer`, clears stale exit metadata when the init process starts again, and validates with focused resource tests plus `make test`.</td>
     </tr>
     <tr>
       <td><img alt="SUPPORTED" src="https://img.shields.io/badge/SUPPORTED-2E7D32?style=flat-square"> Project exit metadata through container-compose discovery</td>
@@ -451,7 +451,7 @@ Reference targets:
       <td>2026-06-22 03:12:12 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch as signed commit `831a013` (`feat(api): expose image healthcheck metadata`). The slice references [`apple/container#440`](https://github.com/apple/container/issues/440), [`apple/container#1502`](https://github.com/apple/container/issues/1502), and [`apple/container#1504`](https://github.com/apple/container/pull/1504), decodes Docker image config `Healthcheck` metadata from the existing image config content blob, projects it as `ImageResource.Variant.healthCheck`, and documents the PR shape in `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` / `docs/upstream/apple-container/PR-image-healthcheck-metadata.md`.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane as signed commit `831a013` (`feat(api): expose image healthcheck metadata`). The slice references [`apple/container#440`](https://github.com/apple/container/issues/440), [`apple/container#1502`](https://github.com/apple/container/issues/1502), and [`apple/container#1504`](https://github.com/apple/container/pull/1504), decodes Docker image config `Healthcheck` metadata from the existing image config content blob, projects it as `ImageResource.Variant.healthCheck`, and documents the PR shape in `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` / `docs/upstream/apple-container/PR-image-healthcheck-metadata.md`.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Dockerfile-inherited image healthchecks in container-compose</td>
@@ -487,7 +487,7 @@ Reference targets:
       <td>2026-06-22 04:33:28 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by combining the resource-level direction from [`apple/container#1340`](https://github.com/apple/container/pull/1340) with the Docker-compatible `--add-host` CLI surface from [`apple/container#1563`](https://github.com/apple/container/pull/1563). The fork now has `ContainerConfiguration.HostEntry`, defaulted `hosts` decoding, repeatable `container run/create --add-host`, static IPv4/IPv6 validation, and runtime `/etc/hosts` injection before workload start. This remains fork-backed until one accepted upstream host-entry API lands. Handoff files are `docs/upstream/apple-container/ISSUE-host-entries.md` and `docs/upstream/apple-container/PR-host-entries.md`.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane by combining the resource-level direction from [`apple/container#1340`](https://github.com/apple/container/pull/1340) with the Docker-compatible `--add-host` CLI surface from [`apple/container#1563`](https://github.com/apple/container/pull/1563). The fork now has `ContainerConfiguration.HostEntry`, defaulted `hosts` decoding, repeatable `container run/create --add-host`, static IPv4/IPv6 validation, and runtime `/etc/hosts` injection before workload start. This remains fork-backed until one accepted upstream host-entry API lands. Handoff files are `docs/upstream/apple-container/ISSUE-host-entries.md` and `docs/upstream/apple-container/PR-host-entries.md`.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `extra_hosts` to runtime host entries</td>
@@ -505,7 +505,7 @@ Reference targets:
       <td>2026-06-22 05:07:50 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by accepting `host-gateway` as the address side of `--add-host`, storing it as a runtime-resolved host-entry marker, and resolving it to the first runtime network IPv4 gateway when generating `/etc/hosts`. Containers without an IPv4 gateway fail clearly. Handoff files are `docs/upstream/apple-container/ISSUE-host-gateway.md` and `docs/upstream/apple-container/PR-host-gateway.md`.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane by accepting `host-gateway` as the address side of `--add-host`, storing it as a runtime-resolved host-entry marker, and resolving it to the first runtime network IPv4 gateway when generating `/etc/hosts`. Containers without an IPv4 gateway fail clearly. Handoff files are `docs/upstream/apple-container/ISSUE-host-gateway.md` and `docs/upstream/apple-container/PR-host-gateway.md`.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `host-gateway` extra_hosts to runtime host entries</td>
@@ -523,7 +523,7 @@ Reference targets:
       <td>2026-06-22 04:54:29 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by adding `ContainerConfiguration.hostname`, shared `container run/create -h, --hostname` flags, RFC1123 hostname validation, and runtime resolution that prefers explicit hostnames while preserving existing network-derived defaults. This remains fork-backed until accepted upstream. Handoff files are `docs/upstream/apple-container/ISSUE-hostname.md` and `docs/upstream/apple-container/PR-hostname.md`.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane by adding `ContainerConfiguration.hostname`, shared `container run/create -h, --hostname` flags, RFC1123 hostname validation, and runtime resolution that prefers explicit hostnames while preserving existing network-derived defaults. This remains fork-backed until accepted upstream. Handoff files are `docs/upstream/apple-container/ISSUE-hostname.md` and `docs/upstream/apple-container/PR-hostname.md`.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `hostname` to runtime hostnames</td>
@@ -541,7 +541,7 @@ Reference targets:
       <td>2026-06-22 06:15 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by adding `ContainerConfiguration.domainname`, shared `container run/create --domainname` flags, RFC1123 validation, and a runtime bridge through the existing `kernel.domainname` sysctl path. This remains fork-backed until accepted upstream, and the sysctl bridge can be replaced by a direct lower-runtime `domainname` mapping once `containerization` wires the OCI field into `vminitd`. Handoff files are `docs/upstream/apple-container/ISSUE-domainname.md` and `docs/upstream/apple-container/PR-domainname.md`.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane by adding `ContainerConfiguration.domainname`, shared `container run/create --domainname` flags, RFC1123 validation, and a runtime bridge through the existing `kernel.domainname` sysctl path. This remains fork-backed until accepted upstream, and the sysctl bridge can be replaced by a direct lower-runtime `domainname` mapping once `containerization` wires the OCI field into `vminitd`. Handoff files are `docs/upstream/apple-container/ISSUE-domainname.md` and `docs/upstream/apple-container/PR-domainname.md`.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose `domainname` to runtime domain names</td>
@@ -559,7 +559,7 @@ Reference targets:
       <td>2026-06-22 05:31:11 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch by adding `AttachmentOptions.aliases`, repeatable `container run/create --network name,alias=...` parsing, XPC allocation payload support, allocator alias reservation/lookup/release behavior, and create-time collision checks. The slice intentionally keeps alias names unique because the current lookup API is hostname-like and not source-network-scoped; Docker-compatible shared aliases and DNSRR behavior remain future networking work. Handoff files are `docs/upstream/apple-container/ISSUE-network-aliases.md` and `docs/upstream/apple-container/PR-network-aliases.md`.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane by adding `AttachmentOptions.aliases`, repeatable `container run/create --network name,alias=...` parsing, XPC allocation payload support, allocator alias reservation/lookup/release behavior, and create-time collision checks. The slice intentionally keeps alias names unique because the current lookup API is hostname-like and not source-network-scoped; Docker-compatible shared aliases and DNSRR behavior remain future networking work. Handoff files are `docs/upstream/apple-container/ISSUE-network-aliases.md` and `docs/upstream/apple-container/PR-network-aliases.md`.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Map Compose service network aliases to runtime aliases</td>
@@ -646,7 +646,7 @@ Reference targets:
       <td></td>
     </tr>
     <tr>
-      <td colspan="4">Notes: rebase the local `logs-integration-chris` branch after #1592/#1764 land, keep `ContainerLogOptions` as retrieval-only state, keep replay policy outside presentation flags, and preserve tests for negative tail, `--tail 0 --follow`, EOF final records, split records, legacy raw records, and line-based filtering. Track #1765 only as Apple CLI parser work; `container-compose` owns the Docker-compatible parser.</td>
+      <td colspan="4">Notes: rebase the current `stephenlclarke/container` `develop` fork integration lane after #1592/#1764 land, keep `ContainerLogOptions` as retrieval-only state, keep replay policy outside presentation flags, and preserve tests for negative tail, `--tail 0 --follow`, EOF final records, split records, legacy raw records, and line-based filtering. Track #1765 only as Apple CLI parser work; `container-compose` owns the Docker-compatible parser.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream structured log record storage</td>
@@ -655,7 +655,7 @@ Reference targets:
       <td>2026-06-21 20:50:49 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: split from the local `logs-integration-chris` branch into a small apple/container branch named `logs-structured-record-storage`. The branch writes raw workload bytes to `stdio.log` and Docker-like line-framed JSON Lines sidecar records to `stdio.jsonl`. Each sidecar record contains `timestamp`, `stream`, and base64 `data`; final complete EOF records and oversized unterminated 16 KiB chunks are covered by tests. Keep this runtime-only; no Compose prefixes, colors, service names, or replica policy. Upstream support remains partial until this branch is turned into an apple/container PR and accepted.</td>
+      <td colspan="4">Notes: split from the current `stephenlclarke/container` `develop` fork integration lane into a small apple/container branch named `logs-structured-record-storage`. The branch writes raw workload bytes to `stdio.log` and Docker-like line-framed JSON Lines sidecar records to `stdio.jsonl`. Each sidecar record contains `timestamp`, `stream`, and base64 `data`; final complete EOF records and oversized unterminated 16 KiB chunks are covered by tests. Keep this runtime-only; no Compose prefixes, colors, service names, or replica policy. Upstream support remains partial until this branch is turned into an apple/container PR and accepted.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream structured retrieval APIs</td>
@@ -664,7 +664,7 @@ Reference targets:
       <td>2026-06-21 21:11:04 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: split from the local `logs-integration-chris` branch into a small apple/container branch named `logs-structured-record-api`. The branch stacks on `logs-structured-record-storage` and exposes `ContainerClient.logRecords(id:options:)` for decoded `ContainerLogRecord` snapshots plus `ContainerClient.logRecordFile(id:)` for the active `stdio.jsonl` file handle. The wire surfaces are XPC routes `containerLogRecords` and `containerLogRecordFile`; retrieval options are `ContainerLogOptions.tail`, `ContainerLogOptions.since`, and `ContainerLogOptions.until`. Timestamp rendering stays a command/plugin presentation concern. Upstream support remains partial until this branch is turned into an apple/container PR and accepted; rotated replay and legacy raw-log fallback remain separate slices.</td>
+      <td colspan="4">Notes: split from the current `stephenlclarke/container` `develop` fork integration lane into a small apple/container branch named `logs-structured-record-api`. The branch stacks on `logs-structured-record-storage` and exposes `ContainerClient.logRecords(id:options:)` for decoded `ContainerLogRecord` snapshots plus `ContainerClient.logRecordFile(id:)` for the active `stdio.jsonl` file handle. The wire surfaces are XPC routes `containerLogRecords` and `containerLogRecordFile`; retrieval options are `ContainerLogOptions.tail`, `ContainerLogOptions.since`, and `ContainerLogOptions.until`. Timestamp rendering stays a command/plugin presentation concern. Upstream support remains partial until this branch is turned into an apple/container PR and accepted; rotated replay and legacy raw-log fallback remain separate slices.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream static rotated replay and bounded tail scan</td>
@@ -673,7 +673,7 @@ Reference targets:
       <td>2026-06-21 22:32:35 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch as commit `86a9bda` with handoff files `docs/upstream/apple-container/ISSUE-logs-static-rotated-tail.md` and `docs/upstream/apple-container/PR-logs-static-rotated-tail.md`. The runtime-owned behavior is `ContainerLogReplayOptions(includeRotated:)` or an accepted replay-policy equivalent, deterministic active-plus-rotated retention ordering, negative tail as all, `tail 0` as empty, line reconstruction across file boundaries, and bounded reverse scanning for static raw replay. This avoids making `container logs -n 10` replay full retained history. Keep Compose-specific prefixes, colors, service names, and replica ordering out of the runtime branch. Split this into an Apple-facing PR branch after #1592/#1764 settle.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane as commit `86a9bda` with handoff files `docs/upstream/apple-container/ISSUE-logs-static-rotated-tail.md` and `docs/upstream/apple-container/PR-logs-static-rotated-tail.md`. The runtime-owned behavior is `ContainerLogReplayOptions(includeRotated:)` or an accepted replay-policy equivalent, deterministic active-plus-rotated retention ordering, negative tail as all, `tail 0` as empty, line reconstruction across file boundaries, and bounded reverse scanning for static raw replay. This avoids making `container logs -n 10` replay full retained history. Keep Compose-specific prefixes, colors, service names, and replica ordering out of the runtime branch. Split this into an Apple-facing PR branch after #1592/#1764 settle.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream raw rotation-aware follow stream</td>
@@ -682,7 +682,7 @@ Reference targets:
       <td>2026-06-21 23:43:58 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch and documented with `docs/upstream/apple-container/ISSUE-logs-rotation-aware-follow.md` and `docs/upstream/apple-container/PR-logs-rotation-aware-follow.md`. The runtime-owned raw follow behavior is `ContainerClient.followLogs(id:options:)`, XPC route `containerFollowLogs`, Docker-style initial replay for negative, zero, and positive tail values, rename-based active-file detection, final reads from the renamed active file, and reopening the recreated active path without polling merged snapshots. Keep Compose service fan-out, prefixes, colors, and replica ordering out of the runtime branch.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane and documented with `docs/upstream/apple-container/ISSUE-logs-rotation-aware-follow.md` and `docs/upstream/apple-container/PR-logs-rotation-aware-follow.md`. The runtime-owned raw follow behavior is `ContainerClient.followLogs(id:options:)`, XPC route `containerFollowLogs`, Docker-style initial replay for negative, zero, and positive tail values, rename-based active-file detection, final reads from the renamed active file, and reopening the recreated active path without polling merged snapshots. Keep Compose service fan-out, prefixes, colors, and replica ordering out of the runtime branch.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream structured rotation-aware follow stream</td>
@@ -691,7 +691,7 @@ Reference targets:
       <td>2026-06-22 00:36:46 BST</td>
     </tr>
     <tr>
-      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `logs-integration-chris` branch as commit `43add25` and documented with `docs/upstream/apple-container/ISSUE-logs-structured-rotation-aware-follow.md` and `docs/upstream/apple-container/PR-logs-structured-rotation-aware-follow.md`. The runtime-owned structured follow behavior is `ContainerClient.followLogRecords(id:options:)`, XPC route `containerFollowLogRecords`, retained `stdio.jsonl` replay, rename-based active-file detection, logical-line reconstruction before `tail`/`since`/`until`, `tail 0` open-fragment skipping, and final partial-line flushing when the runtime stream ends. Keep Compose service fan-out, prefixes, colors, and replica ordering out of the runtime branch.</td>
+      <td colspan="4">Notes: implemented locally in the `stephenlclarke/container` `develop` fork integration lane as commit `43add25` and documented with `docs/upstream/apple-container/ISSUE-logs-structured-rotation-aware-follow.md` and `docs/upstream/apple-container/PR-logs-structured-rotation-aware-follow.md`. The runtime-owned structured follow behavior is `ContainerClient.followLogRecords(id:options:)`, XPC route `containerFollowLogRecords`, retained `stdio.jsonl` replay, rename-based active-file detection, logical-line reconstruction before `tail`/`since`/`until`, `tail 0` open-fragment skipping, and final partial-line flushing when the runtime stream ends. Keep Compose service fan-out, prefixes, colors, and replica ordering out of the runtime branch.</td>
     </tr>
     <tr>
       <td><img alt="PARTIAL" src="https://img.shields.io/badge/PARTIAL-B26A00?style=flat-square"> Upstream local logging policy model</td>
@@ -796,7 +796,7 @@ Reference targets:
       <td></td>
     </tr>
     <tr>
-      <td colspan="4">Notes: once each apple/container PR lands, update `COMPATIBILITY.md` on `apple-container-compatible`, `full-compose-preview`, and `logs-integration` so released upstream support, fork-only support, and remaining runtime gaps stay distinct.</td>
+      <td colspan="4">Notes: once each apple/container PR lands, update `COMPATIBILITY.md` on `apple-container-compatible`, `develop`, and `main` so released upstream support, fork-only support, and remaining runtime gaps stay distinct.</td>
     </tr>
   </tbody>
 </table>
@@ -816,7 +816,7 @@ Overlap: <img alt="IMPLEMENTATION LINK" src="https://img.shields.io/badge/IMPLEM
 - Implements a broad Docker Compose-like CLI and runtime abstraction layer for Apple containers.
 - Tracks fork-forward runtime gaps that also matter to this repo, including log options, events, restart policy, healthcheck observation, richer IPAM, process flag factoring, and resource controls.
 - [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) overlaps directly with this log plan by adding `ContainerLogOptions` for `since` and `timestamps` to `ContainerClient.logs`.
-- Chris George confirmed the [`apple/container#1752`](https://github.com/apple/container/issues/1752#issuecomment-4752812508) direction on `2026-06-19`. The local `logs-integration-chris` branch preserves his API shape first, then layers the broader Compose log capabilities as separate signed commits that can be split into upstream PRs.
+- Chris George confirmed the [`apple/container#1752`](https://github.com/apple/container/issues/1752#issuecomment-4752812508) direction on `2026-06-19`. The current `stephenlclarke/container` `develop` fork integration lane preserves his API shape first, then layers the broader Compose log capabilities as separate signed commits that can be split into upstream PRs.
 
 How this repo complements it: <img alt="IMPLEMENTATION LINK" src="https://img.shields.io/badge/IMPLEMENTATION%20LINK-2563EB?style=flat-square"> <img alt="PEER TOUCHPOINT" src="https://img.shields.io/badge/PEER%20TOUCHPOINT-DB2777?style=flat-square"> <img alt="PEER COMPLEMENT" src="https://img.shields.io/badge/PEER%20COMPLEMENT-7C3AED?style=flat-square">
 
@@ -943,7 +943,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream `container logs --follow <container-id>` follows one container log file.
-- The local `logs-integration-chris` branch follows active raw log handles for the CLI and exposes static rotated replay through `ContainerClient.logs(id:options:replay:)` with `ContainerLogReplayOptions(includeRotated: true)`.
+- The current `stephenlclarke/container` `develop` fork integration lane follows active raw log handles for the CLI and exposes static rotated replay through `ContainerClient.logs(id:options:replay:)` with `ContainerLogReplayOptions(includeRotated: true)`.
 - The direct API exposes container status through `ContainerClient.get`, which lets clients distinguish live buffering from stopped final-line flushing.
 
 Remaining work:
@@ -1062,12 +1062,12 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream exposes raw stdio and boot log file handles.
-- The local `logs-integration-chris` branch exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:replay:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
-- The local `logs-integration-chris` branch accepts RFC 3339, RFC 3339 nano, Unix timestamps in seconds with optional fractional seconds, and relative durations for `container logs --since` and `--until`.
-- The local `logs-integration-chris` branch stores timestamped runtime records at Docker-like line boundaries, flushes final complete records at static EOF, and exposes `ContainerClient.logRecords(id:options:replay:)` with timestamp, stream, raw bytes, and line-correct tail/since/until filtering for static replay.
-- The local `logs-integration-chris` branch exposes `ContainerClient.logRecordFile(id:)` for clients that want direct structured JSONL file access.
-- The local `logs-integration-chris` branch renders static `container logs --timestamps` output through structured records before rendering; upstream review still needs to confirm the contract across legacy raw logs, rotated retention, and truncation behavior.
-- The local `logs-integration-chris` branch exposes `ContainerClient.followLogRecords(id:options:)` and renders followed `container logs --timestamps`, `--since`, and `--until` output from a runtime-owned structured record stream; it renders plain unfiltered `container logs --follow` through a raw rotation-aware follow stream.
+- The current `stephenlclarke/container` `develop` fork integration lane exposes static `tail`, `since`, and `until` filtering through `ContainerClient.logs(id:options:replay:)`, with raw `tail` filtering performed without requiring UTF-8 decoding.
+- The current `stephenlclarke/container` `develop` fork integration lane accepts RFC 3339, RFC 3339 nano, Unix timestamps in seconds with optional fractional seconds, and relative durations for `container logs --since` and `--until`.
+- The current `stephenlclarke/container` `develop` fork integration lane stores timestamped runtime records at Docker-like line boundaries, flushes final complete records at static EOF, and exposes `ContainerClient.logRecords(id:options:replay:)` with timestamp, stream, raw bytes, and line-correct tail/since/until filtering for static replay.
+- The current `stephenlclarke/container` `develop` fork integration lane exposes `ContainerClient.logRecordFile(id:)` for clients that want direct structured JSONL file access.
+- The current `stephenlclarke/container` `develop` fork integration lane renders static `container logs --timestamps` output through structured records before rendering; upstream review still needs to confirm the contract across legacy raw logs, rotated retention, and truncation behavior.
+- The current `stephenlclarke/container` `develop` fork integration lane exposes `ContainerClient.followLogRecords(id:options:)` and renders followed `container logs --timestamps`, `--since`, and `--until` output from a runtime-owned structured record stream; it renders plain unfiltered `container logs --follow` through a raw rotation-aware follow stream.
 - Does not yet have upstream-reviewed cursor, truncation, rotation, or retention semantics for long-lived structured/timestamped rotation-aware follow clients.
 - Still needs upstream review to confirm `tail`, `since`, and `until` filtering is applied to reconstructed logical log lines rather than raw storage fragments in every record source.
 
@@ -1080,7 +1080,7 @@ Missing behavior:
 
 Implementation direction:
 
-- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs from `logs-integration-chris`: retrieval-only log options, replay policy options, line-correct filtered static replay, typed timestamp-filter API behavior, structured timestamped record storage, structured record retrieval, static rotated replay, local logging policy and rotation, raw rotation-aware follow, and a later structured rotation-aware follow design. Keep Docker-compatible timestamp parsing in `container-compose`.
+- Split the local [`apple/container`](https://github.com/apple/container) log work into small upstream PRs from the current `stephenlclarke/container` `develop` fork integration lane: retrieval-only log options, replay policy options, line-correct filtered static replay, typed timestamp-filter API behavior, structured timestamped record storage, structured record retrieval, static rotated replay, local logging policy and rotation, raw rotation-aware follow, and a later structured rotation-aware follow design. Keep Docker-compatible timestamp parsing in `container-compose`.
 - Keep the upstreamable API shape aligned with [`full-chaos/container#11`](https://github.com/full-chaos/container/pull/11) so both Compose implementations can converge on one runtime contract.
 - Add golden behavior tests using RFC 3339 timestamps, Unix timestamps, relative durations, followed timestamp output, and combined `--since`/`--until` windows after the upstream API shape settles.
 
@@ -1119,7 +1119,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Captures container stdio to local runtime files.
-- The local `logs-integration-chris` branch adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, supports disabled persisted capture through `--log-driver none`, parses `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` into the local rotation policy, honors configured local `maxSizeInBytes` / `maxFileCount` at the runtime writer, and exposes static rotated raw and structured replay through direct log options.
+- The current `stephenlclarke/container` `develop` fork integration lane adds a typed local logging policy, treats `container create/run --log-driver json-file` and `--log-driver local` as local stdio capture aliases, supports disabled persisted capture through `--log-driver none`, parses `container create/run --log-opt max-size=<size>` and `--log-opt max-file=<count>` into the local rotation policy, honors configured local `maxSizeInBytes` / `maxFileCount` at the runtime writer, and exposes static rotated raw and structured replay through direct log options.
 - Does not expose Docker-compatible remote logging driver selection or remote logging backends.
 
 Missing behavior:
@@ -1159,7 +1159,7 @@ Current `container-compose` behavior:
 Current [`apple/container`](https://github.com/apple/container) behavior:
 
 - Upstream stores a merged stdio file and returns a file handle.
-- The local `logs-integration-chris` branch also stores structured records with stdout/stderr stream metadata and per-record capture timestamps. Records are emitted at line boundaries, final unterminated data is flushed when a stream closes, and oversized unterminated data is chunked at a Docker-like 16 KiB boundary.
+- The current `stephenlclarke/container` `develop` fork integration lane also stores structured records with stdout/stderr stream metadata and per-record capture timestamps. Records are emitted at line boundaries, final unterminated data is flushed when a stream closes, and oversized unterminated data is chunked at a Docker-like 16 KiB boundary.
 
 Missing behavior:
 
