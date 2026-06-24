@@ -22,7 +22,7 @@ The current create-options parity fixture copies Docker Compose's upstream `pkg/
 
 | Date | Target | Docker Source | Result | Notes |
 | --- | --- | --- | --- | --- |
-| 2026-06-24 | `make cli-smoke-built` | Docker Compose 5.2.0 CLI help snapshot | Pass | The `container-compose` executable accepts the Docker Compose 5.2.0 root command surface, global options, command help, and placeholder gaps for `bridge`, `commit`, and `publish`. Top-level `convert` is intentionally removed because Docker Compose exposes conversion under `bridge`. |
+| 2026-06-24 | `make cli-smoke-built` | Docker Compose 5.2.0 CLI help snapshot | Pass | The `container-compose` executable accepts the Docker Compose 5.2.0 root command surface, global options, command help, supported `config` projections, build/run/ps option wiring, timestamped log dry-run wiring, runtime pause/unpause dry-run wiring, `start --wait`, `kill --remove-orphans`, and placeholder gaps for `bridge`, `commit`, and `publish`. Top-level `convert` is intentionally removed because Docker Compose exposes conversion under `bridge`. |
 | 2026-06-24 | `make docker-compose-e2e-fixtures` | `docker/compose@a3c1c0dc2eba14f5ad9df3f5c8f0e1ebdd088a9c` | Pass | Missing-checkout clone succeeded. Immediate rerun reported the same commit without recloning. |
 | 2026-06-24 | `make docker-compose-restart-policy-parity` | Local parity fixture | Pass | Passed with Docker Compose 5.2.0 and Docker Engine 29.5.2 after updating the inspector to use `docker compose ps --all -q` for created-but-not-running containers. |
 | 2026-06-24 | `make docker-compose-create-options-parity` | `docker/compose@a3c1c0dc2eba14f5ad9df3f5c8f0e1ebdd088a9c` plus local create-options fixture | Partial | Docker Compose inspect checks passed and `container-compose --dry-run create --build` checks passed. Live `container-compose create --build` is blocked by `Error: XPC connection error: Connection invalid`; `container system status` also hangs and `container system start` did not complete. |
@@ -32,6 +32,18 @@ The current create-options parity fixture copies Docker Compose's upstream `pkg/
 `container-compose` accepts the Docker Compose 5.2.0 root command list and global option surface. Help output is rendered from a Docker Compose 5.2.0 snapshot so that missing implementation work is visible without rejecting valid Docker Compose commands at parse time. Help marks supported commands, subcommands, and options in green, partially supported surfaces in orange, and unsupported surfaces in red; `--ansi never` keeps the same support text without color.
 
 Command-level gaps currently return the literal placeholder `Not implemented yet` when there is no backing implementation. The current placeholders are `bridge`, `commit`, and `publish`. Some implemented commands also accept newer Docker Compose options that are parsed for surface compatibility but not yet behaviorally wired; those remain parity gaps until covered by a focused fixture or runtime primitive.
+
+`compose config` now supports JSON rendering, selected-service filtering, `--services`, `--images`, `--networks`, `--volumes`, `--models`, `--hash`, `--quiet`, and `--output`. `--format` is partial because JSON is supported and YAML rendering is still a gap. Interpolation, environment, profile, path-resolution, digest-resolution, and variables projection flags remain unsupported until the normalizer exposes the required resolved views.
+
+`compose build` now forwards CLI `--build-arg` and `--memory` to `container build` alongside Compose-file build args, cache, label, secret, platform, pull, quiet, and push wiring. `--builder`, `--check`, `--print`, `--provenance`, `--sbom`, and `--ssh` remain unsupported because the local Apple build CLI/runtime surface does not expose matching Docker Compose behavior yet.
+
+`compose run` now wires `--build`, `--interactive`, `--quiet-build`, `--quiet-pull`, and `--remove-orphans` into the existing one-off container flow. `--quiet` and `--use-aliases` are still unsupported and fail explicitly instead of being silently ignored.
+
+`compose ps` now supports `--format table|json`, `--no-trunc`, and `--orphans` on the local projection. The table projection is limited to the fields available from Apple container summaries and Compose labels: name, image, service, and status.
+
+`compose start` now supports `--wait` and `--wait-timeout` using the direct container discovery API. It waits until selected service containers are running or reported healthy, keeps polling containers reported as starting, and fails fast on unhealthy or stopped containers.
+
+`compose kill --remove-orphans` now removes project containers that are not part of the current Compose model after signaling the selected service containers. `compose version --dry-run` is accepted as a no-op Docker Compose compatibility flag.
 
 ## Covered By Current Parity Checks
 

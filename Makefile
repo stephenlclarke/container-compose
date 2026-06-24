@@ -94,7 +94,8 @@ swift-test-build:
 
 swift-test: swift-test-build
 	@mkdir -p .build
-	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_FLAGS) 2>&1 | tee "$(SWIFT_TEST_RESULT_LOG)"
+	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_FLAGS) >"$(SWIFT_TEST_RESULT_LOG)" 2>&1 || { status="$$?"; cat "$(SWIFT_TEST_RESULT_LOG)" || true; exit "$$status"; }
+	@tail -n 200 "$(SWIFT_TEST_RESULT_LOG)"
 	@if ! grep -Eq 'Test run with [1-9][0-9]* tests .* passed|Executed [1-9][0-9]* tests' "$(SWIFT_TEST_RESULT_LOG)"; then \
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \
@@ -145,7 +146,7 @@ cli-smoke-built:
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mup$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
-	[[ "$$root_help_output" == *"$${ansi_escape}[31mpause$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[32mpause$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32m--file$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[31m--parallel$${ansi_escape}[0m"* ]]; \
 	plain_help_output="$$(".build/debug/compose" --ansi never --help)"; \
@@ -153,23 +154,33 @@ cli-smoke-built:
 	[[ "$$plain_help_output" != *"$${ansi_escape}["* ]]; \
 	version_help_output="$$(".build/debug/compose" version --help)"; \
 	[[ "$$version_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
-	[[ "$$version_help_output" == *"$${ansi_escape}[31m--dry-run$${ansi_escape}[0m"* ]]; \
+	[[ "$$version_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	[[ "$$version_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	commit_help_output="$$(".build/debug/compose" commit --help)"; \
 	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[31mnot supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$commit_help_output" == *"$${ansi_escape}[31m--author$${ansi_escape}[0m"* ]]; \
 	config_help_output="$$(".build/debug/compose" config --help)"; \
-	[[ "$$config_help_output" == *"$${ansi_escape}[31m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[38;5;208m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--services$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--images$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--output$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[31m--environment$${ansi_escape}[0m"* ]]; \
 	build_help_output="$$(".build/debug/compose" build --help)"; \
-	[[ "$$build_help_output" == *"$${ansi_escape}[31m--build-arg$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[31m--ssh$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
+	ps_help_output="$$(".build/debug/compose" ps --help)"; \
+	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--no-trunc$${ansi_escape}[0m"* ]]; \
+	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--orphans$${ansi_escape}[0m"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
 	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[38;5;208m--follow$${ansi_escape}[0m"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--tail$${ansi_escape}[0m"* ]]; \
-	[[ "$$logs_help_output" == *"$${ansi_escape}[31m--timestamps$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--timestamps$${ansi_escape}[0m"* ]]; \
 	logs_misordered_help_output="$$(".build/debug/compose" logs help)"; \
 	[[ "$$logs_misordered_help_output" == *"Usage:  container compose logs [OPTIONS] [SERVICE...]"* ]]; \
 	[[ "$$logs_misordered_help_output" != *"compose-normalizer"* ]]; \
@@ -178,7 +189,11 @@ cli-smoke-built:
 	[[ "$$logs_plain_misordered_help_output" != *"$${ansi_escape}["* ]]; \
 	run_help_output="$$(".build/debug/compose" run --help)"; \
 	[[ "$$run_help_output" == *"-p, --publish stringArray"* ]]; \
-	[[ "$$run_help_output" == *"$${ansi_escape}[31m--build$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--build$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--interactive$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--quiet-build$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--quiet-pull$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--publish$${ansi_escape}[0m"* ]]; \
 	up_help_output="$$(".build/debug/compose" up --help)"; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
@@ -188,7 +203,12 @@ cli-smoke-built:
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \
 	[[ "$$rm_help_output" == *"-f, --force"* ]]; \
 	start_help_output="$$(".build/debug/compose" start --help)"; \
-	[[ "$$start_help_output" == *"$${ansi_escape}[31m--wait$${ansi_escape}[0m"* ]]; \
+	[[ "$$start_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
+	[[ "$$start_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
+	kill_help_output="$$(".build/debug/compose" kill --help)"; \
+	[[ "$$kill_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
+	version_help_output="$$(".build/debug/compose" version --help)"; \
+	[[ "$$version_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	wait_help_output="$$(".build/debug/compose" wait --help)"; \
 	[[ "$$wait_help_output" == *"--down-project"* ]]; \
 	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \
@@ -235,6 +255,26 @@ cli-smoke-built:
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
 	[[ "$$config_output" == *'"name":"demo"'* ]]; \
+	config_services_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --services)"; \
+	[[ "$$config_services_output" == *"api"* ]]; \
+	[[ "$$config_services_output" == *"db"* ]]; \
+	[[ "$$config_services_output" == *"job"* ]]; \
+	config_images_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --images api)"; \
+	[[ "$$config_images_output" == "alpine" ]]; \
+	config_networks_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --networks)"; \
+	[[ "$$config_networks_output" == "default" ]]; \
+	config_volumes_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --volumes)"; \
+	[[ "$$config_volumes_output" == "cache" ]]; \
+	config_hash_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --hash api)"; \
+	[[ "$$config_hash_output" == api" "* ]]; \
+	config_filtered_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config api)"; \
+	[[ "$$config_filtered_output" == *'"api"'* ]]; \
+	[[ "$$config_filtered_output" != *'"db"'* ]]; \
+	config_output_path="$$tmpdir/config-output.json"; \
+	".build/debug/compose" -f "$$tmpdir/compose.yml" config --output "$$config_output_path"; \
+	[[ -s "$$config_output_path" ]]; \
+	config_unsupported_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --environment 2>&1 || true)"; \
+	[[ "$$config_unsupported_output" == *"unsupported compose feature: config --environment"* ]]; \
 	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
 	[[ "$$compact_global_output" == *"compact-db-1"* ]]; \
 	[[ "$$compact_global_output" == *"compact-api-1"* ]]; \
@@ -275,6 +315,11 @@ cli-smoke-built:
 	[[ "$$build_secret_output" == *"--secret id=npm_token,env=NPM_TOKEN"* ]]; \
 	[[ "$$build_secret_output" == *"--pull"* ]]; \
 	[[ "$$build_secret_output" == *"--quiet"* ]]; \
+	build_arg_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --build-arg VERSION=2 --memory 256m worker)"; \
+	[[ "$$build_arg_output" == *"--memory 256m"* ]]; \
+	[[ "$$build_arg_output" == *"--build-arg VERSION=2"* ]]; \
+	build_ssh_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --ssh default worker 2>&1 || true)"; \
+	[[ "$$build_ssh_output" == *"unsupported compose feature: build --ssh"* ]]; \
 	build_inline_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-inline.yml" build api)"; \
 	[[ "$$build_inline_output" == *"container build"* ]]; \
 	[[ "$$build_inline_output" == *"--tag example/api:inline"* ]]; \
@@ -283,6 +328,16 @@ cli-smoke-built:
 	[[ "$$run_pull_output" == *"container image inspect alpine"* ]]; \
 	[[ "$$run_pull_output" == *"container image pull alpine"* ]]; \
 	[[ "$$run_pull_output" == *" alpine true"* ]]; \
+	run_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --pull always --quiet-pull api true)"; \
+	[[ "$$run_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
+	run_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" run --build --quiet-build worker true)"; \
+	[[ "$$run_build_output" == *"container build"* ]]; \
+	[[ "$$run_build_output" == *"--quiet"* ]]; \
+	[[ "$$run_build_output" == *"container run"* ]]; \
+	run_interactive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --interactive api true)"; \
+	[[ "$$run_interactive_output" == *"--interactive"* ]]; \
+	run_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --quiet api true 2>&1 || true)"; \
+	[[ "$$run_quiet_output" == *"unsupported compose feature: run --quiet"* ]]; \
 	run_named_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --name custom-api api echo hello)"; \
 	[[ "$$run_named_output" == *"--name custom-api"* ]]; \
 	[[ "$$run_named_output" == *" alpine echo hello"* ]]; \
@@ -450,8 +505,8 @@ cli-smoke-built:
 	[[ "$$logs_all_output" != *" -n "* ]]; \
 	logs_filter_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --since 2026-06-18T10:00:00Z --until 30m api)"; \
 	[[ "$$logs_filter_output" == *"container logs --since 2026-06-18T10:00:00Z --until 30m demo-api-1"* ]]; \
-	logs_timestamp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --timestamps api 2>&1 || true)"; \
-	[[ "$$logs_timestamp_output" == *"unsupported compose feature: logs --timestamps: apple/container does not expose timestamped log records"* ]]; \
+	logs_timestamp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --timestamps api)"; \
+	[[ "$$logs_timestamp_output" == *"compose-runtime logs --timestamps demo-api-1"* ]]; \
 	logs_filtered_follow_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --follow --since 2026-06-18T10:00:00Z api 2>&1 || true)"; \
 	[[ "$$logs_filtered_follow_output" == *"unsupported compose feature: logs --follow with --since/--until: apple/container does not expose filtered follow streams"* ]]; \
 	logs_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --index 2 api)"; \
@@ -520,6 +575,9 @@ cli-smoke-built:
 	[[ "$$restart_compact_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
 	kill_compact_signal_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo kill -sSIGKILL api)"; \
 	[[ "$$kill_compact_signal_output" == *"container kill --signal SIGKILL demo-api-1"* ]]; \
+	kill_remove_orphans_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo kill --remove-orphans api)"; \
+	[[ "$$kill_remove_orphans_output" == *"compose-runtime kill demo-api-1"* ]]; \
+	[[ "$$kill_remove_orphans_output" == *"container list --format json --all"* ]]; \
 	rm_force_volumes_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo rm -fv api)"; \
 	[[ "$$rm_force_volumes_output" == *"container delete --force demo-api-1"* ]]; \
 	[[ "$$rm_force_volumes_output" == *"container volume delete demo_anon-"* ]]; \
@@ -535,6 +593,10 @@ cli-smoke-built:
 	[[ "$$ps_status_output" == *"container list --format json --all"* ]]; \
 	ps_filter_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --filter status=exited)"; \
 	[[ "$$ps_filter_output" == *"container list --format json --all"* ]]; \
+	ps_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --format json --no-trunc --orphans)"; \
+	[[ "$$ps_format_output" == *"container list --format json"* ]]; \
+	ps_bad_format_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" -p demo ps --format yaml 2>&1 || true)"; \
+	[[ "$$ps_bad_format_output" == *"unsupported compose feature: ps --format 'yaml'; supported formats are table and json"* ]]; \
 	images_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format json api)"; \
 	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
 	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \
@@ -559,12 +621,13 @@ cli-smoke-built:
 	[[ "$$events_output" == *"+ container events"* ]]; \
 	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 80)"; \
 	[[ "$$port_output" == *"0.0.0.0:8080"* ]]; \
-	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api 2>&1 || true)"; \
-	[[ "$$pause_output" == *"unsupported compose feature: pause:"* ]]; \
-	[[ "$$pause_output" == *"apple/container does not expose pause yet"* ]]; \
-	unpause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" unpause api 2>&1 || true)"; \
-	[[ "$$unpause_output" == *"unsupported compose feature: unpause:"* ]]; \
-	[[ "$$unpause_output" == *"apple/container does not expose unpause yet"* ]]; \
+	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api)"; \
+	[[ "$$pause_output" == *"compose-runtime pause demo-api-1"* ]]; \
+	unpause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" unpause api)"; \
+	[[ "$$unpause_output" == *"compose-runtime unpause demo-api-1"* ]]; \
+	start_wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" start --wait --wait-timeout 3 api)"; \
+	[[ "$$start_wait_output" == *"container start demo-api-1"* ]]; \
+	[[ "$$start_wait_output" == *"compose-runtime wait-running --timeout 3 demo-api-1"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api)"; \
 	[[ "$$wait_output" == *"container wait demo-api-1"* ]]; \
 	wait_down_project_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait --down-project api)"; \

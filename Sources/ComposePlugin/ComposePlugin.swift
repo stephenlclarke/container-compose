@@ -255,14 +255,44 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Prints the canonical project JSON emitted by the orchestrator.
     func run() async throws {
-        if environment || format != nil || hash != nil || images || lockImageDigests || models || networks || noConsistency
-            || noEnvResolution || noInterpolate || noNormalize || noPathResolution || output != nil || profiles || quiet
-            || resolveImageDigests || servicesOnly || variables || volumes || !services.isEmpty
-        {
-            print("Not implemented yet")
+        let unsupportedOptions = [
+            environment ? "--environment" : nil,
+            lockImageDigests ? "--lock-image-digests" : nil,
+            noConsistency ? "--no-consistency" : nil,
+            noEnvResolution ? "--no-env-resolution" : nil,
+            noInterpolate ? "--no-interpolate" : nil,
+            noNormalize ? "--no-normalize" : nil,
+            noPathResolution ? "--no-path-resolution" : nil,
+            profiles ? "--profiles" : nil,
+            resolveImageDigests ? "--resolve-image-digests" : nil,
+            variables ? "--variables" : nil,
+        ].compactMap { $0 }
+        if let first = unsupportedOptions.first {
+            throw ComposeError.unsupported("config \(first)")
+        }
+
+        let loadedProject = try await project()
+        let rendered = try orchestrator().config(
+            project: loadedProject,
+            options: ComposeConfigOptions {
+                $0.services = services
+                $0.format = format
+                $0.hash = hash
+                $0.images = images
+                $0.models = models
+                $0.networks = networks
+                $0.quiet = quiet
+                $0.servicesOnly = servicesOnly
+                $0.volumes = volumes
+            }
+        )
+        if let output {
+            try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
             return
         }
-        try await printCanonicalProject()
+        if !rendered.isEmpty {
+            print(rendered)
+        }
     }
 }
 
@@ -464,11 +494,25 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Builds selected service images.
     func run() async throws {
+        let unsupportedOptions = [
+            builder != nil ? "--builder" : nil,
+            check ? "--check" : nil,
+            printBake ? "--print" : nil,
+            provenance != nil ? "--provenance" : nil,
+            sbom != nil ? "--sbom" : nil,
+            ssh != nil ? "--ssh" : nil,
+        ].compactMap { $0 }
+        if let first = unsupportedOptions.first {
+            throw ComposeError.unsupported("build \(first)")
+        }
+
         let loadedProject = try await project()
         try await orchestrator().build(
             project: loadedProject,
             options: ComposeBuildOptions {
                 $0.services = services
+                $0.buildArguments = buildArgs
+                $0.memory = memory
                 $0.noCache = noCache
                 $0.pull = pull
                 $0.push = push
@@ -574,8 +618,12 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     var format = "table"
     @Flag(name: .customLong("no-trunc"), help: "Do not truncate output.")
     var noTrunc = false
-    @Flag(name: .customLong("orphans"), help: "Include orphaned services.")
-    var orphans = false
+    @Flag(
+        name: .customLong("orphans"),
+        inversion: .prefixedNo,
+        help: "Include orphaned services. Enabled by default for Compose compatibility."
+    )
+    var orphans = true
     @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display container IDs.")
     var quiet = false
     @Flag(name: .customLong("services"), help: "Only display service names.")
@@ -594,7 +642,10 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
             quiet: quiet,
             services: services,
             statuses: statuses,
-            filters: filters
+            filters: filters,
+            format: format,
+            noTrunc: noTrunc,
+            orphans: orphans
         )
     }
 }
@@ -760,19 +811,32 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Runs a one-off service container with an optional command override.
     func run() async throws {
+        let unsupportedOptions = [
+            quiet ? "--quiet" : nil,
+            useAliases ? "--use-aliases" : nil,
+        ].compactMap { $0 }
+        if let first = unsupportedOptions.first {
+            throw ComposeError.unsupported("run \(first)")
+        }
+
         let loadedProject = try await project()
         try await orchestrator().run(
             project: loadedProject,
             serviceName: service,
             options: ComposeRunOptions {
                 $0.command = command
+                $0.build = build
                 $0.remove = remove
                 $0.detach = detach
+                $0.interactive = interactive
                 $0.noTty = noTty
                 $0.noDeps = noDeps
                 $0.servicePorts = servicePorts
                 $0.publish = publish
                 $0.pullPolicy = pull
+                $0.quietBuild = quietBuild
+                $0.quietPull = quietPull
+                $0.removeOrphans = removeOrphans
                 $0.containerName = name
                 $0.entrypoint = entrypoint
                 $0.workingDirectory = workdir
@@ -800,7 +864,14 @@ struct Start: AsyncParsableCommand, ComposeProjectCommand {
     /// Starts selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().start(project: loadedProject, services: services)
+        try await orchestrator().start(
+            project: loadedProject,
+            options: ComposeStartOptions {
+                $0.services = services
+                $0.wait = wait
+                $0.waitTimeout = waitTimeout
+            }
+        )
     }
 }
 
@@ -911,7 +982,7 @@ struct Kill: AsyncParsableCommand, ComposeProjectCommand {
     /// Sends the requested signal to selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().kill(project: loadedProject, services: services, signal: signal)
+        try await orchestrator().kill(project: loadedProject, services: services, signal: signal, removeOrphans: removeOrphans)
     }
 }
 

@@ -435,6 +435,42 @@ public struct ComposeUpOptions {
     }
 }
 
+/// Options for `compose start`.
+public struct ComposeStartOptions {
+    public var services: [String] = []
+    public var wait = false
+    public var waitTimeout: Int?
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default start behavior.
+    }
+
+    public init(_ configure: (inout ComposeStartOptions) -> Void) {
+        configure(&self)
+    }
+}
+
+/// Options for `compose config`.
+public struct ComposeConfigOptions {
+    public var services: [String] = []
+    public var format: String?
+    public var hash: String?
+    public var images = false
+    public var models = false
+    public var networks = false
+    public var quiet = false
+    public var servicesOnly = false
+    public var volumes = false
+
+    public init() {
+        // Stored property defaults represent Docker Compose's default config behavior.
+    }
+
+    public init(_ configure: (inout ComposeConfigOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose create`.
 public struct ComposeCreateOptions {
     public var services: [String] = []
@@ -510,6 +546,8 @@ public struct ComposeLogsOptions: Sendable {
 /// Options for `compose build`.
 public struct ComposeBuildOptions {
     public var services: [String] = []
+    public var buildArguments: [String] = []
+    public var memory: String?
     public var noCache = false
     public var pull = false
     public var push = false
@@ -737,13 +775,18 @@ public struct ComposeLsOptions {
 /// Options for `compose run` one-off containers.
 public struct ComposeRunOptions {
     public var command: [String] = []
+    public var build = false
     public var remove = false
     public var detach = false
+    public var interactive = false
     public var noTty = false
     public var noDeps = false
     public var servicePorts = false
     public var publish: [String] = []
     public var pullPolicy: String?
+    public var quietBuild = false
+    public var quietPull = false
+    public var removeOrphans = false
     public var containerName: String?
     public var entrypoint: String?
     public var workingDirectory: String?
@@ -1128,6 +1171,36 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(project)
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Returns Docker Compose compatible config projections for supported flags.
+    public func config(project: ComposeProject, options: ComposeConfigOptions) throws -> String {
+        if options.quiet {
+            _ = try selectedServices(project: project, selected: options.services)
+            return ""
+        }
+
+        if let hash = options.hash {
+            return try configHashes(project: project, services: options.services, hash: hash)
+        }
+        if options.images {
+            return try lineProjection(configImages(project: project, services: options.services))
+        }
+        if options.models {
+            return lineProjection((project.models ?? [:]).keys.sorted())
+        }
+        if options.networks {
+            return lineProjection(project.networks.keys.sorted())
+        }
+        if options.servicesOnly {
+            return try lineProjection(selectedServices(project: project, selected: options.services).map(\.name).sorted())
+        }
+        if options.volumes {
+            return lineProjection(project.volumes.keys.sorted())
+        }
+
+        let scopedProject = try project.filtered(to: options.services)
+        return try config(project: scopedProject, format: options.format)
     }
 
     /// Creates project resources and starts selected services in dependency order.
@@ -1682,9 +1755,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         quiet: Bool = false,
         services: Bool = false,
         statuses: [String] = [],
-        filters: [String] = []
+        filters: [String] = [],
+        format: String = "json",
+        noTrunc: Bool = false,
+        orphans: Bool = true
     ) async throws {
         let statusFilters = try psStatusFilters(statuses: statuses, filters: filters)
+        let outputFormat = try composePsFormat(format)
         var args = ["list", "--format", "json"]
         if all || !statusFilters.isEmpty {
             args.append("--all")
@@ -1694,7 +1771,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return
         }
         let containers = try await projectContainers(projectName: project.name, all: all || !statusFilters.isEmpty)
-        let filteredContainers = filterContainersByStatus(containers, statuses: statusFilters)
+        let serviceScopedContainers = filterContainersByOrphanPolicy(
+            containers,
+            project: project,
+            includeOrphans: orphans
+        )
+        let filteredContainers = filterContainersByStatus(serviceScopedContainers, statuses: statusFilters)
         if quiet {
             let identifiers = containerIdentifiers(filteredContainers)
             if !identifiers.isEmpty {
@@ -1709,7 +1791,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
             return
         }
-        options.emit(try containerListJSON(filteredContainers))
+        switch outputFormat {
+        case .json:
+            options.emit(try containerListJSON(filteredContainers))
+        case .table:
+            let table = renderComposeContainerTable(filteredContainers, noTrunc: noTrunc)
+            if !table.isEmpty {
+                options.emit(table)
+            }
+        }
     }
 
     /// Streams or prints logs for selected service containers.
@@ -2081,6 +2171,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if run.noTty {
             service.tty = false
         }
+        if run.interactive {
+            service.stdinOpen = true
+        }
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunCapabilityOverrides(run, service: &service)
         try applyRunVolumeOverrides(run, project: &runProject, service: &service)
@@ -2120,7 +2213,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             project: runProject,
             services: dependencyServices + [service]
         )
-        try await applyPullPolicy(run.pullPolicy, project: runProject, services: [service])
+        if run.build, service.build != nil {
+            try await build(project: runProject, services: [service.name], noCache: false, quiet: run.quietBuild)
+        }
+        try await applyPullPolicy(
+            run.pullPolicy,
+            project: runProject,
+            services: [service],
+            quiet: run.quietPull,
+            quietBuild: run.quietBuild
+        )
         try await validateRuntimeHealthChecks(project: runProject, services: dependencyServices + [service], cache: imageHealthCheckCache)
         try await ensureResources(project: runProject)
         runProject = try await startDependencyServices(
@@ -2154,13 +2256,32 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if run.detach {
             try await runPostStartHooks(service: service, containerID: containerName)
         }
+        if run.removeOrphans {
+            let declaredContainers = try declaredServiceContainerNames(project: runProject, scaleOverrides: [:])
+            let preservedServices = orphanProtectedServiceNames(project: runProject, scaleOverrides: [:])
+            try await removeRemainingProjectContainers(
+                project: runProject,
+                excluding: declaredContainers,
+                preservingServices: preservedServices
+            )
+        }
     }
 
     /// Starts selected service containers.
     public func start(project: ComposeProject, services selected: [String]) async throws {
-        let services = try selectedServices(project: project, selected: selected)
-        for target in try await serviceContainerTargets(project: project, services: services) {
+        try await start(project: project, options: ComposeStartOptions { $0.services = selected })
+    }
+
+    /// Starts selected service containers.
+    public func start(project: ComposeProject, options start: ComposeStartOptions) async throws {
+        try validateTimeoutSeconds(start.waitTimeout, command: "start --wait-timeout")
+        let services = try selectedServices(project: project, selected: start.services)
+        let targets = try await serviceContainerTargets(project: project, services: services)
+        for target in targets {
             try await startContainer(service: target.service, containerName: target.name)
+        }
+        if start.wait {
+            try await waitForStartedServiceTargets(targets, timeout: start.waitTimeout)
         }
     }
 
@@ -2345,6 +2466,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Sends a signal to selected service containers.
     public func kill(project: ComposeProject, services selected: [String], signal: String?) async throws {
+        try await kill(project: project, services: selected, signal: signal, removeOrphans: false)
+    }
+
+    /// Sends the requested signal to selected service containers.
+    public func kill(project: ComposeProject, services selected: [String], signal: String?, removeOrphans: Bool) async throws {
         let services = try selectedServices(project: project, selected: selected)
         for target in try await serviceContainerTargets(project: project, services: services) {
             var args = ["kill"]
@@ -2358,6 +2484,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 continue
             }
             try await lifecycleManager.killContainer(id: containerID, signal: signal ?? "KILL")
+        }
+        if removeOrphans {
+            let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
+            let preservedServices = orphanProtectedServiceNames(project: project, scaleOverrides: [:])
+            try await removeRemainingProjectContainers(
+                project: project,
+                excluding: declaredContainers,
+                preservingServices: preservedServices
+            )
         }
     }
 
@@ -2641,6 +2776,51 @@ public extension ComposeOrchestrator {
 }
 
 private extension ComposeOrchestrator {
+    /// Renders the full canonical config in a supported output format.
+    func config(project: ComposeProject, format: String?) throws -> String {
+        let normalizedFormat = (format ?? "json").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalizedFormat {
+        case "", "json":
+            return try config(project: project)
+        case "yaml":
+            throw ComposeError.unsupported("config --format yaml; YAML rendering is not wired yet")
+        default:
+            throw ComposeError.unsupported("config --format '\(format ?? "")'; supported formats are json")
+        }
+    }
+
+    /// Returns images referenced by selected services, including generated build tags.
+    func configImages(project: ComposeProject, services: [String]) throws -> [String] {
+        let selected = try selectedServices(project: project, selected: services)
+        return Array(Set(selected.compactMap { serviceImage(project: project, service: $0) })).sorted()
+    }
+
+    /// Returns service config hashes using the same fingerprint as recreate decisions.
+    func configHashes(project: ComposeProject, services: [String], hash: String) throws -> String {
+        let requestedHash = hash.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected: [ComposeService]
+        if requestedHash.isEmpty || requestedHash == "*" {
+            selected = try selectedServices(project: project, selected: services)
+        } else {
+            if !services.isEmpty, !services.contains(requestedHash) {
+                throw ComposeError.invalidProject("config --hash '\(requestedHash)' is outside the selected services")
+            }
+            selected = try selectedServices(project: project, selected: [requestedHash])
+        }
+        let lines = try selected.sorted(by: { $0.name < $1.name }).map { service in
+            "\(service.name) \(try configHash(project: project, service: service))"
+        }
+        return lineProjection(lines)
+    }
+
+    /// Renders one value per line, matching Docker Compose projection commands.
+    func lineProjection(_ values: [String]) -> String {
+        guard !values.isEmpty else {
+            return ""
+        }
+        return values.joined(separator: "\n")
+    }
+
     /// Builds the Compose-owned typed projection that will feed direct
     /// apple/container service creation once image/kernel resolution is wired.
     func serviceCreatePlan(
@@ -5644,6 +5824,9 @@ private extension ComposeOrchestrator {
         if buildOptions.quiet {
             args.append("--quiet")
         }
+        if let memory = buildOptions.memory?.trimmingCharacters(in: .whitespacesAndNewlines), !memory.isEmpty {
+            args.append(contentsOf: ["--memory", memory])
+        }
         for platform in build.platforms ?? [] where !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])
         }
@@ -5661,6 +5844,9 @@ private extension ComposeOrchestrator {
         }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
+        }
+        for buildArgument in buildOptions.buildArguments where !buildArgument.isEmpty {
+            args.append(contentsOf: ["--build-arg", buildArgument])
         }
         args.append(build.context ?? ".")
         try await runContainer(args)
@@ -6555,6 +6741,50 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Waits for started service containers to reach a usable runtime state.
+    func waitForStartedServiceTargets(_ targets: [ServiceContainerTarget], timeout: Int?) async throws {
+        guard !targets.isEmpty else {
+            return
+        }
+        if options.dryRun {
+            for target in targets {
+                var args = ["wait-running"]
+                if let timeout {
+                    args.append(contentsOf: ["--timeout", String(timeout)])
+                }
+                args.append(target.name)
+                emitComposeRuntimeOperation(args)
+            }
+            return
+        }
+
+        let deadline = timeout.map { options.currentDate().addingTimeInterval(TimeInterval($0)) }
+        var pending = Dictionary(uniqueKeysWithValues: targets.map { ($0.name, $0) })
+        while !pending.isEmpty {
+            for (name, target) in pending.sorted(by: { $0.key < $1.key }) {
+                guard let container = try await discoveryManager.getContainer(id: name) else {
+                    throw ComposeError.invalidProject("service '\(target.service.name)' container '\(name)' does not exist")
+                }
+                switch startWaitState(container) {
+                case .ready:
+                    pending.removeValue(forKey: name)
+                case .pending:
+                    break
+                case .failed(let message):
+                    throw ComposeError.invalidProject("service '\(target.service.name)' container '\(name)' \(message)")
+                }
+            }
+            guard !pending.isEmpty else {
+                return
+            }
+            if let deadline, options.currentDate() >= deadline {
+                let names = pending.keys.sorted().joined(separator: ", ")
+                throw ComposeError.invalidProject("start --wait timed out waiting for \(names)")
+            }
+            try await options.sleep(.milliseconds(250))
+        }
+    }
+
     /// Validates that attach stays on the output-only log-follow path apple/container exposes today.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
         if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
@@ -7254,6 +7484,40 @@ private extension ComposeContainerSummary {
     /// Compose config hash label used for recreate decisions.
     var configHash: String? {
         labels[configHashLabel]
+    }
+}
+
+private extension ComposeProject {
+    /// Returns a copy scoped to explicitly selected services for `compose config`.
+    func filtered(to selected: [String]) throws -> ComposeProject {
+        guard !selected.isEmpty else {
+            return self
+        }
+        var copy = self
+        let selectedServices = try selected.map { name in
+            guard let service = services[name] else {
+                throw ComposeError.invalidProject("unknown service '\(name)'")
+            }
+            return (name, service)
+        }
+        copy.services = Dictionary(uniqueKeysWithValues: selectedServices)
+
+        let networkNames = Set(selectedServices.flatMap { _, service in service.networks ?? [] })
+        copy.networks = copy.networks.filter { networkNames.contains($0.key) }
+
+        let volumeNames = Set(selectedServices.flatMap { _, service in
+            (service.volumes ?? []).compactMap { mount -> String? in
+                guard (mount.type == nil || mount.type == "volume"),
+                      let source = mount.source,
+                      !source.hasPrefix("/") else {
+                    return nil
+                }
+                return source
+            }
+        })
+        copy.volumes = copy.volumes.filter { volumeNames.contains($0.key) }
+
+        return copy
     }
 }
 
@@ -8512,9 +8776,73 @@ private func platformJSONObject(_ value: String) -> [String: String] {
     return object
 }
 
+/// Validates the `compose ps --format` value.
+private func composePsFormat(_ value: String) throws -> ComposePsFormat {
+    switch value.lowercased() {
+    case "table":
+        return .table
+    case "json":
+        return .json
+    default:
+        throw ComposeError.unsupported("ps --format '\(value)'; supported formats are table and json")
+    }
+}
+
+/// Output modes supported by `compose ps`.
+private enum ComposePsFormat {
+    case table
+    case json
+}
+
+/// Renders project container rows as a compact Docker Compose-style table.
+private func renderComposeContainerTable(
+    _ containers: [ComposeContainerSummary],
+    noTrunc _: Bool
+) -> String {
+    guard !containers.isEmpty else {
+        return ""
+    }
+    let rows = [
+        ["NAME", "IMAGE", "SERVICE", "STATUS"],
+    ] + containers.map { container in
+        [
+            container.id,
+            container.imageReference,
+            container.serviceName ?? "",
+            container.status,
+        ]
+    }
+    let widths = rows.reduce(Array(repeating: 0, count: rows[0].count)) { current, row in
+        zip(current, row).map { max($0, $1.count) }
+    }
+    return rows.map { row in
+        row.enumerated().map { index, value in
+            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
+        }.joined(separator: "  ")
+    }.joined(separator: "\n")
+}
+
 /// Returns container IDs from a filtered direct API list.
 private func containerIdentifiers(_ containers: [ComposeContainerSummary]) -> [String] {
     containers.map(\.id)
+}
+
+/// Applies `compose ps --orphans` using service labels from the normalized model.
+private func filterContainersByOrphanPolicy(
+    _ containers: [ComposeContainerSummary],
+    project: ComposeProject,
+    includeOrphans: Bool
+) -> [ComposeContainerSummary] {
+    guard !includeOrphans else {
+        return containers
+    }
+    let serviceNames = Set(project.services.keys)
+    return containers.filter { container in
+        guard let serviceName = container.serviceName else {
+            return false
+        }
+        return serviceNames.contains(serviceName)
+    }
 }
 
 /// Returns unique service names from a filtered direct API list.
@@ -8623,6 +8951,39 @@ private func filterContainersByStatus(_ containers: [ComposeContainerSummary], s
 /// Filters direct API containers by Compose project label.
 private func filterProjectContainers(projectName: String, containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
     containers.filter { $0.projectName == projectName }
+}
+
+/// Interprets direct runtime state for `compose start --wait`.
+private func startWaitState(_ container: ComposeContainerSummary) -> ComposeStartWaitState {
+    switch container.health?.lowercased() {
+    case "healthy":
+        return .ready
+    case "starting":
+        return .pending
+    case "unhealthy":
+        return .failed("is unhealthy")
+    case .some("none"), nil:
+        break
+    case let health?:
+        return .failed("has unsupported health status '\(health)'")
+    }
+
+    switch container.status.lowercased() {
+    case "running":
+        return .ready
+    case "created", "creating", "starting", "stopping", "unknown":
+        return .pending
+    case "stopped":
+        return .failed("is stopped")
+    default:
+        return .failed("is \(container.status)")
+    }
+}
+
+private enum ComposeStartWaitState {
+    case ready
+    case pending
+    case failed(String)
 }
 
 /// Returns true when a discovered normal service container matches an ID.
