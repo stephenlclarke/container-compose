@@ -27,8 +27,8 @@ public enum ComposeArgumentRewriter {
         "build",
         "config",
         "attach",
+        "bridge",
         "commit",
-        "convert",
         "cp",
         "create",
         "down",
@@ -63,9 +63,12 @@ public enum ComposeArgumentRewriter {
 
     private static let globalOptions: [String: OptionKind] = [
         "--ansi": .value,
+        "--all-resources": .flag,
+        "--compatibility": .flag,
         "--dry-run": .flag,
         "--env-file": .value,
         "--file": .value,
+        "--parallel": .value,
         "--profile": .value,
         "--progress": .value,
         "--project-directory": .value,

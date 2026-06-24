@@ -141,16 +141,20 @@ cli-smoke-built:
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
-	[[ "$$stats_help_output" == *"Optional service names."* ]]; \
+	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
-	[[ "$$logs_help_output" == *"Docker Compose shorthand -f is accepted after logs."* ]]; \
+	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \
 	run_help_output="$$(".build/debug/compose" run --help)"; \
-	[[ "$$run_help_output" == *"Docker Compose shorthand -p is accepted after run."* ]]; \
+	[[ "$$run_help_output" == *"-p, --publish stringArray"* ]]; \
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \
-	[[ "$$rm_help_output" == *"Docker Compose shorthand -f is accepted after rm."* ]]; \
+	[[ "$$rm_help_output" == *"-f, --force"* ]]; \
 	wait_help_output="$$(".build/debug/compose" wait --help)"; \
-	[[ "$$wait_help_output" == *"Drop the project when the first selected service container stops."* ]]; \
+	[[ "$$wait_help_output" == *"--down-project"* ]]; \
 	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \
+	bridge_help_output="$$(".build/debug/compose" bridge --help)"; \
+	[[ "$$bridge_help_output" == *"Management Commands:"* ]]; \
+	commit_output="$$(".build/debug/compose" commit api example/api:latest)"; \
+	[[ "$$commit_output" == "Not implemented yet" ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'enabled=true\n' > "$$tmpdir/api.conf"; \
@@ -177,9 +181,7 @@ cli-smoke-built:
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
-	convert_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" convert)"; \
-	[[ "$$convert_output" == "$$config_output" ]]; \
-	[[ "$$convert_output" == *'"name":"demo"'* ]]; \
+	[[ "$$config_output" == *'"name":"demo"'* ]]; \
 	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
 	[[ "$$compact_global_output" == *"compact-db-1"* ]]; \
 	[[ "$$compact_global_output" == *"compact-api-1"* ]]; \
@@ -521,12 +523,10 @@ cli-smoke-built:
 	[[ "$$watch_output" == *"compose: watch prune disabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch quiet enabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
-	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot 2>&1 || true)"; \
-	[[ "$$commit_output" == *"unsupported compose feature: commit:"* ]]; \
-	[[ "$$commit_output" == *"apple/container does not expose a container commit image snapshot primitive yet"* ]]; \
-	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \
-	[[ "$$publish_output" == *"unsupported compose feature: publish:"* ]]; \
-	[[ "$$publish_output" == *"apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet"* ]]
+	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot)"; \
+	[[ "$$commit_output" == "Not implemented yet" ]]; \
+	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest)"; \
+	[[ "$$publish_output" == "Not implemented yet" ]]
 
 docker-log-fixtures:
 	./scripts/capture-docker-compose-log-fixtures.sh

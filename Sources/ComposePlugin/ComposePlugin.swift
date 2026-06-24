@@ -35,6 +35,7 @@ struct ComposePlugin: AsyncParsableCommand {
         abstract: "Manage multi-container applications with Docker Compose syntax",
         version: composePluginVersionString,
         subcommands: [
+            Bridge.self,
             Config.self,
             Create.self,
             Up.self,
@@ -60,7 +61,6 @@ struct ComposePlugin: AsyncParsableCommand {
             Scale.self,
             Attach.self,
             Commit.self,
-            Convert.self,
             Export.self,
             Publish.self,
             Volumes.self,
@@ -81,7 +81,11 @@ struct ComposePluginMain {
     static func main() async {
         // Docker Compose allows global options before the subcommand. Rewrite
         // them before handing arguments to Swift Argument Parser.
-        await ComposePlugin.main(ComposeArgumentRewriter.rewrite(Array(CommandLine.arguments.dropFirst())))
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if ComposeCLIHelp.renderIfRequested(arguments: arguments) {
+            return
+        }
+        await ComposePlugin.main(ComposeArgumentRewriter.rewrite(arguments))
     }
 }
 
@@ -107,6 +111,15 @@ struct GlobalOptions: ParsableArguments {
 
     @Option(name: .customLong("progress"), help: "Progress output policy, accepted for Docker Compose compatibility.")
     var progress: String?
+
+    @Flag(name: .customLong("all-resources"), help: "Include all resources, even those not used by services.")
+    var allResources: Bool = false
+
+    @Flag(name: .customLong("compatibility"), help: "Run compose in backward compatibility mode.")
+    var compatibility: Bool = false
+
+    @Option(name: .customLong("parallel"), help: "Control max parallelism.")
+    var parallel: Int?
 
     @Flag(name: .customLong("dry-run"), help: "Print container commands instead of running them.")
     var dryRun: Bool = false
@@ -183,14 +196,72 @@ extension ComposeProjectCommand {
     }
 }
 
+/// Placeholder for Docker Compose bridge management commands.
+struct Bridge: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "bridge", abstract: "Convert compose files into another model.")
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
+    /// Reports that bridge conversion is not implemented yet.
+    func run() throws {
+        print("Not implemented yet")
+    }
+}
+
 /// Implements `compose config`.
 struct Config: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "config", abstract: "Validate and print the normalized Compose project.")
 
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("environment"), help: "Print environment used for interpolation.")
+    var environment = false
+    @Option(name: .customLong("format"), help: "Format the output. Values: yaml or json.")
+    var format: String?
+    @Option(name: .customLong("hash"), help: "Print the service config hash, one per line.")
+    var hash: String?
+    @Flag(name: .customLong("images"), help: "Print the image names, one per line.")
+    var images = false
+    @Flag(name: .customLong("lock-image-digests"), help: "Produce an override file with image digests.")
+    var lockImageDigests = false
+    @Flag(name: .customLong("models"), help: "Print the model names, one per line.")
+    var models = false
+    @Flag(name: .customLong("networks"), help: "Print the network names, one per line.")
+    var networks = false
+    @Flag(name: .customLong("no-consistency"), help: "Do not check model consistency.")
+    var noConsistency = false
+    @Flag(name: .customLong("no-env-resolution"), help: "Do not resolve service env files.")
+    var noEnvResolution = false
+    @Flag(name: .customLong("no-interpolate"), help: "Do not interpolate environment variables.")
+    var noInterpolate = false
+    @Flag(name: .customLong("no-normalize"), help: "Do not normalize compose model.")
+    var noNormalize = false
+    @Flag(name: .customLong("no-path-resolution"), help: "Do not resolve file paths.")
+    var noPathResolution = false
+    @Option(name: [.customShort("o"), .customLong("output")], help: "Save to file.")
+    var output: String?
+    @Flag(name: .customLong("profiles"), help: "Print the profile names, one per line.")
+    var profiles = false
+    @Flag(name: .shortAndLong, help: "Only validate the configuration.")
+    var quiet = false
+    @Flag(name: .customLong("resolve-image-digests"), help: "Pin image tags to digests.")
+    var resolveImageDigests = false
+    @Flag(name: .customLong("services"), help: "Print the service names, one per line.")
+    var servicesOnly = false
+    @Flag(name: .customLong("variables"), help: "Print model variables and default values.")
+    var variables = false
+    @Flag(name: .customLong("volumes"), help: "Print the volume names, one per line.")
+    var volumes = false
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
 
     /// Prints the canonical project JSON emitted by the orchestrator.
     func run() async throws {
+        if environment || format != nil || hash != nil || images || lockImageDigests || models || networks || noConsistency
+            || noEnvResolution || noInterpolate || noNormalize || noPathResolution || output != nil || profiles || quiet
+            || resolveImageDigests || servicesOnly || variables || volumes || !services.isEmpty
+        {
+            print("Not implemented yet")
+            return
+        }
         try await printCanonicalProject()
     }
 }
@@ -246,6 +317,14 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "up", abstract: "Create and start services.")
 
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("abort-on-container-exit"), help: "Stop all containers if any container stops.")
+    var abortOnContainerExit = false
+    @Flag(name: .customLong("abort-on-container-failure"), help: "Stop all containers if any container exits with failure.")
+    var abortOnContainerFailure = false
+    @Option(name: .customLong("attach"), help: "Restrict attaching to the specified service. May be repeated.")
+    var attach: [String] = []
+    @Flag(name: .customLong("attach-dependencies"), help: "Attach to dependent service logs.")
+    var attachDependencies = false
     @Flag(name: .shortAndLong, help: "Build images before starting services.")
     var build = false
     @Flag(name: .customLong("quiet-build"), help: "Suppress build output.")
@@ -254,14 +333,24 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var noBuild = false
     @Flag(name: .shortAndLong, help: "Run containers in the background.")
     var detach = false
+    @Option(name: .customLong("exit-code-from"), help: "Return the exit code of the selected service container.")
+    var exitCodeFrom: String?
     @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
     var forceRecreate = false
+    @Flag(name: .customLong("menu"), help: "Enable interactive shortcuts when running attached.")
+    var menu = false
     @Flag(name: .customLong("always-recreate-deps"), help: "Recreate dependent containers.")
     var alwaysRecreateDeps = false
+    @Option(name: .customLong("no-attach"), help: "Do not attach to the specified service. May be repeated.")
+    var noAttach: [String] = []
     @Flag(name: .customLong("no-recreate"), help: "Reuse existing containers.")
     var noRecreate = false
+    @Flag(name: .customLong("no-color"), help: "Produce monochrome output.")
+    var noColor = false
     @Flag(name: .customLong("remove-orphans"), help: "Remove project containers for services not declared by the Compose file.")
     var removeOrphans = false
+    @Flag(name: .customLong("no-log-prefix"), help: "Do not print service prefixes.")
+    var noLogPrefix = false
     @Option(name: .customLong("pull"), help: "Image pull policy: always, missing, if_not_present, or never.")
     var pull: String?
     @Flag(name: .customLong("quiet-pull"), help: "Pull without printing progress output.")
@@ -272,8 +361,20 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var noDeps = false
     @Flag(name: .customLong("no-start"), help: "Create services without starting them.")
     var noStart = false
+    @Flag(name: [.customShort("V"), .customLong("renew-anon-volumes")], help: "Recreate anonymous volumes.")
+    var renewAnonVolumes = false
     @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers during recreate shutdown.")
     var timeout: Int?
+    @Flag(name: .customLong("timestamps"), help: "Show timestamps.")
+    var timestamps = false
+    @Flag(name: .customLong("wait"), help: "Wait for services to be running or healthy.")
+    var wait = false
+    @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to wait for services.")
+    var waitTimeout: Int?
+    @Flag(name: [.customShort("w"), .customLong("watch")], help: "Watch source code and rebuild or refresh containers.")
+    var watch = false
+    @Flag(name: [.customShort("y"), .customLong("yes")], help: "Assume yes as answer to prompts.")
+    var yes = false
     @Argument(help: "Optional service names to start.")
     var services: [String] = []
 
@@ -332,14 +433,30 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "build", abstract: "Build service images.")
 
     @OptionGroup var global: GlobalOptions
+    @Option(name: .customLong("build-arg"), help: "Set build-time variables for services. May be repeated.")
+    var buildArgs: [String] = []
+    @Option(name: .customLong("builder"), help: "Set builder to use.")
+    var builder: String?
+    @Flag(name: .customLong("check"), help: "Check build configuration.")
+    var check = false
+    @Option(name: [.customShort("m"), .customLong("memory")], help: "Set memory limit for the build container.")
+    var memory: String?
     @Flag(name: .customLong("no-cache"), help: "Do not use cached image layers.")
     var noCache = false
+    @Flag(name: .customLong("print"), help: "Print equivalent bake file.")
+    var printBake = false
+    @Option(name: .customLong("provenance"), help: "Add a provenance attestation.")
+    var provenance: String?
     @Flag(name: .customLong("pull"), help: "Always attempt to pull newer base images.")
     var pull = false
     @Flag(name: .customLong("push"), help: "Push service images after building.")
     var push = false
     @Flag(name: .shortAndLong, help: "Suppress build output.")
     var quiet = false
+    @Option(name: .customLong("sbom"), help: "Add a SBOM attestation.")
+    var sbom: String?
+    @Option(name: .customLong("ssh"), help: "Set SSH authentications used when building service images.")
+    var ssh: String?
     @Flag(name: .customLong("with-dependencies"), help: "Also build service dependencies.")
     var withDependencies = false
     @Argument(help: "Optional services to build.")
@@ -453,6 +570,12 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .shortAndLong, help: "Include stopped containers.")
     var all = false
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    var format = "table"
+    @Flag(name: .customLong("no-trunc"), help: "Do not truncate output.")
+    var noTrunc = false
+    @Flag(name: .customLong("orphans"), help: "Include orphaned services.")
+    var orphans = false
     @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display container IDs.")
     var quiet = false
     @Flag(name: .customLong("services"), help: "Only display service names.")
@@ -582,11 +705,15 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "run", abstract: "Run a one-off command for a service.")
 
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("build"), help: "Build image before starting container.")
+    var build = false
     @Flag(name: .customLong("rm"), help: "Remove the one-off container after exit.")
     var remove = false
     @Flag(name: .shortAndLong, help: "Run the one-off container in the background.")
     var detach = false
-    @Flag(name: [.customShort("T"), .customLong("no-tty")], help: "Disable pseudo-TTY allocation.")
+    @Flag(name: .shortAndLong, help: "Keep stdin open.")
+    var interactive = false
+    @Flag(name: [.customShort("T"), .customLong("no-TTY"), .customLong("no-tty")], help: "Disable pseudo-TTY allocation.")
     var noTty = false
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
     var noDeps = false
@@ -596,6 +723,16 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var publish: [String] = []
     @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, if_not_present, or never.")
     var pull: String?
+    @Flag(name: .shortAndLong, help: "Do not print anything to stdout.")
+    var quiet = false
+    @Flag(name: .customLong("quiet-build"), help: "Suppress build progress output.")
+    var quietBuild = false
+    @Flag(name: .customLong("quiet-pull"), help: "Pull without printing progress output.")
+    var quietPull = false
+    @Flag(name: .customLong("remove-orphans"), help: "Remove containers for services not defined in the Compose file.")
+    var removeOrphans = false
+    @Flag(name: .customLong("use-aliases"), help: "Use the service's network aliases.")
+    var useAliases = false
     @Option(name: .customLong("name"), help: "Assign a name to the one-off container.")
     var name: String?
     @Option(name: .customLong("entrypoint"), help: "Override the service entrypoint for the one-off container.")
@@ -655,6 +792,10 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
 struct Start: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "start", abstract: "Start existing service containers.")
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("wait"), help: "Wait for services to be running or healthy.")
+    var wait = false
+    @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to wait for services.")
+    var waitTimeout: Int?
     @Argument var services: [String] = []
     /// Starts selected service containers.
     func run() async throws {
@@ -681,6 +822,8 @@ struct Stop: AsyncParsableCommand, ComposeProjectCommand {
 struct Restart: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "restart", abstract: "Restart service containers.")
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("no-deps"), help: "Do not restart dependent services.")
+    var noDeps = false
     @Option(name: [.customShort("t"), .customLong("timeout")], help: "Seconds to wait before killing containers.")
     var timeout: Int?
     @Argument var services: [String] = []
@@ -760,6 +903,8 @@ struct Stats: AsyncParsableCommand, ComposeProjectCommand {
 struct Kill: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "kill", abstract: "Kill service containers.")
     @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("remove-orphans"), help: "Remove containers for services not defined in the Compose file.")
+    var removeOrphans = false
     @Option(name: .shortAndLong, help: "Signal to send.")
     var signal: String?
     @Argument var services: [String] = []
@@ -952,17 +1097,7 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for committing service containers.
     func run() throws {
-        try global.orchestrator().unsupported("commit", reason: "apple/container does not expose a container commit image snapshot primitive yet")
-    }
-}
-
-/// Implements `compose convert` as the canonical config renderer.
-struct Convert: AsyncParsableCommand, ComposeProjectCommand {
-    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert the Compose model to canonical JSON.")
-    @OptionGroup var global: GlobalOptions
-    /// Prints the canonical project JSON emitted by the orchestrator.
-    func run() async throws {
-        try await printCanonicalProject()
+        print("Not implemented yet")
     }
 }
 
@@ -994,7 +1129,7 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for Compose application publishing.
     func run() throws {
-        try global.orchestrator().unsupported("publish", reason: "apple/container does not expose Compose application OCI artifact publishing or oci:// consumption primitives yet")
+        print("Not implemented yet")
     }
 }
 
@@ -1088,6 +1223,8 @@ struct Version: ParsableCommand {
 
 /// Global options accepted after `compose version`.
 struct VersionGlobalOptions: ParsableArguments {
+    @Flag(name: .customLong("all-resources"), help: "Accepted for Docker Compose compatibility.")
+    var allResources = false
     @Option(name: .customLong("file"), help: "Accepted for Docker Compose compatibility.")
     var file: [String] = []
     @Option(name: [.customShort("p"), .customLong("project-name")], help: "Accepted for Docker Compose compatibility.")
@@ -1102,6 +1239,10 @@ struct VersionGlobalOptions: ParsableArguments {
     var ansi: String?
     @Option(name: .customLong("progress"), help: "Accepted for Docker Compose compatibility.")
     var progress: String?
+    @Flag(name: .customLong("compatibility"), help: "Accepted for Docker Compose compatibility.")
+    var compatibility = false
+    @Option(name: .customLong("parallel"), help: "Accepted for Docker Compose compatibility.")
+    var parallel: Int?
     @Flag(name: .customLong("dry-run"), help: "Accepted for Docker Compose compatibility.")
     var dryRun = false
     @Flag(name: .customLong("verbose"), help: "Accepted for Docker Compose compatibility.")

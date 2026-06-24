@@ -1007,8 +1007,8 @@ struct ComposeArgumentRewriterTests {
     func recognizesExplicitComposeCommandSurfaces() {
         let commands = [
             "attach",
+            "bridge",
             "commit",
-            "convert",
             "export",
             "publish",
             "scale",

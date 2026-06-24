@@ -23,6 +23,11 @@ where [`container`](https://github.com/apple/container) has matching runtime
 primitives. Compose file normalization uses `compose-go`, with Swift handling
 runtime orchestration.
 
+The CLI accepts the Docker Compose 5.2.0 command and option surface, including
+help output. Commands or option modes that do not yet have backing
+`apple/container` functionality print `Not implemented yet` or keep the
+runtime gap documented in [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md).
+
 ## Documentation
 
 - [INSTALL.md](INSTALL.md)

@@ -22,9 +22,16 @@ The current create-options parity fixture copies Docker Compose's upstream `pkg/
 
 | Date | Target | Docker Source | Result | Notes |
 | --- | --- | --- | --- | --- |
+| 2026-06-24 | `make cli-smoke-built` | Docker Compose 5.2.0 CLI help snapshot | Pass | The `container-compose` executable accepts the Docker Compose 5.2.0 root command surface, global options, command help, and placeholder gaps for `bridge`, `commit`, and `publish`. Top-level `convert` is intentionally removed because Docker Compose exposes conversion under `bridge`. |
 | 2026-06-24 | `make docker-compose-e2e-fixtures` | `docker/compose@a3c1c0dc2eba14f5ad9df3f5c8f0e1ebdd088a9c` | Pass | Missing-checkout clone succeeded. Immediate rerun reported the same commit without recloning. |
 | 2026-06-24 | `make docker-compose-restart-policy-parity` | Local parity fixture | Pass | Passed with Docker Compose 5.2.0 and Docker Engine 29.5.2 after updating the inspector to use `docker compose ps --all -q` for created-but-not-running containers. |
 | 2026-06-24 | `make docker-compose-create-options-parity` | `docker/compose@a3c1c0dc2eba14f5ad9df3f5c8f0e1ebdd088a9c` plus local create-options fixture | Partial | Docker Compose inspect checks passed and `container-compose --dry-run create --build` checks passed. Live `container-compose create --build` is blocked by `Error: XPC connection error: Connection invalid`; `container system status` also hangs and `container system start` did not complete. |
+
+## CLI Surface
+
+`container-compose` accepts the Docker Compose 5.2.0 root command list and global option surface. Help output is rendered from a Docker Compose 5.2.0 snapshot so that missing implementation work is visible without rejecting valid Docker Compose commands at parse time.
+
+Command-level gaps currently return the literal placeholder `Not implemented yet` when there is no backing implementation. The current placeholders are `bridge`, `commit`, and `publish`. Some implemented commands also accept newer Docker Compose options that are parsed for surface compatibility but not yet behaviorally wired; those remain parity gaps until covered by a focused fixture or runtime primitive.
 
 ## Covered By Current Parity Checks
 
