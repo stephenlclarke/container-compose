@@ -6,7 +6,7 @@ This repository keeps two public environments: `main` for people who want to tes
 
 | Environment | `container-compose` branch | `container` fork branch | Audience | Movement rule |
 | --- | --- | --- | --- | --- |
-| Release | `main` | `main` | People trying the app/plugin without chasing active development | Move only after a validation pass. Treat this as frozen between promoted snapshots. |
+| Stable | `main` | `main` | People trying the app/plugin without chasing active development | Move only after a validation pass. Treat this as frozen between promoted snapshots. |
 | Development | `develop` | `develop` | Day-to-day development and integration testing | Move freely as work lands, including fork-backed runtime work that has not been accepted upstream. |
 
 `Package.swift` references the `container` checkout as a sibling path dependency at `../container`, so the active branch in that checkout is part of the selected environment. For the frozen tester environment, use `main` in both repositories. For active development, use `develop` in both repositories.
@@ -21,18 +21,17 @@ git -C ~/github/container-compose checkout develop
 git -C ~/github/container checkout develop
 ```
 
-The current integration stack still pins [`stephenlclarke/containerization`](https://github.com/stephenlclarke/containerization) `integration/blkio-runtime` through `Package.swift` and `Package.resolved` until the block I/O runtime API from [`apple/containerization#739`](https://github.com/apple/containerization/pull/739) is accepted upstream. There is no separate containerization release/develop lane for this repo right now; the pin is part of the selected plugin/runtime environment.
+The current integration stack still pins [`stephenlclarke/containerization`](https://github.com/stephenlclarke/containerization) `integration/blkio-runtime` through `Package.swift` and `Package.resolved` until the block I/O runtime API from [`apple/containerization#739`](https://github.com/apple/containerization/pull/739) is accepted upstream. There is no separate stable/develop lane for `containerization` right now; the pin is part of the selected plugin/runtime environment.
 
 ## Default And Compatibility Branches
 
 | Branch | Purpose |
 | --- | --- |
-| `main` | Default repository branch and public release lane. It may require the matching `stephenlclarke/container` `main` branch when the released plugin snapshot depends on fork-backed runtime primitives. |
+| `main` | Default repository branch and public stable lane. It may require the matching `stephenlclarke/container` `main` branch when the promoted plugin snapshot depends on fork-backed runtime primitives. |
 | `apple-container-compatible` | Upstream-only compatibility branch for users who want behavior available from released or accepted [`apple/container`](https://github.com/apple/container) primitives. |
 | `regression` | Short-lived upstream compatibility, dependency, CodeQL, and canary work. It should stay close to `main` or `develop` depending on the issue being checked. |
-| `release` | Legacy frozen-branch name kept only as a transition alias. Do not land work here independently of `main`. |
 
-Do not maintain two silently divergent frozen branches. Future promotions should move validated `develop` snapshots into `main`; if the legacy `release` branch is retained, update it only as an alias of the same promoted commit.
+Do not maintain extra frozen branches. Future promotions should move validated `develop` snapshots into `main`.
 
 ## Integration And Archive Branches
 
