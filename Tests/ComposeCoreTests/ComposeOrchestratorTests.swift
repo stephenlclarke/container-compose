@@ -16889,6 +16889,34 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "sleep", "60"])
     }
 
+    @Test("run quiet suppresses inherited terminal IO")
+    func runQuietSuppressesInheritedTerminalIO() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.tty = true
+                    $0.stdinOpen = true
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["sh"]) {
+                $0.quiet = true
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(runner.commands.first?.io == .captured(input: nil))
+        #expect(command.contains("--tty"))
+        #expect(command.contains("--interactive"))
+        #expect(Array(command.suffix(2)) == ["alpine", "sh"])
+    }
+
     @Test("run detached executes post start hooks on one off containers")
     func runDetachedExecutesPostStartHooksOnOneOffContainers() async throws {
         let runner = RecordingRunner()

@@ -281,6 +281,7 @@ cli-smoke-built:
 	[[ "$$run_help_output" == *"-p, --publish stringArray"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--build$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--interactive$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--quiet$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--quiet-build$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--quiet-pull$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
@@ -450,8 +451,9 @@ cli-smoke-built:
 	[[ "$$run_build_output" == *"container run"* ]]; \
 	run_interactive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --interactive api true)"; \
 	[[ "$$run_interactive_output" == *"--interactive"* ]]; \
-	run_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --quiet api true 2>&1 || true)"; \
-	[[ "$$run_quiet_output" == *"unsupported compose feature: run --quiet"* ]]; \
+	run_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --quiet api true)"; \
+	[[ "$$run_quiet_output" == *"container run"* ]]; \
+	[[ "$$run_quiet_output" == *" alpine true"* ]]; \
 	run_named_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --name custom-api api echo hello)"; \
 	[[ "$$run_named_output" == *"--name custom-api"* ]]; \
 	[[ "$$run_named_output" == *" alpine echo hello"* ]]; \

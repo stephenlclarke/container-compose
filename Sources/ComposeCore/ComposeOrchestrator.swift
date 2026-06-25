@@ -900,6 +900,7 @@ public struct ComposeRunOptions {
     public var pullPolicy: String?
     public var quietBuild = false
     public var quietPull = false
+    public var quiet = false
     public var removeOrphans = false
     public var containerName: String?
     public var entrypoint: String?
@@ -926,6 +927,7 @@ public struct ComposeRunOptions {
         pullPolicy = nil
         quietBuild = false
         quietPull = false
+        quiet = false
         removeOrphans = false
         containerName = nil
         entrypoint = nil
@@ -2464,7 +2466,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 externalVolumeMounts: externalVolumeMounts,
                 imageHealthCheckCache: imageHealthCheckCache
             ),
-            inheritedIO: !run.detach && (service.tty == true || service.stdinOpen == true)
+            inheritedIO: !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
         )
         if run.detach {
             try await runPostStartHooks(service: service, containerID: containerName)

@@ -989,13 +989,6 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Runs a one-off service container with an optional command override.
     func run() async throws {
-        let unsupportedOptions = [
-            quiet ? "--quiet" : nil,
-        ].compactMap { $0 }
-        if let first = unsupportedOptions.first {
-            throw ComposeError.unsupported("run \(first)")
-        }
-
         let loadedProject = try await project()
         try await orchestrator().run(
             project: loadedProject,
@@ -1013,6 +1006,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 $0.pullPolicy = pull
                 $0.quietBuild = quietBuild
                 $0.quietPull = quietPull
+                $0.quiet = quiet
                 $0.removeOrphans = removeOrphans
                 $0.containerName = name
                 $0.entrypoint = entrypoint

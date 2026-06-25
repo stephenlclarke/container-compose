@@ -412,7 +412,7 @@ enum ComposeCLIHelp {
             "--no-deps": .supported,
             "--publish": .supported,
             "--pull": .supported,
-            "--quiet": .notSupported,
+            "--quiet": .supported,
             "--quiet-build": .supported,
             "--quiet-pull": .supported,
             "--remove-orphans": .supported,
