@@ -54,7 +54,7 @@ SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAM
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
 SWIFT_TEST_ATTEMPTS ?= 2
-SWIFT_TEST_RUN_FLAGS ?=
+SWIFT_TEST_RUN_FLAGS ?= --no-parallel
 MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md STATUS.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
 
 # Some local toolchains can build Swift Testing targets without adding the
