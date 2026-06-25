@@ -197,30 +197,32 @@ Build the plugin archive consumed by the install guide:
 make package
 ```
 
-GitHub Actions builds and uploads this archive for `main` branch pushes and manual workflow runs. Pull requests run validation and SonarQube analysis without producing a package artifact, which keeps review feedback faster and avoids unnecessary release builds. Main and manual runs restore a separate SwiftPM release-artifact cache before packaging so a pull-request debug/test cache hit does not prevent release build products from being reused on later package builds.
+`make package` is an alias for the release package. Build a specific lane archive with:
+
+```sh
+make package-release
+make package-debug
+```
 
 `make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`.
 
-The package target writes the archive and staging directory:
+The default local package target writes the archive, checksum, and staging directory:
 
 ```text
-container-compose-plugin.tar.gz
+container-compose-plugin-release-arm64.tar.gz
+container-compose-plugin-release-arm64.tar.gz.sha256
 dist/compose/bin/compose
 dist/compose/config.toml
 dist/compose/resources/compose-normalizer
 ```
 
-Use [INSTALL.md](INSTALL.md) to install, upgrade, verify, or remove the packaged
-plugin on a target machine.
+GitHub Actions publishes branch release assets for `main` and `develop` using branch-specific archive names such as `container-compose-plugin-main-release-arm64.tar.gz` and `container-compose-plugin-develop-debug-arm64.tar.gz`. The release lane builds optimized archives from `main`; the debug integration lane builds debug archives from `develop`. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
+
+Use [INSTALL.md](INSTALL.md) to install, upgrade, verify, or remove the packaged plugin on a target machine.
 
 ## Runtime Boundary
 
-The build produces two executables with separate responsibilities:
-
-| Component | Language | Responsibility |
-| --- | --- | --- |
-| `compose` | Swift | Parse Docker Compose style CLI arguments, validate normalized projects, plan orchestration, and call apple/container runtime APIs or compatibility commands. |
-| `compose-normalizer` | Go | Load Compose files with `compose-go` and emit canonical JSON. It does not create, start, stop, or inspect containers. |
+The build produces two executables: `compose` in Swift and `compose-normalizer` in Go. The architecture and runtime adapter boundary are documented in [DESIGN.md](DESIGN.md).
 
 The installed plugin layout is:
 
@@ -229,48 +231,6 @@ The installed plugin layout is:
 /usr/local/libexec/container-plugins/compose/config.toml
 /usr/local/libexec/container-plugins/compose/resources/compose-normalizer
 ```
-
-### Direct API Adapters
-
-The Swift layer uses direct apple/container APIs wherever a stable API maps
-cleanly to a Compose operation.
-
-| Compose surface | Direct apple/container path |
-| --- | --- |
-| Project discovery, `ps`, `images`, recreate checks, indexed service targets, `port`, and orphan cleanup | `ContainerClient.list(filters:)` and `ContainerClient.get(id:)` |
-| Project networks | `NetworkClient.create(configuration:)`, `NetworkConfiguration(mode:ipv4Subnet:ipv6Subnet:)`, and `NetworkClient.delete(id:)` |
-| Project volumes | `ClientVolume.create(name:driver:driverOpts:labels:)`, `ClientVolume.list()`, and `ClientVolume.delete(name:)` |
-| Image pull, inspect, push, and delete | `ClientImage.pull`, `ClientImage.get`, `ClientImage.push`, `ClientImage.delete`, and `ClientImage.cleanUpOrphanedBlobs()` |
-| Service lifecycle | `ContainerClient.bootstrap(id:stdio:dynamicEnv:)`, `ClientProcess.start()`, `ClientProcess.wait()`, `ContainerClient.stop(id:opts:)`, `ContainerClient.delete(id:force:)`, and `ContainerClient.kill(id:signal:)` |
-| Logs and output-only attach | `ContainerClient.logs(id:options:replay:)` for raw static replay, `ContainerClient.logRecords(id:options:replay:)` for timestamped static replay on the local integration stack, active `ContainerClient.logRecordFile(id:)` access for structured follow, and plugin-side raw replay cursors until apple/container exposes a rotation-aware stream |
-| Attached and detached exec | `ProcessIO.create(tty:interactive:detach:)`, `ContainerClient.createProcess(containerId:processId:configuration:stdio:)`, `ProcessIO.handleProcess(process:log:)`, and `ClientProcess.start()` |
-| Stats | `ContainerClient.stats(id:)` with stopped-container metadata from `ContainerClient.list(filters:)` |
-| Copy and export | `ContainerClient.copyIn`, `ContainerClient.copyOut`, and `ContainerClient.export(id:archive:)` |
-
-The log adapters currently assume the current `stephenlclarke/container` `develop` fork integration lane when testing structured timestamped replay, rotated replay, and logging policy mapping. The upstream direction is smaller than that integration branch: keep retrieval filters, replay policy, and presentation flags separate, then land line-correct `tail`/`since`/`until` filtering, Docker timestamp parsing, structured records, static rotated replay, a bounded rotation-aware follow cursor or stream, and local logging policy support as separate apple/container changes. Until those runtime primitives are accepted upstream, plugin-side raw rotated polling and active structured record-file follow are treated as local validation scaffolding.
-
-### CLI Compatibility Adapter
-
-Some supported surfaces still route through the installed `container` CLI
-because this repository does not yet have a focused direct adapter for that
-operation or because the CLI is the available public compatibility surface.
-
-| Compose surface | CLI path |
-| --- | --- |
-| Build | `container build --pull --platform --cache-in --cache-out --tag --label --secret --file` |
-| Container create/run options not yet exposed through a focused adapter | `container create` and `container run` flags such as `--network none`, `--network <name>,mac=...,mtu=...`, `--publish`, `--volume`, `--tmpfs`, and `--mount type=tmpfs` |
-| Dynamic host-port allocation | `container-compose` allocates ephemeral host ports, then renders explicit `container create` or `container run --publish <host>:<target>` bindings because apple/container expects explicit host ports. |
-| Dry-run output | Renders equivalent `container` commands without mutating runtime state |
-
-Unsupported Docker Compose behavior is rejected before resources are created.
-For example, multiple service networks and service logging drivers are rejected
-until apple/container exposes matching runtime primitives.
-
-Apple publishes public DocC documentation for
-[`container`](https://apple.github.io/container/documentation/) and
-[`ContainerClient`](https://apple.github.io/container/documentation/containerclient/).
-Use those references when adding future direct Swift adapters or identifying
-apple/container runtime gaps.
 
 ## SonarQube
 
