@@ -1,44 +1,37 @@
 # Installing container-compose
 
-This guide starts with an existing `container-compose` plugin archive and
-explains how to install it for the local
-[`apple/container`](https://github.com/apple/container) CLI. Source build, test,
-and package steps are covered in [BUILD.md](BUILD.md).
+This guide explains how to install the `container-compose` plugin for the local [`container`](https://github.com/apple/container) CLI. Source build, test, and package steps are covered in [BUILD.md](BUILD.md); branch lane rules are covered in [BRANCHES.md](BRANCHES.md).
 
 ## Requirements
 
 - macOS.
 - The `container` CLI installed and working on the target machine.
-- A `container-compose-plugin.tar.gz` archive from a release or from
-  `make package`.
+- Either Homebrew access to this repository's branch release assets or a plugin archive from `make package`.
 
 ## Install With Homebrew
 
-The `develop` and `main` branches carry a local Homebrew formula that installs prebuilt release assets from GitHub releases instead of building Swift or Go source on the user's machine. The `main` branch tracks release builds and the `develop` branch tracks debug builds. It installs the plugin under the `container-compose` keg and leaves the final plugin registration as an explicit symlink into the active `container` install root.
+The `develop` and `main` branches carry a local Homebrew formula that installs prebuilt release assets from GitHub releases instead of building Swift or Go source on the user's machine. Use the same lane for `container` and `container-compose`: `main` is the release lane and `develop` is the debug integration lane. See [BRANCHES.md](BRANCHES.md) for the full lane model.
 
-Install the matching `container` fork branch first:
+Install the matching `container` fork branch first. Set `lane=main` for the frozen release lane or `lane=develop` for active debug builds:
 
 ```sh
+lane=develop
 brew tap stephenlclarke/container https://github.com/stephenlclarke/container
-git -C "$(brew --repo stephenlclarke/container)" checkout develop
+git -C "$(brew --repo stephenlclarke/container)" checkout "$lane"
 brew install stephenlclarke/container/container
 brew services start container
 ```
 
-For the frozen tester lane, check out `main` instead of `develop` inside the tap.
-
-Install `container-compose` from the same lane:
+Install `container-compose` from the same lane. The formula installs the plugin under the `container-compose` keg; the final plugin registration remains an explicit symlink into the active `container` install root:
 
 ```sh
 brew tap stephenlclarke/container-compose https://github.com/stephenlclarke/container-compose
-git -C "$(brew --repo stephenlclarke/container-compose)" checkout develop
+git -C "$(brew --repo stephenlclarke/container-compose)" checkout "$lane"
 brew install stephenlclarke/container-compose/container-compose
 mkdir -p "$(brew --prefix container)/libexec/container-plugins"
 ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
 brew services restart container
 ```
-
-For the frozen tester lane, check out `main` instead of `develop` inside the tap.
 
 Verify that `container` discovers the plugin:
 
@@ -48,7 +41,7 @@ container compose version
 
 ## Install Locally
 
-Install or replace the local plugin with:
+Build a local plugin archive with `make package`, then install or replace the plugin with:
 
 ```sh
 sudo rm -rf /usr/local/libexec/container-plugins/compose

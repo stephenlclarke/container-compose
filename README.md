@@ -32,14 +32,15 @@ keep the runtime gap documented in [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PAR
 
 ## Documentation
 
-- [INSTALL.md](INSTALL.md)
-- [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md)
-- [BRANCHES.md](BRANCHES.md)
-- [BUILD.md](BUILD.md)
-- [DESIGN.md](DESIGN.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [SUPPORT.md](SUPPORT.md)
-- [SECURITY.md](SECURITY.md)
+- [INSTALL.md](INSTALL.md): install prebuilt Homebrew assets or a local plugin archive.
+- [BRANCHES.md](BRANCHES.md): choose the matching `main` or `develop` lane across `container-compose` and the `container` fork.
+- [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
+- [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
+- [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md): review Docker-backed parity evidence and known compatibility gaps.
+- [STATUS.md](STATUS.md): get the current runtime fork, active slab, blockers, and handoff state.
+- [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
+- [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.
+- [SECURITY.md](SECURITY.md): report security issues.
 
 ## License
 
