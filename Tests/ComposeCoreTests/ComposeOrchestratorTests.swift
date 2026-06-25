@@ -7212,7 +7212,7 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false)
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]))
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [false])
@@ -7230,7 +7230,10 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: true)
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.all = true }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [true])
@@ -7248,7 +7251,10 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, quiet: true)
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.quiet = true }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [false])
@@ -7266,7 +7272,10 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, services: true)
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.services = true }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [false])
@@ -7286,10 +7295,10 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.ps(
             project: ComposeProject(name: "demo", services: [:]),
-            all: false,
-            format: "table",
-            noTrunc: true,
-            orphans: true
+            options: ComposePsOptions {
+                $0.format = "table"
+                $0.noTrunc = true
+            }
         )
 
         let output = try #require(emitted.messages.first)
@@ -7326,9 +7335,10 @@ struct ComposeOrchestratorTests {
             project: ComposeProject(name: "demo", services: [
                 "api": ComposeService(name: "api", image: "example/api"),
             ]),
-            all: false,
-            format: "json",
-            orphans: false
+            options: ComposePsOptions {
+                $0.format = "json"
+                $0.orphans = false
+            }
         )
 
         let data = Data(try #require(emitted.messages.first).utf8)
@@ -7342,7 +7352,10 @@ struct ComposeOrchestratorTests {
         let orchestrator = ComposeOrchestrator(runner: runner)
 
         do {
-            try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, format: "yaml")
+            try await orchestrator.ps(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposePsOptions { $0.format = "yaml" }
+            )
             Issue.record("Expected unsupported ps format error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("ps --format 'yaml'; supported formats are table and json"))
@@ -7364,7 +7377,13 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, quiet: true, services: true)
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.quiet = true
+                $0.services = true
+            }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [false])
@@ -7382,7 +7401,10 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, statuses: ["running"])
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.statuses = ["running"] }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [true])
@@ -7400,7 +7422,10 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, filters: ["status=exited"])
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.filters = ["status=exited"] }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [true])
@@ -7418,7 +7443,13 @@ struct ComposeOrchestratorTests {
             discoveryManager: discoveryManager
         )
 
-        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, services: true, statuses: ["running"])
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.services = true
+                $0.statuses = ["running"]
+            }
+        )
 
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [true])
@@ -7431,7 +7462,10 @@ struct ComposeOrchestratorTests {
         let orchestrator = ComposeOrchestrator(runner: runner)
 
         do {
-            try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, filters: ["status"])
+            try await orchestrator.ps(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposePsOptions { $0.filters = ["status"] }
+            )
             Issue.record("Expected invalid filter error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("ps --filter must be in KEY=VALUE form"))
@@ -7448,7 +7482,10 @@ struct ComposeOrchestratorTests {
         let orchestrator = ComposeOrchestrator(runner: runner)
 
         do {
-            try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, filters: ["source=image"])
+            try await orchestrator.ps(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposePsOptions { $0.filters = ["source=image"] }
+            )
             Issue.record("Expected unsupported filter error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("ps --filter source; supported filter is status"))
@@ -7465,7 +7502,10 @@ struct ComposeOrchestratorTests {
         let orchestrator = ComposeOrchestrator(runner: runner)
 
         do {
-            try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]), all: false, statuses: ["paused"])
+            try await orchestrator.ps(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposePsOptions { $0.statuses = ["paused"] }
+            )
             Issue.record("Expected unsupported status error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("ps status 'paused'; apple/container exposes running, stopped, stopping, and unknown"))
@@ -9890,18 +9930,20 @@ struct ComposeOrchestratorTests {
                 digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 platform: "linux/arm64"
             ),
-            publishedPorts: [
-                ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 2),
-            ],
-            mounts: [
-                ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", readOnly: true),
-                ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed"),
-                ComposeMount(type: "tmpfs", target: "/scratch", readOnly: true),
-            ],
-            networks: [
-                ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
-            ],
-            health: "healthy"
+            resources: ComposeContainerSummary.Resources(
+                publishedPorts: [
+                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 2),
+                ],
+                mounts: [
+                    ComposeMount(type: "external-volume", source: "legacy_data", target: "/data", readOnly: true),
+                    ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed"),
+                    ComposeMount(type: "tmpfs", target: "/scratch", readOnly: true),
+                ],
+                networks: [
+                    ComposeContainerNetworkAttachment(network: "demo_backend", ipv4Address: "192.168.64.20"),
+                ]
+            ),
+            state: ComposeContainerSummary.State(health: "healthy")
         ))
         #expect(all.map(\.status) == ["running", "stopped"])
         #expect(worker?.id == "demo-worker-1")

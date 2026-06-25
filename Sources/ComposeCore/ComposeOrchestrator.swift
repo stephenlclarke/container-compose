@@ -772,6 +772,34 @@ public struct ComposeLsOptions {
     }
 }
 
+/// Options for `compose ps`.
+public struct ComposePsOptions: Sendable {
+    public var all: Bool
+    public var quiet: Bool
+    public var services: Bool
+    public var statuses: [String]
+    public var filters: [String]
+    public var format: String
+    public var noTrunc: Bool
+    public var orphans: Bool
+
+    public init() {
+        all = false
+        quiet = false
+        services = false
+        statuses = []
+        filters = []
+        format = "json"
+        noTrunc = false
+        orphans = true
+    }
+
+    public init(_ configure: (inout ComposePsOptions) -> Void) {
+        self.init()
+        configure(&self)
+    }
+}
+
 /// Options for `compose run` one-off containers.
 public struct ComposeRunOptions {
     public var command: [String] = []
@@ -971,6 +999,25 @@ private struct ServiceContainerTarget {
     var service: ComposeService
     var index: Int
     var name: String
+}
+
+private struct RuntimeLogOptions: Sendable {
+    var tail: Int?
+    var since: Date?
+    var until: Date?
+    var timestamps: Bool
+    var noLogPrefix: Bool
+    var colorPrefixes: Bool
+}
+
+private struct RuntimeLogRequest: Sendable {
+    var id: String
+    var follow: Bool
+    var tail: Int?
+    var since: Date?
+    var until: Date?
+    var timestamps: Bool
+    var emit: @Sendable (Data) -> Void
 }
 
 private struct ServiceContainerWaitResult {
@@ -1760,40 +1807,33 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Lists containers belonging to the Compose project.
     public func ps(
         project: ComposeProject,
-        all: Bool,
-        quiet: Bool = false,
-        services: Bool = false,
-        statuses: [String] = [],
-        filters: [String] = [],
-        format: String = "json",
-        noTrunc: Bool = false,
-        orphans: Bool = true
+        options psOptions: ComposePsOptions = ComposePsOptions()
     ) async throws {
-        let statusFilters = try psStatusFilters(statuses: statuses, filters: filters)
-        let outputFormat = try composePsFormat(format)
+        let statusFilters = try psStatusFilters(statuses: psOptions.statuses, filters: psOptions.filters)
+        let outputFormat = try composePsFormat(psOptions.format)
         var args = ["list", "--format", "json"]
-        if all || !statusFilters.isEmpty {
+        if psOptions.all || !statusFilters.isEmpty {
             args.append("--all")
         }
         if options.dryRun {
             try await runContainer(args)
             return
         }
-        let containers = try await projectContainers(projectName: project.name, all: all || !statusFilters.isEmpty)
+        let containers = try await projectContainers(projectName: project.name, all: psOptions.all || !statusFilters.isEmpty)
         let serviceScopedContainers = filterContainersByOrphanPolicy(
             containers,
             project: project,
-            includeOrphans: orphans
+            includeOrphans: psOptions.orphans
         )
         let filteredContainers = filterContainersByStatus(serviceScopedContainers, statuses: statusFilters)
-        if quiet {
+        if psOptions.quiet {
             let identifiers = containerIdentifiers(filteredContainers)
             if !identifiers.isEmpty {
                 options.emit(identifiers.joined(separator: "\n"))
             }
             return
         }
-        if services {
+        if psOptions.services {
             let names = containerServiceNames(filteredContainers)
             if !names.isEmpty {
                 options.emit(names.joined(separator: "\n"))
@@ -1804,7 +1844,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         case .json:
             options.emit(try containerListJSON(filteredContainers))
         case .table:
-            let table = renderComposeContainerTable(filteredContainers, noTrunc: noTrunc)
+            let table = renderComposeContainerTable(filteredContainers, noTrunc: psOptions.noTrunc)
             if !table.isEmpty {
                 options.emit(table)
             }
@@ -1821,6 +1861,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let runtimeTail = try runtimeLogTail(logOptions.tail)
         let runtimeSince = try runtimeLogTimestamp(logOptions.since)
         let runtimeUntil = try runtimeLogTimestamp(logOptions.until)
+        let runtimeOptions = RuntimeLogOptions(
+            tail: runtimeTail,
+            since: runtimeSince,
+            until: runtimeUntil,
+            timestamps: logOptions.timestamps,
+            noLogPrefix: logOptions.noLogPrefix,
+            colorPrefixes: logOptions.colorPrefixes
+        )
         let targets = try await logTargets(project: project, services: services, index: logOptions.index)
         if options.dryRun {
             for target in targets {
@@ -1839,25 +1887,25 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if logOptions.follow, targets.count > 1 {
             try await followLogTargets(
                 targets,
-                tail: runtimeTail,
-                since: runtimeSince,
-                until: runtimeUntil,
-                timestamps: logOptions.timestamps,
-                noLogPrefix: logOptions.noLogPrefix,
-                colorPrefixes: logOptions.colorPrefixes
+                options: runtimeOptions
             )
             return
         }
         for target in targets {
             try await emitLogs(
-                for: target,
-                follow: logOptions.follow,
-                tail: runtimeTail,
-                since: runtimeSince,
-                until: runtimeUntil,
-                timestamps: logOptions.timestamps,
-                noLogPrefix: logOptions.noLogPrefix,
-                colorPrefixes: logOptions.colorPrefixes
+                RuntimeLogRequest(
+                    id: target.name,
+                    follow: logOptions.follow,
+                    tail: runtimeOptions.tail,
+                    since: runtimeOptions.since,
+                    until: runtimeOptions.until,
+                    timestamps: runtimeOptions.timestamps,
+                    emit: logEmitter(
+                        for: target,
+                        noLogPrefix: runtimeOptions.noLogPrefix,
+                        colorPrefixes: runtimeOptions.colorPrefixes
+                    )
+                )
             )
         }
     }
@@ -1887,53 +1935,52 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Follows all selected log targets concurrently.
     private func followLogTargets(
         _ targets: [ServiceContainerTarget],
-        tail: Int?,
-        since: Date?,
-        until: Date?,
-        timestamps: Bool,
-        noLogPrefix: Bool,
-        colorPrefixes: Bool
+        options runtimeOptions: RuntimeLogOptions
     ) async throws {
         let logManager = logManager
         try await withThrowingTaskGroup(of: Void.self) { group in
             for target in targets {
-                let containerID = target.name
-                let emit = logEmitter(for: target, noLogPrefix: noLogPrefix, colorPrefixes: colorPrefixes)
-                group.addTask { [containerID, emit, logManager, since, tail, timestamps, until] in
+                let request = RuntimeLogRequest(
+                    id: target.name,
+                    follow: true,
+                    tail: runtimeOptions.tail,
+                    since: runtimeOptions.since,
+                    until: runtimeOptions.until,
+                    timestamps: runtimeOptions.timestamps,
+                    emit: logEmitter(
+                        for: target,
+                        noLogPrefix: runtimeOptions.noLogPrefix,
+                        colorPrefixes: runtimeOptions.colorPrefixes
+                    )
+                )
+                group.addTask { [request, logManager] in
                     try await logManager.logs(
-                        id: containerID,
-                        tail: tail,
-                        follow: true,
-                        since: since,
-                        until: until,
-                        timestamps: timestamps,
-                        emit: emit
+                        id: request.id,
+                        tail: request.tail,
+                        follow: request.follow,
+                        since: request.since,
+                        until: request.until,
+                        timestamps: request.timestamps,
+                        emit: request.emit
                     )
                 }
             }
-            while try await group.next() != nil {}
+            while let completed = try await group.next() {
+                _ = completed
+            }
         }
     }
 
     /// Emits static or single-target followed logs.
-    private func emitLogs(
-        for target: ServiceContainerTarget,
-        follow: Bool,
-        tail: Int?,
-        since: Date?,
-        until: Date?,
-        timestamps: Bool,
-        noLogPrefix: Bool,
-        colorPrefixes: Bool
-    ) async throws {
+    private func emitLogs(_ request: RuntimeLogRequest) async throws {
         try await logManager.logs(
-            id: target.name,
-            tail: tail,
-            follow: follow,
-            since: since,
-            until: until,
-            timestamps: timestamps,
-            emit: logEmitter(for: target, noLogPrefix: noLogPrefix, colorPrefixes: colorPrefixes)
+            id: request.id,
+            tail: request.tail,
+            follow: request.follow,
+            since: request.since,
+            until: request.until,
+            timestamps: request.timestamps,
+            emit: request.emit
         )
     }
 
@@ -2856,28 +2903,30 @@ private extension ComposeOrchestrator {
         let restartPolicy = planOptions.includeRestartPolicy
             ? try runtimeRestartPolicy(service: service) ?? .no
             : .no
-        return try ContainerServiceCreatePlan(
+        let identity = ContainerServiceCreateIdentity(
             name: runtimeName,
             imageReference: image,
             oneOff: planOptions.oneOff,
             autoRemove: planOptions.autoRemove,
-            labels: serviceCreateLabels(
+            labels: try serviceCreateLabels(
                 project: project,
                 service: service,
                 oneOff: planOptions.oneOff,
                 externalVolumeMounts: externalVolumeMounts,
                 labelOverrides: labelOverrides
-            ),
-            initProcess: baseProcess,
-            logging: runtimeLogConfiguration(service: service),
-            healthCheck: healthCheck,
-            restartPolicy: restartPolicy,
-            hostname: runtimeHostnameArgument(service: service),
-            domainname: runtimeDomainnameArgument(service: service),
-            hosts: runtimeHostEntries(service: service),
-            sysctls: runtimeSysctls(service: service),
-            blockIO: runtimeBlockIO(service: service)
+            )
         )
+        var runtime = ContainerServiceCreateRuntime()
+        runtime.initProcess = baseProcess
+        runtime.logging = try runtimeLogConfiguration(service: service)
+        runtime.healthCheck = healthCheck
+        runtime.restartPolicy = restartPolicy
+        runtime.hostname = try runtimeHostnameArgument(service: service)
+        runtime.domainname = try runtimeDomainnameArgument(service: service)
+        runtime.hosts = try runtimeHostEntries(service: service)
+        runtime.sysctls = try runtimeSysctls(service: service)
+        runtime.blockIO = try runtimeBlockIO(service: service)
+        return ContainerServiceCreatePlan(identity: identity, runtime: runtime)
     }
 
     /// Resolves an optional service selection into deterministic services.
@@ -5051,7 +5100,7 @@ private extension ComposeOrchestrator {
 
         return ContainerHealthCheck(
             process: ProcessConfiguration(
-                executable: "/bin/sh",
+                executable: ComposeRuntimeDefaults.shellExecutable,
                 arguments: ["-c", command],
                 environment: baseProcess.environment,
                 workingDirectory: baseProcess.workingDirectory,
@@ -8548,7 +8597,7 @@ private func serviceCreateBaseProcess(service: ComposeService) -> ProcessConfigu
         executable = command[0]
         arguments = Array(command.dropFirst())
     } else {
-        executable = "/bin/sh"
+        executable = ComposeRuntimeDefaults.shellExecutable
         arguments = []
     }
 

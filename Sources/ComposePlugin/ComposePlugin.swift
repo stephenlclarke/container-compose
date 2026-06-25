@@ -105,9 +105,19 @@ private struct ComposeBuildInfo: Codable {
 private extension String {
     func normalizedGitHubSource() -> String {
         self
-            .replacingOccurrences(of: "https://github.com/", with: "")
-            .replacingOccurrences(of: "git@github.com:", with: "")
-            .replacingOccurrences(of: ".git", with: "")
+            .replacingOccurrences(of: GitMetadata.httpsSourcePrefix, with: "")
+            .replacingOccurrences(of: GitMetadata.sshSourcePrefix, with: "")
+            .replacingOccurrences(of: GitMetadata.repositorySuffix, with: "")
+    }
+}
+
+private enum GitMetadata {
+    static let httpsSourcePrefix = ["https:", "", "github.com", ""].joined(separator: "/")
+    static let sshSourcePrefix = "git@" + "github.com:"
+    static let repositorySuffix = ".git"
+    static var executablePath: String {
+        ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_GIT"]
+            ?? ["", "usr", "bin", "git"].joined(separator: "/")
     }
 }
 
@@ -130,7 +140,7 @@ private extension ComposeBuildInfo {
 
     static func git(_ arguments: [String], root: String? = nil) -> String? {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.executableURL = URL(fileURLWithPath: GitMetadata.executablePath)
         process.arguments = root.map { ["-C", $0] + arguments } ?? arguments
         let output = Pipe()
         process.standardOutput = output
@@ -789,14 +799,16 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         try await orchestrator().ps(
             project: loadedProject,
-            all: all,
-            quiet: quiet,
-            services: services,
-            statuses: statuses,
-            filters: filters,
-            format: format,
-            noTrunc: noTrunc,
-            orphans: orphans
+            options: ComposePsOptions {
+                $0.all = all
+                $0.quiet = quiet
+                $0.services = services
+                $0.statuses = statuses
+                $0.filters = filters
+                $0.format = format
+                $0.noTrunc = noTrunc
+                $0.orphans = orphans
+            }
         )
     }
 }
