@@ -1,19 +1,20 @@
 # Status
 
-Last updated: 2026-06-25 12:15 BST.
+Last updated: 2026-06-25 18:06 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
 ## Current State
 
-The repository has two Homebrew and prebuilt-binary lanes:
+The repository uses `main` for active development and frozen branches for installable package lanes:
 
 | Branch | Lane | Package intent | Runtime dependency |
 | --- | --- | --- | --- |
-| `main` | Release | Optimized prebuilt Swift and Go binaries | Match `stephenlclarke/container` `main` |
-| `develop` | Debug integration | Debug prebuilt Swift and Go binaries | Match `stephenlclarke/container` `develop` |
+| `main` | Active development | Full CI, CodeQL, and SonarQube signal | Pin to the required `stephenlclarke/container` and `stephenlclarke/containerization` surfaces |
+| `release/*` | Frozen release | Optimized Swift package with release-built Go normalizer | Pin to the reviewed runtime fork refs for that release branch |
+| `snapshot/*` | Frozen debug snapshot | Debug Swift package with release-built Go normalizer | Pin to the reviewed runtime fork refs for that snapshot branch |
 
-Both lanes should remain installable through Homebrew without requiring Go, Xcode, or a Swift toolchain on the target machine.
+Frozen lanes should remain installable through Homebrew without requiring Go, Xcode, or a Swift toolchain on the target machine.
 
 ## Current Integration Assumption
 
@@ -34,23 +35,30 @@ The old long-lived evidence files have been removed from the top-level documenta
 
 ## Latest Local Validation
 
-Docs-only consolidation validation:
+Current local validation:
 
 ```sh
-markdownlint README.md INSTALL.md BUILD.md
-markdownlint README.md INSTALL.md BUILD.md PLAN.md STATUS.md CONTRIBUTING.md SUPPORT.md docs/upstream/README.md
-markdownlint --disable MD013 MD041 -- $(git diff --name-only -- '*.md' | tr '\n' ' ')
+make go-build
+make go-test
+make package-debug PLUGIN_ARCHIVE=/tmp/container-compose-plugin-snapshot-debug-arm64.tar.gz
+make package-release PLUGIN_ARCHIVE=/tmp/container-compose-plugin-release-arm64.tar.gz CONTAINER_COMPOSE_BRANCH=release/local CONTAINER_COMPOSE_LANE=release
+make swift-test
+make cli-smoke-built
+make ci
+npx --yes markdownlint-cli BUILD.md
+npx --yes markdownlint-cli README.md BUILD.md PLAN.md STATUS.md
+npx --yes markdownlint-cli BUILD.md PLAN.md STATUS.md BRANCHES.md README.md INSTALL.md DESIGN.md
 git diff --check
 ```
 
-All passed locally.
+All passed locally. `make ci` reported Swift coverage 90.26% and Go coverage 93.26%. The debug and release package targets both built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. Local package inspection confirmed the release archive includes `compose/bin/compose`, `compose/config.toml`, `compose/resources/build-info.json`, and `compose/resources/compose-normalizer`.
 
 ## Open Blockers
 
 - Released Apple compatibility still depends on upstream acceptance of fork-backed runtime primitives.
-- CI for the newest pushed commits may still be settling after branch pushes.
 - SonarQube status should be checked through `/Users/sclarke/github/pr-refresh` with `make sonar-status` during the next full maintenance refresh.
+- Runtime smoke tests still require a responsive local Apple container runtime; the last enabled local run timed out during `container system status`.
 
 ## Next Step
 
-After this docs consolidation lands, focus on CI signal for the latest `main` and `develop` pushes. If CI is green, the next Apple-review pass should inspect the upstream handoff drafts for stale references rather than keeping additional top-level evidence files.
+Continue the local review loop on `main`-bound changes: prove the package path locally, then push only once a coherent functionality slice is ready for review.

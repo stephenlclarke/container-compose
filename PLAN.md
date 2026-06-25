@@ -12,17 +12,19 @@ The Apple runtime forks should expose smaller Apple-native primitives that can b
 
 ## Branch Lanes
 
-- `main`: frozen release lane. Build optimized prebuilt assets and keep it installable through the `main` Homebrew formula lane.
-- `develop`: debug integration lane. Build debug prebuilt assets and pin to fork-supported runtime surfaces when upstream Apple APIs are not yet available.
+- `main`: active development and integration lane. Keep full CI, CodeQL, and SonarQube here so the public badges describe the code under active review.
+- `release/*`: frozen release lanes. Build optimized prebuilt assets, remove branch-inappropriate SonarQube badges, and update the release Homebrew formula from published assets.
+- `snapshot/*`: frozen debug snapshot lanes. Build debug Swift prebuilt assets, keep the Go normalizer release-built, remove branch-inappropriate SonarQube badges, and update the snapshot Homebrew formula from published assets.
 
-The `container-compose` lane must match the `stephenlclarke/container` lane. Do not silently drift back to incompatible `apple/container` or `apple/containerization` surfaces while fork-backed behavior is still required.
+The `container-compose` branch must stay pinned to the required `stephenlclarke/container` and `stephenlclarke/containerization` surfaces. Do not silently drift back to incompatible `apple/container` or `apple/containerization` surfaces while fork-backed behavior is still required.
 
 ## Current Focus
 
 Keep the prebuilt install path healthy for both lanes:
 
-- GitHub Actions publishes branch release assets for `main` and `develop`.
+- GitHub Actions publishes branch release assets for frozen `release/*` and `snapshot/*` branches.
 - Homebrew installs those prebuilt Swift and Go binaries without requiring Go, Xcode, or a Swift toolchain on the target machine.
+- Package targets always include a release-built Go normalizer, even when the Swift plugin is a debug snapshot build.
 - CI accepts classified SwiftPM signal-pass output only when the helper proves tests passed and no failure markers were emitted.
 - Homebrew advisory jobs trust only the specific taps required by the formulas.
 

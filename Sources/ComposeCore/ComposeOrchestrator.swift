@@ -2859,6 +2859,7 @@ private extension ComposeOrchestrator {
                 externalVolumeMounts: externalVolumeMounts,
                 labelOverrides: labelOverrides
             ),
+            initProcess: baseProcess,
             logging: runtimeLogConfiguration(service: service),
             healthCheck: healthCheck,
             restartPolicy: restartPolicy,

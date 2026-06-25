@@ -1,9 +1,9 @@
 class ContainerCompose < Formula
   desc "Docker Compose style plugin for Apple's container CLI"
   homepage "https://github.com/stephenlclarke/container-compose"
-  url "https://github.com/stephenlclarke/container-compose/releases/download/homebrew-develop/container-compose-plugin-develop-debug-arm64.tar.gz"
+  url "https://github.com/stephenlclarke/container-compose/releases/download/homebrew-main/container-compose-plugin-main-release-arm64.tar.gz"
   sha256 :no_check
-  version "develop-debug"
+  version "release-bootstrap"
   license "Apache-2.0"
 
   depends_on "container"
@@ -28,8 +28,8 @@ class ContainerCompose < Formula
         ln -sfn "#{opt_libexec}/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
         brew services restart container
 
-      This formula installs the develop debug prebuilt release asset:
-        container-compose-plugin-develop-debug-arm64.tar.gz
+      This formula installs the release bootstrap prebuilt release asset:
+        container-compose-plugin-main-release-arm64.tar.gz
     EOS
   end
 

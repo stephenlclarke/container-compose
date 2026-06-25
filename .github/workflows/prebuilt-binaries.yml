@@ -19,8 +19,8 @@ name: Prebuilt Binaries
 on:
   push:
     branches:
-      - main
-      - develop
+      - "release/**"
+      - "snapshot/**"
   workflow_dispatch:
 
 permissions:
@@ -33,10 +33,7 @@ concurrency:
 jobs:
   package:
     name: Package ${{ github.ref_name }}
-    if: >
-      github.repository == 'stephenlclarke/container-compose' &&
-      (github.event_name != 'push' ||
-       !startsWith(github.event.head_commit.message, 'chore(homebrew): refresh prebuilt formula metadata'))
+    if: github.repository == 'stephenlclarke/container-compose'
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
@@ -44,8 +41,29 @@ jobs:
         with:
           path: container-compose
           fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Prepare frozen branch README
+        id: prepare
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          Tools/release/prepare-frozen-branch.sh
+          if git diff --quiet README.md; then
+            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(release): prepare frozen branch"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          printf 'changed=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Read container ref
+        if: steps.prepare.outputs.changed != 'true'
         id: container-ref
         shell: bash
         run: |
@@ -60,6 +78,7 @@ jobs:
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
+        if: steps.prepare.outputs.changed != 'true'
         uses: actions/checkout@v6
         with:
           repository: stephenlclarke/container
@@ -67,38 +86,67 @@ jobs:
           ref: ${{ steps.container-ref.outputs.ref }}
 
       - name: Set up Go
+        if: steps.prepare.outputs.changed != 'true'
         uses: actions/setup-go@v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
       - name: Select package lane
+        if: steps.prepare.outputs.changed != 'true'
         id: lane
         shell: bash
         run: |
           set -euo pipefail
+          slug="${GITHUB_REF_NAME//\//-}"
           case "${GITHUB_REF_NAME}" in
-            main)
-              printf 'target=package-release\n' >> "$GITHUB_OUTPUT"
-              printf 'asset=container-compose-plugin-main-release-arm64.tar.gz\n' >> "$GITHUB_OUTPUT"
-              printf 'release_name=Homebrew main release prebuilt\n' >> "$GITHUB_OUTPUT"
+            release/*)
+              target="package-release"
+              asset="container-compose-plugin-${slug}-release-arm64.tar.gz"
+              release_name="Homebrew ${GITHUB_REF_NAME} release prebuilt"
+              config="release"
+              lane="release"
+              formula="container-compose.rb"
+              label="${GITHUB_REF_NAME} release"
               ;;
-            develop)
-              printf 'target=package-debug\n' >> "$GITHUB_OUTPUT"
-              printf 'asset=container-compose-plugin-develop-debug-arm64.tar.gz\n' >> "$GITHUB_OUTPUT"
-              printf 'release_name=Homebrew develop debug prebuilt\n' >> "$GITHUB_OUTPUT"
+            snapshot/*)
+              target="package-debug"
+              asset="container-compose-plugin-${slug}-debug-arm64.tar.gz"
+              release_name="Homebrew ${GITHUB_REF_NAME} debug prebuilt"
+              config="debug"
+              lane="snapshot"
+              formula="container-compose-snapshot.rb"
+              label="${GITHUB_REF_NAME} debug"
               ;;
             *)
               printf 'Unsupported branch for prebuilt packaging: %s\n' "${GITHUB_REF_NAME}" >&2
               exit 1
               ;;
           esac
+          {
+            printf 'target=%s\n' "$target"
+            printf 'asset=%s\n' "$asset"
+            printf 'release_name=%s\n' "$release_name"
+            printf 'config=%s\n' "$config"
+            printf 'lane=%s\n' "$lane"
+            printf 'formula=%s\n' "$formula"
+            printf 'label=%s\n' "$label"
+            printf 'slug=%s\n' "$slug"
+            printf 'tag=homebrew-%s\n' "$slug"
+            printf 'version=%s-%s\n' "$slug" "${GITHUB_SHA:0:12}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build package
+        if: steps.prepare.outputs.changed != 'true'
         run: make "${{ steps.lane.outputs.target }}" PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
         working-directory: container-compose
+        env:
+          CONTAINER_COMPOSE_BRANCH: ${{ github.ref_name }}
+          CONTAINER_COMPOSE_COMMIT: ${{ github.sha }}
+          CONTAINER_COMPOSE_LANE: ${{ steps.lane.outputs.lane }}
 
       - name: Upload workflow artifact
+        if: steps.prepare.outputs.changed != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.lane.outputs.asset }}
@@ -106,39 +154,97 @@ jobs:
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}.sha256
 
-      - name: Publish branch release assets
+      - name: Publish frozen branch release assets
+        if: steps.prepare.outputs.changed != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET: ${{ steps.lane.outputs.asset }}
           RELEASE_NAME: ${{ steps.lane.outputs.release_name }}
+          RELEASE_TAG: ${{ steps.lane.outputs.tag }}
         shell: bash
         working-directory: container-compose
         run: |
           set -euo pipefail
-          tag="homebrew-${GITHUB_REF_NAME}"
           notes="$(mktemp)"
           {
             printf '%s\n\n' "${RELEASE_NAME}"
             printf 'Branch: %s\n' "${GITHUB_REF_NAME}"
             printf 'Commit: %s\n' "${GITHUB_SHA}"
-            printf 'Build configuration: %s\n' "$([[ "${GITHUB_REF_NAME}" == "main" ]] && printf release || printf debug)"
+            printf 'Build configuration: %s\n' "${{ steps.lane.outputs.config }}"
           } > "$notes"
 
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" \
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
               --target "$GITHUB_SHA" \
               --title "${RELEASE_NAME}" \
               --notes-file "$notes" \
               --prerelease
           else
-            gh release edit "$tag" \
+            gh release edit "$RELEASE_TAG" \
               --target "$GITHUB_SHA" \
               --title "${RELEASE_NAME}" \
               --notes-file "$notes" \
               --prerelease
           fi
 
-          gh release upload "$tag" \
+          gh release upload "$RELEASE_TAG" \
             "${RUNNER_TEMP}/${ASSET}" \
             "${RUNNER_TEMP}/${ASSET}.sha256" \
             --clobber
+
+      - name: Require Homebrew tap token
+        if: steps.prepare.outputs.changed != 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
+            printf 'HOMEBREW_TAP_TOKEN is required to update stephenlclarke/homebrew-tap\n' >&2
+            exit 1
+          fi
+
+      - name: Checkout Homebrew tap
+        if: steps.prepare.outputs.changed != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: stephenlclarke/homebrew-tap
+          path: homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update Homebrew tap formula
+        if: steps.prepare.outputs.changed != 'true'
+        env:
+          ASSET: ${{ steps.lane.outputs.asset }}
+          FORMULA: ${{ steps.lane.outputs.formula }}
+          LABEL: ${{ steps.lane.outputs.label }}
+          RELEASE_TAG: ${{ steps.lane.outputs.tag }}
+          VERSION: ${{ steps.lane.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/stephenlclarke/container-compose/releases/download/${RELEASE_TAG}/${ASSET}"
+          python3 container-compose/Tools/release/update-homebrew-formula.py \
+            --formula "homebrew-tap/Formula/${FORMULA}" \
+            --url "$url" \
+            --version "$VERSION" \
+            --asset "$ASSET" \
+            --label "$LABEL"
+          git -C homebrew-tap diff -- Formula
+
+      - name: Commit Homebrew tap update
+        if: steps.prepare.outputs.changed != 'true'
+        shell: bash
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Formula; then
+            printf 'Homebrew tap formula already points at %s\n' "${{ steps.lane.outputs.asset }}"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Formula/${{ steps.lane.outputs.formula }}"
+          git commit -m "chore(homebrew): update ${{ github.ref_name }} compose formula"
+          git push

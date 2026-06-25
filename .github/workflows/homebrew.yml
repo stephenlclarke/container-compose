@@ -20,11 +20,11 @@ on:
   push:
     branches:
       - main
-      - develop
+      - "release/**"
+      - "snapshot/**"
   pull_request:
     branches:
       - main
-      - develop
     types:
       - opened
       - synchronize

@@ -27,12 +27,15 @@ The CLI accepts the Docker Compose 5.2.0 command and option surface, including
 help output. Help color-codes command, subcommand, and option support status:
 green for supported, orange for partially supported, and red for not supported;
 use `--ansi never` for plain output. Commands or option modes that do not yet
-have backing `apple/container` functionality print `Not implemented yet`.
+have backing `apple/container` functionality fail with an explicit
+`unsupported compose feature` message.
+
+Use `container system version` to see the running `container` runtime source, branch lane, commit, and compiled `containerization` ref. Use `container compose version` to see the installed plugin lane and the `container` / `containerization` pins that package was built against.
 
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): install prebuilt Homebrew assets or a local plugin archive.
-- [BRANCHES.md](BRANCHES.md): choose the matching `main` or `develop` lane across `container-compose` and the `container` fork.
+- [BRANCHES.md](BRANCHES.md): understand active `main` development and frozen `release/*` / `snapshot/*` install branches.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.

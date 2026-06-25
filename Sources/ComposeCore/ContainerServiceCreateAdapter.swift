@@ -28,6 +28,7 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var oneOff: Bool
     public var autoRemove: Bool
     public var labels: [String: String]
+    public var initProcess: ProcessConfiguration
     public var logging: ContainerLogConfiguration
     public var healthCheck: ContainerHealthCheck?
     public var restartPolicy: ContainerRestartPolicy
@@ -43,6 +44,12 @@ public struct ContainerServiceCreatePlan: Sendable {
         oneOff: Bool = false,
         autoRemove: Bool = false,
         labels: [String: String] = [:],
+        initProcess: ProcessConfiguration = ProcessConfiguration(
+            executable: "/bin/sh",
+            arguments: [],
+            environment: [],
+            workingDirectory: "/"
+        ),
         logging: ContainerLogConfiguration = .default,
         healthCheck: ContainerHealthCheck? = nil,
         restartPolicy: ContainerRestartPolicy = .no,
@@ -57,6 +64,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         self.oneOff = oneOff
         self.autoRemove = autoRemove
         self.labels = labels
+        self.initProcess = initProcess
         self.logging = logging
         self.healthCheck = healthCheck
         self.restartPolicy = restartPolicy

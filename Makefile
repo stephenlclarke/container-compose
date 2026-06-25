@@ -26,11 +26,23 @@ SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
 # longer needs the workaround.
 SWIFT_RELEASE_FLAGS ?= -Xswiftc -Osize
 GO ?= go
+GO_RELEASE_ENV ?= CGO_ENABLED=0
+GO_RELEASE_BUILD_FLAGS ?= -trimpath
+GO_RELEASE_LDFLAGS ?= -s -w
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
+COMPOSE_VERSION ?= 0.1.0
+CONTAINER_COMPOSE_SOURCE ?= $(shell (git remote get-url origin 2>/dev/null || true) | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$$##')
+CONTAINER_COMPOSE_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --short HEAD)
+CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BRANCH)"; print("main" if branch == "main" else "release" if branch.startswith("release/") else "snapshot" if branch.startswith("snapshot/") else "detached" if branch in ("", "HEAD") else "development")')
+CONTAINER_COMPOSE_COMMIT ?= $(shell git rev-parse HEAD)
+CONTAINER_SOURCE ?= stephenlclarke/container
+CONTAINER_REF ?= $(shell sed -n '1{s/[[:space:]]//g;p;q;}' APPLE_CONTAINER_REF 2>/dev/null || printf 'unspecified')
+CONTAINERIZATION_SOURCE ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); print((pin or {}).get("location", "unspecified").replace("https://github.com/", "").removesuffix(".git"))' 2>/dev/null || printf 'unspecified')
+CONTAINERIZATION_REF ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); state=(pin or {}).get("state", {}); print(state.get("revision") or state.get("branch") or state.get("version") or "unspecified")' 2>/dev/null || printf 'unspecified')
 SONAR_QUALITYGATE_WAIT ?= false
 XCODE_SELECT_DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
 SWIFT_RUNTIME_RESOURCE_PATH ?= $(shell $(SWIFT) -print-target-info 2>/dev/null | $(PYTHON) -c 'import json, sys; print(json.load(sys.stdin).get("paths", {}).get("runtimeResourcePath", ""))' 2>/dev/null || true)
@@ -55,6 +67,8 @@ SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTI
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
 SWIFT_TEST_ATTEMPTS ?= 2
 SWIFT_TEST_RUN_FLAGS ?= --no-parallel
+SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
+COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
 MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md STATUS.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
 
 # Some local toolchains can build Swift Testing targets without adding the
@@ -70,7 +84,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -102,6 +116,13 @@ swift-test: swift-test-build
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \
 	fi
+
+swift-runtime-test-build:
+	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --build-tests $(SWIFT_TEST_FLAGS)
+
+swift-runtime-test: build swift-runtime-test-build
+	CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
+		$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test-build
 	@if [[ -z "$(SWIFT_LLVM_COV)" ]]; then \
@@ -139,7 +160,7 @@ go-test:
 	cd Tools/compose-normalizer && $(GO) test ./... -coverprofile=coverage.out -covermode=atomic
 
 go-build:
-	cd Tools/compose-normalizer && $(GO) build -o compose-normalizer .
+	cd Tools/compose-normalizer && $(GO_RELEASE_ENV) $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-normalizer .
 
 cli-smoke: build cli-smoke-built
 
@@ -152,12 +173,18 @@ cli-smoke-built:
 	.build/debug/compose version --dry-run >/dev/null
 	version_short_output="$$(".build/debug/compose" version --short)"; \
 	[[ "$$version_short_output" == "0.1.0" ]]; \
+	version_pretty_output="$$(".build/debug/compose" version)"; \
+	[[ "$$version_pretty_output" == *"container-compose 0.1.0"* ]]; \
+	[[ "$$version_pretty_output" == *"container:"* ]]; \
+	[[ "$$version_pretty_output" == *"containerization:"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
-	[[ "$$version_json_output" == '{"version":"0.1.0"}' ]]; \
+	[[ "$$version_json_output" == *'"version":"0.1.0"'* ]]; \
+	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
+	[[ "$$version_json_output" == *'"containerizationSource":'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
-	[[ "$$version_short_format_output" == '{"version":"0.1.0"}' ]]; \
+	[[ "$$version_short_format_output" == *'"version":"0.1.0"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
-	[[ "$$version_compact_format_output" == '{"version":"0.1.0"}' ]]; \
+	[[ "$$version_compact_format_output" == *'"version":"0.1.0"'* ]]; \
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	ansi_escape="$$(printf '\033')"; \
@@ -230,11 +257,13 @@ cli-smoke-built:
 	[[ "$$version_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	wait_help_output="$$(".build/debug/compose" wait --help)"; \
 	[[ "$$wait_help_output" == *"--down-project"* ]]; \
-	[[ "$$wait_help_output" != *"Not implemented yet."* ]]; \
+	[[ "$$wait_help_output" != *"unsupported compose feature"* ]]; \
 	bridge_help_output="$$(".build/debug/compose" bridge --help)"; \
 	[[ "$$bridge_help_output" == *"Management Commands:"* ]]; \
 	bridge_misordered_help_output="$$(".build/debug/compose" bridge help)"; \
 	[[ "$$bridge_misordered_help_output" == *"Usage:  container compose bridge [OPTIONS] COMMAND"* ]]; \
+	bridge_convert_output="$$(".build/debug/compose" bridge convert 2>&1 || true)"; \
+	[[ "$$bridge_convert_output" == *"unsupported compose feature: bridge: Compose Bridge transformations are not available through apple/container"* ]]; \
 	bridge_convert_help_output="$$(".build/debug/compose" bridge convert --help)"; \
 	[[ "$$bridge_convert_help_output" == *"Usage:  container compose bridge convert"* ]]; \
 	[[ "$$bridge_convert_help_output" == *"-o, --output string"* ]]; \
@@ -245,8 +274,8 @@ cli-smoke-built:
 	bridge_transformations_list_help_output="$$(".build/debug/compose" bridge transformations list --help)"; \
 	[[ "$$bridge_transformations_list_help_output" == *"Usage:  container compose bridge transformations list"* ]]; \
 	[[ "$$bridge_transformations_list_help_output" == *"$${ansi_escape}[31m--format$${ansi_escape}[0m"* ]]; \
-	commit_output="$$(".build/debug/compose" commit api example/api:latest)"; \
-	[[ "$$commit_output" == "Not implemented yet" ]]; \
+	commit_output="$$(".build/debug/compose" commit api example/api:latest 2>&1 || true)"; \
+	[[ "$$commit_output" == *"unsupported compose feature: commit: apple/container does not expose committing service containers to images"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'enabled=true\n' > "$$tmpdir/api.conf"; \
@@ -658,10 +687,10 @@ cli-smoke-built:
 	[[ "$$watch_output" == *"compose: watch prune disabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch quiet enabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
-	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot)"; \
-	[[ "$$commit_output" == "Not implemented yet" ]]; \
-	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest)"; \
-	[[ "$$publish_output" == "Not implemented yet" ]]
+	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot 2>&1 || true)"; \
+	[[ "$$commit_output" == *"unsupported compose feature: commit: apple/container does not expose committing service containers to images"* ]]; \
+	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \
+	[[ "$$publish_output" == *"unsupported compose feature: publish: Compose application OCI artifacts are not available through apple/container"* ]]
 
 docker-log-fixtures:
 	./scripts/capture-docker-compose-log-fixtures.sh
@@ -727,11 +756,23 @@ package-built:
 	cp ".build/$(PACKAGE_BUILD_CONFIGURATION)/compose" "$(DIST_DIR)/compose/bin/compose"
 	cp config.toml "$(DIST_DIR)/compose/config.toml"
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
+	$(PYTHON) Tools/release/write-build-info.py \
+		--output "$(DIST_DIR)/compose/resources/build-info.json" \
+		--version "$(COMPOSE_VERSION)" \
+		--source "$(CONTAINER_COMPOSE_SOURCE)" \
+		--branch "$(CONTAINER_COMPOSE_BRANCH)" \
+		--lane "$(CONTAINER_COMPOSE_LANE)" \
+		--commit "$(CONTAINER_COMPOSE_COMMIT)" \
+		--build-type "$(PACKAGE_BUILD_CONFIGURATION)" \
+		--container-source "$(CONTAINER_SOURCE)" \
+		--container-ref "$(CONTAINER_REF)" \
+		--containerization-source "$(CONTAINERIZATION_SOURCE)" \
+		--containerization-ref "$(CONTAINERIZATION_REF)"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 	shasum -a 256 "$(PLUGIN_ARCHIVE)" > "$(PLUGIN_ARCHIVE).sha256"
 
 coverage-tools-test:
-	$(PYTHON) -m py_compile Tools/coverage/*.py
+	$(PYTHON) -m py_compile Tools/coverage/*.py Tools/release/*.py
 	$(PYTHON) -m unittest discover Tools/coverage
 
 check: lint check-licenses

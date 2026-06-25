@@ -20,11 +20,11 @@ on:
   push:
     branches:
       - main
-      - develop
+      - "release/**"
+      - "snapshot/**"
   pull_request:
     branches:
       - main
-      - develop
     types:
       - opened
       - synchronize
@@ -117,10 +117,34 @@ jobs:
           markdownlint --version
 
       - name: Run local CI workflow
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         run: make ci
         working-directory: container-compose
         env:
           HAWKEYE_AUTO_INSTALL: "1"
+
+      - name: Run frozen branch validation
+        if: >
+          github.event_name == 'push' &&
+          (startsWith(github.ref, 'refs/heads/release/') ||
+           startsWith(github.ref, 'refs/heads/snapshot/'))
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          ruby -c Formula/container-compose.rb
+          case "${GITHUB_REF_NAME}" in
+            release/*)
+              make package-release PLUGIN_ARCHIVE=container-compose-plugin-release-arm64.tar.gz
+              ;;
+            snapshot/*)
+              make package-debug PLUGIN_ARCHIVE=container-compose-plugin-snapshot-arm64.tar.gz
+              ;;
+            *)
+              printf 'Unsupported frozen branch: %s\n' "${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Cache SonarQube packages
         if: >
@@ -217,12 +241,12 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-release-v1-
 
       - name: Build plugin package
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         run: make package PLUGIN_ARCHIVE=container-compose-plugin.tar.gz
         working-directory: container-compose
 
       - name: Upload plugin artifact
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
         with:
           name: container-compose-plugin

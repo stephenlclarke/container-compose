@@ -572,6 +572,30 @@ struct ComposeOrchestratorTests {
         #expect(ordered.map(\.name) == ["db", "api", "web"])
     }
 
+    @Test("orders map-form dependencies before dependents")
+    func ordersMapFormDependenciesBeforeDependents() throws {
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "web": composeService(name: "web", image: "example/web:latest") {
+                    $0.dependsOn = [
+                        "api": ComposeDependency(condition: "service_healthy", restart: true),
+                        "cache": ComposeDependency(condition: "service_started"),
+                    ]
+                },
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_completed_successfully")]
+                },
+                "db": ComposeService(name: "db", image: "postgres:16"),
+                "cache": ComposeService(name: "cache", image: "redis:7"),
+            ]
+        )
+
+        let ordered = try ComposeOrchestrator().orderedServices(project: project, selected: ["web"])
+
+        #expect(ordered.map(\.name) == ["db", "api", "cache", "web"])
+    }
+
     @Test("orders present optional dependencies and skips missing optional dependencies")
     func ordersPresentOptionalDependenciesAndSkipsMissingOptionalDependencies() throws {
         let project = ComposeProject(
@@ -1437,6 +1461,33 @@ struct ComposeOrchestratorTests {
         #expect(plan.blockIO?.weightDevice.first?.minor == 0)
         #expect(plan.blockIO?.weightDevice.first?.weight == 700)
         #expect(plan.blockIO?.throttleReadIOPSDevice.first?.rate == 1000)
+    }
+
+    @Test("service create plan maps entrypoint and command to init process")
+    func serviceCreatePlanMapsEntrypointAndCommandToInitProcess() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.entrypoint = ["/bin/sh", "-c"]
+                    $0.command = ["printf ready"]
+                    $0.environment = [
+                        "EMPTY": nil,
+                        "LOG_LEVEL": "debug",
+                    ]
+                    $0.workingDir = "/work"
+                    $0.user = "1000:1000"
+                },
+            ]
+        )
+
+        let plan = try await ComposeOrchestrator().serviceCreatePlan(project: project, serviceName: "job")
+
+        #expect(plan.initProcess.executable == "/bin/sh")
+        #expect(plan.initProcess.arguments == ["-c", "printf ready"])
+        #expect(plan.initProcess.environment == ["EMPTY", "LOG_LEVEL=debug"])
+        #expect(plan.initProcess.workingDirectory == "/work")
+        #expect(plan.initProcess.user.description == "1000:1000")
     }
 
     @Test("service create plan maps explicit healthcheck to typed policy")

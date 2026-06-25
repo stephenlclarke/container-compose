@@ -23,8 +23,159 @@ import Glibc
 #endif
 import Foundation
 
-private let composePluginVersionNumber = "0.1.0"
+private let composeBuildInfo = ComposeBuildInfo.load()
+private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
+
+private struct ComposeBuildInfo: Codable {
+    var version: String = "0.1.0"
+    var source: String = "unspecified"
+    var branch: String = "unspecified"
+    var lane: String = "unspecified"
+    var commit: String = "unspecified"
+    var buildType: String = defaultBuildType
+    var containerSource: String = "unspecified"
+    var containerRef: String = "unspecified"
+    var containerizationSource: String = "unspecified"
+    var containerizationRef: String = "unspecified"
+
+    static func load() -> ComposeBuildInfo {
+        if let path = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_BUILD_INFO"],
+           let info = decode(path: path) {
+            return info
+        }
+        if let info = decode(path: packagedBuildInfoPath()) {
+            return info
+        }
+        return localBuildInfo()
+    }
+
+    private static var defaultBuildType: String {
+        #if DEBUG
+        "debug"
+        #else
+        "release"
+        #endif
+    }
+
+    private static func packagedBuildInfoPath() -> String {
+        let executable = URL(fileURLWithPath: CommandLine.arguments.first ?? "")
+        return executable
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("resources/build-info.json")
+            .path
+    }
+
+    private static func decode(path: String) -> ComposeBuildInfo? {
+        guard let data = FileManager.default.contents(atPath: path) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(ComposeBuildInfo.self, from: data)
+    }
+
+    private static func localBuildInfo() -> ComposeBuildInfo {
+        let root = git(["rev-parse", "--show-toplevel"]) ?? FileManager.default.currentDirectoryPath
+        let branch = git(["branch", "--show-current"], root: root) ?? "unspecified"
+        return ComposeBuildInfo(
+            version: "0.1.0",
+            source: remoteSource(root: root),
+            branch: branch,
+            lane: lane(for: branch),
+            commit: git(["rev-parse", "HEAD"], root: root) ?? "unspecified",
+            buildType: defaultBuildType,
+            containerSource: "stephenlclarke/container",
+            containerRef: firstLine(in: "\(root)/APPLE_CONTAINER_REF") ?? "unspecified",
+            containerizationSource: normalizedSource(packageResolvedValue(root: root, key: "location") ?? "unspecified"),
+            containerizationRef: packageResolvedState(root: root) ?? "unspecified"
+        )
+    }
+
+    private static func remoteSource(root: String) -> String {
+        let remote = git(["remote", "get-url", "origin"], root: root) ?? "unspecified"
+        return remote
+            .normalizedGitHubSource()
+    }
+
+    private static func normalizedSource(_ source: String) -> String {
+        source.normalizedGitHubSource()
+    }
+}
+
+private extension String {
+    func normalizedGitHubSource() -> String {
+        self
+            .replacingOccurrences(of: "https://github.com/", with: "")
+            .replacingOccurrences(of: "git@github.com:", with: "")
+            .replacingOccurrences(of: ".git", with: "")
+    }
+}
+
+private extension ComposeBuildInfo {
+    static func lane(for branch: String) -> String {
+        if branch == "main" {
+            return "main"
+        }
+        if branch.hasPrefix("release/") {
+            return "release"
+        }
+        if branch.hasPrefix("snapshot/") {
+            return "snapshot"
+        }
+        if branch == "HEAD" || branch.isEmpty {
+            return "detached"
+        }
+        return "development"
+    }
+
+    static func git(_ arguments: [String], root: String? = nil) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = root.map { ["-C", $0] + arguments } ?? arguments
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let value = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    static func firstLine(in path: String) -> String? {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        return text.split(whereSeparator: \.isNewline).first.map(String.init)
+    }
+
+    static func packageResolvedValue(root: String, key: String) -> String? {
+        packageResolvedPin(root: root)?[key] as? String
+    }
+
+    static func packageResolvedState(root: String) -> String? {
+        guard let state = packageResolvedPin(root: root)?["state"] as? [String: Any] else {
+            return nil
+        }
+        return (state["revision"] ?? state["branch"] ?? state["version"]) as? String
+    }
+
+    static func packageResolvedPin(root: String) -> [String: Any]? {
+        guard let data = FileManager.default.contents(atPath: "\(root)/Package.resolved"),
+              let rootObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let pins = rootObject["pins"] as? [[String: Any]] else {
+            return nil
+        }
+        return pins.first { $0["identity"] as? String == "containerization" }
+    }
+}
 
 /// Root command for the `container compose` plugin.
 struct ComposePlugin: AsyncParsableCommand {
@@ -196,14 +347,14 @@ extension ComposeProjectCommand {
     }
 }
 
-/// Placeholder for Docker Compose bridge management commands.
+/// Reports unsupported Docker Compose bridge management commands.
 struct Bridge: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "bridge", abstract: "Convert compose files into another model.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports that bridge conversion is not implemented yet.
+    /// Reports the transformation runtime gap.
     func run() throws {
-        print("Not implemented yet")
+        throw ComposeError.unsupported("bridge: Compose Bridge transformations are not available through apple/container")
     }
 }
 
@@ -1161,14 +1312,14 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose commit` until apple/container can commit containers to images.
+/// Reports `compose commit` as unsupported until apple/container can commit containers to images.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for committing service containers.
     func run() throws {
-        print("Not implemented yet")
+        throw ComposeError.unsupported("commit: apple/container does not expose committing service containers to images")
     }
 }
 
@@ -1193,14 +1344,14 @@ struct Export: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Placeholder for `compose publish` until apple/container supports Compose OCI artifacts.
+/// Reports `compose publish` as unsupported until Compose application artifacts are available.
 struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "publish", abstract: "Publish the Compose application.")
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized) var arguments: [String] = []
     /// Reports the runtime gap for Compose application publishing.
     func run() throws {
-        print("Not implemented yet")
+        throw ComposeError.unsupported("publish: Compose application OCI artifacts are not available through apple/container")
     }
 }
 
@@ -1284,8 +1435,18 @@ struct Version: ParsableCommand {
         switch format.lowercased() {
         case "pretty":
             print(composePluginVersionString)
+            print("  source: \(composeBuildInfo.source)")
+            print("  lane: \(composeBuildInfo.lane)")
+            print("  branch: \(composeBuildInfo.branch)")
+            print("  commit: \(composeBuildInfo.commit)")
+            print("  build: \(composeBuildInfo.buildType)")
+            print("  container: \(composeBuildInfo.containerSource)@\(composeBuildInfo.containerRef)")
+            print("  containerization: \(composeBuildInfo.containerizationSource)@\(composeBuildInfo.containerizationRef)")
         case "json":
-            print(#"{"version":"\#(composePluginVersionNumber)"}"#)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(composeBuildInfo)
+            print(String(decoding: data, as: UTF8.self))
         default:
             throw ComposeError.unsupported("version --format '\(format)'; supported formats are pretty and json")
         }

@@ -69,5 +69,12 @@ let package = Package(
                 .process("Fixtures"),
             ]
         ),
+        .testTarget(
+            name: "ComposeRuntimeTests",
+            dependencies: [
+                "ComposeCore",
+            ],
+            path: "Tests/ComposeRuntimeTests"
+        ),
     ]
 )
