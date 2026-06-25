@@ -218,7 +218,7 @@ jobs:
 
       - name: Build plugin package
         if: github.event_name != 'pull_request'
-        run: make package
+        run: make package PLUGIN_ARCHIVE=container-compose-plugin.tar.gz
         working-directory: container-compose
 
       - name: Upload plugin artifact
