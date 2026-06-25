@@ -84,7 +84,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -161,6 +161,48 @@ go-test:
 
 go-build:
 	cd Tools/compose-normalizer && $(GO_RELEASE_ENV) $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-normalizer .
+	$(MAKE) go-release-check
+
+go-release-check:
+	@test -x Tools/compose-normalizer/compose-normalizer || { \
+		printf 'Tools/compose-normalizer/compose-normalizer is missing; run make go-build first\n' >&2; \
+		exit 1; \
+	}
+	@case " $(GO_RELEASE_BUILD_FLAGS) " in \
+		*" -trimpath "*) ;; \
+		*) \
+			printf 'GO_RELEASE_BUILD_FLAGS must include -trimpath for Homebrew package builds\n' >&2; \
+			exit 1; \
+			;; \
+	esac
+	@case " $(GO_RELEASE_LDFLAGS) " in \
+		*" -s "*) ;; \
+		*) \
+			printf 'GO_RELEASE_LDFLAGS must include -s for Homebrew package builds\n' >&2; \
+			exit 1; \
+			;; \
+	esac
+	@case " $(GO_RELEASE_LDFLAGS) " in \
+		*" -w "*) ;; \
+		*) \
+			printf 'GO_RELEASE_LDFLAGS must include -w for Homebrew package builds\n' >&2; \
+			exit 1; \
+			;; \
+	esac
+	@$(GO) version -m Tools/compose-normalizer/compose-normalizer | grep -E '^[[:space:]]*build[[:space:]]+-trimpath=true$$' >/dev/null || { \
+		printf 'compose-normalizer was not built with -trimpath; Homebrew packages require the release Go build path\n' >&2; \
+		$(GO) version -m Tools/compose-normalizer/compose-normalizer >&2; \
+		exit 1; \
+	}
+	@$(GO) version -m Tools/compose-normalizer/compose-normalizer | grep -E '^[[:space:]]*build[[:space:]]+CGO_ENABLED=0$$' >/dev/null || { \
+		printf 'compose-normalizer was not built with CGO_ENABLED=0; Homebrew packages require the release Go build path\n' >&2; \
+		$(GO) version -m Tools/compose-normalizer/compose-normalizer >&2; \
+		exit 1; \
+	}
+	@if otool -l Tools/compose-normalizer/compose-normalizer | grep -E '__DWARF|__debug' >/dev/null; then \
+		printf 'compose-normalizer contains DWARF debug sections; Homebrew packages require stripped release Go binaries\n' >&2; \
+		exit 1; \
+	fi
 
 cli-smoke: build cli-smoke-built
 
@@ -206,7 +248,7 @@ cli-smoke-built:
 	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[31mnot supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$commit_help_output" == *"$${ansi_escape}[31m--author$${ansi_escape}[0m"* ]]; \
 	config_help_output="$$(".build/debug/compose" config --help)"; \
-	[[ "$$config_help_output" == *"$${ansi_escape}[38;5;208m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--services$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--images$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--output$${ansi_escape}[0m"* ]]; \
@@ -303,6 +345,11 @@ cli-smoke-built:
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
 	[[ "$$config_output" == *'"name":"demo"'* ]]; \
+	config_yaml_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --format yaml api)"; \
+	[[ "$$config_yaml_output" == *"services:"* ]]; \
+	[[ "$$config_yaml_output" == *"  api:"* ]]; \
+	[[ "$$config_yaml_output" == *'    image: "alpine"'* ]]; \
+	[[ "$$config_yaml_output" != *"  db:"* ]]; \
 	config_services_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --services)"; \
 	[[ "$$config_services_output" == *"api"* ]]; \
 	[[ "$$config_services_output" == *"db"* ]]; \

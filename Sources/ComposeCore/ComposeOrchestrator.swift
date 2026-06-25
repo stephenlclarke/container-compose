@@ -1173,6 +1173,15 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// Returns canonical project YAML for `compose config --format yaml`.
+    public func configYAML(project: ComposeProject) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(project)
+        let object = try JSONSerialization.jsonObject(with: data)
+        return YAMLDocumentRenderer.render(object)
+    }
+
     /// Returns Docker Compose compatible config projections for supported flags.
     public func config(project: ComposeProject, options: ComposeConfigOptions) throws -> String {
         if options.quiet {
@@ -2783,9 +2792,9 @@ private extension ComposeOrchestrator {
         case "", "json":
             return try config(project: project)
         case "yaml":
-            throw ComposeError.unsupported("config --format yaml; YAML rendering is not wired yet")
+            return try configYAML(project: project)
         default:
-            throw ComposeError.unsupported("config --format '\(format ?? "")'; supported formats are json")
+            throw ComposeError.unsupported("config --format '\(format ?? "")'; supported formats are yaml and json")
         }
     }
 
@@ -9507,6 +9516,119 @@ private func recordsForCompleteLogData(_ output: Data) -> [Data] {
         records.append(current)
     }
     return records
+}
+
+/// Renders JSON-compatible Foundation values as deterministic block YAML.
+private enum YAMLDocumentRenderer {
+    static func render(_ value: Any) -> String {
+        var lines: [String] = []
+        append(value, indent: 0, to: &lines)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func append(_ value: Any, indent: Int, to lines: inout [String]) {
+        let prefix = String(repeating: " ", count: indent)
+        if let object = value as? [String: Any] {
+            appendObject(object, prefix: prefix, indent: indent, to: &lines)
+        } else if let array = value as? [Any] {
+            appendArray(array, prefix: prefix, indent: indent, to: &lines)
+        } else {
+            lines.append(prefix + scalar(value))
+        }
+    }
+
+    private static func appendObject(_ object: [String: Any], prefix: String, indent: Int, to lines: inout [String]) {
+        guard !object.isEmpty else {
+            lines.append(prefix + "{}")
+            return
+        }
+        for key in object.keys.sorted() {
+            guard let value = object[key] else {
+                continue
+            }
+            if isBlockValue(value) {
+                lines.append("\(prefix)\(renderKey(key)):")
+                append(value, indent: indent + 2, to: &lines)
+            } else {
+                lines.append("\(prefix)\(renderKey(key)): \(scalar(value))")
+            }
+        }
+    }
+
+    private static func appendArray(_ array: [Any], prefix: String, indent: Int, to lines: inout [String]) {
+        guard !array.isEmpty else {
+            lines.append(prefix + "[]")
+            return
+        }
+        for value in array {
+            if isBlockValue(value) {
+                lines.append(prefix + "-")
+                append(value, indent: indent + 2, to: &lines)
+            } else {
+                lines.append("\(prefix)- \(scalar(value))")
+            }
+        }
+    }
+
+    private static func isBlockValue(_ value: Any) -> Bool {
+        if let object = value as? [String: Any] {
+            return !object.isEmpty
+        }
+        if let array = value as? [Any] {
+            return !array.isEmpty
+        }
+        return false
+    }
+
+    private static func scalar(_ value: Any) -> String {
+        switch value {
+        case _ as NSNull:
+            return "null"
+        case let bool as Bool:
+            return bool ? "true" : "false"
+        case let number as NSNumber:
+            return number.stringValue
+        case let string as String:
+            return quoted(string)
+        case let object as [String: Any] where object.isEmpty:
+            return "{}"
+        case let array as [Any] where array.isEmpty:
+            return "[]"
+        default:
+            return quoted(String(describing: value))
+        }
+    }
+
+    private static func renderKey(_ key: String) -> String {
+        guard !key.isEmpty, key.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-" }) else {
+            return quoted(key)
+        }
+        return key
+    }
+
+    private static func quoted(_ value: String) -> String {
+        var rendered = "\""
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\"":
+                rendered += "\\\""
+            case "\\":
+                rendered += "\\\\"
+            case "\n":
+                rendered += "\\n"
+            case "\r":
+                rendered += "\\r"
+            case "\t":
+                rendered += "\\t"
+            case let control where control.value < 0x20 || control.value == 0x7F:
+                rendered += String(format: "\\u%04X", Int(control.value))
+            default:
+                rendered.unicodeScalars.append(scalar)
+            }
+        }
+        rendered += "\""
+        return rendered
+    }
 }
 
 /// Returns a SHA-256 hex digest for stable names and labels.

@@ -7495,6 +7495,58 @@ struct ComposeOrchestratorTests {
         #expect(json.contains(#""web" : {"#))
     }
 
+    @Test("config renders canonical YAML")
+    func configRendersCanonicalYAML() throws {
+        var project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.environment = ["CONTROL": "\u{001F}", "EMPTY": nil, "MODE": "dev", "ODD": "line\nquote\"tab\tend"]
+                    $0.networks = ["front"]
+                },
+                "worker": composeService(name: "worker", image: "example/worker"),
+            ]
+        ) {
+            $0.networks = ["front": ComposeNetwork(name: "front")]
+            $0.extensions = ["x-project": .object(["enabled": .bool(true)])]
+        }
+        project.workingDirectory = "/workspace/demo"
+
+        let yaml = try ComposeOrchestrator().config(
+            project: project,
+            options: ComposeConfigOptions {
+                $0.services = ["api"]
+                $0.format = "yaml"
+            }
+        )
+
+        #expect(yaml.contains(#"name: "demo""#))
+        #expect(yaml.contains(#"workingDirectory: "/workspace/demo""#))
+        #expect(yaml.contains("services:\n  api:"))
+        #expect(yaml.contains(#"    image: "example/api""#))
+        #expect(yaml.contains("    environment:\n      CONTROL: \"\\u001F\"\n      EMPTY: null\n      MODE: \"dev\""))
+        #expect(yaml.contains(#"      ODD: "line\nquote\"tab\tend""#))
+        #expect(yaml.contains("    networks:\n      - \"front\""))
+        #expect(yaml.contains("networks:\n  front:\n    name: \"front\""))
+        #expect(yaml.contains("extensions:\n  x-project:\n    enabled: true"))
+        #expect(!yaml.contains("worker"))
+    }
+
+    @Test("config rejects unsupported render formats")
+    func configRejectsUnsupportedRenderFormats() throws {
+        let project = ComposeProject(name: "demo", services: ["web": ComposeService(name: "web", image: "nginx")])
+
+        do {
+            _ = try ComposeOrchestrator().config(
+                project: project,
+                options: ComposeConfigOptions { $0.format = "toml" }
+            )
+            Issue.record("expected unsupported config format")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("config --format 'toml'; supported formats are yaml and json"))
+        }
+    }
+
     @Test("config preserves normalized compose extension fields")
     func configPreservesNormalizedComposeExtensionFields() throws {
         let project = composeProject(

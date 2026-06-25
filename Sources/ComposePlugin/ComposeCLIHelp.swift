@@ -253,7 +253,7 @@ enum ComposeCLIHelp {
         "config": [
             "--dry-run": .supported,
             "--environment": .notSupported,
-            "--format": .partiallySupported,
+            "--format": .supported,
             "--hash": .supported,
             "--images": .supported,
             "--lock-image-digests": .notSupported,
