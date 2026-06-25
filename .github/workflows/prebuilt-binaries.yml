@@ -132,6 +132,7 @@ jobs:
               --prerelease
           else
             gh release edit "$tag" \
+              --target "$GITHUB_SHA" \
               --title "${RELEASE_NAME}" \
               --notes-file "$notes" \
               --prerelease
