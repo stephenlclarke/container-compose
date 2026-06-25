@@ -14,14 +14,14 @@ and package steps are covered in [BUILD.md](BUILD.md).
 
 ## Install With Homebrew
 
-The `develop` and `main` branches carry a local Homebrew formula that mirrors the source-build style used by Homebrew's `container` formula. It installs the plugin under the `container-compose` keg and leaves the final plugin registration as an explicit symlink into the active `container` install root.
+The `develop` and `main` branches carry a local Homebrew formula that installs prebuilt release assets from GitHub releases instead of building Swift or Go source on the user's machine. The `main` branch tracks release builds and the `develop` branch tracks debug builds. It installs the plugin under the `container-compose` keg and leaves the final plugin registration as an explicit symlink into the active `container` install root.
 
 Install the matching `container` fork branch first:
 
 ```sh
 brew tap stephenlclarke/container https://github.com/stephenlclarke/container
 git -C "$(brew --repo stephenlclarke/container)" checkout develop
-brew install --build-from-source --HEAD stephenlclarke/container/container
+brew install stephenlclarke/container/container
 brew services start container
 ```
 
@@ -32,7 +32,7 @@ Install `container-compose` from the same lane:
 ```sh
 brew tap stephenlclarke/container-compose https://github.com/stephenlclarke/container-compose
 git -C "$(brew --repo stephenlclarke/container-compose)" checkout develop
-brew install --build-from-source --HEAD stephenlclarke/container-compose/container-compose
+brew install stephenlclarke/container-compose/container-compose
 mkdir -p "$(brew --prefix container)/libexec/container-plugins"
 ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
 brew services restart container

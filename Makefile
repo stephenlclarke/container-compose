@@ -30,7 +30,7 @@ PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
-PLUGIN_ARCHIVE ?= container-compose-plugin.tar.gz
+PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
 SONAR_QUALITYGATE_WAIT ?= false
 XCODE_SELECT_DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
 SWIFT_RUNTIME_RESOURCE_PATH ?= $(shell $(SWIFT) -print-target-info 2>/dev/null | $(PYTHON) -c 'import json, sys; print(json.load(sys.stdin).get("paths", {}).get("runtimeResourcePath", ""))' 2>/dev/null || true)
@@ -67,7 +67,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-coverage go-test go-build cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-create-options-parity docker-compose-events-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -694,14 +694,22 @@ sonar-scan:
 		SONAR_TOKEN="$$sonar_token" sonar-scanner -Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"; \
 	fi
 
-package: build-release
-	cd Tools/compose-normalizer && $(GO) build -o compose-normalizer .
+package: package-release
+
+package-release: PACKAGE_BUILD_CONFIGURATION = release
+package-release: build-release go-build package-built
+
+package-debug: PACKAGE_BUILD_CONFIGURATION = debug
+package-debug: build go-build package-built
+
+package-built:
 	rm -rf "$(DIST_DIR)"
 	mkdir -p "$(DIST_DIR)/compose/bin" "$(DIST_DIR)/compose/resources"
-	cp .build/release/compose "$(DIST_DIR)/compose/bin/compose"
+	cp ".build/$(PACKAGE_BUILD_CONFIGURATION)/compose" "$(DIST_DIR)/compose/bin/compose"
 	cp config.toml "$(DIST_DIR)/compose/config.toml"
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
+	shasum -a 256 "$(PLUGIN_ARCHIVE)" > "$(PLUGIN_ARCHIVE).sha256"
 
 coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py
