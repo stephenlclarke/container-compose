@@ -425,6 +425,8 @@ public struct ComposeUpOptions {
     public var quietBuild = false
     public var quietPull = false
     public var timeout: Int?
+    public var wait = false
+    public var waitTimeout: Int?
 
     public init() {
         services = []
@@ -442,6 +444,8 @@ public struct ComposeUpOptions {
         quietBuild = false
         quietPull = false
         timeout = nil
+        wait = false
+        waitTimeout = nil
     }
 
     public init(_ configure: (inout ComposeUpOptions) -> Void) {
@@ -1399,6 +1403,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let selectedServiceReferences = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
             : orderedServices(project: project, selected: up.services)
+        var waitTargets: [ServiceContainerTarget] = []
         var workingProject = try projectByApplyingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
         var services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
@@ -1427,7 +1432,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
-        let attachedForegroundService = try foregroundServiceTarget(project: workingProject, services: services, scaleOverrides: scaleOverrides, detach: up.detach)
+        let attachedForegroundService = try foregroundServiceTarget(project: workingProject, services: services, scaleOverrides: scaleOverrides, detach: up.detach || up.wait)
         try validateAttachedPostStartSupport(target: attachedForegroundService)
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
@@ -1486,7 +1491,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                         request: ServiceContainerReconcileRequest(
                             name: name,
                             runOptions: RunArgumentOptions {
-                                $0.detach = up.detach || isDeployJobService(service) || attachedForegroundService?.name != name
+                                $0.detach = up.detach || up.wait || isDeployJobService(service) || attachedForegroundService?.name != name
                                 $0.containerIndex = replicaIndex
                                 $0.replicaCount = replicaCount
                             },
@@ -1502,6 +1507,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     serviceChanged = serviceChanged || reconcileOutcome.changed
                     if reconcileOutcome.recreated {
                         priorReplicaRecreated = true
+                    }
+                    if up.wait, !isDeployJobService(service) {
+                        waitTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
                     }
                 }
             }
@@ -1534,6 +1542,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 preservingServices: preservedServices,
                 timeout: up.timeout
             )
+        }
+        if up.wait {
+            try await waitForStartedServiceTargets(waitTargets, timeout: up.waitTimeout, command: "up --wait")
         }
     }
 
@@ -2457,14 +2468,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Starts selected service containers.
     public func start(project: ComposeProject, options start: ComposeStartOptions) async throws {
-        try validateTimeoutSeconds(start.waitTimeout, command: "start --wait-timeout")
+        try validateTimeoutSeconds(start.waitTimeout, command: "start", option: "--wait-timeout")
         let services = try selectedServices(project: project, selected: start.services)
         let targets = try await serviceContainerTargets(project: project, services: services)
         for target in targets {
             try await startContainer(service: target.service, containerName: target.name)
         }
         if start.wait {
-            try await waitForStartedServiceTargets(targets, timeout: start.waitTimeout)
+            try await waitForStartedServiceTargets(targets, timeout: start.waitTimeout, command: "start --wait")
         }
     }
 
@@ -5570,8 +5581,12 @@ private extension ComposeOrchestrator {
     /// Validates command-level `compose up` option combinations before runtime side effects.
     func validateUpOptions(_ options: ComposeUpOptions) throws {
         try validateTimeoutSeconds(options.timeout, command: "up")
+        try validateTimeoutSeconds(options.waitTimeout, command: "up", option: "--wait-timeout")
         if options.build, options.noBuild {
             throw ComposeError.invalidProject("--build and --no-build are incompatible")
+        }
+        if options.wait, options.noStart {
+            throw ComposeError.invalidProject("--wait and --no-start are incompatible")
         }
         if options.forceRecreate, options.noRecreate {
             throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
@@ -5895,12 +5910,12 @@ private extension ComposeOrchestrator {
     }
 
     /// Validates a Compose CLI shutdown timeout before runtime side effects.
-    func validateTimeoutSeconds(_ timeout: Int?, command: String) throws {
+    func validateTimeoutSeconds(_ timeout: Int?, command: String, option: String = "--timeout") throws {
         guard let timeout else {
             return
         }
         guard timeout >= 0, timeout <= Int(Int32.max) else {
-            throw ComposeError.invalidProject("\(command) --timeout must be between 0 and \(Int32.max) seconds")
+            throw ComposeError.invalidProject("\(command) \(option) must be between 0 and \(Int32.max) seconds")
         }
     }
 
@@ -6949,7 +6964,7 @@ private extension ComposeOrchestrator {
     }
 
     /// Waits for started service containers to reach a usable runtime state.
-    func waitForStartedServiceTargets(_ targets: [ServiceContainerTarget], timeout: Int?) async throws {
+    func waitForStartedServiceTargets(_ targets: [ServiceContainerTarget], timeout: Int?, command: String) async throws {
         guard !targets.isEmpty else {
             return
         }
@@ -6986,7 +7001,7 @@ private extension ComposeOrchestrator {
             }
             if let deadline, options.currentDate() >= deadline {
                 let names = pending.keys.sorted().joined(separator: ", ")
-                throw ComposeError.invalidProject("start --wait timed out waiting for \(names)")
+                throw ComposeError.invalidProject("\(command) timed out waiting for \(names)")
             }
             try await options.sleep(.milliseconds(250))
         }
@@ -9160,7 +9175,7 @@ private func filterProjectContainers(projectName: String, containers: [ComposeCo
     containers.filter { $0.projectName == projectName }
 }
 
-/// Interprets direct runtime state for `compose start --wait`.
+/// Interprets direct runtime state for Compose wait-until-running operations.
 private func startWaitState(_ container: ComposeContainerSummary) -> ComposeStartWaitState {
     switch container.health?.lowercased() {
     case "healthy":

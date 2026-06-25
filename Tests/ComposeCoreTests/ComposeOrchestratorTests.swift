@@ -2008,6 +2008,13 @@ struct ComposeOrchestratorTests {
                 },
                 "--always-recreate-deps and --no-recreate are incompatible"
             ),
+            (
+                ComposeUpOptions {
+                    $0.wait = true
+                    $0.noStart = true
+                },
+                "--wait and --no-start are incompatible"
+            ),
         ]
 
         for testCase in incompatibleOptionCases {
@@ -2045,6 +2052,97 @@ struct ComposeOrchestratorTests {
         #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-2", "--detach"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
         #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("up wait implies detached containers and polls until running")
+    func upWaitImpliesDetachedContainersAndPollsUntilRunning() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-api-1", status: "starting"),
+                    ComposeContainerSummary(id: "demo-api-1", status: "running"),
+                ],
+            ]
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.wait = true
+                $0.waitTimeout = 5
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands[0].starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
+    }
+
+    @Test("up wait dry run emits wait-running operations")
+    func upWaitDryRunEmitsWaitRunningOperations() async throws {
+        let emitted = MessageRecorder()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.wait = true
+                $0.waitTimeout = 3
+            }
+        )
+
+        #expect(emitted.messages.contains("+ container inspect demo-api-1"))
+        #expect(emitted.messages.contains { message in
+            message.contains("container run --name demo-api-1 --detach")
+                && message.contains("com.apple.container.compose.service=api")
+                && message.hasSuffix("example/api")
+        })
+        #expect(emitted.messages.contains("+ compose-runtime wait-running --timeout 3 demo-api-1"))
+    }
+
+    @Test("up wait timeout reports up command")
+    func upWaitTimeoutReportsUpCommand() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-api-1", status: "starting"),
+                ],
+            ]
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        let now = Date(timeIntervalSince1970: 1_000)
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions(runtimeHooks: .init(currentDate: { now }, sleep: { _ in })),
+                discoveryManager: discoveryManager
+            ).up(
+                project: project,
+                options: ComposeUpOptions {
+                    $0.wait = true
+                    $0.waitTimeout = 0
+                }
+            )
+            Issue.record("Expected up wait timeout error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("up --wait timed out waiting for demo-api-1"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 
     @Test("create creates scaled service replicas")
@@ -8867,6 +8965,48 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("up wait runs post start hooks through detached path")
+    func upWaitRunsPostStartHooksThroughDetachedPath() async throws {
+        let runner = RecordingRunner()
+        let execManager = RecordingContainerExecManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-api-1", status: "running"),
+                ],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.postStart = [ComposeServiceHook(command: ["sh", "-c", "touch /tmp/ready"])]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.execManager = execManager
+            }
+        ).up(project: project, options: ComposeUpOptions { $0.wait = true })
+
+        #expect(runner.commands.map(\.arguments).first?.contains("--detach") == true)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh", "-c", "touch /tmp/ready"],
+                interactive: false,
+                tty: false
+            ),
+        ])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1"])
+    }
+
     @Test("restart runs pre stop and post start hooks around lifecycle calls")
     func restartRunsPreStopAndPostStartHooksAroundLifecycleCalls() async throws {
         let execManager = RecordingContainerExecManager()
@@ -11810,6 +11950,28 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected invalid up timeout error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("up --timeout must be between 0 and 2147483647 seconds"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            try await orchestrator.up(project: project, options: ComposeUpOptions {
+                $0.waitTimeout = -1
+            })
+            Issue.record("Expected invalid up wait timeout error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("up --wait-timeout must be between 0 and 2147483647 seconds"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            try await orchestrator.start(project: project, options: ComposeStartOptions {
+                $0.waitTimeout = -1
+            })
+            Issue.record("Expected invalid start wait timeout error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("start --wait-timeout must be between 0 and 2147483647 seconds"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

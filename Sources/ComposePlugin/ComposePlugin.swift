@@ -602,6 +602,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 $0.noDeps = noDeps
                 $0.noStart = noStart
                 $0.timeout = timeout
+                $0.wait = wait
+                $0.waitTimeout = waitTimeout
             }
         )
     }

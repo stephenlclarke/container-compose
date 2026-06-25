@@ -290,6 +290,8 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--no-color$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[38;5;208m--yes$${ansi_escape}[0m"* ]]; \
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \
 	[[ "$$rm_help_output" == *"-f, --force"* ]]; \
@@ -554,6 +556,13 @@ cli-smoke-built:
 	[[ "$$up_quiet_build_output" == *"container build"* ]]; \
 	[[ "$$up_quiet_build_output" == *"--quiet"* ]]; \
 	[[ "$$up_quiet_build_output" == *"container run"* ]]; \
+	up_wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --wait --wait-timeout 3 api)"; \
+	[[ "$$up_wait_output" == *"--name demo-db-1 --detach"* ]]; \
+	[[ "$$up_wait_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$up_wait_output" == *"compose-runtime wait-running --timeout 3 demo-db-1"* ]]; \
+	[[ "$$up_wait_output" == *"compose-runtime wait-running --timeout 3 demo-api-1"* ]]; \
+	up_wait_no_start_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --wait --no-start api 2>&1 || true)"; \
+	[[ "$$up_wait_no_start_output" == *"invalid compose project: --wait and --no-start are incompatible"* ]]; \
 	up_build_no_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --build --no-build worker 2>&1 || true)"; \
 	[[ "$$up_build_no_build_output" == *"invalid compose project: --build and --no-build are incompatible"* ]]; \
 	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" up --scale worker=2 worker)"; \
