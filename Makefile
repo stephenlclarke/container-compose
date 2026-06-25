@@ -103,7 +103,7 @@ swift-test: swift-test-build
 		exit 1; \
 	fi
 
-swift-coverage: swift-test
+swift-coverage: swift-test-build
 	@if [[ -z "$(SWIFT_LLVM_COV)" ]]; then \
 		printf 'llvm-cov is required; install the active Swift toolchain or set SWIFT_LLVM_COV=/path/to/llvm-cov\n' >&2; \
 		exit 1; \
@@ -112,6 +112,8 @@ swift-coverage: swift-test
 		printf 'llvm-profdata is required; install the active Swift toolchain or set SWIFT_LLVM_PROFDATA=/path/to/llvm-profdata\n' >&2; \
 		exit 1; \
 	fi
+	@rm -f .build/*/debug/codecov/*.profraw .build/codecov/fallback.profdata coverage.lcov coverage.xml
+	@SWIFT_TEST_ACCEPT_SIGNAL_13=0 SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 Tools/ci/run-swift-test.sh $(SWIFT) test --quiet $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
 	profile="$$(find .build -path '*/codecov/default.profdata' -type f | head -n 1)"; \
 	if [[ -z "$$test_binary" ]]; then \
@@ -119,14 +121,14 @@ swift-coverage: swift-test
 		exit 2; \
 	fi; \
 	if [[ -z "$$profile" ]]; then \
-		raw_profiles="$$(find .build -name '*.profraw' -type f)"; \
-		if [[ -z "$$raw_profiles" ]]; then \
+		raw_profile_count="$$(find .build -name '*.profraw' -type f | wc -l | tr -d ' ')"; \
+		if [[ "$$raw_profile_count" -eq 0 ]]; then \
 			printf 'Swift coverage profile is missing and no raw .profraw files were found\n' >&2; \
 			exit 2; \
 		fi; \
 		mkdir -p .build/codecov; \
 		profile=".build/codecov/fallback.profdata"; \
-		"$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile" $$raw_profiles; \
+		find .build -name '*.profraw' -type f -print0 | xargs -0 "$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile"; \
 	fi; \
 	"$(SWIFT_LLVM_COV)" export \
 		-format=lcov \
