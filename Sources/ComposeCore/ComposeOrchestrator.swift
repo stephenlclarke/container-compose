@@ -899,6 +899,7 @@ public struct ComposeRunOptions {
     public var volumes: [String] = []
     public var capAdd: [String] = []
     public var capDrop: [String] = []
+    public var useAliases = false
 
     public init() {
         command = []
@@ -924,6 +925,7 @@ public struct ComposeRunOptions {
         volumes = []
         capAdd = []
         capDrop = []
+        useAliases = false
     }
 
     public init(_ configure: (inout ComposeRunOptions) -> Void) {
@@ -2336,6 +2338,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         if run.interactive {
             service.stdinOpen = true
+        }
+        if !run.useAliases {
+            service.networkAliases = nil
         }
         try applyRunEnvironmentOverrides(run, service: &service)
         try applyRunCapabilityOverrides(run, service: &service)

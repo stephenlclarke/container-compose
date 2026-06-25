@@ -15434,8 +15434,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run maps network aliases to single network attachment")
-    func runMapsNetworkAliasesToSingleNetworkAttachment() async throws {
+    @Test("run omits network aliases by default for one-off containers")
+    func runOmitsNetworkAliasesByDefaultForOneOffContainers() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -15454,6 +15454,37 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
             .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+        #expect(commands.count == 1)
+        #expect(commands[0].containsSequence(["--network", "demo_backend"]))
+        #expect(!commands[0].contains("demo_backend,alias=job,alias=job.internal"))
+    }
+
+    @Test("run use-aliases maps network aliases to single network attachment")
+    func runUseAliasesMapsNetworkAliasesToSingleNetworkAttachment() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.networks = ["backend"]
+                    $0.networkAliases = ["backend": ["job", "job.internal"]]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
+                $0.remove = true
+                $0.useAliases = true
+            })
 
         let commands = runner.commands.map(\.arguments)
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])

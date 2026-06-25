@@ -976,7 +976,6 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     func run() async throws {
         let unsupportedOptions = [
             quiet ? "--quiet" : nil,
-            useAliases ? "--use-aliases" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("run \(first)")
@@ -1010,6 +1009,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                 $0.volumes = volumes
                 $0.capAdd = capAdd
                 $0.capDrop = capDrop
+                $0.useAliases = useAliases
             }
         )
     }

@@ -283,6 +283,7 @@ cli-smoke-built:
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--quiet-pull$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--publish$${ansi_escape}[0m"* ]]; \
+	[[ "$$run_help_output" == *"$${ansi_escape}[32m--use-aliases$${ansi_escape}[0m"* ]]; \
 	up_help_output="$$(".build/debug/compose" up --help)"; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
@@ -322,7 +323,7 @@ cli-smoke-built:
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'enabled=true\n' > "$$tmpdir/api.conf"; \
 	printf 'token\n' > "$$tmpdir/api-token.txt"; \
-	printf 'services:\n  api:\n    image: alpine\n    annotations:\n      example.com/owner: platform\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    configs:\n      - source: api_config\n        target: /etc/api.conf\n    secrets:\n      - api_token\n    volumes_from:\n      - db:ro\n    volumes:\n      - /scratch\n      - cache:/cache\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n    volumes:\n      - cache:/db-cache\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\nvolumes:\n  cache:\n    driver: local\n    driver_opts:\n      journal: ordered\n      size: 64m\nconfigs:\n  api_config:\n    file: ./api.conf\nsecrets:\n  api_token:\n    file: ./api-token.txt\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    annotations:\n      example.com/owner: platform\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    configs:\n      - source: api_config\n        target: /etc/api.conf\n    secrets:\n      - api_token\n    volumes_from:\n      - db:ro\n    volumes:\n      - /scratch\n      - cache:/cache\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        aliases:\n          - api\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n    volumes:\n      - cache:/db-cache\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\nvolumes:\n  cache:\n    driver: local\n    driver_opts:\n      journal: ordered\n      size: 64m\nconfigs:\n  api_config:\n    file: ./api.conf\nsecrets:\n  api_token:\n    file: ./api-token.txt\n' > "$$tmpdir/compose.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    attach: false\n' > "$$tmpdir/attach-false.yml"; \
 	mkdir -p "$$tmpdir/src"; \
@@ -402,6 +403,8 @@ cli-smoke-built:
 	run_publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run -p 9090:90 api echo hello)"; \
 	[[ "$$run_publish_output" == *"--publish 9090:90"* ]]; \
 	[[ "$$run_publish_output" != *"--publish 8080:80"* ]]; \
+	run_aliases_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --use-aliases api echo hello)"; \
+	[[ "$$run_aliases_output" == *"--network demo_default,alias=api"* ]]; \
 	run_capability_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --cap-add SYS_PTRACE --cap-drop NET_RAW api echo hello)"; \
 	[[ "$$run_capability_output" == *"--cap-add SYS_PTRACE"* ]]; \
 	[[ "$$run_capability_output" == *"--cap-drop NET_RAW"* ]]; \

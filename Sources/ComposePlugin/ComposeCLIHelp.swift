@@ -418,7 +418,7 @@ enum ComposeCLIHelp {
             "--remove-orphans": .supported,
             "--rm": .supported,
             "--service-ports": .supported,
-            "--use-aliases": .notSupported,
+            "--use-aliases": .supported,
             "--user": .supported,
             "--volume": .supported,
             "--workdir": .supported,
