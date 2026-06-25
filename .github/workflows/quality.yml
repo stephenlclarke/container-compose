@@ -110,7 +110,7 @@ jobs:
         run: |
           SWIFT_TEST_RESULT_LOG=.build/swift-asan.log \
             SWIFT_TEST_ATTEMPTS=2 \
-            Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=address --num-workers 1
+            Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=address --parallel --num-workers 1
         working-directory: container-compose
 
   swift-thread-sanitizer:
@@ -184,7 +184,7 @@ jobs:
         run: |
           SWIFT_TEST_RESULT_LOG=.build/swift-tsan.log \
             SWIFT_TEST_ATTEMPTS=2 \
-            Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=thread --num-workers 1
+            Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=thread --parallel --num-workers 1
         working-directory: container-compose
 
   swift-style-advisory:
