@@ -197,6 +197,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install Swift style tools
+        env:
+          HOMEBREW_NO_ENV_HINTS: "1"
+          HOMEBREW_REQUIRE_TAP_TRUST: "1"
         run: |
           set -euo pipefail
           if ! command -v swiftlint >/dev/null 2>&1; then
@@ -209,9 +212,21 @@ jobs:
           swiftformat --version
 
       - name: Run SwiftLint
-        continue-on-error: true
-        run: swiftlint lint --strict --quiet Package.swift Sources Tests
+        run: |
+          set +e
+          swiftlint lint --strict --quiet Package.swift Sources Tests
+          status="$?"
+          if [[ "$status" -ne 0 ]]; then
+            printf '::warning title=SwiftLint advisory::swiftlint exited with status %s\n' "$status"
+          fi
+          exit 0
 
       - name: Run SwiftFormat lint
-        continue-on-error: true
-        run: swiftformat Package.swift Sources Tests --lint --swift-version 6.2
+        run: |
+          set +e
+          swiftformat Package.swift Sources Tests --lint --swift-version 6.2
+          status="$?"
+          if [[ "$status" -ne 0 ]]; then
+            printf '::warning title=SwiftFormat advisory::swiftformat exited with status %s\n' "$status"
+          fi
+          exit 0
