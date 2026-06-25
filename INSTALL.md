@@ -1,47 +1,96 @@
 # Installing container-compose
 
-This guide explains how to install the `container-compose` plugin for the local [`container`](https://github.com/apple/container) CLI. Source build, test, and package steps are covered in [BUILD.md](BUILD.md); branch lane rules are covered in [BRANCHES.md](BRANCHES.md).
+This guide explains how to install the `container-compose` plugin and the compatible fork-backed `container` runtime. Source build, test, and package steps are covered in [BUILD.md](BUILD.md); branch rules are covered in [BRANCHES.md](BRANCHES.md).
+
+## Install Lanes
+
+`main` is the active development branch and keeps the useful SonarCloud badges. Homebrew installs should normally use frozen branches published as prebuilt release assets:
+
+| Lane | Formula | Build type | Use when |
+| --- | --- | --- | --- |
+| Release | `container-compose` | release | You want the latest frozen release build. |
+| Snapshot | `container-compose-snapshot` | debug | You want the latest frozen debug snapshot. |
+
+Both lanes install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation.
 
 ## Requirements
 
-- macOS.
-- The `container` CLI installed and working on the target machine.
-- Either Homebrew access to this repository's branch release assets or a plugin archive from `make package`.
+- Apple silicon Mac.
+- macOS 26 or newer.
+- Homebrew.
+- The fork-backed `container` formula from `stephenlclarke/tap`.
+- No running `container` service from a different install source while switching lanes.
 
-## Install With Homebrew
+## Install From The Aggregate Tap
 
-The `develop` and `main` branches carry a local Homebrew formula that installs prebuilt release assets from GitHub releases instead of building Swift or Go source on the user's machine. Use the same lane for `container` and `container-compose`: `main` is the release lane and `develop` is the debug integration lane. See [BRANCHES.md](BRANCHES.md) for the full lane model.
-
-Install the matching `container` fork branch first. Set `lane=main` for the frozen release lane or `lane=develop` for active debug builds:
-
-```sh
-lane=develop
-brew tap stephenlclarke/container https://github.com/stephenlclarke/container
-git -C "$(brew --repo stephenlclarke/container)" checkout "$lane"
-brew install stephenlclarke/container/container
-brew services start container
-```
-
-Install `container-compose` from the same lane. The formula installs the plugin under the `container-compose` keg; the final plugin registration remains an explicit symlink into the active `container` install root:
+Install the latest frozen release:
 
 ```sh
-brew tap stephenlclarke/container-compose https://github.com/stephenlclarke/container-compose
-git -C "$(brew --repo stephenlclarke/container-compose)" checkout "$lane"
-brew install stephenlclarke/container-compose/container-compose
+brew tap stephenlclarke/tap
+brew install stephenlclarke/tap/container
+brew install stephenlclarke/tap/container-compose
 mkdir -p "$(brew --prefix container)/libexec/container-plugins"
 ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
-brew services restart container
-```
-
-Verify that `container` discovers the plugin:
-
-```sh
+brew services start container
 container compose version
 ```
 
-## Install Locally
+Install the latest frozen snapshot:
 
-Build a local plugin archive with `make package`, then install or replace the plugin with:
+```sh
+brew tap stephenlclarke/tap
+brew install stephenlclarke/tap/container
+brew install stephenlclarke/tap/container-compose-snapshot
+mkdir -p "$(brew --prefix container)/libexec/container-plugins"
+ln -sfn "$(brew --prefix container-compose-snapshot)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
+brew services restart container
+container compose version
+```
+
+Do not install both `container-compose` and `container-compose-snapshot` at the same time; they both provide the `container-compose` command and the `compose` plugin payload.
+
+## If Apple container Is Already Installed
+
+If `container` was installed from Apple's signed package, stop it before installing this fork-backed lane:
+
+```sh
+container system stop || true
+```
+
+To avoid path and service ambiguity, remove the Apple package install before installing the Homebrew lane. Keep user data with `-k` or remove user data with `-d`:
+
+```sh
+sudo /usr/local/bin/uninstall-container.sh -k
+```
+
+Then install `container` and `container-compose` from the aggregate tap using one of the lanes above.
+
+Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
+
+## Install From A Source Branch
+
+Use this path only when testing a source branch directly, not for normal Homebrew installs:
+
+```sh
+branch=main
+brew tap stephenlclarke/container-compose https://github.com/stephenlclarke/container-compose
+git -C "$(brew --repo stephenlclarke/container-compose)" fetch origin
+git -C "$(brew --repo stephenlclarke/container-compose)" checkout "$branch"
+brew install stephenlclarke/container-compose/container-compose
+```
+
+Register the plugin with the Homebrew-installed `container` keg:
+
+```sh
+mkdir -p "$(brew --prefix container)/libexec/container-plugins"
+ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
+brew services restart container
+container compose version
+```
+
+## Install A Local Plugin Archive
+
+Build a local plugin archive with `make package`, then install or replace the plugin under the active `container` install root:
 
 ```sh
 sudo rm -rf /usr/local/libexec/container-plugins/compose
@@ -57,7 +106,7 @@ The resulting plugin layout is:
 /usr/local/libexec/container-plugins/compose/resources/compose-normalizer
 ```
 
-## Verify The Installation
+## Verify
 
 Confirm that `container` discovers the plugin:
 
@@ -65,24 +114,46 @@ Confirm that `container` discovers the plugin:
 container compose version
 ```
 
+Show the runtime and plugin provenance:
+
+```sh
+container system version
+container compose version
+container compose version --format json
+```
+
+`container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, and the exact `containerization` source/ref compiled into the runtime. Apple package builds do not carry the Stephen fork provenance fields.
+
+`container compose version` shows the installed plugin build plus the `container` and `containerization` pins that the plugin package was built against. Frozen `release/*` packages report lane `release`; frozen `snapshot/*` packages report lane `snapshot`; active development builds from `main` report lane `main`.
+
 Run a read-only Compose command from a directory containing a Compose file:
 
 ```sh
 container compose config
 ```
 
-## Upgrade
+## Upgrade Or Switch Lanes
 
-Obtain or build a fresh archive, then replace the installed plugin:
+Stop the active service, uninstall the old plugin lane, install the new lane, then register the plugin again:
 
 ```sh
-sudo rm -rf /usr/local/libexec/container-plugins/compose
-sudo tar -xzf container-compose-plugin.tar.gz -C /usr/local/libexec/container-plugins
+brew services stop container || true
+brew uninstall container-compose container-compose-snapshot || true
 ```
+
+Then run either the release or snapshot install commands above.
 
 ## Uninstall
 
-Remove the installed plugin directory:
+Remove the plugin and fork-backed `container` package:
+
+```sh
+brew services stop container || true
+brew uninstall container-compose container-compose-snapshot container || true
+brew untap stephenlclarke/tap || true
+```
+
+If you installed the plugin manually under `/usr/local`, remove it with:
 
 ```sh
 sudo rm -rf /usr/local/libexec/container-plugins/compose
@@ -90,10 +161,14 @@ sudo rm -rf /usr/local/libexec/container-plugins/compose
 
 ## Troubleshooting
 
-If `container compose` is not found, verify that
-`/usr/local/libexec/container-plugins/compose/config.toml` exists and that the
-`container` CLI supports plugin discovery from `/usr/local/libexec/container-plugins`.
+If `container compose` is not found, verify that the plugin symlink points into the active Homebrew `container` prefix:
 
-If Compose normalization fails after installation, verify that
-`/usr/local/libexec/container-plugins/compose/resources/compose-normalizer`
-exists and is executable.
+```sh
+ls -l "$(brew --prefix container)/libexec/container-plugins/compose"
+```
+
+If Compose normalization fails after installation, verify that the normalizer exists and is executable:
+
+```sh
+ls -l "$(brew --prefix container-compose 2>/dev/null || brew --prefix container-compose-snapshot)/libexec/container-plugins/compose/resources/compose-normalizer"
+```

@@ -85,7 +85,7 @@ Expected runtime behavior:
 
 - Docker Compose service configs: [services.configs](https://docs.docker.com/reference/compose-file/services/#configs)
 - Docker Compose service secrets: [services.secrets](https://docs.docker.com/reference/compose-file/services/#secrets)
-- Related materialization issue: `docs/upstream/container-compose/ISSUE-config-secret-materialization.md`
+- Related materialization issue: `ISSUE-config-secret-materialization.md`
 - Related compatibility docs: `STATUS.md`
 - Related plan docs: `PLAN.md`
 

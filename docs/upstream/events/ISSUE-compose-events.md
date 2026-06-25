@@ -41,8 +41,6 @@ This Compose slice stacks on the local `apple/container` PR-shaped runtime primi
 
 - `docs/upstream/events/ISSUE-container-events-stream.md`
 - `docs/upstream/events/PR-container-events-stream.md`
-- `docs/upstream/apple-container/ISSUE-container-events-stream.md`
-- `docs/upstream/apple-container/PR-container-events-stream.md`
 
 That runtime slice adds `ContainerEvent`, `ContainerClient.events()`, API-service lifecycle event emission, non-blocking subscribers, and a raw `container events` JSON Lines CLI. It intentionally does not include Compose project/service filtering, selected-service filtering, one-off suppression, or Docker Compose output formatting.
 

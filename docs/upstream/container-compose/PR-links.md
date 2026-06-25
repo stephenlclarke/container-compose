@@ -24,8 +24,10 @@ the Compose file surface and they carry two behaviors: implicit dependency
 ordering and optional alias names for the linked service.
 
 The local container fork now exposes a single-network alias primitive through
-`container run/create --network <name>,alias=<value>`. This plugin change maps
-only the part of `links` that can be represented cleanly by that primitive.
+typed attachment aliases. This plugin change maps only the part of `links` that
+can be represented cleanly by that primitive. The current live execution path
+still renders `container run/create --network <name>,alias=<value>` through the
+command-vector bridge while typed service creation is being wired.
 Compose-specific legacy-link parsing stays in `container-compose`; no
 Compose-specific policy is added to `apple/container`.
 
@@ -34,9 +36,15 @@ References:
 - Compose service `links`: <https://docs.docker.com/reference/compose-file/services/#links>
 - Compose service network `aliases`: <https://docs.docker.com/reference/compose-file/services/#aliases>
 - Docker `network connect --alias`: <https://docs.docker.com/reference/cli/docker/network/connect/>
-- Runtime alias handoff files in the container fork: `docs/upstream/container-compose/ISSUE-network-aliases.md`
-  and `docs/upstream/container-compose/PR-network-aliases.md`
+- Runtime alias handoff files: `docs/upstream/apple-container/ISSUE-network-aliases.md`
+  and `docs/upstream/apple-container/PR-network-aliases.md`
 - Related `apple/container` networking issues: [apple/container#1283](https://github.com/apple/container/issues/1283), [apple/container#457](https://github.com/apple/container/issues/457), [apple/container#456](https://github.com/apple/container/issues/456), [apple/container#500](https://github.com/apple/container/issues/500), [apple/container#1320](https://github.com/apple/container/issues/1320)
+
+## Commit Tracking
+
+- Compose code commit: `48367c7` (`feat(network): map compose links`)
+- Container code dependency: `cf5e8d1` in `stephenlclarke/container` (`feat(network): add attachment aliases`)
+- Lower runtime code commit: not required
 
 ## Implementation Details
 
@@ -59,7 +67,8 @@ References:
 ## Docker Compose Compatibility Notes
 
 - Supported now on the fork-backed integration branch: `links` for services
-  that share exactly one explicit Compose network.
+  that share exactly one explicit Compose network, currently through the
+  command-vector bridge.
 - Supported now: `SERVICE:ALIAS` link aliases.
 - Supported now: `SERVICE` entries mapped to the target service name as an
   alias.

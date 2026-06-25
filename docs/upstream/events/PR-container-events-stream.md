@@ -19,7 +19,7 @@ Related issue: [apple/container#484](https://github.com/apple/container/issues/4
 
 ## Motivation And Context
 
-Docker-compatible clients need an event stream to observe lifecycle changes without polling. `container-compose` needs this runtime primitive before it can implement `container compose events --json [SERVICE...]` while keeping Compose filtering and formatting in the plugin.
+Higher-level callers need an event stream to observe lifecycle changes without polling. `container-compose` needs this runtime primitive before it can implement `container compose events --json [SERVICE...]` while keeping Compose filtering and formatting in the plugin.
 
 The existing upstream feature request is [apple/container#484](https://github.com/apple/container/issues/484). A live check on 2026-06-22 did not find an existing event-stream PR in `apple/container`; the first implementation slice stays in `apple/container` because all included lifecycle transitions are already visible at the API-service layer.
 
@@ -81,7 +81,7 @@ Planned pre-PR validation:
 ```sh
 /usr/bin/swift build --product container --product container-apiserver
 git diff --check
-markdownlint ISSUE-container-events-stream.md PR-container-events-stream.md
+markdownlint docs/upstream/events/ISSUE-container-events-stream.md docs/upstream/events/PR-container-events-stream.md
 ```
 
 ## Compatibility Notes

@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Map Compose service `extra_hosts` to fork-backed `container run/create --add-host` arguments.
+- Map Compose service `extra_hosts` to the plugin-owned host-entry projection.
 - Accept compose-go normalized `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms.
 - Validate static IP-literal entries before side effects.
 - Keep `domainname`, `links`, and `external_links` as explicit remaining runtime gaps.
@@ -18,9 +18,15 @@
 
 Docker Compose `extra_hosts` is a common local-development feature for pinning service names to specific addresses inside a container. The plugin previously rejected all `extra_hosts` entries because released upstream `apple/container` did not expose a creation-time host-entry primitive.
 
-The local container fork now carries a small host-entry slice that combines the API direction from [apple/container#1340](https://github.com/apple/container/pull/1340) and the CLI direction from [apple/container#1563](https://github.com/apple/container/pull/1563). That gives this plugin a non-Compose-specific runtime boundary: `container run/create --add-host`.
+The local container fork now carries a small host-entry slice that combines the API direction from [apple/container#1340](https://github.com/apple/container/pull/1340) and the CLI direction from [apple/container#1563](https://github.com/apple/container/pull/1563). This plugin owns Compose syntax handling and projects canonical host entries to the runtime. The current live execution path still uses the `container run/create --add-host` command-vector bridge while typed service creation is being wired.
 
-This change keeps Compose syntax handling in `container-compose`, validates static entries before creating resources, and passes canonical runtime arguments to the fork. No Compose-specific service aliasing is added to `apple/container`.
+This change keeps Compose syntax handling in `container-compose`, validates static entries before creating resources, and passes canonical runtime host entries to the fork. No Compose-specific service aliasing is added to `apple/container`.
+
+## Commit Tracking
+
+- Compose code commit: `7855a19` (`feat(network): map compose extra hosts`)
+- Container code commit: `bf1d6b4` in `stephenlclarke/container` (`feat(api): add explicit host entries`)
+- Lower runtime code commit: not required
 
 ## Implementation Details
 
@@ -29,15 +35,16 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 - Removed IPv6 brackets accepted by Compose before passing arguments to the runtime.
 - Validated IP literals with `IPAddress`.
 - Added a precise unsupported error for Docker's `host-gateway` magic value before the runtime resolver existed.
-- Appended `--add-host` arguments in the shared service create/run argument builder, so service containers and one-off `run` containers inherit the same host entries.
+- Built a deterministic host-entry projection shared by service containers and one-off `run` containers.
+- Appended `--add-host` arguments in the command-vector bridge while typed service creation is being wired.
 - Extended Swift and Go normalizer tests to cover compose-go canonical `extra_hosts` output.
 - Updated `PLAN.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: static `extra_hosts` entries with IPv4, IPv6, and bracketed IPv6 source forms.
+- Supported now on the fork-backed integration branch: static `extra_hosts` entries with IPv4, IPv6, and bracketed IPv6 source forms, currently through the command-vector bridge.
 - Supported now: service `up`, `create`, and one-off `run` host entries.
-- Separate slice: Docker `host-gateway` is handled by `docs/upstream/container-compose/ISSUE-host-gateway.md` / `docs/upstream/container-compose/PR-host-gateway.md`.
+- Separate slice: Docker `host-gateway` is handled by `docs/upstream/apple-container/ISSUE-host-gateway.md` / `docs/upstream/apple-container/PR-host-gateway.md`.
 - Remaining gap: custom `domainname` and legacy `links` / `external_links` are still separate runtime or compatibility surfaces.
 - Separate slice: service `hostname` is handled by `docs/upstream/container-compose/ISSUE-service-hostname.md` / `docs/upstream/container-compose/PR-service-hostname.md`.
 

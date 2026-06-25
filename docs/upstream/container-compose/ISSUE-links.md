@@ -58,9 +58,10 @@ container-compose
 
 `container-compose` owns legacy Compose link interpretation and dependency
 ordering. `apple/container` already owns the current single-network alias
-primitive in the fork. Full Docker parity still needs upstream runtime DNS work
-for implicit default-network service names, source-scoped link aliases, and
-shared aliases.
+primitive in the fork. The current live execution path projects those aliases
+through `--network ...,alias=...` command-vector output while typed service
+creation is being wired. Full Docker parity still needs upstream runtime DNS
+work for source-scoped link aliases and shared aliases.
 
 ## Minimal example
 
@@ -88,7 +89,7 @@ networks:
 Expected runtime behavior on the fork-backed integration branch:
 
 - `container-compose` creates or reuses `redis` before `api`.
-- The `redis` service container receives `--network links-demo_backend,alias=cache`.
+- The `redis` service container currently receives `--network links-demo_backend,alias=cache` through the command-vector bridge.
 - The `api` service container attaches to the same network.
 - `external_links`, implicit default-network link aliases, multi-network links,
   and shared aliases remain documented runtime/DNS gaps.

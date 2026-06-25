@@ -86,6 +86,8 @@ Build the Go normalizer helper:
 make go-build
 ```
 
+`make go-build` always produces the Homebrew-packaged normalizer as a release-style Go binary using `CGO_ENABLED=0`, `-trimpath`, and `-ldflags "-s -w"`. Both `make package-release` and `make package-debug` depend on that target, so debug snapshot packages still carry a release-built Go helper beside the debug Swift plugin.
+
 Run the plugin from source:
 
 ```sh
@@ -108,6 +110,20 @@ Run Swift and Go tests:
 make test
 ```
 
+The default Swift test path is static: it covers normalizer output,
+orchestration planning, command projection, and adapter behavior without
+requiring a live Apple container runtime. Runtime smoke tests live in the
+separate `ComposeRuntimeTests` target and are opt-in:
+
+```sh
+make swift-runtime-test
+```
+
+That target builds `.build/debug/compose`, sets
+`CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1`, and runs only the runtime smoke test
+filter. Use it when proving real Apple container behavior locally; it is not
+part of `make ci`.
+
 Use the Makefile targets for local Swift tests instead of invoking
 `swift test` directly. The Makefile derives the Swift Testing framework and
 runtime library paths from the active `swift` executable and fails if SwiftPM
@@ -125,6 +141,18 @@ make ci
 ```
 
 `make ci` runs required Markdown linting, Python coverage-tool tests, Go formatting checks, Hawkeye license-header checks, Swift and Go coverage, the coverage threshold gate, the Go helper build, and the CLI smoke test. Swift build and test targets use the checked-in `Package.resolved` by default so CI fails quickly if dependency versions need an intentional lockfile refresh. The CI smoke test reuses the debug `compose` executable emitted by the Swift coverage test build, while standalone `make cli-smoke` still builds the debug executable before exercising representative commands.
+
+GitHub Actions keeps the expensive and security-oriented checks in separate workflows so PR feedback stays narrow and Apple-facing upstream slices can adopt the same checks one at a time:
+
+| Workflow | Trigger | Coverage |
+| --- | --- | --- |
+| `CI / Validate` | Pushes to `main`, `release/*`, or `snapshot/*`, PRs to `main`, and manual runs | Runs `make ci` on `main` and PRs, including Swift Testing/XCTest through SwiftPM, Go tests, Markdown linting, Hawkeye license-header validation, coverage gates, and the CLI smoke test. Frozen branch pushes run reduced package validation for the matching release or snapshot lane. |
+| `Quality / Swift ASan` | Pushes to `main`, every PR, and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=address` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
+| `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=thread` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
+| `Quality / SwiftLint/SwiftFormat Advisory` | Pushes to `main`, every PR, and manual runs | Runs `swiftlint lint --strict --quiet Package.swift Sources Tests` and `swiftformat Package.swift Sources Tests --lint --swift-version 6.2`. These checks are advisory until a repo-owned SwiftLint and SwiftFormat baseline/configuration lands, because the current default tools report existing repository-wide style drift. |
+| `CodeQL / Analyze` | Pushes to `main`, PRs to `main`, weekly schedule, and manual runs | Runs the separate Swift and Go CodeQL analysis workflow. |
+
+SwiftPM on the current Apple Swift 6.3.2 toolchain exposes `address`, `thread`, `undefined`, `scudo`, and `fuzzer` sanitizer modes. It does not expose a separate `leak` mode, so there is no standalone Leak Sanitizer job yet; keep ASan as the PR sanitizer gate and add a dedicated LSan job only when the supported SwiftPM sanitizer list includes it.
 
 Run the faster non-coverage source checks with:
 
@@ -181,6 +209,28 @@ make docker-compose-events-parity
 
 This runs Docker Compose V2 against a temporary project and validates the event behavior mirrored by `container-compose`: JSON output, container-event scope, selected-service filtering, internal Compose label stripping, and one-off container suppression. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
 
+For the local-only restart-policy parity check added with the fork-backed lifecycle slice, run:
+
+```sh
+make docker-compose-restart-policy-parity
+```
+
+This runs Docker Compose V2 against a temporary project and validates the container `HostConfig.RestartPolicy` shape mirrored by `container-compose`: service-level `restart`, deploy-over-service precedence, deploy `condition: any`, deploy `condition: none`, and `on-failure:0` as an unlimited retry policy. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
+For the local-only create-options parity check, run:
+
+```sh
+make docker-compose-create-options-parity
+```
+
+This target refreshes a sparse checkout of Docker Compose's upstream e2e fixtures under `.build/parity/docker-compose-e2e` only when the checkout is missing or Docker Compose `main` has moved. The temporary parity project copies the current upstream `pkg/e2e/fixtures/build-test/minimal/Dockerfile`, then runs the same fixture through Docker Compose V2 and `container-compose`. The check covers build wiring plus create-time behavior for explicit healthchecks, local and disabled logging, restart policy, deploy restart timing, host-IP published ports, configs, secrets, DNS options, host identity, extra hosts, sysctls, blkio weight, and network aliases. The target is not used by `make ci`.
+
+To refresh only the Docker Compose e2e fixture checkout, run:
+
+```sh
+make docker-compose-e2e-fixtures
+```
+
 Refresh the checked fixture after intentionally changing the example or adopting a newer Docker behavior with:
 
 ```sh
@@ -204,7 +254,7 @@ make package-release
 make package-debug
 ```
 
-`make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`.
+`make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`. Package targets always include a release-built Go normalizer from `make go-build`; only the Swift `compose` executable changes between the release and debug lanes.
 
 The default local package target writes the archive, checksum, and staging directory:
 
@@ -213,10 +263,13 @@ container-compose-plugin-release-arm64.tar.gz
 container-compose-plugin-release-arm64.tar.gz.sha256
 dist/compose/bin/compose
 dist/compose/config.toml
+dist/compose/resources/build-info.json
 dist/compose/resources/compose-normalizer
 ```
 
-GitHub Actions publishes branch release assets for `main` and `develop` using branch-specific archive names such as `container-compose-plugin-main-release-arm64.tar.gz` and `container-compose-plugin-develop-debug-arm64.tar.gz`. The release lane builds optimized archives from `main`; the debug integration lane builds debug archives from `develop`. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
+GitHub Actions publishes frozen `release/*` and `snapshot/*` branch assets using branch-specific archive names such as `container-compose-plugin-release-v0.1.0-release-arm64.tar.gz` and `container-compose-plugin-snapshot-v0.1.0-debug-arm64.tar.gz`. Release branches build optimized archives; snapshot branches build debug archives. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
+
+Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, `container` pin from `APPLE_CONTAINER_REF`, and `containerization` pin from `Package.resolved`. Local development builds fall back to the current git checkout when the packaged metadata file is absent.
 
 Use [INSTALL.md](INSTALL.md) to install, upgrade, verify, or remove the packaged plugin on a target machine.
 
@@ -250,14 +303,14 @@ By default it publishes analysis for the current Git branch. Override the
 branch when needed:
 
 ```sh
-SONAR_BRANCH=develop make sonar
+SONAR_BRANCH=main make sonar
 ```
 
 When coverage has already been generated by `make ci`, run only the scanner
 step with:
 
 ```sh
-SONAR_BRANCH=develop make sonar-scan
+SONAR_BRANCH=main make sonar-scan
 ```
 
 Local scans default `SONAR_QUALITYGATE_WAIT` to `false` so branch analysis can

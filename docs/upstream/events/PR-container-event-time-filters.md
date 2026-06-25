@@ -8,7 +8,7 @@ Related issue: [apple/container#484](https://github.com/apple/container/issues/4
 
 - Add `ContainerEventOptions(since:until:)` to the runtime event API.
 - Keep a bounded API-service event history so new subscribers can replay recent matching events.
-- Add `container events --since` and `container events --until` using the existing Docker-compatible timestamp parser.
+- Add `container events --since` and `container events --until` as CLI conveniences around the typed event filter options.
 
 ## Type Of Change
 
@@ -19,7 +19,7 @@ Related issue: [apple/container#484](https://github.com/apple/container/issues/4
 
 ## Motivation And Context
 
-The first event-stream slice for [apple/container#484](https://github.com/apple/container/issues/484) exposes live lifecycle events. Docker-compatible clients also need time-windowed replay for `--since` and `--until`; otherwise higher-level callers such as `container-compose` must either reject those flags or maintain their own event cache.
+The first event-stream slice for [apple/container#484](https://github.com/apple/container/issues/484) exposes live lifecycle events. Higher-level callers need time-windowed replay for `--since` and `--until`; otherwise tools such as `container-compose` must either reject those flags or maintain their own event cache.
 
 This PR is intentionally a second Apple-shaped primitive stacked on the event stream PR. It keeps event history and time filtering in `apple/container`, while `container-compose` keeps project/service filtering, selected services, one-off suppression, and Docker Compose JSON formatting.
 
@@ -28,7 +28,7 @@ This PR is intentionally a second Apple-shaped primitive stacked on the event st
 - **Base issue:** [apple/container#484](https://github.com/apple/container/issues/484) remains the upstream event-stream request.
 - **Runtime dependency:** this PR stacks on `PR-container-events-stream.md` and requires its constructible code commits `b71e4bb323e3` and `0da7890b2632`.
 - **No lower-runtime dependency:** no `apple/containerization` change is required because the cache and filters sit at the API-service event stream boundary.
-- **Not based on Docker Compose code:** Docker Compose source is Go code over Docker engine events. This PR uses Docker behavior as the compatibility contract and keeps the Swift runtime API typed.
+- **Not based on Docker Compose code:** Docker Compose source is Go code over Docker engine events. This PR lifts the runtime primitive needed by higher-level callers and keeps the Swift runtime API typed.
 - **Adjacent lifecycle PRs not used:** restart-policy, attach, and graceful-stop PRs are unrelated to event replay and should remain separate review conversations.
 
 ## Commit Tracking
@@ -57,7 +57,7 @@ Use `d0977b5a99ec7dfd4fdc9a3b5e50b36869451270` as one future upstream `apple/con
   - close stale subscribers when the `until` bound has passed;
   - retain the non-blocking writer behavior for slow subscribers.
 - Adds `container events --since` and `container events --until` flags.
-- Reuses `ContainerLogTimestampParser` so log and event filters accept the same Docker-compatible RFC 3339, Unix timestamp, and relative-duration inputs.
+- Accepts typed `Date` bounds through `ContainerEventOptions`; any Docker Compose string compatibility stays in `container-compose`, while the Apple CLI can expose native event filter flags around the same runtime primitive.
 
 ## Docker Compose Compatibility Notes
 
@@ -92,11 +92,11 @@ Planned pre-PR validation:
 ```sh
 swift build --product container --product container-apiserver
 git diff --check
-markdownlint ISSUE-container-event-time-filters.md PR-container-event-time-filters.md
+markdownlint docs/upstream/events/ISSUE-container-event-time-filters.md docs/upstream/events/PR-container-event-time-filters.md
 ```
 
 ## Maintainer Review Notes
 
 - The bounded replay cache is deliberately small and local to the API-service event broadcaster. A persistent event journal would need a separate storage and retention discussion.
-- The Swift API takes typed `Date` values; Docker-compatible string parsing stays in CLI/client layers.
+- The Swift API takes typed `Date` values; Docker-compatible string parsing for Compose workflows stays in `container-compose`.
 - Compose-specific labels are carried as ordinary container labels, but no Compose filtering or output policy is added here.

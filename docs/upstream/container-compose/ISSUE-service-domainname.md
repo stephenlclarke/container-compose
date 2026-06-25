@@ -21,19 +21,19 @@ References:
 
 - Compose service `domainname`: <https://docs.docker.com/reference/compose-file/services/#domainname>
 - Docker `container run --domainname`: <https://docs.docker.com/reference/cli/docker/container/run/>
-- Runtime handoff files in the container fork: `ISSUE-domainname.md` and `PR-domainname.md`
+- Runtime handoff files: `docs/upstream/apple-container/ISSUE-domainname.md` and `docs/upstream/apple-container/PR-domainname.md`
 
 ## Current container-compose behavior
 
 Before this change, any non-empty service `domainname` was rejected as an `apple/container` runtime gap.
 
-With this change, `container-compose` validates Compose `domainname` values before creating resources and maps valid values to the fork-backed `container run/create --domainname` runtime surface for service containers, `create`, and one-off `run` containers.
+With this change, `container-compose` validates Compose `domainname` values before creating resources and maps valid values to the plugin-owned runtime domain-name projection for service containers, `create`, and one-off `run` containers. The current live execution path still renders `container run/create --domainname` through the command-vector bridge while typed service creation is being wired.
 
 ## Likely owner
 
 both
 
-`apple/container` owns the runtime domain-name primitive. `container-compose` owns the Compose model validation and translation to the runtime argument.
+`apple/container` owns the typed runtime domain-name primitive. `container-compose` owns the Compose model validation and translation to the runtime projection.
 
 ## Minimal example
 
@@ -49,7 +49,7 @@ services:
 
 Expected runtime behavior on the fork-backed integration branch:
 
-- `container-compose` emits `--domainname example.test`.
+- `container-compose` currently emits `--domainname example.test` through the command-vector bridge.
 - The runtime makes `example.test` visible as the container's NIS domain name.
 - Released upstream `apple/container` branches still need accepted domain-name support before this can work without the fork.
 

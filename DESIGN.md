@@ -158,6 +158,29 @@ The current decision is therefore:
   boilerplate at the Swift model boundary without weakening compatibility with
   Docker Compose v2 behavior.
 
+## Related Implementations
+
+Morris Richman (`mcrich23`) maintains
+[`mcrich23/container-compose`](https://github.com/mcrich23/container-compose),
+a separate Compose implementation for Apple container. It takes a smaller,
+standalone Swift approach: a `container-compose` executable decodes Compose YAML
+with Yams, models the supported fields directly in Swift, and targets the
+public `apple/container` package.
+
+This project makes a different tradeoff. It installs as a `container compose`
+plugin, delegates Compose loading and normalization to `compose-go`, and keeps
+Swift focused on orchestration plus direct apple/container API mapping. That
+adds more moving parts than a compact Swift-only implementation, but it avoids
+maintaining a second Compose loader and gives this repository a clearer path
+toward Docker Compose v2 compatibility.
+
+The two approaches are complementary. Morris's implementation is useful as a
+compact upstream-container-compatible reference and as a source of focused
+behavior tests. This repository keeps the broader compatibility goal: preserve
+Docker Compose semantics at the normalization boundary, expose unsupported
+Apple runtime gaps clearly, and structure the Swift runtime work so it can be
+reviewed in small apple/container-shaped pieces.
+
 ## Architecture
 
 ```mermaid
@@ -194,6 +217,7 @@ The installed plugin layout is:
 ```text
 /usr/local/libexec/container-plugins/compose/bin/compose
 /usr/local/libexec/container-plugins/compose/config.toml
+/usr/local/libexec/container-plugins/compose/resources/build-info.json
 /usr/local/libexec/container-plugins/compose/resources/compose-normalizer
 ```
 
@@ -266,6 +290,21 @@ Compose compatibility needs primitives that are available in the API.
 `compose-normalizer` is a Go executable. It has no orchestration behavior. Its
 only job is to load Compose files with `compose-go` and emit the normalized
 project as JSON.
+
+## Build Provenance
+
+Packaged builds include `compose/resources/build-info.json`. The Swift plugin
+loads that file for `container compose version` so users and maintainers can see
+which source, lane, branch, commit, build type, `container` pin, and
+`containerization` pin produced the installed plugin.
+
+Local development builds fall back to the active git checkout and
+`Package.resolved` when packaged metadata is absent. This keeps source builds
+usable while still making Homebrew-installed release and snapshot artifacts
+traceable. Use `container system version` beside `container compose version` to
+compare the running `container` runtime and API service against the plugin's
+compiled expectations, especially when testing Stephen fork builds against
+Apple upstream packages.
 
 ## Orchestration Model
 

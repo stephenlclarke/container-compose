@@ -32,20 +32,20 @@ References:
 
 ## Current container-compose behavior
 
-Before this change, the normalizer collapsed `blkio_config` to a boolean and the orchestrator rejected any service that declared the field. That was correct for released `apple/container`, but it meant `container-compose` could not validate its side of the mapping against Chris George's active `--blkio` runtime contract in [apple/container#1595](https://github.com/apple/container/pull/1595).
+Before this change, the normalizer collapsed `blkio_config` to a boolean and the orchestrator rejected any service that declared the field. That was correct for released `apple/container`, but it meant `container-compose` could not validate its side of the mapping against Chris George's active block I/O runtime contract in [apple/container#1595](https://github.com/apple/container/pull/1595).
 
 With this change, `container-compose` supports the plugin-owned half of the surface:
 
 - compose-go normalized `blkio_config.weight` is preserved.
 - `weight_device`, `device_read_bps`, `device_write_bps`, `device_read_iops`, and `device_write_iops` are preserved with path/rate values.
-- `up`, `create`, and one-off `run` render repeatable `container run/create --blkio` arguments using the key-value syntax from [apple/container#1595](https://github.com/apple/container/pull/1595).
+- `up`, `create`, and one-off `run` project typed OCI block I/O data. The current live execution path still renders repeatable `container run/create --blkio` arguments using the key-value syntax from [apple/container#1595](https://github.com/apple/container/pull/1595) while typed service creation is being wired.
 - Invalid weights, empty device paths, comma-containing device paths, and non-integer throttle rates are rejected before runtime commands.
 
 ## Likely owner
 
-`container-compose` owns the Compose model normalization and argument rendering.
+`container-compose` owns the Compose model normalization, validation, and typed block I/O projection.
 
-`apple/container` owns the runtime contract for `--blkio`, device path resolution, major/minor translation, cgroup application, and the dependency on the underlying `containerization` blockIO API. This repository should track and depend on [apple/container#1595](https://github.com/apple/container/pull/1595), not open a duplicate runtime PR. The local integration branch pins to `stephenlclarke/containerization@integration/blkio-runtime` so the Compose mapping can be tested while [apple/containerization#739](https://github.com/apple/containerization/pull/739) is still open.
+`apple/container` owns device path resolution, major/minor translation, cgroup application, and the dependency on the underlying `containerization` blockIO API. This repository should track and depend on [apple/container#1595](https://github.com/apple/container/pull/1595), not open a duplicate runtime PR. The local integration branch pins to `stephenlclarke/containerization@integration/blkio-runtime` so the Compose mapping can be tested while [apple/containerization#739](https://github.com/apple/containerization/pull/739) is still open.
 
 ## Minimal example
 
@@ -67,9 +67,9 @@ services:
 
 Expected integration-branch behavior when the runtime includes [apple/container#1595](https://github.com/apple/container/pull/1595):
 
-- `container-compose` renders `--blkio weight=500`.
-- `container-compose` renders `--blkio device=8:0,weight=700`.
-- `container-compose` renders `--blkio device=8:0,read-bps=1048576`.
+- `container-compose` currently renders `--blkio weight=500` through the command-vector bridge.
+- `container-compose` currently renders `--blkio device=8:0,weight=700` through the command-vector bridge.
+- `container-compose` currently renders `--blkio device=8:0,read-bps=1048576` through the command-vector bridge.
 - `apple/container` validates and applies the Linux block I/O runtime data.
 
 ## Code of Conduct and documentation

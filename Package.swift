@@ -52,6 +52,7 @@ let package = Package(
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
                 .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/ComposeCore"
@@ -67,6 +68,13 @@ let package = Package(
             resources: [
                 .process("Fixtures"),
             ]
+        ),
+        .testTarget(
+            name: "ComposeRuntimeTests",
+            dependencies: [
+                "ComposeCore",
+            ],
+            path: "Tests/ComposeRuntimeTests"
         ),
     ]
 )

@@ -1,48 +1,67 @@
 # Branch Guide
 
-This repository keeps two public environments: `main` for people who want to test a frozen plugin build, and `develop` for active integration work that can move quickly. The companion [`stephenlclarke/container`](https://github.com/stephenlclarke/container) fork uses the same branch names so testers and contributors can check out a matching plugin/runtime pair.
+This repository uses `main` as the active development branch. The free SonarCloud project only provides a useful branch signal for one branch, so active work, README badges, full CI, CodeQL, and SonarQube quality reporting all stay on `main`.
 
-## Environment Branches
+Frozen install branches are created from validated `main` commits when a release or snapshot should be made available through prebuilt GitHub release assets and the Homebrew tap.
 
-| Environment | `container-compose` branch | `container` fork branch | Audience | Movement rule |
-| --- | --- | --- | --- | --- |
-| Stable | `main` | `main` | People trying the app/plugin without chasing active development | Move only after a validation pass. Treat this as frozen between promoted snapshots. |
-| Development | `develop` | `develop` | Day-to-day development and integration testing | Move freely as work lands, including fork-backed runtime work that has not been accepted upstream. |
+## Branch Model
 
-`Package.swift` references the `container` checkout as a sibling path dependency at `../container`, so the active branch in that checkout is part of the selected environment. For the frozen tester environment, use `main` in both repositories. For active development, use `develop` in both repositories.
+| Branch pattern | Purpose | CI profile | README badges |
+| --- | --- | --- | --- |
+| `main` | Active development and integration branch | Full CI, Quality, CodeQL, SonarQube | SonarCloud and security badges stay visible. |
+| `release/*` | Frozen release lane for installable release builds | Reduced package and formula validation | SonarCloud badges are removed automatically. |
+| `snapshot/*` | Frozen snapshot lane for installable debug builds | Reduced package and formula validation | SonarCloud badges are removed automatically. |
+| `apple-container-compatible` | Upstream-only compatibility branch for accepted or released Apple runtime primitives | Targeted compatibility validation | Branch-specific. |
+
+Do not use a long-lived `develop` branch for normal work. New changes should land on `main`, where the SonarCloud badges reflect the current branch state.
+
+## Frozen Branch Automation
+
+Pushing a `release/*` or `snapshot/*` branch starts the frozen branch workflow:
+
+1. Prepare the branch by removing SonarCloud badge lines from `README.md`.
+2. Commit that README change back to the frozen branch when needed.
+3. On the follow-up workflow run for the prepared branch tip, build the prebuilt package.
+4. Publish the package to a branch-specific `homebrew-*` GitHub release.
+5. Update `stephenlclarke/homebrew-tap` so Homebrew installs the matching frozen asset.
+
+`release/*` branches build release packages. `snapshot/*` branches build debug packages.
+
+The tap update requires the `HOMEBREW_TAP_TOKEN` repository secret with permission to push to `stephenlclarke/homebrew-tap`.
+
+Frozen branch packages include a plugin `build-info.json` file. `container compose version` reads that file and reports the lane, branch, commit, build type, `container` pin, and `containerization` pin used for the package. Use `container system version` beside it to confirm the actual running `container` runtime source and `containerization` ref.
+
+## Local Branch Selection
+
+For active development:
 
 ```sh
 git -C ~/github/container-compose checkout main
 git -C ~/github/container checkout main
 ```
 
+For a frozen release or snapshot branch, check out the matching `container-compose` branch and the `container` fork revision pinned by `APPLE_CONTAINER_REF`:
+
 ```sh
-git -C ~/github/container-compose checkout develop
-git -C ~/github/container checkout develop
+git -C ~/github/container-compose checkout release/example
+git -C ~/github/container fetch fork
+git -C ~/github/container checkout "$(cat ~/github/container-compose/APPLE_CONTAINER_REF)"
 ```
 
-The current integration stack still pins [`stephenlclarke/containerization`](https://github.com/stephenlclarke/containerization) `integration/blkio-runtime` through `Package.swift` and `Package.resolved` until the block I/O runtime API from [`apple/containerization#739`](https://github.com/apple/containerization/pull/739) is accepted upstream. There is no separate stable/develop lane for `containerization` right now; the pin is part of the selected plugin/runtime environment.
+`Package.swift` references the `container` checkout as a sibling path dependency at `../container`, so the checked-out `container` revision is part of the selected environment.
 
-## Default And Compatibility Branches
+The current integration stack still pins [`stephenlclarke/containerization`](https://github.com/stephenlclarke/containerization) `integration/blkio-runtime` through `Package.swift` and `Package.resolved` until the block I/O runtime API from [`apple/containerization#739`](https://github.com/apple/containerization/pull/739) is accepted upstream.
 
-| Branch | Purpose |
-| --- | --- |
-| `main` | Default repository branch and public stable lane. It may require the matching `stephenlclarke/container` `main` branch when the promoted plugin snapshot depends on fork-backed runtime primitives. |
-| `apple-container-compatible` | Upstream-only compatibility branch for users who want behavior available from released or accepted [`apple/container`](https://github.com/apple/container) primitives. |
-| `regression` | Short-lived upstream compatibility, dependency, CodeQL, and canary work. It should stay close to `main` or `develop` depending on the issue being checked. |
-
-Do not maintain extra frozen branches. Future promotions should move validated `develop` snapshots into `main`.
-
-## Integration And Archive Branches
+## Archive Branches
 
 | Branch | Status | Notes |
 | --- | --- | --- |
 | `compose-v2-preview` | Legacy preview archive | Preserves older preview harness and handoff state. Do not treat this as the current compatibility target. |
 
-The former broad `logs-integration`, `logs-integration-chris`, `full-compose-preview`, and `full-compose-runtime` branches have been folded into the current `develop` / `main` lane model or deleted as stale archives. Historical handoff notes may still mention those names when they identify where a slice originally came from, but new work should not target them.
+The former `develop`, `regression`, `logs-integration`, `logs-integration-chris`, `full-compose-preview`, and `full-compose-runtime` branches are not current development targets. Historical handoff notes may still mention those names when they identify where a slice originally came from, but new work should not target them.
 
 ## Upstreaming Rule
 
-Fork-backed runtime changes should still be split into small Apple-facing branches before opening pull requests against [`apple/container`](https://github.com/apple/container). Keep one runtime capability per PR where practical, with focused tests and no Compose-specific policy in the runtime branch. The `develop` branches can carry integration work so `container-compose` can keep moving, while upstream PR branches remain easy to review and cherry-pick.
+Fork-backed runtime changes should still be split into small Apple-facing branches before opening pull requests against [`apple/container`](https://github.com/apple/container). Keep one runtime capability per PR where practical, with focused tests and no Compose-specific policy in the runtime branch.
 
 Compose-specific behavior stays in this repository, including service fan-out, replica selection, prefixes, colors, selected-service ordering, Docker Compose CLI parsing, and Docker Compose output formatting.

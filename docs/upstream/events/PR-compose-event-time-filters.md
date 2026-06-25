@@ -48,9 +48,9 @@ Use the Compose code commit as one future `container-compose` PR. Keep it stacke
 ## Implementation Details
 
 - Updates `ContainerEventsAPIClienting` and `ContainerEventsManaging` to carry `ContainerEventOptions`.
-- Parses `ComposeEventsOptions.since` and `.until` with the existing Docker-compatible `ContainerLogTimestampParser`.
+- Parses `ComposeEventsOptions.since` and `.until` with `ComposeTimeParser`, keeping Docker-shaped time strings in `container-compose` before passing typed dates through `ContainerEventOptions`.
 - Leaves `--json` required in this slice; default text formatting is handled by the later `PR-compose-events-text-format.md` slice.
-- Updates dry-run output to include `container events --since ... --until ...`.
+- Updates dry-run output to show the Compose-owned direct runtime read, `compose-runtime events --since ... --until ...`, instead of depending on an Apple CLI command shape.
 - Extends focused tests to verify:
   - selected services plus time filters reach the event manager;
   - invalid time filters are rejected before runtime calls;

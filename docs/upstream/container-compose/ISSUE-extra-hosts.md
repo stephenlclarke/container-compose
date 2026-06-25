@@ -28,11 +28,11 @@ Reference surfaces:
 
 Before this change, any non-empty service `extra_hosts` list was rejected as an `apple/container` runtime gap.
 
-With this change, `container-compose` accepts static IP-literal `extra_hosts`, validates them before creating resources, and maps them to the fork-backed `container run/create --add-host` runtime surface. The generated runtime arguments use canonical `HOST:IP` form.
+With this change, `container-compose` accepts static IP-literal `extra_hosts`, validates them before creating resources, and maps them to the plugin-owned host-entry projection. The current live execution path still renders `container run/create --add-host` through the command-vector bridge while typed service creation is being wired.
 
 ## Remaining Gaps
 
-- Docker's `host-gateway` magic value is handled by the separate `docs/upstream/container-compose/ISSUE-host-gateway.md` / `docs/upstream/container-compose/PR-host-gateway.md` slice on the fork-backed branch.
+- Docker's `host-gateway` magic value is handled by the separate `docs/upstream/apple-container/ISSUE-host-gateway.md` / `docs/upstream/apple-container/PR-host-gateway.md` slice on the fork-backed branch.
 - `domainname` still needs runtime host identity controls.
 - `hostname` is handled by the separate `docs/upstream/container-compose/ISSUE-service-hostname.md` / `docs/upstream/container-compose/PR-service-hostname.md` slice on the fork-backed branch.
 - `links` and `external_links` still need legacy link/alias semantics, or an explicit decision to keep them unsupported.
@@ -40,7 +40,7 @@ With this change, `container-compose` accepts static IP-literal `extra_hosts`, v
 
 ## Likely Owner
 
-`apple/container` owns creation-time `/etc/hosts` generation. `container-compose` owns translating Compose `extra_hosts` syntax into static runtime host-entry arguments and keeping Compose-specific validation outside the runtime.
+`apple/container` owns creation-time `/etc/hosts` generation. `container-compose` owns translating Compose `extra_hosts` syntax into typed runtime host-entry projections and keeping Compose-specific validation outside the runtime.
 
 ## Minimal Example
 
@@ -58,8 +58,8 @@ services:
 
 Expected runtime behavior on the fork-backed integration branch:
 
-- `container-compose` emits `--add-host db:10.0.0.5`.
-- `container-compose` emits `--add-host myhostv6:::1`.
+- `container-compose` currently emits `--add-host db:10.0.0.5` through the command-vector bridge.
+- `container-compose` currently emits `--add-host myhostv6:::1` through the command-vector bridge.
 - The runtime appends the two entries to `/etc/hosts` before the container workload starts.
 
 ## Code Of Conduct And Documentation

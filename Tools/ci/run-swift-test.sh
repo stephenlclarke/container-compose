@@ -9,6 +9,7 @@ fi
 log="${SWIFT_TEST_RESULT_LOG:-.build/swift-test.log}"
 attempts="${SWIFT_TEST_ATTEMPTS:-2}"
 tail_lines="${SWIFT_TEST_TAIL_LINES:-200}"
+accept_signal_13="${SWIFT_TEST_ACCEPT_SIGNAL_13:-1}"
 
 mkdir -p "$(dirname "$log")"
 
@@ -46,7 +47,7 @@ while (( attempt <= attempts )); do
     continue
   fi
 
-  if is_swiftpm_signal_13 && has_passing_test_output && ! has_test_failure_output; then
+  if [[ "$accept_signal_13" == "1" ]] && is_swiftpm_signal_13 && has_passing_test_output && ! has_test_failure_output; then
     printf 'Test run with 1 tests passed after swiftpm-testing-helper signal 13 toolchain failure.\n' >>"$log"
     printf 'Treating swiftpm-testing-helper signal 13 as a SwiftPM toolchain failure after passing test output.\n' >&2
     tail -n "$tail_lines" "$log"

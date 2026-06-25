@@ -35,8 +35,7 @@ With this change, `container-compose` supports the local Docker Compose job subs
 - `up` starts job replicas detached.
 - `up` waits every selected job replica to exit successfully before continuing to later services.
 - A non-zero job exit fails `up` before later services start.
-- `deploy.restart_policy.condition: any` is rendered as `on-failure` for job services because Docker jobs are not restarted after reaching the completed state.
-- Service-level `restart: always` and `restart: unless-stopped` are rejected for job services before resources are created because they conflict with completion semantics.
+- Restart-capable service-level and deploy-level restart policies are rejected for job services before resources are created until `apple/container` exposes a restart-aware wait primitive. Explicit no-restart policies (`restart: no` or `deploy.restart_policy.condition: none`) remain allowed as no restart. The current wait primitive observes one exit and cannot yet report the final job result after runtime restart attempts.
 
 ## Likely owner
 

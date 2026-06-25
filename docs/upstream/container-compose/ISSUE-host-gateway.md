@@ -27,13 +27,13 @@ References:
 
 Before this change, `container-compose` rejected `host-gateway` before creating resources because released upstream `apple/container` could only accept static IP-literal host entries.
 
-With this change, `container-compose` passes `host-gateway` through to the fork-backed runtime as `--add-host host.docker.internal:host-gateway`. The runtime resolves it to the first network gateway while generating `/etc/hosts`.
+With this change, `container-compose` recognizes the Compose/Docker `host-gateway` value and projects it to the runtime host-entry model. The current live execution path still renders `--add-host host.docker.internal:host-gateway` through the command-vector bridge while typed service creation is being wired. The runtime resolves it to the first network gateway while generating `/etc/hosts`.
 
 ## Likely owner
 
 both
 
-`apple/container` owns resolving `host-gateway` to an actual gateway address. `container-compose` owns translating Compose `extra_hosts` syntax into the runtime `--add-host` argument.
+`apple/container` owns resolving a host-gateway entry to an actual gateway address. `container-compose` owns translating Compose `extra_hosts` syntax into the typed host-entry projection.
 
 ## Minimal example
 
@@ -50,7 +50,7 @@ services:
 
 Expected runtime behavior on the fork-backed integration branch:
 
-- `container-compose` emits `--add-host host.docker.internal:host-gateway`.
+- `container-compose` currently emits `--add-host host.docker.internal:host-gateway` through the command-vector bridge.
 - The runtime writes a concrete IPv4 gateway address for `host.docker.internal`.
 - Containers with no IPv4 gateway fail clearly at runtime instead of receiving an invalid hosts-file literal.
 

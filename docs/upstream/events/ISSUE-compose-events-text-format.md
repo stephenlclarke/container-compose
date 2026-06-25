@@ -50,7 +50,7 @@ With this slice on the local fork-backed integration stack:
 
 - `container compose events [SERVICE...]` renders Docker Compose-style text event lines by default.
 - `container compose events --json [SERVICE...]` keeps the existing JSON Lines behavior.
-- `--since` and `--until` continue to parse through the Docker-compatible timestamp parser and pass typed dates to `ContainerEventOptions`.
+- `--since` and `--until` continue to parse through `ComposeTimeParser` in `container-compose` and pass typed dates to `ContainerEventOptions`.
 - Project/service filtering, one-off suppression, and Compose-private attribute stripping remain unchanged.
 - Public text attributes are sorted for deterministic output, even though Docker Compose builds its text attribute list from Go map iteration.
 

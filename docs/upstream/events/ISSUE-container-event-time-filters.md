@@ -6,13 +6,13 @@ Related issue: [apple/container#484](https://github.com/apple/container/issues/4
 
 ## Feature Or Enhancement Request Details
 
-`apple/container` now has a local fork-backed first event-stream slice for [apple/container#484](https://github.com/apple/container/issues/484), but Docker-compatible clients also need bounded replay and time filtering so `container events --since ... --until ...` and `container compose events --json --since ... --until ...` can avoid polling or client-side event history.
+`apple/container` now has a local fork-backed first event-stream slice for [apple/container#484](https://github.com/apple/container/issues/484), but higher-level callers also need bounded replay and time filtering so `container events --since ... --until ...` and `container compose events --json --since ... --until ...` can avoid polling or client-side event history.
 
 Docker Compose passes event filters through to the Docker engine event API as `Since` and `Until` strings. The engine can return historical events in that requested window and stop streaming at the upper bound. A matching Apple primitive should keep those semantics in the generic runtime event stream rather than making every client maintain a separate event cache.
 
 ## Existing Source And Stacking Decision
 
-Use [apple/container#484](https://github.com/apple/container/issues/484) as the upstream issue anchor rather than opening a duplicate top-level event-stream request. This slice should stack on the local event-stream primitive documented in `ISSUE-container-events-stream.md` / `PR-container-events-stream.md`.
+Use [apple/container#484](https://github.com/apple/container/issues/484) as the upstream issue anchor rather than opening a duplicate top-level event-stream request. This slice should stack on the local event-stream primitive documented in `docs/upstream/events/ISSUE-container-events-stream.md` / `docs/upstream/events/PR-container-events-stream.md`.
 
 A live GitHub check on 2026-06-22 found no open `apple/container` or `apple/containerization` issue or PR specifically for event replay, `container events --since`, `container events --until`, or historical event filtering. Broader lifecycle checks found adjacent but separate work:
 
@@ -30,8 +30,8 @@ Those items are references for the wider lifecycle slab, but none is an implemen
 - Replay buffered events that match `since` / `until` when a subscriber connects.
 - Apply the same time filters to live events.
 - Close a filtered stream once its `until` bound has elapsed.
-- Add `container events --since` and `container events --until` using the existing Docker-compatible timestamp and relative-duration parser.
-- Keep the cache API-service-lifetime only. Persistent daemon-style event journaling should be a later design discussion if maintainers want Docker daemon parity beyond an in-memory bounded replay.
+- Expose `container events --since` and `container events --until` as CLI conveniences around those typed bounds.
+- Keep the cache API-service-lifetime only. Persistent event journaling should be a later design discussion if maintainers want behavior beyond an in-memory bounded replay.
 - Keep Compose project/service filtering, selected-service arguments, one-off suppression, JSON shape, and label stripping out of `apple/container`.
 
 ## Docker And Docker Compose Guidance
@@ -41,7 +41,7 @@ Those items are references for the wider lifecycle slab, but none is an implemen
 - Docker Compose command source: <https://github.com/docker/compose/blob/9b55a6e9c1016fd3c31859b7e09260378d45a783/cmd/compose/events.go>
 - Docker Compose backend source: <https://github.com/docker/compose/blob/9b55a6e9c1016fd3c31859b7e09260378d45a783/pkg/compose/events.go>
 
-Docker Compose exposes `--since` and `--until` as strings and forwards them to `EventsListOptions`. The Apple runtime API should use typed dates at the Swift boundary while allowing CLI callers and Compose callers to share Docker-compatible timestamp parsing.
+Docker Compose exposes `--since` and `--until` as strings and forwards them to `EventsListOptions`. The Apple runtime API should use typed dates at the Swift boundary. `container-compose` owns Docker-compatible timestamp parsing before it calls that API; the Apple CLI can keep any native parser it needs for `container events`.
 
 ## Acceptance Criteria
 

@@ -20,13 +20,9 @@ on:
   push:
     branches:
       - main
-      - develop
-      - regression
   pull_request:
     branches:
       - main
-      - develop
-      - regression
     types:
       - opened
       - synchronize
@@ -94,8 +90,8 @@ jobs:
         working-directory: container-compose
 
       - name: Build Go normalizer for CodeQL
-        run: go build -o compose-normalizer .
-        working-directory: container-compose/Tools/compose-normalizer
+        run: make go-build
+        working-directory: container-compose
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4

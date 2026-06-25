@@ -199,6 +199,49 @@ struct ComposeNormalizerTests {
         ))
     }
 
+    @Test("normalizer preserves entrypoint command and environment forms")
+    func normalizerPreservesEntrypointCommandAndEnvironmentForms() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          map:
+            image: alpine
+            entrypoint: ["/bin/sh", "-c"]
+            command: ["echo map"]
+            environment:
+              MAP_EMPTY:
+              MAP_VALUE: one
+          list:
+            image: alpine
+            environment:
+              - LIST_EMPTY=
+              - CONTAINER_COMPOSE_TEST_UNSET_LIST_INHERIT
+              - LIST_VALUE=two=with=equals
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
+
+        #expect(project.services["map"]?.entrypoint == ["/bin/sh", "-c"])
+        #expect(project.services["map"]?.command == ["echo map"])
+        #expect(project.services["map"]?.environment == [
+            "MAP_EMPTY": nil,
+            "MAP_VALUE": "one",
+        ])
+        #expect(project.services["list"]?.environment == [
+            "CONTAINER_COMPOSE_TEST_UNSET_LIST_INHERIT": nil,
+            "LIST_EMPTY": "",
+            "LIST_VALUE": "two=with=equals",
+        ])
+    }
+
     @Test("normalizes logging fixture without losing shell variables")
     func normalizesLoggingFixtureWithoutLosingShellVariables() async throws {
         let composeFile = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
