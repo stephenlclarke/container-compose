@@ -183,6 +183,36 @@ services:
 	}
 }
 
+func TestLoadProjectPreservesInterpolationEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	unsetEnv(t, "COMPOSE_FILE")
+	t.Setenv("NORMALIZER_HOST_ENV", "from-host")
+	writeFile(t, filepath.Join(dir, ".env"), "NORMALIZER_DOT_ENV=from-dot-env\n")
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: ${NORMALIZER_HOST_ENV:-missing}
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	expected := map[string]string{
+		"NORMALIZER_DOT_ENV":  "from-dot-env",
+		"NORMALIZER_HOST_ENV": "from-host",
+	}
+	for key, want := range expected {
+		if got := project.Environment[key]; got != want {
+			t.Fatalf("Environment[%s] = %q, want %q", key, got, want)
+		}
+	}
+	if got := project.Services["api"].Image; got != "from-host" {
+		t.Fatalf("api image = %q, want from-host", got)
+	}
+}
+
 func TestLoadProjectDoesNotAutoLoadOverrideForExplicitFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "compose.yaml"), `

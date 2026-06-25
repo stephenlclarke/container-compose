@@ -21,6 +21,7 @@ public struct ComposeProject: Codable, Equatable {
     public var name: String
     public var workingDirectory: String = FileManager.default.currentDirectoryPath
     public var composeFiles: [String] = []
+    public var environment: [String: String] = [:]
     public var services: [String: ComposeService]
     public var networks: [String: ComposeNetwork] = [:]
     public var volumes: [String: ComposeVolume] = [:]
@@ -32,6 +33,50 @@ public struct ComposeProject: Codable, Equatable {
     public init(name: String, services: [String: ComposeService]) {
         self.name = name
         self.services = services
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
+            ?? FileManager.default.currentDirectoryPath
+        composeFiles = try container.decodeIfPresent([String].self, forKey: .composeFiles) ?? []
+        environment = try container.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        services = try container.decode([String: ComposeService].self, forKey: .services)
+        networks = try container.decodeIfPresent([String: ComposeNetwork].self, forKey: .networks) ?? [:]
+        volumes = try container.decodeIfPresent([String: ComposeVolume].self, forKey: .volumes) ?? [:]
+        configs = try container.decodeIfPresent([String: ComposeValue].self, forKey: .configs)
+        secrets = try container.decodeIfPresent([String: ComposeValue].self, forKey: .secrets)
+        models = try container.decodeIfPresent([String: ComposeValue].self, forKey: .models)
+        extensions = try container.decodeIfPresent([String: ComposeValue].self, forKey: .extensions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(workingDirectory, forKey: .workingDirectory)
+        try container.encode(composeFiles, forKey: .composeFiles)
+        try container.encode(services, forKey: .services)
+        try container.encode(networks, forKey: .networks)
+        try container.encode(volumes, forKey: .volumes)
+        try container.encodeIfPresent(configs, forKey: .configs)
+        try container.encodeIfPresent(secrets, forKey: .secrets)
+        try container.encodeIfPresent(models, forKey: .models)
+        try container.encodeIfPresent(extensions, forKey: .extensions)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case workingDirectory
+        case composeFiles
+        case environment
+        case services
+        case networks
+        case volumes
+        case configs
+        case secrets
+        case models
+        case extensions
     }
 }
 

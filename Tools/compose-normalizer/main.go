@@ -54,6 +54,7 @@ type normalizedProject struct {
 	Name             string                       `json:"name"`
 	WorkingDirectory string                       `json:"workingDirectory"`
 	ComposeFiles     []string                     `json:"composeFiles"`
+	Environment      map[string]string            `json:"environment,omitempty"`
 	Services         map[string]normalizedService `json:"services"`
 	Networks         map[string]normalizedNetwork `json:"networks"`
 	Volumes          map[string]normalizedVolume  `json:"volumes"`
@@ -444,6 +445,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		Name:             project.Name,
 		WorkingDirectory: projectDirectory,
 		ComposeFiles:     append([]string(nil), project.ComposeFiles...),
+		Environment:      mapStringValues(project.Environment),
 		Services:         map[string]normalizedService{},
 		Networks:         map[string]normalizedNetwork{},
 		Volumes:          map[string]normalizedVolume{},
@@ -901,6 +903,18 @@ func serviceModelValues(models map[string]*types.ServiceModelConfig) map[string]
 			EndpointVariable: model.EndpointVariable,
 			ModelVariable:    model.ModelVariable,
 		}
+	}
+	return result
+}
+
+// mapStringValues copies string maps while preserving nil for absent maps.
+func mapStringValues(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = value
 	}
 	return result
 }

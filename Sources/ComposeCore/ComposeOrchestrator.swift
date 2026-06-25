@@ -427,7 +427,21 @@ public struct ComposeUpOptions {
     public var timeout: Int?
 
     public init() {
-        // Stored property defaults represent Docker Compose's default up behavior.
+        services = []
+        build = false
+        noBuild = false
+        detach = false
+        forceRecreate = false
+        alwaysRecreateDeps = false
+        noRecreate = false
+        removeOrphans = false
+        pullPolicy = nil
+        scales = []
+        noDeps = false
+        noStart = false
+        quietBuild = false
+        quietPull = false
+        timeout = nil
     }
 
     public init(_ configure: (inout ComposeUpOptions) -> Void) {
@@ -442,7 +456,9 @@ public struct ComposeStartOptions {
     public var waitTimeout: Int?
 
     public init() {
-        // Stored property defaults represent Docker Compose's default start behavior.
+        services = []
+        wait = false
+        waitTimeout = nil
     }
 
     public init(_ configure: (inout ComposeStartOptions) -> Void) {
@@ -453,6 +469,7 @@ public struct ComposeStartOptions {
 /// Options for `compose config`.
 public struct ComposeConfigOptions {
     public var services: [String] = []
+    public var environment = false
     public var format: String?
     public var hash: String?
     public var images = false
@@ -463,7 +480,16 @@ public struct ComposeConfigOptions {
     public var volumes = false
 
     public init() {
-        // Stored property defaults represent Docker Compose's default config behavior.
+        services = []
+        environment = false
+        format = nil
+        hash = nil
+        images = false
+        models = false
+        networks = false
+        quiet = false
+        servicesOnly = false
+        volumes = false
     }
 
     public init(_ configure: (inout ComposeConfigOptions) -> Void) {
@@ -486,7 +512,17 @@ public struct ComposeCreateOptions {
     public var quietPull = false
 
     public init() {
-        // Stored property defaults represent Docker Compose's default create behavior.
+        services = []
+        build = false
+        noBuild = false
+        forceRecreate = false
+        noRecreate = false
+        removeOrphans = false
+        pullPolicy = nil
+        scales = []
+        noDeps = false
+        quietBuild = false
+        quietPull = false
     }
 
     public init(_ configure: (inout ComposeCreateOptions) -> Void) {
@@ -500,7 +536,8 @@ public struct ComposeScaleOptions {
     public var noDeps = false
 
     public init() {
-        // Stored property defaults represent Docker Compose's default scale behavior.
+        scales = []
+        noDeps = false
     }
 
     public init(_ configure: (inout ComposeScaleOptions) -> Void) {
@@ -535,7 +572,14 @@ public struct ComposeLogsOptions: Sendable {
     public var colorPrefixes = false
 
     public init() {
-        // Stored property defaults represent Docker Compose's default logs behavior.
+        follow = false
+        tail = nil
+        index = nil
+        since = nil
+        until = nil
+        timestamps = false
+        noLogPrefix = false
+        colorPrefixes = false
     }
 
     public init(_ configure: (inout ComposeLogsOptions) -> Void) {
@@ -555,7 +599,14 @@ public struct ComposeBuildOptions {
     public var withDependencies = false
 
     public init() {
-        // Stored property defaults represent Docker Compose's default build behavior.
+        services = []
+        buildArguments = []
+        memory = nil
+        noCache = false
+        pull = false
+        push = false
+        quiet = false
+        withDependencies = false
     }
 
     public init(_ configure: (inout ComposeBuildOptions) -> Void) {
@@ -573,7 +624,12 @@ public struct ComposePullOptions {
     public var quiet = false
 
     public init() {
-        // Stored property defaults represent Docker Compose's default pull behavior.
+        services = []
+        ignoreBuildable = false
+        ignorePullFailures = false
+        includeDependencies = false
+        policy = nil
+        quiet = false
     }
 
     public init(_ configure: (inout ComposePullOptions) -> Void) {
@@ -589,7 +645,10 @@ public struct ComposePushOptions {
     public var quiet = false
 
     public init() {
-        // Stored property defaults represent Docker Compose's default push behavior.
+        services = []
+        ignorePushFailures = false
+        includeDependencies = false
+        quiet = false
     }
 
     public init(_ configure: (inout ComposePushOptions) -> Void) {
@@ -700,7 +759,10 @@ public struct ComposeAttachOptions {
     public var sigProxy = "true"
 
     public init() {
-        // Stored property defaults represent Docker Compose's default attach behavior.
+        noStdin = false
+        detachKeys = nil
+        index = 1
+        sigProxy = "true"
     }
 
     public init(_ configure: (inout ComposeAttachOptions) -> Void) {
@@ -721,7 +783,15 @@ public struct ComposeExecOptions {
     public var workingDirectory: String?
 
     public init() {
-        // Stored property defaults represent Docker Compose's default exec behavior.
+        command = []
+        interactive = true
+        tty = true
+        detach = false
+        environment = []
+        index = 1
+        privileged = false
+        user = nil
+        workingDirectory = nil
     }
 
     public init(_ configure: (inout ComposeExecOptions) -> Void) {
@@ -738,7 +808,11 @@ public struct ComposeCopyOptions {
     public var index = 1
 
     public init() {
-        // Stored property defaults represent Docker Compose's default copy behavior.
+        arguments = []
+        all = false
+        archive = false
+        followLink = false
+        index = 1
     }
 
     public init(_ configure: (inout ComposeCopyOptions) -> Void) {
@@ -827,7 +901,29 @@ public struct ComposeRunOptions {
     public var capDrop: [String] = []
 
     public init() {
-        // Stored property defaults represent Docker Compose's default run behavior.
+        command = []
+        build = false
+        remove = false
+        detach = false
+        interactive = false
+        noTty = false
+        noDeps = false
+        servicePorts = false
+        publish = []
+        pullPolicy = nil
+        quietBuild = false
+        quietPull = false
+        removeOrphans = false
+        containerName = nil
+        entrypoint = nil
+        workingDirectory = nil
+        user = nil
+        environment = []
+        envFiles = []
+        labels = []
+        volumes = []
+        capAdd = []
+        capDrop = []
     }
 
     public init(_ configure: (inout ComposeRunOptions) -> Void) {
@@ -847,7 +943,15 @@ private struct RunArgumentOptions {
     var labelOverrides: [ComposeLabelOverride] = []
 
     init() {
-        // Stored property defaults represent unmodified service run arguments.
+        command = "run"
+        detach = false
+        remove = false
+        oneOff = false
+        containerIndex = nil
+        replicaCount = nil
+        publishedPorts = nil
+        containerNameOverride = nil
+        labelOverrides = []
     }
 
     init(_ configure: (inout RunArgumentOptions) -> Void) {
@@ -1236,6 +1340,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return ""
         }
 
+        if options.environment {
+            return configEnvironment(project: project)
+        }
         if let hash = options.hash {
             return try configHashes(project: project, services: options.services, hash: hash)
         }
@@ -2849,6 +2956,13 @@ private extension ComposeOrchestrator {
     func configImages(project: ComposeProject, services: [String]) throws -> [String] {
         let selected = try selectedServices(project: project, selected: services)
         return Array(Set(selected.compactMap { serviceImage(project: project, service: $0) })).sorted()
+    }
+
+    /// Returns the interpolation environment loaded by compose-go.
+    func configEnvironment(project: ComposeProject) -> String {
+        lineProjection(project.environment.keys.sorted().map { key in
+            "\(key)=\(project.environment[key] ?? "")"
+        })
     }
 
     /// Returns service config hashes using the same fingerprint as recreate decisions.

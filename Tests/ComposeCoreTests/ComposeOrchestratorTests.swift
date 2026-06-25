@@ -7635,12 +7635,15 @@ struct ComposeOrchestratorTests {
                 },
             ]
         ) {
+            $0.environment = ["BETA": "two", "ALPHA": "one"]
             $0.networks = ["front": ComposeNetwork(name: "front"), "back": ComposeNetwork(name: "back")]
             $0.volumes = ["cache": ComposeVolume(name: "cache"), "unused": ComposeVolume(name: "unused")]
             $0.models = ["llm": .object(["model": .string("example/local-llm")])]
         }
         let orchestrator = ComposeOrchestrator()
 
+        #expect(try orchestrator.config(project: project).contains("ALPHA") == false)
+        #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.environment = true }) == "ALPHA=one\nBETA=two")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.servicesOnly = true }) == "api\nworker")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.images = true }) == "demo_worker:latest\nexample/api")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.networks = true }) == "back\nfront")

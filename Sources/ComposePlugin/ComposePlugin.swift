@@ -417,7 +417,6 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
     /// Prints the canonical project JSON emitted by the orchestrator.
     func run() async throws {
         let unsupportedOptions = [
-            environment ? "--environment" : nil,
             lockImageDigests ? "--lock-image-digests" : nil,
             noConsistency ? "--no-consistency" : nil,
             noEnvResolution ? "--no-env-resolution" : nil,
@@ -437,6 +436,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             project: loadedProject,
             options: ComposeConfigOptions {
                 $0.services = services
+                $0.environment = environment
                 $0.format = format
                 $0.hash = hash
                 $0.images = images

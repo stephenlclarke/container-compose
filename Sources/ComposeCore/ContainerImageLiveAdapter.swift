@@ -21,8 +21,10 @@ import ContainerizationOCI
 
 /// Live apple/container image API bridge used by production orchestration.
 public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
+    private static let isStateless = true
+
     public init() {
-        // Stateless adapter; public initializer supports dependency injection.
+        _ = Self.isStateless
     }
 
     /// Returns whether the image can be resolved locally.

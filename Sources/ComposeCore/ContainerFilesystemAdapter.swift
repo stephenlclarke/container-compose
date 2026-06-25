@@ -147,8 +147,10 @@ public struct ContainerClientCopier: ContainerCopying {
 
 /// `ContainerClient`-backed exporter for real service container exports.
 public struct ContainerClientExporter: ContainerExporting {
+    private static let isStateless = true
+
     public init() {
-        // Stateless adapter; public initializer supports dependency injection.
+        _ = Self.isStateless
     }
 
     /// Exports through `ContainerClient.export(id:archive:)`.

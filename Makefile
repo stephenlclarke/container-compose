@@ -252,7 +252,7 @@ cli-smoke-built:
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--services$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--images$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--output$${ansi_escape}[0m"* ]]; \
-	[[ "$$config_help_output" == *"$${ansi_escape}[31m--environment$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--environment$${ansi_escape}[0m"* ]]; \
 	build_help_output="$$(".build/debug/compose" build --help)"; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
@@ -368,8 +368,8 @@ cli-smoke-built:
 	config_output_path="$$tmpdir/config-output.json"; \
 	".build/debug/compose" -f "$$tmpdir/compose.yml" config --output "$$config_output_path"; \
 	[[ -s "$$config_output_path" ]]; \
-	config_unsupported_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --environment 2>&1 || true)"; \
-	[[ "$$config_unsupported_output" == *"unsupported compose feature: config --environment"* ]]; \
+	config_environment_output="$$(COMPOSE_CONFIG_ENV_SMOKE=ok ".build/debug/compose" -f "$$tmpdir/compose.yml" config --environment)"; \
+	[[ "$$config_environment_output" == *"COMPOSE_CONFIG_ENV_SMOKE=ok"* ]]; \
 	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \
 	[[ "$$compact_global_output" == *"compact-db-1"* ]]; \
 	[[ "$$compact_global_output" == *"compact-api-1"* ]]; \
