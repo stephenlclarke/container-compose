@@ -52,6 +52,7 @@ SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES := \
 SWIFT_TEST_FRAMEWORK_SEARCH_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_FRAMEWORK_CANDIDATES),$(if $(wildcard $(path)/Testing.framework),$(path))))
 SWIFT_TEST_RUNTIME_LIBRARY_PATH ?= $(firstword $(foreach path,$(SWIFT_TEST_RUNTIME_LIBRARY_CANDIDATES),$(if $(wildcard $(path)/lib_TestingInterop.dylib),$(path))))
 SWIFT_TEST_RESULT_LOG ?= .build/swift-test.log
+SWIFT_TEST_ATTEMPTS ?= 2
 MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md CONTRIBUTING.md DESIGN.md DOCKER-COMPOSE-PARITY.md INSTALL.md PLAN.md SECURITY.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
 
 # Some local toolchains can build Swift Testing targets without adding the
@@ -94,8 +95,7 @@ swift-test-build:
 
 swift-test: swift-test-build
 	@mkdir -p .build
-	@$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_FLAGS) >"$(SWIFT_TEST_RESULT_LOG)" 2>&1 || { status="$$?"; cat "$(SWIFT_TEST_RESULT_LOG)" || true; exit "$$status"; }
-	@tail -n 200 "$(SWIFT_TEST_RESULT_LOG)"
+	@SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_FLAGS)
 	@if ! grep -Eq 'Test run with [1-9][0-9]* tests .* passed|Executed [1-9][0-9]* tests' "$(SWIFT_TEST_RESULT_LOG)"; then \
 		printf 'swift test completed without running tests; check the active toolchain Testing.framework and rpath settings.\n' >&2; \
 		exit 1; \

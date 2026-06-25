@@ -107,7 +107,10 @@ jobs:
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
       - name: Run Swift tests with Address Sanitizer
-        run: swift test --disable-automatic-resolution --sanitize=address
+        run: |
+          SWIFT_TEST_RESULT_LOG=.build/swift-asan.log \
+            SWIFT_TEST_ATTEMPTS=2 \
+            Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=address
         working-directory: container-compose
 
   swift-thread-sanitizer:
@@ -178,7 +181,10 @@ jobs:
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
       - name: Run Swift tests with Thread Sanitizer
-        run: swift test --disable-automatic-resolution --sanitize=thread
+        run: |
+          SWIFT_TEST_RESULT_LOG=.build/swift-tsan.log \
+            SWIFT_TEST_ATTEMPTS=2 \
+            Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=thread
         working-directory: container-compose
 
   swift-style-advisory:
