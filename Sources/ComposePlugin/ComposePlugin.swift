@@ -583,6 +583,23 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Creates resources and starts selected services.
     func run() async throws {
+        let unsupportedOptions = [
+            abortOnContainerExit ? "--abort-on-container-exit" : nil,
+            abortOnContainerFailure ? "--abort-on-container-failure" : nil,
+            attach.isEmpty ? nil : "--attach",
+            attachDependencies ? "--attach-dependencies" : nil,
+            exitCodeFrom == nil ? nil : "--exit-code-from",
+            menu ? "--menu" : nil,
+            noAttach.isEmpty ? nil : "--no-attach",
+            noColor ? "--no-color" : nil,
+            noLogPrefix ? "--no-log-prefix" : nil,
+            timestamps ? "--timestamps" : nil,
+            watch ? "--watch" : nil,
+        ].compactMap { $0 }
+        if let first = unsupportedOptions.first {
+            throw ComposeError.unsupported("up \(first)")
+        }
+
         let loadedProject = try await project()
         try await orchestrator().up(
             project: loadedProject,
