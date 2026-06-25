@@ -113,7 +113,11 @@ swift-coverage: swift-test-build
 		exit 1; \
 	fi
 	@rm -f .build/*/debug/codecov/*.profraw .build/codecov/fallback.profdata coverage.lcov coverage.xml
-	@SWIFT_TEST_ACCEPT_SIGNAL_13=0 SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 Tools/ci/run-swift-test.sh $(SWIFT) test --quiet $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
+	@if ! SWIFT_TEST_ACCEPT_SIGNAL_13=0 SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 Tools/ci/run-swift-test.sh $(SWIFT) test --quiet $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS); then \
+		printf 'Retrying Swift coverage tests after failed helper run.\n' >&2; \
+		rm -f .build/*/debug/codecov/*.profraw .build/codecov/fallback.profdata; \
+		SWIFT_TEST_ACCEPT_SIGNAL_13=0 SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 Tools/ci/run-swift-test.sh $(SWIFT) test --quiet $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS); \
+	fi
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
 	profile="$$(find .build -path '*/codecov/default.profdata' -type f | head -n 1)"; \
 	if [[ -z "$$test_binary" ]]; then \
