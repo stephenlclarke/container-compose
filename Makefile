@@ -112,28 +112,21 @@ swift-coverage: swift-test-build
 		printf 'llvm-profdata is required; install the active Swift toolchain or set SWIFT_LLVM_PROFDATA=/path/to/llvm-profdata\n' >&2; \
 		exit 1; \
 	fi
-	@rm -f .build/*/debug/codecov/*.profraw .build/codecov/fallback.profdata coverage.lcov coverage.xml
-	@if ! SWIFT_TEST_ACCEPT_SIGNAL_13=0 SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 Tools/ci/run-swift-test.sh $(SWIFT) test --quiet $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS); then \
-		printf 'Retrying Swift coverage tests after failed helper run.\n' >&2; \
-		rm -f .build/*/debug/codecov/*.profraw .build/codecov/fallback.profdata; \
-		SWIFT_TEST_ACCEPT_SIGNAL_13=0 SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 Tools/ci/run-swift-test.sh $(SWIFT) test --quiet $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS); \
-	fi
+	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage.lcov coverage.xml
+	@SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
-	profile="$$(find .build -path '*/codecov/default.profdata' -type f | head -n 1)"; \
+	profile=".build/codecov/fallback.profdata"; \
 	if [[ -z "$$test_binary" ]]; then \
 		printf 'Swift test binary is missing; run make swift-test-build before make swift-coverage\n' >&2; \
 		exit 2; \
 	fi; \
-	if [[ -z "$$profile" ]]; then \
-		raw_profile_count="$$(find .build -name '*.profraw' -type f | wc -l | tr -d ' ')"; \
-		if [[ "$$raw_profile_count" -eq 0 ]]; then \
-			printf 'Swift coverage profile is missing and no raw .profraw files were found\n' >&2; \
-			exit 2; \
-		fi; \
-		mkdir -p .build/codecov; \
-		profile=".build/codecov/fallback.profdata"; \
-		find .build -name '*.profraw' -type f -print0 | xargs -0 "$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile"; \
+	raw_profile_count="$$(find .build -name '*.profraw' -type f | wc -l | tr -d ' ')"; \
+	if [[ "$$raw_profile_count" -eq 0 ]]; then \
+		printf 'Swift coverage profile is missing and no raw .profraw files were found\n' >&2; \
+		exit 2; \
 	fi; \
+	mkdir -p .build/codecov; \
+	find .build -name '*.profraw' -type f -print0 | xargs -0 "$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile"; \
 	"$(SWIFT_LLVM_COV)" export \
 		-format=lcov \
 		-instr-profile="$$profile" \
