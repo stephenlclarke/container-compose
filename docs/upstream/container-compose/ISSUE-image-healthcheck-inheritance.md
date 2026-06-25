@@ -80,5 +80,5 @@ container run --health-cmd "test -f /tmp/ready" --health-interval 5s --health-ti
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `COMPATIBILITY.md`.
+- [x] I checked `STATUS.md`.
 - [x] I checked `PLAN.md`.

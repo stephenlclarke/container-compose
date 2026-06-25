@@ -117,7 +117,7 @@ Example event shape:
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `COMPATIBILITY.md`.
+- [x] I checked `STATUS.md`.
 - [x] I checked `STATUS.md`.
 - [x] I checked current Apple issues and PRs before selecting this slice.
 - [x] I recorded whether matching upstream items were used as a base, dependency, or behavioral reference.

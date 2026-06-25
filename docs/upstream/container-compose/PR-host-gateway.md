@@ -31,7 +31,7 @@ References:
 - Reused `ContainerConfiguration.HostEntry.hostGatewayAddress` so the plugin and runtime agree on the sentinel.
 - Added orchestration coverage proving `up` emits `--add-host host.docker.internal:host-gateway`.
 - Removed `host-gateway` from generic unsupported-project fixtures.
-- Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
+- Updated `PLAN.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -61,7 +61,7 @@ git diff --check
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

@@ -30,7 +30,7 @@ References:
 - Replaced the blanket `domainname` rejection with `runtimeDomainnameArgument(service:)`.
 - Reused the existing RFC1123 validation helper for hostname-like values.
 - Appended `--domainname` in the shared service create/run argument builder so `up`, `create`, and one-off `run` use the same mapping.
-- Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
+- Updated `PLAN.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -60,7 +60,7 @@ git diff --check
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

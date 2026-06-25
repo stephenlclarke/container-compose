@@ -22,7 +22,7 @@ The review must cover every potential PR independently:
 - Verify the listed commit IDs still construct the intended PR and that no unrelated `container-compose` policy, Docker Compose formatting, private-machine assumption, or temporary fork-only behavior has leaked into Apple runtime code.
 - Review the code as an Apple maintainer and as any likely code owner for the touched area, then fix findings before drafting the PR text.
 - Re-run the focused validation for each slice plus repository-level hygiene checks, and keep optional Docker / Docker Compose V2 parity checks local-only and out of Apple CI.
-- Update the affected `ISSUE*.md`, `PR*.md`, `COMPATIBILITY.md`, `PLAN.md`, `STATUS.md`, and `RESUME.md` files with findings, fixes, validation, dependencies, and any residual risk.
+- Update the affected `ISSUE*.md`, `PR*.md`, `PLAN.md` and `STATUS.md` files with findings, fixes, validation, dependencies, and any residual risk.
 
 ## Current Inventory
 

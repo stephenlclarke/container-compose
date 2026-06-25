@@ -31,7 +31,7 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 - Added a precise unsupported error for Docker's `host-gateway` magic value before the runtime resolver existed.
 - Appended `--add-host` arguments in the shared service create/run argument builder, so service containers and one-off `run` containers inherit the same host entries.
 - Extended Swift and Go normalizer tests to cover compose-go canonical `extra_hosts` output.
-- Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
+- Updated `PLAN.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -65,7 +65,7 @@ Result: `make check` passed; `make coverage-check` passed with Swift coverage at
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

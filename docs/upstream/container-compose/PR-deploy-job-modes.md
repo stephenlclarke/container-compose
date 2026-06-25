@@ -34,7 +34,7 @@ References:
 - Added `waitForDeployJobService(service:targets:)` to wait each job replica and fail on non-zero exit before later services start.
 - Adjusted deploy restart-policy mapping so job `condition: any` renders as `on-failure`.
 - Rejected service-level `restart: always` and `restart: unless-stopped` on job services before runtime side effects because those policies conflict with completed-job semantics.
-- Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md`.
+- Updated `PLAN.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -70,7 +70,7 @@ git diff --check
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

@@ -94,5 +94,5 @@ equivalent `apple/container` timing API.
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `COMPATIBILITY.md`.
+- [x] I checked `STATUS.md`.
 - [x] I checked `PLAN.md`.

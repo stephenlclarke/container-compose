@@ -75,5 +75,5 @@ Expected integration-branch behavior when the runtime includes [apple/container#
 ## Code of Conduct and documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `COMPATIBILITY.md`.
+- [x] I checked `STATUS.md`.
 - [x] I checked `PLAN.md`.

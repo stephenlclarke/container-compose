@@ -67,6 +67,6 @@ The extension has not yet been rerun against Docker after this slice. Run it bef
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `COMPATIBILITY.md`.
+- [x] I checked `STATUS.md`.
 - [x] I checked current Apple issues and PRs before selecting this slice.
 - [x] I recorded why no Apple runtime source issue or PR should be used as a base.

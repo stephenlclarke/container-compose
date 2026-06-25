@@ -29,7 +29,7 @@ References:
 
 - Added `upMapsLinksOnNormalizedDefaultNetwork` to cover the compose-go normalized `default` network shape.
 - Updated the unsupported shared-network error text from "explicit Compose network" to "Compose network".
-- Updated `COMPATIBILITY.md`, `PLAN.md`, and `STATUS.md` to describe implicit default-network links as part of the supported single-network subset.
+- Updated `PLAN.md` and `STATUS.md` to describe implicit default-network links as part of the supported single-network subset.
 
 ## Docker Compose Compatibility Notes
 
@@ -54,13 +54,13 @@ Additional local checks:
 ```sh
 make check
 make coverage-check
-markdownlint --disable MD013 MD041 -- COMPATIBILITY.md PLAN.md STATUS.md docs/upstream/container-compose/ISSUE-links-default-network.md docs/upstream/container-compose/PR-links-default-network.md
+markdownlint --disable MD013 MD041 -- STATUS.md PLAN.md STATUS.md docs/upstream/container-compose/ISSUE-links-default-network.md docs/upstream/container-compose/PR-links-default-network.md
 git diff --check
 ```
 
 ## container-compose Checks
 
-- [x] I updated `COMPATIBILITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

@@ -29,8 +29,8 @@ runtime orchestration.
 - [BRANCHES.md](BRANCHES.md): choose the matching `main` or `develop` lane across `container-compose` and the `container` fork.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
-- [COMPATIBILITY.md](COMPATIBILITY.md): review Docker-backed parity evidence and known compatibility gaps.
-- [STATUS.md](STATUS.md): get the current runtime fork, active slab, blockers, and handoff state.
+- [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.
+- [STATUS.md](STATUS.md): get the current branch lanes, blockers, and validation handoff.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.
 - [SECURITY.md](SECURITY.md): report security issues.
