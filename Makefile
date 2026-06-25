@@ -39,6 +39,7 @@ SWIFT_XCODE_DEVELOPER_DIR := $(patsubst %/Toolchains/XcodeDefault.xctoolchain/us
 SWIFT_CLT_DEVELOPER_DIR := $(patsubst %/usr/lib/swift,%,$(filter-out %/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift,$(filter %/usr/lib/swift,$(SWIFT_RUNTIME_RESOURCE_PATH))))
 SWIFT_ACTIVE_DEVELOPER_DIR ?= $(firstword $(SWIFT_XCODE_DEVELOPER_DIR) $(SWIFT_CLT_DEVELOPER_DIR) $(XCODE_SELECT_DEVELOPER_DIR))
 SWIFT_LLVM_COV ?= $(firstword $(wildcard $(SWIFT_TOOLCHAIN_USR_DIR)/bin/llvm-cov) $(shell xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov 2>/dev/null || true))
+SWIFT_LLVM_PROFDATA ?= $(firstword $(wildcard $(SWIFT_TOOLCHAIN_USR_DIR)/bin/llvm-profdata) $(shell xcrun --find llvm-profdata 2>/dev/null || command -v llvm-profdata 2>/dev/null || true))
 SWIFT_TEST_FRAMEWORK_CANDIDATES := \
 	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/Library/Frameworks \
 	$(SWIFT_ACTIVE_DEVELOPER_DIR)/Library/Developer/Frameworks \
@@ -107,8 +108,26 @@ swift-coverage: swift-test
 		printf 'llvm-cov is required; install the active Swift toolchain or set SWIFT_LLVM_COV=/path/to/llvm-cov\n' >&2; \
 		exit 1; \
 	fi
+	@if [[ -z "$(SWIFT_LLVM_PROFDATA)" ]]; then \
+		printf 'llvm-profdata is required; install the active Swift toolchain or set SWIFT_LLVM_PROFDATA=/path/to/llvm-profdata\n' >&2; \
+		exit 1; \
+	fi
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/*' -type f | head -n 1)"; \
 	profile="$$(find .build -path '*/codecov/default.profdata' -type f | head -n 1)"; \
+	if [[ -z "$$test_binary" ]]; then \
+		printf 'Swift test binary is missing; run make swift-test-build before make swift-coverage\n' >&2; \
+		exit 2; \
+	fi; \
+	if [[ -z "$$profile" ]]; then \
+		mapfile -t raw_profiles < <(find .build -name '*.profraw' -type f); \
+		if [[ "$${#raw_profiles[@]}" -eq 0 ]]; then \
+			printf 'Swift coverage profile is missing and no raw .profraw files were found\n' >&2; \
+			exit 2; \
+		fi; \
+		mkdir -p .build/codecov; \
+		profile=".build/codecov/fallback.profdata"; \
+		"$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile" "$${raw_profiles[@]}"; \
+	fi; \
 	"$(SWIFT_LLVM_COV)" export \
 		-format=lcov \
 		-instr-profile="$$profile" \
