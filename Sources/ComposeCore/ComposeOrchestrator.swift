@@ -475,8 +475,10 @@ public struct ComposeConfigOptions {
     public var images = false
     public var models = false
     public var networks = false
+    public var profiles = false
     public var quiet = false
     public var servicesOnly = false
+    public var variables: [ComposeVariable]? = nil
     public var volumes = false
 
     public init() {
@@ -487,8 +489,10 @@ public struct ComposeConfigOptions {
         images = false
         models = false
         networks = false
+        profiles = false
         quiet = false
         servicesOnly = false
+        variables = nil
         volumes = false
     }
 
@@ -1357,8 +1361,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if options.networks {
             return lineProjection(project.networks.keys.sorted())
         }
+        if options.profiles {
+            return lineProjection(Array(Set(project.profiles)).sorted())
+        }
         if options.servicesOnly {
             return try lineProjection(selectedServices(project: project, selected: options.services).map(\.name).sorted())
+        }
+        if let variables = options.variables {
+            return configVariables(variables)
         }
         if options.volumes {
             return lineProjection(project.volumes.keys.sorted())
@@ -1366,6 +1376,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         let scopedProject = try project.filtered(to: options.services)
         return try config(project: scopedProject, format: options.format)
+    }
+
+    /// Returns Docker Compose compatible variable projection output.
+    public func config(variables: [ComposeVariable]) -> String {
+        configVariables(variables)
     }
 
     /// Creates project resources and starts selected services in dependency order.
@@ -2968,6 +2983,20 @@ private extension ComposeOrchestrator {
         lineProjection(project.environment.keys.sorted().map { key in
             "\(key)=\(project.environment[key] ?? "")"
         })
+    }
+
+    /// Returns the interpolation variable table loaded by compose-go.
+    func configVariables(_ variables: [ComposeVariable]) -> String {
+        let rows = [["NAME", "REQUIRED", "DEFAULT VALUE", "ALTERNATE VALUE"]]
+            + variables.map { variable in
+                [
+                    variable.name,
+                    variable.required ? "true" : "false",
+                    variable.defaultValue,
+                    variable.alternateValue,
+                ]
+            }
+        return renderTable(rows)
     }
 
     /// Returns service config hashes using the same fingerprint as recreate decisions.

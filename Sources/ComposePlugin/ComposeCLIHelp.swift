@@ -265,11 +265,11 @@ enum ComposeCLIHelp {
             "--no-normalize": .notSupported,
             "--no-path-resolution": .notSupported,
             "--output": .supported,
-            "--profiles": .notSupported,
+            "--profiles": .supported,
             "--quiet": .supported,
             "--resolve-image-digests": .notSupported,
             "--services": .supported,
-            "--variables": .notSupported,
+            "--variables": .supported,
             "--volumes": .supported,
         ],
         "cp": [

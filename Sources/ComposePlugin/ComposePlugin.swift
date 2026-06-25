@@ -423,12 +423,23 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             noInterpolate ? "--no-interpolate" : nil,
             noNormalize ? "--no-normalize" : nil,
             noPathResolution ? "--no-path-resolution" : nil,
-            profiles ? "--profiles" : nil,
             resolveImageDigests ? "--resolve-image-digests" : nil,
-            variables ? "--variables" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("config \(first)")
+        }
+
+        if variables {
+            let loadedVariables = try await ComposeNormalizer().variables(options: global.composeOptions())
+            let rendered = orchestrator().config(variables: loadedVariables)
+            if let output {
+                try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+                return
+            }
+            if !rendered.isEmpty {
+                print(rendered)
+            }
+            return
         }
 
         let loadedProject = try await project()
@@ -442,6 +453,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
                 $0.images = images
                 $0.models = models
                 $0.networks = networks
+                $0.profiles = profiles
                 $0.quiet = quiet
                 $0.servicesOnly = servicesOnly
                 $0.volumes = volumes

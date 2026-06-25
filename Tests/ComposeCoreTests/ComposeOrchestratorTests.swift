@@ -7627,6 +7627,7 @@ struct ComposeOrchestratorTests {
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
+                    $0.profiles = ["debug", "dev"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                     $0.networks = ["front"]
                 },
@@ -7636,6 +7637,7 @@ struct ComposeOrchestratorTests {
             ]
         ) {
             $0.environment = ["BETA": "two", "ALPHA": "one"]
+            $0.profiles = ["dev", "debug", "dev"]
             $0.networks = ["front": ComposeNetwork(name: "front"), "back": ComposeNetwork(name: "back")]
             $0.volumes = ["cache": ComposeVolume(name: "cache"), "unused": ComposeVolume(name: "unused")]
             $0.models = ["llm": .object(["model": .string("example/local-llm")])]
@@ -7647,6 +7649,19 @@ struct ComposeOrchestratorTests {
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.servicesOnly = true }) == "api\nworker")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.images = true }) == "demo_worker:latest\nexample/api")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.networks = true }) == "back\nfront")
+        #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.profiles = true }) == "debug\ndev")
+        #expect(try orchestrator.config(project: project, options: ComposeConfigOptions {
+            $0.variables = [
+                ComposeVariable(name: "IMAGE_NAME", defaultValue: "alpine"),
+                ComposeVariable(name: "OPTIONAL", alternateValue: "enabled"),
+                ComposeVariable(name: "REQUIRED", required: true),
+            ]
+        }) == """
+        NAME        REQUIRED  DEFAULT VALUE  ALTERNATE VALUE
+        IMAGE_NAME  false     alpine
+        OPTIONAL    false                    enabled
+        REQUIRED    true
+        """)
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.volumes = true }) == "cache\nunused")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.models = true }) == "llm")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.quiet = true }) == "")

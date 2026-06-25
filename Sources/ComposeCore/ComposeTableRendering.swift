@@ -23,8 +23,12 @@ func renderTable(_ rows: [[String]]) -> String {
         zip(current, row).map { max($0, $1.count) }
     }
     return rows.map { row in
-        row.enumerated().map { index, value in
+        var line = row.enumerated().map { index, value in
             index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
         }.joined(separator: "  ")
+        while line.last == " " {
+            line.removeLast()
+        }
+        return line
     }.joined(separator: "\n")
 }

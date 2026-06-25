@@ -253,6 +253,8 @@ cli-smoke-built:
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--images$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--output$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--environment$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--profiles$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--variables$${ansi_escape}[0m"* ]]; \
 	build_help_output="$$(".build/debug/compose" build --help)"; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
@@ -323,7 +325,7 @@ cli-smoke-built:
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'enabled=true\n' > "$$tmpdir/api.conf"; \
 	printf 'token\n' > "$$tmpdir/api-token.txt"; \
-	printf 'services:\n  api:\n    image: alpine\n    annotations:\n      example.com/owner: platform\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    configs:\n      - source: api_config\n        target: /etc/api.conf\n    secrets:\n      - api_token\n    volumes_from:\n      - db:ro\n    volumes:\n      - /scratch\n      - cache:/cache\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        aliases:\n          - api\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n    volumes:\n      - cache:/db-cache\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\nvolumes:\n  cache:\n    driver: local\n    driver_opts:\n      journal: ordered\n      size: 64m\nconfigs:\n  api_config:\n    file: ./api.conf\nsecrets:\n  api_token:\n    file: ./api-token.txt\n' > "$$tmpdir/compose.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    annotations:\n      example.com/owner: platform\n    depends_on:\n      - db\n    ports:\n      - "8080:80"\n    mac_address: "02:42:ac:11:00:03"\n    configs:\n      - source: api_config\n        target: /etc/api.conf\n    secrets:\n      - api_token\n    volumes_from:\n      - db:ro\n    volumes:\n      - /scratch\n      - cache:/cache\n    dns_opt:\n      - use-vc\n    networks:\n      default:\n        aliases:\n          - api\n        driver_opts:\n          com.docker.network.driver.mtu: "1450"\n  db:\n    image: alpine\n    volumes:\n      - cache:/db-cache\n  debugger:\n    image: alpine\n    profiles:\n      - dev\n      - debug\n  job:\n    image: alpine\n    depends_on:\n      db:\n        condition: service_healthy\n        restart: true\n  shell:\n    image: alpine\n    tty: true\n    stdin_open: true\n  isolated:\n    image: alpine\n    network_mode: none\nnetworks:\n  default:\n    internal: true\n    ipam:\n      config:\n        - subnet: "10.77.0.0/24"\n        - subnet: "fd77::/64"\nvolumes:\n  cache:\n    driver: local\n    driver_opts:\n      journal: ordered\n      size: 64m\nconfigs:\n  api_config:\n    file: ./api.conf\nsecrets:\n  api_token:\n    file: ./api-token.txt\n' > "$$tmpdir/compose.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    ports:\n      - "80"\n' > "$$tmpdir/dynamic-ports.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    attach: false\n' > "$$tmpdir/attach-false.yml"; \
 	mkdir -p "$$tmpdir/src"; \
@@ -342,6 +344,8 @@ cli-smoke-built:
 	printf 'services:\n  api:\n    image: example/api:build\n    build:\n      context: ./api\n      secrets:\n        - source: file_token\n        - source: env_token\n          target: npm_token\nsecrets:\n  file_token:\n    file: ./build-token.txt\n  env_token:\n    environment: NPM_TOKEN\n' > "$$tmpdir/build-secrets.yml"; \
 	printf 'name: inline-build\nservices:\n  api:\n    image: example/api:inline\n    build:\n      context: ./api\n      dockerfile_inline: |\n        FROM alpine:3.20\n        RUN echo inline\n' > "$$tmpdir/build-inline.yml"; \
 	printf 'services:\n  worker:\n    build:\n      context: ./api\n' > "$$tmpdir/build-only.yml"; \
+	printf 'services:\n  api:\n    image: "$${IMAGE_NAME:-alpine}:$${IMAGE_TAG:-3.20}"\n    environment:\n      REQUIRED: "$${REQUIRED?must set}"\n      WHEN_PRESENT: "$${OPTIONAL:+enabled}"\n' > "$$tmpdir/variables.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n' > "$$tmpdir/no-variables.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
@@ -359,6 +363,15 @@ cli-smoke-built:
 	[[ "$$config_images_output" == "alpine" ]]; \
 	config_networks_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --networks)"; \
 	[[ "$$config_networks_output" == "default" ]]; \
+	config_profiles_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --profiles)"; \
+	[[ "$$config_profiles_output" == $$'debug\ndev' ]]; \
+	config_variables_output="$$(".build/debug/compose" -f "$$tmpdir/variables.yml" config --variables)"; \
+	[[ "$$config_variables_output" == *"IMAGE_NAME"*"false"*"alpine"* ]]; \
+	[[ "$$config_variables_output" == *"IMAGE_TAG"*"false"*"3.20"* ]]; \
+	[[ "$$config_variables_output" == *"OPTIONAL"*"false"*"enabled"* ]]; \
+	[[ "$$config_variables_output" == *"REQUIRED"*"true"* ]]; \
+	config_no_variables_output="$$(".build/debug/compose" -f "$$tmpdir/no-variables.yml" config --variables)"; \
+	[[ "$$config_no_variables_output" == "NAME  REQUIRED  DEFAULT VALUE  ALTERNATE VALUE" ]]; \
 	config_volumes_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --volumes)"; \
 	[[ "$$config_volumes_output" == "cache" ]]; \
 	config_hash_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --hash api)"; \
@@ -795,12 +808,15 @@ sonar-scan:
 package: package-release
 
 package-release: PACKAGE_BUILD_CONFIGURATION = release
-package-release: build-release go-build package-built
+package-release: build-release go-build
+	$(MAKE) package-built PACKAGE_BUILD_CONFIGURATION="$(PACKAGE_BUILD_CONFIGURATION)"
 
 package-debug: PACKAGE_BUILD_CONFIGURATION = debug
-package-debug: build go-build package-built
+package-debug: build go-build
+	$(MAKE) package-built PACKAGE_BUILD_CONFIGURATION="$(PACKAGE_BUILD_CONFIGURATION)"
 
 package-built:
+	$(MAKE) go-release-check
 	rm -rf "$(DIST_DIR)"
 	mkdir -p "$(DIST_DIR)/compose/bin" "$(DIST_DIR)/compose/resources"
 	cp ".build/$(PACKAGE_BUILD_CONFIGURATION)/compose" "$(DIST_DIR)/compose/bin/compose"

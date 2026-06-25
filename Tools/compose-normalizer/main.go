@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/cli"
+	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
 )
 
@@ -55,6 +56,7 @@ type normalizedProject struct {
 	WorkingDirectory string                       `json:"workingDirectory"`
 	ComposeFiles     []string                     `json:"composeFiles"`
 	Environment      map[string]string            `json:"environment,omitempty"`
+	Profiles         []string                     `json:"profiles,omitempty"`
 	Services         map[string]normalizedService `json:"services"`
 	Networks         map[string]normalizedNetwork `json:"networks"`
 	Volumes          map[string]normalizedVolume  `json:"volumes"`
@@ -64,11 +66,19 @@ type normalizedProject struct {
 	Extensions       map[string]any               `json:"extensions,omitempty"`
 }
 
+type normalizedVariable struct {
+	Name           string `json:"name"`
+	Required       bool   `json:"required"`
+	DefaultValue   string `json:"defaultValue,omitempty"`
+	AlternateValue string `json:"alternateValue,omitempty"`
+}
+
 // normalizedService contains the Compose service fields Swift can either
 // orchestrate directly or preserve for config output and runtime gap checks.
 type normalizedService struct {
 	Name                    string                              `json:"name"`
 	Image                   string                              `json:"image,omitempty"`
+	Profiles                []string                            `json:"profiles,omitempty"`
 	PullPolicy              string                              `json:"pullPolicy,omitempty"`
 	Platform                string                              `json:"platform,omitempty"`
 	Annotations             map[string]string                   `json:"annotations,omitempty"`
@@ -341,6 +351,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	var envFiles stringList
 	var projectName string
 	var projectDirectory string
+	var variables bool
 
 	flags := flag.NewFlagSet("compose-normalizer", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -349,11 +360,18 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags.Var(&envFiles, "env-file", "Environment file. May be repeated.")
 	flags.StringVar(&projectName, "project-name", "", "Compose project name.")
 	flags.StringVar(&projectDirectory, "project-directory", "", "Project directory.")
+	flags.BoolVar(&variables, "variables", false, "Print model variables as JSON.")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 
-	project, err := loadProject(files, profiles, envFiles, projectName, projectDirectory)
+	var result any
+	var err error
+	if variables {
+		result, err = loadVariables(files, profiles, envFiles, projectName, projectDirectory)
+	} else {
+		result, err = loadProject(files, profiles, envFiles, projectName, projectDirectory)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "compose-normalizer: %v\n", err)
 		return 1
@@ -361,7 +379,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(project); err != nil {
+	if err := encoder.Encode(result); err != nil {
 		fmt.Fprintf(stderr, "compose-normalizer: encode: %v\n", err)
 		return 1
 	}
@@ -416,6 +434,67 @@ func loadProject(files, profiles, envFiles []string, projectName, projectDirecto
 	return normalize(project, projectDirectory), nil
 }
 
+func loadVariables(files, profiles, envFiles []string, projectName, projectDirectory string) ([]normalizedVariable, error) {
+	if projectDirectory == "" {
+		var err error
+		projectDirectory, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	usesDefaultFiles := len(files) == 0
+	options := []cli.ProjectOptionsFn{cli.WithWorkingDirectory(projectDirectory), cli.WithOsEnv}
+	if len(envFiles) > 0 {
+		options = append(options, cli.WithEnvFiles(envFiles...))
+	} else {
+		options = append(options, cli.WithEnvFiles())
+	}
+	options = append(options, cli.WithDotEnv)
+	if usesDefaultFiles {
+		options = append(options, cli.WithConfigFileEnv, cli.WithDefaultConfigPath)
+	}
+	if projectName != "" {
+		options = append(options, cli.WithName(projectName))
+	}
+	if len(profiles) > 0 {
+		options = append(options, cli.WithProfiles(profiles))
+	}
+	options = append(options, cli.WithInterpolation(false))
+
+	projectOptions, err := newProjectOptions(files, projectDirectory, usesDefaultFiles, options...)
+	if err != nil {
+		return nil, err
+	}
+	if len(projectOptions.ConfigPaths) == 0 {
+		return nil, errors.New("no compose file found")
+	}
+
+	model, err := projectOptions.LoadModel(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	extracted := template.ExtractVariables(model, template.DefaultPattern)
+	names := make([]string, 0, len(extracted))
+	for name := range extracted {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	variables := make([]normalizedVariable, 0, len(names))
+	for _, name := range names {
+		variable := extracted[name]
+		variables = append(variables, normalizedVariable{
+			Name:           variable.Name,
+			Required:       variable.Required,
+			DefaultValue:   variable.DefaultValue,
+			AlternateValue: variable.PresenceValue,
+		})
+	}
+	return variables, nil
+}
+
 // newProjectOptions applies compose-go options from the Compose project
 // directory when default file discovery is active. That keeps COMPOSE_FILE
 // paths from .env aligned between installed helpers and source-checkout go run.
@@ -441,11 +520,14 @@ func newProjectOptions(files []string, projectDirectory string, usesDefaultFiles
 // normalize copies the compose-go project into the stable JSON shape consumed
 // by Swift orchestration.
 func normalize(project *types.Project, projectDirectory string) *normalizedProject {
+	profiles := project.AllServices().GetProfiles()
+	sort.Strings(profiles)
 	result := &normalizedProject{
 		Name:             project.Name,
 		WorkingDirectory: projectDirectory,
 		ComposeFiles:     append([]string(nil), project.ComposeFiles...),
 		Environment:      mapStringValues(project.Environment),
+		Profiles:         profiles,
 		Services:         map[string]normalizedService{},
 		Networks:         map[string]normalizedNetwork{},
 		Volumes:          map[string]normalizedVolume{},
@@ -497,6 +579,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 	result := normalizedService{
 		Name:                    service.Name,
 		Image:                   service.Image,
+		Profiles:                append([]string(nil), service.Profiles...),
 		PullPolicy:              service.PullPolicy,
 		Platform:                service.Platform,
 		Annotations:             mapMapping(service.Annotations),

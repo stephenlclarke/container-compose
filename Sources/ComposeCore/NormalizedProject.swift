@@ -22,6 +22,7 @@ public struct ComposeProject: Codable, Equatable {
     public var workingDirectory: String = FileManager.default.currentDirectoryPath
     public var composeFiles: [String] = []
     public var environment: [String: String] = [:]
+    public var profiles: [String] = []
     public var services: [String: ComposeService]
     public var networks: [String: ComposeNetwork] = [:]
     public var volumes: [String: ComposeVolume] = [:]
@@ -42,6 +43,7 @@ public struct ComposeProject: Codable, Equatable {
             ?? FileManager.default.currentDirectoryPath
         composeFiles = try container.decodeIfPresent([String].self, forKey: .composeFiles) ?? []
         environment = try container.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        profiles = try container.decodeIfPresent([String].self, forKey: .profiles) ?? []
         services = try container.decode([String: ComposeService].self, forKey: .services)
         networks = try container.decodeIfPresent([String: ComposeNetwork].self, forKey: .networks) ?? [:]
         volumes = try container.decodeIfPresent([String: ComposeVolume].self, forKey: .volumes) ?? [:]
@@ -70,6 +72,7 @@ public struct ComposeProject: Codable, Equatable {
         case workingDirectory
         case composeFiles
         case environment
+        case profiles
         case services
         case networks
         case volumes
@@ -77,6 +80,28 @@ public struct ComposeProject: Codable, Equatable {
         case secrets
         case models
         case extensions
+    }
+}
+
+public struct ComposeVariable: Codable, Equatable, Sendable {
+    public var name: String
+    public var required: Bool
+    public var defaultValue: String
+    public var alternateValue: String
+
+    public init(name: String, required: Bool = false, defaultValue: String = "", alternateValue: String = "") {
+        self.name = name
+        self.required = required
+        self.defaultValue = defaultValue
+        self.alternateValue = alternateValue
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+        defaultValue = try container.decodeIfPresent(String.self, forKey: .defaultValue) ?? ""
+        alternateValue = try container.decodeIfPresent(String.self, forKey: .alternateValue) ?? ""
     }
 }
 
@@ -180,6 +205,7 @@ public struct ComposeBlkioThrottleDevice: Codable, Equatable {
 public struct ComposeService: Codable, Equatable {
     public var name: String
     public var image: String? = nil
+    public var profiles: [String]? = nil
     public var pullPolicy: String? = nil
     public var platform: String? = nil
     public var annotations: [String: String]? = nil
@@ -287,6 +313,7 @@ public struct ComposeService: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case name
         case image
+        case profiles
         case pullPolicy
         case platform
         case annotations

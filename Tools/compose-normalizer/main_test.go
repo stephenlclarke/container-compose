@@ -77,6 +77,71 @@ services:
 	}
 }
 
+func TestRunWritesVariablesJSON(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: "${IMAGE_NAME:-alpine}:${IMAGE_TAG:-3.20}"
+    environment:
+      REQUIRED: "${REQUIRED?must set}"
+      WHEN_PRESENT: "${OPTIONAL:+enabled}"
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--variables", "--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var variables []normalizedVariable
+	if err := json.Unmarshal(stdout.Bytes(), &variables); err != nil {
+		t.Fatalf("decode variables JSON: %v", err)
+	}
+	want := []normalizedVariable{
+		{Name: "IMAGE_NAME", DefaultValue: "alpine"},
+		{Name: "IMAGE_TAG", DefaultValue: "3.20"},
+		{Name: "OPTIONAL", AlternateValue: "enabled"},
+		{Name: "REQUIRED", Required: true},
+	}
+	if !reflect.DeepEqual(variables, want) {
+		t.Fatalf("variables = %#v, want %#v", variables, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunWritesEmptyVariablesArray(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: alpine
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--variables", "--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var variables []normalizedVariable
+	if err := json.Unmarshal(stdout.Bytes(), &variables); err != nil {
+		t.Fatalf("decode variables JSON: %v", err)
+	}
+	if len(variables) != 0 {
+		t.Fatalf("variables = %#v, want empty", variables)
+	}
+	if !strings.HasPrefix(stdout.String(), "[]") {
+		t.Fatalf("variables JSON = %q, want empty JSON array", stdout.String())
+	}
+}
+
 func TestRunReportsFlagAndLoadErrors(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -1418,6 +1483,12 @@ services:
 	if project.Name != "custom" {
 		t.Fatalf("project.Name = %q, want custom", project.Name)
 	}
+	if got, want := project.Profiles, []string{"dev"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("project.Profiles = %#v, want %#v", got, want)
+	}
+	if got, want := api.Profiles, []string{"dev"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Profiles = %#v, want %#v", got, want)
+	}
 	if api.Build == nil {
 		t.Fatal("api.Build is nil")
 	}
@@ -1478,6 +1549,40 @@ services:
 	}
 	if api.MemLimit == "" {
 		t.Fatal("MemLimit is empty")
+	}
+}
+
+func TestLoadProjectReportsProfilesFromDisabledServices(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  base:
+    image: alpine
+  api:
+    image: alpine
+    profiles: ["dev", "debug"]
+  worker:
+    image: alpine
+    profiles: ["debug"]
+`)
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	if got, want := project.Profiles, []string{"debug", "dev"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("project.Profiles = %#v, want %#v", got, want)
+	}
+	if _, ok := project.Services["base"]; !ok {
+		t.Fatal("base service is missing")
+	}
+	if _, ok := project.Services["api"]; ok {
+		t.Fatal("api service is active without profile selection")
+	}
+	if _, ok := project.Services["worker"]; ok {
+		t.Fatal("worker service is active without profile selection")
 	}
 }
 

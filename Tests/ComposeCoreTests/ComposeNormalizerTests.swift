@@ -1021,6 +1021,33 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
+    @Test("normalizer decodes model variables")
+    func normalizerDecodesModelVariables() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"[{"name":"IMAGE_NAME","required":false,"defaultValue":"alpine"},{"name":"REQUIRED","required":true}]"#,
+                stderr: ""
+            ),
+        ])
+
+        let variables = try await ComposeNormalizer(runner: runner).variables(options: ComposeOptions(
+            files: ["compose.yml"],
+            projectName: "demo",
+            projectDirectory: "/tmp/demo"
+        ))
+
+        #expect(variables == [
+            ComposeVariable(name: "IMAGE_NAME", defaultValue: "alpine"),
+            ComposeVariable(name: "REQUIRED", required: true),
+        ])
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--variables"))
+        #expect(command.arguments.containsSequence(["--file", "compose.yml"]))
+        #expect(command.arguments.containsSequence(["--project-name", "demo"]))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
     @Test("normalizer forwards inferred project directory")
     func normalizerForwardsInferredProjectDirectory() async throws {
         let runner = RecordingRunner(responses: [
