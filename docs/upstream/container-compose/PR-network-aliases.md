@@ -42,7 +42,7 @@ References:
 - Appended aliases to the single `--network` attachment argument before MAC and MTU options in the current command-vector bridge.
 - Added positive `up` and one-off `run` tests for alias rendering.
 - Added negative tests for invalid aliases and aliases declared on unattached networks.
-- Updated `DOCKER-COMPOSE-PARITY.md`, `PLAN.md`, and `STATUS.md`.
+- Updated `PLAN.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -74,7 +74,7 @@ git diff --check
 
 ## container-compose Checks
 
-- [x] I updated `DOCKER-COMPOSE-PARITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.

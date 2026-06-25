@@ -79,11 +79,11 @@ container run --volume <state>/configs/inline_config-<hash>:/etc/inline.conf:ro 
 
 - Docker Compose configs: [configs](https://docs.docker.com/reference/compose-file/configs/)
 - Docker Compose secrets: [secrets](https://docs.docker.com/reference/compose-file/secrets/)
-- Related compatibility docs: `DOCKER-COMPOSE-PARITY.md`
+- Related compatibility docs: `STATUS.md`
 - Related plan docs: `PLAN.md`
 
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
-- [x] I checked `DOCKER-COMPOSE-PARITY.md`.
+- [x] I checked `STATUS.md`.
 - [x] I checked `PLAN.md`.

@@ -27,8 +27,7 @@ The CLI accepts the Docker Compose 5.2.0 command and option surface, including
 help output. Help color-codes command, subcommand, and option support status:
 green for supported, orange for partially supported, and red for not supported;
 use `--ansi never` for plain output. Commands or option modes that do not yet
-have backing `apple/container` functionality print `Not implemented yet` or
-keep the runtime gap documented in [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md).
+have backing `apple/container` functionality print `Not implemented yet`.
 
 ## Documentation
 
@@ -36,8 +35,8 @@ keep the runtime gap documented in [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PAR
 - [BRANCHES.md](BRANCHES.md): choose the matching `main` or `develop` lane across `container-compose` and the `container` fork.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
-- [DOCKER-COMPOSE-PARITY.md](DOCKER-COMPOSE-PARITY.md): review Docker-backed parity evidence and known compatibility gaps.
-- [STATUS.md](STATUS.md): get the current runtime fork, active slab, blockers, and handoff state.
+- [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.
+- [STATUS.md](STATUS.md): get the current branch lanes, blockers, and validation handoff.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.
 - [SECURITY.md](SECURITY.md): report security issues.

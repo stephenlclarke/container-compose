@@ -38,7 +38,7 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 - Built a deterministic host-entry projection shared by service containers and one-off `run` containers.
 - Appended `--add-host` arguments in the command-vector bridge while typed service creation is being wired.
 - Extended Swift and Go normalizer tests to cover compose-go canonical `extra_hosts` output.
-- Updated `DOCKER-COMPOSE-PARITY.md`, `PLAN.md`, and `STATUS.md`.
+- Updated `PLAN.md` and `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 
@@ -72,7 +72,7 @@ Result: `make check` passed; `make coverage-check` passed with Swift coverage at
 
 ## container-compose Checks
 
-- [x] I updated `DOCKER-COMPOSE-PARITY.md` for runtime primitive changes, or no update is needed.
+- [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
 - [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.
