@@ -300,6 +300,9 @@ cli-smoke-built:
 	start_help_output="$$(".build/debug/compose" start --help)"; \
 	[[ "$$start_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
 	[[ "$$start_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
+	top_help_output="$$(".build/debug/compose" top --help)"; \
+	[[ "$$top_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$top_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	kill_help_output="$$(".build/debug/compose" kill --help)"; \
 	[[ "$$kill_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
 	version_help_output="$$(".build/debug/compose" version --help)"; \
@@ -767,9 +770,8 @@ cli-smoke-built:
 	[[ "$$ls_json_output" != *"--all"* ]]; \
 	ls_all_output="$$(".build/debug/compose" --dry-run ls --all --filter name=demo)"; \
 	[[ "$$ls_all_output" == *"container list --format json --all"* ]]; \
-	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api 2>&1 || true)"; \
-	[[ "$$top_output" == *"unsupported compose feature: top:"* ]]; \
-	[[ "$$top_output" == *"apple/container does not expose a process-list command yet"* ]]; \
+	top_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" top api)"; \
+	[[ "$$top_output" == *"+ compose-runtime top demo-api-1"* ]]; \
 	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json)"; \
 	[[ "$$events_output" == *"+ container events"* ]]; \
 	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 80)"; \

@@ -170,7 +170,7 @@ enum ComposeCLIHelp {
         "start": .partiallySupported,
         "stats": .partiallySupported,
         "stop": .partiallySupported,
-        "top": .notSupported,
+        "top": .supported,
         "unpause": .supported,
         "up": .partiallySupported,
         "version": .supported,
@@ -442,6 +442,9 @@ enum ComposeCLIHelp {
         "stop": [
             "--dry-run": .supported,
             "--timeout": .supported,
+        ],
+        "top": [
+            "--dry-run": .supported,
         ],
         "up": [
             "--abort-on-container-exit": .notSupported,
