@@ -199,14 +199,16 @@ jobs:
       - name: Install Swift style tools
         env:
           HOMEBREW_NO_ENV_HINTS: "1"
-          HOMEBREW_REQUIRE_TAP_TRUST: "1"
         run: |
           set -euo pipefail
+          for tap in aws/tap azure/bicep; do
+            HOMEBREW_NO_REQUIRE_TAP_TRUST=1 brew untap "$tap" >/dev/null 2>&1 || true
+          done
           if ! command -v swiftlint >/dev/null 2>&1; then
-            brew install swiftlint
+            HOMEBREW_REQUIRE_TAP_TRUST=1 brew install swiftlint
           fi
           if ! command -v swiftformat >/dev/null 2>&1; then
-            brew install swiftformat
+            HOMEBREW_REQUIRE_TAP_TRUST=1 brew install swiftformat
           fi
           swiftlint version
           swiftformat --version
