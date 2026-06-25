@@ -21,12 +21,10 @@ on:
     branches:
       - main
       - develop
-      - regression
   pull_request:
     branches:
       - main
       - develop
-      - regression
     types:
       - opened
       - synchronize

@@ -29,7 +29,6 @@ The current integration stack still pins [`stephenlclarke/containerization`](htt
 | --- | --- |
 | `main` | Default repository branch and public stable lane. It may require the matching `stephenlclarke/container` `main` branch when the promoted plugin snapshot depends on fork-backed runtime primitives. |
 | `apple-container-compatible` | Upstream-only compatibility branch for users who want behavior available from released or accepted [`apple/container`](https://github.com/apple/container) primitives. |
-| `regression` | Short-lived upstream compatibility, dependency, CodeQL, and canary work. It should stay close to `main` or `develop` depending on the issue being checked. |
 
 Do not maintain extra frozen branches. Future promotions should move validated `develop` snapshots into `main`.
 
@@ -39,7 +38,7 @@ Do not maintain extra frozen branches. Future promotions should move validated `
 | --- | --- | --- |
 | `compose-v2-preview` | Legacy preview archive | Preserves older preview harness and handoff state. Do not treat this as the current compatibility target. |
 
-The former broad `logs-integration`, `logs-integration-chris`, `full-compose-preview`, and `full-compose-runtime` branches have been folded into the current `develop` / `main` lane model or deleted as stale archives. Historical handoff notes may still mention those names when they identify where a slice originally came from, but new work should not target them.
+The former `regression` canary branch and the former broad `logs-integration`, `logs-integration-chris`, `full-compose-preview`, and `full-compose-runtime` branches have been folded into the current `develop` / `main` lane model or deleted as stale archives. Historical handoff notes may still mention those names when they identify where a slice originally came from, but new work should not target them.
 
 ## Upstreaming Rule
 
