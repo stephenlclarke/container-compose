@@ -16,7 +16,7 @@
       "location" : "https://github.com/stephenlclarke/containerization.git",
       "state" : {
         "branch" : "integration/blkio-runtime",
-        "revision" : "650eb6888d5b6f067a2b30cf99a0d9bfed5351b8"
+        "revision" : "428ef88d0c432f1f1812c9fe92a2ce25124a99f8"
       }
     },
     {
