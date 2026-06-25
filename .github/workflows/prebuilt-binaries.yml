@@ -1,0 +1,168 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Prebuilt Binaries
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prebuilt-binaries-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package ${{ github.ref_name }}
+    if: >
+      github.repository == 'stephenlclarke/container-compose' &&
+      (github.event_name != 'push' ||
+       !startsWith(github.event.head_commit.message, 'chore(homebrew): refresh prebuilt formula metadata'))
+    runs-on: macos-26
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v6
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Read container ref
+        id: container-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(
+            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
+          )"
+          if [[ -z "$ref" ]]; then
+            printf 'APPLE_CONTAINER_REF is empty\n' >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout container dependency
+        uses: actions/checkout@v6
+        with:
+          repository: stephenlclarke/container
+          path: container
+          ref: ${{ steps.container-ref.outputs.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Select package lane
+        id: lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_NAME}" in
+            main)
+              printf 'target=package-release\n' >> "$GITHUB_OUTPUT"
+              printf 'asset=container-compose-plugin-main-release-arm64.tar.gz\n' >> "$GITHUB_OUTPUT"
+              printf 'release_name=Homebrew main release prebuilt\n' >> "$GITHUB_OUTPUT"
+              ;;
+            develop)
+              printf 'target=package-debug\n' >> "$GITHUB_OUTPUT"
+              printf 'asset=container-compose-plugin-develop-debug-arm64.tar.gz\n' >> "$GITHUB_OUTPUT"
+              printf 'release_name=Homebrew develop debug prebuilt\n' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              printf 'Unsupported branch for prebuilt packaging: %s\n' "${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Build package
+        run: make "${{ steps.lane.outputs.target }}" PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
+        working-directory: container-compose
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.lane.outputs.asset }}
+          path: |
+            ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
+            ${{ runner.temp }}/${{ steps.lane.outputs.asset }}.sha256
+
+      - name: Publish branch release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ steps.lane.outputs.asset }}
+          RELEASE_NAME: ${{ steps.lane.outputs.release_name }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          tag="homebrew-${GITHUB_REF_NAME}"
+          notes="$(mktemp)"
+          {
+            printf '%s\n\n' "${RELEASE_NAME}"
+            printf 'Branch: %s\n' "${GITHUB_REF_NAME}"
+            printf 'Commit: %s\n' "${GITHUB_SHA}"
+            printf 'Build configuration: %s\n' "$([[ "${GITHUB_REF_NAME}" == "main" ]] && printf release || printf debug)"
+          } > "$notes"
+
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --target "$GITHUB_SHA" \
+              --title "${RELEASE_NAME}" \
+              --notes-file "$notes" \
+              --prerelease
+          else
+            gh release edit "$tag" \
+              --title "${RELEASE_NAME}" \
+              --notes-file "$notes" \
+              --prerelease
+          fi
+
+          gh release upload "$tag" \
+            "${RUNNER_TEMP}/${ASSET}" \
+            "${RUNNER_TEMP}/${ASSET}.sha256" \
+            --clobber
+
+      - name: Refresh formula metadata
+        env:
+          ASSET: ${{ steps.lane.outputs.asset }}
+          CONFIGURATION: ${{ github.ref_name == 'main' && 'release' || 'debug' }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          sha="$(
+            shasum -a 256 "${RUNNER_TEMP}/${ASSET}" | awk '{ print $1 }'
+          )"
+          version="${GITHUB_REF_NAME}-${CONFIGURATION}-${GITHUB_SHA:0:12}"
+          SHA256="$sha" FORMULA_VERSION="$version" ruby -0777 -i -pe 'gsub(/sha256 (?::no_check|"[0-9a-f]{64}")/, "sha256 \"#{ENV.fetch("SHA256")}\""); gsub(/version "[^"]+"/, "version \"#{ENV.fetch("FORMULA_VERSION")}\"")' Formula/container-compose.rb
+
+          if git diff --quiet -- Formula/container-compose.rb; then
+            printf 'Formula metadata already current.\n'
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/container-compose.rb
+          git commit -m "chore(homebrew): refresh prebuilt formula metadata"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

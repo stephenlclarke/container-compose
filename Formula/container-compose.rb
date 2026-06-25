@@ -1,33 +1,18 @@
 class ContainerCompose < Formula
   desc "Docker Compose style plugin for Apple's container CLI"
   homepage "https://github.com/stephenlclarke/container-compose"
+  url "https://github.com/stephenlclarke/container-compose/releases/download/homebrew-main/container-compose-plugin-main-release-arm64.tar.gz"
+  sha256 :no_check
+  version "main-release"
   license "Apache-2.0"
-  head "https://github.com/stephenlclarke/container-compose.git", branch: "release"
 
   depends_on "container"
-  depends_on "go" => :build
-  depends_on xcode: ["26.0", :build]
   depends_on arch: :arm64
   depends_on macos: :sequoia
 
-  resource "container" do
-    url "https://github.com/stephenlclarke/container/archive/7c761e0ab4db9ba74715ca8615fcf1fd7c9cdfab.tar.gz"
-    sha256 "7f49354d4c948f1d90ea2c2bad62c4d64f4c5b09837d9ee55c671dd2e20aa74d"
-  end
-
   def install
-    resource("container").stage buildpath.parent/"container"
-
-    system "swift", "build", "--disable-sandbox", "--configuration", "release", "--product", "compose"
-
-    cd "Tools/compose-normalizer" do
-      system "go", "build", "-o", "compose-normalizer", "."
-    end
-
     plugin = libexec/"container-plugins/compose"
-    (plugin/"bin").install ".build/release/compose"
-    plugin.install "config.toml"
-    (plugin/"resources").install "Tools/compose-normalizer/compose-normalizer"
+    plugin.install Dir["compose/*"]
 
     bin.install_symlink plugin/"bin/compose" => "container-compose"
   end
@@ -43,8 +28,8 @@ class ContainerCompose < Formula
         ln -sfn "#{opt_libexec}/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
         brew services restart container
 
-      This formula builds against stephenlclarke/container at:
-        7c761e0ab4db9ba74715ca8615fcf1fd7c9cdfab
+      This formula installs the main release prebuilt release asset:
+        container-compose-plugin-main-release-arm64.tar.gz
     EOS
   end
 
