@@ -472,6 +472,23 @@ public struct ComposeStartOptions {
     }
 }
 
+/// Options for `compose restart`.
+public struct ComposeRestartOptions {
+    public var services: [String] = []
+    public var noDeps = false
+    public var timeout: Int?
+
+    public init() {
+        services = []
+        noDeps = false
+        timeout = nil
+    }
+
+    public init(_ configure: (inout ComposeRestartOptions) -> Void) {
+        configure(&self)
+    }
+}
+
 /// Options for `compose config`.
 public struct ComposeConfigOptions {
     public var services: [String] = []
@@ -2514,8 +2531,31 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Restarts selected service containers.
     public func restart(project: ComposeProject, services selected: [String], timeout: Int? = nil) async throws {
-        try await stop(project: project, services: selected, timeout: timeout)
-        try await start(project: project, services: selected)
+        try await restart(project: project, options: ComposeRestartOptions {
+            $0.services = selected
+            $0.timeout = timeout
+        })
+    }
+
+    /// Restarts selected service containers, including dependencies unless disabled.
+    public func restart(project: ComposeProject, options restart: ComposeRestartOptions) async throws {
+        try validateTimeoutSeconds(restart.timeout, command: "restart")
+        let services = try restart.noDeps && !restart.services.isEmpty
+            ? selectedServices(project: project, selected: restart.services)
+            : orderedServices(project: project, selected: restart.services)
+        for service in services.reversed() where service.provider != nil {
+            _ = try await runProvider(project: project, service: service, action: .stop)
+        }
+        for service in services.reversed() {
+            for target in try await serviceContainerTargets(project: project, services: [service]) {
+                try await stopContainer(service: target.service, containerName: target.name, timeout: restart.timeout)
+            }
+        }
+        for service in services {
+            for target in try await serviceContainerTargets(project: project, services: [service]) {
+                try await startContainer(service: target.service, containerName: target.name)
+            }
+        }
     }
 
     /// Removes selected service containers.

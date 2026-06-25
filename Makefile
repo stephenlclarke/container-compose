@@ -717,8 +717,15 @@ cli-smoke-built:
 	[[ "$$stop_compact_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	restart_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t 13 api)"; \
 	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-db-1"* ]]; \
+	[[ "$$restart_timeout_output" == *"container start demo-db-1"* ]]; \
+	[[ "$$restart_timeout_output" == *"container start demo-api-1"* ]]; \
 	restart_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t13 api)"; \
 	[[ "$$restart_compact_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	restart_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart --no-deps -t 13 api)"; \
+	[[ "$$restart_no_deps_output" == *"container stop --time 13 demo-api-1"* ]]; \
+	[[ "$$restart_no_deps_output" == *"container start demo-api-1"* ]]; \
+	[[ "$$restart_no_deps_output" != *"demo-db-1"* ]]; \
 	kill_compact_signal_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo kill -sSIGKILL api)"; \
 	[[ "$$kill_compact_signal_output" == *"container kill --signal SIGKILL demo-api-1"* ]]; \
 	kill_remove_orphans_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo kill --remove-orphans api)"; \

@@ -1090,7 +1090,14 @@ struct Restart: AsyncParsableCommand, ComposeProjectCommand {
     /// Restarts selected service containers.
     func run() async throws {
         let loadedProject = try await project()
-        try await orchestrator().restart(project: loadedProject, services: services, timeout: timeout)
+        try await orchestrator().restart(
+            project: loadedProject,
+            options: ComposeRestartOptions {
+                $0.services = services
+                $0.noDeps = noDeps
+                $0.timeout = timeout
+            }
+        )
     }
 }
 

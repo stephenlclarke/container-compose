@@ -9108,6 +9108,46 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("restart includes dependencies unless no-deps is set")
+    func restartIncludesDependenciesUnlessNoDepsIsSet() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            lifecycleManager: lifecycleManager
+        ).restart(project: project, services: ["api"])
+
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+            .start(id: "demo-db-1"),
+            .start(id: "demo-api-1"),
+        ])
+
+        let noDepsLifecycleManager = RecordingContainerLifecycleManager()
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            lifecycleManager: noDepsLifecycleManager
+        ).restart(project: project, options: ComposeRestartOptions {
+            $0.services = ["api"]
+            $0.noDeps = true
+        })
+
+        #expect(await noDepsLifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .start(id: "demo-api-1"),
+        ])
+    }
+
     @Test("lifecycle hooks render exec commands in dry run")
     func lifecycleHooksRenderExecCommandsInDryRun() async throws {
         let emitted = MessageRecorder()
