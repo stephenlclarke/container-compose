@@ -141,28 +141,3 @@ jobs:
             "${RUNNER_TEMP}/${ASSET}" \
             "${RUNNER_TEMP}/${ASSET}.sha256" \
             --clobber
-
-      - name: Refresh formula metadata
-        env:
-          ASSET: ${{ steps.lane.outputs.asset }}
-          CONFIGURATION: ${{ github.ref_name == 'main' && 'release' || 'debug' }}
-        shell: bash
-        working-directory: container-compose
-        run: |
-          set -euo pipefail
-          sha="$(
-            shasum -a 256 "${RUNNER_TEMP}/${ASSET}" | awk '{ print $1 }'
-          )"
-          version="${GITHUB_REF_NAME}-${CONFIGURATION}-${GITHUB_SHA:0:12}"
-          SHA256="$sha" FORMULA_VERSION="$version" ruby -0777 -i -pe 'gsub(/sha256 (?::no_check|"[0-9a-f]{64}")/, "sha256 \"#{ENV.fetch("SHA256")}\""); gsub(/version "[^"]+"/, "version \"#{ENV.fetch("FORMULA_VERSION")}\"")' Formula/container-compose.rb
-
-          if git diff --quiet -- Formula/container-compose.rb; then
-            printf 'Formula metadata already current.\n'
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/container-compose.rb
-          git commit -m "chore(homebrew): refresh prebuilt formula metadata"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
