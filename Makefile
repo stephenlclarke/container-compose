@@ -119,14 +119,14 @@ swift-coverage: swift-test
 		exit 2; \
 	fi; \
 	if [[ -z "$$profile" ]]; then \
-		mapfile -t raw_profiles < <(find .build -name '*.profraw' -type f); \
-		if [[ "$${#raw_profiles[@]}" -eq 0 ]]; then \
+		raw_profiles="$$(find .build -name '*.profraw' -type f)"; \
+		if [[ -z "$$raw_profiles" ]]; then \
 			printf 'Swift coverage profile is missing and no raw .profraw files were found\n' >&2; \
 			exit 2; \
 		fi; \
 		mkdir -p .build/codecov; \
 		profile=".build/codecov/fallback.profdata"; \
-		"$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile" "$${raw_profiles[@]}"; \
+		"$(SWIFT_LLVM_PROFDATA)" merge -sparse -o "$$profile" $$raw_profiles; \
 	fi; \
 	"$(SWIFT_LLVM_COV)" export \
 		-format=lcov \
