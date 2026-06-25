@@ -604,6 +604,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 $0.timeout = timeout
                 $0.wait = wait
                 $0.waitTimeout = waitTimeout
+                $0.renewAnonymousVolumes = renewAnonVolumes
             }
         )
     }

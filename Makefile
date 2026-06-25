@@ -290,6 +290,7 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--no-color$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--renew-anon-volumes$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[38;5;208m--yes$${ansi_escape}[0m"* ]]; \
@@ -563,6 +564,13 @@ cli-smoke-built:
 	[[ "$$up_wait_output" == *"compose-runtime wait-running --timeout 3 demo-api-1"* ]]; \
 	up_wait_no_start_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --wait --no-start api 2>&1 || true)"; \
 	[[ "$$up_wait_no_start_output" == *"invalid compose project: --wait and --no-start are incompatible"* ]]; \
+	up_renew_anon_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-volumes.yml" up --renew-anon-volumes --scale api=2 api)"; \
+	[[ "$$up_renew_anon_output" == *"container volume delete demo_anon-api-1-"* ]]; \
+	[[ "$$up_renew_anon_output" == *"container volume delete demo_anon-api-2-"* ]]; \
+	[[ "$$up_renew_anon_output" == *"--name demo-api-1"* ]]; \
+	[[ "$$up_renew_anon_output" == *"--name demo-api-2 --detach"* ]]; \
+	up_renew_no_recreate_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-volumes.yml" up --renew-anon-volumes --no-recreate api 2>&1 || true)"; \
+	[[ "$$up_renew_no_recreate_output" == *"invalid compose project: --no-recreate and --renew-anon-volumes are incompatible"* ]]; \
 	up_build_no_build_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" up --build --no-build worker 2>&1 || true)"; \
 	[[ "$$up_build_no_build_output" == *"invalid compose project: --build and --no-build are incompatible"* ]]; \
 	up_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale.yml" up --scale worker=2 worker)"; \

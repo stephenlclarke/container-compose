@@ -427,6 +427,7 @@ public struct ComposeUpOptions {
     public var timeout: Int?
     public var wait = false
     public var waitTimeout: Int?
+    public var renewAnonymousVolumes = false
 
     public init() {
         services = []
@@ -446,6 +447,7 @@ public struct ComposeUpOptions {
         timeout = nil
         wait = false
         waitTimeout = nil
+        renewAnonymousVolumes = false
     }
 
     public init(_ configure: (inout ComposeUpOptions) -> Void) {
@@ -518,6 +520,7 @@ public struct ComposeCreateOptions {
     public var noDeps = false
     public var quietBuild = false
     public var quietPull = false
+    public var renewAnonymousVolumes = false
 
     public init() {
         services = []
@@ -531,6 +534,7 @@ public struct ComposeCreateOptions {
         noDeps = false
         quietBuild = false
         quietPull = false
+        renewAnonymousVolumes = false
     }
 
     public init(_ configure: (inout ComposeCreateOptions) -> Void) {
@@ -1145,6 +1149,7 @@ private struct ServiceContainerReconcileRequest {
     var imageHealthCheckCache: ComposeImageHealthCheckCache?
     var forceRecreate: Bool
     var noRecreate: Bool
+    var renewAnonymousVolumes: Bool
     var dependencyRecreateServices: Set<String>
     var recreateTimeout: Int?
     var delayBeforeRecreate: Bool = false
@@ -1499,6 +1504,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                             imageHealthCheckCache: imageHealthCheckCache,
                             forceRecreate: up.forceRecreate,
                             noRecreate: up.noRecreate,
+                            renewAnonymousVolumes: up.renewAnonymousVolumes,
                             dependencyRecreateServices: dependencyRecreateServices,
                             recreateTimeout: up.timeout,
                             delayBeforeRecreate: priorReplicaRecreated
@@ -1563,6 +1569,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 return .unchanged
             }
             if !request.forceRecreate,
+               !request.renewAnonymousVolumes,
                !request.dependencyRecreateServices.contains(service.name),
                existing.configHash == (try configHash(
                    project: project,
@@ -1577,6 +1584,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await stopContainer(service: service, containerName: name, timeout: request.recreateTimeout)
             try await deleteContainer(name)
             didRecreate = true
+        }
+        if request.renewAnonymousVolumes {
+            try await removeExistingAnonymousVolumes(
+                project: project,
+                target: ServiceContainerTarget(
+                    service: service,
+                    index: request.runOptions.containerIndex ?? 1,
+                    name: name
+                )
+            )
         }
 
         try await runContainer(try await runArguments(
@@ -1696,6 +1713,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                             imageHealthCheckCache: imageHealthCheckCache,
                             forceRecreate: create.forceRecreate,
                             noRecreate: create.noRecreate,
+                            renewAnonymousVolumes: create.renewAnonymousVolumes,
                             dependencyRecreateServices: dependencyRecreateServices,
                             recreateTimeout: recreateTimeout,
                             delayBeforeRecreate: priorReplicaRecreated
@@ -1737,6 +1755,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             $0.noDeps = up.noDeps
             $0.quietBuild = up.quietBuild
             $0.quietPull = up.quietPull
+            $0.renewAnonymousVolumes = up.renewAnonymousVolumes
         }
     }
 
@@ -5588,6 +5607,9 @@ private extension ComposeOrchestrator {
         if options.wait, options.noStart {
             throw ComposeError.invalidProject("--wait and --no-start are incompatible")
         }
+        if options.noRecreate, options.renewAnonymousVolumes {
+            throw ComposeError.invalidProject("--no-recreate and --renew-anon-volumes are incompatible")
+        }
         if options.forceRecreate, options.noRecreate {
             throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
         }
@@ -5600,6 +5622,9 @@ private extension ComposeOrchestrator {
     func validateCreateOptions(_ options: ComposeCreateOptions) throws {
         if options.build, options.noBuild {
             throw ComposeError.invalidProject("--build and --no-build are incompatible")
+        }
+        if options.noRecreate, options.renewAnonymousVolumes {
+            throw ComposeError.invalidProject("--no-recreate and --renew-anon-volumes are incompatible")
         }
         if options.forceRecreate, options.noRecreate {
             throw ComposeError.invalidProject("--force-recreate and --no-recreate are incompatible")
@@ -7308,6 +7333,25 @@ private extension ComposeOrchestrator {
             }
         }
         return Array(Set(names)).sorted()
+    }
+
+    /// Removes existing anonymous volume names for one service container target.
+    func removeExistingAnonymousVolumes(project: ComposeProject, target: ServiceContainerTarget) async throws {
+        let names = try anonymousVolumeRuntimeNames(project: project, targets: [target])
+        guard !names.isEmpty else {
+            return
+        }
+        if options.dryRun {
+            for name in names {
+                try await runContainer(["volume", "delete", name], check: false)
+            }
+            return
+        }
+        let existingVolumes = try await resourceManager.listVolumes()
+        let existingNames = Set(existingVolumes.map(\.name))
+        for name in names where existingNames.contains(name) {
+            try await resourceManager.deleteVolume(name: name)
+        }
     }
 
     /// Returns the project-scoped name used for an anonymous Compose service

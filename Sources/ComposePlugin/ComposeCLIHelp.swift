@@ -466,7 +466,7 @@ enum ComposeCLIHelp {
             "--quiet-build": .supported,
             "--quiet-pull": .supported,
             "--remove-orphans": .supported,
-            "--renew-anon-volumes": .notSupported,
+            "--renew-anon-volumes": .supported,
             "--scale": .supported,
             "--timeout": .supported,
             "--timestamps": .notSupported,

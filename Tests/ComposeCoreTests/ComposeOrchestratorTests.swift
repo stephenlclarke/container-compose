@@ -2015,6 +2015,13 @@ struct ComposeOrchestratorTests {
                 },
                 "--wait and --no-start are incompatible"
             ),
+            (
+                ComposeUpOptions {
+                    $0.noRecreate = true
+                    $0.renewAnonymousVolumes = true
+                },
+                "--no-recreate and --renew-anon-volumes are incompatible"
+            ),
         ]
 
         for testCase in incompatibleOptionCases {
@@ -2286,6 +2293,58 @@ struct ComposeOrchestratorTests {
         #expect(!commands[1].contains { $0.hasPrefix("demo_anon-api-1-") })
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
         #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("up renew anonymous volumes recreates matching containers")
+    func upRenewAnonymousVolumesRecreatesMatchingContainers() async throws {
+        let project = ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
+            $0.volumes = [
+                ComposeMount(type: "volume", target: "/scratch"),
+            ]
+        }])
+        let createRunner = RecordingRunner(responses: [.success])
+        let createDiscovery = RecordingContainerDiscoveryManager()
+
+        try await ComposeOrchestrator(runner: createRunner, discoveryManager: createDiscovery)
+            .up(project: project, options: ComposeUpOptions())
+
+        let createCommand = try #require(createRunner.commands.last?.arguments)
+        let hash = try #require(composeConfigHash(in: createCommand))
+        let anonymousVolume = try #require(createCommand.compactMap { argument -> String? in
+            guard argument.hasPrefix("demo_anon-"), argument.hasSuffix(":/scratch") else {
+                return nil
+            }
+            return String(argument.split(separator: ":", maxSplits: 1)[0])
+        }.first)
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: hash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(name: anonymousVolume),
+        ])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions {
+            $0.renewAnonymousVolumes = true
+        })
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+        #expect(await resourceManager.requests == [
+            .listVolumes,
+            .deleteVolume(name: anonymousVolume),
+        ])
+        #expect(runner.commands.map(\.arguments).count == 1)
+        #expect(try #require(runner.commands.last?.arguments).contains { $0 == "\(anonymousVolume):/scratch" })
     }
 
     @Test("create allocates multi port ranges per service replica")
