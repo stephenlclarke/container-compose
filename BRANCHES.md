@@ -13,7 +13,7 @@ Frozen install branches are created from validated `main` commits when a release
 | `snapshot/*` | Frozen snapshot lane for installable debug builds | Reduced package and formula validation | SonarCloud badges are removed automatically. |
 | `apple-container-compatible` | Upstream-only compatibility branch for accepted or released Apple runtime primitives | Targeted compatibility validation | Branch-specific. |
 
-Do not use a long-lived `develop` branch for normal work. New changes should land on `main`, where the SonarCloud badges reflect the current branch state.
+This branching strategy exists because the free SonarQube/SonarCloud plan only analyzes one useful branch. Keeping active development on `main` makes the badges and quality gate reflect the branch maintainers and users actually see.
 
 ## Frozen Branch Automation
 
