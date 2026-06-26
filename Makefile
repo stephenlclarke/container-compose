@@ -808,6 +808,8 @@ cli-smoke-built:
 	[[ "$$images_quiet_output" == *"container list --format json --all"* ]]; \
 	images_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format '{{.Size}}' api 2>&1 || true)"; \
 	[[ "$$images_bad_format_output" == *"unsupported compose feature: images --format '{{.Size}}'; supported formats are table and json"* ]]; \
+	volumes_help_output="$$(".build/debug/compose" volumes --help)"; \
+	[[ "$$volumes_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	volumes_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes --format json api)"; \
 	[[ "$$volumes_json_output" == *"container volume list --format json"* ]]; \
 	volumes_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes -q api)"; \

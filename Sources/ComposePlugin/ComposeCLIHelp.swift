@@ -485,7 +485,7 @@ enum ComposeCLIHelp {
         ],
         "volumes": [
             "--dry-run": .supported,
-            "--format": .partiallySupported,
+            "--format": .supported,
             "--quiet": .supported,
         ],
         "wait": [
