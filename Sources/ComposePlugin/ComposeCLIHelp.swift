@@ -158,7 +158,7 @@ enum ComposeCLIHelp {
         "logs": .supported,
         "ls": .supported,
         "pause": .supported,
-        "port": .partiallySupported,
+        "port": .supported,
         "ps": .partiallySupported,
         "publish": .notSupported,
         "pull": .partiallySupported,

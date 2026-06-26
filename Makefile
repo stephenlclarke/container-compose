@@ -826,6 +826,8 @@ cli-smoke-built:
 	[[ "$$top_output" == *"+ compose-runtime top demo-api-1"* ]]; \
 	events_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" events --json)"; \
 	[[ "$$events_output" == *"+ container events"* ]]; \
+	port_help_output="$$(".build/debug/compose" port --help)"; \
+	[[ "$$port_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	port_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" port api 80)"; \
 	[[ "$$port_output" == *"0.0.0.0:8080"* ]]; \
 	pause_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" pause api)"; \
