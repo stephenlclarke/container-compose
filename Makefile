@@ -552,7 +552,10 @@ cli-smoke-built:
 	[[ "$$run_no_tty_output" != *"--tty"* ]]; \
 	[[ "$$run_no_tty_output" == *"--interactive"* ]]; \
 	run_deps_metadata_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run job true 2>&1 || true)"; \
-	[[ "$$run_deps_metadata_output" == *"unsupported compose feature: service 'job' depends on 'db' with condition 'service_healthy'"* ]]; \
+	[[ "$$run_deps_metadata_output" == *"container inspect "*"db-1"* ]]; \
+	[[ "$$run_deps_metadata_output" == *"--name "*"db-1 --detach"* ]]; \
+	[[ "$$run_deps_metadata_output" == *"--name "*"job-run-"* ]]; \
+	[[ "$$run_deps_metadata_output" == *" alpine true"* ]]; \
 	run_no_deps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" run --no-deps job true)"; \
 	[[ "$$run_no_deps_output" == *"container run"* ]]; \
 	[[ "$$run_no_deps_output" == *" alpine true"* ]]; \
