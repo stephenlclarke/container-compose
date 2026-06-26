@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 @testable import ComposePlugin
 import Testing
 
@@ -28,6 +29,7 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[31mnot supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[38;5;208mrun\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--progress\u{001B}[0m"))
     }
 
     @Test("root help honours ansi never")
@@ -36,5 +38,36 @@ struct ComposeCLIHelpTests {
 
         #expect(help.contains("Support: supported | partially supported | not supported"))
         #expect(!help.contains("\u{001B}["))
+    }
+
+    @Test("global progress option maps Docker Compose policies")
+    func globalProgressOptionMapsDockerComposePolicies() {
+        var options = GlobalOptions()
+
+        options.progress = "quiet"
+        #expect(options.progressStyle() == .quiet)
+
+        options.progress = "none"
+        #expect(options.progressStyle() == .quiet)
+
+        options.progress = "plain"
+        #expect(options.progressStyle() == .plain)
+
+        options.progress = "json"
+        #expect(options.progressStyle() == .plain)
+
+        options.progress = "tty"
+        #expect(options.progressStyle() == .tty)
+    }
+
+    @Test("global ansi option controls progress colour")
+    func globalANSIOptionControlsProgressColour() {
+        var options = GlobalOptions()
+
+        options.ansi = "always"
+        #expect(options.shouldColorProgress())
+
+        options.ansi = "never"
+        #expect(!options.shouldColorProgress())
     }
 }

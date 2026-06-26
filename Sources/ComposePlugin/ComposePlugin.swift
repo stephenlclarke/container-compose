@@ -304,12 +304,26 @@ struct GlobalOptions: ParsableArguments {
 
     /// Loads the Compose project through the compose-go normalizer.
     func loadProject() async throws -> ComposeProject {
-        try await ComposeNormalizer().normalize(options: composeOptions())
+        try await loadProject(options: composeOptions())
+    }
+
+    /// Loads a Compose project while reporting normalizer progress.
+    func loadProject(options: ComposeOptions) async throws -> ComposeProject {
+        try await progressReporter().activity("Loading Compose model") {
+            try await ComposeNormalizer().normalize(options: options)
+        }
+    }
+
+    /// Loads Compose variables while reporting normalizer progress.
+    func loadVariables(options: ComposeOptions) async throws -> [ComposeVariable] {
+        try await progressReporter().activity("Loading Compose variables") {
+            try await ComposeNormalizer().variables(options: options)
+        }
     }
 
     /// Creates an orchestrator configured from global runtime flags.
     func orchestrator() -> ComposeOrchestrator {
-        ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: dryRun))
+        ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: dryRun, progress: progressReporter()))
     }
 
     /// Returns whether log prefix color should be enabled for this invocation.
@@ -326,12 +340,58 @@ struct GlobalOptions: ParsableArguments {
             return stdoutSupportsANSI()
         }
     }
+
+    /// Creates the progress renderer selected by Docker Compose-compatible global flags.
+    func progressReporter() -> ComposeProgressReporter {
+        ComposeProgressReporter(
+            style: progressStyle(),
+            colorEnabled: shouldColorProgress(),
+            emitData: { FileHandle.standardError.write($0) }
+        )
+    }
+
+    /// Maps Docker Compose progress policy names onto local progress modes.
+    func progressStyle() -> ComposeProgressStyle {
+        switch progress?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "quiet", "none":
+            return .quiet
+        case "plain", "json":
+            return .plain
+        case "tty":
+            return .tty
+        case "auto", "", nil:
+            return stderrSupportsANSI() ? .tty : .plain
+        default:
+            return stderrSupportsANSI() ? .tty : .plain
+        }
+    }
+
+    /// Returns whether progress rows should include ANSI color.
+    func shouldColorProgress() -> Bool {
+        switch ansi?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "always":
+            return true
+        case "never":
+            return false
+        default:
+            return stderrSupportsANSI()
+        }
+    }
 }
 
 /// Returns whether stdout is an interactive terminal that can display ANSI color.
 private func stdoutSupportsANSI() -> Bool {
 #if canImport(Darwin) || canImport(Glibc)
     isatty(STDOUT_FILENO) == 1
+#else
+    false
+#endif
+}
+
+/// Returns whether stderr is an interactive terminal that can display ANSI progress.
+private func stderrSupportsANSI() -> Bool {
+#if canImport(Darwin) || canImport(Glibc)
+    isatty(STDERR_FILENO) == 1
 #else
     false
 #endif
@@ -434,7 +494,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
         composeOptions.noPathResolution = noPathResolution
 
         if variables {
-            let loadedVariables = try await ComposeNormalizer().variables(options: composeOptions)
+            let loadedVariables = try await global.loadVariables(options: composeOptions)
             let rendered = orchestrator().config(variables: loadedVariables)
             if let output {
                 try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
@@ -446,7 +506,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             return
         }
 
-        let loadedProject = try await ComposeNormalizer().normalize(options: composeOptions)
+        let loadedProject = try await global.loadProject(options: composeOptions)
         let rendered = try orchestrator().config(
             project: loadedProject,
             options: ComposeConfigOptions {

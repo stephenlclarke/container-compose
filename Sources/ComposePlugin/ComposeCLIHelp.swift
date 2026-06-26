@@ -229,7 +229,7 @@ enum ComposeCLIHelp {
             "--file": .supported,
             "--parallel": .notSupported,
             "--profile": .supported,
-            "--progress": .notSupported,
+            "--progress": .partiallySupported,
             "--project-directory": .supported,
             "--project-name": .supported,
         ],

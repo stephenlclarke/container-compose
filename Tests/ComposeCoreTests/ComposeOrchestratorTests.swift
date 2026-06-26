@@ -8663,6 +8663,67 @@ struct ComposeOrchestratorTests {
         #expect(command.last == "api")
     }
 
+    @Test("build emits progress rows when progress is enabled")
+    func buildEmitsProgressRowsWhenProgressIsEnabled() async throws {
+        let runner = RecordingRunner()
+        let emitted = LockedStringRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+        let progress = ComposeProgressReporter(
+            style: .plain,
+            emitData: { emitted.append(String(bytes: $0, encoding: .utf8) ?? "") }
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(progress: progress)
+        ).build(project: project, services: ["api"], noCache: false)
+
+        #expect(runner.commands.count == 1)
+        #expect(emitted.snapshot == [
+            "⠋ Building api\n",
+            "✔︎ Building api\n",
+        ])
+    }
+
+    @Test("quiet build suppresses progress rows")
+    func quietBuildSuppressesProgressRows() async throws {
+        let runner = RecordingRunner()
+        let emitted = LockedStringRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+        let progress = ComposeProgressReporter(
+            style: .plain,
+            emitData: { emitted.append(String(bytes: $0, encoding: .utf8) ?? "") }
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(progress: progress)
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.services = ["api"]
+                $0.quiet = true
+            }
+        )
+
+        #expect(runner.commands.count == 1)
+        #expect(emitted.snapshot.isEmpty)
+    }
+
     @Test("build with dependencies builds dependency images first")
     func buildWithDependenciesBuildsDependencyImagesFirst() async throws {
         let runner = RecordingRunner()

@@ -70,6 +70,7 @@ public struct ComposeExecutionOptions {
     public var confirm: @Sendable (_ prompt: String) async throws -> Bool
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
+    public var progress: ComposeProgressReporter
 
     public init(
         dryRun: Bool = false,
@@ -77,6 +78,7 @@ public struct ComposeExecutionOptions {
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         watchPollInterval: Duration = .seconds(1),
         materializedConfigSecretDirectory: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
+        progress: ComposeProgressReporter = .disabled,
         runtimeHooks: RuntimeHooks = RuntimeHooks()
     ) {
         self.dryRun = dryRun
@@ -91,6 +93,7 @@ public struct ComposeExecutionOptions {
         self.confirm = runtimeHooks.confirm
         self.emit = runtimeHooks.emit
         self.emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
+        self.progress = progress
     }
 
     public init(dryRun: Bool = false, emit: @escaping @Sendable (String) -> Void) {
@@ -1883,7 +1886,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             ? orderedServices(project: project, selected: build.services)
             : selectedServices(project: project, selected: build.services)
         for service in services where service.build != nil {
-            try await buildService(project: project, service: service, options: build)
+            if build.quiet || options.dryRun {
+                try await buildService(project: project, service: service, options: build)
+            } else {
+                try await options.progress.activity("Building \(service.name)") {
+                    try await buildService(project: project, service: service, options: build)
+                }
+            }
             if build.push, let image = service.image {
                 if options.dryRun {
                     try await runContainer(["image", "push", image])
