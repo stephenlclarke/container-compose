@@ -799,7 +799,7 @@ cli-smoke-built:
 	ps_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --format json --no-trunc --orphans)"; \
 	[[ "$$ps_format_output" == *"container list --format json"* ]]; \
 	ps_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --format '{{.Command}}' 2>&1 || true)"; \
-	[[ "$$ps_bad_format_output" == *"unsupported compose feature: ps --format field '.Command'; supported fields are ID, Image, Name, Project, Service, State, Status"* ]]; \
+	[[ "$$ps_bad_format_output" == *"unsupported compose feature: ps --format field '.Command'; supported fields are ID, Image, Name, Ports, Project, Service, State, Status"* ]]; \
 	images_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format json api)"; \
 	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
 	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \

@@ -7694,7 +7694,23 @@ struct ComposeOrchestratorTests {
     func psFormatTableRendersProjectScopedContainers() async throws {
         let emitted = MessageRecorder()
         let runner = RecordingRunner()
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ],
+                image: .init(reference: "localhost:5000/example/api:latest"),
+                resources: .init(publishedPorts: [
+                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
+                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8081, containerPort: 81, protocolName: "udp", count: 2),
+                    ComposeContainerPublishedPort(hostAddress: "::1", hostPort: 8083, containerPort: 83, protocolName: "tcp"),
+                ])
+            ),
+        ])
         let orchestrator = ComposeOrchestrator(
             runner: runner,
             options: ComposeExecutionOptions(emit: { emitted.append($0) }),
@@ -7715,8 +7731,13 @@ struct ComposeOrchestratorTests {
         #expect(output.contains("NAME"))
         #expect(output.contains("IMAGE"))
         #expect(output.contains("SERVICE"))
+        #expect(output.contains("PORTS"))
         #expect(output.contains("demo-api-1"))
         #expect(output.contains("api"))
+        #expect(output.contains("127.0.0.1:8080->80/tcp"))
+        #expect(output.contains("127.0.0.1:8081->81/udp"))
+        #expect(output.contains("127.0.0.1:8082->82/udp"))
+        #expect(output.contains("[::1]:8083->83/tcp"))
     }
 
     @Test("ps table renders headers when no records match")
@@ -7735,7 +7756,7 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(await discoveryManager.listRequests == [false])
-        #expect(emitted.messages == ["NAME  IMAGE  SERVICE  STATUS"])
+        #expect(emitted.messages == ["NAME  IMAGE  SERVICE  STATUS  PORTS"])
     }
 
     @Test("ps format template renders selected fields")
@@ -7753,7 +7774,7 @@ struct ComposeOrchestratorTests {
             project: ComposeProject(name: "demo", services: [:]),
             options: ComposePsOptions {
                 $0.all = true
-                $0.format = #"table {{.Name}}\t{{.Service}}\t{{.Status}}"#
+                $0.format = #"table {{.Name}}\t{{.Service}}\t{{.Status}}\t{{.Ports}}"#
                 $0.noTrunc = true
             }
         )
@@ -7762,7 +7783,7 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true])
         #expect(emitted.messages == [
             """
-            NAME           SERVICE  STATUS
+            NAME           SERVICE  STATUS   PORTS
             demo-api-1     api      running
             demo-worker-1  worker   stopped
             """,
@@ -7844,7 +7865,7 @@ struct ComposeOrchestratorTests {
             )
             Issue.record("Expected unsupported ps template field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ID, Image, Name, Project, Service, State, Status"))
+            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ID, Image, Name, Ports, Project, Service, State, Status"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

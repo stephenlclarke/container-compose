@@ -9143,7 +9143,7 @@ private func platformJSONObject(_ value: String) -> [String: String] {
     return object
 }
 
-private let composePsTemplateFields: Set<String> = ["ID", "Image", "Name", "Project", "Service", "State", "Status"]
+private let composePsTemplateFields: Set<String> = ["ID", "Image", "Name", "Ports", "Project", "Service", "State", "Status"]
 private let composeVolumesTemplateFields: Set<String> = [
     "Availability",
     "Driver",
@@ -9200,13 +9200,14 @@ private func renderComposeContainerTable(
     noTrunc _: Bool
 ) -> String {
     let rows = [
-        ["NAME", "IMAGE", "SERVICE", "STATUS"],
+        ["NAME", "IMAGE", "SERVICE", "STATUS", "PORTS"],
     ] + containers.map { container in
         [
             container.id,
             container.imageReference,
             container.serviceName ?? "",
             container.status,
+            renderComposePublishedPorts(container.publishedPorts),
         ]
     }
     let widths = rows.reduce(Array(repeating: 0, count: rows[0].count)) { current, row in
@@ -9242,6 +9243,8 @@ private func renderComposeContainerTemplate(
                 container.id
             case "Image":
                 container.imageReference
+            case "Ports":
+                renderComposePublishedPorts(container.publishedPorts)
             case "Service":
                 container.serviceName ?? ""
             case "State", "Status":
@@ -9254,6 +9257,25 @@ private func renderComposeContainerTemplate(
         }
     }
     return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+}
+
+/// Renders published ports the way Docker Compose shows them in `ps`.
+private func renderComposePublishedPorts(_ ports: [ComposeContainerPublishedPort]) -> String {
+    ports.flatMap { port in
+        (0..<Int(port.count)).map { offset in
+            let hostPort = Int(port.hostPort) + offset
+            let containerPort = Int(port.containerPort) + offset
+            let hostAddress = dockerPortHostAddress(port.hostAddress)
+            return "\(hostAddress):\(hostPort)->\(containerPort)/\(port.protocolName)"
+        }
+    }.joined(separator: ", ")
+}
+
+private func dockerPortHostAddress(_ hostAddress: String) -> String {
+    guard hostAddress.contains(":"), !hostAddress.hasPrefix("[") else {
+        return hostAddress
+    }
+    return "[\(hostAddress)]"
 }
 
 /// Mirrors Docker-style default identifier truncation.
