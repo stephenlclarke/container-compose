@@ -6826,6 +6826,23 @@ struct ComposeOrchestratorTests {
         #expect(!output.contains("other_cache"))
     }
 
+    @Test("volumes table renders headers when no records match")
+    func volumesTableRendersHeadersWhenNoRecordsMatch() async throws {
+        let emitted = MessageRecorder()
+        let resourceManager = RecordingContainerResourceManager(volumes: [])
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await orchestrator.volumes(project: project, options: ComposeVolumesOptions())
+
+        #expect(emitted.messages == ["DRIVER  VOLUME NAME"])
+        #expect(await resourceManager.requests == [.listVolumes])
+    }
+
     @Test("volumes quiet prints selected service volume names")
     func volumesQuietPrintsSelectedServiceVolumeNames() async throws {
         let emitted = MessageRecorder()

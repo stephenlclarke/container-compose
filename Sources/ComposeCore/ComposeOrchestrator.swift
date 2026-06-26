@@ -2688,9 +2688,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         switch format {
         case .table:
             let table = renderComposeVolumeTable(records)
-            if !table.isEmpty {
-                options.emit(table)
-            }
+            options.emit(table)
         case .json:
             let output = try renderComposeVolumeJSON(records)
             if !output.isEmpty {
@@ -9665,9 +9663,6 @@ private func composeVolumesFormat(_ value: String) throws -> ComposeVolumesForma
 
 /// Renders volume rows as a compact table.
 private func renderComposeVolumeTable(_ records: [ComposeVolumeRecord]) -> String {
-    guard !records.isEmpty else {
-        return ""
-    }
     let rows = [
         ["DRIVER", "VOLUME NAME"],
     ] + records.map { [$0.driver, $0.name] }
