@@ -7151,7 +7151,7 @@ struct ComposeOrchestratorTests {
             )
             Issue.record("Expected unsupported stats template field failure")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("stats --format field '.Scope'; supported fields are BlockIO, CPUPerc, Container, ID, MemUsage, Name, NetIO, PIDs"))
+            #expect(error == .unsupported("stats --format field '.Scope'; supported fields are BlockIO, CPUPerc, Container, ID, MemPerc, MemUsage, Name, NetIO, PIDs"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -11576,10 +11576,12 @@ struct ComposeOrchestratorTests {
         try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
 
         #expect(emitted.messages.count == 1)
-        #expect(emitted.messages[0].contains("Container ID"))
+        #expect(emitted.messages[0].contains("CONTAINER ID"))
+        #expect(emitted.messages[0].contains("MEM %"))
         #expect(emitted.messages[0].contains("demo-api-1"))
         #expect(emitted.messages[0].contains("25.00%"))
         #expect(emitted.messages[0].contains("1.00 MiB / 2.00 MiB"))
+        #expect(emitted.messages[0].contains("50.00%"))
         #expect(!emitted.messages[0].contains("demo-db-1"))
         #expect(await client.listRequests == [["demo-api-1", "demo-db-1"]])
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
@@ -11606,7 +11608,7 @@ struct ComposeOrchestratorTests {
 
         try await manager.stats(
             ids: ["demo-api-1"],
-            format: #"table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"#,
+            format: #"table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}"#,
             noStream: true,
             noTrunc: false,
             includeStopped: false,
@@ -11617,9 +11619,11 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages[0].contains("CONTAINER"))
         #expect(emitted.messages[0].contains("CPUPERC"))
         #expect(emitted.messages[0].contains("MEMUSAGE"))
+        #expect(emitted.messages[0].contains("MEMPERC"))
         #expect(emitted.messages[0].contains("demo-api-1"))
         #expect(emitted.messages[0].contains("25.00%"))
         #expect(emitted.messages[0].contains("1.00 MiB / 2.00 MiB"))
+        #expect(emitted.messages[0].contains("50.00%"))
     }
 
     @Test("stats manager honors no trunc table output")
@@ -11725,9 +11729,9 @@ struct ComposeOrchestratorTests {
         #expect(messages.count == 4)
         if messages.count == 4 {
             #expect(messages[0] == "\u{001B}[?1049h\u{001B}[?25l")
-            #expect(messages[1].contains("\u{001B}[H\u{001B}[JContainer ID"))
+            #expect(messages[1].contains("\u{001B}[H\u{001B}[JCONTAINER ID"))
             #expect(!messages[1].contains("demo-api-1"))
-            #expect(messages[2].contains("\u{001B}[H\u{001B}[JContainer ID"))
+            #expect(messages[2].contains("\u{001B}[H\u{001B}[JCONTAINER ID"))
             #expect(messages[2].contains("demo-api-1"))
             #expect(messages[2].contains("50.00%"))
             #expect(messages[3] == "\u{001B}[?25h\u{001B}[?1049l")
@@ -11781,11 +11785,13 @@ struct ComposeOrchestratorTests {
 
         try await manager.stats(ids: ["demo-api-1"], format: "json", noStream: false, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
 
-        let decoded = try JSONDecoder().decode([ContainerStats].self, from: Data(emitted.messages[0].utf8))
-        #expect(decoded.count == 1)
-        #expect(decoded[0].id == "demo-api-1")
-        #expect(decoded[0].cpuUsageUsec == 1_500_000)
-        #expect(decoded[0].memoryUsageBytes == 2_097_152)
+        let decoded = try #require(JSONSerialization.jsonObject(with: Data(emitted.messages[0].utf8)) as? [String: String])
+        #expect(decoded["Container"] == "demo-api-1")
+        #expect(decoded["ID"] == "demo-api-1")
+        #expect(decoded["Name"] == "demo-api-1")
+        #expect(decoded["CPUPerc"] == "25.00%")
+        #expect(decoded["MemUsage"] == "2.00 MiB / 2.00 MiB")
+        #expect(decoded["MemPerc"] == "100.00%")
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
     }
 

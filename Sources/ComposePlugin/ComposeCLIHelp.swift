@@ -168,7 +168,7 @@ enum ComposeCLIHelp {
         "run": .partiallySupported,
         "scale": .supported,
         "start": .supported,
-        "stats": .partiallySupported,
+        "stats": .supported,
         "stop": .supported,
         "top": .supported,
         "unpause": .supported,
@@ -435,7 +435,7 @@ enum ComposeCLIHelp {
         "stats": [
             "--all": .supported,
             "--dry-run": .supported,
-            "--format": .partiallySupported,
+            "--format": .supported,
             "--no-stream": .supported,
             "--no-trunc": .supported,
         ],

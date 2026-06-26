@@ -23,6 +23,7 @@ private let composeStatsTemplateFields: Set<String> = [
     "CPUPerc",
     "Container",
     "ID",
+    "MemPerc",
     "MemUsage",
     "Name",
     "NetIO",
@@ -207,8 +208,10 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         case .json:
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(records.map(\.second))
-            return String(decoding: data, as: UTF8.self)
+            return try records.map { snapshot in
+                let data = try encoder.encode(statsJSONObject(snapshot, noTrunc: noTrunc))
+                return String(decoding: data, as: UTF8.self)
+            }.joined(separator: "\n")
         case .table:
             return renderStatsTable(records, noTrunc: noTrunc)
         case .template(let template, let table):
@@ -216,9 +219,9 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         }
     }
 
-    /// Renders stats rows with the same columns as `container stats`.
+    /// Renders stats rows with Docker Compose-style columns.
     private func renderStatsTable(_ records: [StatsSnapshot], noTrunc: Bool) -> String {
-        let headerRow = ["Container ID", "Cpu %", "Memory Usage", "Net Rx/Tx", "Block I/O", "Pids"]
+        let headerRow = ["CONTAINER ID", "CPU %", "MEM USAGE / LIMIT", "MEM %", "NET I/O", "BLOCK I/O", "PIDS"]
         let rows = [headerRow] + records.map { statsTableRow($0, noTrunc: noTrunc) }
         return renderTable(rows)
     }
@@ -230,6 +233,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             display.container,
             display.cpuPercent,
             "\(display.memoryUsage) / \(display.memoryLimit)",
+            display.memoryPercent,
             "\(display.networkRx) / \(display.networkTx)",
             "\(display.blockRead) / \(display.blockWrite)",
             display.pids,
@@ -246,6 +250,8 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             return display.cpuPercent
         case "MemUsage":
             return "\(display.memoryUsage) / \(display.memoryLimit)"
+        case "MemPerc":
+            return display.memoryPercent
         case "NetIO":
             return "\(display.networkRx) / \(display.networkTx)"
         case "BlockIO":
@@ -279,6 +285,8 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             .map { String(format: "%.2f%%", $0) } ?? notAvailable
         let memoryUsage = second.memoryUsageBytes.map(formatBytes) ?? notAvailable
         let memoryLimit = second.memoryLimitBytes.map(formatBytes) ?? notAvailable
+        let memoryPercent = memoryPercent(usage: second.memoryUsageBytes, limit: second.memoryLimitBytes)
+            .map { String(format: "%.2f%%", $0) } ?? notAvailable
         let networkRx = second.networkRxBytes.map(formatBytes) ?? notAvailable
         let networkTx = second.networkTxBytes.map(formatBytes) ?? notAvailable
         let blockRead = second.blockReadBytes.map(formatBytes) ?? notAvailable
@@ -290,6 +298,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             cpuPercent: cpuPercent,
             memoryUsage: memoryUsage,
             memoryLimit: memoryLimit,
+            memoryPercent: memoryPercent,
             networkRx: networkRx,
             networkTx: networkTx,
             blockRead: blockRead,
@@ -306,6 +315,22 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         return String(id.prefix(12))
     }
 
+    /// Renders one Docker Compose-style stats JSON object.
+    private func statsJSONObject(_ snapshot: StatsSnapshot, noTrunc: Bool) -> [String: String] {
+        let display = statsDisplayValues(snapshot, noTrunc: noTrunc)
+        return [
+            "BlockIO": "\(display.blockRead) / \(display.blockWrite)",
+            "CPUPerc": display.cpuPercent,
+            "Container": snapshot.second.id,
+            "ID": display.container,
+            "MemPerc": display.memoryPercent,
+            "MemUsage": "\(display.memoryUsage) / \(display.memoryLimit)",
+            "Name": snapshot.second.id,
+            "NetIO": "\(display.networkRx) / \(display.networkTx)",
+            "PIDs": display.pids,
+        ]
+    }
+
     /// Computes CPU percentage from two microsecond counters.
     private func cpuPercent(first: UInt64?, second: UInt64?) -> Double? {
         guard let first, let second else {
@@ -313,6 +338,14 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         }
         let delta = second > first ? second - first : 0
         return (Double(delta) / Double(sampleIntervalMicroseconds)) * 100.0
+    }
+
+    /// Computes Docker Compose-style memory usage percentage.
+    private func memoryPercent(usage: UInt64?, limit: UInt64?) -> Double? {
+        guard let usage, let limit, limit > 0 else {
+            return nil
+        }
+        return (Double(usage) / Double(limit)) * 100.0
     }
 
     /// Formats bytes like the apple/container `container stats` command.
@@ -350,6 +383,7 @@ private struct StatsDisplayValues {
     var cpuPercent: String
     var memoryUsage: String
     var memoryLimit: String
+    var memoryPercent: String
     var networkRx: String
     var networkTx: String
     var blockRead: String
