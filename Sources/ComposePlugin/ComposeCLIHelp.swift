@@ -166,7 +166,7 @@ enum ComposeCLIHelp {
         "restart": .supported,
         "rm": .supported,
         "run": .partiallySupported,
-        "scale": .partiallySupported,
+        "scale": .supported,
         "start": .supported,
         "stats": .partiallySupported,
         "stop": .supported,
