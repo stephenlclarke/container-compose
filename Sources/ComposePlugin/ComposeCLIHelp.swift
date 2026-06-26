@@ -164,7 +164,7 @@ enum ComposeCLIHelp {
         "pull": .partiallySupported,
         "push": .partiallySupported,
         "restart": .supported,
-        "rm": .partiallySupported,
+        "rm": .supported,
         "run": .partiallySupported,
         "scale": .partiallySupported,
         "start": .supported,

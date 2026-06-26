@@ -12289,6 +12289,67 @@ struct ComposeOrchestratorTests {
         #expect(!commands.contains { $0.contains("demo_cache") })
     }
 
+    @Test("rm cancellation avoids stop and delete")
+    func rmCancellationAvoidsStopAndDelete() async throws {
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let prompts = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(confirm: { prompt in
+                    prompts.append(prompt)
+                    return false
+                })
+            ),
+            lifecycleManager: lifecycleManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine"),
+            ]
+        )
+
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: true, force: false)
+
+        #expect(prompts.messages == ["Going to remove demo-api-1\nAre you sure? [yN] "])
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("rm confirms before stopping containers")
+    func rmConfirmsBeforeStoppingContainers() async throws {
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let prompts = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(confirm: { prompt in
+                    prompts.append(prompt)
+                    return true
+                })
+            ),
+            lifecycleManager: lifecycleManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine"),
+            ]
+        )
+
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: true, force: false)
+
+        #expect(prompts.messages == ["Going to remove demo-api-1\nAre you sure? [yN] "])
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
     @Test("rm surfaces anonymous volume removal failures")
     func rmSurfacesAnonymousVolumeRemovalFailures() async throws {
         let runner = RecordingRunner()

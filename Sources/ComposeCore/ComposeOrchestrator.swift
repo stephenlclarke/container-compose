@@ -35,6 +35,7 @@ public struct ComposeExecutionOptions {
         public var currentDate: @Sendable () -> Date
         public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
         public var sleep: @Sendable (Duration) async throws -> Void
+        public var confirm: @Sendable (_ prompt: String) async throws -> Bool
         public var emit: @Sendable (String) -> Void
         public var emitData: (@Sendable (Data) -> Void)?
 
@@ -43,6 +44,7 @@ public struct ComposeExecutionOptions {
             currentDate: @escaping @Sendable () -> Date = Date.init,
             hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
             sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            confirm: @escaping @Sendable (_ prompt: String) async throws -> Bool = ComposeExecutionOptions.defaultConfirmation,
             emit: @escaping @Sendable (String) -> Void = { print($0) },
             emitData: (@Sendable (Data) -> Void)? = nil
         ) {
@@ -50,6 +52,7 @@ public struct ComposeExecutionOptions {
             self.currentDate = currentDate
             self.hostPortAllocator = hostPortAllocator
             self.sleep = sleep
+            self.confirm = confirm
             self.emit = emit
             self.emitData = emitData
         }
@@ -64,6 +67,7 @@ public struct ComposeExecutionOptions {
     public var watchPollInterval: Duration
     public var materializedConfigSecretDirectory: URL
     public var sleep: @Sendable (Duration) async throws -> Void
+    public var confirm: @Sendable (_ prompt: String) async throws -> Bool
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
 
@@ -84,6 +88,7 @@ public struct ComposeExecutionOptions {
         self.watchPollInterval = watchPollInterval
         self.materializedConfigSecretDirectory = materializedConfigSecretDirectory
         self.sleep = runtimeHooks.sleep
+        self.confirm = runtimeHooks.confirm
         self.emit = runtimeHooks.emit
         self.emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
     }
@@ -147,6 +152,19 @@ public struct ComposeExecutionOptions {
 
     public static func defaultOneOffIdentifier() -> String {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+    }
+
+    public static func defaultConfirmation(_ prompt: String) async throws -> Bool {
+        FileHandle.standardError.write(Data(prompt.utf8))
+        guard let response = readLine() else {
+            return false
+        }
+        switch response.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "y", "yes":
+            return true
+        default:
+            return false
+        }
     }
 
     /// Returns the per-user root for local config and secret materialization.
@@ -2582,10 +2600,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         volumes: Bool = false
     ) async throws {
         let services = try selectedServices(project: project, selected: selected)
+        let targets = try await serviceContainerTargets(project: project, services: services)
+        if !targets.isEmpty && !force && !options.dryRun {
+            let names = targets.map(\.name).joined(separator: ", ")
+            guard try await options.confirm("Going to remove \(names)\nAre you sure? [yN] ") else {
+                return
+            }
+        }
         if stopFirst {
             try await stop(project: project, services: services.map(\.name))
         }
-        let targets = try await serviceContainerTargets(project: project, services: services)
         for target in targets {
             try await deleteContainer(target.name, force: force)
         }
