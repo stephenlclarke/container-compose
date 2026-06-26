@@ -274,9 +274,9 @@ enum ComposeCLIHelp {
         ],
         "cp": [
             "--all": .supported,
-            "--archive": .notSupported,
+            "--archive": .supported,
             "--dry-run": .supported,
-            "--follow-link": .notSupported,
+            "--follow-link": .supported,
             "--index": .supported,
         ],
         "create": [

@@ -266,6 +266,9 @@ cli-smoke-built:
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--no-trunc$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--orphans$${ansi_escape}[0m"* ]]; \
+	cp_help_output="$$(".build/debug/compose" cp --help)"; \
+	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--archive$${ansi_escape}[0m"* ]]; \
+	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--follow-link$${ansi_escape}[0m"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
 	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[38;5;208m--follow$${ansi_escape}[0m"* ]]; \
@@ -698,10 +701,10 @@ cli-smoke-built:
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_index_one_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 1 api:/tmp/file .)"; \
 	[[ "$$cp_index_one_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
-	cp_archive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -a api:/tmp/file . 2>&1 || true)"; \
-	[[ "$$cp_archive_output" == *"unsupported compose feature: cp --archive: apple/container cp does not expose archive mode"* ]]; \
-	cp_follow_link_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -L api:/tmp/file . 2>&1 || true)"; \
-	[[ "$$cp_follow_link_output" == *"unsupported compose feature: cp --follow-link: apple/container cp does not expose follow-link mode"* ]]; \
+	cp_archive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -a api:/tmp/file .)"; \
+	[[ "$$cp_archive_output" == *"compose-runtime cp --archive demo-api-1:/tmp/file ."* ]]; \
+	cp_follow_link_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -L api:/tmp/file .)"; \
+	[[ "$$cp_follow_link_output" == *"compose-runtime cp --follow-link demo-api-1:/tmp/file ."* ]]; \
 	cp_all_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --all api:/tmp/file .)"; \
 	[[ "$$cp_all_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_all_service_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --all api:/tmp/file db:/tmp/file)"; \
