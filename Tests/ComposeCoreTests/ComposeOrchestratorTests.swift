@@ -8059,6 +8059,24 @@ struct ComposeOrchestratorTests {
         #expect(!yaml.contains("worker"))
     }
 
+    @Test("config defaults to canonical YAML")
+    func configDefaultsToCanonicalYAML() throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api"),
+                "worker": composeService(name: "worker", image: "example/worker"),
+            ]
+        )
+
+        let yaml = try ComposeOrchestrator().config(project: project, options: ComposeConfigOptions())
+
+        #expect(yaml.contains(#"name: "demo""#))
+        #expect(yaml.contains("services:\n  api:"))
+        #expect(yaml.contains("  worker:"))
+        #expect(!yaml.contains(#""services" :"#))
+    }
+
     @Test("config rejects unsupported render formats")
     func configRejectsUnsupportedRenderFormats() throws {
         let project = ComposeProject(name: "demo", services: ["web": ComposeService(name: "web", image: "nginx")])

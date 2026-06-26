@@ -3087,7 +3087,7 @@ public extension ComposeOrchestrator {
 private extension ComposeOrchestrator {
     /// Renders the full canonical config in a supported output format.
     func config(project: ComposeProject, format: String?) throws -> String {
-        let normalizedFormat = (format ?? "json").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedFormat = (format ?? "yaml").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch normalizedFormat {
         case "", "json":
             return try config(project: project)

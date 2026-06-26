@@ -385,7 +385,10 @@ cli-smoke-built:
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
-	[[ "$$config_output" == *'"name":"demo"'* ]]; \
+	[[ "$$config_output" == *"name: \"demo\""* ]]; \
+	[[ "$$config_output" == *"services:"* ]]; \
+	config_json_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --format json)"; \
+	[[ "$$config_json_output" == *'"name":"demo"'* ]]; \
 	config_yaml_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --format yaml api)"; \
 	[[ "$$config_yaml_output" == *"services:"* ]]; \
 	[[ "$$config_yaml_output" == *"  api:"* ]]; \
@@ -428,7 +431,7 @@ cli-smoke-built:
 	config_filtered_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config api)"; \
 	[[ "$$config_filtered_output" == *'"api"'* ]]; \
 	[[ "$$config_filtered_output" != *'"db"'* ]]; \
-	config_output_path="$$tmpdir/config-output.json"; \
+	config_output_path="$$tmpdir/config-output.yaml"; \
 	".build/debug/compose" -f "$$tmpdir/compose.yml" config --output "$$config_output_path"; \
 	[[ -s "$$config_output_path" ]]; \
 	config_environment_output="$$(COMPOSE_CONFIG_ENV_SMOKE=ok ".build/debug/compose" -f "$$tmpdir/compose.yml" config --environment)"; \
