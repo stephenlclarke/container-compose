@@ -45,7 +45,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -65,7 +65,7 @@ jobs:
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -85,7 +85,7 @@ jobs:
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM build artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             container-compose/.build
@@ -105,7 +105,7 @@ jobs:
         run: npm install --global markdownlint-cli@0.48.0
 
       - name: Cache local repo tools
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: container-compose/.local/bin
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
@@ -152,7 +152,7 @@ jobs:
           (github.event_name != 'pull_request' ||
             (github.event.pull_request.head.repo.full_name == github.repository &&
              github.actor != 'dependabot[bot]'))
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
@@ -229,7 +229,7 @@ jobs:
 
       - name: Cache SwiftPM release artifacts
         if: github.event_name != 'pull_request'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             container-compose/.build/*-apple-macosx/release

@@ -44,7 +44,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Validate Ruby syntax
         run: ruby -c Formula/container-compose.rb
