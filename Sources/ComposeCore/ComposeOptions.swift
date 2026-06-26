@@ -19,24 +19,17 @@ import Foundation
 /// Options that influence Compose file normalization.
 public struct ComposeOptions: Equatable {
     public struct NormalizationOptions: Equatable {
-        public var noConsistency: Bool
-        public var noEnvResolution: Bool
-        public var noInterpolate: Bool
-        public var noNormalize: Bool
-        public var noPathResolution: Bool
+        public var noConsistency: Bool = false
+        public var noEnvResolution: Bool = false
+        public var noInterpolate: Bool = false
+        public var noNormalize: Bool = false
+        public var noPathResolution: Bool = false
 
-        public init(
-            noConsistency: Bool = false,
-            noEnvResolution: Bool = false,
-            noInterpolate: Bool = false,
-            noNormalize: Bool = false,
-            noPathResolution: Bool = false
-        ) {
-            self.noConsistency = noConsistency
-            self.noEnvResolution = noEnvResolution
-            self.noInterpolate = noInterpolate
-            self.noNormalize = noNormalize
-            self.noPathResolution = noPathResolution
+        public init() {}
+
+        public init(_ configure: (inout NormalizationOptions) -> Void) {
+            self.init()
+            configure(&self)
         }
     }
 
