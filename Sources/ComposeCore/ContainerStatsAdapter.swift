@@ -283,14 +283,14 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         let notAvailable = "--"
         let cpuPercent = cpuPercent(first: first.cpuUsageUsec, second: second.cpuUsageUsec)
             .map { String(format: "%.2f%%", $0) } ?? notAvailable
-        let memoryUsage = second.memoryUsageBytes.map(formatBytes) ?? notAvailable
-        let memoryLimit = second.memoryLimitBytes.map(formatBytes) ?? notAvailable
+        let memoryUsage = second.memoryUsageBytes.map(formatDockerMemoryBytes) ?? notAvailable
+        let memoryLimit = second.memoryLimitBytes.map(formatDockerMemoryBytes) ?? notAvailable
         let memoryPercent = memoryPercent(usage: second.memoryUsageBytes, limit: second.memoryLimitBytes)
             .map { String(format: "%.2f%%", $0) } ?? notAvailable
-        let networkRx = second.networkRxBytes.map(formatBytes) ?? notAvailable
-        let networkTx = second.networkTxBytes.map(formatBytes) ?? notAvailable
-        let blockRead = second.blockReadBytes.map(formatBytes) ?? notAvailable
-        let blockWrite = second.blockWriteBytes.map(formatBytes) ?? notAvailable
+        let networkRx = second.networkRxBytes.map(formatDockerIOBytes) ?? notAvailable
+        let networkTx = second.networkTxBytes.map(formatDockerIOBytes) ?? notAvailable
+        let blockRead = second.blockReadBytes.map(formatDockerIOBytes) ?? notAvailable
+        let blockWrite = second.blockWriteBytes.map(formatDockerIOBytes) ?? notAvailable
         let pids = second.numProcesses.map(String.init) ?? notAvailable
 
         return StatsDisplayValues(
@@ -348,20 +348,25 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         return (Double(usage) / Double(limit)) * 100.0
     }
 
-    /// Formats bytes like the apple/container `container stats` command.
-    private func formatBytes(_ bytes: UInt64) -> String {
-        let kib = 1024.0
-        let mib = kib * 1024.0
-        let gib = mib * 1024.0
-        let value = Double(bytes)
+    /// Formats memory like Docker's binary `go-units.BytesSize`.
+    private func formatDockerMemoryBytes(_ bytes: UInt64) -> String {
+        formatDockerBytes(bytes, base: 1024.0, units: ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"])
+    }
 
-        if value >= gib {
-            return String(format: "%.2f GiB", value / gib)
+    /// Formats network and block I/O like Docker's decimal `go-units.HumanSize`.
+    private func formatDockerIOBytes(_ bytes: UInt64) -> String {
+        formatDockerBytes(bytes, base: 1000.0, units: ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"])
+    }
+
+    /// Applies Docker's four significant digit byte display rule.
+    private func formatDockerBytes(_ bytes: UInt64, base: Double, units: [String]) -> String {
+        var value = Double(bytes)
+        var index = 0
+        while value >= base && index < units.count - 1 {
+            value /= base
+            index += 1
         }
-        if value >= mib {
-            return String(format: "%.2f MiB", value / mib)
-        }
-        return String(format: "%.2f KiB", value / kib)
+        return String(format: "%.4g%@", value, units[index])
     }
 }
 

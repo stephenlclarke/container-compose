@@ -11580,8 +11580,10 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages[0].contains("MEM %"))
         #expect(emitted.messages[0].contains("demo-api-1"))
         #expect(emitted.messages[0].contains("25.00%"))
-        #expect(emitted.messages[0].contains("1.00 MiB / 2.00 MiB"))
+        #expect(emitted.messages[0].contains("1MiB / 2MiB"))
         #expect(emitted.messages[0].contains("50.00%"))
+        #expect(emitted.messages[0].contains("1.024kB / 2.048kB"))
+        #expect(emitted.messages[0].contains("4.096kB / 8.192kB"))
         #expect(!emitted.messages[0].contains("demo-db-1"))
         #expect(await client.listRequests == [["demo-api-1", "demo-db-1"]])
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
@@ -11622,7 +11624,7 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages[0].contains("MEMPERC"))
         #expect(emitted.messages[0].contains("demo-api-1"))
         #expect(emitted.messages[0].contains("25.00%"))
-        #expect(emitted.messages[0].contains("1.00 MiB / 2.00 MiB"))
+        #expect(emitted.messages[0].contains("1MiB / 2MiB"))
         #expect(emitted.messages[0].contains("50.00%"))
     }
 
@@ -11765,7 +11767,7 @@ struct ComposeOrchestratorTests {
         try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
 
         #expect(emitted.messages[0].contains("--"))
-        #expect(emitted.messages[0].contains("1.00 GiB / --"))
+        #expect(emitted.messages[0].contains("1GiB / --"))
         #expect(emitted.messages[0].contains("-- / --"))
     }
 
@@ -11777,7 +11779,15 @@ struct ComposeOrchestratorTests {
             statsResponses: [
                 "demo-api-1": [
                     containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
-                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_500_000, memoryUsageBytes: 2_097_152),
+                    containerStats(
+                        id: "demo-api-1",
+                        cpuUsageUsec: 1_500_000,
+                        memoryUsageBytes: 2_097_152,
+                        networkRxBytes: 1_100,
+                        networkTxBytes: 126,
+                        blockReadBytes: 0,
+                        blockWriteBytes: 0
+                    ),
                 ],
             ]
         )
@@ -11790,8 +11800,10 @@ struct ComposeOrchestratorTests {
         #expect(decoded["ID"] == "demo-api-1")
         #expect(decoded["Name"] == "demo-api-1")
         #expect(decoded["CPUPerc"] == "25.00%")
-        #expect(decoded["MemUsage"] == "2.00 MiB / 2.00 MiB")
+        #expect(decoded["MemUsage"] == "2MiB / 2MiB")
         #expect(decoded["MemPerc"] == "100.00%")
+        #expect(decoded["NetIO"] == "1.1kB / 126B")
+        #expect(decoded["BlockIO"] == "0B / 0B")
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
     }
 
