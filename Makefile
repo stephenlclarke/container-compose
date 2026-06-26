@@ -971,6 +971,7 @@ package-built:
 coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py Tools/release/*.py
 	$(PYTHON) -m unittest discover Tools/coverage
+	$(PYTHON) -m unittest discover Tools/release
 
 check: lint check-licenses
 

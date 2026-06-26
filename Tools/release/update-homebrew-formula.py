@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument("--asset", required=True)
     parser.add_argument("--label", required=True)
+    parser.add_argument("--sha256", required=True)
     return parser.parse_args()
 
 
@@ -45,6 +46,7 @@ def main() -> None:
     args = parse_args()
     text = args.formula.read_text(encoding="utf-8")
     text = replace_once(r'^  url ".+"$', f'  url "{args.url}"', text)
+    text = replace_once(r"^  sha256 .+$", f'  sha256 "{args.sha256}"', text)
     text = replace_once(r'^  version ".+"$', f'  version "{args.version}"', text)
     text = replace_once(
         r"This formula installs the .+ prebuilt release asset:\n        .+\.tar\.gz",

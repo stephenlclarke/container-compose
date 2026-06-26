@@ -224,12 +224,14 @@ jobs:
         run: |
           set -euo pipefail
           url="https://github.com/stephenlclarke/container-compose/releases/download/${RELEASE_TAG}/${ASSET}"
+          sha256="$(awk '{print $1}' "${RUNNER_TEMP}/${ASSET}.sha256")"
           python3 container-compose/Tools/release/update-homebrew-formula.py \
             --formula "homebrew-tap/Formula/${FORMULA}" \
             --url "$url" \
             --version "$VERSION" \
             --asset "$ASSET" \
-            --label "$LABEL"
+            --label "$LABEL" \
+            --sha256 "$sha256"
           git -C homebrew-tap diff -- Formula
 
       - name: Commit Homebrew tap update
