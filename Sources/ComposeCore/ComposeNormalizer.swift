@@ -34,22 +34,7 @@ public struct ComposeNormalizer: Sendable {
     /// Normalizes Compose input options into the Swift orchestration model.
     public func normalize(options: ComposeOptions) async throws -> ComposeProject {
         let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
-        let projectDirectory = options.projectDirectory ?? Self.defaultProjectDirectory(files: options.files)
-        var arguments = invocation.prefixArguments
-
-        for file in options.files {
-            arguments.append(contentsOf: ["--file", file])
-        }
-        for profile in options.profiles {
-            arguments.append(contentsOf: ["--profile", profile])
-        }
-        for envFile in options.envFiles {
-            arguments.append(contentsOf: ["--env-file", envFile])
-        }
-        if let projectName = options.projectName {
-            arguments.append(contentsOf: ["--project-name", projectName])
-        }
-        arguments.append(contentsOf: ["--project-directory", projectDirectory])
+        let arguments = Self.normalizerArguments(invocation: invocation, options: options)
 
         let result = try await runner.run(
             invocation.executable,
@@ -71,6 +56,32 @@ public struct ComposeNormalizer: Sendable {
             throw ComposeError.invalidProject("failed to decode normalized compose JSON: \(error)")
         }
     }
+
+    /// Returns the interpolation variables declared by the Compose model.
+    public func variables(options: ComposeOptions) async throws -> [ComposeVariable] {
+        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
+        let arguments = Self.normalizerArguments(invocation: invocation, options: options, modeArguments: ["--variables"])
+
+        let result = try await runner.run(
+            invocation.executable,
+            arguments,
+            workingDirectory: invocation.workingDirectory
+        )
+        guard result.succeeded else {
+            throw ComposeError.commandFailed(
+                command: ([invocation.executable] + arguments).joined(separator: " "),
+                status: result.status,
+                stderr: result.stderr
+            )
+        }
+
+        let data = Data(result.stdout.utf8)
+        do {
+            return try JSONDecoder().decode([ComposeVariable].self, from: data)
+        } catch {
+            throw ComposeError.invalidProject("failed to decode compose variables JSON: \(error)")
+        }
+    }
 }
 
 /// Concrete command used to run the compose-go normalizer helper.
@@ -81,6 +92,46 @@ private struct NormalizerInvocation {
 }
 
 private extension ComposeNormalizer {
+    static func normalizerArguments(
+        invocation: NormalizerInvocation,
+        options: ComposeOptions,
+        modeArguments: [String] = []
+    ) -> [String] {
+        let projectDirectory = options.projectDirectory ?? Self.defaultProjectDirectory(files: options.files)
+        var arguments = invocation.prefixArguments
+        arguments.append(contentsOf: modeArguments)
+
+        for file in options.files {
+            arguments.append(contentsOf: ["--file", file])
+        }
+        for profile in options.profiles {
+            arguments.append(contentsOf: ["--profile", profile])
+        }
+        for envFile in options.envFiles {
+            arguments.append(contentsOf: ["--env-file", envFile])
+        }
+        if let projectName = options.projectName {
+            arguments.append(contentsOf: ["--project-name", projectName])
+        }
+        if options.noConsistency {
+            arguments.append("--no-consistency")
+        }
+        if options.noEnvResolution {
+            arguments.append("--no-env-resolution")
+        }
+        if options.noInterpolate {
+            arguments.append("--no-interpolate")
+        }
+        if options.noNormalize {
+            arguments.append("--no-normalize")
+        }
+        if options.noPathResolution {
+            arguments.append("--no-path-resolution")
+        }
+        arguments.append(contentsOf: ["--project-directory", projectDirectory])
+        return arguments
+    }
+
     /// Finds the normalizer from an explicit environment override, plugin
     /// resources, or a source checkout fallback.
     static func normalizerInvocation(fallbackLauncher: String) throws -> NormalizerInvocation {

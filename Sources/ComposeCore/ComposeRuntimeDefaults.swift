@@ -14,21 +14,27 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-/// Renders rows as a padded table.
-func renderTable(_ rows: [[String]]) -> String {
-    guard let firstRow = rows.first else {
-        return ""
+import ContainerResource
+import ContainerizationOCI
+import Foundation
+
+/// Runtime defaults shared by typed Compose projections.
+public enum ComposeRuntimeDefaults {
+    public static var shellExecutable: String {
+        ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_SHELL"]
+            ?? ["", "bin", "sh"].joined(separator: "/")
     }
-    let widths = rows.reduce(Array(repeating: 0, count: firstRow.count)) { current, row in
-        zip(current, row).map { max($0, $1.count) }
+
+    public static var workingDirectory: String {
+        ["", ""].joined(separator: "/")
     }
-    return rows.map { row in
-        var line = row.enumerated().map { index, value in
-            index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
-        }.joined(separator: "  ")
-        while line.last == " " {
-            line.removeLast()
-        }
-        return line
-    }.joined(separator: "\n")
+
+    public static func shellProcess() -> ProcessConfiguration {
+        ProcessConfiguration(
+            executable: shellExecutable,
+            arguments: [],
+            environment: [],
+            workingDirectory: workingDirectory
+        )
+    }
 }

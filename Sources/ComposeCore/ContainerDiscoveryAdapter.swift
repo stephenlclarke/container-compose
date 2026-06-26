@@ -34,6 +34,36 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         }
     }
 
+    /// Runtime resource attachments discovered from the container snapshot.
+    public struct Resources: Sendable, Equatable, Codable {
+        public var publishedPorts: [ComposeContainerPublishedPort]
+        public var mounts: [ComposeMount]
+        public var networks: [ComposeContainerNetworkAttachment]
+
+        public init(
+            publishedPorts: [ComposeContainerPublishedPort] = [],
+            mounts: [ComposeMount] = [],
+            networks: [ComposeContainerNetworkAttachment] = []
+        ) {
+            self.publishedPorts = publishedPorts
+            self.mounts = mounts
+            self.networks = networks
+        }
+    }
+
+    /// Runtime state discovered from the container snapshot.
+    public struct State: Sendable, Equatable, Codable {
+        public var exitCode: Int32?
+        public var exitedDate: Date?
+        public var health: String?
+
+        public init(exitCode: Int32? = nil, exitedDate: Date? = nil, health: String? = nil) {
+            self.exitCode = exitCode
+            self.exitedDate = exitedDate
+            self.health = health
+        }
+    }
+
     public var id: String
     public var status: String
     public var labels: [String: String]
@@ -52,12 +82,8 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         status: String,
         labels: [String: String] = [:],
         image: Image = Image(),
-        publishedPorts: [ComposeContainerPublishedPort] = [],
-        mounts: [ComposeMount] = [],
-        networks: [ComposeContainerNetworkAttachment] = [],
-        exitCode: Int32? = nil,
-        exitedDate: Date? = nil,
-        health: String? = nil
+        resources: Resources = Resources(),
+        state: State = State()
     ) {
         self.id = id
         self.status = status
@@ -65,12 +91,42 @@ public struct ComposeContainerSummary: Sendable, Equatable, Codable {
         self.imageReference = image.reference
         self.imageDigest = image.digest
         self.platform = image.platform
-        self.publishedPorts = publishedPorts
-        self.mounts = mounts
-        self.networks = networks
-        self.exitCode = exitCode
-        self.exitedDate = exitedDate
-        self.health = health
+        self.publishedPorts = resources.publishedPorts
+        self.mounts = resources.mounts
+        self.networks = resources.networks
+        self.exitCode = state.exitCode
+        self.exitedDate = state.exitedDate
+        self.health = state.health
+    }
+
+    public init(id: String, status: String, labels: [String: String] = [:], exitCode: Int32) {
+        self.init(id: id, status: status, labels: labels, state: State(exitCode: exitCode))
+    }
+
+    public init(id: String, status: String, labels: [String: String] = [:], health: String) {
+        self.init(id: id, status: status, labels: labels, state: State(health: health))
+    }
+
+    public init(id: String, status: String, labels: [String: String] = [:], mounts: [ComposeMount]) {
+        self.init(id: id, status: status, labels: labels, resources: Resources(mounts: mounts))
+    }
+
+    public init(
+        id: String,
+        status: String,
+        labels: [String: String] = [:],
+        publishedPorts: [ComposeContainerPublishedPort]
+    ) {
+        self.init(id: id, status: status, labels: labels, resources: Resources(publishedPorts: publishedPorts))
+    }
+
+    public init(
+        id: String,
+        status: String,
+        labels: [String: String] = [:],
+        networks: [ComposeContainerNetworkAttachment]
+    ) {
+        self.init(id: id, status: status, labels: labels, resources: Resources(networks: networks))
     }
 }
 
@@ -192,25 +248,29 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
                 digest: snapshot.configuration.image.digest,
                 platform: snapshot.platform.description
             ),
-            publishedPorts: snapshot.configuration.publishedPorts.map {
-                ComposeContainerPublishedPort(
-                    hostAddress: String(describing: $0.hostAddress),
-                    hostPort: $0.hostPort,
-                    containerPort: $0.containerPort,
-                    protocolName: $0.proto.rawValue,
-                    count: $0.count
-                )
-            },
-            mounts: snapshot.configuration.mounts.map(Self.mount(from:)),
-            networks: snapshot.networks.map {
-                ComposeContainerNetworkAttachment(
-                    network: $0.network,
-                    ipv4Address: String(describing: $0.ipv4Address.address)
-                )
-            },
-            exitCode: snapshot.exitCode,
-            exitedDate: snapshot.exitedDate,
-            health: snapshot.health?.rawValue
+            resources: ComposeContainerSummary.Resources(
+                publishedPorts: snapshot.configuration.publishedPorts.map {
+                    ComposeContainerPublishedPort(
+                        hostAddress: String(describing: $0.hostAddress),
+                        hostPort: $0.hostPort,
+                        containerPort: $0.containerPort,
+                        protocolName: $0.proto.rawValue,
+                        count: $0.count
+                    )
+                },
+                mounts: snapshot.configuration.mounts.map(Self.mount(from:)),
+                networks: snapshot.networks.map {
+                    ComposeContainerNetworkAttachment(
+                        network: $0.network,
+                        ipv4Address: String(describing: $0.ipv4Address.address)
+                    )
+                }
+            ),
+            state: ComposeContainerSummary.State(
+                exitCode: snapshot.exitCode,
+                exitedDate: snapshot.exitedDate,
+                health: snapshot.health?.rawValue
+            )
         )
     }
 

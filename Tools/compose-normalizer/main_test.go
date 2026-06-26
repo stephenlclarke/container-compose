@@ -77,6 +77,71 @@ services:
 	}
 }
 
+func TestRunWritesVariablesJSON(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: "${IMAGE_NAME:-alpine}:${IMAGE_TAG:-3.20}"
+    environment:
+      REQUIRED: "${REQUIRED?must set}"
+      WHEN_PRESENT: "${OPTIONAL:+enabled}"
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--variables", "--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var variables []normalizedVariable
+	if err := json.Unmarshal(stdout.Bytes(), &variables); err != nil {
+		t.Fatalf("decode variables JSON: %v", err)
+	}
+	want := []normalizedVariable{
+		{Name: "IMAGE_NAME", DefaultValue: "alpine"},
+		{Name: "IMAGE_TAG", DefaultValue: "3.20"},
+		{Name: "OPTIONAL", AlternateValue: "enabled"},
+		{Name: "REQUIRED", Required: true},
+	}
+	if !reflect.DeepEqual(variables, want) {
+		t.Fatalf("variables = %#v, want %#v", variables, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunWritesEmptyVariablesArray(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: alpine
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--variables", "--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var variables []normalizedVariable
+	if err := json.Unmarshal(stdout.Bytes(), &variables); err != nil {
+		t.Fatalf("decode variables JSON: %v", err)
+	}
+	if len(variables) != 0 {
+		t.Fatalf("variables = %#v, want empty", variables)
+	}
+	if !strings.HasPrefix(stdout.String(), "[]") {
+		t.Fatalf("variables JSON = %q, want empty JSON array", stdout.String())
+	}
+}
+
 func TestRunReportsFlagAndLoadErrors(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -180,6 +245,131 @@ services:
 	}
 	if image := project.Services["api"].Image; image != "from-custom" {
 		t.Fatalf("api image = %q, want from-custom", image)
+	}
+}
+
+func TestLoadProjectPreservesInterpolationEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	unsetEnv(t, "COMPOSE_FILE")
+	t.Setenv("NORMALIZER_HOST_ENV", "from-host")
+	writeFile(t, filepath.Join(dir, ".env"), "NORMALIZER_DOT_ENV=from-dot-env\n")
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: ${NORMALIZER_HOST_ENV:-missing}
+`)
+
+	project, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	expected := map[string]string{
+		"NORMALIZER_DOT_ENV":  "from-dot-env",
+		"NORMALIZER_HOST_ENV": "from-host",
+	}
+	for key, want := range expected {
+		if got := project.Environment[key]; got != want {
+			t.Fatalf("Environment[%s] = %q, want %q", key, got, want)
+		}
+	}
+	if got := project.Services["api"].Image; got != "from-host" {
+		t.Fatalf("api image = %q, want from-host", got)
+	}
+}
+
+func TestLoadProjectHonorsConfigLoadOptions(t *testing.T) {
+	dir := t.TempDir()
+	unsetEnv(t, "COMPOSE_FILE")
+	writeFile(t, filepath.Join(dir, "service.env"), "VALUE=from-env-file\n")
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: "${IMAGE_NAME:-alpine}:latest"
+    env_file:
+      - service.env
+    build:
+      context: ./api
+    volumes:
+      - ./data:/data
+`)
+
+	noInterpolate, err := loadProject(nil, nil, nil, "", dir, projectLoadOptions{noInterpolate: true})
+	if err != nil {
+		t.Fatalf("loadProject noInterpolate returned error: %v", err)
+	}
+	if got, want := noInterpolate.Services["api"].Image, "${IMAGE_NAME:-alpine}:latest"; got != want {
+		t.Fatalf("noInterpolate image = %q, want %q", got, want)
+	}
+
+	noEnvResolution, err := loadProject(nil, nil, nil, "", dir, projectLoadOptions{noEnvResolution: true})
+	if err != nil {
+		t.Fatalf("loadProject noEnvResolution returned error: %v", err)
+	}
+	if got := noEnvResolution.Services["api"].Environment; got != nil {
+		t.Fatalf("noEnvResolution environment = %#v, want nil", got)
+	}
+	if got := noEnvResolution.Services["api"].EnvFiles; len(got) != 1 || !strings.HasSuffix(got[0], "service.env") {
+		t.Fatalf("noEnvResolution envFiles = %#v, want service.env", got)
+	}
+
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: alpine
+    build:
+      context: ./api
+    volumes:
+      - ./data:/data
+`)
+	noPathResolution, err := loadProject(nil, nil, nil, "", dir, projectLoadOptions{noPathResolution: true})
+	if err != nil {
+		t.Fatalf("loadProject noPathResolution returned error: %v", err)
+	}
+	if got, want := noPathResolution.Services["api"].Build.Context, "./api"; got != want {
+		t.Fatalf("noPathResolution build context = %q, want %q", got, want)
+	}
+	if got, want := noPathResolution.Services["api"].Volumes[0].Source, "./data"; got != want {
+		t.Fatalf("noPathResolution volume source = %q, want %q", got, want)
+	}
+
+	normalized, err := loadProject(nil, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject normalized returned error: %v", err)
+	}
+	if got, want := normalized.Services["api"].Build.Dockerfile, "Dockerfile"; got != want {
+		t.Fatalf("normalized dockerfile = %q, want %q", got, want)
+	}
+	noNormalize, err := loadProject(nil, nil, nil, "", dir, projectLoadOptions{noNormalize: true})
+	if err != nil {
+		t.Fatalf("loadProject noNormalize returned error: %v", err)
+	}
+	if got := noNormalize.Services["api"].Build.Dockerfile; got != "" {
+		t.Fatalf("noNormalize dockerfile = %q, want empty", got)
+	}
+}
+
+func TestLoadProjectCanSkipConsistencyChecks(t *testing.T) {
+	dir := t.TempDir()
+	unsetEnv(t, "COMPOSE_FILE")
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  api:
+    image: alpine
+    depends_on:
+      - missing
+`)
+
+	if _, err := loadProject(nil, nil, nil, "", dir); err == nil {
+		t.Fatal("loadProject default consistency returned nil error, want missing dependency failure")
+	}
+
+	project, err := loadProject(nil, nil, nil, "", dir, projectLoadOptions{noConsistency: true})
+	if err != nil {
+		t.Fatalf("loadProject noConsistency returned error: %v", err)
+	}
+	if _, ok := project.Services["api"].DependsOn["missing"]; !ok {
+		t.Fatalf("noConsistency dependsOn = %#v, want missing dependency preserved", project.Services["api"].DependsOn)
 	}
 }
 
@@ -1388,6 +1578,12 @@ services:
 	if project.Name != "custom" {
 		t.Fatalf("project.Name = %q, want custom", project.Name)
 	}
+	if got, want := project.Profiles, []string{"dev"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("project.Profiles = %#v, want %#v", got, want)
+	}
+	if got, want := api.Profiles, []string{"dev"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Profiles = %#v, want %#v", got, want)
+	}
 	if api.Build == nil {
 		t.Fatal("api.Build is nil")
 	}
@@ -1448,6 +1644,40 @@ services:
 	}
 	if api.MemLimit == "" {
 		t.Fatal("MemLimit is empty")
+	}
+}
+
+func TestLoadProjectReportsProfilesFromDisabledServices(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  base:
+    image: alpine
+  api:
+    image: alpine
+    profiles: ["dev", "debug"]
+  worker:
+    image: alpine
+    profiles: ["debug"]
+`)
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "", dir)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	if got, want := project.Profiles, []string{"debug", "dev"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("project.Profiles = %#v, want %#v", got, want)
+	}
+	if _, ok := project.Services["base"]; !ok {
+		t.Fatal("base service is missing")
+	}
+	if _, ok := project.Services["api"]; ok {
+		t.Fatal("api service is active without profile selection")
+	}
+	if _, ok := project.Services["worker"]; ok {
+		t.Fatal("worker service is active without profile selection")
 	}
 }
 

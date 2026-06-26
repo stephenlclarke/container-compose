@@ -17,6 +17,54 @@
 import ContainerResource
 import ContainerizationOCI
 
+/// User-visible service identity fields for create planning.
+public struct ContainerServiceCreateIdentity: Sendable {
+    public var name: String
+    public var imageReference: String
+    public var oneOff: Bool
+    public var autoRemove: Bool
+    public var labels: [String: String]
+
+    public init(
+        name: String,
+        imageReference: String,
+        oneOff: Bool = false,
+        autoRemove: Bool = false,
+        labels: [String: String] = [:]
+    ) {
+        self.name = name
+        self.imageReference = imageReference
+        self.oneOff = oneOff
+        self.autoRemove = autoRemove
+        self.labels = labels
+    }
+}
+
+/// Runtime-specific service create fields.
+public struct ContainerServiceCreateRuntime: Sendable {
+    public var initProcess: ProcessConfiguration
+    public var logging: ContainerLogConfiguration
+    public var healthCheck: ContainerHealthCheck?
+    public var restartPolicy: ContainerRestartPolicy
+    public var hostname: String?
+    public var domainname: String?
+    public var hosts: [ContainerConfiguration.HostEntry]
+    public var sysctls: [String: String]
+    public var blockIO: LinuxBlockIO?
+
+    public init() {
+        initProcess = ComposeRuntimeDefaults.shellProcess()
+        logging = ContainerLogConfiguration.default
+        healthCheck = nil
+        restartPolicy = ContainerRestartPolicy.no
+        hostname = nil
+        domainname = nil
+        hosts = []
+        sysctls = [:]
+        blockIO = nil
+    }
+}
+
 /// Compose-owned typed create-time values for a service container.
 ///
 /// This is the boundary that lets Docker/Compose syntax stay in
@@ -39,40 +87,23 @@ public struct ContainerServiceCreatePlan: Sendable {
     public var blockIO: LinuxBlockIO?
 
     public init(
-        name: String,
-        imageReference: String,
-        oneOff: Bool = false,
-        autoRemove: Bool = false,
-        labels: [String: String] = [:],
-        initProcess: ProcessConfiguration = ProcessConfiguration(
-            executable: "/bin/sh",
-            arguments: [],
-            environment: [],
-            workingDirectory: "/"
-        ),
-        logging: ContainerLogConfiguration = .default,
-        healthCheck: ContainerHealthCheck? = nil,
-        restartPolicy: ContainerRestartPolicy = .no,
-        hostname: String? = nil,
-        domainname: String? = nil,
-        hosts: [ContainerConfiguration.HostEntry] = [],
-        sysctls: [String: String] = [:],
-        blockIO: LinuxBlockIO? = nil
+        identity: ContainerServiceCreateIdentity,
+        runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime()
     ) {
-        self.name = name
-        self.imageReference = imageReference
-        self.oneOff = oneOff
-        self.autoRemove = autoRemove
-        self.labels = labels
-        self.initProcess = initProcess
-        self.logging = logging
-        self.healthCheck = healthCheck
-        self.restartPolicy = restartPolicy
-        self.hostname = hostname
-        self.domainname = domainname
-        self.hosts = hosts
-        self.sysctls = sysctls
-        self.blockIO = blockIO
+        self.name = identity.name
+        self.imageReference = identity.imageReference
+        self.oneOff = identity.oneOff
+        self.autoRemove = identity.autoRemove
+        self.labels = identity.labels
+        self.initProcess = runtime.initProcess
+        self.logging = runtime.logging
+        self.healthCheck = runtime.healthCheck
+        self.restartPolicy = runtime.restartPolicy
+        self.hostname = runtime.hostname
+        self.domainname = runtime.domainname
+        self.hosts = runtime.hosts
+        self.sysctls = runtime.sysctls
+        self.blockIO = runtime.blockIO
     }
 }
 

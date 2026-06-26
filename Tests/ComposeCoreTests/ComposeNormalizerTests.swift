@@ -1021,6 +1021,33 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
+    @Test("normalizer decodes model variables")
+    func normalizerDecodesModelVariables() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"[{"name":"IMAGE_NAME","required":false,"defaultValue":"alpine"},{"name":"REQUIRED","required":true}]"#,
+                stderr: ""
+            ),
+        ])
+
+        let variables = try await ComposeNormalizer(runner: runner).variables(options: ComposeOptions(
+            files: ["compose.yml"],
+            projectName: "demo",
+            projectDirectory: "/tmp/demo"
+        ))
+
+        #expect(variables == [
+            ComposeVariable(name: "IMAGE_NAME", defaultValue: "alpine"),
+            ComposeVariable(name: "REQUIRED", required: true),
+        ])
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--variables"))
+        #expect(command.arguments.containsSequence(["--file", "compose.yml"]))
+        #expect(command.arguments.containsSequence(["--project-name", "demo"]))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
     @Test("normalizer forwards inferred project directory")
     func normalizerForwardsInferredProjectDirectory() async throws {
         let runner = RecordingRunner(responses: [
@@ -1035,6 +1062,35 @@ struct ComposeNormalizerTests {
 
         let command = try #require(runner.commands.first)
         #expect(command.arguments.containsSequence(["--file", "/tmp/demo/compose.yml"]))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
+    @Test("normalizer forwards config load switches")
+    func normalizerForwardsConfigLoadSwitches() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+
+        _ = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(
+            files: ["compose.yml"],
+            projectDirectory: "/tmp/demo",
+            noConsistency: true,
+            noEnvResolution: true,
+            noInterpolate: true,
+            noNormalize: true,
+            noPathResolution: true
+        ))
+
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--no-consistency"))
+        #expect(command.arguments.contains("--no-env-resolution"))
+        #expect(command.arguments.contains("--no-interpolate"))
+        #expect(command.arguments.contains("--no-normalize"))
+        #expect(command.arguments.contains("--no-path-resolution"))
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
