@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-26 23:27 BST.
+Last updated: 2026-06-26 23:39 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,7 +24,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed fork pins:
 
-- `stephenlclarke/container`: `834e57248cb6c1efbd28e606c8d03e20ea44e9d1`
+- `stephenlclarke/container`: `3fa746c85d99e295e998ccf07ba4a5d58fb48be8`
 - `stephenlclarke/containerization`: `a0b08ffeda51ea5396efb0788e060610c39f4b55`
 
 ## Current Docs Shape
@@ -47,13 +47,14 @@ swift test --disable-automatic-resolution --filter 'resourceManagerMapsComposeRe
 make check
 make ci
 make package-debug PLUGIN_ARCHIVE=container-compose-plugin-debug-arm64.tar.gz
+swift build --disable-automatic-resolution --product compose
 ../container/bin/container compose --progress plain -p volume-smoke -f /tmp/container-compose-volume-smoke.yml down --volumes --timeout 2
 bash -n Tools/ci/run-swift-test.sh
 npx --yes markdownlint-cli README.md PLAN.md STATUS.md
 git diff --check
 ```
 
-All passed locally after making direct volume cleanup tolerant of already-absent project volumes while still surfacing real delete failures such as volume-in-use errors. The routed runtime smoke proved `down --volumes` on an absent project network and declared volume exits cleanly. The CI harness now keeps the normal SwiftPM signal-13 retry path for plain tests but requires a complete Swift test exit for coverage so incomplete profile data cannot be reported as false 0% coverage. `make ci` ran 674 Swift tests, reported Swift coverage at 89.99%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
+All passed locally after making direct volume cleanup tolerant of already-absent project volumes while still surfacing real delete failures such as volume-in-use errors. The routed runtime smoke proved `down --volumes` on an absent project network and declared volume exits cleanly. The CI harness now keeps the normal SwiftPM signal-13 retry path for plain tests but requires a complete Swift test exit for coverage so incomplete profile data cannot be reported as false 0% coverage. `make ci` ran 674 Swift tests, reported Swift coverage at 89.99%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`; compose still builds against the refreshed fork ref.
 
 ## Open Blockers
 
