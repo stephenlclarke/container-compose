@@ -1100,6 +1100,7 @@ private enum DownImageRemovalPolicy {
 private enum ComposeImagesFormat {
     case table
     case json
+    case template(String, table: Bool)
 }
 
 private struct ParsedPublishedPortMapping {
@@ -2626,6 +2627,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
         case .json:
             options.emit(try renderComposeImageJSON(records))
+        case .template(let template, let table):
+            let output = try renderComposeImageTemplate(records, template: template, table: table)
+            if !output.isEmpty {
+                options.emit(output)
+            }
         }
     }
 
@@ -9102,6 +9108,7 @@ private func platformJSONObject(_ value: String) -> [String: String] {
     return object
 }
 
+private let composeImagesTemplateFields: Set<String> = ["Container", "ImageID", "Platform", "Repository", "Tag"]
 private let composePsTemplateFields: Set<String> = ["ID", "Image", "Name", "Project", "Service", "State", "Status"]
 private let composeVolumesTemplateFields: Set<String> = ["Driver", "Name"]
 
@@ -9479,13 +9486,31 @@ private func renderComposeProjectJSON(_ records: [ComposeProjectRecord]) throws 
 
 /// Validates the `compose images --format` value.
 private func composeImagesFormat(_ value: String) throws -> ComposeImagesFormat {
-    switch value.lowercased() {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch normalized.lowercased() {
     case "table":
         return .table
     case "json":
         return .json
     default:
-        throw ComposeError.unsupported("images --format '\(value)'; supported formats are table and json")
+        let tablePrefix = "table "
+        if normalized.lowercased().hasPrefix(tablePrefix) {
+            let template = String(normalized.dropFirst(tablePrefix.count))
+            try validateDockerTemplateActions(in: template)
+            try validateDockerTemplateFields(
+                dockerTemplateFields(in: template),
+                command: "images",
+                supported: composeImagesTemplateFields
+            )
+            return .template(template, table: true)
+        }
+        try validateDockerTemplateActions(in: normalized)
+        try validateDockerTemplateFields(
+            dockerTemplateFields(in: normalized),
+            command: "images",
+            supported: composeImagesTemplateFields
+        )
+        return .template(normalized, table: false)
     }
 }
 
@@ -9531,6 +9556,32 @@ private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> S
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(records)
     return String(decoding: data, as: UTF8.self)
+}
+
+/// Renders Compose image rows through a Docker-style field template.
+private func renderComposeImageTemplate(_ records: [ComposeImageRecord], template: String, table: Bool) throws -> String {
+    let fields = dockerTemplateFields(in: template)
+    try validateDockerTemplateActions(in: template)
+    try validateDockerTemplateFields(fields, command: "images", supported: composeImagesTemplateFields)
+    let rows = try records.map { record in
+        try renderDockerTemplate(template) { field in
+            switch field {
+            case "Container":
+                record.container
+            case "Repository":
+                record.repository
+            case "Tag":
+                record.tag
+            case "ImageID":
+                record.imageID
+            case "Platform":
+                record.platform
+            default:
+                throw unsupportedDockerTemplateField(field, command: "images", supported: composeImagesTemplateFields)
+            }
+        }
+    }
+    return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
 }
 
 /// Validates the `compose volumes --format` value.

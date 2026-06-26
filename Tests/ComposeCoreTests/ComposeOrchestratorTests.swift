@@ -6626,16 +6626,73 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true])
     }
 
-    @Test("images rejects unsupported output formats")
-    func imagesRejectsUnsupportedOutputFormats() async throws {
+    @Test("images renders Docker field templates")
+    func imagesRendersDockerFieldTemplates() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+                "worker": ComposeService(name: "worker", image: "example/worker:debug"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        ).images(
+            project: project,
+            services: [],
+            options: ComposeImagesOptions(format: "{{.Repository}}:{{.Tag}}\\t{{.ImageID}}")
+        )
+
+        #expect(emitted.messages == [
+            "localhost:5000/example/api:latest\taaaaaaaaaaaa\nexample/worker:debug\tbbbbbbbbbbbb",
+        ])
+    }
+
+    @Test("images renders table templates")
+    func imagesRendersTableTemplates() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        ).images(
+            project: project,
+            services: ["api"],
+            options: ComposeImagesOptions(format: "table {{.Container}}\\t{{.Repository}}\\t{{.Platform}}")
+        )
+
+        let output = try #require(emitted.messages.first)
+        #expect(output.contains("CONTAINER"))
+        #expect(output.contains("REPOSITORY"))
+        #expect(output.contains("PLATFORM"))
+        #expect(output.contains("demo-api-1"))
+        #expect(output.contains("localhost:5000/example/api"))
+        #expect(output.contains("linux/arm64"))
+    }
+
+    @Test("images rejects unsupported template fields")
+    func imagesRejectsUnsupportedTemplateFields() async throws {
         let runner = RecordingRunner()
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
         do {
-            try await ComposeOrchestrator(runner: runner).images(project: project, services: [], options: ComposeImagesOptions(format: "yaml"))
-            Issue.record("Expected unsupported images format error")
+            try await ComposeOrchestrator(runner: runner).images(project: project, services: [], options: ComposeImagesOptions(format: "{{.Size}}"))
+            Issue.record("Expected unsupported images template field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("images --format 'yaml'; supported formats are table and json"))
+            #expect(error == .unsupported("images --format field '.Size'; supported fields are Container, ImageID, Platform, Repository, Tag"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

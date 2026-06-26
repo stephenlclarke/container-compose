@@ -321,7 +321,7 @@ enum ComposeCLIHelp {
         ],
         "images": [
             "--dry-run": .supported,
-            "--format": .supported,
+            "--format": .partiallySupported,
             "--quiet": .supported,
         ],
         "kill": [
@@ -1116,7 +1116,7 @@ enum ComposeCLIHelp {
 
         Options:
               --dry-run         Execute command in dry run mode
-              --format string   Format the output. Values: [table | json] (default "table")
+              --format string   Format output using table, json, or a custom template (default "table")
           -q, --quiet           Only display IDs
         """,
         "kill": """

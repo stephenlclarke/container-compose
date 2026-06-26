@@ -790,7 +790,7 @@ struct Ls: AsyncParsableCommand {
     var all = false
     @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display project names.")
     var quiet = false
-    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    @Option(name: .customLong("format"), help: "Output format: table, json, or a custom template.")
     var format = "table"
     @Option(name: .customLong("filter"), help: "Filter projects. Supported filter: name.")
     var filters: [String] = []
@@ -808,7 +808,7 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .shortAndLong, help: "Include stopped containers.")
     var all = false
-    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    @Option(name: .customLong("format"), help: "Output format: table, json, or a custom template.")
     var format = "table"
     @Flag(name: .customLong("no-trunc"), help: "Do not truncate output.")
     var noTrunc = false
@@ -1124,7 +1124,7 @@ struct Rm: AsyncParsableCommand, ComposeProjectCommand {
 struct Images: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "images", abstract: "List images used by created service containers.")
     @OptionGroup var global: GlobalOptions
-    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    @Option(name: .customLong("format"), help: "Output format: table, json, or a custom template.")
     var format = "table"
     @Flag(name: .shortAndLong, help: "Only display image IDs.")
     var quiet = false
@@ -1142,7 +1142,7 @@ struct Stats: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: [.customShort("a"), .customLong("all")], help: "Show all service containers.")
     var all = false
-    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    @Option(name: .customLong("format"), help: "Output format: table, json, or a custom template.")
     var format = "table"
     @Flag(name: .customLong("no-stream"), help: "Disable streaming stats and only pull the first result.")
     var noStream = false
@@ -1405,7 +1405,7 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
 struct Volumes: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "volumes", abstract: "List Compose volumes.")
     @OptionGroup var global: GlobalOptions
-    @Option(name: .customLong("format"), help: "Output format: table or json.")
+    @Option(name: .customLong("format"), help: "Output format: table, json, or a custom template.")
     var format = "table"
     @Flag(name: .shortAndLong, help: "Only display volume names.")
     var quiet = false
