@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-25 18:06 BST.
+Last updated: 2026-06-26 19:37 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -22,6 +22,11 @@ Frozen lanes should remain installable through Homebrew without requiring Go, Xc
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
+Current reviewed fork pins:
+
+- `stephenlclarke/container`: `834e57248cb6c1efbd28e606c8d03e20ea44e9d1`
+- `stephenlclarke/containerization`: `a0b08ffeda51ea5396efb0788e060610c39f4b55`
+
 ## Current Docs Shape
 
 The old long-lived evidence files have been removed from the top-level documentation set. Current ownership is:
@@ -38,25 +43,18 @@ The old long-lived evidence files have been removed from the top-level documenta
 Current local validation:
 
 ```sh
-make go-build
-make go-test
-make package-debug PLUGIN_ARCHIVE=/tmp/container-compose-plugin-snapshot-debug-arm64.tar.gz
-make package-release PLUGIN_ARCHIVE=/tmp/container-compose-plugin-release-arm64.tar.gz CONTAINER_COMPOSE_BRANCH=release/local CONTAINER_COMPOSE_LANE=release
-make swift-test
-make cli-smoke-built
+swift build --disable-automatic-resolution --product compose
 make ci
-npx --yes markdownlint-cli BUILD.md
-npx --yes markdownlint-cli README.md BUILD.md PLAN.md STATUS.md
-npx --yes markdownlint-cli BUILD.md PLAN.md STATUS.md BRANCHES.md README.md INSTALL.md DESIGN.md
+make package-release PLUGIN_ARCHIVE=container-compose-plugin-release-arm64.tar.gz
 git diff --check
 ```
 
-All passed locally. `make ci` reported Swift coverage 90.26% and Go coverage 93.26%. The debug and release package targets both built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. Local package inspection confirmed the release archive includes `compose/bin/compose`, `compose/config.toml`, `compose/resources/build-info.json`, and `compose/resources/compose-normalizer`.
+All passed locally after refreshing the fork pins. `make package-release` built the Swift plugin in release mode and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. Local package metadata recorded the refreshed `container` and `containerization` refs above.
 
 ## Open Blockers
 
 - Released Apple compatibility still depends on upstream acceptance of fork-backed runtime primitives.
-- SonarQube status should be checked through `/Users/sclarke/github/pr-refresh` with `make sonar-status` during the next full maintenance refresh.
+- SonarQube status should be checked through `/Users/sclarke/github/pr-refresh` with `make sonar-status` after the next push.
 - Runtime smoke tests still require a responsive local Apple container runtime; the last enabled local run timed out during `container system status`.
 
 ## Next Step
