@@ -45,6 +45,7 @@ public protocol ContainerStatsManaging: Sendable {
         ids: [String],
         format: String,
         noStream: Bool,
+        noTrunc: Bool,
         includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws
@@ -106,12 +107,13 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         ids: [String],
         format: String,
         noStream: Bool,
+        noTrunc: Bool,
         includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
         if format == "json" || noStream {
             let records = try await collectStats(ids: ids, includeStopped: includeStopped)
-            emit(try renderStats(records, format: format))
+            emit(try renderStats(records, format: format, noTrunc: noTrunc))
             return
         }
 
@@ -120,10 +122,10 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             emit("\u{001B}[?25h\u{001B}[?1049l")
         }
 
-        emit("\u{001B}[H\u{001B}[J" + renderStatsTable([]))
+        emit("\u{001B}[H\u{001B}[J" + renderStatsTable([], noTrunc: noTrunc))
         while !Task.isCancelled {
             let records = try await collectStats(ids: ids, includeStopped: includeStopped)
-            emit("\u{001B}[H\u{001B}[J" + renderStatsTable(records))
+            emit("\u{001B}[H\u{001B}[J" + renderStatsTable(records, noTrunc: noTrunc))
             try await sleep(sampleInterval)
         }
     }
@@ -183,7 +185,7 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
     }
 
     /// Renders the direct stats payload in a supported format.
-    private func renderStats(_ records: [StatsSnapshot], format: String) throws -> String {
+    private func renderStats(_ records: [StatsSnapshot], format: String, noTrunc: Bool) throws -> String {
         switch format {
         case "json":
             let encoder = JSONEncoder()
@@ -191,21 +193,21 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
             let data = try encoder.encode(records.map(\.second))
             return String(decoding: data, as: UTF8.self)
         case "table":
-            return renderStatsTable(records)
+            return renderStatsTable(records, noTrunc: noTrunc)
         default:
             throw ComposeError.unsupported("stats --format '\(format)': apple/container stats supports table and json output")
         }
     }
 
     /// Renders stats rows with the same columns as `container stats`.
-    private func renderStatsTable(_ records: [StatsSnapshot]) -> String {
+    private func renderStatsTable(_ records: [StatsSnapshot], noTrunc: Bool) -> String {
         let headerRow = ["Container ID", "Cpu %", "Memory Usage", "Net Rx/Tx", "Block I/O", "Pids"]
-        let rows = [headerRow] + records.map(statsTableRow)
+        let rows = [headerRow] + records.map { statsTableRow($0, noTrunc: noTrunc) }
         return renderTable(rows)
     }
 
     /// Projects one stats snapshot pair into display columns.
-    private func statsTableRow(_ snapshot: StatsSnapshot) -> [String] {
+    private func statsTableRow(_ snapshot: StatsSnapshot, noTrunc: Bool) -> [String] {
         let first = snapshot.first
         let second = snapshot.second
         let notAvailable = "--"
@@ -220,13 +222,21 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         let pids = second.numProcesses.map(String.init) ?? notAvailable
 
         return [
-            second.id,
+            noTrunc ? second.id : truncatedContainerID(second.id),
             cpuPercent,
             "\(memoryUsage) / \(memoryLimit)",
             "\(networkRx) / \(networkTx)",
             "\(blockRead) / \(blockWrite)",
             pids,
         ]
+    }
+
+    /// Mirrors Docker-style table truncation for container identifiers.
+    private func truncatedContainerID(_ id: String) -> String {
+        guard id.count > 12 else {
+            return id
+        }
+        return String(id.prefix(12))
     }
 
     /// Computes CPU percentage from two microsecond counters.

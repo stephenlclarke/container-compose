@@ -2664,6 +2664,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if stats.noStream {
             args.append("--no-stream")
         }
+        if stats.noTrunc {
+            args.append("--no-trunc")
+        }
         if stats.all {
             args.append("--all")
         }
@@ -2677,6 +2680,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             ids: ids,
             format: stats.format,
             noStream: stats.noStream,
+            noTrunc: stats.noTrunc,
             includeStopped: stats.all,
             emit: options.emit
         )

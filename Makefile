@@ -768,6 +768,8 @@ cli-smoke-built:
 	[[ "$$volumes_bad_format_output" == *"unsupported compose feature: volumes --format 'yaml'; supported formats are table and json"* ]]; \
 	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api db)"; \
 	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1 demo-db-1"* ]]; \
+	stats_no_trunc_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --no-trunc api)"; \
+	[[ "$$stats_no_trunc_output" == *"container stats --no-stream --no-trunc demo-api-1"* ]]; \
 	ls_json_output="$$(".build/debug/compose" --dry-run ls --format json)"; \
 	[[ "$$ls_json_output" == *"container list --format json"* ]]; \
 	[[ "$$ls_json_output" != *"--all"* ]]; \

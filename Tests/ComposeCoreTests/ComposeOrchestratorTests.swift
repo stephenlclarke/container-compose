@@ -6842,9 +6842,9 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.isEmpty)
         #expect(await statsManager.requests == [
-            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "table", noStream: false, includeStopped: false),
-            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "json", noStream: true, includeStopped: false),
-            ContainerStatsRequest(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: true),
+            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "table", noStream: false, noTrunc: false, includeStopped: false),
+            ContainerStatsRequest(ids: ["demo-api-1", "custom-db"], format: "json", noStream: true, noTrunc: false, includeStopped: false),
+            ContainerStatsRequest(ids: ["demo-api-1"], format: "table", noStream: true, noTrunc: true, includeStopped: true),
         ])
         #expect(emitted.messages == [
             "stats-output",
@@ -6880,6 +6880,26 @@ struct ComposeOrchestratorTests {
             "+ compose-runtime stats --format json --no-stream --all demo-api-1 custom-db",
         ])
         #expect(await statsManager.requests.isEmpty)
+    }
+
+    @Test("stats dry run renders no trunc flag")
+    func statsDryRunRendersNoTruncFlag() async throws {
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        ).stats(
+            project: project,
+            options: ComposeStatsOptions(services: ["api"], noStream: true, noTrunc: true)
+        )
+
+        #expect(emitted.messages == [
+            "+ compose-runtime stats --no-stream --no-trunc demo-api-1",
+        ])
     }
 
     @Test("stats rejects unsupported format before runtime commands")
@@ -11156,7 +11176,7 @@ struct ComposeOrchestratorTests {
             sleep: { _ in }
         )
 
-        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, includeStopped: false, emit: { emitted.append($0) })
+        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
 
         #expect(emitted.messages.count == 1)
         #expect(emitted.messages[0].contains("Container ID"))
@@ -11166,6 +11186,43 @@ struct ComposeOrchestratorTests {
         #expect(!emitted.messages[0].contains("demo-db-1"))
         #expect(await client.listRequests == [["demo-api-1", "demo-db-1"]])
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
+    }
+
+    @Test("stats manager honors no trunc table output")
+    func statsManagerHonorsNoTruncTableOutput() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1-very-long-id", status: "running")],
+            statsResponses: [
+                "demo-api-1-very-long-id": [
+                    containerStats(id: "demo-api-1-very-long-id", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1-very-long-id", cpuUsageUsec: 1_500_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
+
+        try await manager.stats(
+            ids: ["demo-api-1-very-long-id"],
+            format: "table",
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emitted.append($0) }
+        )
+        try await manager.stats(
+            ids: ["demo-api-1-very-long-id"],
+            format: "table",
+            noStream: true,
+            noTrunc: true,
+            includeStopped: false,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages.count == 2)
+        #expect(emitted.messages[0].contains("demo-api-1-v"))
+        #expect(!emitted.messages[0].contains("demo-api-1-very-long-id"))
+        #expect(emitted.messages[1].contains("demo-api-1-very-long-id"))
     }
 
     @Test("stats manager includes stopped containers when all is requested")
@@ -11190,7 +11247,7 @@ struct ComposeOrchestratorTests {
             sleep: { _ in }
         )
 
-        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, includeStopped: true, emit: { emitted.append($0) })
+        try await manager.stats(ids: ["demo-api-1", "demo-db-1"], format: "table", noStream: true, noTrunc: false, includeStopped: true, emit: { emitted.append($0) })
 
         #expect(emitted.messages.count == 1)
         #expect(emitted.messages[0].contains("demo-api-1"))
@@ -11222,7 +11279,7 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: false, includeStopped: false, emit: { emitted.append($0) })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: false, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
             Issue.record("Expected streaming stats cancellation")
         } catch is CancellationError {
             // Expected cancellation from the injected sleeper after one streamed frame.
@@ -11267,7 +11324,7 @@ struct ComposeOrchestratorTests {
         )
         let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
 
-        try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { emitted.append($0) })
+        try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
 
         #expect(emitted.messages[0].contains("--"))
         #expect(emitted.messages[0].contains("1.00 GiB / --"))
@@ -11288,7 +11345,7 @@ struct ComposeOrchestratorTests {
         )
         let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
 
-        try await manager.stats(ids: ["demo-api-1"], format: "json", noStream: false, includeStopped: false, emit: { emitted.append($0) })
+        try await manager.stats(ids: ["demo-api-1"], format: "json", noStream: false, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
 
         let decoded = try JSONDecoder().decode([ContainerStats].self, from: Data(emitted.messages[0].utf8))
         #expect(decoded.count == 1)
@@ -11304,7 +11361,7 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientStatsManager(client: client, sleep: { _ in })
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { _ in })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, noTrunc: false, includeStopped: false, emit: { _ in })
             Issue.record("Expected missing stats target error")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("no such container: demo-api-1"))
@@ -11327,7 +11384,7 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientStatsManager(client: client, sleep: { _ in })
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { _ in })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, noTrunc: false, includeStopped: false, emit: { _ in })
             Issue.record("Expected initial stats failure")
         } catch let error as ComposeError {
             #expect(error == expected)
@@ -11355,7 +11412,7 @@ struct ComposeOrchestratorTests {
         let manager = ContainerClientStatsManager(client: client, sampleInterval: .microseconds(1), sleep: { _ in })
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, includeStopped: false, emit: { _ in })
+            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: true, noTrunc: false, includeStopped: false, emit: { _ in })
             Issue.record("Expected follow-up stats failure")
         } catch let error as ComposeError {
             #expect(error == expected)
@@ -18868,6 +18925,7 @@ private struct ContainerStatsRequest: Equatable {
     var ids: [String]
     var format: String
     var noStream: Bool
+    var noTrunc: Bool
     var includeStopped: Bool
 }
 
@@ -19656,10 +19714,11 @@ private actor RecordingContainerStatsManager: ContainerStatsManaging {
         ids: [String],
         format: String,
         noStream: Bool,
+        noTrunc: Bool,
         includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        storage.append(ContainerStatsRequest(ids: ids, format: format, noStream: noStream, includeStopped: includeStopped))
+        storage.append(ContainerStatsRequest(ids: ids, format: format, noStream: noStream, noTrunc: noTrunc, includeStopped: includeStopped))
         for output in outputs {
             emit(output)
         }
