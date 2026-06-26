@@ -6562,7 +6562,9 @@ private extension ComposeOrchestrator {
             try await runContainer(inspectArgs, check: false, emitOutput: false)
             try await runContainer(imagePullArguments(image, quiet: quiet))
         } else {
-            try await imageManager.pullMissingImage(image)
+            try await progressActivity("Preparing image \(image)", quiet: quiet) {
+                try await imageManager.pullMissingImage(image)
+            }
         }
     }
 
@@ -6572,8 +6574,10 @@ private extension ComposeOrchestrator {
             try await runContainer(imagePullArguments(image, quiet: quiet))
             return
         }
-        try await imageManager.pullImage(image)
-        try await pullMetadataStore.recordPullDate(options.currentDate(), for: image)
+        try await progressActivity("Pulling image \(image)", quiet: quiet) {
+            try await imageManager.pullImage(image)
+            try await pullMetadataStore.recordPullDate(options.currentDate(), for: image)
+        }
     }
 
     /// Pulls an image when absent or older than a Compose time-window policy.
@@ -6605,6 +6609,14 @@ private extension ComposeOrchestrator {
         }
         args.append(image)
         return args
+    }
+
+    /// Runs a Compose-owned progress activity unless output was explicitly quieted.
+    private func progressActivity<T>(_ message: String, quiet: Bool, operation: () async throws -> T) async throws -> T {
+        if quiet || options.dryRun {
+            return try await operation()
+        }
+        return try await options.progress.activity(message, operation: operation)
     }
 
     /// Builds the `container run` argument vector for a service.

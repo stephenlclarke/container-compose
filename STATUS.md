@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-26 21:47 BST.
+Last updated: 2026-06-26 22:05 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -43,13 +43,14 @@ The old long-lived evidence files have been removed from the top-level documenta
 Current local validation:
 
 ```sh
-swift test --disable-automatic-resolution --filter 'ComposeProgressTests|ComposeCLIHelpTests'
+swift test --disable-automatic-resolution --filter 'upDirectImagePullEmitsProgressBeforeRun|upQuietPullSuppressesDirectImagePullProgress|runDirectImagePullEmitsProgressBeforeOneOffContainer|runQuietPullSuppressesDirectImagePullProgress'
+make check
 make ci
 npx --yes markdownlint-cli README.md PLAN.md STATUS.md
 git diff --check
 ```
 
-All passed locally after adding structured `--progress json` events for Compose-owned progress phases and `up --no-attach SERVICE` foreground-selection support. `make ci` ran 664 Swift tests, reported Swift coverage at 90.02%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
+All passed locally after extending Compose-owned progress reporting to direct image pull preparation for `run` and `up`. `make ci` ran 668 Swift tests, reported Swift coverage at 90.03%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
 
 ## Open Blockers
 
@@ -59,7 +60,7 @@ All passed locally after adding structured `--progress json` events for Compose-
 
 ## Open Follow-ups
 
-- Verify real `run` and `up` build/startup paths emit immediate terminal progress before the Apple build subprocess produces output, using the existing Docker Compose-style `--progress` policies and spinner.
+- Verify real `run` and `up` build/startup paths emit immediate terminal progress before the Apple build subprocess produces output, now that normalization, direct image pulls, and image builds use the existing Docker Compose-style `--progress` policies and spinner.
 
 ## Next Step
 

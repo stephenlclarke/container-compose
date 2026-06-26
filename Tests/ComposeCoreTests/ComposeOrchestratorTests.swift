@@ -125,6 +125,13 @@ private final class LockedStringRecorder: @unchecked Sendable {
     }
 }
 
+private func progressReportingOptions(recordingTo recorder: LockedStringRecorder) -> ComposeExecutionOptions {
+    ComposeExecutionOptions(progress: ComposeProgressReporter(
+        style: .plain,
+        emitData: { recorder.append(String(decoding: $0, as: UTF8.self)) }
+    ))
+}
+
 private func composeRunOptions(
     command: [String] = [],
     configure: (inout ComposeRunOptions) -> Void = { _ in }
@@ -3470,6 +3477,73 @@ struct ComposeOrchestratorTests {
             .healthCheck(reference: "example/api", platform: nil),
         ])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
+    @Test("up direct image pull emits progress before run")
+    func upDirectImagePullEmitsProgressBeforeRun() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let progress = LockedStringRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.imageManager = imageManager
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.pullPolicy = "always"
+        })
+
+        #expect(progress.snapshot.joined() == "⠋ Pulling image example/api\n✔︎ Pulling image example/api\n")
+        #expect(await imageManager.requests == [
+            .pull("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
+        ])
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+    }
+
+    @Test("up quiet-pull suppresses direct image pull progress")
+    func upQuietPullSuppressesDirectImagePullProgress() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let progress = LockedStringRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.imageManager = imageManager
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.pullPolicy = "always"
+            $0.quietPull = true
+        })
+
+        #expect(progress.snapshot.isEmpty)
+        #expect(await imageManager.requests == [
+            .pull("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
+        ])
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
     }
 
     @Test("up applies service pull policies when no global pull policy is set")
@@ -16041,6 +16115,81 @@ struct ComposeOrchestratorTests {
             .healthCheck(reference: "alpine", platform: nil),
         ])
         #expect(commands[0].starts(with: ["container", "run", "--name"]))
+    }
+
+    @Test("run direct image pull emits progress before one-off container")
+    func runDirectImagePullEmitsProgressBeforeOneOffContainer() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let progress = LockedStringRecorder()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": ComposeService(name: "job", image: "alpine"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        )
+
+        try await orchestrator.run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"]) {
+                $0.pullPolicy = "always"
+            }
+        )
+
+        #expect(progress.snapshot.joined() == "⠋ Pulling image alpine\n✔︎ Pulling image alpine\n")
+        #expect(await imageManager.requests == [
+            .pull("alpine"),
+            .healthCheck(reference: "alpine", platform: nil),
+        ])
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name"]))
+    }
+
+    @Test("run quiet-pull suppresses direct image pull progress")
+    func runQuietPullSuppressesDirectImagePullProgress() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let progress = LockedStringRecorder()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": ComposeService(name: "job", image: "alpine"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        )
+
+        try await orchestrator.run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"]) {
+                $0.pullPolicy = "always"
+                $0.quietPull = true
+            }
+        )
+
+        #expect(progress.snapshot.isEmpty)
+        #expect(await imageManager.requests == [
+            .pull("alpine"),
+            .healthCheck(reference: "alpine", platform: nil),
+        ])
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name"]))
     }
 
     @Test("run applies service build pull policy before one-off container")
