@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-26 22:52 BST.
+Last updated: 2026-06-26 23:06 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -43,17 +43,16 @@ The old long-lived evidence files have been removed from the top-level documenta
 Current local validation:
 
 ```sh
-swift test --disable-automatic-resolution --filter 'resourceManagerMapsComposeResourcesToDirectAPIClient|resourceManagerSkipsDeletingMissingNetworks|resourceAPIClientForwardsConfiguredOperations|downIgnoresServiceContainersThatAreAlreadyRemoved|downIgnoresOrphanContainersThatDisappearDuringCleanup|downSurfacesNetworkRemovalFailures'
+swift test --disable-automatic-resolution --filter 'resourceManagerMapsComposeResourcesToDirectAPIClient|resourceManagerSkipsDeletingMissingVolumes|resourceManagerIgnoresVolumesRemovedAfterPreflight|resourceManagerSurfacesVolumeDeleteFailures|resourceManagerSkipsDeletingMissingNetworks|resourceAPIClientForwardsConfiguredOperations|downSurfacesVolumeRemovalFailures'
 make check
 make ci
 make package-debug PLUGIN_ARCHIVE=container-compose-plugin-debug-arm64.tar.gz
-../container/bin/container compose --progress plain -p progress-smoke -f /tmp/container-compose-up-smoke-fixed.yml up --wait --wait-timeout 15 shell
-../container/bin/container compose --progress plain -p progress-smoke -f /tmp/container-compose-up-smoke-fixed.yml down --timeout 2
+../container/bin/container compose --progress plain -p volume-smoke -f /tmp/container-compose-volume-smoke.yml down --volumes --timeout 2
 npx --yes markdownlint-cli README.md PLAN.md STATUS.md
 git diff --check
 ```
 
-All passed locally after making `down` tolerant of already-removed service containers, orphan containers, and absent project networks. The runtime smoke also proved `run` and `up --wait` emit `Loading Compose model` / `Building shell` progress before the slow Apple build subprocess output. `make ci` ran 671 Swift tests, reported Swift coverage at 89.98%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
+All passed locally after making direct volume cleanup tolerant of already-absent project volumes while still surfacing real delete failures such as volume-in-use errors. The routed runtime smoke proved `down --volumes` on an absent project network and declared volume exits cleanly. `make ci` ran 674 Swift tests, reported Swift coverage at 89.99%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
 
 ## Open Blockers
 
@@ -62,7 +61,7 @@ All passed locally after making `down` tolerant of already-removed service conta
 
 ## Open Follow-ups
 
-- Continue the strict cleanup review around volume removal and orphan handling; missing container and missing network cleanup are now covered by tests and live smoke.
+- Continue the strict cleanup review around remaining orphan/resource edge cases; missing containers, missing networks, and missing volumes are now covered by tests and live smoke.
 
 ## Next Step
 

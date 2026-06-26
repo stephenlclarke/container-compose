@@ -12597,6 +12597,7 @@ struct ComposeOrchestratorTests {
             .listVolumes,
             .networkExists(id: "demo_default"),
             .deleteNetwork(id: "demo_default"),
+            .listVolumes,
             .deleteVolume(name: "demo_cache"),
         ])
     }
@@ -12610,6 +12611,57 @@ struct ComposeOrchestratorTests {
 
         #expect(await client.requests == [
             .networkExists(id: "demo_default"),
+        ])
+    }
+
+    @Test("resource manager skips deleting missing volumes")
+    func resourceManagerSkipsDeletingMissingVolumes() async throws {
+        let client = RecordingContainerResourceAPIClient(volumes: [])
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.deleteVolume(name: "demo_cache")
+
+        #expect(await client.requests == [
+            .listVolumes,
+        ])
+    }
+
+    @Test("resource manager ignores volumes removed after preflight")
+    func resourceManagerIgnoresVolumesRemovedAfterPreflight() async throws {
+        let client = RecordingContainerResourceAPIClient(
+            volumes: [ComposeVolumeSummary(name: "demo_cache", labels: [:])],
+            volumeDeleteError: VolumeError.volumeNotFound("demo_cache")
+        )
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.deleteVolume(name: "demo_cache")
+
+        #expect(await client.requests == [
+            .listVolumes,
+            .deleteVolume(name: "demo_cache"),
+        ])
+    }
+
+    @Test("resource manager surfaces volume delete failures")
+    func resourceManagerSurfacesVolumeDeleteFailures() async throws {
+        let client = RecordingContainerResourceAPIClient(
+            volumes: [ComposeVolumeSummary(name: "demo_cache", labels: [:])],
+            volumeDeleteError: VolumeError.volumeInUse("demo_cache")
+        )
+        let manager = ContainerClientResourceManager(client: client)
+
+        do {
+            try await manager.deleteVolume(name: "demo_cache")
+            Issue.record("Expected volume-in-use failure")
+        } catch VolumeError.volumeInUse(let name) {
+            #expect(name == "demo_cache")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await client.requests == [
+            .listVolumes,
+            .deleteVolume(name: "demo_cache"),
         ])
     }
 
@@ -21124,16 +21176,19 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
     private let existingNetworks: Set<String>
     private let volumes: [ComposeVolumeSummary]
     private let networkCreateError: (any Error)?
+    private let volumeDeleteError: (any Error)?
     private var storage: [ContainerResourceAPIRequest] = []
 
     init(
         existingNetworks: Set<String> = ["demo_default"],
         volumes: [ComposeVolumeSummary] = [],
-        networkCreateError: (any Error)? = nil
+        networkCreateError: (any Error)? = nil,
+        volumeDeleteError: (any Error)? = nil
     ) {
         self.existingNetworks = existingNetworks
         self.volumes = volumes
         self.networkCreateError = networkCreateError
+        self.volumeDeleteError = volumeDeleteError
     }
 
     var requests: [ContainerResourceAPIRequest] {
@@ -21174,6 +21229,9 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
 
     func deleteVolume(name: String) async throws {
         storage.append(.deleteVolume(name: name))
+        if let volumeDeleteError {
+            throw volumeDeleteError
+        }
     }
 }
 

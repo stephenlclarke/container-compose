@@ -283,6 +283,17 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
 
     /// Deletes a Compose project volume through `ClientVolume`.
     public func deleteVolume(name: String) async throws {
-        try await client.deleteVolume(name: name)
+        let volumes = try await client.listVolumes()
+        guard volumes.contains(where: { $0.name == name }) else {
+            return
+        }
+        do {
+            try await client.deleteVolume(name: name)
+        } catch let error as VolumeError {
+            if case .volumeNotFound = error {
+                return
+            }
+            throw error
+        }
     }
 }
