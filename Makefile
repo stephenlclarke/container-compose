@@ -768,6 +768,10 @@ cli-smoke-built:
 	[[ "$$volumes_bad_format_output" == *"unsupported compose feature: volumes --format field '.Scope'; supported fields are Driver, Name"* ]]; \
 	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api db)"; \
 	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1 demo-db-1"* ]]; \
+	stats_template_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format '{{.Container}}' api)"; \
+	[[ "$$stats_template_output" == *"container stats --format '{{.Container}}' --no-stream demo-api-1"* ]]; \
+	stats_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --format '{{.Scope}}' api 2>&1 || true)"; \
+	[[ "$$stats_bad_format_output" == *"unsupported compose feature: stats --format field '.Scope'; supported fields are BlockIO, CPUPerc, Container, ID, MemUsage, Name, NetIO, PIDs"* ]]; \
 	stats_no_trunc_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --no-trunc api)"; \
 	[[ "$$stats_no_trunc_output" == *"container stats --no-stream --no-trunc demo-api-1"* ]]; \
 	ls_json_output="$$(".build/debug/compose" --dry-run ls --format json)"; \

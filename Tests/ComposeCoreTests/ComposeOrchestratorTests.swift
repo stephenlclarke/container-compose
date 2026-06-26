@@ -6956,8 +6956,8 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("stats rejects unsupported format before runtime commands")
-    func statsRejectsUnsupportedFormatBeforeRuntimeCommands() async throws {
+    @Test("stats rejects unsupported template fields before runtime commands")
+    func statsRejectsUnsupportedTemplateFieldsBeforeRuntimeCommands() async throws {
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -6970,11 +6970,11 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(runner: runner).stats(
                 project: project,
-                options: ComposeStatsOptions(format: "yaml")
+                options: ComposeStatsOptions(format: "{{.Scope}}")
             )
-            Issue.record("Expected unsupported stats format failure")
+            Issue.record("Expected unsupported stats template field failure")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("stats --format 'yaml': apple/container stats supports table and json output"))
+            #expect(error == .unsupported("stats --format field '.Scope'; supported fields are BlockIO, CPUPerc, Container, ID, MemUsage, Name, NetIO, PIDs"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -11302,6 +11302,43 @@ struct ComposeOrchestratorTests {
         #expect(await client.statsRequests == ["demo-api-1", "demo-api-1"])
     }
 
+    @Test("stats manager renders template output from direct API stats")
+    func statsManagerRendersTemplateOutputFromDirectAPIStats() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerStatsAPIClient(
+            targets: [ComposeStatsTarget(id: "demo-api-1", status: "running")],
+            statsResponses: [
+                "demo-api-1": [
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_000_000),
+                    containerStats(id: "demo-api-1", cpuUsageUsec: 1_250_000),
+                ],
+            ]
+        )
+        let manager = ContainerClientStatsManager(
+            client: client,
+            sampleInterval: .microseconds(1),
+            sampleIntervalMicroseconds: 1_000_000,
+            sleep: { _ in }
+        )
+
+        try await manager.stats(
+            ids: ["demo-api-1"],
+            format: #"table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"#,
+            noStream: true,
+            noTrunc: false,
+            includeStopped: false,
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages.count == 1)
+        #expect(emitted.messages[0].contains("CONTAINER"))
+        #expect(emitted.messages[0].contains("CPUPERC"))
+        #expect(emitted.messages[0].contains("MEMUSAGE"))
+        #expect(emitted.messages[0].contains("demo-api-1"))
+        #expect(emitted.messages[0].contains("25.00%"))
+        #expect(emitted.messages[0].contains("1.00 MiB / 2.00 MiB"))
+    }
+
     @Test("stats manager honors no trunc table output")
     func statsManagerHonorsNoTruncTableOutput() async throws {
         let emitted = MessageRecorder()
@@ -11393,7 +11430,7 @@ struct ComposeOrchestratorTests {
         )
 
         do {
-            try await manager.stats(ids: ["demo-api-1"], format: "table", noStream: false, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
+            try await manager.stats(ids: ["demo-api-1"], format: " TABLE ", noStream: false, noTrunc: false, includeStopped: false, emit: { emitted.append($0) })
             Issue.record("Expected streaming stats cancellation")
         } catch is CancellationError {
             // Expected cancellation from the injected sleeper after one streamed frame.

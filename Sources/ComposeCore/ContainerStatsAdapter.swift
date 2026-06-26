@@ -18,6 +18,22 @@ import ContainerAPIClient
 import ContainerResource
 import Foundation
 
+private let composeStatsTemplateFields: Set<String> = [
+    "BlockIO",
+    "CPUPerc",
+    "Container",
+    "ID",
+    "MemUsage",
+    "Name",
+    "NetIO",
+    "PIDs",
+]
+
+/// Validates the `compose stats --format` value.
+func validateComposeStatsFormat(_ value: String) throws {
+    _ = try composeStatsFormat(value)
+}
+
 /// Container identity and status needed before collecting direct API stats.
 public struct ComposeStatsTarget: Sendable, Equatable {
     public var id: String
@@ -111,9 +127,10 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         includeStopped: Bool,
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
-        if format == "json" || noStream {
+        let parsedFormat = try composeStatsFormat(format)
+        if !parsedFormat.isStreamingTable || noStream {
             let records = try await collectStats(ids: ids, includeStopped: includeStopped)
-            emit(try renderStats(records, format: format, noTrunc: noTrunc))
+            emit(try renderStats(records, format: parsedFormat, noTrunc: noTrunc))
             return
         }
 
@@ -185,17 +202,17 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
     }
 
     /// Renders the direct stats payload in a supported format.
-    private func renderStats(_ records: [StatsSnapshot], format: String, noTrunc: Bool) throws -> String {
+    private func renderStats(_ records: [StatsSnapshot], format: ComposeStatsFormat, noTrunc: Bool) throws -> String {
         switch format {
-        case "json":
+        case .json:
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             let data = try encoder.encode(records.map(\.second))
             return String(decoding: data, as: UTF8.self)
-        case "table":
+        case .table:
             return renderStatsTable(records, noTrunc: noTrunc)
-        default:
-            throw ComposeError.unsupported("stats --format '\(format)': apple/container stats supports table and json output")
+        case .template(let template, let table):
+            return try renderStatsTemplate(records, template: template, table: table, noTrunc: noTrunc)
         }
     }
 
@@ -208,6 +225,53 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
 
     /// Projects one stats snapshot pair into display columns.
     private func statsTableRow(_ snapshot: StatsSnapshot, noTrunc: Bool) -> [String] {
+        let display = statsDisplayValues(snapshot, noTrunc: noTrunc)
+        return [
+            display.container,
+            display.cpuPercent,
+            "\(display.memoryUsage) / \(display.memoryLimit)",
+            "\(display.networkRx) / \(display.networkTx)",
+            "\(display.blockRead) / \(display.blockWrite)",
+            display.pids,
+        ]
+    }
+
+    /// Projects one stats snapshot pair into template fields.
+    private func statsTemplateValue(_ field: String, snapshot: StatsSnapshot, noTrunc: Bool) throws -> String {
+        let display = statsDisplayValues(snapshot, noTrunc: noTrunc)
+        switch field {
+        case "Container", "ID", "Name":
+            return display.container
+        case "CPUPerc":
+            return display.cpuPercent
+        case "MemUsage":
+            return "\(display.memoryUsage) / \(display.memoryLimit)"
+        case "NetIO":
+            return "\(display.networkRx) / \(display.networkTx)"
+        case "BlockIO":
+            return "\(display.blockRead) / \(display.blockWrite)"
+        case "PIDs":
+            return display.pids
+        default:
+            throw unsupportedDockerTemplateField(field, command: "stats", supported: composeStatsTemplateFields)
+        }
+    }
+
+    /// Renders stats rows through a Docker-style field template.
+    private func renderStatsTemplate(_ records: [StatsSnapshot], template: String, table: Bool, noTrunc: Bool) throws -> String {
+        let fields = dockerTemplateFields(in: template)
+        try validateDockerTemplateActions(in: template)
+        try validateDockerTemplateFields(fields, command: "stats", supported: composeStatsTemplateFields)
+        let rows = try records.map { snapshot in
+            try renderDockerTemplate(template) { field in
+                try statsTemplateValue(field, snapshot: snapshot, noTrunc: noTrunc)
+            }
+        }
+        return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+    }
+
+    /// Projects one stats snapshot pair into display values.
+    private func statsDisplayValues(_ snapshot: StatsSnapshot, noTrunc: Bool) -> StatsDisplayValues {
         let first = snapshot.first
         let second = snapshot.second
         let notAvailable = "--"
@@ -221,14 +285,17 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
         let blockWrite = second.blockWriteBytes.map(formatBytes) ?? notAvailable
         let pids = second.numProcesses.map(String.init) ?? notAvailable
 
-        return [
-            noTrunc ? second.id : truncatedContainerID(second.id),
-            cpuPercent,
-            "\(memoryUsage) / \(memoryLimit)",
-            "\(networkRx) / \(networkTx)",
-            "\(blockRead) / \(blockWrite)",
-            pids,
-        ]
+        return StatsDisplayValues(
+            container: noTrunc ? second.id : truncatedContainerID(second.id),
+            cpuPercent: cpuPercent,
+            memoryUsage: memoryUsage,
+            memoryLimit: memoryLimit,
+            networkRx: networkRx,
+            networkTx: networkTx,
+            blockRead: blockRead,
+            blockWrite: blockWrite,
+            pids: pids
+        )
     }
 
     /// Mirrors Docker-style table truncation for container identifiers.
@@ -265,9 +332,55 @@ public struct ContainerClientStatsManager: ContainerStatsManaging {
     }
 }
 
+private enum ComposeStatsFormat {
+    case table
+    case json
+    case template(String, table: Bool)
+
+    var isStreamingTable: Bool {
+        if case .table = self {
+            return true
+        }
+        return false
+    }
+}
+
+private struct StatsDisplayValues {
+    var container: String
+    var cpuPercent: String
+    var memoryUsage: String
+    var memoryLimit: String
+    var networkRx: String
+    var networkTx: String
+    var blockRead: String
+    var blockWrite: String
+    var pids: String
+}
+
 /// Two samples for one container, used to calculate rate-based fields.
 private struct StatsSnapshot {
     var first: ContainerStats
     var second: ContainerStats
     var refresh: Bool
+}
+
+private func composeStatsFormat(_ value: String) throws -> ComposeStatsFormat {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch normalized.lowercased() {
+    case "table":
+        return .table
+    case "json":
+        return .json
+    default:
+        let tablePrefix = "table "
+        if normalized.lowercased().hasPrefix(tablePrefix) {
+            let template = String(normalized.dropFirst(tablePrefix.count))
+            try validateDockerTemplateActions(in: template)
+            try validateDockerTemplateFields(dockerTemplateFields(in: template), command: "stats", supported: composeStatsTemplateFields)
+            return .template(template, table: true)
+        }
+        try validateDockerTemplateActions(in: normalized)
+        try validateDockerTemplateFields(dockerTemplateFields(in: normalized), command: "stats", supported: composeStatsTemplateFields)
+        return .template(normalized, table: false)
+    }
 }
