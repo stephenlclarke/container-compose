@@ -282,9 +282,12 @@ cli-smoke-built:
 	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--follow-link$${ansi_escape}[0m"* ]]; \
 	logs_help_output="$$(".build/debug/compose" logs --help)"; \
 	[[ "$$logs_help_output" == *"-f, --follow"* ]]; \
-	[[ "$$logs_help_output" == *"$${ansi_escape}[38;5;208m--follow$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--follow$${ansi_escape}[0m"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--tail$${ansi_escape}[0m"* ]]; \
 	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--timestamps$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--since$${ansi_escape}[0m"* ]]; \
+	[[ "$$logs_help_output" == *"$${ansi_escape}[32m--until$${ansi_escape}[0m"* ]]; \
 	logs_misordered_help_output="$$(".build/debug/compose" logs help)"; \
 	[[ "$$logs_misordered_help_output" == *"Usage:  container compose logs [OPTIONS] [SERVICE...]"* ]]; \
 	[[ "$$logs_misordered_help_output" != *"compose-normalizer"* ]]; \
@@ -687,8 +690,8 @@ cli-smoke-built:
 	[[ "$$logs_filter_output" == *"container logs --since 2026-06-18T10:00:00Z --until 30m demo-api-1"* ]]; \
 	logs_timestamp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --timestamps api)"; \
 	[[ "$$logs_timestamp_output" == *"compose-runtime logs --timestamps demo-api-1"* ]]; \
-	logs_filtered_follow_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --follow --since 2026-06-18T10:00:00Z api 2>&1 || true)"; \
-	[[ "$$logs_filtered_follow_output" == *"unsupported compose feature: logs --follow with --since/--until: apple/container does not expose filtered follow streams"* ]]; \
+	logs_filtered_follow_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --follow --since 2026-06-18T10:00:00Z api)"; \
+	[[ "$$logs_filtered_follow_output" == *"compose-runtime logs --follow --since 2026-06-18T10:00:00Z demo-api-1"* ]]; \
 	logs_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --index 2 api)"; \
 	[[ "$$logs_index_output" == *"container logs demo-api-2"* ]]; \
 	logs_display_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --no-color --no-log-prefix api)"; \
