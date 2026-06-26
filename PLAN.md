@@ -28,6 +28,7 @@ Keep the prebuilt install path healthy for both lanes:
 - CI accepts classified SwiftPM signal-pass output only when the helper proves tests passed and no failure markers were emitted.
 - Homebrew advisory jobs trust only the specific taps required by the formulas.
 - Startup, normalization, and image build paths emit prompt stderr progress feedback instead of sitting silent, using Docker Compose-style `--progress` policies and a compact spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner).
+- Tighten first-output latency: if Compose startup or image build setup can still sit silent before the first progress frame, emit an immediate Docker Compose-style status row or spinner before starting the slow subprocess.
 
 ## Upstreamable Runtime Slices
 
