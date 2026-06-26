@@ -1078,13 +1078,13 @@ struct ComposeNormalizerTests {
         _ = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(
             files: ["compose.yml"],
             projectDirectory: "/tmp/demo",
-            normalization: ComposeOptions.NormalizationOptions(
-                noConsistency: true,
-                noEnvResolution: true,
-                noInterpolate: true,
-                noNormalize: true,
-                noPathResolution: true
-            )
+            normalization: ComposeOptions.NormalizationOptions {
+                $0.noConsistency = true
+                $0.noEnvResolution = true
+                $0.noInterpolate = true
+                $0.noNormalize = true
+                $0.noPathResolution = true
+            }
         ))
 
         let command = try #require(runner.commands.first)
