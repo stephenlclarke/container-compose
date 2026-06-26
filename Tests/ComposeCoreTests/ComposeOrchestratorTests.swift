@@ -9170,7 +9170,7 @@ struct ComposeOrchestratorTests {
         try await orchestrator.start(project: project, services: ["api"])
         try await orchestrator.stop(project: project, services: ["api"])
         try await orchestrator.restart(project: project, services: ["api"])
-        try await orchestrator.rm(project: project, services: ["api"], stopFirst: true)
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: true, force: true)
         try await orchestrator.kill(project: project, services: ["api"], signal: "SIGTERM")
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/file", "."])
 
@@ -9192,7 +9192,7 @@ struct ComposeOrchestratorTests {
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
             .start(id: "demo-api-1"),
             .stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9),
-            .delete(id: "demo-api-1", force: false),
+            .delete(id: "demo-api-1", force: true),
             .kill(id: "demo-api-1", signal: "SIGTERM"),
         ])
         #expect(await copier.requests == [
