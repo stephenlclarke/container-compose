@@ -18,23 +18,49 @@ import Foundation
 
 /// Options that influence Compose file normalization.
 public struct ComposeOptions: Equatable {
+    public struct NormalizationOptions: Equatable {
+        public var noConsistency: Bool = false
+        public var noEnvResolution: Bool = false
+        public var noInterpolate: Bool = false
+        public var noNormalize: Bool = false
+        public var noPathResolution: Bool = false
+
+        public init() {}
+
+        public init(_ configure: (inout NormalizationOptions) -> Void) {
+            self.init()
+            configure(&self)
+        }
+    }
+
     public var files: [String]
     public var projectName: String?
     public var profiles: [String]
     public var envFiles: [String]
     public var projectDirectory: String?
+    public var noConsistency: Bool
+    public var noEnvResolution: Bool
+    public var noInterpolate: Bool
+    public var noNormalize: Bool
+    public var noPathResolution: Bool
 
     public init(
         files: [String] = [],
         projectName: String? = nil,
         profiles: [String] = [],
         envFiles: [String] = [],
-        projectDirectory: String? = nil
+        projectDirectory: String? = nil,
+        normalization: NormalizationOptions = NormalizationOptions()
     ) {
         self.files = files
         self.projectName = projectName
         self.profiles = profiles
         self.envFiles = envFiles
         self.projectDirectory = projectDirectory
+        self.noConsistency = normalization.noConsistency
+        self.noEnvResolution = normalization.noEnvResolution
+        self.noInterpolate = normalization.noInterpolate
+        self.noNormalize = normalization.noNormalize
+        self.noPathResolution = normalization.noPathResolution
     }
 }

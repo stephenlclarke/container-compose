@@ -72,8 +72,10 @@ public extension CommandRunning {
 
 /// Production command runner backed by Foundation `Process`.
 public struct ProcessRunner: CommandRunning {
+    private static let isStateless = true
+
     public init() {
-        // Stateless runner; public initializer supports dependency injection.
+        _ = Self.isStateless
     }
 
     /// Executes a command with either captured or inherited process streams.
