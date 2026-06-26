@@ -268,6 +268,8 @@ cli-smoke-built:
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	ls_help_output="$$(".build/debug/compose" ls --help)"; \
+	[[ "$$ls_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$ls_help_output" == *"$${ansi_escape}[32m--filter$${ansi_escape}[0m"* ]]; \
 	[[ "$$ls_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ls_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	ps_help_output="$$(".build/debug/compose" ps --help)"; \

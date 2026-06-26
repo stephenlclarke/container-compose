@@ -156,7 +156,7 @@ enum ComposeCLIHelp {
         "images": .partiallySupported,
         "kill": .partiallySupported,
         "logs": .supported,
-        "ls": .partiallySupported,
+        "ls": .supported,
         "pause": .supported,
         "port": .partiallySupported,
         "ps": .partiallySupported,
@@ -343,7 +343,7 @@ enum ComposeCLIHelp {
         "ls": [
             "--all": .supported,
             "--dry-run": .supported,
-            "--filter": .partiallySupported,
+            "--filter": .supported,
             "--format": .supported,
             "--quiet": .supported,
         ],
