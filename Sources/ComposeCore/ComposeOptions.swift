@@ -18,6 +18,28 @@ import Foundation
 
 /// Options that influence Compose file normalization.
 public struct ComposeOptions: Equatable {
+    public struct NormalizationOptions: Equatable {
+        public var noConsistency: Bool
+        public var noEnvResolution: Bool
+        public var noInterpolate: Bool
+        public var noNormalize: Bool
+        public var noPathResolution: Bool
+
+        public init(
+            noConsistency: Bool = false,
+            noEnvResolution: Bool = false,
+            noInterpolate: Bool = false,
+            noNormalize: Bool = false,
+            noPathResolution: Bool = false
+        ) {
+            self.noConsistency = noConsistency
+            self.noEnvResolution = noEnvResolution
+            self.noInterpolate = noInterpolate
+            self.noNormalize = noNormalize
+            self.noPathResolution = noPathResolution
+        }
+    }
+
     public var files: [String]
     public var projectName: String?
     public var profiles: [String]
@@ -35,21 +57,17 @@ public struct ComposeOptions: Equatable {
         profiles: [String] = [],
         envFiles: [String] = [],
         projectDirectory: String? = nil,
-        noConsistency: Bool = false,
-        noEnvResolution: Bool = false,
-        noInterpolate: Bool = false,
-        noNormalize: Bool = false,
-        noPathResolution: Bool = false
+        normalization: NormalizationOptions = NormalizationOptions()
     ) {
         self.files = files
         self.projectName = projectName
         self.profiles = profiles
         self.envFiles = envFiles
         self.projectDirectory = projectDirectory
-        self.noConsistency = noConsistency
-        self.noEnvResolution = noEnvResolution
-        self.noInterpolate = noInterpolate
-        self.noNormalize = noNormalize
-        self.noPathResolution = noPathResolution
+        self.noConsistency = normalization.noConsistency
+        self.noEnvResolution = normalization.noEnvResolution
+        self.noInterpolate = normalization.noInterpolate
+        self.noNormalize = normalization.noNormalize
+        self.noPathResolution = normalization.noPathResolution
     }
 }
