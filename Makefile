@@ -44,6 +44,7 @@ CONTAINER_REF ?= $(shell sed -n '1{s/[[:space:]]//g;p;q;}' APPLE_CONTAINER_REF 2
 CONTAINERIZATION_SOURCE ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); print((pin or {}).get("location", "unspecified").replace("https://github.com/", "").removesuffix(".git"))' 2>/dev/null || printf 'unspecified')
 CONTAINERIZATION_REF ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); state=(pin or {}).get("state", {}); print(state.get("revision") or state.get("branch") or state.get("version") or "unspecified")' 2>/dev/null || printf 'unspecified')
 SONAR_QUALITYGATE_WAIT ?= false
+SONAR_SCAN_ATTEMPTS ?= 3
 XCODE_SELECT_DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
 SWIFT_RUNTIME_RESOURCE_PATH ?= $(shell $(SWIFT) -print-target-info 2>/dev/null | $(PYTHON) -c 'import json, sys; print(json.load(sys.stdin).get("paths", {}).get("runtimeResourcePath", ""))' 2>/dev/null || true)
 SWIFT_TOOLCHAIN_USR_DIR := $(patsubst %/lib/swift,%,$(SWIFT_RUNTIME_RESOURCE_PATH))
@@ -904,11 +905,27 @@ sonar-scan:
 	fi
 	sonar_token="$${SONAR_TOKEN:-$${SONAR_TOKEN_PERSONAL:-}}"; \
 	branch="$${SONAR_BRANCH:-$$(git branch --show-current 2>/dev/null || true)}"; \
+	attempt=1; \
+	max_attempts="$(SONAR_SCAN_ATTEMPTS)"; \
+	scanner_args=(-Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"); \
 	if [[ -n "$$branch" && "$$branch" != "HEAD" ]]; then \
-		SONAR_TOKEN="$$sonar_token" sonar-scanner -Dsonar.branch.name="$$branch" -Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"; \
-	else \
-		SONAR_TOKEN="$$sonar_token" sonar-scanner -Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"; \
-	fi
+		scanner_args=(-Dsonar.branch.name="$$branch" "$${scanner_args[@]}"); \
+	fi; \
+	while true; do \
+		set +e; \
+		SONAR_TOKEN="$$sonar_token" sonar-scanner "$${scanner_args[@]}"; \
+		status="$$?"; \
+		set -e; \
+		if [[ "$$status" -eq 0 ]]; then \
+			exit 0; \
+		fi; \
+		if (( attempt >= max_attempts )); then \
+			exit "$$status"; \
+		fi; \
+		printf 'Sonar scanner failed with exit %s; retrying %s/%s after 20 seconds...\n' "$$status" "$$((attempt + 1))" "$$max_attempts" >&2; \
+		sleep 20; \
+		((attempt += 1)); \
+	done
 
 package: package-release
 
