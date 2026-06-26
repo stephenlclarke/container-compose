@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-26 21:17 BST.
+Last updated: 2026-06-26 21:47 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -49,13 +49,17 @@ npx --yes markdownlint-cli README.md PLAN.md STATUS.md
 git diff --check
 ```
 
-All passed locally after adding structured `--progress json` events for Compose-owned progress phases. `make ci` ran 661 Swift tests, reported Swift coverage at 90.00%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
+All passed locally after adding structured `--progress json` events for Compose-owned progress phases and `up --no-attach SERVICE` foreground-selection support. `make ci` ran 664 Swift tests, reported Swift coverage at 90.02%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
 
 ## Open Blockers
 
 - Released Apple compatibility still depends on upstream acceptance of fork-backed runtime primitives.
 - SonarQube status should be checked through `/Users/sclarke/github/pr-refresh` with `make sonar-status` after the next push.
 - Runtime smoke tests still require a responsive local Apple container runtime; the last enabled local run timed out during `container system status`.
+
+## Open Follow-ups
+
+- Verify real `run` and `up` build/startup paths emit immediate terminal progress before the Apple build subprocess produces output, using the existing Docker Compose-style `--progress` policies and spinner.
 
 ## Next Step
 

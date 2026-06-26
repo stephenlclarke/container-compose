@@ -61,6 +61,10 @@ enum ComposeCLIHelp {
         renderedHelp(rootHelp, commandPath: [], useANSI: shouldUseANSI(arguments: arguments))
     }
 
+    static func commandHelpText(command: String, arguments: [String] = []) -> String? {
+        commandHelp[command].map { renderedHelp($0, commandPath: [command], useANSI: shouldUseANSI(arguments: arguments)) }
+    }
+
     private static func isHelpRequested(arguments: [String]) -> Bool {
         if arguments.contains("--help") || arguments.contains("-h") {
             return true
@@ -498,7 +502,7 @@ enum ComposeCLIHelp {
             "--exit-code-from": .notSupported,
             "--force-recreate": .supported,
             "--menu": .notSupported,
-            "--no-attach": .notSupported,
+            "--no-attach": .supported,
             "--no-build": .supported,
             "--no-color": .notSupported,
             "--no-deps": .supported,

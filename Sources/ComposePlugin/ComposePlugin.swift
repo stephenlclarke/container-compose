@@ -657,7 +657,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             attachDependencies ? "--attach-dependencies" : nil,
             exitCodeFrom == nil ? nil : "--exit-code-from",
             menu ? "--menu" : nil,
-            noAttach.isEmpty ? nil : "--no-attach",
             noColor ? "--no-color" : nil,
             noLogPrefix ? "--no-log-prefix" : nil,
             timestamps ? "--timestamps" : nil,
@@ -672,6 +671,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             project: loadedProject,
             options: ComposeUpOptions {
                 $0.services = services
+                $0.noAttach = noAttach
                 $0.build = build
                 $0.quietBuild = quietBuild
                 $0.noBuild = noBuild

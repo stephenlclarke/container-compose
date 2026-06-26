@@ -313,6 +313,7 @@ cli-smoke-built:
 	up_help_output="$$(".build/debug/compose" up --help)"; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--no-color$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--renew-anon-volumes$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
@@ -576,6 +577,9 @@ cli-smoke-built:
 	[[ "$$up_output" == *"--label example.com/owner=platform"* ]]; \
 	[[ "$$up_output" == *"--name demo-db-1 --detach"* ]]; \
 	[[ "$$up_output" != *"--name demo-api-1 --detach"* ]]; \
+	up_no_attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-attach api api)"; \
+	[[ "$$up_no_attach_output" != *"--name demo-db-1 --detach"* ]]; \
+	[[ "$$up_no_attach_output" == *"--name demo-api-1 --detach"* ]]; \
 	up_attach_false_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/attach-false.yml" up api)"; \
 	[[ "$$up_attach_false_output" == *"--name demo-api-1 --detach"* ]]; \
 	for unsupported_up_option in \
@@ -585,7 +589,6 @@ cli-smoke-built:
 		"--attach-dependencies" \
 		"--exit-code-from api" \
 		"--menu" \
-		"--no-attach api" \
 		"--no-color" \
 		"--no-log-prefix" \
 		"--timestamps" \

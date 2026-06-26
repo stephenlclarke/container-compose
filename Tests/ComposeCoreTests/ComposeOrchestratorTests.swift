@@ -3126,6 +3126,55 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
     }
 
+    @Test("up no-attach detaches named service and attaches next eligible dependency")
+    func upNoAttachDetachesNamedServiceAndAttachesNextEligibleDependency() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+                $0.noAttach = ["api"]
+            })
+
+        let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        #expect(!dbRun.contains("--detach"))
+        #expect(apiRun.contains("--detach"))
+        #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
+    }
+
+    @Test("up no-attach rejects unknown services before side effects")
+    func upNoAttachRejectsUnknownServicesBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions {
+                    $0.noAttach = ["missing"]
+                }
+            )
+            Issue.record("Expected unknown no-attach service error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unknown service 'missing'"))
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up detaches all services when each service disables attach")
     func upDetachesAllServicesWhenEachServiceDisablesAttach() async throws {
         let runner = RecordingRunner(responses: [

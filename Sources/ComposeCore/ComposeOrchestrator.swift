@@ -432,6 +432,7 @@ public struct ComposeOrchestratorDependencies: Sendable {
 /// Options for `compose up`.
 public struct ComposeUpOptions {
     public var services: [String] = []
+    public var noAttach: [String] = []
     public var build = false
     public var noBuild = false
     public var detach = false
@@ -453,6 +454,7 @@ public struct ComposeUpOptions {
 
     public init() {
         services = []
+        noAttach = []
         build = false
         noBuild = false
         detach = false
@@ -1441,6 +1443,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
         try validate(project: project)
         try validateUpOptions(up)
+        let project = try projectByApplyingNoAttach(project: project, services: up.noAttach)
         if up.noStart {
             try await create(
                 project: project,
@@ -1598,6 +1601,19 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if up.wait {
             try await waitForStartedServiceTargets(waitTargets, timeout: up.waitTimeout, command: "up --wait")
         }
+    }
+
+    /// Marks services excluded from attached `up` output before target selection.
+    private func projectByApplyingNoAttach(project: ComposeProject, services: [String]) throws -> ComposeProject {
+        guard !services.isEmpty else {
+            return project
+        }
+        let noAttachServices = Set(try selectedServices(project: project, selected: services).map(\.name))
+        var project = project
+        for serviceName in noAttachServices {
+            project.services[serviceName]?.attach = false
+        }
+        return project
     }
 
     /// Reuses or recreates one deterministic service container.

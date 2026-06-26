@@ -40,6 +40,13 @@ struct ComposeCLIHelpTests {
         #expect(!help.contains("\u{001B}["))
     }
 
+    @Test("up no-attach is shown as supported")
+    func upNoAttachIsShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
+
+        #expect(help.contains("\u{001B}[32m--no-attach\u{001B}[0m"))
+    }
+
     @Test("global progress option maps Docker Compose policies")
     func globalProgressOptionMapsDockerComposePolicies() {
         var options = GlobalOptions()
