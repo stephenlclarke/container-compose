@@ -182,6 +182,8 @@ Use a different local threshold with:
 COVERAGE_MIN=90 make coverage-check
 ```
 
+`swift-coverage` retries SwiftPM helper signal failures with `SWIFT_COVERAGE_TEST_ATTEMPTS` but does not accept the signal-13 fallback as a successful coverage run; incomplete profile data would make the report unusable.
+
 Generated coverage reports are:
 
 ```text
