@@ -43,6 +43,7 @@ jobs:
   validate:
     name: Validate
     runs-on: macos-26
+    timeout-minutes: 75
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v7
