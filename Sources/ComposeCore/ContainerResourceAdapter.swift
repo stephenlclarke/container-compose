@@ -110,6 +110,9 @@ public protocol ContainerResourceAPIClienting: Sendable {
     /// Creates a network from a fully resolved apple/container configuration.
     func createNetwork(configuration: NetworkConfiguration) async throws
 
+    /// Returns whether the runtime network named by `id` exists.
+    func networkExists(id: String) async throws -> Bool
+
     /// Deletes the runtime network named by `id`.
     func deleteNetwork(id: String) async throws
 
@@ -159,12 +162,14 @@ public extension ContainerResourceManaging {
 /// Thin apple/container client wrapper around network and volume API calls.
 public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     public typealias CreateNetwork = @Sendable (NetworkConfiguration) async throws -> Void
+    public typealias NetworkExists = @Sendable (String) async throws -> Bool
     public typealias DeleteNetwork = @Sendable (String) async throws -> Void
     public typealias CreateVolume = @Sendable (ComposeVolumeCreateRequest) async throws -> Void
     public typealias ListVolumes = @Sendable () async throws -> [ComposeVolumeSummary]
     public typealias DeleteVolume = @Sendable (String) async throws -> Void
 
     private let createNetworkOperation: CreateNetwork
+    private let networkExistsOperation: NetworkExists
     private let deleteNetworkOperation: DeleteNetwork
     private let createVolumeOperation: CreateVolume
     private let listVolumesOperation: ListVolumes
@@ -172,6 +177,14 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
 
     public init(
         createNetwork: @escaping CreateNetwork = { _ = try await NetworkClient().create(configuration: $0) },
+        networkExists: @escaping NetworkExists = { id in
+            do {
+                _ = try await NetworkClient().get(id: id)
+                return true
+            } catch let error as ContainerizationError where error.code == .notFound {
+                return false
+            }
+        },
         deleteNetwork: @escaping DeleteNetwork = { try await NetworkClient().delete(id: $0) },
         createVolume: @escaping CreateVolume = {
             _ = try await ClientVolume.create(
@@ -185,6 +198,7 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
         deleteVolume: @escaping DeleteVolume = { try await ClientVolume.delete(name: $0) }
     ) {
         self.createNetworkOperation = createNetwork
+        self.networkExistsOperation = networkExists
         self.deleteNetworkOperation = deleteNetwork
         self.createVolumeOperation = createVolume
         self.listVolumesOperation = listVolumes
@@ -194,6 +208,11 @@ public struct ContainerResourceAPIClient: ContainerResourceAPIClienting {
     /// Creates a network through `NetworkClient`.
     public func createNetwork(configuration: NetworkConfiguration) async throws {
         try await createNetworkOperation(configuration)
+    }
+
+    /// Checks whether a network exists through `NetworkClient`.
+    public func networkExists(id: String) async throws -> Bool {
+        try await networkExistsOperation(id)
     }
 
     /// Deletes a network through `NetworkClient`.
@@ -246,6 +265,9 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
 
     /// Deletes a Compose project network through `NetworkClient`.
     public func deleteNetwork(id: String) async throws {
+        guard try await client.networkExists(id: id) else {
+            return
+        }
         try await client.deleteNetwork(id: id)
     }
 

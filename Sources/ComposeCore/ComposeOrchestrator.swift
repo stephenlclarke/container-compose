@@ -21,6 +21,7 @@ import Darwin
 import Glibc
 #endif
 import ContainerResource
+import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOCI
 import Foundation
@@ -1836,8 +1837,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 continue
             }
             for target in targets.filter({ $0.service.name == service.name }).reversed() {
-                try await stopContainer(service: service, containerName: target.name, timeout: down.timeout)
-                try await deleteContainer(target.name)
+                try await ignoringMissingContainer {
+                    try await stopContainer(service: service, containerName: target.name, timeout: down.timeout)
+                }
+                try await ignoringMissingContainer {
+                    try await deleteContainer(target.name)
+                }
             }
         }
         if down.removeOrphans {
@@ -7599,6 +7604,30 @@ private extension ComposeOrchestrator {
         }
     }
 
+    /// Treats already-removed containers as absent during teardown.
+    func ignoringMissingContainer(_ operation: () async throws -> Void) async throws {
+        do {
+            try await operation()
+        } catch let error where isContainerNotFound(error) {
+            return
+        }
+    }
+
+    /// Returns true when a container lifecycle error or one of its causes is a
+    /// runtime not-found response.
+    func isContainerNotFound(_ error: any Error) -> Bool {
+        guard let containerError = error as? ContainerizationError else {
+            return false
+        }
+        if containerError.code == .notFound {
+            return true
+        }
+        guard let cause = containerError.cause else {
+            return false
+        }
+        return isContainerNotFound(cause)
+    }
+
     /// Returns the stop command arguments for a service container.
     func stopArguments(service: ComposeService, containerName: String, timeout: Int? = nil) -> [String] {
         var args = ["stop"]
@@ -7665,8 +7694,12 @@ private extension ComposeOrchestrator {
             }
         }
         for container in remainingContainers {
-            try await stopRemainingProjectContainer(project: project, container: container, timeout: timeout)
-            try await deleteContainer(container.id)
+            try await ignoringMissingContainer {
+                try await stopRemainingProjectContainer(project: project, container: container, timeout: timeout)
+            }
+            try await ignoringMissingContainer {
+                try await deleteContainer(container.id)
+            }
         }
     }
 

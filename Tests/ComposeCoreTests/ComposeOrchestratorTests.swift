@@ -9180,6 +9180,31 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("down ignores service containers that are already removed")
+    func downIgnoresServiceContainersThatAreAlreadyRemoved() async throws {
+        let missing = ContainerizationError(.notFound, message: "container not found")
+        let stopError = ContainerizationError(.internalError, message: "failed to stop container", cause: missing)
+        let deleteError = ContainerizationError(.internalError, message: "failed to delete container", cause: missing)
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            stopErrorsByID: ["demo-api-1": stopError],
+            deleteErrorsByID: ["demo-api-1": deleteError]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), lifecycleManager: lifecycleManager)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions())
+
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
     @Test("down removes remaining project scoped containers")
     func downRemovesRemainingProjectScopedContainers() async throws {
         let runner = RecordingRunner()
@@ -9200,6 +9225,39 @@ struct ComposeOrchestratorTests {
         try await orchestrator.down(project: project, options: ComposeDownOptions(removeOrphans: true))
 
         #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true, true])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+            .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-worker-1", force: false),
+        ])
+    }
+
+    @Test("down ignores orphan containers that disappear during cleanup")
+    func downIgnoresOrphanContainersThatDisappearDuringCleanup() async throws {
+        let missing = ContainerizationError(.notFound, message: "container not found")
+        let stopError = ContainerizationError(.internalError, message: "failed to stop container", cause: missing)
+        let deleteError = ContainerizationError(.internalError, message: "failed to delete container", cause: missing)
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            stopErrorsByID: ["demo-worker-1": stopError],
+            deleteErrorsByID: ["demo-worker-1": deleteError]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions(removeOrphans: true))
+
         #expect(await discoveryManager.listRequests == [true, true])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
@@ -12537,8 +12595,21 @@ struct ComposeOrchestratorTests {
                 labels: labels
             )),
             .listVolumes,
+            .networkExists(id: "demo_default"),
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_cache"),
+        ])
+    }
+
+    @Test("resource manager skips deleting missing networks")
+    func resourceManagerSkipsDeletingMissingNetworks() async throws {
+        let client = RecordingContainerResourceAPIClient(existingNetworks: [])
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.deleteNetwork(id: "demo_default")
+
+        #expect(await client.requests == [
+            .networkExists(id: "demo_default"),
         ])
     }
 
@@ -12591,6 +12662,9 @@ struct ComposeOrchestratorTests {
             createNetwork: { configuration in
                 try await recorder.createNetwork(configuration: configuration)
             },
+            networkExists: { id in
+                try await recorder.networkExists(id: id)
+            },
             deleteNetwork: { id in
                 try await recorder.deleteNetwork(id: id)
             },
@@ -12620,6 +12694,7 @@ struct ComposeOrchestratorTests {
             labels: labels
         ))
         _ = try await client.listVolumes()
+        _ = try await client.networkExists(id: "demo_default")
         try await client.deleteNetwork(id: "demo_default")
         try await client.deleteVolume(name: "demo_cache")
 
@@ -12639,6 +12714,7 @@ struct ComposeOrchestratorTests {
                 labels: labels
             )),
             .listVolumes,
+            .networkExists(id: "demo_default"),
             .deleteNetwork(id: "demo_default"),
             .deleteVolume(name: "demo_cache"),
         ])
@@ -19843,6 +19919,7 @@ private enum ContainerResourceAPIRequest: Equatable {
         ipv6Subnet: String?,
         labels: [String: String]
     )
+    case networkExists(id: String)
     case deleteNetwork(id: String)
     case createVolume(ComposeVolumeCreateRequest)
     case listVolumes
@@ -19909,12 +19986,22 @@ private actor RecordingContainerCopyOperations {
 private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     private let stopError: (any Error)?
     private let deleteError: (any Error)?
+    private let stopErrorsByID: [String: any Error]
+    private let deleteErrorsByID: [String: any Error]
     private let waitExitCodes: [String: Int32]
     private var storage: [ContainerLifecycleRequest] = []
 
-    init(stopError: (any Error)? = nil, deleteError: (any Error)? = nil, waitExitCodes: [String: Int32] = [:]) {
+    init(
+        stopError: (any Error)? = nil,
+        deleteError: (any Error)? = nil,
+        stopErrorsByID: [String: any Error] = [:],
+        deleteErrorsByID: [String: any Error] = [:],
+        waitExitCodes: [String: Int32] = [:]
+    ) {
         self.stopError = stopError
         self.deleteError = deleteError
+        self.stopErrorsByID = stopErrorsByID
+        self.deleteErrorsByID = deleteErrorsByID
         self.waitExitCodes = waitExitCodes
     }
 
@@ -19932,6 +20019,9 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
 
     func stopContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws {
         storage.append(.stop(id: id, signal: signal, timeoutInSeconds: timeoutInSeconds))
+        if let error = stopErrorsByID[id] {
+            throw error
+        }
         if let stopError {
             throw stopError
         }
@@ -19952,6 +20042,9 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
 
     func deleteContainer(id: String, force: Bool) async throws {
         storage.append(.delete(id: id, force: force))
+        if let error = deleteErrorsByID[id] {
+            throw error
+        }
         if let deleteError {
             throw deleteError
         }
@@ -21028,11 +21121,17 @@ private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienti
 }
 
 private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting {
+    private let existingNetworks: Set<String>
     private let volumes: [ComposeVolumeSummary]
     private let networkCreateError: (any Error)?
     private var storage: [ContainerResourceAPIRequest] = []
 
-    init(volumes: [ComposeVolumeSummary] = [], networkCreateError: (any Error)? = nil) {
+    init(
+        existingNetworks: Set<String> = ["demo_default"],
+        volumes: [ComposeVolumeSummary] = [],
+        networkCreateError: (any Error)? = nil
+    ) {
+        self.existingNetworks = existingNetworks
         self.volumes = volumes
         self.networkCreateError = networkCreateError
     }
@@ -21053,6 +21152,11 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
         if let networkCreateError {
             throw networkCreateError
         }
+    }
+
+    func networkExists(id: String) async throws -> Bool {
+        storage.append(.networkExists(id: id))
+        return existingNetworks.contains(id)
     }
 
     func deleteNetwork(id: String) async throws {
