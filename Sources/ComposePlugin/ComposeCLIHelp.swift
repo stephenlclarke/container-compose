@@ -147,7 +147,7 @@ enum ComposeCLIHelp {
         "build": .partiallySupported,
         "commit": .notSupported,
         "config": .partiallySupported,
-        "cp": .partiallySupported,
+        "cp": .supported,
         "create": .partiallySupported,
         "down": .partiallySupported,
         "events": .supported,
