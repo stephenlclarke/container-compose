@@ -154,7 +154,7 @@ enum ComposeCLIHelp {
         "exec": .partiallySupported,
         "export": .supported,
         "images": .partiallySupported,
-        "kill": .partiallySupported,
+        "kill": .supported,
         "logs": .supported,
         "ls": .supported,
         "pause": .supported,
