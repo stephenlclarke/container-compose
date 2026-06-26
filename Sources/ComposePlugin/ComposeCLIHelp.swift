@@ -152,7 +152,7 @@ enum ComposeCLIHelp {
         "down": .partiallySupported,
         "events": .partiallySupported,
         "exec": .partiallySupported,
-        "export": .partiallySupported,
+        "export": .supported,
         "images": .partiallySupported,
         "kill": .partiallySupported,
         "logs": .supported,

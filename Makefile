@@ -325,6 +325,8 @@ cli-smoke-built:
 	[[ "$$top_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	kill_help_output="$$(".build/debug/compose" kill --help)"; \
 	[[ "$$kill_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
+	export_help_output="$$(".build/debug/compose" export --help)"; \
+	[[ "$$export_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	version_help_output="$$(".build/debug/compose" version --help)"; \
 	[[ "$$version_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	wait_help_output="$$(".build/debug/compose" wait --help)"; \
