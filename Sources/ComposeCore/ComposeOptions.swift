@@ -30,7 +30,7 @@ public struct ComposeOptions: Equatable {
             noEnvResolution: Bool = false,
             noInterpolate: Bool = false,
             noNormalize: Bool = false,
-            noPathResolution: Bool = false
+            noPathResolution: Bool = false,
         ) {
             self.noConsistency = noConsistency
             self.noEnvResolution = noEnvResolution
@@ -62,17 +62,17 @@ public struct ComposeOptions: Equatable {
         profiles: [String] = [],
         envFiles: [String] = [],
         projectDirectory: String? = nil,
-        normalization: NormalizationOptions = NormalizationOptions()
+        normalization: NormalizationOptions = NormalizationOptions(),
     ) {
         self.files = files
         self.projectName = projectName
         self.profiles = profiles
         self.envFiles = envFiles
         self.projectDirectory = projectDirectory
-        self.noConsistency = normalization.noConsistency
-        self.noEnvResolution = normalization.noEnvResolution
-        self.noInterpolate = normalization.noInterpolate
-        self.noNormalize = normalization.noNormalize
-        self.noPathResolution = normalization.noPathResolution
+        noConsistency = normalization.noConsistency
+        noEnvResolution = normalization.noEnvResolution
+        noInterpolate = normalization.noInterpolate
+        noNormalize = normalization.noNormalize
+        noPathResolution = normalization.noPathResolution
     }
 }
