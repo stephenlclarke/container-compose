@@ -175,7 +175,7 @@ enum ComposeCLIHelp {
         "up": .partiallySupported,
         "version": .supported,
         "volumes": .partiallySupported,
-        "wait": .partiallySupported,
+        "wait": .supported,
         "watch": .partiallySupported,
     ]
 
