@@ -83,6 +83,22 @@ struct ComposeProgressTests {
         #expect(emitted.string.contains("\u{001B}[38;5;63m⠋\u{001B}[0m Building api"))
         #expect(emitted.string.contains("\u{001B}[32m✔︎\u{001B}[0m Building api"))
     }
+
+    @Test
+    func `tty progress emits first frame before operation starts`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .tty,
+            emitData: { emitted.append($0) },
+            sleep: { _ in try await Task.sleep(for: .seconds(60)) },
+        )
+
+        try await reporter.activity("Loading Compose model") {
+            #expect(emitted.string == "\r⠋ Loading Compose model")
+        }
+
+        #expect(emitted.string == "\r⠋ Loading Compose model\r\u{001B}[K✔︎ Loading Compose model\n")
+    }
 }
 
 private final class LockedDataRecorder: @unchecked Sendable {

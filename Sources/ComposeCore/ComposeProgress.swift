@@ -71,16 +71,17 @@ public struct ComposeProgressReporter: Sendable {
     }
 
     private func ttyActivity<T>(_ message: String, operation: () async throws -> T) async throws -> T {
+        emit(renderedTTYFrame(message: message, frameIndex: 0))
         let spinner = Task<Void, Never> {
-            var frameIndex = 0
+            var frameIndex = 1
             while !Task.isCancelled {
-                emit(renderedTTYFrame(message: message, frameIndex: frameIndex))
-                frameIndex += 1
                 do {
                     try await sleep(.milliseconds(100))
                 } catch {
                     return
                 }
+                emit(renderedTTYFrame(message: message, frameIndex: frameIndex))
+                frameIndex += 1
             }
         }
         do {
