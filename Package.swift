@@ -70,6 +70,13 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "ComposePluginTests",
+            dependencies: [
+                "ComposePlugin",
+            ],
+            path: "Tests/ComposePluginTests"
+        ),
+        .testTarget(
             name: "ComposeRuntimeTests",
             dependencies: [
                 "ComposeCore",

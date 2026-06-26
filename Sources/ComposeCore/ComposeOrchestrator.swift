@@ -2400,7 +2400,12 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
             return
         }
-        try await runContainer(args, inheritedIO: !exec.detach && (exec.interactive || exec.tty))
+        let foregroundInteractiveExec = !exec.detach && (exec.interactive || exec.tty)
+        try await runContainer(
+            args,
+            inheritedIO: foregroundInteractiveExec,
+            replaceProcess: foregroundInteractiveExec
+        )
     }
 
     /// Runs a one-off container for a service.
@@ -2504,6 +2509,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await waitForDependencyConditions(project: runProject, service: service)
         }
         let containerName = oneOffRunContainerName(project: runProject, service: service, requestedName: run.containerName)
+        let foregroundInteractiveRun = !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
+        if run.removeOrphans, foregroundInteractiveRun {
+            let declaredContainers = try declaredServiceContainerNames(project: runProject, scaleOverrides: [:])
+            let preservedServices = orphanProtectedServiceNames(project: runProject, scaleOverrides: [:])
+            try await removeRemainingProjectContainers(
+                project: runProject,
+                excluding: declaredContainers,
+                preservingServices: preservedServices
+            )
+        }
         try await runContainer(
             try await runArguments(
                 project: runProject,
@@ -2519,12 +2534,13 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 externalVolumeMounts: externalVolumeMounts,
                 imageHealthCheckCache: imageHealthCheckCache
             ),
-            inheritedIO: !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
+            inheritedIO: foregroundInteractiveRun,
+            replaceProcess: foregroundInteractiveRun
         )
         if run.detach {
             try await runPostStartHooks(service: service, containerID: containerName)
         }
-        if run.removeOrphans {
+        if run.removeOrphans, !foregroundInteractiveRun {
             let declaredContainers = try declaredServiceContainerNames(project: runProject, scaleOverrides: [:])
             let preservedServices = orphanProtectedServiceNames(project: runProject, scaleOverrides: [:])
             try await removeRemainingProjectContainers(
@@ -7692,7 +7708,8 @@ private extension ComposeOrchestrator {
         _ arguments: [String],
         check: Bool = true,
         emitOutput: Bool = true,
-        inheritedIO: Bool = false
+        inheritedIO: Bool = false,
+        replaceProcess: Bool = false
     ) async throws -> CommandResult {
         if options.dryRun {
             options.emit("+ " + shellQuoted([options.containerBinary] + arguments))
@@ -7703,7 +7720,7 @@ private extension ComposeOrchestrator {
             [options.containerBinary] + arguments,
             workingDirectory: nil,
             environment: nil,
-            io: inheritedIO ? .inherited : .captured(input: nil)
+            io: replaceProcess ? .replacingProcess : (inheritedIO ? .inherited : .captured(input: nil))
         )
         if emitOutput, !inheritedIO {
             print(result.stdout, terminator: result.stdout.hasSuffix("\n") || result.stdout.isEmpty ? "" : "\n")

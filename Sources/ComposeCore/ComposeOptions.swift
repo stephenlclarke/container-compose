@@ -25,7 +25,19 @@ public struct ComposeOptions: Equatable {
         public var noNormalize: Bool = false
         public var noPathResolution: Bool = false
 
-        public init() {}
+        public init(
+            noConsistency: Bool = false,
+            noEnvResolution: Bool = false,
+            noInterpolate: Bool = false,
+            noNormalize: Bool = false,
+            noPathResolution: Bool = false
+        ) {
+            self.noConsistency = noConsistency
+            self.noEnvResolution = noEnvResolution
+            self.noInterpolate = noInterpolate
+            self.noNormalize = noNormalize
+            self.noPathResolution = noPathResolution
+        }
 
         public init(_ configure: (inout NormalizationOptions) -> Void) {
             self.init()

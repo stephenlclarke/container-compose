@@ -27,6 +27,7 @@ Keep the prebuilt install path healthy for both lanes:
 - Package targets always include a release-built Go normalizer, even when the Swift plugin is a debug snapshot build.
 - CI accepts classified SwiftPM signal-pass output only when the helper proves tests passed and no failure markers were emitted.
 - Homebrew advisory jobs trust only the specific taps required by the formulas.
+- Startup, normalization, and image build paths should show prompt visual progress feedback instead of sitting silent. Prefer Docker Compose-style progress rows, or a Swift/Go spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner), with plain non-TTY output for CI and logs.
 
 ## Upstreamable Runtime Slices
 

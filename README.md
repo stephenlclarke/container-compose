@@ -32,6 +32,12 @@ have backing `apple/container` functionality fail with an explicit
 
 Use `container system version` to see the running `container` runtime source, branch lane, commit, and compiled `containerization` ref. Use `container compose version` to see the installed plugin lane and the `container` / `containerization` pins that package was built against.
 
+## Plugin Recognition
+
+When installed correctly, `container help` lists `compose` under `PLUGINS`.
+
+![container help output showing the compose plugin recognised](docs/images/container-help-compose-plugin.png)
+
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): install prebuilt Homebrew assets or a local plugin archive.

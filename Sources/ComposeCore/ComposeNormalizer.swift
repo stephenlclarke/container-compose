@@ -42,11 +42,7 @@ public struct ComposeNormalizer: Sendable {
             workingDirectory: invocation.workingDirectory
         )
         guard result.succeeded else {
-            throw ComposeError.commandFailed(
-                command: ([invocation.executable] + arguments).joined(separator: " "),
-                status: result.status,
-                stderr: result.stderr
-            )
+            throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
         }
 
         let data = Data(result.stdout.utf8)
@@ -68,11 +64,7 @@ public struct ComposeNormalizer: Sendable {
             workingDirectory: invocation.workingDirectory
         )
         guard result.succeeded else {
-            throw ComposeError.commandFailed(
-                command: ([invocation.executable] + arguments).joined(separator: " "),
-                status: result.status,
-                stderr: result.stderr
-            )
+            throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
         }
 
         let data = Data(result.stdout.utf8)
@@ -92,6 +84,24 @@ private struct NormalizerInvocation {
 }
 
 private extension ComposeNormalizer {
+    static func normalizerFailure(
+        invocation: NormalizerInvocation,
+        arguments: [String],
+        result: CommandResult
+    ) -> ComposeError {
+        let stderrLines = result.stderr
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if stderrLines.contains("compose-normalizer: no compose file found") {
+            return .missingComposeFile
+        }
+        return .commandFailed(
+            command: ([invocation.executable] + arguments).joined(separator: " "),
+            status: result.status,
+            stderr: result.stderr
+        )
+    }
+
     static func normalizerArguments(
         invocation: NormalizerInvocation,
         options: ComposeOptions,
@@ -102,13 +112,13 @@ private extension ComposeNormalizer {
         arguments.append(contentsOf: modeArguments)
 
         for file in options.files {
-            arguments.append(contentsOf: ["--file", file])
+            arguments.append(contentsOf: ["--file", absoluteInputPath(file)])
         }
         for profile in options.profiles {
             arguments.append(contentsOf: ["--profile", profile])
         }
         for envFile in options.envFiles {
-            arguments.append(contentsOf: ["--env-file", envFile])
+            arguments.append(contentsOf: ["--env-file", absoluteInputPath(envFile)])
         }
         if let projectName = options.projectName {
             arguments.append(contentsOf: ["--project-name", projectName])
@@ -192,5 +202,20 @@ private extension ComposeNormalizer {
             fileURL = URL(fileURLWithPath: expandedPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
         }
         return fileURL.standardizedFileURL.deletingLastPathComponent().path
+    }
+
+    static func absoluteInputPath(_ path: String) -> String {
+        guard path != "-" else {
+            return path
+        }
+
+        let expandedPath = (path as NSString).expandingTildeInPath
+        if expandedPath.hasPrefix("/") {
+            return URL(fileURLWithPath: expandedPath).standardizedFileURL.path
+        }
+        return URL(
+            fileURLWithPath: expandedPath,
+            relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        ).standardizedFileURL.path
     }
 }

@@ -979,6 +979,7 @@ struct ComposeNormalizerTests {
             ),
         ])
 
+        let currentDirectory = FileManager.default.currentDirectoryPath
         let project = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(
             files: ["compose.yml"],
             projectName: "demo",
@@ -995,9 +996,9 @@ struct ComposeNormalizerTests {
             "job": ComposeDependency(condition: "service_completed_successfully", restart: true, required: false),
         ])
         let command = try #require(runner.commands.first)
-        #expect(command.arguments.containsSequence(["--file", "compose.yml"]))
+        #expect(command.arguments.containsSequence(["--file", "\(currentDirectory)/compose.yml"]))
         #expect(command.arguments.containsSequence(["--profile", "dev"]))
-        #expect(command.arguments.containsSequence(["--env-file", ".env"]))
+        #expect(command.arguments.containsSequence(["--env-file", "\(currentDirectory)/.env"]))
         #expect(command.arguments.containsSequence(["--project-name", "demo"]))
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
@@ -1012,12 +1013,14 @@ struct ComposeNormalizerTests {
             ),
         ])
 
+        let currentDirectory = FileManager.default.currentDirectoryPath
         _ = try await ComposeNormalizer(runner: runner, fallbackLauncher: "custom-env")
             .normalize(options: ComposeOptions(files: ["compose.yml"], projectDirectory: "/tmp/demo"))
 
         let command = try #require(runner.commands.first)
         #expect(command.executable == "custom-env")
         #expect(command.arguments.starts(with: ["go", "run", "."]))
+        #expect(command.arguments.containsSequence(["--file", "\(currentDirectory)/compose.yml"]))
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
@@ -1031,6 +1034,7 @@ struct ComposeNormalizerTests {
             ),
         ])
 
+        let currentDirectory = FileManager.default.currentDirectoryPath
         let variables = try await ComposeNormalizer(runner: runner).variables(options: ComposeOptions(
             files: ["compose.yml"],
             projectName: "demo",
@@ -1043,7 +1047,7 @@ struct ComposeNormalizerTests {
         ])
         let command = try #require(runner.commands.first)
         #expect(command.arguments.contains("--variables"))
-        #expect(command.arguments.containsSequence(["--file", "compose.yml"]))
+        #expect(command.arguments.containsSequence(["--file", "\(currentDirectory)/compose.yml"]))
         #expect(command.arguments.containsSequence(["--project-name", "demo"]))
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
@@ -1121,7 +1125,7 @@ struct ComposeNormalizerTests {
             Issue.record("Expected command failure")
         } catch let error as ComposeError {
             #expect(error == .commandFailed(
-                command: "/usr/bin/env go run . --file compose.yml --project-directory \(FileManager.default.currentDirectoryPath)",
+                command: "/usr/bin/env go run . --file \(FileManager.default.currentDirectoryPath)/compose.yml --project-directory \(FileManager.default.currentDirectoryPath)",
                 status: 23,
                 stderr: "bad compose"
             ))
@@ -1140,6 +1144,38 @@ struct ComposeNormalizerTests {
             } else {
                 Issue.record("Unexpected compose error: \(error)")
             }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("normalizer maps missing compose file to Docker compatible error")
+    func normalizerMapsMissingComposeFileToDockerCompatibleError() async throws {
+        let missingFileResult = CommandResult(
+            status: 1,
+            stdout: "",
+            stderr: "compose-normalizer: no compose file found\nexit status 1\n"
+        )
+
+        do {
+            _ = try await ComposeNormalizer(runner: RecordingRunner(responses: [
+                missingFileResult,
+            ])).normalize(options: ComposeOptions())
+            Issue.record("Expected missing compose file error")
+        } catch let error as ComposeError {
+            #expect(error == .missingComposeFile)
+            #expect(error.description == "no configuration file provided: not found")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            _ = try await ComposeNormalizer(runner: RecordingRunner(responses: [
+                missingFileResult,
+            ])).variables(options: ComposeOptions())
+            Issue.record("Expected missing compose file error")
+        } catch let error as ComposeError {
+            #expect(error == .missingComposeFile)
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

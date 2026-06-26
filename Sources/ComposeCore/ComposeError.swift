@@ -22,6 +22,7 @@ public enum ComposeError: Error, CustomStringConvertible, Equatable {
     case invalidProject(String)
     case unsupported(String)
     case missingNormalizer(String)
+    case missingComposeFile
 
     /// A user-facing error description suitable for CLI output.
     public var description: String {
@@ -38,6 +39,8 @@ public enum ComposeError: Error, CustomStringConvertible, Equatable {
             return "unsupported compose feature: \(message)"
         case .missingNormalizer(let message):
             return "compose normalizer unavailable: \(message)"
+        case .missingComposeFile:
+            return "no configuration file provided: not found"
         }
     }
 }

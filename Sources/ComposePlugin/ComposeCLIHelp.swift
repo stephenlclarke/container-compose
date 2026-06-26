@@ -45,6 +45,22 @@ enum ComposeCLIHelp {
         return true
     }
 
+    /// Prints Docker Compose compatible root help for invocations that include
+    /// only global options and no subcommand.
+    static func renderRootIfNoCommand(arguments: [String]) -> Bool {
+        let rewritten = ComposeArgumentRewriter.rewrite(arguments)
+        guard isMissingCommandInvocation(arguments: rewritten) else {
+            return false
+        }
+
+        print(rootHelpText(arguments: rewritten))
+        return true
+    }
+
+    static func rootHelpText(arguments: [String]) -> String {
+        renderedHelp(rootHelp, commandPath: [], useANSI: shouldUseANSI(arguments: arguments))
+    }
+
     private static func isHelpRequested(arguments: [String]) -> Bool {
         if arguments.contains("--help") || arguments.contains("-h") {
             return true
@@ -104,6 +120,30 @@ enum ComposeCLIHelp {
             }
         }
         return false
+    }
+
+    private static func isMissingCommandInvocation(arguments: [String]) -> Bool {
+        guard !arguments.isEmpty else {
+            return true
+        }
+
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            if commandNames.contains(argument) || argument == "help" || argument == "--help" || argument == "-h" {
+                return false
+            }
+            if consumesGlobalValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+                index += 2
+                continue
+            }
+            if consumesGlobalValue(argument) || argument.hasPrefix("--ansi=") {
+                index += 1
+                continue
+            }
+            return false
+        }
+        return true
     }
 
     private enum SupportLevel {

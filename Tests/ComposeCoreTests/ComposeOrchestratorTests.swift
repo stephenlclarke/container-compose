@@ -15363,7 +15363,7 @@ struct ComposeOrchestratorTests {
         try await orchestrator.run(project: project, serviceName: "job", command: ["echo", "ok"], remove: true)
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(runner.commands.first?.io == .inherited)
+        #expect(runner.commands.first?.io == .replacingProcess)
         #expect(command.starts(with: ["container", "run", "--name"]))
         #expect(command.contains("--rm"))
         #expect(command.containsSequence(["--env", "A=B"]))
@@ -16024,6 +16024,53 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages.contains { $0.contains("container run --name") })
         #expect(emitted.messages.contains { $0 == "+ container list --format json --all" })
+    }
+
+    @Test("interactive run remove orphans cleans before replacing process")
+    func interactiveRunRemoveOrphansCleansBeforeReplacingProcess() async throws {
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-old-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "old",
+                    composeConfigHashLabel: "old-hash",
+                ]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.tty = true
+                    $0.stdinOpen = true
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["sh"]) {
+                $0.removeOrphans = true
+            }
+        )
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-old-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-old-1", force: false),
+        ])
+        #expect(runner.commands.first?.io == .replacingProcess)
     }
 
     @Test("run rejects unsupported service pull policies before creating resources")
@@ -17633,7 +17680,7 @@ struct ComposeOrchestratorTests {
         )
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(runner.commands.first?.io == .inherited)
+        #expect(runner.commands.first?.io == .replacingProcess)
         #expect(!command.contains("--tty"))
         #expect(command.contains("--interactive"))
         #expect(Array(command.suffix(2)) == ["alpine", "sh"])

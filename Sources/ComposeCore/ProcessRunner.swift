@@ -15,6 +15,11 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// Captured result from an external command.
 public struct CommandResult: Equatable, Sendable {
@@ -37,6 +42,7 @@ public struct CommandResult: Equatable, Sendable {
 public enum CommandIO: Equatable, Sendable {
     case captured(input: Data?)
     case inherited
+    case replacingProcess
 }
 
 /// Runs external commands for normalizer and container CLI integration.
@@ -97,6 +103,13 @@ public struct ProcessRunner: CommandRunning {
             )
         case .inherited:
             try await runInheritingIO(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment
+            )
+        case .replacingProcess:
+            try replaceCurrentProcess(
                 executable,
                 arguments,
                 workingDirectory: workingDirectory,
@@ -192,6 +205,36 @@ public struct ProcessRunner: CommandRunning {
                 state.fail(error)
             }
         }
+    }
+
+    /// Replaces the plugin process with an interactive child command.
+    private func replaceCurrentProcess(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?
+    ) throws -> CommandResult {
+        if let workingDirectory, chdir(workingDirectory.path) != 0 {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        if let environment {
+            for (key, value) in environment {
+                setenv(key, value, 1)
+            }
+        }
+
+        let processArguments = [executable] + arguments
+        var cArguments = processArguments.map { strdup($0) }
+        defer {
+            for argument in cArguments {
+                free(argument)
+            }
+        }
+        cArguments.append(nil)
+        _ = cArguments.withUnsafeMutableBufferPointer { buffer in
+            execvp(executable, buffer.baseAddress)
+        }
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
     }
 }
 

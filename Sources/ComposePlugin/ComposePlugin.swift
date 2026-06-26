@@ -246,6 +246,9 @@ struct ComposePluginMain {
         if ComposeCLIHelp.renderIfRequested(arguments: arguments) {
             return
         }
+        if ComposeCLIHelp.renderRootIfNoCommand(arguments: arguments) {
+            return
+        }
         await ComposePlugin.main(ComposeArgumentRewriter.rewrite(arguments))
     }
 }
