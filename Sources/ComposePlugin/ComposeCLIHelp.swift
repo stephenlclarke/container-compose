@@ -163,7 +163,7 @@ enum ComposeCLIHelp {
         "publish": .notSupported,
         "pull": .partiallySupported,
         "push": .partiallySupported,
-        "restart": .partiallySupported,
+        "restart": .supported,
         "rm": .partiallySupported,
         "run": .partiallySupported,
         "scale": .partiallySupported,

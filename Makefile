@@ -761,6 +761,8 @@ cli-smoke-built:
 	stop_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stop -t12 api)"; \
 	[[ "$$stop_compact_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
 	restart_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo restart -t 13 api)"; \
+	restart_help_output="$$(".build/debug/compose" restart --help)"; \
+	[[ "$$restart_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-api-1"* ]]; \
 	[[ "$$restart_timeout_output" == *"container stop --time 13 demo-db-1"* ]]; \
 	[[ "$$restart_timeout_output" == *"container start demo-db-1"* ]]; \
