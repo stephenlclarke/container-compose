@@ -321,7 +321,7 @@ enum ComposeCLIHelp {
         ],
         "images": [
             "--dry-run": .supported,
-            "--format": .partiallySupported,
+            "--format": .supported,
             "--quiet": .supported,
         ],
         "kill": [
@@ -344,7 +344,7 @@ enum ComposeCLIHelp {
             "--all": .supported,
             "--dry-run": .supported,
             "--filter": .partiallySupported,
-            "--format": .partiallySupported,
+            "--format": .supported,
             "--quiet": .supported,
         ],
         "port": [
@@ -356,7 +356,7 @@ enum ComposeCLIHelp {
             "--all": .supported,
             "--dry-run": .supported,
             "--filter": .partiallySupported,
-            "--format": .supported,
+            "--format": .partiallySupported,
             "--no-trunc": .supported,
             "--orphans": .supported,
             "--quiet": .supported,

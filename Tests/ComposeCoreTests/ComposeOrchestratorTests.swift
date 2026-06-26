@@ -6772,6 +6772,60 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests == [.listVolumes])
     }
 
+    @Test("volumes format template renders selected fields")
+    func volumesFormatTemplateRendersSelectedFields() async throws {
+        let emitted = MessageRecorder()
+        let resourceManager = RecordingContainerResourceManager(volumes: [
+            ComposeVolumeSummary(
+                name: "demo_cache",
+                driver: "local",
+                labels: ["com.apple.container.compose.project": "demo"]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: ["api": composeService(name: "api", image: "example/api")]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        try await orchestrator.volumes(
+            project: project,
+            options: ComposeVolumesOptions(format: #"table {{.Name}}\t{{.Driver}}"#)
+        )
+
+        #expect(emitted.messages == [
+            """
+            NAME        DRIVER
+            demo_cache  local
+            """,
+        ])
+        #expect(await resourceManager.requests == [.listVolumes])
+    }
+
+    @Test("volumes format template rejects unsupported fields without records")
+    func volumesFormatTemplateRejectsUnsupportedFieldsWithoutRecords() async throws {
+        let resourceManager = RecordingContainerResourceManager(volumes: [])
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: RecordingRunner(), resourceManager: resourceManager)
+                .volumes(project: project, options: ComposeVolumesOptions(format: "{{.Scope}}"))
+            Issue.record("Expected unsupported volumes template field error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("volumes --format field '.Scope'; supported fields are Driver, Name"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("volumes dry run renders the backing direct API command")
     func volumesDryRunRendersBackingDirectAPICommand() async throws {
         let emitted = MessageRecorder()
@@ -6790,18 +6844,18 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
-    @Test("volumes rejects unsupported output formats")
-    func volumesRejectsUnsupportedOutputFormats() async throws {
+    @Test("volumes rejects unsupported template actions")
+    func volumesRejectsUnsupportedTemplateActions() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
         do {
             try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
-                .volumes(project: project, options: ComposeVolumesOptions(format: "yaml"))
-            Issue.record("Expected unsupported volumes format error")
+                .volumes(project: project, options: ComposeVolumesOptions(format: "{{json .}}"))
+            Issue.record("Expected unsupported volumes template action error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("volumes --format 'yaml'; supported formats are table and json"))
+            #expect(error == .unsupported("format template action '{{json .}}'; supported actions are field references like '{{.Name}}'"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -7488,6 +7542,64 @@ struct ComposeOrchestratorTests {
         #expect(output.contains("api"))
     }
 
+    @Test("ps format template renders selected fields")
+    func psFormatTemplateRendersSelectedFields() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.all = true
+                $0.format = #"table {{.Name}}\t{{.Service}}\t{{.Status}}"#
+                $0.noTrunc = true
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(emitted.messages == [
+            """
+            NAME           SERVICE  STATUS
+            demo-api-1     api      running
+            demo-worker-1  worker   stopped
+            """,
+        ])
+    }
+
+    @Test("ps format template truncates IDs by default")
+    func psFormatTemplateTruncatesIDsByDefault() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "0123456789abcdef",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.format = "{{.ID}}" }
+        )
+
+        #expect(emitted.messages == ["0123456789ab"])
+    }
+
     @Test("ps can exclude orphaned service containers")
     func psCanExcludeOrphanedServiceContainers() async throws {
         let emitted = MessageRecorder()
@@ -7523,24 +7635,26 @@ struct ComposeOrchestratorTests {
         #expect(containers.compactMap { $0["id"] as? String } == ["demo-api-1"])
     }
 
-    @Test("ps rejects unsupported output formats")
-    func psRejectsUnsupportedOutputFormats() async throws {
+    @Test("ps rejects unsupported template fields")
+    func psRejectsUnsupportedTemplateFields() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
+        let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
 
         do {
             try await orchestrator.ps(
                 project: ComposeProject(name: "demo", services: [:]),
-                options: ComposePsOptions { $0.format = "yaml" }
+                options: ComposePsOptions { $0.format = "{{.Command}}" }
             )
-            Issue.record("Expected unsupported ps format error")
+            Issue.record("Expected unsupported ps template field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("ps --format 'yaml'; supported formats are table and json"))
+            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ID, Image, Name, Project, Service, State, Status"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests.isEmpty)
     }
 
     @Test("ps quiet takes precedence over services")

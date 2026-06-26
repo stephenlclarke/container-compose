@@ -263,7 +263,7 @@ cli-smoke-built:
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	ps_help_output="$$(".build/debug/compose" ps --help)"; \
-	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$ps_help_output" == *"$${ansi_escape}[38;5;208m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--no-trunc$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--orphans$${ansi_escape}[0m"* ]]; \
 	cp_help_output="$$(".build/debug/compose" cp --help)"; \
@@ -754,8 +754,8 @@ cli-smoke-built:
 	[[ "$$ps_filter_output" == *"container list --format json --all"* ]]; \
 	ps_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --format json --no-trunc --orphans)"; \
 	[[ "$$ps_format_output" == *"container list --format json"* ]]; \
-	ps_bad_format_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" -p demo ps --format yaml 2>&1 || true)"; \
-	[[ "$$ps_bad_format_output" == *"unsupported compose feature: ps --format 'yaml'; supported formats are table and json"* ]]; \
+	ps_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --format '{{.Command}}' 2>&1 || true)"; \
+	[[ "$$ps_bad_format_output" == *"unsupported compose feature: ps --format field '.Command'; supported fields are ID, Image, Name, Project, Service, State, Status"* ]]; \
 	images_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format json api)"; \
 	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
 	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \
@@ -764,8 +764,8 @@ cli-smoke-built:
 	[[ "$$volumes_json_output" == *"container volume list --format json"* ]]; \
 	volumes_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes -q api)"; \
 	[[ "$$volumes_quiet_output" == *"container volume list --format json"* ]]; \
-	volumes_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes --format yaml api 2>&1 || true)"; \
-	[[ "$$volumes_bad_format_output" == *"unsupported compose feature: volumes --format 'yaml'; supported formats are table and json"* ]]; \
+	volumes_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes --format '{{.Scope}}' api 2>&1 || true)"; \
+	[[ "$$volumes_bad_format_output" == *"unsupported compose feature: volumes --format field '.Scope'; supported fields are Driver, Name"* ]]; \
 	stats_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --format json api db)"; \
 	[[ "$$stats_output" == *"container stats --format json --no-stream demo-api-1 demo-db-1"* ]]; \
 	stats_no_trunc_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo stats --no-stream --no-trunc api)"; \

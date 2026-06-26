@@ -1116,6 +1116,7 @@ private struct ParsedPublishedPortMapping {
 private enum ComposeVolumesFormat {
     case table
     case json
+    case template(String, table: Bool)
 }
 
 private enum RuntimeHealthCheckCommand {
@@ -2021,6 +2022,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             if !table.isEmpty {
                 options.emit(table)
             }
+        case .template(let template, let table):
+            let output = try renderComposeContainerTemplate(
+                filteredContainers,
+                template: template,
+                table: table,
+                noTrunc: psOptions.noTrunc
+            )
+            if !output.isEmpty {
+                options.emit(output)
+            }
         }
     }
 
@@ -2649,6 +2660,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
         case .json:
             options.emit(try renderComposeVolumeJSON(records))
+        case .template(let template, let table):
+            let output = try renderComposeVolumeTemplate(records, template: template, table: table)
+            if !output.isEmpty {
+                options.emit(output)
+            }
         }
     }
 
@@ -9088,15 +9104,36 @@ private func platformJSONObject(_ value: String) -> [String: String] {
     return object
 }
 
+private let composePsTemplateFields: Set<String> = ["ID", "Image", "Name", "Project", "Service", "State", "Status"]
+private let composeVolumesTemplateFields: Set<String> = ["Driver", "Name"]
+
 /// Validates the `compose ps --format` value.
 private func composePsFormat(_ value: String) throws -> ComposePsFormat {
-    switch value.lowercased() {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch normalized.lowercased() {
     case "table":
         return .table
     case "json":
         return .json
     default:
-        throw ComposeError.unsupported("ps --format '\(value)'; supported formats are table and json")
+        let tablePrefix = "table "
+        if normalized.lowercased().hasPrefix(tablePrefix) {
+            let template = String(normalized.dropFirst(tablePrefix.count))
+            try validateDockerTemplateActions(in: template)
+            try validateDockerTemplateFields(
+                dockerTemplateFields(in: template),
+                command: "ps",
+                supported: composePsTemplateFields
+            )
+            return .template(template, table: true)
+        }
+        try validateDockerTemplateActions(in: normalized)
+        try validateDockerTemplateFields(
+            dockerTemplateFields(in: normalized),
+            command: "ps",
+            supported: composePsTemplateFields
+        )
+        return .template(normalized, table: false)
     }
 }
 
@@ -9104,6 +9141,7 @@ private func composePsFormat(_ value: String) throws -> ComposePsFormat {
 private enum ComposePsFormat {
     case table
     case json
+    case template(String, table: Bool)
 }
 
 /// Renders project container rows as a compact Docker Compose-style table.
@@ -9132,6 +9170,156 @@ private func renderComposeContainerTable(
             index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
         }.joined(separator: "  ")
     }.joined(separator: "\n")
+}
+
+/// Renders project containers through a Docker-style field template.
+private func renderComposeContainerTemplate(
+    _ containers: [ComposeContainerSummary],
+    template: String,
+    table: Bool,
+    noTrunc: Bool
+) throws -> String {
+    let fields = dockerTemplateFields(in: template)
+    try validateDockerTemplateActions(in: template)
+    try validateDockerTemplateFields(
+        fields,
+        command: "ps",
+        supported: composePsTemplateFields
+    )
+    let rows = try containers.map { container in
+        try renderDockerTemplate(template) { field in
+            switch field {
+            case "ID":
+                noTrunc ? container.id : truncatedDockerIdentifier(container.id)
+            case "Name":
+                container.id
+            case "Image":
+                container.imageReference
+            case "Service":
+                container.serviceName ?? ""
+            case "State", "Status":
+                container.status
+            case "Project":
+                container.projectName ?? ""
+            default:
+                throw unsupportedDockerTemplateField(field, command: "ps", supported: composePsTemplateFields)
+            }
+        }
+    }
+    return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+}
+
+/// Mirrors Docker-style default identifier truncation.
+private func truncatedDockerIdentifier(_ id: String) -> String {
+    guard id.count > 12 else {
+        return id
+    }
+    return String(id.prefix(12))
+}
+
+/// Returns field references from a Docker-style template in encounter order.
+private func dockerTemplateFields(in template: String) -> [String] {
+    dockerTemplateFieldMatches(in: template).map(\.field)
+}
+
+/// Renders the field-reference subset of Docker's output template language.
+private func renderDockerTemplate(
+    _ template: String,
+    valueForField: (String) throws -> String
+) throws -> String {
+    try validateDockerTemplateActions(in: template)
+    let fieldMatches = dockerTemplateFieldMatches(in: template)
+    var rendered = template
+    for match in fieldMatches.reversed() {
+        let value = try valueForField(match.field)
+        rendered.replaceSubrange(match.range, with: value)
+    }
+    return rendered
+        .replacingOccurrences(of: #"\t"#, with: "\t")
+        .replacingOccurrences(of: #"\n"#, with: "\n")
+}
+
+/// Renders table template rows with Docker-style headers from referenced fields.
+private func renderDockerTemplateTable(fields: [String], rows: [String]) -> String {
+    guard !rows.isEmpty else {
+        return ""
+    }
+    guard !fields.isEmpty else {
+        return rows.joined(separator: "\n")
+    }
+    let tableRows = [fields.map { $0.uppercased() }] + rows.map { row in
+        let columns = row.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        return columns.count == fields.count ? columns : [row]
+    }
+    return renderTable(tableRows)
+}
+
+/// Rejects template actions outside the supported field-reference subset.
+private func validateDockerTemplateActions(in template: String) throws {
+    let actionMatches = dockerTemplateActionMatches(in: template)
+    let fieldMatches = dockerTemplateFieldMatches(in: template)
+    guard actionMatches.count == fieldMatches.count else {
+        let fieldRanges = Set(fieldMatches.map(\.range))
+        let unsupported = actionMatches.first { !fieldRanges.contains($0.range) }?.action ?? ""
+        throw ComposeError.unsupported("format template action '{{\(unsupported)}}'; supported actions are field references like '{{.Name}}'")
+    }
+}
+
+/// Rejects fields that the current command cannot project.
+private func validateDockerTemplateFields(_ fields: [String], command: String, supported: Set<String>) throws {
+    for field in fields where !supported.contains(field) {
+        throw unsupportedDockerTemplateField(field, command: command, supported: supported)
+    }
+}
+
+/// Formats the shared unsupported field error for early validation and defensive render checks.
+private func unsupportedDockerTemplateField(_ field: String, command: String, supported: Set<String>) -> ComposeError {
+    let supportedFields = supported.sorted().joined(separator: ", ")
+    return ComposeError.unsupported("\(command) --format field '.\(field)'; supported fields are \(supportedFields)")
+}
+
+private struct DockerTemplateFieldMatch {
+    var field: String
+    var range: Range<String.Index>
+}
+
+private struct DockerTemplateActionMatch {
+    var action: String
+    var range: Range<String.Index>
+}
+
+private func dockerTemplateFieldMatches(in template: String) -> [DockerTemplateFieldMatch] {
+    let pattern = #"\{\{\s*\.([A-Za-z][A-Za-z0-9_]*)\s*\}\}"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        return []
+    }
+    let range = NSRange(template.startIndex..<template.endIndex, in: template)
+    return regex.matches(in: template, range: range).compactMap { match in
+        guard
+            let fullRange = Range(match.range(at: 0), in: template),
+            let fieldRange = Range(match.range(at: 1), in: template)
+        else {
+            return nil
+        }
+        return DockerTemplateFieldMatch(field: String(template[fieldRange]), range: fullRange)
+    }
+}
+
+private func dockerTemplateActionMatches(in template: String) -> [DockerTemplateActionMatch] {
+    let pattern = #"\{\{([^}]*)\}\}"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        return []
+    }
+    let range = NSRange(template.startIndex..<template.endIndex, in: template)
+    return regex.matches(in: template, range: range).compactMap { match in
+        guard
+            let fullRange = Range(match.range(at: 0), in: template),
+            let actionRange = Range(match.range(at: 1), in: template)
+        else {
+            return nil
+        }
+        return DockerTemplateActionMatch(action: String(template[actionRange]).trimmingCharacters(in: .whitespacesAndNewlines), range: fullRange)
+    }
 }
 
 /// Returns container IDs from a filtered direct API list.
@@ -9454,13 +9642,23 @@ private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> S
 
 /// Validates the `compose volumes --format` value.
 private func composeVolumesFormat(_ value: String) throws -> ComposeVolumesFormat {
-    switch value.lowercased() {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch normalized.lowercased() {
     case "table":
         return .table
     case "json":
         return .json
     default:
-        throw ComposeError.unsupported("volumes --format '\(value)'; supported formats are table and json")
+        let tablePrefix = "table "
+        if normalized.lowercased().hasPrefix(tablePrefix) {
+            let template = String(normalized.dropFirst(tablePrefix.count))
+            try validateDockerTemplateActions(in: template)
+            try validateDockerTemplateFields(dockerTemplateFields(in: template), command: "volumes", supported: composeVolumesTemplateFields)
+            return .template(template, table: true)
+        }
+        try validateDockerTemplateActions(in: normalized)
+        try validateDockerTemplateFields(dockerTemplateFields(in: normalized), command: "volumes", supported: composeVolumesTemplateFields)
+        return .template(normalized, table: false)
     }
 }
 
@@ -9480,6 +9678,26 @@ private func renderComposeVolumeTable(_ records: [ComposeVolumeRecord]) -> Strin
             index == row.count - 1 ? value : value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
         }.joined(separator: "  ")
     }.joined(separator: "\n")
+}
+
+/// Renders Compose volumes through a Docker-style field template.
+private func renderComposeVolumeTemplate(_ records: [ComposeVolumeRecord], template: String, table: Bool) throws -> String {
+    let fields = dockerTemplateFields(in: template)
+    try validateDockerTemplateActions(in: template)
+    try validateDockerTemplateFields(fields, command: "volumes", supported: composeVolumesTemplateFields)
+    let rows = try records.map { record in
+        try renderDockerTemplate(template) { field in
+            switch field {
+            case "Name":
+                record.name
+            case "Driver":
+                record.driver
+            default:
+                throw unsupportedDockerTemplateField(field, command: "volumes", supported: composeVolumesTemplateFields)
+            }
+        }
+    }
+    return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
 }
 
 /// Renders volume rows as deterministic JSON.
