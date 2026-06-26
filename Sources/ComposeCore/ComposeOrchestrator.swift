@@ -2518,7 +2518,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Starts selected service containers.
     public func start(project: ComposeProject, options start: ComposeStartOptions) async throws {
         try validateTimeoutSeconds(start.waitTimeout, command: "start", option: "--wait-timeout")
-        let services = try selectedServices(project: project, selected: start.services)
+        let services = try start.services.isEmpty
+            ? orderedServices(project: project, selected: [])
+            : selectedServices(project: project, selected: start.services)
         let targets = try await serviceContainerTargets(project: project, services: services)
         for target in targets {
             try await startContainer(service: target.service, containerName: target.name)

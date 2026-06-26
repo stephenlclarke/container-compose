@@ -9624,6 +9624,53 @@ struct ComposeOrchestratorTests {
         #expect(await dryRunLifecycleManager.requests.isEmpty)
     }
 
+    @Test("start all uses dependency order")
+    func startAllUsesDependencyOrder() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            lifecycleManager: lifecycleManager
+        ).start(project: project, services: [])
+
+        #expect(await lifecycleManager.requests == [
+            .start(id: "demo-db-1"),
+            .start(id: "demo-api-1"),
+        ])
+    }
+
+    @Test("start selected service does not include dependencies")
+    func startSelectedServiceDoesNotIncludeDependencies() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            lifecycleManager: lifecycleManager
+        ).start(project: project, services: ["api"])
+
+        #expect(await lifecycleManager.requests == [
+            .start(id: "demo-api-1"),
+        ])
+    }
+
     @Test("start wait polls until selected containers are running")
     func startWaitPollsUntilSelectedContainersAreRunning() async throws {
         let lifecycleManager = RecordingContainerLifecycleManager()
