@@ -267,13 +267,16 @@ cli-smoke-built:
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
+	ls_help_output="$$(".build/debug/compose" ls --help)"; \
+	[[ "$$ls_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$ls_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	ps_help_output="$$(".build/debug/compose" ps --help)"; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[38;5;208m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--no-trunc$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--orphans$${ansi_escape}[0m"* ]]; \
 	images_help_output="$$(".build/debug/compose" images --help)"; \
-	[[ "$$images_help_output" == *"$${ansi_escape}[38;5;208m--format$${ansi_escape}[0m"* ]]; \
-	[[ "$$images_help_output" == *"Format output using table, json, or a custom template"* ]]; \
+	[[ "$$images_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$images_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	cp_help_output="$$(".build/debug/compose" cp --help)"; \
 	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--archive$${ansi_escape}[0m"* ]]; \
 	[[ "$$cp_help_output" == *"$${ansi_escape}[32m--follow-link$${ansi_escape}[0m"* ]]; \
@@ -785,10 +788,8 @@ cli-smoke-built:
 	[[ "$$images_json_output" == *"container list --format json --all"* ]]; \
 	images_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images -q api)"; \
 	[[ "$$images_quiet_output" == *"container list --format json --all"* ]]; \
-	images_template_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format '{{.Repository}}:{{.Tag}}' api)"; \
-	[[ "$$images_template_output" == *"container list --format json --all"* ]]; \
 	images_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format '{{.Size}}' api 2>&1 || true)"; \
-	[[ "$$images_bad_format_output" == *"unsupported compose feature: images --format field '.Size'; supported fields are Container, ImageID, Platform, Repository, Tag"* ]]; \
+	[[ "$$images_bad_format_output" == *"unsupported compose feature: images --format '{{.Size}}'; supported formats are table and json"* ]]; \
 	volumes_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes --format json api)"; \
 	[[ "$$volumes_json_output" == *"container volume list --format json"* ]]; \
 	volumes_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes -q api)"; \

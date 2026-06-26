@@ -790,7 +790,7 @@ struct Ls: AsyncParsableCommand {
     var all = false
     @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display project names.")
     var quiet = false
-    @Option(name: .customLong("format"), help: "Output format: table, json, or a custom template.")
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
     var format = "table"
     @Option(name: .customLong("filter"), help: "Filter projects. Supported filter: name.")
     var filters: [String] = []
@@ -1124,7 +1124,7 @@ struct Rm: AsyncParsableCommand, ComposeProjectCommand {
 struct Images: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "images", abstract: "List images used by created service containers.")
     @OptionGroup var global: GlobalOptions
-    @Option(name: .customLong("format"), help: "Output format: table, json, or a custom template.")
+    @Option(name: .customLong("format"), help: "Output format: table or json.")
     var format = "table"
     @Flag(name: .shortAndLong, help: "Only display image IDs.")
     var quiet = false
