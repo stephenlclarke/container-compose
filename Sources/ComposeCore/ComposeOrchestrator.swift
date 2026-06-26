@@ -9199,9 +9199,6 @@ private func renderComposeContainerTable(
     _ containers: [ComposeContainerSummary],
     noTrunc _: Bool
 ) -> String {
-    guard !containers.isEmpty else {
-        return ""
-    }
     let rows = [
         ["NAME", "IMAGE", "SERVICE", "STATUS"],
     ] + containers.map { container in

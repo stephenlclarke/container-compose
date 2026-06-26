@@ -7719,6 +7719,25 @@ struct ComposeOrchestratorTests {
         #expect(output.contains("api"))
     }
 
+    @Test("ps table renders headers when no records match")
+    func psTableRendersHeadersWhenNoRecordsMatch() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.format = "table" }
+        )
+
+        #expect(await discoveryManager.listRequests == [false])
+        #expect(emitted.messages == ["NAME  IMAGE  SERVICE  STATUS"])
+    }
+
     @Test("ps format template renders selected fields")
     func psFormatTemplateRendersSelectedFields() async throws {
         let emitted = MessageRecorder()
