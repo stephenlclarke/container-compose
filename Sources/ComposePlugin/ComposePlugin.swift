@@ -355,8 +355,10 @@ struct GlobalOptions: ParsableArguments {
         switch progress?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "quiet", "none":
             return .quiet
-        case "plain", "json":
+        case "plain":
             return .plain
+        case "json":
+            return .json
         case "tty":
             return .tty
         case "auto", "", nil:

@@ -29,7 +29,7 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[31mnot supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[38;5;208mrun\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--progress\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--progress\u{001B}[0m"))
     }
 
     @Test("root help honours ansi never")
@@ -54,7 +54,7 @@ struct ComposeCLIHelpTests {
         #expect(options.progressStyle() == .plain)
 
         options.progress = "json"
-        #expect(options.progressStyle() == .plain)
+        #expect(options.progressStyle() == .json)
 
         options.progress = "tty"
         #expect(options.progressStyle() == .tty)

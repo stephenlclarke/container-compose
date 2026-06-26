@@ -20,6 +20,7 @@ import Foundation
 public enum ComposeProgressStyle: Equatable, Sendable {
     case quiet
     case plain
+    case json
     case tty
 }
 
@@ -53,6 +54,8 @@ public struct ComposeProgressReporter: Sendable {
             try await operation()
         case .plain:
             try await plainActivity(message, operation: operation)
+        case .json:
+            try await jsonActivity(message, operation: operation)
         case .tty:
             try await ttyActivity(message, operation: operation)
         }
@@ -66,6 +69,18 @@ public struct ComposeProgressReporter: Sendable {
             return result
         } catch {
             emitLine(mark: Self.failedMark, color: Self.failureColor, message: message)
+            throw error
+        }
+    }
+
+    private func jsonActivity<T>(_ message: String, operation: () async throws -> T) async throws -> T {
+        emitJSON(status: "running", message: message)
+        do {
+            let result = try await operation()
+            emitJSON(status: "done", message: message)
+            return result
+        } catch {
+            emitJSON(status: "error", message: message)
             throw error
         }
     }
@@ -109,6 +124,17 @@ public struct ComposeProgressReporter: Sendable {
         emit("\(colored(mark, color: color)) \(message)\n")
     }
 
+    private func emitJSON(status: String, message: String) {
+        let event = ProgressEvent(id: Self.progressID, status: status, text: message)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(event) else {
+            return
+        }
+        emitData(data)
+        emit("\n")
+    }
+
     private func colored(_ value: String, color: String) -> String {
         guard colorEnabled else {
             return value
@@ -120,6 +146,7 @@ public struct ComposeProgressReporter: Sendable {
         emitData(Data(text.utf8))
     }
 
+    private static let progressID = "container-compose"
     private static let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     private static let pendingMark = "⠋"
     private static let doneMark = "✔︎"
@@ -128,4 +155,10 @@ public struct ComposeProgressReporter: Sendable {
     private static let successColor = "\u{001B}[32m"
     private static let failureColor = "\u{001B}[31m"
     private static let resetColor = "\u{001B}[0m"
+}
+
+private struct ProgressEvent: Encodable {
+    var id: String
+    var status: String
+    var text: String
 }

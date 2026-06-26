@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-26 19:37 BST.
+Last updated: 2026-06-26 21:17 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -43,13 +43,13 @@ The old long-lived evidence files have been removed from the top-level documenta
 Current local validation:
 
 ```sh
-swift build --disable-automatic-resolution --product compose
+swift test --disable-automatic-resolution --filter 'ComposeProgressTests|ComposeCLIHelpTests'
 make ci
-make package-release PLUGIN_ARCHIVE=container-compose-plugin-release-arm64.tar.gz
+npx --yes markdownlint-cli README.md PLAN.md STATUS.md
 git diff --check
 ```
 
-All passed locally after refreshing the fork pins. `make package-release` built the Swift plugin in release mode and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. Local package metadata recorded the refreshed `container` and `containerization` refs above.
+All passed locally after adding structured `--progress json` events for Compose-owned progress phases. `make ci` ran 661 Swift tests, reported Swift coverage at 90.00%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`.
 
 ## Open Blockers
 

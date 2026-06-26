@@ -85,6 +85,50 @@ struct ComposeProgressTests {
     }
 
     @Test
+    func `json progress emits structured running and done events`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .json,
+            emitData: { emitted.append($0) },
+        )
+
+        let value = try await reporter.activity("Loading Compose model") {
+            "loaded"
+        }
+
+        #expect(value == "loaded")
+        let events = try emitted.jsonLines()
+        #expect(events == [
+            ["id": "container-compose", "status": "running", "text": "Loading Compose model"],
+            ["id": "container-compose", "status": "done", "text": "Loading Compose model"],
+        ])
+    }
+
+    @Test
+    func `json progress emits error event before rethrowing`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .json,
+            emitData: { emitted.append($0) },
+        )
+
+        do {
+            _ = try await reporter.activity("Building api") {
+                throw ComposeError.invalidProject("broken build")
+            }
+            Issue.record("Expected progress activity to rethrow")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("broken build"))
+        }
+
+        let events = try emitted.jsonLines()
+        #expect(events == [
+            ["id": "container-compose", "status": "running", "text": "Building api"],
+            ["id": "container-compose", "status": "error", "text": "Building api"],
+        ])
+    }
+
+    @Test
     func `tty progress emits first frame before operation starts`() async throws {
         let emitted = LockedDataRecorder()
         let reporter = ComposeProgressReporter(
@@ -117,5 +161,14 @@ private final class LockedDataRecorder: @unchecked Sendable {
             lock.unlock()
         }
         return String(bytes: data, encoding: .utf8) ?? ""
+    }
+
+    func jsonLines() throws -> [[String: String]] {
+        try string
+            .split(separator: "\n")
+            .map { line in
+                let data = try #require(String(line).data(using: .utf8))
+                return try #require(JSONSerialization.jsonObject(with: data) as? [String: String])
+            }
     }
 }
