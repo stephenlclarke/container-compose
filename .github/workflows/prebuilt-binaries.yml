@@ -37,7 +37,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -79,7 +79,7 @@ jobs:
 
       - name: Checkout container dependency
         if: steps.prepare.outputs.changed != 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -206,7 +206,7 @@ jobs:
 
       - name: Checkout Homebrew tap
         if: steps.prepare.outputs.changed != 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: stephenlclarke/homebrew-tap
           path: homebrew-tap
