@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-26 23:47 BST.
+Last updated: 2026-06-27 00:09 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,7 +24,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed fork pins:
 
-- `stephenlclarke/container`: `3fa746ce5ca14342de2065e3de40f86252cd5c37`
+- `stephenlclarke/container`: `ae4667ef6ab2b6099943489e4732f802bea2f3b7`
 - `stephenlclarke/containerization`: `a0b08ffeda51ea5396efb0788e060610c39f4b55`
 
 ## Current Docs Shape
@@ -54,7 +54,7 @@ npx --yes markdownlint-cli README.md PLAN.md STATUS.md
 git diff --check
 ```
 
-All passed locally after making direct volume cleanup tolerant of already-absent project volumes while still surfacing real delete failures such as volume-in-use errors. The routed runtime smoke proved `down --volumes` on an absent project network and declared volume exits cleanly. The CI harness now keeps the normal SwiftPM signal-13 retry path for plain tests but requires a complete Swift test exit for coverage so incomplete profile data cannot be reported as false 0% coverage. `make ci` ran 674 Swift tests, reported Swift coverage at 89.99%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`; compose still builds against the refreshed fork ref.
+All passed locally after making direct volume cleanup tolerant of already-absent project volumes while still surfacing real delete failures such as volume-in-use errors. The routed runtime smoke proved `down --volumes` on an absent project network and declared volume exits cleanly. The CI harness now keeps the normal SwiftPM signal-13 retry path for plain tests but requires a complete Swift test exit for coverage so incomplete profile data cannot be reported as false 0% coverage. `make ci` ran 674 Swift tests, reported Swift coverage at 89.99%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`, plus the Apple `containerization` 0.35 package-version update through `c34d340` while retaining Stephen's `containerization` support branch; compose still builds against the refreshed fork ref.
 
 ## Open Blockers
 
