@@ -1065,6 +1065,35 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
+    @Test("normalizer forwards config load switches")
+    func normalizerForwardsConfigLoadSwitches() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+
+        _ = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(
+            files: ["compose.yml"],
+            projectDirectory: "/tmp/demo",
+            noConsistency: true,
+            noEnvResolution: true,
+            noInterpolate: true,
+            noNormalize: true,
+            noPathResolution: true
+        ))
+
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--no-consistency"))
+        #expect(command.arguments.contains("--no-env-resolution"))
+        #expect(command.arguments.contains("--no-interpolate"))
+        #expect(command.arguments.contains("--no-normalize"))
+        #expect(command.arguments.contains("--no-path-resolution"))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
     @Test("normalizer defaults project directory to current working directory")
     func normalizerDefaultsProjectDirectoryToCurrentWorkingDirectory() async throws {
         let runner = RecordingRunner(responses: [

@@ -113,6 +113,21 @@ private extension ComposeNormalizer {
         if let projectName = options.projectName {
             arguments.append(contentsOf: ["--project-name", projectName])
         }
+        if options.noConsistency {
+            arguments.append("--no-consistency")
+        }
+        if options.noEnvResolution {
+            arguments.append("--no-env-resolution")
+        }
+        if options.noInterpolate {
+            arguments.append("--no-interpolate")
+        }
+        if options.noNormalize {
+            arguments.append("--no-normalize")
+        }
+        if options.noPathResolution {
+            arguments.append("--no-path-resolution")
+        }
         arguments.append(contentsOf: ["--project-directory", projectDirectory])
         return arguments
     }

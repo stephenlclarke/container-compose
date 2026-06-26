@@ -418,19 +418,20 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
     func run() async throws {
         let unsupportedOptions = [
             lockImageDigests ? "--lock-image-digests" : nil,
-            noConsistency ? "--no-consistency" : nil,
-            noEnvResolution ? "--no-env-resolution" : nil,
-            noInterpolate ? "--no-interpolate" : nil,
-            noNormalize ? "--no-normalize" : nil,
-            noPathResolution ? "--no-path-resolution" : nil,
             resolveImageDigests ? "--resolve-image-digests" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("config \(first)")
         }
+        var composeOptions = global.composeOptions()
+        composeOptions.noConsistency = noConsistency
+        composeOptions.noEnvResolution = noEnvResolution
+        composeOptions.noInterpolate = noInterpolate
+        composeOptions.noNormalize = noNormalize
+        composeOptions.noPathResolution = noPathResolution
 
         if variables {
-            let loadedVariables = try await ComposeNormalizer().variables(options: global.composeOptions())
+            let loadedVariables = try await ComposeNormalizer().variables(options: composeOptions)
             let rendered = orchestrator().config(variables: loadedVariables)
             if let output {
                 try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
@@ -442,7 +443,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             return
         }
 
-        let loadedProject = try await project()
+        let loadedProject = try await ComposeNormalizer().normalize(options: composeOptions)
         let rendered = try orchestrator().config(
             project: loadedProject,
             options: ComposeConfigOptions {

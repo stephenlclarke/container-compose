@@ -351,6 +351,11 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	var envFiles stringList
 	var projectName string
 	var projectDirectory string
+	var noConsistency bool
+	var noEnvResolution bool
+	var noInterpolate bool
+	var noNormalize bool
+	var noPathResolution bool
 	var variables bool
 
 	flags := flag.NewFlagSet("compose-normalizer", flag.ContinueOnError)
@@ -360,17 +365,29 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags.Var(&envFiles, "env-file", "Environment file. May be repeated.")
 	flags.StringVar(&projectName, "project-name", "", "Compose project name.")
 	flags.StringVar(&projectDirectory, "project-directory", "", "Project directory.")
+	flags.BoolVar(&noConsistency, "no-consistency", false, "Skip model consistency checks.")
+	flags.BoolVar(&noEnvResolution, "no-env-resolution", false, "Do not resolve service env files.")
+	flags.BoolVar(&noInterpolate, "no-interpolate", false, "Do not interpolate environment variables.")
+	flags.BoolVar(&noNormalize, "no-normalize", false, "Do not normalize the compose model.")
+	flags.BoolVar(&noPathResolution, "no-path-resolution", false, "Do not resolve relative file paths.")
 	flags.BoolVar(&variables, "variables", false, "Print model variables as JSON.")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 
+	loadOptions := projectLoadOptions{
+		noConsistency:    noConsistency,
+		noEnvResolution:  noEnvResolution,
+		noInterpolate:    noInterpolate,
+		noNormalize:      noNormalize,
+		noPathResolution: noPathResolution,
+	}
 	var result any
 	var err error
 	if variables {
-		result, err = loadVariables(files, profiles, envFiles, projectName, projectDirectory)
+		result, err = loadVariables(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	} else {
-		result, err = loadProject(files, profiles, envFiles, projectName, projectDirectory)
+		result, err = loadProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "compose-normalizer: %v\n", err)
@@ -386,9 +403,18 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+type projectLoadOptions struct {
+	noConsistency    bool
+	noEnvResolution  bool
+	noInterpolate    bool
+	noNormalize      bool
+	noPathResolution bool
+}
+
 // loadProject delegates Compose parsing, merging, interpolation, and profile
 // handling to compose-go.
-func loadProject(files, profiles, envFiles []string, projectName, projectDirectory string) (*normalizedProject, error) {
+func loadProject(files, profiles, envFiles []string, projectName, projectDirectory string, optionalLoadOptions ...projectLoadOptions) (*normalizedProject, error) {
+	loadOptions := firstProjectLoadOptions(optionalLoadOptions)
 	if projectDirectory == "" {
 		var err error
 		projectDirectory, err = os.Getwd()
@@ -417,6 +443,7 @@ func loadProject(files, profiles, envFiles []string, projectName, projectDirecto
 	if len(profiles) > 0 {
 		options = append(options, cli.WithProfiles(profiles))
 	}
+	options = appendProjectLoadOptions(options, loadOptions)
 
 	projectOptions, err := newProjectOptions(files, projectDirectory, usesDefaultFiles, options...)
 	if err != nil {
@@ -434,7 +461,8 @@ func loadProject(files, profiles, envFiles []string, projectName, projectDirecto
 	return normalize(project, projectDirectory), nil
 }
 
-func loadVariables(files, profiles, envFiles []string, projectName, projectDirectory string) ([]normalizedVariable, error) {
+func loadVariables(files, profiles, envFiles []string, projectName, projectDirectory string, optionalLoadOptions ...projectLoadOptions) ([]normalizedVariable, error) {
+	loadOptions := firstProjectLoadOptions(optionalLoadOptions)
 	if projectDirectory == "" {
 		var err error
 		projectDirectory, err = os.Getwd()
@@ -460,6 +488,7 @@ func loadVariables(files, profiles, envFiles []string, projectName, projectDirec
 	if len(profiles) > 0 {
 		options = append(options, cli.WithProfiles(profiles))
 	}
+	options = appendProjectLoadOptions(options, loadOptions)
 	options = append(options, cli.WithInterpolation(false))
 
 	projectOptions, err := newProjectOptions(files, projectDirectory, usesDefaultFiles, options...)
@@ -493,6 +522,26 @@ func loadVariables(files, profiles, envFiles []string, projectName, projectDirec
 		})
 	}
 	return variables, nil
+}
+
+func firstProjectLoadOptions(options []projectLoadOptions) projectLoadOptions {
+	if len(options) == 0 {
+		return projectLoadOptions{}
+	}
+	return options[0]
+}
+
+func appendProjectLoadOptions(options []cli.ProjectOptionsFn, loadOptions projectLoadOptions) []cli.ProjectOptionsFn {
+	options = append(options,
+		cli.WithConsistency(!loadOptions.noConsistency),
+		cli.WithInterpolation(!loadOptions.noInterpolate),
+		cli.WithNormalization(!loadOptions.noNormalize),
+		cli.WithResolvedPaths(!loadOptions.noPathResolution),
+	)
+	if loadOptions.noEnvResolution {
+		options = append(options, cli.WithoutEnvironmentResolution)
+	}
+	return options
 }
 
 // newProjectOptions applies compose-go options from the Compose project

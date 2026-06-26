@@ -255,6 +255,11 @@ cli-smoke-built:
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--environment$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--profiles$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--variables$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-consistency$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-env-resolution$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-interpolate$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-normalize$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-path-resolution$${ansi_escape}[0m"* ]]; \
 	build_help_output="$$(".build/debug/compose" build --help)"; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
@@ -356,6 +361,10 @@ cli-smoke-built:
 	printf 'services:\n  worker:\n    build:\n      context: ./api\n' > "$$tmpdir/build-only.yml"; \
 	printf 'services:\n  api:\n    image: "$${IMAGE_NAME:-alpine}:$${IMAGE_TAG:-3.20}"\n    environment:\n      REQUIRED: "$${REQUIRED?must set}"\n      WHEN_PRESENT: "$${OPTIONAL:+enabled}"\n' > "$$tmpdir/variables.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n' > "$$tmpdir/no-variables.yml"; \
+	printf 'VALUE=from-env-file\n' > "$$tmpdir/service.env"; \
+	printf 'services:\n  api:\n    image: alpine\n    env_file:\n      - service.env\n' > "$$tmpdir/env-file.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    build:\n      context: ./api\n    volumes:\n      - ./src:/src\n' > "$$tmpdir/relative-paths.yml"; \
+	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - missing\n' > "$$tmpdir/missing-dependency.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
 	[[ "$$version_compact_global_output" == "0.1.0" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
@@ -382,6 +391,19 @@ cli-smoke-built:
 	[[ "$$config_variables_output" == *"REQUIRED"*"true"* ]]; \
 	config_no_variables_output="$$(".build/debug/compose" -f "$$tmpdir/no-variables.yml" config --variables)"; \
 	[[ "$$config_no_variables_output" == "NAME  REQUIRED  DEFAULT VALUE  ALTERNATE VALUE" ]]; \
+	config_no_interpolate_output="$$(".build/debug/compose" -f "$$tmpdir/variables.yml" config --no-interpolate --format json)"; \
+	[[ "$$config_no_interpolate_output" == *'$${IMAGE_NAME:-alpine}:$${IMAGE_TAG:-3.20}'* ]]; \
+	config_no_env_resolution_output="$$(".build/debug/compose" -f "$$tmpdir/env-file.yml" config --no-env-resolution --format json)"; \
+	[[ "$$config_no_env_resolution_output" == *'"envFiles"'* ]]; \
+	[[ "$$config_no_env_resolution_output" != *"from-env-file"* ]]; \
+	config_no_path_resolution_output="$$(".build/debug/compose" -f "$$tmpdir/relative-paths.yml" config --no-path-resolution --format json)"; \
+	[[ "$$config_no_path_resolution_output" == *'"context":"./api"'* ]]; \
+	[[ "$$config_no_path_resolution_output" == *'"source":"./src"'* ]]; \
+	config_no_normalize_output="$$(".build/debug/compose" -f "$$tmpdir/relative-paths.yml" config --no-normalize --format json)"; \
+	[[ "$$config_no_normalize_output" == *'"context":'* ]]; \
+	[[ "$$config_no_normalize_output" != *'"dockerfile":"Dockerfile"'* ]]; \
+	config_no_consistency_output="$$(".build/debug/compose" -f "$$tmpdir/missing-dependency.yml" config --no-consistency --services)"; \
+	[[ "$$config_no_consistency_output" == "api" ]]; \
 	config_volumes_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --volumes)"; \
 	[[ "$$config_volumes_output" == "cache" ]]; \
 	config_hash_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config --hash api)"; \

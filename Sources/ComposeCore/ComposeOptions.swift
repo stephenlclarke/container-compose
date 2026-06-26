@@ -23,18 +23,33 @@ public struct ComposeOptions: Equatable {
     public var profiles: [String]
     public var envFiles: [String]
     public var projectDirectory: String?
+    public var noConsistency: Bool
+    public var noEnvResolution: Bool
+    public var noInterpolate: Bool
+    public var noNormalize: Bool
+    public var noPathResolution: Bool
 
     public init(
         files: [String] = [],
         projectName: String? = nil,
         profiles: [String] = [],
         envFiles: [String] = [],
-        projectDirectory: String? = nil
+        projectDirectory: String? = nil,
+        noConsistency: Bool = false,
+        noEnvResolution: Bool = false,
+        noInterpolate: Bool = false,
+        noNormalize: Bool = false,
+        noPathResolution: Bool = false
     ) {
         self.files = files
         self.projectName = projectName
         self.profiles = profiles
         self.envFiles = envFiles
         self.projectDirectory = projectDirectory
+        self.noConsistency = noConsistency
+        self.noEnvResolution = noEnvResolution
+        self.noInterpolate = noInterpolate
+        self.noNormalize = noNormalize
+        self.noPathResolution = noPathResolution
     }
 }
