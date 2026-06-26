@@ -2621,9 +2621,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         switch format {
         case .table:
             let table = renderComposeImageTable(records)
-            if !table.isEmpty {
-                options.emit(table)
-            }
+            options.emit(table)
         case .json:
             options.emit(try renderComposeImageJSON(records))
         }
@@ -9507,9 +9505,6 @@ private struct ComposeVolumeRecord: Encodable, Equatable {
 
 /// Renders image rows as a compact table.
 private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String {
-    guard !records.isEmpty else {
-        return ""
-    }
     let rows = [
         ["CONTAINER", "REPOSITORY", "TAG", "IMAGE ID", "PLATFORM"],
     ] + records.map { record in
@@ -9527,6 +9522,9 @@ private func renderComposeImageTable(_ records: [ComposeImageRecord]) -> String 
 
 /// Renders image rows as deterministic JSON.
 private func renderComposeImageJSON(_ records: [ComposeImageRecord]) throws -> String {
+    guard !records.isEmpty else {
+        return "null"
+    }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(records)

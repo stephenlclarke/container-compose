@@ -6597,6 +6597,22 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["aaaaaaaaaaaa\nbbbbbbbbbbbb"])
     }
 
+    @Test("images table prints header for empty projects")
+    func imagesTablePrintsHeaderForEmptyProjects() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        ).images(project: project, services: [], options: ComposeImagesOptions())
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(emitted.messages == ["CONTAINER  REPOSITORY  TAG  IMAGE ID  PLATFORM"])
+    }
+
     @Test("images json renders created image records")
     func imagesJSONRendersCreatedImageRecords() async throws {
         let emitted = MessageRecorder()
@@ -6624,6 +6640,22 @@ struct ComposeOrchestratorTests {
         #expect(records.map { $0["tag"] } == ["latest", "debug"])
         #expect(records.map { $0["imageID"] } == ["aaaaaaaaaaaa", "bbbbbbbbbbbb"])
         #expect(await discoveryManager.listRequests == [true])
+    }
+
+    @Test("images json renders null for empty projects")
+    func imagesJSONRendersNullForEmptyProjects() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [])
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        ).images(project: project, services: [], options: ComposeImagesOptions(format: "json"))
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(emitted.messages == ["null"])
     }
 
     @Test("images rejects unsupported output formats")
