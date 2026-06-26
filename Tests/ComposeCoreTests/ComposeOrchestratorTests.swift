@@ -7817,6 +7817,40 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["0123456789ab"])
     }
 
+    @Test("ps format template renders health exit code and publishers")
+    func psFormatTemplateRendersHealthExitCodeAndPublishers() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ],
+                resources: .init(publishedPorts: [
+                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
+                ]),
+                state: .init(exitCode: 0, health: "healthy")
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions {
+                $0.all = true
+                $0.format = #"{{.Health}}\t{{.ExitCode}}\t{{.Publishers}}"#
+            }
+        )
+
+        #expect(emitted.messages == ["healthy\t0\t127.0.0.1:8080->80/tcp"])
+    }
+
     @Test("ps can exclude orphaned service containers")
     func psCanExcludeOrphanedServiceContainers() async throws {
         let emitted = MessageRecorder()
@@ -7865,7 +7899,7 @@ struct ComposeOrchestratorTests {
             )
             Issue.record("Expected unsupported ps template field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ID, Image, Name, Ports, Project, Service, State, Status"))
+            #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Name, Ports, Project, Publishers, Service, State, Status"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

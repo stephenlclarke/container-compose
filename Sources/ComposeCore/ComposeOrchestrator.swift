@@ -9177,7 +9177,19 @@ private func platformJSONObject(_ value: String) -> [String: String] {
     return object
 }
 
-private let composePsTemplateFields: Set<String> = ["ID", "Image", "Name", "Ports", "Project", "Service", "State", "Status"]
+private let composePsTemplateFields: Set<String> = [
+    "ExitCode",
+    "Health",
+    "ID",
+    "Image",
+    "Name",
+    "Ports",
+    "Project",
+    "Publishers",
+    "Service",
+    "State",
+    "Status",
+]
 private let composeVolumesTemplateFields: Set<String> = [
     "Availability",
     "Driver",
@@ -9277,7 +9289,13 @@ private func renderComposeContainerTemplate(
                 container.id
             case "Image":
                 container.imageReference
+            case "ExitCode":
+                container.exitCode.map(String.init) ?? ""
+            case "Health":
+                container.health ?? ""
             case "Ports":
+                renderComposePublishedPorts(container.publishedPorts)
+            case "Publishers":
                 renderComposePublishedPorts(container.publishedPorts)
             case "Service":
                 container.serviceName ?? ""
