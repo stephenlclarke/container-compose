@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-26 23:39 BST.
+Last updated: 2026-06-26 23:47 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,7 +24,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed fork pins:
 
-- `stephenlclarke/container`: `3fa746c85d99e295e998ccf07ba4a5d58fb48be8`
+- `stephenlclarke/container`: `3fa746ce5ca14342de2065e3de40f86252cd5c37`
 - `stephenlclarke/containerization`: `a0b08ffeda51ea5396efb0788e060610c39f4b55`
 
 ## Current Docs Shape
