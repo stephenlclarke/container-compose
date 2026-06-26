@@ -2692,7 +2692,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 options.emit(table)
             }
         case .json:
-            options.emit(try renderComposeVolumeJSON(records))
+            let output = try renderComposeVolumeJSON(records)
+            if !output.isEmpty {
+                options.emit(output)
+            }
         case .template(let template, let table):
             let output = try renderComposeVolumeTemplate(records, template: template, table: table)
             if !output.isEmpty {
@@ -7652,7 +7655,7 @@ private extension ComposeOrchestrator {
                 }
                 return volume.labels[projectLabel] == project.name || attachedVolumeNames.contains(volume.name)
             }
-            .map { ComposeVolumeRecord(driver: $0.driver, name: $0.name) }
+            .map { ComposeVolumeRecord(summary: $0) }
             .sorted { $0.name < $1.name }
     }
 
@@ -9143,7 +9146,18 @@ private func platformJSONObject(_ value: String) -> [String: String] {
 }
 
 private let composePsTemplateFields: Set<String> = ["ID", "Image", "Name", "Project", "Service", "State", "Status"]
-private let composeVolumesTemplateFields: Set<String> = ["Driver", "Name"]
+private let composeVolumesTemplateFields: Set<String> = [
+    "Availability",
+    "Driver",
+    "Group",
+    "Labels",
+    "Links",
+    "Mountpoint",
+    "Name",
+    "Scope",
+    "Size",
+    "Status",
+]
 
 /// Validates the `compose ps --format` value.
 private func composePsFormat(_ value: String) throws -> ComposePsFormat {
@@ -9541,8 +9555,62 @@ private struct ComposeImageRecord: Encodable, Equatable {
 
 /// One Docker Compose-style volume row derived from apple/container volumes.
 private struct ComposeVolumeRecord: Encodable, Equatable {
+    let availability: String
     let driver: String
+    let group: String
+    let labels: String
+    let links: String
+    let mountpoint: String
     let name: String
+    let scope: String
+    let size: String
+    let status: String
+
+    init(summary: ComposeVolumeSummary) {
+        self.init(
+            driver: summary.driver,
+            labels: summary.labels,
+            mountpoint: summary.source,
+            name: summary.name,
+            sizeInBytes: summary.sizeInBytes
+        )
+    }
+
+    init(
+        driver: String,
+        labels: [String: String] = [:],
+        mountpoint: String = "",
+        name: String,
+        scope: String = "local",
+        sizeInBytes: UInt64? = nil
+    ) {
+        self.availability = "N/A"
+        self.driver = driver
+        self.group = "N/A"
+        self.labels = labels
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: ",")
+        self.links = "N/A"
+        self.mountpoint = mountpoint.isEmpty ? "N/A" : mountpoint
+        self.name = name
+        self.scope = scope
+        self.size = sizeInBytes.map(String.init) ?? "N/A"
+        self.status = "N/A"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case availability = "Availability"
+        case driver = "Driver"
+        case group = "Group"
+        case labels = "Labels"
+        case links = "Links"
+        case mountpoint = "Mountpoint"
+        case name = "Name"
+        case scope = "Scope"
+        case size = "Size"
+        case status = "Status"
+    }
 }
 
 /// Renders image rows as a compact table.
@@ -9621,24 +9689,60 @@ private func renderComposeVolumeTemplate(_ records: [ComposeVolumeRecord], templ
     let rows = try records.map { record in
         try renderDockerTemplate(template) { field in
             switch field {
-            case "Name":
-                record.name
+            case "Availability":
+                record.availability
             case "Driver":
                 record.driver
+            case "Group":
+                record.group
+            case "Labels":
+                record.labels
+            case "Links":
+                record.links
+            case "Mountpoint":
+                record.mountpoint
+            case "Name":
+                record.name
+            case "Scope":
+                record.scope
+            case "Size":
+                record.size
+            case "Status":
+                record.status
             default:
                 throw unsupportedDockerTemplateField(field, command: "volumes", supported: composeVolumesTemplateFields)
             }
         }
     }
-    return table ? renderDockerTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
+    return table ? renderComposeVolumeTemplateTable(fields: fields, rows: rows) : rows.joined(separator: "\n")
 }
 
-/// Renders volume rows as deterministic JSON.
+/// Renders volume template table rows with Docker Compose's volume headers.
+private func renderComposeVolumeTemplateTable(fields: [String], rows: [String]) -> String {
+    guard !rows.isEmpty else {
+        return ""
+    }
+    guard !fields.isEmpty else {
+        return rows.joined(separator: "\n")
+    }
+    let headers = fields.map { field in
+        field == "Name" ? "VOLUME NAME" : field.uppercased()
+    }
+    let tableRows = [headers] + rows.map { row in
+        let columns = row.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        return columns.count == fields.count ? columns : [row]
+    }
+    return renderTable(tableRows)
+}
+
+/// Renders volume rows as deterministic newline-delimited Docker-style JSON.
 private func renderComposeVolumeJSON(_ records: [ComposeVolumeRecord]) throws -> String {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    let data = try encoder.encode(records)
-    return String(decoding: data, as: UTF8.self)
+    encoder.outputFormatting = [.sortedKeys]
+    return try records.map { record in
+        let data = try encoder.encode(record)
+        return String(decoding: data, as: UTF8.self)
+    }.joined(separator: "\n")
 }
 
 /// Splits a container image reference into repository and tag display fields.

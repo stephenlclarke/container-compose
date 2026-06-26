@@ -6879,6 +6879,7 @@ struct ComposeOrchestratorTests {
             ComposeVolumeSummary(
                 name: "demo_cache",
                 driver: "local",
+                source: "/volumes/demo_cache",
                 labels: ["com.apple.container.compose.project": "demo"]
             ),
         ])
@@ -6897,8 +6898,36 @@ struct ComposeOrchestratorTests {
         try await orchestrator.volumes(project: project, options: ComposeVolumesOptions(format: "json"))
 
         let data = Data(try #require(emitted.messages.first).utf8)
-        let records = try #require(JSONSerialization.jsonObject(with: data) as? [[String: String]])
-        #expect(records == [["driver": "local", "name": "demo_cache"]])
+        let record = try #require(JSONSerialization.jsonObject(with: data) as? [String: String])
+        #expect(record == [
+            "Availability": "N/A",
+            "Driver": "local",
+            "Group": "N/A",
+            "Labels": "com.apple.container.compose.project=demo",
+            "Links": "N/A",
+            "Mountpoint": "/volumes/demo_cache",
+            "Name": "demo_cache",
+            "Scope": "local",
+            "Size": "N/A",
+            "Status": "N/A",
+        ])
+        #expect(await resourceManager.requests == [.listVolumes])
+    }
+
+    @Test("volumes json omits output when there are no matching records")
+    func volumesJSONOmitsOutputWhenThereAreNoMatchingRecords() async throws {
+        let emitted = MessageRecorder()
+        let resourceManager = RecordingContainerResourceManager(volumes: [])
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            resourceManager: resourceManager
+        )
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await orchestrator.volumes(project: project, options: ComposeVolumesOptions(format: "json"))
+
+        #expect(emitted.messages.isEmpty)
         #expect(await resourceManager.requests == [.listVolumes])
     }
 
@@ -6909,6 +6938,7 @@ struct ComposeOrchestratorTests {
             ComposeVolumeSummary(
                 name: "demo_cache",
                 driver: "local",
+                source: "/volumes/demo_cache",
                 labels: ["com.apple.container.compose.project": "demo"]
             ),
         ])
@@ -6926,29 +6956,29 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.volumes(
             project: project,
-            options: ComposeVolumesOptions(format: #"table {{.Name}}\t{{.Driver}}"#)
+            options: ComposeVolumesOptions(format: #"table {{.Name}}\t{{.Driver}}\t{{.Scope}}\t{{.Mountpoint}}"#)
         )
 
         #expect(emitted.messages == [
             """
-            NAME        DRIVER
-            demo_cache  local
+            VOLUME NAME  DRIVER  SCOPE  MOUNTPOINT
+            demo_cache   local   local  /volumes/demo_cache
             """,
         ])
         #expect(await resourceManager.requests == [.listVolumes])
     }
 
-    @Test("volumes format template rejects unsupported fields without records")
-    func volumesFormatTemplateRejectsUnsupportedFieldsWithoutRecords() async throws {
+    @Test("volumes format template rejects unknown fields without records")
+    func volumesFormatTemplateRejectsUnknownFieldsWithoutRecords() async throws {
         let resourceManager = RecordingContainerResourceManager(volumes: [])
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
         do {
             try await ComposeOrchestrator(runner: RecordingRunner(), resourceManager: resourceManager)
-                .volumes(project: project, options: ComposeVolumesOptions(format: "{{.Scope}}"))
+                .volumes(project: project, options: ComposeVolumesOptions(format: "{{.Foo}}"))
             Issue.record("Expected unsupported volumes template field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("volumes --format field '.Scope'; supported fields are Driver, Name"))
+            #expect(error == .unsupported("volumes --format field '.Foo'; supported fields are Availability, Driver, Group, Labels, Links, Mountpoint, Name, Scope, Size, Status"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
