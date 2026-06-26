@@ -5003,6 +5003,53 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments == ["compose", "metadata"])
     }
 
+    @Test("stop all uses reverse dependency order")
+    func stopAllUsesReverseDependencyOrder() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            lifecycleManager: lifecycleManager
+        ).stop(project: project, services: [])
+
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil),
+        ])
+    }
+
+    @Test("stop selected service does not include dependencies")
+    func stopSelectedServiceDoesNotIncludeDependencies() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            lifecycleManager: lifecycleManager
+        ).stop(project: project, services: ["api"])
+
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+        ])
+    }
+
     @Test("up rejects provider missing required metadata option")
     func upRejectsProviderMissingRequiredMetadataOption() async throws {
         let provider = try temporaryExecutable(name: "example-provider")

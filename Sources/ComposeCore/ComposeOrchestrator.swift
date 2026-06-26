@@ -2531,8 +2531,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     /// Stops selected service containers.
     public func stop(project: ComposeProject, services selected: [String], timeout: Int? = nil) async throws {
         try validateTimeoutSeconds(timeout, command: "stop")
-        let services = try selectedServices(project: project, selected: selected)
-        for service in services.reversed() where service.provider != nil {
+        let services = try selected.isEmpty
+            ? Array(orderedServices(project: project, selected: []).reversed())
+            : selectedServices(project: project, selected: selected)
+        for service in services where service.provider != nil {
             _ = try await runProvider(project: project, service: service, action: .stop)
         }
         for target in try await serviceContainerTargets(project: project, services: services) {
