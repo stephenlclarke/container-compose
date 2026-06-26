@@ -2945,6 +2945,7 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.up(project: project, options: ComposeUpOptions {
             $0.removeOrphans = true
+            $0.assumeYes = true
             $0.timeout = 7
         })
 
@@ -2960,6 +2961,55 @@ struct ComposeOrchestratorTests {
             .stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: 7),
             .delete(id: "demo-worker-1", force: false),
         ])
+    }
+
+    @Test("up remove orphans cancellation leaves orphan containers")
+    func upRemoveOrphansCancellationLeavesOrphanContainers() async throws {
+        let prompts = MessageRecorder()
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-worker-1",
+                status: "stopped",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "worker",
+                    composeConfigHashLabel: "worker-hash",
+                ]
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(confirm: { prompt in
+                    prompts.append(prompt)
+                    return false
+                })
+            ),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.removeOrphans = true
+            $0.timeout = 7
+        })
+
+        #expect(runner.commands.count == 1)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(prompts.messages == ["Going to remove orphan containers demo-worker-1\nAre you sure? [yN] "])
+        #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("up remove orphans preserves declared service replicas without explicit scale")
@@ -3012,6 +3062,7 @@ struct ComposeOrchestratorTests {
         ).up(project: project, options: ComposeUpOptions {
             $0.noRecreate = true
             $0.removeOrphans = true
+            $0.assumeYes = true
         })
 
         #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
@@ -9535,6 +9586,7 @@ struct ComposeOrchestratorTests {
             }
         ).up(project: project, options: ComposeUpOptions {
             $0.removeOrphans = true
+            $0.assumeYes = true
             $0.timeout = 4
         })
 

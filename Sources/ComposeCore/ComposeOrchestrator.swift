@@ -446,6 +446,7 @@ public struct ComposeUpOptions {
     public var wait = false
     public var waitTimeout: Int?
     public var renewAnonymousVolumes = false
+    public var assumeYes = false
 
     public init() {
         services = []
@@ -466,6 +467,7 @@ public struct ComposeUpOptions {
         wait = false
         waitTimeout = nil
         renewAnonymousVolumes = false
+        assumeYes = false
     }
 
     public init(_ configure: (inout ComposeUpOptions) -> Void) {
@@ -556,6 +558,7 @@ public struct ComposeCreateOptions {
     public var quietBuild = false
     public var quietPull = false
     public var renewAnonymousVolumes = false
+    public var assumeYes = false
 
     public init() {
         services = []
@@ -570,6 +573,7 @@ public struct ComposeCreateOptions {
         quietBuild = false
         quietPull = false
         renewAnonymousVolumes = false
+        assumeYes = false
     }
 
     public init(_ configure: (inout ComposeCreateOptions) -> Void) {
@@ -1584,7 +1588,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
-                timeout: up.timeout
+                timeout: up.timeout,
+                confirmBeforeRemoval: !up.assumeYes
             )
         }
         if up.wait {
@@ -1774,7 +1779,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 project: workingProject,
                 excluding: declaredContainers,
                 preservingServices: preservedServices,
-                timeout: recreateTimeout
+                timeout: recreateTimeout,
+                confirmBeforeRemoval: !create.assumeYes
             )
         }
     }
@@ -1794,6 +1800,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             $0.quietBuild = up.quietBuild
             $0.quietPull = up.quietPull
             $0.renewAnonymousVolumes = up.renewAnonymousVolumes
+            $0.assumeYes = up.assumeYes
         }
     }
 
@@ -7579,7 +7586,8 @@ private extension ComposeOrchestrator {
         project: ComposeProject,
         excluding declaredContainers: Set<String>,
         preservingServices serviceNames: Set<String> = [],
-        timeout: Int? = nil
+        timeout: Int? = nil,
+        confirmBeforeRemoval: Bool = false
     ) async throws {
         let args = ["list", "--format", "json", "--all"]
         if options.dryRun {
@@ -7596,6 +7604,12 @@ private extension ComposeOrchestrator {
                 return container.isOneOff || !isPreservedService
             }
             .sorted { $0.id < $1.id }
+        if confirmBeforeRemoval, !remainingContainers.isEmpty {
+            let names = remainingContainers.map(\.id).joined(separator: ", ")
+            guard try await options.confirm("Going to remove orphan containers \(names)\nAre you sure? [yN] ") else {
+                return
+            }
+        }
         for container in remainingContainers {
             try await stopRemainingProjectContainer(project: project, container: container, timeout: timeout)
             try await deleteContainer(container.id)

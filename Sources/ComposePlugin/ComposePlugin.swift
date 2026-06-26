@@ -511,6 +511,7 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
                 $0.pullPolicy = pull
                 $0.scales = scales
                 $0.quietPull = quietPull
+                $0.assumeYes = yes
             }
         )
     }
@@ -623,6 +624,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                 $0.wait = wait
                 $0.waitTimeout = waitTimeout
                 $0.renewAnonymousVolumes = renewAnonVolumes
+                $0.assumeYes = yes
             }
         )
     }

@@ -289,7 +289,7 @@ enum ComposeCLIHelp {
             "--quiet-pull": .supported,
             "--remove-orphans": .supported,
             "--scale": .supported,
-            "--yes": .partiallySupported,
+            "--yes": .supported,
         ],
         "down": [
             "--dry-run": .supported,
@@ -476,7 +476,7 @@ enum ComposeCLIHelp {
             "--wait": .supported,
             "--wait-timeout": .supported,
             "--watch": .notSupported,
-            "--yes": .partiallySupported,
+            "--yes": .supported,
         ],
         "version": [
             "--dry-run": .supported,
