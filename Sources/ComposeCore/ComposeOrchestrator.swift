@@ -7715,12 +7715,20 @@ private extension ComposeOrchestrator {
             options.emit("+ " + shellQuoted([options.containerBinary] + arguments))
             return CommandResult(status: 0, stdout: "", stderr: "")
         }
+        let commandIO: CommandIO
+        if replaceProcess {
+            commandIO = .replacingProcess
+        } else if inheritedIO {
+            commandIO = .inherited
+        } else {
+            commandIO = .captured(input: nil)
+        }
         let result = try await runner.run(
             options.environmentLauncher,
             [options.containerBinary] + arguments,
             workingDirectory: nil,
             environment: nil,
-            io: replaceProcess ? .replacingProcess : (inheritedIO ? .inherited : .captured(input: nil))
+            io: commandIO
         )
         if emitOutput, !inheritedIO {
             print(result.stdout, terminator: result.stdout.hasSuffix("\n") || result.stdout.isEmpty ? "" : "\n")
