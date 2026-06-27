@@ -156,6 +156,9 @@ jobs:
             printf 'Build configuration: %s\n' "${{ steps.lane.outputs.config }}"
           } > "$notes"
 
+          git tag --force "$RELEASE_TAG" "$GITHUB_SHA"
+          git push --force origin "refs/tags/${RELEASE_TAG}"
+
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
               --target "$GITHUB_SHA" \
