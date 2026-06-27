@@ -802,6 +802,27 @@ struct ComposeOrchestratorTests {
         #expect(request.labels["com.example.volume"] == "cache")
     }
 
+    @Test("up maps list entrypoint to executable and command prefix")
+    func upMapsListEntrypointToExecutableAndCommandPrefix() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine:3.20") {
+                    $0.entrypoint = ["/bin/sh", "-c"]
+                    $0.command = ["printf ready"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--entrypoint", "/bin/sh"]))
+        #expect(!command.containsSequence(["--entrypoint", "/bin/sh -c"]))
+        #expect(Array(command.suffix(3)) == ["alpine:3.20", "-c", "printf ready"])
+    }
+
     @Test("up dry run renders volume driver options")
     func upDryRunRendersVolumeDriverOptions() async throws {
         let emitted = MessageRecorder()
@@ -8537,7 +8558,7 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.filter { $0 == "example/api:latest" }.count == 1)
         #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:dev"]))
         #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:test"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--file", "Containerfile"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--file", "api/Containerfile"]))
         #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
         #expect(runner.commands[0].arguments.contains("--no-cache"))
         #expect(runner.commands[0].arguments.contains("--pull"))
@@ -8558,6 +8579,47 @@ struct ComposeOrchestratorTests {
             .push("example/api:latest"),
         ])
         #expect(emitted.messages == ["example/api:latest"])
+    }
+
+    @Test("build resolves Dockerfile relative to build context")
+    func buildResolvesDockerfileRelativeToBuildContext() async throws {
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions()
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api") {
+                    $0.build = ComposeBuild(
+                        context: "/tmp/container-compose-build-context/api",
+                        dockerfile: "docker/Dockerfile"
+                    )
+                },
+                "worker": composeService(name: "worker") {
+                    $0.build = ComposeBuild(
+                        context: "worker",
+                        dockerfile: "Containerfile"
+                    )
+                },
+                "remote": composeService(name: "remote") {
+                    $0.build = ComposeBuild(
+                        context: "https://example.com/repo.git",
+                        dockerfile: "Containerfile"
+                    )
+                },
+            ]
+        )
+
+        try await orchestrator.build(project: project, services: ["api", "worker", "remote"], noCache: false)
+
+        #expect(runner.commands[0].arguments.containsSequence([
+            "--file",
+            "/tmp/container-compose-build-context/api/docker/Dockerfile",
+        ]))
+        #expect(runner.commands[1].arguments.containsSequence(["--file", "worker/Containerfile"]))
+        #expect(runner.commands[2].arguments.containsSequence(["--file", "Containerfile"]))
     }
 
     @Test("build materializes inline Dockerfile for container build")
@@ -15932,10 +15994,10 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--shm-size", "67108864"]))
         #expect(command.containsSequence(["--ulimit", "nofile=1024:2048"]))
         #expect(command.containsSequence(["--ulimit", "nproc=512"]))
-        #expect(command.containsSequence(["--entrypoint", "/bin/sh -c"]))
+        #expect(command.containsSequence(["--entrypoint", "/bin/sh"]))
         #expect(command.contains("--read-only"))
         #expect(command.contains("--init"))
-        #expect(Array(command.suffix(3)) == ["alpine", "echo", "ok"])
+        #expect(Array(command.suffix(4)) == ["alpine", "-c", "echo", "ok"])
     }
 
     @Test("run applies one-off capability overrides")

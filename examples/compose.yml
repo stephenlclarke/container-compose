@@ -22,8 +22,8 @@
 services:
   shell:
     build:
-      context: ..
-      dockerfile: examples/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: container-compose-alpine-shell:local
     pull_policy: build
     stdin_open: true

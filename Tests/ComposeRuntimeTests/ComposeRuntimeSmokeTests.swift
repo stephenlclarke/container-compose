@@ -20,6 +20,85 @@ import Testing
 
 @Suite("Compose runtime smoke tests")
 struct ComposeRuntimeSmokeTests {
+    @Test("runtime run build emits progress before build output")
+    func runtimeRunBuildEmitsProgressBeforeBuildOutput() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let dockerfile = directory.appendingPathComponent("Dockerfile")
+        try """
+        FROM alpine:3.20
+        """.write(to: dockerfile, atomically: true, encoding: .utf8)
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          shell:
+            build:
+              context: .
+              dockerfile: Dockerfile
+            pull_policy: build
+            command: ["echo", "runtime-progress-ok"]
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--progress", "plain",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "run", "--rm", "--no-TTY", "shell",
+            ],
+            timeout: 240,
+            mergeOutputForOrdering: true
+        )
+
+        let output = result.combined
+        #expect(output.contains("runtime-progress-ok"))
+        #expect(output.contains("Loading Compose model"))
+        #expect(output.contains("Building shell"))
+
+        try assert(
+            "Loading Compose model",
+            appearsBefore: "Building shell",
+            in: output,
+            diagnostic: "Compose model progress should be visible before build progress starts."
+        )
+        try assert(
+            "Building shell",
+            appearsBefore: "#1 ",
+            in: output,
+            diagnostic: "Build progress should be visible before container build output starts."
+        )
+    }
+
     @Test("runtime up handles entrypoint plus command")
     func runtimeUpHandlesEntrypointPlusCommand() throws {
         guard runtimeTestsEnabled else {
@@ -43,7 +122,7 @@ struct ComposeRuntimeSmokeTests {
             command: ["printf entrypoint-command-ok"]
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
-        let project = "compose-runtime-\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        let project = runtimeProjectName()
         let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
         let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
         _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
@@ -98,10 +177,15 @@ private var runtimeTestsEnabled: Bool {
     ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_RUN_RUNTIME_TESTS"] == "1"
 }
 
+private func runtimeProjectName() -> String {
+    "ccrt-\(UUID().uuidString.prefix(8).lowercased())"
+}
+
 private struct RuntimeProcessResult {
     var status: Int32
     var stdout: String
     var stderr: String
+    var combined: String
 }
 
 private final class OutputAccumulator: @unchecked Sendable {
@@ -129,7 +213,8 @@ private final class OutputAccumulator: @unchecked Sendable {
 private func runProcess(
     _ executable: String,
     _ arguments: [String],
-    timeout: TimeInterval
+    timeout: TimeInterval,
+    mergeOutputForOrdering: Bool = false
 ) throws -> RuntimeProcessResult {
     let process = Process()
     let command = [executable] + arguments
@@ -142,21 +227,30 @@ private func runProcess(
     }
 
     let stdout = Pipe()
-    let stderr = Pipe()
+    let stderr = mergeOutputForOrdering ? stdout : Pipe()
     process.standardOutput = stdout
     process.standardError = stderr
 
     let stdoutBuffer = OutputAccumulator()
     let stderrBuffer = OutputAccumulator()
+    let combinedBuffer = OutputAccumulator()
     stdout.fileHandleForReading.readabilityHandler = { handle in
-        stdoutBuffer.append(handle.availableData)
+        let data = handle.availableData
+        stdoutBuffer.append(data)
+        combinedBuffer.append(data)
     }
-    stderr.fileHandleForReading.readabilityHandler = { handle in
-        stderrBuffer.append(handle.availableData)
+    if !mergeOutputForOrdering {
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            stderrBuffer.append(data)
+            combinedBuffer.append(data)
+        }
     }
     defer {
         stdout.fileHandleForReading.readabilityHandler = nil
-        stderr.fileHandleForReading.readabilityHandler = nil
+        if !mergeOutputForOrdering {
+            stderr.fileHandleForReading.readabilityHandler = nil
+        }
     }
 
     try process.run()
@@ -170,9 +264,11 @@ private func runProcess(
         process.waitUntilExit()
         let stderrOutput = stderrBuffer.string()
         let stdoutOutput = stdoutBuffer.string()
+        let combinedOutput = combinedBuffer.string()
         let diagnostic = [
             stderrOutput.isEmpty ? nil : "stderr:\n\(stderrOutput)",
             stdoutOutput.isEmpty ? nil : "stdout:\n\(stdoutOutput)",
+            combinedOutput.isEmpty ? nil : "combined:\n\(combinedOutput)",
         ].compactMap { $0 }.joined(separator: "\n")
         throw ComposeError.commandFailed(
             command: command.joined(separator: " "),
@@ -182,12 +278,19 @@ private func runProcess(
     }
 
     process.waitUntilExit()
-    stdoutBuffer.append(stdout.fileHandleForReading.readDataToEndOfFile())
-    stderrBuffer.append(stderr.fileHandleForReading.readDataToEndOfFile())
+    let stdoutRemainder = stdout.fileHandleForReading.readDataToEndOfFile()
+    stdoutBuffer.append(stdoutRemainder)
+    combinedBuffer.append(stdoutRemainder)
+    if !mergeOutputForOrdering {
+        let stderrRemainder = stderr.fileHandleForReading.readDataToEndOfFile()
+        stderrBuffer.append(stderrRemainder)
+        combinedBuffer.append(stderrRemainder)
+    }
     let result = RuntimeProcessResult(
         status: process.terminationStatus,
         stdout: stdoutBuffer.string(),
-        stderr: stderrBuffer.string()
+        stderr: stderrBuffer.string(),
+        combined: combinedBuffer.string()
     )
     guard result.status == 0 else {
         throw ComposeError.commandFailed(
@@ -197,4 +300,21 @@ private func runProcess(
         )
     }
     return result
+}
+
+private func assert(
+    _ earlier: String,
+    appearsBefore later: String,
+    in output: String,
+    diagnostic: String
+) throws {
+    guard let earlierRange = output.range(of: earlier) else {
+        Issue.record("Expected output to contain '\(earlier)'. Output:\n\(output)")
+        return
+    }
+    guard let laterRange = output.range(of: later) else {
+        Issue.record("Expected output to contain '\(later)'. Output:\n\(output)")
+        return
+    }
+    #expect(earlierRange.lowerBound < laterRange.lowerBound, "\(diagnostic)\nOutput:\n\(output)")
 }

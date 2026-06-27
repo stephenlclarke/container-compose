@@ -6203,7 +6203,7 @@ private extension ComposeOrchestrator {
             if nonEmpty(build.dockerfileInline) != nil {
                 throw ComposeError.invalidProject("service '\(service.name)' cannot define both dockerfile and dockerfile_inline")
             }
-            args.append(contentsOf: ["--file", dockerfile])
+            args.append(contentsOf: ["--file", buildDockerfilePath(dockerfile, build: build)])
         } else if let dockerfileInline = nonEmpty(build.dockerfileInline) {
             let dockerfileURL = try materializeInlineDockerfile(project: project, service: service, contents: dockerfileInline)
             inlineDockerfileDirectory = dockerfileURL.deletingLastPathComponent()
@@ -6247,6 +6247,23 @@ private extension ComposeOrchestrator {
         }
         args.append(build.context ?? ".")
         try await runContainer(args)
+    }
+
+    /// Resolves Compose `dockerfile` relative to the build context for apple/container.
+    func buildDockerfilePath(_ dockerfile: String, build: ComposeBuild) -> String {
+        if (dockerfile as NSString).isAbsolutePath {
+            return dockerfile
+        }
+        guard let context = nonEmpty(build.context), !context.contains("://"), context != "." else {
+            return dockerfile
+        }
+        if (context as NSString).isAbsolutePath {
+            return URL(fileURLWithPath: context, isDirectory: true)
+                .appendingPathComponent(dockerfile)
+                .standardizedFileURL
+                .path
+        }
+        return (context as NSString).appendingPathComponent(dockerfile)
     }
 
     /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for apple/container build.
@@ -6814,8 +6831,10 @@ private extension ComposeOrchestrator {
         for ulimit in service.ulimits ?? [] {
             args.append(contentsOf: ["--ulimit", ulimit])
         }
+        var entrypointCommandPrefix: [String] = []
         if let entrypoint = service.entrypoint, !entrypoint.isEmpty {
-            args.append(contentsOf: ["--entrypoint", entrypoint.joined(separator: " ")])
+            args.append(contentsOf: ["--entrypoint", entrypoint[0]])
+            entrypointCommandPrefix = Array(entrypoint.dropFirst())
         }
         if service.readOnly == true {
             args.append("--read-only")
@@ -6828,6 +6847,7 @@ private extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
         args.append(image)
+        args.append(contentsOf: entrypointCommandPrefix)
         args.append(contentsOf: service.command ?? [])
         return args
     }
