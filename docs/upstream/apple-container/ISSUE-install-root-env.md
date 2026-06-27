@@ -8,7 +8,7 @@ This issue draft follows `.github/ISSUE_TEMPLATE/01-bug.yml`.
 
 ## What Happened?
 
-`container system start` defaults its `--install-root` option to `InstallRoot.defaultPath` instead of the environment-resolved `InstallRoot.path`.
+`container system start` defaults its `--install-root` option to `InstallRoot.defaultPath` instead of the environment-resolved `InstallRoot.path`. CLI plugin discovery has the same shape of bug: it derives the install root from the executable path instead of the resolved install root.
 
 That means a Homebrew wrapper can set `CONTAINER_INSTALL_ROOT=/opt/homebrew/opt/container`, but `container system start` still writes the launchd plist using the grandparent of the real executable path. For a Homebrew keg binary at `.../Cellar/container/<version>/libexec/bin/container`, the computed install root becomes `.../Cellar/container/<version>/libexec`.
 
@@ -18,9 +18,15 @@ The API server then receives the wrong `CONTAINER_INSTALL_ROOT` and searches for
 helper failed [error=internalError: "cannot find any plugins with type network"] [name=container-apiserver]
 ```
 
+After service startup is fixed, the CLI can still fail to find external plugins such as Compose because plugin dispatch checks the executable-derived root for `container-plugins`:
+
+```text
+Error: Plugin 'container-compose' not found.
+```
+
 ## What Did You Expect To Happen?
 
-`container system start` should honor the same install-root resolution as other runtime components. If `CONTAINER_INSTALL_ROOT` is set, the default `--install-root` should use that value unless the user passes an explicit CLI option.
+`container system start` and CLI plugin discovery should honor the same install-root resolution as other runtime components. If `CONTAINER_INSTALL_ROOT` is set, default install-root behavior should use that value unless the user passes an explicit CLI option.
 
 That keeps package-manager wrappers, source builds, and explicit `--install-root` overrides aligned with the plugin loader and API-server startup path.
 
@@ -32,7 +38,7 @@ Install a Homebrew-wrapped `container` binary where the real executable lives be
 CONTAINER_INSTALL_ROOT=/opt/homebrew/opt/container /opt/homebrew/Cellar/container/<version>/libexec/bin/container system start
 ```
 
-Inspect the generated launchd plist or logs. The API server receives the executable-derived install root instead of the environment value and fails to find built-in network plugins.
+Inspect the generated launchd plist or logs. The API server receives the executable-derived install root instead of the environment value and fails to find built-in network plugins. With a CLI plugin installed under the wrapper-provided install root, `container compose help` can also fail to discover the plugin.
 
 ## Code of Conduct
 

@@ -23,17 +23,21 @@ For Homebrew installs where the wrapper executes a keg binary under `libexec/bin
 cannot find any plugins with type network
 ```
 
-The fix keeps `SystemStart` aligned with `APIServer` and plugin helpers by using `InstallRoot.path`, which already resolves `CONTAINER_INSTALL_ROOT` and falls back to `InstallRoot.defaultPath` when the environment is absent.
+CLI plugin discovery had the same mismatch: it derived plugin search roots from the executable path, so a wrapped Homebrew `container` could start the service correctly but still miss an external Compose plugin installed under the wrapper-provided install root.
+
+The fix keeps `SystemStart`, `APIServer`, and plugin discovery aligned by using `InstallRoot.path`, which already resolves `CONTAINER_INSTALL_ROOT` and falls back to `InstallRoot.defaultPath` when the environment is absent.
 
 ## What Changed
 
 - Added `InstallRoot.resolve(environment:currentDirectory:)` so install-root resolution can be unit tested without mutating process-global environment.
 - Changed `Application.SystemStart.installRoot` default from `InstallRoot.defaultPath` to `InstallRoot.path`.
+- Changed CLI plugin discovery to resolve its install root through `InstallRoot.resolve(...)`.
 - Added focused `InstallRootTests` coverage for absolute overrides, relative overrides, and fallback behavior.
+- Added `ApplicationHealthTests` coverage for install-root overrides used by plugin discovery.
 
 ## Commit Tracking
 
-- Container code commit: `stephenlclarke/container@9f7b8af`.
+- Container code commits: `stephenlclarke/container@9f7b8af` and `stephenlclarke/container@a9a0b18`.
 - Lower runtime code commit: not required.
 - Compose mapping code commit: not part of this Apple PR.
 
@@ -47,11 +51,14 @@ Focused validation:
 
 ```bash
 swift test --filter RootPathTests
+swift test --filter ApplicationHealthTests
 ```
 
 Result:
 
 - `RootPathTests`: 8 passing tests.
+- `ApplicationHealthTests`: 13 passing tests.
+- Full `make test`: 808 passing tests.
 
 ## Compatibility Notes
 
