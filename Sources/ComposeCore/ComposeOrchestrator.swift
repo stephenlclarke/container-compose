@@ -6846,10 +6846,11 @@ private extension ComposeOrchestrator {
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
-        let path = String(argument[argument.index(after: delimiter)...])
-        guard path.hasPrefix("/") else {
-            throw ComposeError.invalidProject("container copy path for service '\(serviceName)' must be absolute")
+        let rawPath = String(argument[argument.index(after: delimiter)...])
+        guard !rawPath.isEmpty else {
+            throw ComposeError.invalidProject("container copy path for service '\(serviceName)' cannot be empty")
         }
+        let path = Self.normalizedCopyContainerPath(rawPath)
         if includeOneOff {
             let containers = try await copyTargets(project: project, service: service, path: path, index: index)
             guard !containers.isEmpty else {
@@ -6859,6 +6860,10 @@ private extension ComposeOrchestrator {
         }
         let id = try await serviceContainerID(project: project, service: service, index: index)
         return .containers([ComposeCopyContainerTarget(id: id, path: path)])
+    }
+
+    private static func normalizedCopyContainerPath(_ path: String) -> String {
+        path.hasPrefix("/") ? path : "/\(path)"
     }
 
     /// Returns service and one-off containers that can be targeted by `cp --all`.

@@ -14742,6 +14742,9 @@ struct ComposeOrchestratorTests {
         try await orchestrator.copy(project: project, arguments: ["./seed.sql", "db:/docker-entrypoint-initdb.d/seed.sql"])
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "db:/restore/report.txt"])
         try await orchestrator.copy(project: project, arguments: ["./local:file.txt", "db:/restore/local.txt"])
+        try await orchestrator.copy(project: project, arguments: ["api:etc/os-release", "./os-release"])
+        try await orchestrator.copy(project: project, arguments: ["./seed.sql", "db:tmp/seed.sql"])
+        try await orchestrator.copy(project: project, arguments: ["api:.", "db:tmp/root-copy"])
 
         #expect(runner.commands.isEmpty)
         #expect(await copier.requests == [
@@ -14749,8 +14752,14 @@ struct ComposeOrchestratorTests {
             .into(id: "custom-db", source: "./seed.sql", destination: "/docker-entrypoint-initdb.d/seed.sql"),
             .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "custom-db", destination: "/restore/report.txt"),
             .into(id: "custom-db", source: "./local:file.txt", destination: "/restore/local.txt"),
+            .from(id: "demo-api-1", source: "/etc/os-release", destination: "./os-release"),
+            .into(id: "custom-db", source: "./seed.sql", destination: "/tmp/seed.sql"),
+            .between(sourceID: "demo-api-1", source: "/.", destinationID: "custom-db", destination: "/tmp/root-copy"),
         ])
         #expect(await copier.options == [
+            ContainerCopyTransferOptions(),
+            ContainerCopyTransferOptions(),
+            ContainerCopyTransferOptions(),
             ContainerCopyTransferOptions(),
             ContainerCopyTransferOptions(),
             ContainerCopyTransferOptions(),
@@ -14775,6 +14784,29 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected local-to-local cp to fail")
         } catch let error as ComposeError {
             #expect(error == .invalidProject("unknown copy direction"))
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests.isEmpty)
+    }
+
+    @Test("cp rejects empty service paths")
+    func cpRejectsEmptyServicePaths() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner, copier: copier)
+                .copy(project: project, arguments: ["api:", "./out"])
+            Issue.record("Expected empty service path cp to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("container copy path for service 'api' cannot be empty"))
         }
 
         #expect(runner.commands.isEmpty)
