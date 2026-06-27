@@ -344,7 +344,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
     public var topManager: ContainerTopManaging
 
     public init(
-        discoveryManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager(),
+        discoveryManager: ContainerDiscoveryManaging = ContainerLiveDiscoveryManager(),
         eventsManager: ContainerEventsManaging = ContainerClientEventsManager(),
         lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
         resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
@@ -358,6 +358,29 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
         self.statsManager = statsManager
         self.topManager = topManager
     }
+
+    public init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
+        eventsManager: ContainerEventsManaging = ContainerClientEventsManager(),
+        lifecycleManager: ContainerLifecycleManaging = ContainerClientLifecycleManager(),
+        resourceManager: ContainerResourceManaging = ContainerClientResourceManager(),
+        statsManager: ContainerStatsManaging = ContainerClientStatsManager(),
+        topManager: ContainerTopManaging = ContainerClientTopManager()
+    ) {
+        self.init(
+            discoveryManager: ContainerLiveDiscoveryManager(
+                runner: runner,
+                environmentLauncher: options.environmentLauncher,
+                containerBinary: options.containerBinary
+            ),
+            eventsManager: eventsManager,
+            lifecycleManager: lifecycleManager,
+            resourceManager: resourceManager,
+            statsManager: statsManager,
+            topManager: topManager
+        )
+    }
 }
 
 /// Runtime collaborators used by the Compose orchestrator.
@@ -368,13 +391,15 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var pullMetadataStore: ComposePullMetadataStoring
 
     public init(
+        runner: CommandRunning = ProcessRunner(),
+        options: ComposeExecutionOptions = ComposeExecutionOptions(),
         commands: ComposeOrchestratorCommandDependencies = ComposeOrchestratorCommandDependencies(),
-        runtime: ComposeOrchestratorRuntimeDependencies = ComposeOrchestratorRuntimeDependencies(),
+        runtime: ComposeOrchestratorRuntimeDependencies? = nil,
         imageManager: ContainerImageManaging = ContainerClientImageManager(),
         pullMetadataStore: ComposePullMetadataStoring = FileComposePullMetadataStore()
     ) {
         self.commands = commands
-        self.runtime = runtime
+        self.runtime = runtime ?? ComposeOrchestratorRuntimeDependencies(runner: runner, options: options)
         self.imageManager = imageManager
         self.pullMetadataStore = pullMetadataStore
     }
@@ -1364,8 +1389,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public init(
         runner: CommandRunning = ProcessRunner(),
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
-        dependencies: ComposeOrchestratorDependencies = ComposeOrchestratorDependencies()
+        dependencies: ComposeOrchestratorDependencies? = nil
     ) {
+        let dependencies = dependencies ?? ComposeOrchestratorDependencies(runner: runner, options: options)
         self.runner = runner
         self.options = options
         self.copier = dependencies.copier

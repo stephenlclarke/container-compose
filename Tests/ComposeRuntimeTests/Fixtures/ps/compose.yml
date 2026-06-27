@@ -1,0 +1,6 @@
+services:
+  ps-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["sleep", "300"]

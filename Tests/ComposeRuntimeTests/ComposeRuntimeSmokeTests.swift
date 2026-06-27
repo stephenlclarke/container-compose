@@ -171,6 +171,81 @@ struct ComposeRuntimeSmokeTests {
 
         Issue.record("Expected entrypoint-command output in runtime logs. Last logs: \(lastLogs)")
     }
+
+    @Test("runtime ps lists built compose service")
+    func runtimePsListsBuiltComposeService() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = try copyRuntimeFixture(named: "ps")
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        _ = try runProcess(containerBinary, ["system", "status"], timeout: 15)
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        _ = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "up", "--detach", "--build", "ps-app",
+            ],
+            timeout: 240
+        )
+
+        let jsonResult = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "ps", "--format", "json", "--filter", "status=running", "ps-app",
+            ],
+            timeout: 30
+        )
+        let rows = try composePsJSONRows(jsonResult.stdout)
+        let row = try #require(rows.first)
+        let configuration = try #require(row["configuration"] as? [String: Any])
+        let labels = try #require(configuration["labels"] as? [String: Any])
+        let status = try #require(row["status"] as? [String: Any])
+
+        #expect(rows.count == 1)
+        #expect(labels["com.apple.container.compose.project"] as? String == project)
+        #expect(labels["com.apple.container.compose.service"] as? String == "ps-app")
+        #expect(status["state"] as? String == "running")
+
+        let servicesResult = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "ps", "--services", "--filter", "status=running",
+            ],
+            timeout: 30
+        )
+        #expect(servicesResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "ps-app")
+    }
 }
 
 private var runtimeTestsEnabled: Bool {
@@ -179,6 +254,25 @@ private var runtimeTestsEnabled: Bool {
 
 private func runtimeProjectName() -> String {
     "ccrt-\(UUID().uuidString.prefix(8).lowercased())"
+}
+
+private func copyRuntimeFixture(named name: String) throws -> URL {
+    let fileManager = FileManager.default
+    guard let source = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures") else {
+        throw ComposeError.invalidProject("missing runtime fixture '\(name)'")
+    }
+    let destination = fileManager.temporaryDirectory
+        .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+    try fileManager.copyItem(at: source, to: destination)
+    return destination
+}
+
+private func composePsJSONRows(_ output: String) throws -> [[String: Any]] {
+    let data = Data(output.utf8)
+    guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        throw ComposeError.invalidProject("compose ps emitted malformed JSON")
+    }
+    return rows
 }
 
 private struct RuntimeProcessResult {

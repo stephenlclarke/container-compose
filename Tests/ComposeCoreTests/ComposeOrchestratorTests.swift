@@ -7845,6 +7845,35 @@ struct ComposeOrchestratorTests {
         #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-api-1"])
     }
 
+    @Test("ps default discovery uses configured container binary and environment launcher")
+    func psDefaultDiscoveryUsesConfiguredContainerBinaryAndEnvironmentLauncher() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: "[]", stderr: ""),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                containerBinary: "custom-container",
+                environmentLauncher: "custom-env",
+                runtimeHooks: .init(emit: { emitted.append($0) })
+            )
+        )
+
+        try await orchestrator.ps(project: ComposeProject(name: "demo", services: [:]))
+
+        let command = try #require(runner.commands.first)
+        #expect(runner.commands.count == 1)
+        #expect(command.executable == "custom-env")
+        #expect(command.arguments == ["custom-container", "list", "--format", "json"])
+        #expect(command.workingDirectory == nil)
+        #expect(command.environment == nil)
+        #expect(command.io == .captured(input: nil))
+        let output = try #require(emitted.messages.first)
+        let rows = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [[String: Any]]
+        #expect(rows?.isEmpty == true)
+    }
+
     @Test("ps keeps project scoping when all containers are requested")
     func psKeepsProjectScopingWhenAllContainersAreRequested() async throws {
         let emitted = MessageRecorder()
@@ -11284,6 +11313,180 @@ struct ComposeOrchestratorTests {
         #expect(filters[1].labels[ResourceLabelKeys.plugin] == ContainerListFilters.exclude("machine"))
         #expect(await client.getRequests == ["demo-worker-1"])
         #expect(await missingClient.getRequests == ["demo-missing-1"])
+    }
+
+    @Test("CLI JSON discovery manager maps container list output to compose summaries")
+    func cliJSONDiscoveryManagerMapsContainerListOutputToComposeSummaries() async throws {
+        let runningSnapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .running,
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeConfigHashLabel: "api-hash",
+            ],
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64",
+            publishedPorts: [
+                try PublishPort(
+                    hostAddress: try IPAddress("127.0.0.1"),
+                    hostPort: 8080,
+                    containerPort: 80,
+                    proto: .tcp,
+                    count: 1
+                ),
+            ],
+            mounts: [
+                Filesystem.virtiofs(source: "/tmp/seed", destination: "/seed", options: ["ro"]),
+            ],
+            networks: [
+                ContainerResource.Attachment(
+                    network: "demo_default",
+                    hostname: "demo-api-1",
+                    ipv4Address: try CIDRv4("192.168.64.20/24"),
+                    ipv4Gateway: try IPv4Address("192.168.64.1"),
+                    ipv6Address: nil,
+                    macAddress: nil
+                ),
+            ]
+        )
+        let stoppedSnapshot = try containerSnapshot(
+            id: "demo-worker-1",
+            status: .stopped,
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "worker",
+                composeConfigHashLabel: "worker-hash",
+            ],
+            imageReference: "example/worker:debug",
+            imageDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            platform: "linux/amd64",
+            exitCode: 17,
+            exitedDate: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: try managedContainerJSON([runningSnapshot]), stderr: ""),
+            CommandResult(status: 0, stdout: try managedContainerJSON([runningSnapshot, stoppedSnapshot]), stderr: ""),
+        ])
+        let manager = ContainerCLIJSONDiscoveryManager(
+            runner: runner,
+            environmentLauncher: "/usr/bin/env",
+            containerBinary: "forked-container"
+        )
+
+        let running = try await manager.listContainers(all: false)
+        let worker = try await manager.getContainer(id: "demo-worker-1")
+
+        #expect(running == [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: "running",
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeConfigHashLabel: "api-hash",
+                ],
+                image: .init(
+                    reference: "example/api:latest",
+                    digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    platform: "linux/arm64"
+                ),
+                resources: .init(
+                    publishedPorts: [
+                        ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
+                    ],
+                    mounts: [
+                        ComposeMount(type: "bind", source: "/tmp/seed", target: "/seed", readOnly: true),
+                    ],
+                    networks: [
+                        ComposeContainerNetworkAttachment(network: "demo_default", ipv4Address: "192.168.64.20"),
+                    ]
+                )
+            ),
+        ])
+        #expect(worker?.id == "demo-worker-1")
+        #expect(worker?.status == "stopped")
+        #expect(worker?.exitCode == 17)
+        #expect(worker?.exitedDate == Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(worker?.health == nil)
+        #expect(runner.commands.map(\.arguments) == [
+            ["forked-container", "list", "--format", "json"],
+            ["forked-container", "list", "--format", "json", "--all"],
+        ])
+    }
+
+    @Test("CLI JSON discovery manager surfaces command failures")
+    func cliJSONDiscoveryManagerSurfacesCommandFailures() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 42, stdout: "", stderr: "list failed"),
+        ])
+        let manager = ContainerCLIJSONDiscoveryManager(
+            runner: runner,
+            environmentLauncher: "/usr/bin/env",
+            containerBinary: "forked-container"
+        )
+
+        do {
+            _ = try await manager.listContainers(all: true)
+            Issue.record("Expected container list failure")
+        } catch let error as ComposeError {
+            #expect(error == .commandFailed(
+                command: "forked-container list --format json --all",
+                status: 42,
+                stderr: "list failed"
+            ))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("CLI JSON discovery manager rejects malformed JSON")
+    func cliJSONDiscoveryManagerRejectsMalformedJSON() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: "not-json", stderr: ""),
+        ])
+        let manager = ContainerCLIJSONDiscoveryManager(runner: runner)
+
+        do {
+            _ = try await manager.listContainers(all: false)
+            Issue.record("Expected container list decode failure")
+        } catch let error as ComposeError {
+            guard case .invalidProject(let message) = error else {
+                Issue.record("Unexpected compose error: \(error)")
+                return
+            }
+            #expect(message.contains("failed to decode container list JSON"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("live discovery manager uses CLI list and direct detail")
+    func liveDiscoveryManagerUsesCLIListAndDirectDetail() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: "[]", stderr: ""),
+        ])
+        let detailManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-db-1", status: "running", health: "healthy"),
+        ])
+        let manager = ContainerLiveDiscoveryManager(
+            runner: runner,
+            environmentLauncher: "custom-env",
+            containerBinary: "custom-container",
+            detailManager: detailManager
+        )
+
+        let listed = try await manager.listContainers(all: false)
+        let detail = try await manager.getContainer(id: "demo-db-1")
+
+        let command = try #require(runner.commands.first)
+        #expect(listed.isEmpty)
+        #expect(detail?.health == "healthy")
+        #expect(command.executable == "custom-env")
+        #expect(command.arguments == ["custom-container", "list", "--format", "json"])
+        #expect(await detailManager.listRequests.isEmpty)
+        #expect(await detailManager.getRequests == ["demo-db-1"])
     }
 
     @Test("discovery API client forwards configured operations")
@@ -20346,6 +20549,14 @@ private func containerSnapshot(
         exitedDate: exitedDate,
         health: health
     )
+}
+
+private func managedContainerJSON(_ snapshots: [ContainerSnapshot]) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = [.sortedKeys]
+    let data = try encoder.encode(snapshots.map(ManagedContainer.init))
+    return String(decoding: data, as: UTF8.self)
 }
 
 private func ociPlatform(_ value: String) throws -> Platform {

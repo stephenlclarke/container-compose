@@ -203,7 +203,7 @@ enum ComposeCLIHelp {
         "ls": .supported,
         "pause": .supported,
         "port": .supported,
-        "ps": .partiallySupported,
+        "ps": .supported,
         "publish": .notSupported,
         "pull": .supported,
         "push": .supported,

@@ -81,7 +81,10 @@ let package = Package(
             dependencies: [
                 "ComposeCore",
             ],
-            path: "Tests/ComposeRuntimeTests"
+            path: "Tests/ComposeRuntimeTests",
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
     ]
 )

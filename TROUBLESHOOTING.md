@@ -85,6 +85,93 @@ ln -sfn \
 brew services restart stephenlclarke/tap/container
 ```
 
+## Apple Container Is Installed But The Fork-Backed Container Is Required
+
+Use this when the machine has Apple's signed `container` package, but this
+Compose preview needs the fork-backed `container` runtime from
+`stephenlclarke/tap`. A common signal on Apple silicon is that the shell finds
+`/usr/local/bin/container` instead of the Homebrew formula's `bin/container`.
+
+Check what the shell is actually running:
+
+```sh
+command -v container
+realpath "$(command -v container)"
+pkgutil --pkgs | grep -i 'container'
+container system version
+```
+
+Apple package builds do not show the Stephen fork provenance fields in
+`container system version`. Fork-backed builds include source owner, lane,
+branch, commit, and the compiled `containerization` ref.
+
+Stop the currently running runtime, remove the Apple package while keeping user
+data, then install the fork-backed main lane. If `container system stop` hangs,
+skip it and continue with the uninstall script.
+
+```sh
+container system stop || true
+brew services stop stephenlclarke/tap/container || brew services stop container || true
+
+if [ -x /usr/local/bin/uninstall-container.sh ]; then
+  sudo /usr/local/bin/uninstall-container.sh -k
+fi
+
+brew tap stephenlclarke/tap
+brew trust --tap stephenlclarke/tap
+brew uninstall --ignore-dependencies \
+  container-compose container-compose-release container container-release || true
+brew install stephenlclarke/tap/container
+brew install stephenlclarke/tap/container-compose
+
+mkdir -p "$(brew --prefix container)/libexec/container-plugins"
+ln -sfn \
+  "$(brew --prefix container-compose)/libexec/container-plugins/compose" \
+  "$(brew --prefix container)/libexec/container-plugins/compose"
+
+brew services restart stephenlclarke/tap/container
+hash -r 2>/dev/null || true
+```
+
+If you want the latest stable release lane instead of `main`, replace the
+Homebrew install and plugin-link block with `container-release` and
+`container-compose-release` together:
+
+```sh
+brew uninstall --ignore-dependencies \
+  container-compose container-compose-release container container-release || true
+brew install stephenlclarke/tap/container-release
+brew install stephenlclarke/tap/container-compose-release
+mkdir -p "$(brew --prefix container-release)/libexec/container-plugins"
+ln -sfn \
+  "$(brew --prefix container-compose-release)/libexec/container-plugins/compose" \
+  "$(brew --prefix container-release)/libexec/container-plugins/compose"
+brew services restart stephenlclarke/tap/container-release
+hash -r 2>/dev/null || true
+```
+
+Verify that the shell and service now use the fork-backed Homebrew install:
+
+```sh
+expected="$(realpath "$(brew --prefix container)/bin/container")"
+actual="$(realpath "$(command -v container)")"
+printf 'expected: %s\nactual:   %s\n' "$expected" "$actual"
+test "$actual" = "$expected"
+
+container compose help
+container system version
+container compose version
+```
+
+For the release lane, replace `container` with `container-release` in the
+`brew --prefix` command above. The verification should show Stephen fork
+provenance for the runtime and matching `container` / `containerization` pins
+for the Compose package.
+
+If `command -v container` still resolves to `/usr/local/bin/container` after
+the uninstall, start a new shell or check `PATH` ordering. On Apple silicon,
+Homebrew's `/opt/homebrew/bin` should usually appear before `/usr/local/bin`.
+
 ## Service Is Running From A Different Container Build
 
 If `container compose` still behaves unexpectedly after reinstalling, verify the

@@ -40,11 +40,11 @@ Install the latest stable release branch after the `release` branch has publishe
 
 ```sh
 brew tap stephenlclarke/tap
-brew install stephenlclarke/tap/container
+brew install stephenlclarke/tap/container-release
 brew install stephenlclarke/tap/container-compose-release
-mkdir -p "$(brew --prefix container)/libexec/container-plugins"
-ln -sfn "$(brew --prefix container-compose-release)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
-brew services restart container
+mkdir -p "$(brew --prefix container-release)/libexec/container-plugins"
+ln -sfn "$(brew --prefix container-compose-release)/libexec/container-plugins/compose" "$(brew --prefix container-release)/libexec/container-plugins/compose"
+brew services restart container-release
 container compose version
 ```
 
