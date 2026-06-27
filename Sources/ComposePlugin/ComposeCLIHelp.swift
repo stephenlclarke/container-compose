@@ -197,7 +197,7 @@ enum ComposeCLIHelp {
         "events": .supported,
         "exec": .partiallySupported,
         "export": .supported,
-        "images": .partiallySupported,
+        "images": .supported,
         "kill": .supported,
         "logs": .supported,
         "ls": .supported,
@@ -218,7 +218,7 @@ enum ComposeCLIHelp {
         "unpause": .supported,
         "up": .partiallySupported,
         "version": .supported,
-        "volumes": .partiallySupported,
+        "volumes": .supported,
         "wait": .supported,
         "watch": .partiallySupported,
     ]

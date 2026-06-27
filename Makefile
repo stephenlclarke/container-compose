@@ -285,7 +285,7 @@ cli-smoke-built:
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--orphans$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--status$${ansi_escape}[0m"* ]]; \
 	images_help_output="$$(".build/debug/compose" images --help)"; \
-	[[ "$$images_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$images_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$images_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$images_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	cp_help_output="$$(".build/debug/compose" cp --help)"; \
@@ -835,6 +835,7 @@ cli-smoke-built:
 	images_bad_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo images --format '{{.Size}}' api 2>&1 || true)"; \
 	[[ "$$images_bad_format_output" == *"unsupported compose feature: images --format '{{.Size}}'; supported formats are table and json"* ]]; \
 	volumes_help_output="$$(".build/debug/compose" volumes --help)"; \
+	[[ "$$volumes_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$volumes_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	volumes_json_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo volumes --format json api)"; \
 	[[ "$$volumes_json_output" == *"container volume list --format json"* ]]; \
