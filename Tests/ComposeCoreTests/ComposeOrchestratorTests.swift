@@ -1289,6 +1289,7 @@ struct ComposeOrchestratorTests {
         ])
         let resourceManager = RecordingContainerResourceManager()
         let discoveryManager = RecordingContainerDiscoveryManager()
+        let progress = LockedStringRecorder()
         let project = composeProject(
             name: "demo",
             services: [
@@ -1312,8 +1313,11 @@ struct ComposeOrchestratorTests {
 
         try await ComposeOrchestrator(
             runner: runner,
-            discoveryManager: discoveryManager,
-            resourceManager: resourceManager
+            options: progressReportingOptions(recordingTo: progress),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.resourceManager = resourceManager
+            }
         ).create(project: project, options: ComposeCreateOptions())
 
         let commands = runner.commands.map(\.arguments)
@@ -1323,6 +1327,7 @@ struct ComposeOrchestratorTests {
         #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project"] == "demo" })
         #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project.config-files-hash"]?.count == 64 })
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(progress.snapshot.joined() == "⠋ Creating api\n✔︎ Creating api\n")
 
         let create = commands[0]
         #expect(create.starts(with: ["container", "create", "--name", "demo-api-1"]))
@@ -3504,7 +3509,13 @@ struct ComposeOrchestratorTests {
             $0.pullPolicy = "always"
         })
 
-        #expect(progress.snapshot.joined() == "⠋ Pulling image example/api\n✔︎ Pulling image example/api\n")
+        #expect(progress.snapshot.joined() == """
+        ⠋ Pulling image example/api
+        ✔︎ Pulling image example/api
+        ⠋ Starting api
+        ✔︎ Starting api
+
+        """)
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -3538,7 +3549,7 @@ struct ComposeOrchestratorTests {
             $0.quietPull = true
         })
 
-        #expect(progress.snapshot.isEmpty)
+        #expect(progress.snapshot.joined() == "⠋ Starting api\n✔︎ Starting api\n")
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -10034,10 +10045,22 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner, lifecycleManager: lifecycleManager)
+        let progress = LockedStringRecorder()
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress),
+            lifecycleManager: lifecycleManager
+        )
             .start(project: project, services: [])
 
         #expect(runner.commands.isEmpty)
+        #expect(progress.snapshot.joined() == """
+        ⠋ Starting api
+        ✔︎ Starting api
+        ⠋ Starting worker
+        ✔︎ Starting worker
+
+        """)
         #expect(await lifecycleManager.requests == [
             .start(id: "demo-api-1"),
             .start(id: "custom-worker"),
@@ -16274,7 +16297,13 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(progress.snapshot.joined() == "⠋ Pulling image alpine\n✔︎ Pulling image alpine\n")
+        #expect(progress.snapshot.joined() == """
+        ⠋ Pulling image alpine
+        ✔︎ Pulling image alpine
+        ⠋ Running job
+        ✔︎ Running job
+
+        """)
         #expect(await imageManager.requests == [
             .pull("alpine"),
             .healthCheck(reference: "alpine", platform: nil),
@@ -16312,7 +16341,7 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(progress.snapshot.isEmpty)
+        #expect(progress.snapshot.joined() == "⠋ Running job\n✔︎ Running job\n")
         #expect(await imageManager.requests == [
             .pull("alpine"),
             .healthCheck(reference: "alpine", platform: nil),

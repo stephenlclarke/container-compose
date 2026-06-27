@@ -30,12 +30,13 @@ use `--ansi never` for plain output. Commands or option modes that do not yet
 have backing `apple/container` functionality fail with an explicit
 `unsupported compose feature` message.
 
-Long-running project loading, image pull, and image build steps emit
-Compose-owned progress on stderr so scriptable stdout output stays clean. Use
-`--progress quiet` to suppress these rows, `--progress plain` for log-friendly
-rows, or `--progress tty` for the animated terminal spinner. `--progress json`
-emits newline-delimited JSON events for Compose-owned phases. `--progress auto`
-uses the animated spinner when stderr is a terminal and plain rows otherwise.
+Long-running project loading, image pull/build, and non-interactive runtime
+handoff steps emit Compose-owned progress on stderr so scriptable stdout output
+stays clean. Use `--progress quiet` to suppress these rows, `--progress plain`
+for log-friendly rows, or `--progress tty` for the animated terminal spinner.
+`--progress json` emits newline-delimited JSON events for Compose-owned phases.
+`--progress auto` uses the animated spinner when stderr is a terminal and plain
+rows otherwise.
 
 Use `container system version` to see the running `container` runtime source, branch lane, commit, and compiled `containerization` ref. Use `container compose version` to see the installed plugin lane and the `container` / `containerization` pins that package was built against.
 

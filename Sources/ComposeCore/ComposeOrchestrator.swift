@@ -1659,13 +1659,17 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             )
         }
 
-        try await runContainer(try await runArguments(
+        let arguments = try await runArguments(
             project: project,
             service: service,
             options: request.runOptions,
             externalVolumeMounts: request.externalVolumeMounts,
             imageHealthCheckCache: request.imageHealthCheckCache
-        ))
+        )
+        try await runContainerWithProgress(
+            arguments,
+            message: reconcileProgressMessage(service: service, command: request.runOptions.command)
+        )
         if request.runOptions.command == "run" {
             try await runPostStartHooks(service: service, containerID: name)
         }
@@ -2549,21 +2553,24 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 preservingServices: preservedServices
             )
         }
-        try await runContainer(
-            try await runArguments(
-                project: runProject,
-                service: service,
-                options: RunArgumentOptions {
-                    $0.detach = run.detach
-                    $0.remove = run.remove
-                    $0.oneOff = true
-                    $0.publishedPorts = publishedPorts
-                    $0.containerNameOverride = containerName
-                    $0.labelOverrides = labelOverrides
-                },
-                externalVolumeMounts: externalVolumeMounts,
-                imageHealthCheckCache: imageHealthCheckCache
-            ),
+        let arguments = try await runArguments(
+            project: runProject,
+            service: service,
+            options: RunArgumentOptions {
+                $0.detach = run.detach
+                $0.remove = run.remove
+                $0.oneOff = true
+                $0.publishedPorts = publishedPorts
+                $0.containerNameOverride = containerName
+                $0.labelOverrides = labelOverrides
+            },
+            externalVolumeMounts: externalVolumeMounts,
+            imageHealthCheckCache: imageHealthCheckCache
+        )
+        try await runContainerWithProgress(
+            arguments,
+            message: "Running \(service.name)",
+            quiet: run.quiet,
             inheritedIO: foregroundInteractiveRun,
             replaceProcess: foregroundInteractiveRun
         )
@@ -7546,7 +7553,9 @@ private extension ComposeOrchestrator {
         if options.dryRun {
             try await runContainer(args)
         } else {
-            try await lifecycleManager.startContainer(id: containerName)
+            try await progressActivity("Starting \(service.name)", quiet: false) {
+                try await lifecycleManager.startContainer(id: containerName)
+            }
         }
         try await runPostStartHooks(service: service, containerID: containerName)
     }
@@ -7814,10 +7823,46 @@ private extension ComposeOrchestrator {
         return result
     }
 
+    /// Runs a runtime command while emitting progress for captured operations.
+    @discardableResult
+    private func runContainerWithProgress(
+        _ arguments: [String],
+        message: String,
+        quiet: Bool = false,
+        check: Bool = true,
+        emitOutput: Bool = true,
+        inheritedIO: Bool = false,
+        replaceProcess: Bool = false
+    ) async throws -> CommandResult {
+        guard !inheritedIO, !replaceProcess else {
+            return try await runContainer(
+                arguments,
+                check: check,
+                emitOutput: emitOutput,
+                inheritedIO: inheritedIO,
+                replaceProcess: replaceProcess
+            )
+        }
+        return try await progressActivity(message, quiet: quiet) {
+            try await runContainer(
+                arguments,
+                check: check,
+                emitOutput: emitOutput,
+                inheritedIO: inheritedIO,
+                replaceProcess: replaceProcess
+            )
+        }
+    }
+
     /// Prints a Compose-owned direct runtime operation in dry-run mode.
     func emitComposeRuntimeOperation(_ arguments: [String]) {
         options.emit("+ " + shellQuoted(["compose-runtime"] + arguments))
     }
+}
+
+/// Returns the Compose progress label for a service container reconciliation.
+private func reconcileProgressMessage(service: ComposeService, command: String) -> String {
+    command == "create" ? "Creating \(service.name)" : "Starting \(service.name)"
 }
 
 /// Minimal inspect result needed to decide whether an existing service
