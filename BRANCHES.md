@@ -54,12 +54,21 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 | `container` | `container` | `container-release`, `container-release-v0-1-0`, and other branch-derived formula names |
 | `container-compose` | `container-compose` | `container-compose-release`, `container-compose-release-v0-1-0`, and other branch-derived formula names |
 
+`homebrew-main` tracks the latest `main` package, and `homebrew-release` tracks
+the latest stable `release` package. Treat `homebrew-release` like Docker's
+`:latest` tag for the stable lane: it is intentionally moved whenever a newer
+release is promoted. Versioned release branch copies, such as
+`release-v0.1.0`, keep their own branch-derived Homebrew tags and formula names
+for immutable installs.
+
 Release formula names are derived from the branch name by lowercasing it and
 replacing non-alphanumeric separators with `-`. For example,
 `release-v0.1.0` becomes `container-compose-release-v0-1-0`.
 
-The `container-compose` formula installs the plugin payload. After installing a
-compose formula, link the plugin into the Homebrew-installed `container` prefix:
+Install matching formula lanes together: `container` with `container-compose`
+for `main`, or `container-release` with `container-compose-release` for the
+moving stable release. After installing a compose formula, link the plugin into
+the matching Homebrew-installed `container` prefix:
 
 ```sh
 mkdir -p "$(brew --prefix container)/libexec/container-plugins"
@@ -68,6 +77,9 @@ ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" \
 brew services restart container
 container compose version
 ```
+
+For the moving stable release lane, use the same commands with
+`container-release` and `container-compose-release`.
 
 ## Local Checkouts
 
