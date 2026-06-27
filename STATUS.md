@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-27 00:09 BST.
+Last updated: 2026-06-27 01:09 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -64,6 +64,7 @@ All passed locally after making direct volume cleanup tolerant of already-absent
 ## Open Follow-ups
 
 - Continue the strict cleanup review around remaining orphan/resource edge cases; missing containers, missing networks, and missing volumes are now covered by tests and live smoke.
+- Audit slow startup, normalization, image pull/build, and runtime handoff paths for immediate first-frame progress feedback before subprocesses or runtime calls can appear to hang.
 
 ## Next Step
 
