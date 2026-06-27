@@ -172,6 +172,45 @@ struct ComposeProgressTests {
 
         #expect(emitted.string == "\r⠋ Loading Compose model\r\u{001B}[K✔︎ Loading Compose model\n")
     }
+
+    @Test
+    func `handoff emits one visible progress row`() {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .plain,
+            emitData: { emitted.append($0) },
+        )
+
+        reporter.handoff("Running shell")
+
+        #expect(emitted.string == "⠋ Running shell\n")
+    }
+
+    @Test
+    func `tty handoff emits a newline before terminal ownership changes`() {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .tty,
+            emitData: { emitted.append($0) },
+        )
+
+        reporter.handoff("Running shell")
+
+        #expect(emitted.string == "⠋ Running shell\n")
+    }
+
+    @Test
+    func `quiet handoff emits nothing`() {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .quiet,
+            emitData: { emitted.append($0) },
+        )
+
+        reporter.handoff("Running shell")
+
+        #expect(emitted.string.isEmpty)
+    }
 }
 
 private final class LockedDataRecorder: @unchecked Sendable {

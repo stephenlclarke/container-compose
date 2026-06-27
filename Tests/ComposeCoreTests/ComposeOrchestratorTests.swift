@@ -13205,6 +13205,43 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("attached exec emits progress before terminal handoff")
+    func attachedExecEmitsProgressBeforeTerminalHandoff() async throws {
+        let runner = RecordingRunner()
+        let progress = LockedStringRecorder()
+        let execManager = RecordingContainerExecManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress),
+            execManager: execManager
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            command: ["sh"],
+            interactive: true,
+            tty: true
+        )
+
+        #expect(progress.snapshot.joined() == "⠋ Executing api\n")
+        #expect(runner.commands.isEmpty)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["sh"],
+                interactive: true,
+                tty: true
+            ),
+        ])
+    }
+
     @Test("exec maps environment user workdir and detach options")
     func execMapsEnvironmentUserWorkdirAndDetachOptions() async throws {
         let runner = RecordingRunner()
@@ -18354,6 +18391,37 @@ struct ComposeOrchestratorTests {
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(runner.commands.first?.io == .captured(input: nil))
+        #expect(command.contains("--tty"))
+        #expect(command.contains("--interactive"))
+        #expect(Array(command.suffix(2)) == ["alpine", "sh"])
+    }
+
+    @Test("interactive run emits progress before terminal handoff")
+    func interactiveRunEmitsProgressBeforeTerminalHandoff() async throws {
+        let runner = RecordingRunner()
+        let progress = LockedStringRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "shell": composeService(name: "shell", image: "alpine") {
+                    $0.tty = true
+                    $0.stdinOpen = true
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress)
+        ).run(
+            project: project,
+            serviceName: "shell",
+            options: composeRunOptions(command: ["sh"])
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(progress.snapshot.joined() == "⠋ Running shell\n")
+        #expect(runner.commands.first?.io == .replacingProcess)
         #expect(command.contains("--tty"))
         #expect(command.contains("--interactive"))
         #expect(Array(command.suffix(2)) == ["alpine", "sh"])

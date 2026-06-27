@@ -61,6 +61,20 @@ public struct ComposeProgressReporter: Sendable {
         }
     }
 
+    /// Emits the first progress frame before handing terminal control to the runtime.
+    public func handoff(_ message: String) {
+        switch style {
+        case .quiet:
+            return
+        case .plain:
+            emitLine(mark: Self.pendingMark, color: Self.progressColor, message: message)
+        case .json:
+            emitJSON(status: "running", message: message)
+        case .tty:
+            emit("\(colored(Self.frames[0], color: Self.progressColor)) \(message)\n")
+        }
+    }
+
     private func plainActivity<T>(_ message: String, operation: () async throws -> T) async throws -> T {
         emitLine(mark: Self.pendingMark, color: Self.progressColor, message: message)
         do {

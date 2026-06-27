@@ -2426,6 +2426,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 )
                 return
             }
+            if exec.interactive || exec.tty {
+                options.progress.handoff("Executing \(service.name)")
+            }
             let status = try await execManager.execAttached(
                 request: ContainerAttachedExecRequest(
                     id: containerID,
@@ -7891,6 +7894,9 @@ private extension ComposeOrchestrator {
         replaceProcess: Bool = false
     ) async throws -> CommandResult {
         guard !inheritedIO, !replaceProcess else {
+            if !quiet {
+                options.progress.handoff(message)
+            }
             return try await runContainer(
                 arguments,
                 check: check,
