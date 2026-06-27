@@ -54,6 +54,15 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
     }
 
+    @Test("create command and options are shown as supported")
+    func createCommandAndOptionsAreShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "create"))
+
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--scale\u{001B}[0m"))
+    }
+
     @Test("up attached log presentation flags are shown as partial")
     func upAttachedLogPresentationFlagsAreShownAsPartial() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))

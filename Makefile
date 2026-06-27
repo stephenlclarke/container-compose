@@ -331,6 +331,9 @@ cli-smoke-built:
 	[[ "$$start_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$start_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
 	[[ "$$start_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
+	create_help_output="$$(".build/debug/compose" create --help)"; \
+	[[ "$$create_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$create_help_output" == *"$${ansi_escape}[32m--scale$${ansi_escape}[0m"* ]]; \
 	stop_help_output="$$(".build/debug/compose" stop --help)"; \
 	[[ "$$stop_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	top_help_output="$$(".build/debug/compose" top --help)"; \
