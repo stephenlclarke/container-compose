@@ -16210,6 +16210,52 @@ struct ComposeOrchestratorTests {
         #expect(Array(command.suffix(2)) == ["alpine", "true"])
     }
 
+    @Test("run no-deps only creates selected service resources")
+    func runNoDepsOnlyCreatesSelectedServiceResources() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.networks = ["frontend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "jobcache", target: "/cache")]
+                },
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.networks = ["backend"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "data", target: "/var/lib/postgresql/data")]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(name: "backend"),
+                "frontend": ComposeNetwork(name: "frontend"),
+            ]
+            $0.volumes = [
+                "data": ComposeVolume(name: "data"),
+                "jobcache": ComposeVolume(name: "jobcache"),
+            ]
+        }
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"]) {
+                $0.noDeps = true
+                $0.remove = true
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(runner.commands.count == 1)
+        #expect(await resourceManager.requests.map(\.name) == ["demo_frontend", "demo_jobcache"])
+        #expect(command.containsSequence(["--network", "demo_frontend"]))
+        #expect(command.containsSequence(["--volume", "demo_jobcache:/cache"]))
+        #expect(!command.contains("demo_backend"))
+        #expect(!command.contains("demo_data"))
+    }
+
     @Test("run rejects dependency timing-only healthchecks before creating resources")
     func runRejectsDependencyTimingOnlyHealthchecksBeforeCreatingResources() async throws {
         let runner = RecordingRunner()

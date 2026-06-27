@@ -2531,7 +2531,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             quietBuild: run.quietBuild
         )
         try await validateRuntimeHealthChecks(project: runProject, services: dependencyServices + [service], cache: imageHealthCheckCache)
-        try await ensureResources(project: runProject)
+        try await ensureResources(project: projectBySelectingResources(
+            project: runProject,
+            services: dependencyServices + [service]
+        ))
         runProject = try await startDependencyServices(
             project: runProject,
             services: dependencyServices,
@@ -6117,6 +6120,23 @@ private extension ComposeOrchestrator {
         for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
             try await ensureVolume(project: project, composeName: name, volume: volume)
         }
+    }
+
+    /// Returns a project view containing only resources referenced by active services.
+    func projectBySelectingResources(project: ComposeProject, services: [ComposeService]) -> ComposeProject {
+        let networkNames = Set(services.flatMap { $0.networks ?? [] })
+        let volumeNames = Set(services.flatMap { service in
+            (service.volumes ?? []).compactMap { mount -> String? in
+                guard mount.type == "volume", let source = mount.source, project.volumes[source] != nil else {
+                    return nil
+                }
+                return source
+            }
+        })
+        var selected = project
+        selected.networks = project.networks.filter { networkNames.contains($0.key) }
+        selected.volumes = project.volumes.filter { volumeNames.contains($0.key) }
+        return selected
     }
 
     /// Creates a project network unless it already exists.
