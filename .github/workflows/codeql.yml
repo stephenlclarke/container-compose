@@ -42,9 +42,9 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze
-    runs-on: macos-26
-    timeout-minutes: 130
+    name: Analyze Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v7
@@ -52,96 +52,18 @@ jobs:
           path: container-compose
           fetch-depth: 0
 
-      - name: Read container ref
-        id: apple-container-ref
-        shell: bash
-        run: |
-          set -euo pipefail
-          ref="$(
-            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
-          )"
-          if [[ -z "$ref" ]]; then
-            printf 'APPLE_CONTAINER_REF is empty\n' >&2
-            exit 1
-          fi
-          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout container dependency
-        uses: actions/checkout@v7
-        with:
-          repository: stephenlclarke/container
-          path: container
-          ref: ${{ steps.apple-container-ref.outputs.ref }}
-
-      - name: Compute SwiftPM cache fingerprint
-        id: swiftpm-cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            swift --version 2>&1
-            shasum -a 256 container-compose/APPLE_CONTAINER_REF
-            shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
-            shasum -a 256 container-compose/Makefile
-            shasum -a 256 container/Package.swift container/Package.resolved
-          } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
-
-      - name: Cache SwiftPM build artifacts
-        uses: actions/cache@v6
-        with:
-          path: |
-            container-compose/.build
-            container-compose/.swiftpm
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v2-${{ steps.swiftpm-cache.outputs.fingerprint }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v2-
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
-      - name: Prebuild Swift dependencies for CodeQL
-        timeout-minutes: 90
-        shell: bash
-        working-directory: container-compose
-        run: |
-          set -euo pipefail
-          targets=(
-            ArgumentParser
-            Logging
-            Containerization
-            ContainerizationExtras
-            ContainerizationOCI
-            ContainerPersistence
-            ContainerResource
-            ContainerAPIClient
-            ContainerBuild
-            ContainerCommands
-            ContainerLog
-          )
-          for target in "${targets[@]}"; do
-            swift build --disable-automatic-resolution --target "$target"
-          done
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: swift,go
+          languages: go
           build-mode: manual
           config-file: container-compose/.github/codeql/codeql-config.yml
-
-      - name: Mark Compose Swift sources for CodeQL trace
-        shell: bash
-        working-directory: container-compose
-        run: find Sources -name '*.swift' -print0 | xargs -0 touch
-
-      - name: Build Swift plugin for CodeQL
-        timeout-minutes: 30
-        run: swift build --disable-automatic-resolution --product compose
-        working-directory: container-compose
 
       - name: Build Go normalizer for CodeQL
         timeout-minutes: 10
@@ -151,4 +73,4 @@ jobs:
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:
-          category: "/language:swift-go"
+          category: "/language:go"

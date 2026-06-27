@@ -17,12 +17,12 @@
 name: container-compose-codeql
 
 paths:
-  - container-compose/Sources
   - container-compose/Tools/compose-normalizer
 
 paths-ignore:
   - container/**
   - container-compose/.build/**
   - container-compose/.swiftpm/**
+  - container-compose/Sources/**
   - container-compose/Tests/**
   - container-compose/Tools/coverage/**
