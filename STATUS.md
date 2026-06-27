@@ -67,7 +67,7 @@ All passed locally after extending progress feedback from project loading and im
 ## Open Follow-ups
 
 - Continue the strict cleanup review around remaining orphan/resource edge cases; missing containers, missing networks, and missing volumes are now covered by tests and live smoke.
-- Audit slow startup, normalization, image pull/build, and runtime handoff paths for immediate first-frame progress feedback before subprocesses or runtime calls can appear to hang. In particular, `container-compose` can sit silent for too long when it starts running or building; add Docker Compose-style animated status output, or a compact Swift/Go spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner), before the first expensive call begins.
+- Audit slow startup, normalization, image pull/build, and runtime handoff paths for immediate first-frame progress feedback before subprocesses or runtime calls can appear to hang. In particular, `container-compose` can sit silent for too long when it starts running or building; add Docker Compose-style animated status output, or a compact Swift/Go spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner), before the first expensive call begins. Acceptance should include focused tests that prove the first visible status frame is emitted before Compose model loading, image build, image pull, or runtime handoff waits can block.
 
 ## Next Step
 
