@@ -44,28 +44,7 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
-      - name: Prepare release branch README
-        if: github.ref_name != 'main'
-        id: prepare
-        shell: bash
-        working-directory: container-compose
-        run: |
-          set -euo pipefail
-          Tools/release/prepare-frozen-branch.sh
-          if git diff --quiet README.md; then
-            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          git commit -m "docs(release): prepare frozen branch"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          printf 'changed=true\n' >> "$GITHUB_OUTPUT"
-
       - name: Read container ref
-        if: steps.prepare.outputs.changed != 'true'
         id: container-ref
         shell: bash
         run: |
@@ -80,7 +59,6 @@ jobs:
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
-        if: steps.prepare.outputs.changed != 'true'
         uses: actions/checkout@v7
         with:
           repository: stephenlclarke/container
@@ -88,14 +66,12 @@ jobs:
           ref: ${{ steps.container-ref.outputs.ref }}
 
       - name: Set up Go
-        if: steps.prepare.outputs.changed != 'true'
         uses: actions/setup-go@v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
       - name: Select package lane
-        if: steps.prepare.outputs.changed != 'true'
         id: lane
         shell: bash
         run: |
@@ -147,7 +123,6 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build package
-        if: steps.prepare.outputs.changed != 'true'
         run: make "${{ steps.lane.outputs.target }}" PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
         working-directory: container-compose
         env:
@@ -156,7 +131,6 @@ jobs:
           CONTAINER_COMPOSE_LANE: ${{ steps.lane.outputs.lane }}
 
       - name: Upload workflow artifact
-        if: steps.prepare.outputs.changed != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.lane.outputs.asset }}
@@ -165,7 +139,6 @@ jobs:
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}.sha256
 
       - name: Publish branch release assets
-        if: steps.prepare.outputs.changed != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET: ${{ steps.lane.outputs.asset }}
@@ -203,7 +176,6 @@ jobs:
             --clobber
 
       - name: Check Homebrew tap token
-        if: steps.prepare.outputs.changed != 'true'
         id: tap-token
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -218,7 +190,7 @@ jobs:
           printf 'available=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Checkout Homebrew tap
-        if: steps.prepare.outputs.changed != 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.tap-token.outputs.available == 'true'
         uses: actions/checkout@v7
         with:
           repository: stephenlclarke/homebrew-tap
@@ -226,7 +198,7 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Update Homebrew tap formula
-        if: steps.prepare.outputs.changed != 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.tap-token.outputs.available == 'true'
         env:
           ASSET: ${{ steps.lane.outputs.asset }}
           FORMULA: ${{ steps.lane.outputs.formula }}
@@ -250,7 +222,7 @@ jobs:
           git -C homebrew-tap diff -- Formula
 
       - name: Commit Homebrew tap update
-        if: steps.prepare.outputs.changed != 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.tap-token.outputs.available == 'true'
         shell: bash
         working-directory: homebrew-tap
         run: |
