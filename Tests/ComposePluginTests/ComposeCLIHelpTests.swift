@@ -47,6 +47,15 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--no-attach\u{001B}[0m"))
     }
 
+    @Test("up attached log presentation flags are shown as partial")
+    func upAttachedLogPresentationFlagsAreShownAsPartial() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
+
+        #expect(help.contains("\u{001B}[38;5;208m--no-color\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--no-log-prefix\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--timestamps\u{001B}[0m"))
+    }
+
     @Test("global progress option maps Docker Compose policies")
     func globalProgressOptionMapsDockerComposePolicies() {
         var options = GlobalOptions()

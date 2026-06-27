@@ -319,7 +319,7 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-attach$${ansi_escape}[0m"* ]]; \
-	[[ "$$up_help_output" == *"$${ansi_escape}[31m--no-color$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[38;5;208m--no-color$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--renew-anon-volumes$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
@@ -610,6 +610,14 @@ cli-smoke-built:
 	[[ "$$up_watch_detach_output" == *"unsupported compose feature: up --detach cannot be combined with --watch"* ]]; \
 	up_watch_wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" up --watch --wait api 2>&1 || true)"; \
 	[[ "$$up_watch_wait_output" == *"unsupported compose feature: up --wait cannot be combined with --watch"* ]]; \
+	up_detached_log_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --detach --no-color --no-log-prefix --timestamps api)"; \
+	[[ "$$up_detached_log_options_output" == *"container run"* ]]; \
+	[[ "$$up_detached_log_options_output" == *"--name demo-api-1 --detach"* ]]; \
+	up_wait_log_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --wait --no-color --no-log-prefix --timestamps api)"; \
+	[[ "$$up_wait_log_options_output" == *"container run"* ]]; \
+	[[ "$$up_wait_log_options_output" == *"--name demo-api-1 --detach"* ]]; \
+	up_no_start_log_options_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-start --no-color --no-log-prefix --timestamps api)"; \
+	[[ "$$up_no_start_log_options_output" == *"container create"* ]]; \
 	up_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --pull always --quiet-pull api)"; \
 	[[ "$$up_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
 	[[ "$$up_quiet_pull_output" == *"container run"* ]]; \

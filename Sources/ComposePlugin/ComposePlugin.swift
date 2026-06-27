@@ -676,6 +676,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Creates resources and starts selected services.
     func run() async throws {
+        let formatsAttachedOutput = !(detach || wait || noStart)
         let unsupportedOptions = [
             abortOnContainerExit ? "--abort-on-container-exit" : nil,
             abortOnContainerFailure ? "--abort-on-container-failure" : nil,
@@ -683,9 +684,9 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             attachDependencies ? "--attach-dependencies" : nil,
             exitCodeFrom == nil ? nil : "--exit-code-from",
             menu ? "--menu" : nil,
-            noColor ? "--no-color" : nil,
-            noLogPrefix ? "--no-log-prefix" : nil,
-            timestamps ? "--timestamps" : nil,
+            noColor && formatsAttachedOutput ? "--no-color" : nil,
+            noLogPrefix && formatsAttachedOutput ? "--no-log-prefix" : nil,
+            timestamps && formatsAttachedOutput ? "--timestamps" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("up \(first)")
