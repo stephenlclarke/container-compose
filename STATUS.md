@@ -72,7 +72,7 @@ All passed locally after extending progress feedback from project loading and im
 ## Open Follow-ups
 
 - Continue the strict cleanup review around remaining orphan/resource edge cases; missing containers, missing networks, and missing volumes are now covered by tests and live smoke.
-- Continue live runtime smoke around progress rendering when touching slow paths. Focused and gated runtime tests now prove first visible status output before Compose model loading, variable loading, image build, image pull, and non-interactive runtime handoff waits can block.
+- Continue live runtime smoke around progress rendering when touching slow paths. If a local `container compose` run or build appears to hang before any screen output, treat that as a progress regression: reproduce the silent phase, add a focused first-frame test, and emit a Docker Compose-style spinner/status row before the blocking operation begins.
 
 ## Next Step
 
