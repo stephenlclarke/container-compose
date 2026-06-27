@@ -73,6 +73,31 @@ jobs:
           path: container
           ref: ${{ steps.apple-container-ref.outputs.ref }}
 
+      - name: Compute SwiftPM cache fingerprint
+        id: swiftpm-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            swift --version 2>&1
+            shasum -a 256 container-compose/APPLE_CONTAINER_REF
+            shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
+            shasum -a 256 container-compose/Makefile
+            shasum -a 256 container/Package.swift container/Package.resolved
+          } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            container-compose/.build/*-apple-macosx/debug
+            container-compose/.build/debug
+            container-compose/.build/debug.yaml
+            container-compose/.build/build.db
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-codeql-swiftpm-debug-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-macos26-codeql-swiftpm-debug-v1-
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:

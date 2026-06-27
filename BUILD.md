@@ -150,7 +150,7 @@ GitHub Actions keeps the expensive and security-oriented checks in separate work
 | `Quality / Swift ASan` | Pushes to `main`, every PR, and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=address` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
 | `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=thread` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
 | `Quality / SwiftLint/SwiftFormat Advisory` | Pushes to `main`, every PR, and manual runs | Runs `swiftlint lint --strict --quiet Package.swift Sources Tests` and `swiftformat Package.swift Sources Tests --lint --swift-version 6.2`. These checks are advisory until a repo-owned SwiftLint and SwiftFormat baseline/configuration lands, because the current default tools report existing repository-wide style drift. |
-| `CodeQL / Analyze` | Pushes to `main`, PRs to `main`, weekly schedule, and manual runs | Runs the separate Swift and Go CodeQL analysis workflow. |
+| `CodeQL / Analyze` | Pushes to `main`, PRs to `main`, weekly schedule, and manual runs | Runs the separate Swift and Go CodeQL analysis workflow with a fingerprinted SwiftPM debug build cache so the manual Swift build does not repeatedly rebuild the same dependency graph from cold. |
 
 SwiftPM on the current Apple Swift 6.3.2 toolchain exposes `address`, `thread`, `undefined`, `scudo`, and `fuzzer` sanitizer modes. It does not expose a separate `leak` mode, so there is no standalone Leak Sanitizer job yet; keep ASan as the PR sanitizer gate and add a dedicated LSan job only when the supported SwiftPM sanitizer list includes it.
 
