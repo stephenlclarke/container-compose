@@ -7887,6 +7887,33 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["demo-api-1"])
     }
 
+    @Test("ps filters containers by selected services")
+    func psFiltersContainersBySelectedServices() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]),
+            options: ComposePsOptions {
+                $0.all = true
+                $0.selectedServices = ["worker"]
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-worker-1"])
+    }
+
     @Test("ps services prints project scoped service names")
     func psServicesPrintsProjectScopedServiceNames() async throws {
         let emitted = MessageRecorder()
@@ -7906,6 +7933,34 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [false])
         #expect(emitted.messages == ["api"])
+    }
+
+    @Test("ps services projection honours selected services")
+    func psServicesProjectionHonoursSelectedServices() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]),
+            options: ComposePsOptions {
+                $0.all = true
+                $0.services = true
+                $0.selectedServices = ["worker"]
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(emitted.messages == ["worker"])
     }
 
     @Test("ps format table renders project scoped containers")
@@ -8118,6 +8173,30 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected unsupported ps template field error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("ps --format field '.Command'; supported fields are ExitCode, Health, ID, Image, Name, Ports, Project, Publishers, Service, State, Status"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests.isEmpty)
+    }
+
+    @Test("ps rejects unknown selected services before runtime commands")
+    func psRejectsUnknownSelectedServicesBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: discoveredContainers())
+        let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+
+        do {
+            try await orchestrator.ps(
+                project: ComposeProject(name: "demo", services: [
+                    "api": ComposeService(name: "api", image: "example/api"),
+                ]),
+                options: ComposePsOptions { $0.selectedServices = ["worker"] }
+            )
+            Issue.record("Expected unknown service error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unknown service 'worker'"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

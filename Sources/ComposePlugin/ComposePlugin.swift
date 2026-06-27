@@ -938,6 +938,8 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     var statuses: [String] = []
     @Option(name: .customLong("filter"), help: "Filter services by a property. Supported filter: status.")
     var filters: [String] = []
+    @Argument(help: "Optional service names to list.")
+    var serviceNames: [String] = []
 
     /// Lists project containers, optionally including stopped containers.
     func run() async throws {
@@ -948,6 +950,7 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
                 $0.all = all
                 $0.quiet = quiet
                 $0.services = services
+                $0.selectedServices = serviceNames
                 $0.statuses = statuses
                 $0.filters = filters
                 $0.format = format

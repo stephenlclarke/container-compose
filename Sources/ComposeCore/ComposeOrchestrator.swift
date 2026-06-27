@@ -924,6 +924,7 @@ public struct ComposePsOptions: Sendable {
     public var all: Bool
     public var quiet: Bool
     public var services: Bool
+    public var selectedServices: [String]
     public var statuses: [String]
     public var filters: [String]
     public var format: String
@@ -934,6 +935,7 @@ public struct ComposePsOptions: Sendable {
         all = false
         quiet = false
         services = false
+        selectedServices = []
         statuses = []
         filters = []
         format = "json"
@@ -2067,6 +2069,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     ) async throws {
         let statusFilters = try psStatusFilters(statuses: psOptions.statuses, filters: psOptions.filters)
         let outputFormat = try composePsFormat(psOptions.format)
+        let selectedServiceNames = try psOptions.selectedServices.isEmpty
+            ? nil
+            : Set(selectedServices(project: project, selected: psOptions.selectedServices).map(\.name))
         var args = ["list", "--format", "json"]
         if psOptions.all || !statusFilters.isEmpty {
             args.append("--all")
@@ -2081,7 +2086,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             project: project,
             includeOrphans: psOptions.orphans
         )
-        let filteredContainers = filterContainersByStatus(serviceScopedContainers, statuses: statusFilters)
+        let selectedContainers = filterContainersByService(serviceScopedContainers, services: selectedServiceNames)
+        let filteredContainers = filterContainersByStatus(selectedContainers, statuses: statusFilters)
         if psOptions.quiet {
             let identifiers = containerIdentifiers(filteredContainers)
             if !identifiers.isEmpty {
@@ -9650,6 +9656,19 @@ private func filterContainersByStatus(_ containers: [ComposeContainerSummary], s
 /// Filters direct API containers by Compose project label.
 private func filterProjectContainers(projectName: String, containers: [ComposeContainerSummary]) -> [ComposeContainerSummary] {
     containers.filter { $0.projectName == projectName }
+}
+
+/// Applies positional `compose ps SERVICE...` filtering after project scoping.
+private func filterContainersByService(_ containers: [ComposeContainerSummary], services: Set<String>?) -> [ComposeContainerSummary] {
+    guard let services else {
+        return containers
+    }
+    return containers.filter { container in
+        guard let serviceName = container.serviceName else {
+            return false
+        }
+        return services.contains(serviceName)
+    }
 }
 
 /// Interprets direct runtime state for Compose wait-until-running operations.

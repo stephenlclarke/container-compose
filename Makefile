@@ -830,6 +830,8 @@ cli-smoke-built:
 	[[ "$$down_rmi_output" == *"container image delete --force alpine"* ]]; \
 	ps_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps -q)"; \
 	[[ "$$ps_quiet_output" == *"container list --format json"* ]]; \
+	ps_service_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps api)"; \
+	[[ "$$ps_service_output" == *"container list --format json"* ]]; \
 	ps_services_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --services)"; \
 	[[ "$$ps_services_output" == *"container list --format json"* ]]; \
 	ps_status_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --status running)"; \
