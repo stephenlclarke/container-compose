@@ -10,8 +10,6 @@ class ContainerCompose < Formula
   depends_on arch: :arm64
   depends_on macos: :sequoia
 
-  conflicts_with "container-compose-snapshot", because: "both install the container-compose command and compose plugin"
-
   def install
     plugin = libexec/"container-plugins/compose"
     plugin.install Dir["compose/*"]
@@ -30,7 +28,7 @@ class ContainerCompose < Formula
         ln -sfn "#{opt_libexec}/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
         brew services restart container
 
-      This formula installs the release bootstrap prebuilt release asset:
+      This formula installs the main release prebuilt release asset:
         container-compose-plugin-main-release-arm64.tar.gz
     EOS
   end

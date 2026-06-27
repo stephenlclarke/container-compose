@@ -1,67 +1,103 @@
 # Branch Guide
 
-This repository uses `main` as the active development branch. The free SonarCloud project only provides a useful branch signal for one branch, so active work, README badges, full CI, CodeQL, and SonarQube quality reporting all stay on `main`.
+This guide is the branch policy for these Stephen Clarke repositories:
 
-Frozen install branches are created from validated `main` commits when a release or snapshot should be made available through prebuilt GitHub release assets and the Homebrew tap.
+- `stephenlclarke/container-compose`
+- `stephenlclarke/container`
+- `stephenlclarke/containerization`
 
-## Branch Model
+Keep this file in `container-compose` only. Do not copy it into the Apple
+repositories, and do not maintain separate `BRANCHES.md` files in the companion
+forks.
 
-| Branch pattern | Purpose | CI profile | README badges |
-| --- | --- | --- | --- |
-| `main` | Active development and integration branch | Full CI, Quality, CodeQL, SonarQube | SonarCloud and security badges stay visible. |
-| `release/*` | Frozen release lane for installable release builds | Reduced package and formula validation | SonarCloud badges are removed automatically. |
-| `snapshot/*` | Frozen snapshot lane for installable debug builds | Reduced package and formula validation | SonarCloud badges are removed automatically. |
-| `apple-container-compatible` | Upstream-only compatibility branch for accepted or released Apple runtime primitives | Targeted compatibility validation | Branch-specific. |
+## Active Branches
 
-This branching strategy exists because the free SonarQube/SonarCloud plan only analyzes one useful branch. Keeping active development on `main` makes the badges and quality gate reflect the branch maintainers and users actually see.
-
-## Frozen Branch Automation
-
-Pushing a `release/*` or `snapshot/*` branch starts the frozen branch workflow:
-
-1. Prepare the branch by removing SonarCloud badge lines from `README.md`.
-2. Commit that README change back to the frozen branch when needed.
-3. On the follow-up workflow run for the prepared branch tip, build the prebuilt package.
-4. Publish the package to a branch-specific `homebrew-*` GitHub release.
-5. Update `stephenlclarke/homebrew-tap` so Homebrew installs the matching frozen asset.
-
-`release/*` branches build release packages. `snapshot/*` branches build debug packages.
-
-The tap update requires the `HOMEBREW_TAP_TOKEN` repository secret with permission to push to `stephenlclarke/homebrew-tap`.
-
-Frozen branch packages include a plugin `build-info.json` file. `container compose version` reads that file and reports the lane, branch, commit, build type, `container` pin, and `containerization` pin used for the package. Use `container system version` beside it to confirm the actual running `container` runtime source and `containerization` ref.
-
-## Local Branch Selection
-
-For active development:
-
-```sh
-git -C ~/github/container-compose checkout main
-git -C ~/github/container checkout main
-```
-
-For a frozen release or snapshot branch, check out the matching `container-compose` branch and the `container` fork revision pinned by `APPLE_CONTAINER_REF`:
-
-```sh
-git -C ~/github/container-compose checkout release/example
-git -C ~/github/container fetch fork
-git -C ~/github/container checkout "$(cat ~/github/container-compose/APPLE_CONTAINER_REF)"
-```
-
-`Package.swift` references the `container` checkout as a sibling path dependency at `../container`, so the checked-out `container` revision is part of the selected environment.
-
-The current integration stack still pins [`stephenlclarke/containerization`](https://github.com/stephenlclarke/containerization) `integration/blkio-runtime` through `Package.swift` and `Package.resolved` until the block I/O runtime API from [`apple/containerization#739`](https://github.com/apple/containerization/pull/739) is accepted upstream.
-
-## Archive Branches
-
-| Branch | Status | Notes |
+| Branch | Purpose | Build and quality rule |
 | --- | --- | --- |
-| `compose-v2-preview` | Legacy preview archive | Preserves older preview harness and handoff state. Do not treat this as the current compatibility target. |
+| `main` | Current development for all three repositories. | Full CI, CodeQL, SonarQube, and Homebrew main prebuilt packages. |
+| `release` | Latest stable snapshot promoted from validated `main`. | Release package validation only; no debug binaries. |
+| `release-VERSION-TAG` | Permanent copy of a release tag, for example `release-v0.1.0`. | Release package validation only; no debug binaries. |
 
-The former `develop`, `regression`, `logs-integration`, `logs-integration-chris`, `full-compose-preview`, and `full-compose-runtime` branches are not current development targets. Historical handoff notes may still mention those names when they identify where a slice originally came from, but new work should not target them.
+`main` is the only active development branch because the free SonarQube tier
+only provides one useful branch signal. README badges, quality gates, and normal
+integration work should therefore stay on `main`.
 
-## Upstreaming Rule
+`release` is the moving stable snapshot branch. Each promoted release should
+also be tagged in every repository and copied to a matching
+`release-VERSION-TAG` branch so the exact source state remains installable.
 
-Fork-backed runtime changes should still be split into small Apple-facing branches before opening pull requests against [`apple/container`](https://github.com/apple/container). Keep one runtime capability per PR where practical, with focused tests and no Compose-specific policy in the runtime branch.
+Do not use `develop`, `snapshot/*`, or compatibility side branches as active
+lanes for these three repositories.
 
-Compose-specific behavior stays in this repository, including service fan-out, replica selection, prefixes, colors, selected-service ordering, Docker Compose CLI parsing, and Docker Compose output formatting.
+## Release Flow
+
+1. Validate `main` in `container-compose`, `container`, and `containerization`.
+2. Tag the release in each repository.
+3. Fast-forward or reset the `release` branch to the tagged commit in each
+   repository.
+4. Create a branch copy named `release-VERSION-TAG` from the same tag in each
+   repository.
+5. Publish Homebrew prebuilt assets for `main`, `release`, and each
+   `release-VERSION-TAG` branch.
+
+All release branch artifacts must be release builds. The Swift packages must be
+built with release configuration, and the Go normalizer must keep using release
+flags (`CGO_ENABLED=0`, `-trimpath`, and stripped linker flags). Debug package
+lanes are not part of this branch model.
+
+## Homebrew Lanes
+
+The aggregate tap is `stephenlclarke/homebrew-tap`.
+
+| Repository | Main formula | Release formula pattern |
+| --- | --- | --- |
+| `container` | `container` | `container-release`, `container-release-v0-1-0`, and other branch-derived formula names |
+| `container-compose` | `container-compose` | `container-compose-release`, `container-compose-release-v0-1-0`, and other branch-derived formula names |
+
+Release formula names are derived from the branch name by lowercasing it and
+replacing non-alphanumeric separators with `-`. For example,
+`release-v0.1.0` becomes `container-compose-release-v0-1-0`.
+
+The `container-compose` formula installs the plugin payload. After installing a
+compose formula, link the plugin into the Homebrew-installed `container` prefix:
+
+```sh
+mkdir -p "$(brew --prefix container)/libexec/container-plugins"
+ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" \
+  "$(brew --prefix container)/libexec/container-plugins/compose"
+brew services restart container
+container compose version
+```
+
+## Local Checkouts
+
+For current development, use `main` in all three repositories:
+
+```sh
+git -C ~/github/containerization checkout main
+git -C ~/github/container checkout main
+git -C ~/github/container-compose checkout main
+```
+
+For stable validation, use matching `release` branches:
+
+```sh
+git -C ~/github/containerization checkout release
+git -C ~/github/container checkout release
+git -C ~/github/container-compose checkout release
+```
+
+For a tagged release copy, use the same `release-VERSION-TAG` branch name in all
+three repositories.
+
+`container-compose` still pins the exact `container` commit used in CI through
+`APPLE_CONTAINER_REF`. It also resolves `containerization` from
+`stephenlclarke/containerization` `main`; promote runtime work to that branch
+before deleting a temporary integration branch.
+
+## Archived Names
+
+The former `develop`, `snapshot/*`, `regression`, `apple-container-compatible`,
+logs, restart-policy, and full-compose branches are historical references only.
+Old handoff notes may mention them, but new work should target `main`, `release`,
+or a `release-VERSION-TAG` branch.

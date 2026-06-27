@@ -20,8 +20,8 @@ on:
   push:
     branches:
       - main
-      - "release/**"
-      - "snapshot/**"
+      - release
+      - "release-*"
   pull_request:
     branches:
       - main
@@ -125,27 +125,23 @@ jobs:
         env:
           HAWKEYE_AUTO_INSTALL: "1"
 
-      - name: Run frozen branch validation
+      - name: Run release branch validation
         if: >
           github.event_name == 'push' &&
-          (startsWith(github.ref, 'refs/heads/release/') ||
-           startsWith(github.ref, 'refs/heads/snapshot/'))
+          (github.ref == 'refs/heads/release' ||
+           startsWith(github.ref, 'refs/heads/release-'))
         timeout-minutes: 45
         shell: bash
         working-directory: container-compose
         run: |
           set -euo pipefail
           case "${GITHUB_REF_NAME}" in
-            release/*)
+            release|release-*)
               ruby -c Formula/container-compose.rb
               make package-release PLUGIN_ARCHIVE=container-compose-plugin-release-arm64.tar.gz
               ;;
-            snapshot/*)
-              ruby -c Formula/container-compose-snapshot.rb
-              make package-debug PLUGIN_ARCHIVE=container-compose-plugin-snapshot-arm64.tar.gz
-              ;;
             *)
-              printf 'Unsupported frozen branch: %s\n' "${GITHUB_REF_NAME}" >&2
+              printf 'Unsupported release branch: %s\n' "${GITHUB_REF_NAME}" >&2
               exit 1
               ;;
           esac
@@ -235,7 +231,7 @@ jobs:
       - name: Build plugin package
         if: github.ref == 'refs/heads/main'
         timeout-minutes: 20
-        run: make package-debug PLUGIN_ARCHIVE=container-compose-plugin.tar.gz
+        run: make package-release PLUGIN_ARCHIVE=container-compose-plugin.tar.gz
         working-directory: container-compose
 
       - name: Upload plugin artifact

@@ -37,7 +37,7 @@ PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
 COMPOSE_VERSION ?= 0.1.0
 CONTAINER_COMPOSE_SOURCE ?= $(shell $(PYTHON) -c 'import subprocess; result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True); url = result.stdout.strip() if result.returncode == 0 else ""; url = url[len("git@github.com:"):] if url.startswith("git@github.com:") else url; url = url[len("https://github.com/"):] if url.startswith("https://github.com/") else url; url = url[:-4] if url.endswith(".git") else url; print(url)')
 CONTAINER_COMPOSE_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --short HEAD)
-CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BRANCH)"; print("main" if branch == "main" else "release" if branch.startswith("release/") else "snapshot" if branch.startswith("snapshot/") else "detached" if branch in ("", "HEAD") else "development")')
+CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BRANCH)"; print("main" if branch == "main" else "release" if branch == "release" or branch.startswith("release-") else "detached" if branch in ("", "HEAD") else "development")')
 CONTAINER_COMPOSE_COMMIT ?= $(shell git rev-parse HEAD)
 CONTAINER_SOURCE ?= stephenlclarke/container
 CONTAINER_REF ?= $(shell sed -n '1{s/[[:space:]]//g;p;q;}' APPLE_CONTAINER_REF 2>/dev/null || printf 'unspecified')
@@ -221,12 +221,14 @@ cli-smoke-built:
 	[[ "$$version_short_output" == "0.1.0" ]]; \
 	version_pretty_output="$$(".build/debug/compose" version)"; \
 	[[ "$$version_pretty_output" == *"container-compose 0.1.0"* ]]; \
-	[[ "$$version_pretty_output" == *"container:"* ]]; \
-	[[ "$$version_pretty_output" == *"containerization:"* ]]; \
+	[[ "$$version_pretty_output" == *"container:"*" (custom)"* ]]; \
+	[[ "$$version_pretty_output" == *"containerization:"*" (custom)"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
 	[[ "$$version_json_output" == *'"version":"0.1.0"'* ]]; \
 	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
+	[[ "$$version_json_output" == *'"containerDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationSource":'* ]]; \
+	[[ "$$version_json_output" == *'"containerizationDistribution":"custom"'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
 	[[ "$$version_short_format_output" == *'"version":"0.1.0"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \

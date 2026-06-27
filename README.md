@@ -49,7 +49,8 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): install prebuilt Homebrew assets or a local plugin archive.
-- [BRANCHES.md](BRANCHES.md): understand active `main` development and frozen `release/*` / `snapshot/*` install branches.
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md): recover bad installs and diagnose runtime issues.
+- [BRANCHES.md](BRANCHES.md): understand active `main`, stable `release`, and tagged `release-*` install branches.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.

@@ -4,14 +4,15 @@ This guide explains how to install the `container-compose` plugin and the compat
 
 ## Install Lanes
 
-`main` is the active development branch and keeps the useful SonarCloud badges. Homebrew installs should normally use frozen branches published as prebuilt release assets:
+`main` is the active development branch and keeps the useful SonarCloud badges. Homebrew installs use prebuilt release assets:
 
 | Lane | Formula | Build type | Use when |
 | --- | --- | --- | --- |
-| Release | `container-compose` | release | You want the latest frozen release build. |
-| Snapshot | `container-compose-snapshot` | debug | You want the latest frozen debug snapshot. |
+| Main | `container-compose` | release | You want the latest development build. |
+| Release | `container-compose-release` | release | You want the latest stable release branch build. |
+| Tagged release | `container-compose-release-v0-1-0` style | release | You want a specific `release-VERSION-TAG` branch. |
 
-Both lanes install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation.
+These lanes install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Debug snapshot formulae are not part of the current branch model.
 
 ## Requirements
 
@@ -23,7 +24,7 @@ Both lanes install prebuilt GitHub release assets. They do not build Swift or Go
 
 ## Install From The Aggregate Tap
 
-Install the latest frozen release:
+Install the latest `main` prebuilt:
 
 ```sh
 brew tap stephenlclarke/tap
@@ -35,19 +36,19 @@ brew services start container
 container compose version
 ```
 
-Install the latest frozen snapshot:
+Install the latest stable release branch after the `release` branch has published assets:
 
 ```sh
 brew tap stephenlclarke/tap
 brew install stephenlclarke/tap/container
-brew install stephenlclarke/tap/container-compose-snapshot
+brew install stephenlclarke/tap/container-compose-release
 mkdir -p "$(brew --prefix container)/libexec/container-plugins"
-ln -sfn "$(brew --prefix container-compose-snapshot)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
+ln -sfn "$(brew --prefix container-compose-release)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
 brew services restart container
 container compose version
 ```
 
-Do not install both `container-compose` and `container-compose-snapshot` at the same time; they both provide the `container-compose` command and the `compose` plugin payload.
+Tagged release branch formulae use the same pattern. For example, branch `release-v0.1.0` publishes `container-compose-release-v0-1-0`.
 
 ## If Apple container Is Already Installed
 
@@ -124,7 +125,7 @@ container compose version --format json
 
 `container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, and the exact `containerization` source/ref compiled into the runtime. Apple package builds do not carry the Stephen fork provenance fields.
 
-`container compose version` shows the installed plugin build plus the `container` and `containerization` pins that the plugin package was built against. Frozen `release/*` packages report lane `release`; frozen `snapshot/*` packages report lane `snapshot`; active development builds from `main` report lane `main`.
+`container compose version` shows the installed plugin build plus the `container` and `containerization` pins that the plugin package was built against. `release` and `release-*` packages report lane `release`; active development builds from `main` report lane `main`.
 
 Run a read-only Compose command from a directory containing a Compose file:
 
@@ -138,10 +139,10 @@ Stop the active service, uninstall the old plugin lane, install the new lane, th
 
 ```sh
 brew services stop container || true
-brew uninstall container-compose container-compose-snapshot || true
+brew uninstall container-compose container-compose-release || true
 ```
 
-Then run either the release or snapshot install commands above.
+Then run the main or release install commands above.
 
 ## Uninstall
 
@@ -149,7 +150,7 @@ Remove the plugin and fork-backed `container` package:
 
 ```sh
 brew services stop container || true
-brew uninstall container-compose container-compose-snapshot container || true
+brew uninstall container-compose container-compose-release container || true
 brew untap stephenlclarke/tap || true
 ```
 
@@ -170,5 +171,5 @@ ls -l "$(brew --prefix container)/libexec/container-plugins/compose"
 If Compose normalization fails after installation, verify that the normalizer exists and is executable:
 
 ```sh
-ls -l "$(brew --prefix container-compose 2>/dev/null || brew --prefix container-compose-snapshot)/libexec/container-plugins/compose/resources/compose-normalizer"
+ls -l "$(brew --prefix container-compose 2>/dev/null || brew --prefix container-compose-release)/libexec/container-plugins/compose/resources/compose-normalizer"
 ```

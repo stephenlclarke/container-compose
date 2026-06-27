@@ -39,6 +39,14 @@ private struct ComposeBuildInfo: Codable {
     var containerizationSource: String = "unspecified"
     var containerizationRef: String = "unspecified"
 
+    var containerDistribution: String {
+        distribution(source: containerSource, appleSource: "apple/container")
+    }
+
+    var containerizationDistribution: String {
+        distribution(source: containerizationSource, appleSource: "apple/containerization")
+    }
+
     static func load() -> ComposeBuildInfo {
         if let path = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_BUILD_INFO"],
            let info = decode(path: path) {
@@ -100,6 +108,46 @@ private struct ComposeBuildInfo: Codable {
     private static func normalizedSource(_ source: String) -> String {
         source.normalizedGitHubSource()
     }
+
+    private func distribution(source: String, appleSource: String) -> String {
+        if source == appleSource {
+            return "apple"
+        }
+        if source.isEmpty || source == "unspecified" {
+            return "unknown"
+        }
+        return "custom"
+    }
+}
+
+private struct ComposeVersionOutput: Encodable {
+    let version: String
+    let source: String
+    let branch: String
+    let lane: String
+    let commit: String
+    let buildType: String
+    let containerSource: String
+    let containerRef: String
+    let containerDistribution: String
+    let containerizationSource: String
+    let containerizationRef: String
+    let containerizationDistribution: String
+
+    init(_ info: ComposeBuildInfo) {
+        self.version = info.version
+        self.source = info.source
+        self.branch = info.branch
+        self.lane = info.lane
+        self.commit = info.commit
+        self.buildType = info.buildType
+        self.containerSource = info.containerSource
+        self.containerRef = info.containerRef
+        self.containerDistribution = info.containerDistribution
+        self.containerizationSource = info.containerizationSource
+        self.containerizationRef = info.containerizationRef
+        self.containerizationDistribution = info.containerizationDistribution
+    }
 }
 
 private extension String {
@@ -126,11 +174,8 @@ private extension ComposeBuildInfo {
         if branch == "main" {
             return "main"
         }
-        if branch.hasPrefix("release/") {
+        if branch == "release" || branch.hasPrefix("release-") {
             return "release"
-        }
-        if branch.hasPrefix("snapshot/") {
-            return "snapshot"
         }
         if branch == "HEAD" || branch.isEmpty {
             return "detached"
@@ -1601,12 +1646,12 @@ struct Version: ParsableCommand {
             print("  branch: \(composeBuildInfo.branch)")
             print("  commit: \(composeBuildInfo.commit)")
             print("  build: \(composeBuildInfo.buildType)")
-            print("  container: \(composeBuildInfo.containerSource)@\(composeBuildInfo.containerRef)")
-            print("  containerization: \(composeBuildInfo.containerizationSource)@\(composeBuildInfo.containerizationRef)")
+            print("  container: \(composeBuildInfo.containerSource)@\(composeBuildInfo.containerRef) (\(composeBuildInfo.containerDistribution))")
+            print("  containerization: \(composeBuildInfo.containerizationSource)@\(composeBuildInfo.containerizationRef) (\(composeBuildInfo.containerizationDistribution))")
         case "json":
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(composeBuildInfo)
+            let data = try encoder.encode(ComposeVersionOutput(composeBuildInfo))
             print(String(decoding: data, as: UTF8.self))
         default:
             throw ComposeError.unsupported("version --format '\(format)'; supported formats are pretty and json")

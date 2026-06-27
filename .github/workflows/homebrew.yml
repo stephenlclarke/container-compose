@@ -20,8 +20,8 @@ on:
   push:
     branches:
       - main
-      - "release/**"
-      - "snapshot/**"
+      - release
+      - "release-*"
   pull_request:
     branches:
       - main
@@ -50,14 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "${GITHUB_REF_NAME}" in
-            snapshot/*)
-              ruby -c Formula/container-compose-snapshot.rb
-              ;;
-            *)
-              ruby -c Formula/container-compose.rb
-              ;;
-          esac
+          ruby -c Formula/container-compose.rb
 
       - name: Inspect formula
         shell: bash
@@ -65,11 +58,4 @@ jobs:
           set -euo pipefail
           brew tap stephenlclarke/container-compose "${GITHUB_WORKSPACE}"
           brew trust --tap stephenlclarke/container-compose
-          case "${GITHUB_REF_NAME}" in
-            snapshot/*)
-              brew info --formula stephenlclarke/container-compose/container-compose-snapshot
-              ;;
-            *)
-              brew info --formula stephenlclarke/container-compose/container-compose
-              ;;
-          esac
+          brew info --formula stephenlclarke/container-compose/container-compose

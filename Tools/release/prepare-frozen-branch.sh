@@ -2,9 +2,9 @@
 # USAGE:
 #   Tools/release/prepare-frozen-branch.sh
 #
-# Removes branch-specific SonarCloud badges from frozen release and snapshot
-# branches. Free SonarCloud only reports the useful branch signal on main, so
-# frozen branch READMEs should not display stale main-branch Sonar badges.
+# Removes branch-specific SonarCloud badges from release branches. Free
+# SonarCloud only reports the useful branch signal on main, so release branch
+# READMEs should not display stale main-branch Sonar badges.
 
 set -euo pipefail
 

@@ -19,8 +19,9 @@ name: Prebuilt Binaries
 on:
   push:
     branches:
-      - "release/**"
-      - "snapshot/**"
+      - main
+      - release
+      - "release-*"
   workflow_dispatch:
 
 permissions:
@@ -43,7 +44,8 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
-      - name: Prepare frozen branch README
+      - name: Prepare release branch README
+        if: github.ref_name != 'main'
         id: prepare
         shell: bash
         working-directory: container-compose
@@ -98,25 +100,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          slug="${GITHUB_REF_NAME//\//-}"
+          asset_slug="${GITHUB_REF_NAME//\//-}"
+          formula_slug="$(
+            printf '%s' "$asset_slug" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+          )"
           case "${GITHUB_REF_NAME}" in
-            release/*)
+            main)
               target="package-release"
-              asset="container-compose-plugin-${slug}-release-arm64.tar.gz"
+              asset="container-compose-plugin-main-release-arm64.tar.gz"
+              release_name="Homebrew main release prebuilt"
+              config="release"
+              lane="main"
+              formula="container-compose.rb"
+              formula_class="ContainerCompose"
+              label="main release"
+              ;;
+            release|release-*)
+              target="package-release"
+              asset="container-compose-plugin-${asset_slug}-release-arm64.tar.gz"
               release_name="Homebrew ${GITHUB_REF_NAME} release prebuilt"
               config="release"
               lane="release"
-              formula="container-compose.rb"
+              formula="container-compose-${formula_slug}.rb"
+              formula_class="$(python3 -c 'import re, sys; print("ContainerCompose" + "".join(part.capitalize() for part in re.split(r"[^a-zA-Z0-9]+", sys.argv[1]) if part))' "$formula_slug")"
               label="${GITHUB_REF_NAME} release"
-              ;;
-            snapshot/*)
-              target="package-debug"
-              asset="container-compose-plugin-${slug}-debug-arm64.tar.gz"
-              release_name="Homebrew ${GITHUB_REF_NAME} debug prebuilt"
-              config="debug"
-              lane="snapshot"
-              formula="container-compose-snapshot.rb"
-              label="${GITHUB_REF_NAME} debug"
               ;;
             *)
               printf 'Unsupported branch for prebuilt packaging: %s\n' "${GITHUB_REF_NAME}" >&2
@@ -130,10 +139,11 @@ jobs:
             printf 'config=%s\n' "$config"
             printf 'lane=%s\n' "$lane"
             printf 'formula=%s\n' "$formula"
+            printf 'formula_class=%s\n' "$formula_class"
             printf 'label=%s\n' "$label"
-            printf 'slug=%s\n' "$slug"
-            printf 'tag=homebrew-%s\n' "$slug"
-            printf 'version=%s-%s\n' "$slug" "${GITHUB_SHA:0:12}"
+            printf 'asset_slug=%s\n' "$asset_slug"
+            printf 'tag=homebrew-%s\n' "$asset_slug"
+            printf 'version=%s-release-%s\n' "$asset_slug" "${GITHUB_SHA:0:12}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build package
@@ -154,7 +164,7 @@ jobs:
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}.sha256
 
-      - name: Publish frozen branch release assets
+      - name: Publish branch release assets
         if: steps.prepare.outputs.changed != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -227,6 +237,8 @@ jobs:
           sha256="$(awk '{print $1}' "${RUNNER_TEMP}/${ASSET}.sha256")"
           python3 container-compose/Tools/release/update-homebrew-formula.py \
             --formula "homebrew-tap/Formula/${FORMULA}" \
+            --template "homebrew-tap/Formula/container-compose.rb" \
+            --formula-class "${{ steps.lane.outputs.formula_class }}" \
             --url "$url" \
             --version "$VERSION" \
             --asset "$ASSET" \
