@@ -836,6 +836,8 @@ cli-smoke-built:
 	[[ "$$ps_services_output" == *"container list --format json"* ]]; \
 	ps_status_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --status running)"; \
 	[[ "$$ps_status_output" == *"container list --format json --all"* ]]; \
+	ps_status_paused_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --status paused)"; \
+	[[ "$$ps_status_paused_output" == *"container list --format json --all"* ]]; \
 	ps_filter_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --filter status=exited)"; \
 	[[ "$$ps_filter_output" == *"container list --format json --all"* ]]; \
 	ps_format_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps --format json --no-trunc --orphans)"; \

@@ -10060,12 +10060,12 @@ private func psStatusFilters(statuses: [String], filters: [String]) throws -> Se
 /// Maps Compose status vocabulary onto states exposed by `apple/container`.
 private func normalizedRuntimeStatus(_ status: String) throws -> String {
     switch status.lowercased() {
-    case "running", "stopped", "stopping", "unknown":
+    case "paused", "running", "stopped", "stopping", "unknown":
         return status.lowercased()
     case "exited":
         return "stopped"
     default:
-        throw ComposeError.unsupported("ps status '\(status)'; apple/container exposes running, stopped, stopping, and unknown")
+        throw ComposeError.unsupported("ps status '\(status)'; apple/container exposes paused, running, stopped, stopping, and unknown")
     }
 }
 

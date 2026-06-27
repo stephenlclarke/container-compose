@@ -8271,6 +8271,48 @@ struct ComposeOrchestratorTests {
         #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-worker-1"])
     }
 
+    @Test("ps status supports paused containers")
+    func psStatusSupportsPausedContainers() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: pausedDiscoveredContainers())
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.statuses = ["paused"] }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-paused-1"])
+    }
+
+    @Test("ps filter status supports paused containers")
+    func psFilterStatusSupportsPausedContainers() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: pausedDiscoveredContainers())
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager
+        )
+
+        try await orchestrator.ps(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposePsOptions { $0.filters = ["status=paused"] }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(try listedContainerIDs(from: try #require(emitted.messages.first)) == ["demo-paused-1"])
+    }
+
     @Test("ps status filters services projection")
     func psStatusFiltersServicesProjection() async throws {
         let emitted = MessageRecorder()
@@ -8343,11 +8385,11 @@ struct ComposeOrchestratorTests {
         do {
             try await orchestrator.ps(
                 project: ComposeProject(name: "demo", services: [:]),
-                options: ComposePsOptions { $0.statuses = ["paused"] }
+                options: ComposePsOptions { $0.statuses = ["restarting"] }
             )
             Issue.record("Expected unsupported status error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("ps status 'paused'; apple/container exposes running, stopped, stopping, and unknown"))
+            #expect(error == .unsupported("ps status 'restarting'; apple/container exposes paused, running, stopped, stopping, and unknown"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -20254,6 +20296,15 @@ private func discoveredContainers() -> [ComposeContainerSummary] {
                 platform: "linux/amd64"
             )
         ),
+    ]
+}
+
+private func pausedDiscoveredContainers() -> [ComposeContainerSummary] {
+    discoveredContainers() + [
+        ComposeContainerSummary(id: "demo-paused-1", status: "paused", labels: [
+            composeProjectLabel: "demo",
+            composeServiceLabel: "paused",
+        ]),
     ]
 }
 
