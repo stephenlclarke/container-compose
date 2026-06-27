@@ -279,9 +279,11 @@ cli-smoke-built:
 	[[ "$$ls_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ls_help_output" == *"Format the output. Values: [table | json]"* ]]; \
 	ps_help_output="$$(".build/debug/compose" ps --help)"; \
-	[[ "$$ps_help_output" == *"$${ansi_escape}[38;5;208m--format$${ansi_escape}[0m"* ]]; \
+	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--filter$${ansi_escape}[0m"* ]]; \
+	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--no-trunc$${ansi_escape}[0m"* ]]; \
 	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--orphans$${ansi_escape}[0m"* ]]; \
+	[[ "$$ps_help_output" == *"$${ansi_escape}[32m--status$${ansi_escape}[0m"* ]]; \
 	images_help_output="$$(".build/debug/compose" images --help)"; \
 	[[ "$$images_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$images_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \

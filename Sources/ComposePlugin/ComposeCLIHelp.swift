@@ -399,13 +399,13 @@ enum ComposeCLIHelp {
         "ps": [
             "--all": .supported,
             "--dry-run": .supported,
-            "--filter": .partiallySupported,
-            "--format": .partiallySupported,
+            "--filter": .supported,
+            "--format": .supported,
             "--no-trunc": .supported,
             "--orphans": .supported,
             "--quiet": .supported,
             "--services": .supported,
-            "--status": .partiallySupported,
+            "--status": .supported,
         ],
         "publish": [
             "--app": .notSupported,
