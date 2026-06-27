@@ -64,6 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           brew tap stephenlclarke/container-compose "${GITHUB_WORKSPACE}"
+          brew trust --tap stephenlclarke/container-compose
           case "${GITHUB_REF_NAME}" in
             snapshot/*)
               brew info --formula stephenlclarke/container-compose/container-compose-snapshot
