@@ -119,6 +119,7 @@ jobs:
 
       - name: Run local CI workflow
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        timeout-minutes: 45
         run: make ci
         working-directory: container-compose
         env:
@@ -129,6 +130,7 @@ jobs:
           github.event_name == 'push' &&
           (startsWith(github.ref, 'refs/heads/release/') ||
            startsWith(github.ref, 'refs/heads/snapshot/'))
+        timeout-minutes: 45
         shell: bash
         working-directory: container-compose
         run: |
@@ -222,6 +224,7 @@ jobs:
           (github.event_name != 'pull_request' ||
             (github.event.pull_request.head.repo.full_name == github.repository &&
              github.actor != 'dependabot[bot]'))
+        timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_QUALITYGATE_WAIT: "true"
@@ -243,7 +246,8 @@ jobs:
 
       - name: Build plugin package
         if: github.ref == 'refs/heads/main'
-        run: make package PLUGIN_ARCHIVE=container-compose-plugin.tar.gz
+        timeout-minutes: 20
+        run: make package-debug PLUGIN_ARCHIVE=container-compose-plugin.tar.gz
         working-directory: container-compose
 
       - name: Upload plugin artifact

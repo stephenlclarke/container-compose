@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-27 02:18 BST.
+Last updated: 2026-06-27 02:30 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -50,11 +50,14 @@ make check
 make ci
 make cli-smoke-built
 swift build --disable-automatic-resolution --product compose
+make package-debug PLUGIN_ARCHIVE=/tmp/container-compose-plugin-ci-debug.tar.gz
+actionlint .github/workflows/ci.yml .github/workflows/codeql.yml
 npx --yes markdownlint-cli README.md PLAN.md STATUS.md docs/upstream/apple-container/copy/ISSUE-copy-stdio-archive-streams.md
+npx --yes markdownlint-cli BUILD.md
 git diff --check
 ```
 
-All passed locally after extending progress feedback from project loading and image work into non-interactive runtime create/start/run handoffs, then tightening `compose cp` so local-to-local operands fail with Docker Compose's `unknown copy direction` behavior, local paths containing colons still work when paired with a service target, service-side relative paths such as `api:tmp/file` normalize to container-root paths before reaching the Apple runtime, and `-` stdin/stdout tar-stream operands fail early with a precise Apple copy-stream API gap instead of being treated as literal local filenames. Foreground interactive process replacement remains unwrapped so shells and attached sessions keep direct terminal control. The latest full `make ci` run passed for the `cp -` handoff slice. The previous full `make ci` with captured counts ran 676 Swift tests, reported Swift coverage at 89.97%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`, plus the Apple `containerization` 0.35 package-version update through `c34d340` while retaining Stephen's `containerization` support branch; compose still builds against the refreshed fork ref.
+All passed locally after extending progress feedback from project loading and image work into non-interactive runtime create/start/run handoffs, then tightening `compose cp` so local-to-local operands fail with Docker Compose's `unknown copy direction` behavior, local paths containing colons still work when paired with a service target, service-side relative paths such as `api:tmp/file` normalize to container-root paths before reaching the Apple runtime, and `-` stdin/stdout tar-stream operands fail early with a precise Apple copy-stream API gap instead of being treated as literal local filenames. Foreground interactive process replacement remains unwrapped so shells and attached sessions keep direct terminal control. The latest full `make ci` run passed for the `cp -` handoff slice. Main CI package validation now builds a debug development artifact rather than re-running the frozen release packaging lane on every active-development push; the local `make package-debug` proof produced a `lane: main`, `buildType: debug` archive while still release-building the Go normalizer with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags. Frozen `release/*` and `snapshot/*` package behavior remains unchanged. The previous full `make ci` with captured counts ran 676 Swift tests, reported Swift coverage at 89.97%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`, plus the Apple `containerization` 0.35 package-version update through `c34d340` while retaining Stephen's `containerization` support branch; compose still builds against the refreshed fork ref.
 
 ## Open Blockers
 
