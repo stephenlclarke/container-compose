@@ -686,38 +686,54 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             noColor ? "--no-color" : nil,
             noLogPrefix ? "--no-log-prefix" : nil,
             timestamps ? "--timestamps" : nil,
-            watch ? "--watch" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("up \(first)")
         }
+        if watch && detach {
+            throw ComposeError.unsupported("up --detach cannot be combined with --watch")
+        }
+        if watch && wait {
+            throw ComposeError.unsupported("up --wait cannot be combined with --watch")
+        }
 
         let loadedProject = try await project()
-        try await orchestrator().up(
-            project: loadedProject,
-            options: ComposeUpOptions {
-                $0.services = services
-                $0.noAttach = noAttach
-                $0.build = build
-                $0.quietBuild = quietBuild
-                $0.noBuild = noBuild
-                $0.detach = detach
-                $0.forceRecreate = forceRecreate
-                $0.alwaysRecreateDeps = alwaysRecreateDeps
-                $0.noRecreate = noRecreate
-                $0.removeOrphans = removeOrphans
-                $0.pullPolicy = pull
-                $0.quietPull = quietPull
-                $0.scales = scales
-                $0.noDeps = noDeps
-                $0.noStart = noStart
-                $0.timeout = timeout
-                $0.wait = wait
-                $0.waitTimeout = waitTimeout
-                $0.renewAnonymousVolumes = renewAnonVolumes
-                $0.assumeYes = yes
-            }
-        )
+        let upOptions = ComposeUpOptions {
+            $0.services = services
+            $0.noAttach = noAttach
+            $0.build = build
+            $0.quietBuild = quietBuild
+            $0.noBuild = noBuild
+            $0.detach = detach
+            $0.forceRecreate = forceRecreate
+            $0.alwaysRecreateDeps = alwaysRecreateDeps
+            $0.noRecreate = noRecreate
+            $0.removeOrphans = removeOrphans
+            $0.pullPolicy = pull
+            $0.quietPull = quietPull
+            $0.scales = scales
+            $0.noDeps = noDeps
+            $0.noStart = noStart
+            $0.timeout = timeout
+            $0.wait = wait
+            $0.waitTimeout = waitTimeout
+            $0.renewAnonymousVolumes = renewAnonVolumes
+            $0.assumeYes = yes
+        }
+        if watch {
+            try await orchestrator().watch(
+                project: loadedProject,
+                options: ComposeWatchOptions(
+                    services: services,
+                    noUp: false,
+                    prune: true,
+                    quiet: quietBuild,
+                    initialUpOptions: upOptions
+                )
+            )
+            return
+        }
+        try await orchestrator().up(project: loadedProject, options: upOptions)
     }
 }
 

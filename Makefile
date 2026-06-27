@@ -321,6 +321,7 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--renew-anon-volumes$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--watch$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--yes$${ansi_escape}[0m"* ]]; \
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \
 	[[ "$$rm_help_output" == *"-f, --force"* ]]; \
@@ -594,12 +595,19 @@ cli-smoke-built:
 		"--menu" \
 		"--no-color" \
 		"--no-log-prefix" \
-		"--timestamps" \
-		"--watch"; do \
+		"--timestamps"; do \
 		up_unsupported_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up $$unsupported_up_option api 2>&1 || true)"; \
 		up_unsupported_name="$${unsupported_up_option%% *}"; \
 		[[ "$$up_unsupported_output" == *"unsupported compose feature: up $$up_unsupported_name"* ]]; \
 	done; \
+	up_watch_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" up --watch --no-deps api)"; \
+	[[ "$$up_watch_output" == *"compose: watch project demo services api"* ]]; \
+	[[ "$$up_watch_output" == *"compose: watch initial-up enabled"* ]]; \
+	[[ "$$up_watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
+	up_watch_detach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" up --watch --detach api 2>&1 || true)"; \
+	[[ "$$up_watch_detach_output" == *"unsupported compose feature: up --detach cannot be combined with --watch"* ]]; \
+	up_watch_wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" up --watch --wait api 2>&1 || true)"; \
+	[[ "$$up_watch_wait_output" == *"unsupported compose feature: up --wait cannot be combined with --watch"* ]]; \
 	up_quiet_pull_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --pull always --quiet-pull api)"; \
 	[[ "$$up_quiet_pull_output" == *"container image pull --progress none alpine"* ]]; \
 	[[ "$$up_quiet_pull_output" == *"container run"* ]]; \

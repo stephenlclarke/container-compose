@@ -799,12 +799,20 @@ public struct ComposeWatchOptions {
     public var noUp: Bool
     public var prune: Bool
     public var quiet: Bool
+    public var initialUpOptions: ComposeUpOptions?
 
-    public init(services: [String] = [], noUp: Bool = false, prune: Bool = true, quiet: Bool = false) {
+    public init(
+        services: [String] = [],
+        noUp: Bool = false,
+        prune: Bool = true,
+        quiet: Bool = false,
+        initialUpOptions: ComposeUpOptions? = nil
+    ) {
         self.services = services
         self.noUp = noUp
         self.prune = prune
         self.quiet = quiet
+        self.initialUpOptions = initialUpOptions
     }
 }
 
@@ -2309,14 +2317,14 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return runtimeService
         }
         if !watch.noUp {
+            var initialUp = watch.initialUpOptions ?? ComposeUpOptions()
+            initialUp.services = runtimeServices.map(\.name)
+            initialUp.detach = true
+            initialUp.quietBuild = initialUp.quietBuild || watch.quiet
+            initialUp.quietPull = initialUp.quietPull || watch.quiet
             try await up(
                 project: runtimeProject,
-                options: ComposeUpOptions {
-                    $0.services = runtimeServices.map(\.name)
-                    $0.detach = true
-                    $0.quietBuild = watch.quiet
-                    $0.quietPull = watch.quiet
-                }
+                options: initialUp
             )
         }
 

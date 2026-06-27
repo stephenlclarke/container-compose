@@ -14579,6 +14579,58 @@ struct ComposeOrchestratorTests {
         #expect(commands[2].containsSequence(["image", "prune"]))
     }
 
+    @Test("watch applies provided initial up options")
+    func watchAppliesProvidedInitialUpOptions() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sourceFile = directory.appendingPathComponent("Dockerfile")
+        try "FROM scratch\n".write(to: sourceFile, atomically: true, encoding: .utf8)
+
+        let runner = RecordingRunner()
+        let sleeper = ThrowingSleeper(throwOnCall: 1)
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api") {
+                    $0.build = ComposeBuild(context: directory.path)
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: sourceFile.path, action: "rebuild"),
+                    ])
+                },
+                "db": composeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                watchPollInterval: .milliseconds(1),
+                sleep: { try await sleeper.sleep($0) }
+            ),
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).watch(
+            project: project,
+            options: ComposeWatchOptions(
+                services: ["api"],
+                initialUpOptions: ComposeUpOptions {
+                    $0.services = ["api"]
+                    $0.noDeps = true
+                    $0.build = true
+                    $0.quietBuild = true
+                    $0.scales = ["api=2"]
+                }
+            )
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 3)
+        #expect(commands[0].containsSequence(["build", "--tag", "demo_api:latest", "--quiet", directory.path]))
+        #expect(commands[1].containsSequence(["run", "--name", "demo-api-1", "--detach"]))
+        #expect(commands[2].containsSequence(["run", "--name", "demo-api-2", "--detach"]))
+        #expect(commands.allSatisfy { !$0.contains("demo-db-1") })
+    }
+
     @Test("watch rejects services without develop triggers")
     func watchRejectsServicesWithoutDevelopTriggers() async throws {
         let runner = RecordingRunner()

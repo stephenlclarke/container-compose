@@ -519,7 +519,7 @@ enum ComposeCLIHelp {
             "--timestamps": .notSupported,
             "--wait": .supported,
             "--wait-timeout": .supported,
-            "--watch": .notSupported,
+            "--watch": .supported,
             "--yes": .supported,
         ],
         "version": [
