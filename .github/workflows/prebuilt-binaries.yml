@@ -202,20 +202,23 @@ jobs:
             "${RUNNER_TEMP}/${ASSET}.sha256" \
             --clobber
 
-      - name: Require Homebrew tap token
+      - name: Check Homebrew tap token
         if: steps.prepare.outputs.changed != 'true'
+        id: tap-token
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
-            printf 'HOMEBREW_TAP_TOKEN is required to update stephenlclarke/homebrew-tap\n' >&2
-            exit 1
+            printf 'available=false\n' >> "$GITHUB_OUTPUT"
+            printf 'HOMEBREW_TAP_TOKEN is not set; skipping stephenlclarke/homebrew-tap update.\n'
+            exit 0
           fi
+          printf 'available=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Checkout Homebrew tap
-        if: steps.prepare.outputs.changed != 'true'
+        if: steps.prepare.outputs.changed != 'true' && steps.tap-token.outputs.available == 'true'
         uses: actions/checkout@v7
         with:
           repository: stephenlclarke/homebrew-tap
@@ -223,7 +226,7 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Update Homebrew tap formula
-        if: steps.prepare.outputs.changed != 'true'
+        if: steps.prepare.outputs.changed != 'true' && steps.tap-token.outputs.available == 'true'
         env:
           ASSET: ${{ steps.lane.outputs.asset }}
           FORMULA: ${{ steps.lane.outputs.formula }}
@@ -247,7 +250,7 @@ jobs:
           git -C homebrew-tap diff -- Formula
 
       - name: Commit Homebrew tap update
-        if: steps.prepare.outputs.changed != 'true'
+        if: steps.prepare.outputs.changed != 'true' && steps.tap-token.outputs.available == 'true'
         shell: bash
         working-directory: homebrew-tap
         run: |
