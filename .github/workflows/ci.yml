@@ -135,12 +135,13 @@ jobs:
         working-directory: container-compose
         run: |
           set -euo pipefail
-          ruby -c Formula/container-compose.rb
           case "${GITHUB_REF_NAME}" in
             release/*)
+              ruby -c Formula/container-compose.rb
               make package-release PLUGIN_ARCHIVE=container-compose-plugin-release-arm64.tar.gz
               ;;
             snapshot/*)
+              ruby -c Formula/container-compose-snapshot.rb
               make package-debug PLUGIN_ARCHIVE=container-compose-plugin-snapshot-arm64.tar.gz
               ;;
             *)

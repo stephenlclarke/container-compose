@@ -1,16 +1,16 @@
-class ContainerCompose < Formula
+class ContainerComposeSnapshot < Formula
   desc "Docker Compose style plugin for Apple's container CLI"
   homepage "https://github.com/stephenlclarke/container-compose"
-  url "https://github.com/stephenlclarke/container-compose/releases/download/homebrew-main/container-compose-plugin-main-release-arm64.tar.gz"
+  url "https://github.com/stephenlclarke/container-compose/releases/download/homebrew-snapshot-bootstrap/container-compose-plugin-snapshot-bootstrap-debug-arm64.tar.gz"
   sha256 :no_check
-  version "release-bootstrap"
+  version "snapshot-bootstrap"
   license "Apache-2.0"
 
   depends_on "container"
   depends_on arch: :arm64
   depends_on macos: :sequoia
 
-  conflicts_with "container-compose-snapshot", because: "both install the container-compose command and compose plugin"
+  conflicts_with "container-compose", because: "both install the container-compose command and compose plugin"
 
   def install
     plugin = libexec/"container-plugins/compose"
@@ -30,8 +30,8 @@ class ContainerCompose < Formula
         ln -sfn "#{opt_libexec}/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
         brew services restart container
 
-      This formula installs the release bootstrap prebuilt release asset:
-        container-compose-plugin-main-release-arm64.tar.gz
+      This formula installs the snapshot bootstrap debug prebuilt release asset:
+        container-compose-plugin-snapshot-bootstrap-debug-arm64.tar.gz
     EOS
   end
 

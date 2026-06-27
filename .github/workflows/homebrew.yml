@@ -47,9 +47,28 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Validate Ruby syntax
-        run: ruby -c Formula/container-compose.rb
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_NAME}" in
+            snapshot/*)
+              ruby -c Formula/container-compose-snapshot.rb
+              ;;
+            *)
+              ruby -c Formula/container-compose.rb
+              ;;
+          esac
 
       - name: Inspect formula
+        shell: bash
         run: |
+          set -euo pipefail
           brew tap stephenlclarke/container-compose "${GITHUB_WORKSPACE}"
-          brew info --formula stephenlclarke/container-compose/container-compose
+          case "${GITHUB_REF_NAME}" in
+            snapshot/*)
+              brew info --formula stephenlclarke/container-compose/container-compose-snapshot
+              ;;
+            *)
+              brew info --formula stephenlclarke/container-compose/container-compose
+              ;;
+          esac
