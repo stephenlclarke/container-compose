@@ -44,7 +44,7 @@ jobs:
   analyze:
     name: Analyze
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 130
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v7
@@ -90,19 +90,41 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            container-compose/.build/*-apple-macosx/debug
-            container-compose/.build/debug
-            container-compose/.build/debug.yaml
-            container-compose/.build/build.db
-          key: ${{ runner.os }}-${{ runner.arch }}-macos26-codeql-swiftpm-debug-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
+            container-compose/.build
+            container-compose/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v2-${{ steps.swiftpm-cache.outputs.fingerprint }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-macos26-codeql-swiftpm-debug-v1-
+            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v2-
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Prebuild Swift dependencies for CodeQL
+        timeout-minutes: 90
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          targets=(
+            ArgumentParser
+            Logging
+            Containerization
+            ContainerizationExtras
+            ContainerizationOCI
+            ContainerPersistence
+            ContainerResource
+            ContainerAPIClient
+            ContainerBuild
+            ContainerCommands
+            ContainerLog
+          )
+          for target in "${targets[@]}"; do
+            swift build --disable-automatic-resolution --target "$target"
+          done
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -111,8 +133,13 @@ jobs:
           build-mode: manual
           config-file: container-compose/.github/codeql/codeql-config.yml
 
+      - name: Mark Compose Swift sources for CodeQL trace
+        shell: bash
+        working-directory: container-compose
+        run: find Sources -name '*.swift' -print0 | xargs -0 touch
+
       - name: Build Swift plugin for CodeQL
-        timeout-minutes: 60
+        timeout-minutes: 30
         run: swift build --disable-automatic-resolution --product compose
         working-directory: container-compose
 
