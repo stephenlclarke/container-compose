@@ -193,7 +193,7 @@ enum ComposeCLIHelp {
         "config": .partiallySupported,
         "cp": .supported,
         "create": .partiallySupported,
-        "down": .partiallySupported,
+        "down": .supported,
         "events": .supported,
         "exec": .partiallySupported,
         "export": .supported,

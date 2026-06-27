@@ -604,12 +604,20 @@ public struct ComposeScaleOptions {
 
 /// Options for `compose down`.
 public struct ComposeDownOptions {
+    public var services: [String]
     public var volumes: Bool
     public var removeOrphans: Bool
     public var timeout: Int?
     public var rmi: String?
 
-    public init(volumes: Bool = false, removeOrphans: Bool = false, timeout: Int? = nil, rmi: String? = nil) {
+    public init(
+        services: [String] = [],
+        volumes: Bool = false,
+        removeOrphans: Bool = false,
+        timeout: Int? = nil,
+        rmi: String? = nil
+    ) {
+        self.services = services
         self.volumes = volumes
         self.removeOrphans = removeOrphans
         self.timeout = timeout
@@ -1840,7 +1848,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     public func down(project: ComposeProject, options down: ComposeDownOptions) async throws {
         try validateTimeoutSeconds(down.timeout, command: "down")
         let imageRemovalPolicy = try downImageRemovalPolicy(down.rmi)
-        let services = try orderedServices(project: project, selected: [])
+        let projectWideCleanup = down.services.isEmpty
+        let services = try projectWideCleanup
+            ? orderedServices(project: project, selected: [])
+            : selectedServices(project: project, selected: down.services)
         let declaredContainers = try declaredServiceContainerNames(project: project, scaleOverrides: [:])
         let targets = try await serviceContainerTargets(project: project, services: services)
         for service in services.reversed() {
@@ -1861,20 +1872,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             try await removeRemainingProjectContainers(project: project, excluding: declaredContainers, timeout: down.timeout)
         }
 
-        if !options.dryRun {
+        if projectWideCleanup, !options.dryRun {
             try removeMaterializedConfigSecrets(
                 project: project,
                 root: options.materializedConfigSecretDirectory
             )
         }
 
-        for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
-            let runtimeName = networkRuntimeName(project: project, composeName: name, network: network)
-            let args = ["network", "delete", runtimeName]
-            if options.dryRun {
-                try await runContainer(args, check: false)
-            } else {
-                try await resourceManager.deleteNetwork(id: runtimeName)
+        if projectWideCleanup {
+            for (name, network) in project.networks.sorted(by: { $0.key < $1.key }) where network.external != true {
+                let runtimeName = networkRuntimeName(project: project, composeName: name, network: network)
+                let args = ["network", "delete", runtimeName]
+                if options.dryRun {
+                    try await runContainer(args, check: false)
+                } else {
+                    try await resourceManager.deleteNetwork(id: runtimeName)
+                }
             }
         }
 
@@ -1887,18 +1900,20 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     try await resourceManager.deleteVolume(name: volume)
                 }
             }
-            for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
-                let runtimeName = volumeRuntimeName(project: project, composeName: name, volume: volume)
-                let args = ["volume", "delete", runtimeName]
-                if options.dryRun {
-                    try await runContainer(args, check: false)
-                } else {
-                    try await resourceManager.deleteVolume(name: runtimeName)
+            if projectWideCleanup {
+                for (name, volume) in project.volumes.sorted(by: { $0.key < $1.key }) where volume.external != true {
+                    let runtimeName = volumeRuntimeName(project: project, composeName: name, volume: volume)
+                    let args = ["volume", "delete", runtimeName]
+                    if options.dryRun {
+                        try await runContainer(args, check: false)
+                    } else {
+                        try await resourceManager.deleteVolume(name: runtimeName)
+                    }
                 }
             }
         }
 
-        try await removeImages(project: project, policy: imageRemovalPolicy)
+        try await removeImages(project: project, services: services, policy: imageRemovalPolicy)
     }
 
     /// Builds images for services that declare a build section.
@@ -7004,8 +7019,8 @@ private extension ComposeOrchestrator {
     }
 
     /// Removes images referenced by services according to `down --rmi`.
-    func removeImages(project: ComposeProject, policy: DownImageRemovalPolicy) async throws {
-        for image in removableDownImages(project: project, policy: policy) {
+    func removeImages(project: ComposeProject, services: [ComposeService], policy: DownImageRemovalPolicy) async throws {
+        for image in removableDownImages(project: project, services: services, policy: policy) {
             let args = ["image", "delete", "--force", image]
             if options.dryRun {
                 try await runContainer(args, check: false)
@@ -7016,15 +7031,15 @@ private extension ComposeOrchestrator {
     }
 
     /// Returns deterministic image references affected by `down --rmi`.
-    func removableDownImages(project: ComposeProject, policy: DownImageRemovalPolicy) -> [String] {
+    func removableDownImages(project: ComposeProject, services: [ComposeService], policy: DownImageRemovalPolicy) -> [String] {
         let images: [String]
         switch policy {
         case .none:
             images = []
         case .local:
-            images = project.services.values.compactMap { generatedBuildImage(project: project, service: $0) }
+            images = services.compactMap { generatedBuildImage(project: project, service: $0) }
         case .all:
-            images = project.services.values.compactMap { serviceImage(project: project, service: $0) }
+            images = services.compactMap { serviceImage(project: project, service: $0) }
         }
         return Array(Set(images)).sorted()
     }

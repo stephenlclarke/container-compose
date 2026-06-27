@@ -9298,6 +9298,53 @@ struct ComposeOrchestratorTests {
         #expect(resources.contains { $0.name.hasPrefix("demo_anon-api-2-") })
     }
 
+    @Test("down service selection preserves shared project resources")
+    func downServiceSelectionPreservesSharedProjectResources() async throws {
+        let runner = RecordingRunner()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.networks = ["default"]
+                    $0.volumes = [
+                        ComposeMount(type: "volume", target: "/scratch"),
+                    ]
+                },
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.networks = ["default"]
+                    $0.volumes = [
+                        ComposeMount(type: "volume", source: "data", target: "/var/lib/postgresql/data"),
+                    ]
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+            $0.volumes = ["data": ComposeVolume(name: "data")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            lifecycleManager: lifecycleManager,
+            resourceManager: resourceManager
+        ).down(project: project, options: ComposeDownOptions(services: ["api"], volumes: true))
+
+        #expect(runner.commands.isEmpty)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+        let resources = await resourceManager.requests
+        #expect(resources.count == 1)
+        if case .deleteVolume(let name) = resources[0] {
+            #expect(name.hasPrefix("demo_anon-"))
+        } else {
+            Issue.record("Expected selected down to remove only the selected service anonymous volume")
+        }
+    }
+
     @Test("down skips missing optional dependencies while cleaning resources")
     func downSkipsMissingOptionalDependenciesWhileCleaningResources() async throws {
         let runner = RecordingRunner(responses: [
@@ -9474,6 +9521,32 @@ struct ComposeOrchestratorTests {
             .delete(id: "demo-worker-1", force: false),
             .stop(id: "demo-web-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-web-1", force: false),
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
+    @Test("down service selection removes only selected service images")
+    func downServiceSelectionRemovesOnlySelectedServiceImages() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, imageManager: imageManager, lifecycleManager: lifecycleManager)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api:dev"),
+                "web": ComposeService(name: "web", image: "example/web:dev"),
+            ]
+        )
+
+        try await orchestrator.down(project: project, options: ComposeDownOptions(services: ["api"], rmi: "all"))
+
+        #expect(runner.commands.isEmpty)
+        #expect(await imageManager.requests == [
+            .delete(reference: "example/api:dev", force: true),
+        ])
+        #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-api-1", force: false),
         ])

@@ -751,13 +751,15 @@ struct Down: AsyncParsableCommand, ComposeProjectCommand {
     var timeout: Int?
     @Option(name: .customLong("rmi"), help: "Remove images used by services: local or all.")
     var rmi: String?
+    @Argument(help: "Optional service names to stop and remove.")
+    var services: [String] = []
 
     /// Stops containers and removes project-scoped resources.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().down(
             project: loadedProject,
-            options: ComposeDownOptions(volumes: volumes, removeOrphans: removeOrphans, timeout: timeout, rmi: rmi)
+            options: ComposeDownOptions(services: services, volumes: volumes, removeOrphans: removeOrphans, timeout: timeout, rmi: rmi)
         )
     }
 }

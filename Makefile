@@ -822,6 +822,10 @@ cli-smoke-built:
 	[[ "$$rm_force_volumes_output" == *"container volume delete demo_anon-"* ]]; \
 	down_compact_timeout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down -t12)"; \
 	[[ "$$down_compact_timeout_output" == *"container stop --time 12 demo-api-1"* ]]; \
+	down_service_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down api)"; \
+	[[ "$$down_service_output" == *"container stop demo-api-1"* ]]; \
+	[[ "$$down_service_output" != *"demo-db-1"* ]]; \
+	[[ "$$down_service_output" != *"container network delete"* ]]; \
 	down_rmi_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo down --rmi all)"; \
 	[[ "$$down_rmi_output" == *"container image delete --force alpine"* ]]; \
 	ps_quiet_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo ps -q)"; \
