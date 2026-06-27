@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-27 01:58 BST.
+Last updated: 2026-06-27 02:18 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -45,16 +45,16 @@ Current local validation:
 ```sh
 swift test --disable-automatic-resolution --filter 'resourceManagerMapsComposeResourcesToDirectAPIClient|resourceManagerSkipsDeletingMissingVolumes|resourceManagerIgnoresVolumesRemovedAfterPreflight|resourceManagerSurfacesVolumeDeleteFailures|resourceManagerSkipsDeletingMissingNetworks|resourceAPIClientForwardsConfiguredOperations|downSurfacesVolumeRemovalFailures'
 swift test --disable-automatic-resolution --filter 'createCreatesResourcesAndServiceContainersWithoutStartingThem|upDirectImagePullEmitsProgressBeforeRun|upQuietPullSuppressesDirectImagePullProgress|startUsesDirectRuntimeAPIAndDryRunPreservesCommandOutput|runDirectImagePullEmitsProgressBeforeOneOffContainer|runQuietPullSuppressesDirectImagePullProgress|ComposeProgressTests'
-swift test --disable-automatic-resolution --filter 'cpMapsServiceReferencesInBothCopyDirections|cpRejectsLocalToLocalCopies|cpRejectsEmptyServicePaths'
+swift test --disable-automatic-resolution --filter 'cpRejectsStdioTarStreamingOperands|cpRejectsEmptyServicePaths|cpMapsServiceReferencesInBothCopyDirections'
 make check
 make ci
 make cli-smoke-built
 swift build --disable-automatic-resolution --product compose
-npx --yes markdownlint-cli README.md PLAN.md STATUS.md
+npx --yes markdownlint-cli README.md PLAN.md STATUS.md docs/upstream/apple-container/copy/ISSUE-copy-stdio-archive-streams.md
 git diff --check
 ```
 
-All passed locally after extending progress feedback from project loading and image work into non-interactive runtime create/start/run handoffs, then tightening `compose cp` so local-to-local operands fail with Docker Compose's `unknown copy direction` behavior, local paths containing colons still work when paired with a service target, and service-side relative paths such as `api:tmp/file` normalize to container-root paths before reaching the Apple runtime. Foreground interactive process replacement remains unwrapped so shells and attached sessions keep direct terminal control. The final `make ci` rerun after the CLI smoke update ran 676 Swift tests, reported Swift coverage at 89.97%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`, plus the Apple `containerization` 0.35 package-version update through `c34d340` while retaining Stephen's `containerization` support branch; compose still builds against the refreshed fork ref.
+All passed locally after extending progress feedback from project loading and image work into non-interactive runtime create/start/run handoffs, then tightening `compose cp` so local-to-local operands fail with Docker Compose's `unknown copy direction` behavior, local paths containing colons still work when paired with a service target, service-side relative paths such as `api:tmp/file` normalize to container-root paths before reaching the Apple runtime, and `-` stdin/stdout tar-stream operands fail early with a precise Apple copy-stream API gap instead of being treated as literal local filenames. Foreground interactive process replacement remains unwrapped so shells and attached sessions keep direct terminal control. The latest full `make ci` run passed for the `cp -` handoff slice. The previous full `make ci` with captured counts ran 676 Swift tests, reported Swift coverage at 89.97%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`, plus the Apple `containerization` 0.35 package-version update through `c34d340` while retaining Stephen's `containerization` support branch; compose still builds against the refreshed fork ref.
 
 ## Open Blockers
 
@@ -64,7 +64,7 @@ All passed locally after extending progress feedback from project loading and im
 ## Open Follow-ups
 
 - Continue the strict cleanup review around remaining orphan/resource edge cases; missing containers, missing networks, and missing volumes are now covered by tests and live smoke.
-- Audit slow startup, normalization, image pull/build, and runtime handoff paths for immediate first-frame progress feedback before subprocesses or runtime calls can appear to hang, using Docker Compose-style `--progress` policies and a compact spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner).
+- Audit slow startup, normalization, image pull/build, and runtime handoff paths for immediate first-frame progress feedback before subprocesses or runtime calls can appear to hang. In particular, `container-compose` can sit silent for too long when it starts running or building; add Docker Compose-style animated status output, or a compact Swift/Go spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner), before the first expensive call begins.
 
 ## Next Step
 

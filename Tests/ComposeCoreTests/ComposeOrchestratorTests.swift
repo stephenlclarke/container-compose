@@ -14813,6 +14813,31 @@ struct ComposeOrchestratorTests {
         #expect(await copier.requests.isEmpty)
     }
 
+    @Test("cp rejects stdio tar streaming operands")
+    func cpRejectsStdioTarStreamingOperands() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier)
+
+        for arguments in [["-", "api:/tmp"], ["api:/tmp/report.txt", "-"]] {
+            do {
+                try await orchestrator.copy(project: project, arguments: arguments)
+                Issue.record("Expected stdio tar stream cp to fail")
+            } catch let error as ComposeError {
+                #expect(error == .unsupported("cp '-': tar archive streaming requires an apple/container copy stream API"))
+            }
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests.isEmpty)
+    }
+
     @Test("cp follow link passes source symlink option to direct copy APIs")
     func cpFollowLinkPassesSourceSymlinkOptionToDirectCopyAPIs() async throws {
         let runner = RecordingRunner()

@@ -755,6 +755,10 @@ cli-smoke-built:
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_relative_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:tmp/file .)"; \
 	[[ "$$cp_relative_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
+	cp_stdin_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp - api:/tmp 2>&1 || true)"; \
+	[[ "$$cp_stdin_output" == *"unsupported compose feature: cp '-': tar archive streaming requires an apple/container copy stream API"* ]]; \
+	cp_stdout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file - 2>&1 || true)"; \
+	[[ "$$cp_stdout_output" == *"unsupported compose feature: cp '-': tar archive streaming requires an apple/container copy stream API"* ]]; \
 	cp_index_one_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 1 api:/tmp/file .)"; \
 	[[ "$$cp_index_one_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_archive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -a api:/tmp/file .)"; \

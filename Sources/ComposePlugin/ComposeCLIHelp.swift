@@ -1076,10 +1076,11 @@ enum ComposeCLIHelp {
               --volumes                 Print the volume names, one per line.
         """,
         "cp": """
-        Usage:  container compose cp [OPTIONS] SERVICE:SRC_PATH DEST_PATH|-
-                container compose cp [OPTIONS] SRC_PATH|- SERVICE:DEST_PATH
+        Usage:  container compose cp [OPTIONS] SERVICE:SRC_PATH DEST_PATH
+                container compose cp [OPTIONS] SRC_PATH SERVICE:DEST_PATH
 
         Copy files/folders between a service container and the local filesystem
+        Streaming tar archives with '-' is not supported until apple/container exposes copy stream APIs.
 
         Options:
               --all           Include containers created by the run command

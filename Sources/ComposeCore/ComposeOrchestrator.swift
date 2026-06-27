@@ -2923,6 +2923,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         guard copy.arguments.count == 2 else {
             throw ComposeError.invalidProject("cp requires exactly source and destination")
         }
+        if copy.arguments.contains("-") {
+            throw ComposeError.unsupported("cp '-': tar archive streaming requires an apple/container copy stream API")
+        }
 
         let source = try await copyEndpoint(
             copy.arguments[0],
