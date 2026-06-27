@@ -44,7 +44,7 @@ jobs:
   analyze:
     name: Analyze
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v7
@@ -112,7 +112,7 @@ jobs:
           config-file: container-compose/.github/codeql/codeql-config.yml
 
       - name: Build Swift plugin for CodeQL
-        timeout-minutes: 45
+        timeout-minutes: 60
         run: swift build --disable-automatic-resolution --product compose
         working-directory: container-compose
 
