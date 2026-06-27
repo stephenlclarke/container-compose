@@ -2966,7 +2966,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 transferOptions: transferOptions
             )
         case (.local, .local):
-            try await runContainer(copyCommandArguments(source: source.runtimeArgument, destination: destination.runtimeArgument, options: copy))
+            throw ComposeError.invalidProject("unknown copy direction")
         }
     }
 

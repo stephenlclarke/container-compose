@@ -14741,21 +14741,44 @@ struct ComposeOrchestratorTests {
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "./report.txt"])
         try await orchestrator.copy(project: project, arguments: ["./seed.sql", "db:/docker-entrypoint-initdb.d/seed.sql"])
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "db:/restore/report.txt"])
-        try await orchestrator.copy(project: project, arguments: ["./local:file.txt", "./out:file.txt"])
+        try await orchestrator.copy(project: project, arguments: ["./local:file.txt", "db:/restore/local.txt"])
 
-        #expect(runner.commands.map(\.arguments) == [
-            ["container", "cp", "./local:file.txt", "./out:file.txt"],
-        ])
+        #expect(runner.commands.isEmpty)
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
             .into(id: "custom-db", source: "./seed.sql", destination: "/docker-entrypoint-initdb.d/seed.sql"),
             .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "custom-db", destination: "/restore/report.txt"),
+            .into(id: "custom-db", source: "./local:file.txt", destination: "/restore/local.txt"),
         ])
         #expect(await copier.options == [
             ContainerCopyTransferOptions(),
             ContainerCopyTransferOptions(),
             ContainerCopyTransferOptions(),
+            ContainerCopyTransferOptions(),
         ])
+    }
+
+    @Test("cp rejects local to local copies")
+    func cpRejectsLocalToLocalCopies() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner, copier: copier)
+                .copy(project: project, arguments: ["./local:file.txt", "./out:file.txt"])
+            Issue.record("Expected local-to-local cp to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("unknown copy direction"))
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await copier.requests.isEmpty)
     }
 
     @Test("cp follow link passes source symlink option to direct copy APIs")

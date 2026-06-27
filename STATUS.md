@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-27 01:26 BST.
+Last updated: 2026-06-27 01:36 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -45,6 +45,7 @@ Current local validation:
 ```sh
 swift test --disable-automatic-resolution --filter 'resourceManagerMapsComposeResourcesToDirectAPIClient|resourceManagerSkipsDeletingMissingVolumes|resourceManagerIgnoresVolumesRemovedAfterPreflight|resourceManagerSurfacesVolumeDeleteFailures|resourceManagerSkipsDeletingMissingNetworks|resourceAPIClientForwardsConfiguredOperations|downSurfacesVolumeRemovalFailures'
 swift test --disable-automatic-resolution --filter 'createCreatesResourcesAndServiceContainersWithoutStartingThem|upDirectImagePullEmitsProgressBeforeRun|upQuietPullSuppressesDirectImagePullProgress|startUsesDirectRuntimeAPIAndDryRunPreservesCommandOutput|runDirectImagePullEmitsProgressBeforeOneOffContainer|runQuietPullSuppressesDirectImagePullProgress|ComposeProgressTests'
+swift test --disable-automatic-resolution --filter 'cpMapsServiceReferencesInBothCopyDirections|cpRejectsLocalToLocalCopies|cpFollowLinkPassesSourceSymlinkOptionToDirectCopyAPIs|cpArchivePassesOwnershipPreservationOptionToDirectCopyAPIs|cpDryRunEmitsComposeRuntimeOperation|cpDryRunRendersFollowLinkFlag|cpDryRunRendersArchiveFlag'
 make check
 make ci
 swift build --disable-automatic-resolution --product compose
@@ -52,7 +53,7 @@ npx --yes markdownlint-cli README.md PLAN.md STATUS.md
 git diff --check
 ```
 
-All passed locally after extending progress feedback from project loading and image work into non-interactive runtime create/start/run handoffs. Foreground interactive process replacement remains unwrapped so shells and attached sessions keep direct terminal control. `make ci` ran 674 Swift tests, reported Swift coverage at 90.02%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`, plus the Apple `containerization` 0.35 package-version update through `c34d340` while retaining Stephen's `containerization` support branch; compose still builds against the refreshed fork ref.
+All passed locally after extending progress feedback from project loading and image work into non-interactive runtime create/start/run handoffs, then tightening `compose cp` so local-to-local operands fail with Docker Compose's `unknown copy direction` behavior while local paths containing colons still work when paired with a service target. Foreground interactive process replacement remains unwrapped so shells and attached sessions keep direct terminal control. `make ci` ran 675 Swift tests, reported Swift coverage at 89.96%, reported Go normalizer coverage at 92.39%, and built the Go normalizer with `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"`. The current `container` pin includes Apple upstream test and CI fixture updates through `be3b1f2`, plus the Apple `containerization` 0.35 package-version update through `c34d340` while retaining Stephen's `containerization` support branch; compose still builds against the refreshed fork ref.
 
 ## Open Blockers
 
