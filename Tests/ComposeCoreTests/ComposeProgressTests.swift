@@ -37,6 +37,19 @@ struct ComposeProgressTests {
     }
 
     @Test
+    func `plain progress emits pending row before operation starts`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .plain,
+            emitData: { emitted.append($0) },
+        )
+
+        try await reporter.activity("Loading Compose model") {
+            #expect(emitted.string == "⠋ Loading Compose model\n")
+        }
+    }
+
+    @Test
     func `plain progress emits failure row before rethrowing`() async throws {
         let emitted = LockedDataRecorder()
         let reporter = ComposeProgressReporter(
@@ -102,6 +115,22 @@ struct ComposeProgressTests {
             ["id": "container-compose", "status": "running", "text": "Loading Compose model"],
             ["id": "container-compose", "status": "done", "text": "Loading Compose model"],
         ])
+    }
+
+    @Test
+    func `json progress emits running event before operation starts`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .json,
+            emitData: { emitted.append($0) },
+        )
+
+        try await reporter.activity("Loading Compose model") {
+            let events = try emitted.jsonLines()
+            #expect(events == [
+                ["id": "container-compose", "status": "running", "text": "Loading Compose model"],
+            ])
+        }
     }
 
     @Test

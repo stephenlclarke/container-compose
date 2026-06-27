@@ -309,15 +309,41 @@ struct GlobalOptions: ParsableArguments {
 
     /// Loads a Compose project while reporting normalizer progress.
     func loadProject(options: ComposeOptions) async throws -> ComposeProject {
-        try await progressReporter().activity("Loading Compose model") {
-            try await ComposeNormalizer().normalize(options: options)
+        try await loadProject(
+            options: options,
+            progress: progressReporter(),
+            normalize: { try await ComposeNormalizer().normalize(options: $0) }
+        )
+    }
+
+    /// Loads a Compose project through an injectable normalizer operation.
+    func loadProject(
+        options: ComposeOptions,
+        progress: ComposeProgressReporter,
+        normalize: (ComposeOptions) async throws -> ComposeProject
+    ) async throws -> ComposeProject {
+        try await progress.activity("Loading Compose model") {
+            try await normalize(options)
         }
     }
 
     /// Loads Compose variables while reporting normalizer progress.
     func loadVariables(options: ComposeOptions) async throws -> [ComposeVariable] {
-        try await progressReporter().activity("Loading Compose variables") {
-            try await ComposeNormalizer().variables(options: options)
+        try await loadVariables(
+            options: options,
+            progress: progressReporter(),
+            variables: { try await ComposeNormalizer().variables(options: $0) }
+        )
+    }
+
+    /// Loads Compose variables through an injectable normalizer operation.
+    func loadVariables(
+        options: ComposeOptions,
+        progress: ComposeProgressReporter,
+        variables: (ComposeOptions) async throws -> [ComposeVariable]
+    ) async throws -> [ComposeVariable] {
+        try await progress.activity("Loading Compose variables") {
+            try await variables(options)
         }
     }
 

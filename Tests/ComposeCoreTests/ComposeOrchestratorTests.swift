@@ -241,6 +241,31 @@ private final class InlineDockerfileRunner: CommandRunning, @unchecked Sendable 
     }
 }
 
+private final class ProgressAssertingRunner: CommandRunning, @unchecked Sendable {
+    private let onRun: @Sendable ([String]) -> Void
+    private(set) var commands: [[String]] = []
+
+    init(onRun: @escaping @Sendable ([String]) -> Void) {
+        self.onRun = onRun
+    }
+
+    func run(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?,
+        io: CommandIO
+    ) async throws -> CommandResult {
+        onRun(arguments)
+        _ = executable
+        _ = workingDirectory
+        _ = environment
+        _ = io
+        commands.append(arguments)
+        return CommandResult(status: 0, stdout: "", stderr: "")
+    }
+}
+
 private func orchestratorDependencies(
     configure: (inout ComposeOrchestratorDependencies) -> Void
 ) -> ComposeOrchestratorDependencies {
@@ -3516,6 +3541,42 @@ struct ComposeOrchestratorTests {
         ✔︎ Starting api
 
         """)
+        #expect(await imageManager.requests == [
+            .pull("example/api"),
+            .healthCheck(reference: "example/api", platform: nil),
+        ])
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1"]))
+    }
+
+    @Test("up direct image pull emits first progress row before pull starts")
+    func upDirectImagePullEmitsFirstProgressRowBeforePullStarts() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let progress = LockedStringRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager(onPullImage: { reference in
+            #expect(reference == "example/api")
+            #expect(progress.snapshot == ["⠋ Pulling image example/api\n"])
+        })
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": ComposeService(name: "api", image: "example/api")]
+        )
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.imageManager = imageManager
+            }
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.pullPolicy = "always"
+        })
+
+        #expect(progress.snapshot.joined().hasPrefix("⠋ Pulling image example/api\n"))
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -8846,6 +8907,38 @@ struct ComposeOrchestratorTests {
         let progress = ComposeProgressReporter(
             style: .plain,
             emitData: { emitted.append(String(bytes: $0, encoding: .utf8) ?? "") }
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(progress: progress)
+        ).build(project: project, services: ["api"], noCache: false)
+
+        #expect(runner.commands.count == 1)
+        #expect(emitted.snapshot == [
+            "⠋ Building api\n",
+            "✔︎ Building api\n",
+        ])
+    }
+
+    @Test("build emits first progress row before container build starts")
+    func buildEmitsFirstProgressRowBeforeContainerBuildStarts() async throws {
+        let emitted = LockedStringRecorder()
+        let runner = ProgressAssertingRunner { arguments in
+            #expect(arguments.containsSequence(["container", "build"]))
+            #expect(emitted.snapshot == ["⠋ Building api\n"])
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+        let progress = ComposeProgressReporter(
+            style: .plain,
+            emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) }
         )
 
         try await ComposeOrchestrator(
@@ -20997,6 +21090,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private let pullFailures: Set<String>
     private let pullMissingFailures: Set<String>
+    private let onPullImage: @Sendable (String) async -> Void
     private var pushOutputs: [String: String]
     private let pushFailures: Set<String>
     private var deleteOutputs: [String: String?]
@@ -21008,6 +21102,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
         pullFailures: Set<String> = [],
         pullMissingFailures: Set<String> = [],
+        onPullImage: @escaping @Sendable (String) async -> Void = { _ in },
         pushOutputs: [String: String] = [:],
         pushFailures: Set<String> = [],
         deleteOutputs: [String: String?] = [:],
@@ -21021,6 +21116,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         self.healthChecks = mappedHealthChecks
         self.pullFailures = pullFailures
         self.pullMissingFailures = pullMissingFailures
+        self.onPullImage = onPullImage
         self.pushOutputs = pushOutputs
         self.pushFailures = pushFailures
         self.deleteOutputs = deleteOutputs
@@ -21051,6 +21147,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         if let failure {
             throw failure
         }
+        await onPullImage(reference)
         storage.append(.pull(reference))
         if pullFailures.contains(reference) {
             throw ComposeError.invalidProject("pull failed: \(reference)")

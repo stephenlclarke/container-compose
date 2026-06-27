@@ -27,7 +27,7 @@ Keep the prebuilt install path healthy for both lanes:
 - Package targets always include a release-built Go normalizer, even when the Swift plugin is a debug snapshot build.
 - CI accepts classified SwiftPM signal-pass output only when the helper proves tests passed and no failure markers were emitted.
 - Homebrew advisory jobs trust only the specific taps required by the formulas.
-- Keep auditing startup, normalization, image pull/build, and runtime handoff paths so every slow phase emits prompt stderr progress before the expensive work starts, using Docker Compose-style `--progress` policies and a compact spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner). Treat this as incomplete until focused tests prove a visible first frame is emitted before Compose model loading, image build, image pull, or runtime handoff waits can appear to hang.
+- Keep auditing startup, normalization, image pull/build, and runtime handoff paths so every slow phase emits prompt stderr progress before the expensive work starts, using Docker Compose-style `--progress` policies and a compact spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner). Current focused coverage proves the first visible status row is emitted before Compose model loading, variable loading, image build, image pull, and non-interactive runtime handoff waits can begin.
 - Structured `--progress json` output is available for Compose-owned phases; underlying Apple build subprocess output remains governed by the runtime command being invoked.
 
 ## Upstreamable Runtime Slices
