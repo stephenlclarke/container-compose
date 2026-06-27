@@ -805,6 +805,7 @@ struct ComposeOrchestratorTests {
     @Test("up maps list entrypoint to executable and command prefix")
     func upMapsListEntrypointToExecutableAndCommandPrefix() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
         let project = composeProject(
             name: "demo",
             services: [
@@ -815,7 +816,8 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager)
+            .up(project: project, options: ComposeUpOptions())
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--entrypoint", "/bin/sh"]))
