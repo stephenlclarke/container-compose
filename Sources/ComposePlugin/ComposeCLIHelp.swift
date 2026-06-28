@@ -283,7 +283,7 @@ enum ComposeCLIHelp {
             "--push": .supported,
             "--quiet": .supported,
             "--sbom": .partiallySupported,
-            "--ssh": .notSupported,
+            "--ssh": .partiallySupported,
             "--with-dependencies": .supported,
         ],
         "commit": [

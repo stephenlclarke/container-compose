@@ -235,6 +235,7 @@ type normalizedBuild struct {
 	CacheTo           []string                `json:"cacheTo,omitempty"`
 	Labels            map[string]string       `json:"labels,omitempty"`
 	Secrets           []normalizedBuildSecret `json:"secrets,omitempty"`
+	SSH               []string                `json:"ssh,omitempty"`
 	Target            string                  `json:"target,omitempty"`
 	NoCache           bool                    `json:"noCache,omitempty"`
 	Pull              bool                    `json:"pull,omitempty"`
@@ -734,6 +735,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 			CacheTo:           append([]string(nil), service.Build.CacheTo...),
 			Labels:            mapLabels(service.Build.Labels),
 			Secrets:           buildSecrets,
+			SSH:               buildSSHValues(service.Build.SSH),
 			Target:            service.Build.Target,
 			NoCache:           service.Build.NoCache,
 			Pull:              service.Build.Pull,
@@ -1506,9 +1508,29 @@ func unsupportedBuildFields(build *types.BuildConfig, unsupportedSecrets bool) [
 	appendUnsupportedBuildField(&fields, "sbom", build.SBOM != "")
 	appendUnsupportedBuildField(&fields, "secrets", unsupportedSecrets)
 	appendUnsupportedBuildField(&fields, "shm_size", unitBytesValue(build.ShmSize) != "")
-	appendUnsupportedBuildField(&fields, "ssh", len(build.SSH) > 0)
 	appendUnsupportedBuildField(&fields, "ulimits", len(build.Ulimits) > 0)
 	return fields
+}
+
+// buildSSHValues encodes Compose build.ssh entries as container build --ssh values.
+func buildSSHValues(ssh types.SSHConfig) []string {
+	if len(ssh) == 0 {
+		return nil
+	}
+	values := make([]string, 0, len(ssh))
+	for _, key := range ssh {
+		id := strings.TrimSpace(key.ID)
+		if id == "" {
+			id = "default"
+		}
+		path := strings.TrimSpace(key.Path)
+		if path == "" {
+			values = append(values, id)
+			continue
+		}
+		values = append(values, fmt.Sprintf("%s=%s", id, path))
+	}
+	return values
 }
 
 // appendUnsupportedBuildField records one unsupported build field when present.

@@ -653,10 +653,12 @@ public struct ComposeBuild: Codable, Equatable {
     public struct Metadata: Equatable {
         public var labels: [String: String]?
         public var secrets: [ComposeBuildSecret]?
+        public var ssh: [String]?
 
-        public init(labels: [String: String]? = nil, secrets: [ComposeBuildSecret]? = nil) {
+        public init(labels: [String: String]? = nil, secrets: [ComposeBuildSecret]? = nil, ssh: [String]? = nil) {
             self.labels = labels
             self.secrets = secrets
+            self.ssh = ssh
         }
     }
 
@@ -694,6 +696,7 @@ public struct ComposeBuild: Codable, Equatable {
     public var cacheTo: [String]?
     public var labels: [String: String]?
     public var secrets: [ComposeBuildSecret]?
+    public var ssh: [String]?
     public var target: String?
     public var noCache: Bool?
     public var pull: Bool?
@@ -718,6 +721,7 @@ public struct ComposeBuild: Codable, Equatable {
         self.cacheTo = cache.to
         self.labels = metadata.labels
         self.secrets = metadata.secrets
+        self.ssh = metadata.ssh
         self.target = options.target
         self.noCache = options.noCache
         self.pull = options.pull

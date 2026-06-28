@@ -15,6 +15,11 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 import Testing
 
@@ -648,6 +653,8 @@ struct ComposeRuntimeSmokeTests {
                 FILE_ARG: "1"
               tags:
                 - example/api:dev
+              ssh:
+                - default
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
@@ -657,7 +664,7 @@ struct ComposeRuntimeSmokeTests {
                 "--ansi", "never",
                 "--project-name", runtimeProjectName(),
                 "--file", composeFile.path,
-                "build", "--print", "--provenance=false", "--sbom=false", "--push", "--build-arg", "CLI_ARG=2", "api",
+                "build", "--print", "--provenance=false", "--sbom=false", "--push", "--build-arg", "CLI_ARG=2", "--ssh", "git=/tmp/git.sock", "api",
             ],
             timeout: 30
         )
@@ -667,6 +674,7 @@ struct ComposeRuntimeSmokeTests {
         #expect((api["context"] as? String)?.hasSuffix("/api") == true)
         #expect((api["dockerfile"] as? String)?.hasSuffix("/api/Dockerfile") == true)
         #expect(api["tags"] as? [String] == ["example/api:dev", "example/api:latest"])
+        #expect(api["ssh"] as? [String] == ["default", "git=/tmp/git.sock"])
         #expect(api["output"] as? [String] == ["type=registry"])
         let arguments = try #require(api["args"] as? [String: String])
         #expect(arguments["FILE_ARG"] == "1")
@@ -685,6 +693,66 @@ struct ComposeRuntimeSmokeTests {
         )
 
         #expect(enabled.stderr.contains("unsupported compose feature: build --provenance"))
+    }
+
+    @Test("runtime build forwards default SSH from compose file and CLI")
+    func runtimeBuildForwardsDefaultSSHFromComposeFileAndCLI() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
+        try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        try """
+        FROM ghcr.io/linuxcontainers/alpine:3.20
+        RUN --mount=type=ssh test -S "$SSH_AUTH_SOCK"
+        """.write(to: apiDirectory.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
+
+        let imageTag = UUID().uuidString
+        let imageName = "registry.local/compose-ssh:\(imageTag)"
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: \(imageName)
+            build:
+              context: ./api
+              ssh:
+                - default
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let socket = try FakeSSHAgentSocket()
+        defer {
+            socket.close()
+        }
+
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        defer {
+            _ = try? runProcess(containerBinary, ["image", "delete", imageName], timeout: 30)
+        }
+
+        try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", runtimeProjectName(),
+                "--file", composeFile.path,
+                "build", "--ssh", "default", "api",
+            ],
+            timeout: 120,
+            environment: ["SSH_AUTH_SOCK": socket.path]
+        )
+
+        let inspect = try runProcess(containerBinary, ["image", "inspect", imageName], timeout: 30)
+        #expect(inspect.stdout.contains(imageTag))
     }
 }
 
@@ -738,6 +806,73 @@ private struct RuntimeProcessResult {
     var combined: String
 }
 
+private final class FakeSSHAgentSocket {
+    let path: String
+    private let descriptor: Int32
+    private var acceptThread: Thread?
+
+    init() throws {
+        path = "/tmp/cc-ssh-\(UUID().uuidString.prefix(8)).sock"
+        try? FileManager.default.removeItem(atPath: path)
+        descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard descriptor >= 0 else {
+            throw ComposeError.commandFailed(command: "socket", status: Int32(errno), stderr: "socket() failed")
+        }
+
+        var address = sockaddr_un()
+#if canImport(Darwin)
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+#endif
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { bytes in
+            path.withCString { cString in
+                bytes.copyMemory(from: UnsafeRawBufferPointer(start: cString, count: path.utf8.count + 1))
+            }
+        }
+        let bindResult = withUnsafePointer(to: address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { rebound in
+                bind(descriptor, rebound, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard bindResult == 0 else {
+            closeFileDescriptor(descriptor)
+            throw ComposeError.commandFailed(command: "bind", status: Int32(errno), stderr: "bind() failed")
+        }
+        guard listen(descriptor, 5) == 0 else {
+            closeFileDescriptor(descriptor)
+            throw ComposeError.commandFailed(command: "listen", status: Int32(errno), stderr: "listen() failed")
+        }
+        guard FileManager.default.fileExists(atPath: path) else {
+            closeFileDescriptor(descriptor)
+            throw ComposeError.commandFailed(command: "bind", status: Int32(ENOENT), stderr: "socket path was not created")
+        }
+
+        acceptThread = Thread { [descriptor] in
+            while true {
+                let client = accept(descriptor, nil, nil)
+                if client < 0 {
+                    break
+                }
+                closeFileDescriptor(client)
+            }
+        }
+        acceptThread?.start()
+    }
+
+    func close() {
+        closeFileDescriptor(descriptor)
+        try? FileManager.default.removeItem(atPath: path)
+    }
+}
+
+private func closeFileDescriptor(_ descriptor: Int32) {
+#if canImport(Darwin)
+    Darwin.close(descriptor)
+#elseif canImport(Glibc)
+    Glibc.close(descriptor)
+#endif
+}
+
 private final class OutputAccumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var data = Data()
@@ -765,7 +900,8 @@ private func runProcess(
     _ arguments: [String],
     timeout: TimeInterval,
     expectedStatus: Int32 = 0,
-    mergeOutputForOrdering: Bool = false
+    mergeOutputForOrdering: Bool = false,
+    environment: [String: String] = [:]
 ) throws -> RuntimeProcessResult {
     let process = Process()
     let command = [executable] + arguments
@@ -781,6 +917,13 @@ private func runProcess(
     let stderr = mergeOutputForOrdering ? stdout : Pipe()
     process.standardOutput = stdout
     process.standardError = stderr
+    if !environment.isEmpty {
+        var processEnvironment = ProcessInfo.processInfo.environment
+        for (key, value) in environment {
+            processEnvironment[key] = value
+        }
+        process.environment = processEnvironment
+    }
 
     let stdoutBuffer = OutputAccumulator()
     let stderrBuffer = OutputAccumulator()

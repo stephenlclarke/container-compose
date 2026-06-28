@@ -839,8 +839,8 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
     var quiet = false
     @Option(name: .customLong("sbom"), help: "Add a SBOM attestation.")
     var sbom: String?
-    @Option(name: .customLong("ssh"), help: "Set SSH authentications used when building service images.")
-    var ssh: String?
+    @Option(name: .customLong("ssh"), help: "Set SSH authentications used when building service images. May be repeated.")
+    var ssh: [String] = []
     @Flag(name: .customLong("with-dependencies"), help: "Also build service dependencies.")
     var withDependencies = false
     @Argument(help: "Optional services to build.")
@@ -853,7 +853,6 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
             check ? "--check" : nil,
             unsupportedAttestationOption("--provenance", value: provenance),
             unsupportedAttestationOption("--sbom", value: sbom),
-            ssh != nil ? "--ssh" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("build \(first)")
@@ -871,6 +870,7 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
                 $0.pull = pull
                 $0.push = push
                 $0.quiet = quiet
+                $0.ssh = ssh
                 $0.withDependencies = withDependencies
             }
         )

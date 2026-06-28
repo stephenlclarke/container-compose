@@ -9665,7 +9665,10 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api:latest") {
                     $0.build = ComposeBuild(
                         context: "api",
-                        args: ["FILE_ARG": "1"]
+                        args: ["FILE_ARG": "1"],
+                        metadata: ComposeBuild.Metadata(
+                            ssh: ["default", "git=/tmp/git.sock"]
+                        )
                     )
                 },
             ]
@@ -9677,11 +9680,16 @@ struct ComposeOrchestratorTests {
                 $0.services = ["api"]
                 $0.buildArguments = ["CLI_ARG=2"]
                 $0.memory = "256m"
+                $0.ssh = ["default=/tmp/cli.sock", "deploy=/tmp/deploy.sock"]
             }
         )
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.containsSequence(["--memory", "256m"]))
+        #expect(!command.containsSequence(["--ssh", "default"]))
+        #expect(command.containsSequence(["--ssh", "git=/tmp/git.sock"]))
+        #expect(command.containsSequence(["--ssh", "default=/tmp/cli.sock"]))
+        #expect(command.containsSequence(["--ssh", "deploy=/tmp/deploy.sock"]))
         #expect(command.containsSequence(["--build-arg", "FILE_ARG=1"]))
         #expect(command.containsSequence(["--build-arg", "CLI_ARG=2"]))
         #expect(command.last == "api")
@@ -9712,7 +9720,8 @@ struct ComposeOrchestratorTests {
                             secrets: [
                                 ComposeBuildSecret(id: "file_token", file: "token.txt"),
                                 ComposeBuildSecret(id: "npm_token", environment: "NPM_TOKEN"),
-                            ]
+                            ],
+                            ssh: ["default", "git=/tmp/git.sock"]
                         ),
                         options: ComposeBuild.Options(
                             target: "runtime",
@@ -9744,6 +9753,7 @@ struct ComposeOrchestratorTests {
                 $0.printBake = true
                 $0.pull = true
                 $0.push = true
+                $0.ssh = ["deploy=/tmp/deploy.sock"]
                 $0.withDependencies = true
             }
         )
@@ -9768,6 +9778,7 @@ struct ComposeOrchestratorTests {
             "id=file_token,type=file,src=/workspace/project/token.txt",
             "id=npm_token,type=env,env=NPM_TOKEN",
         ])
+        #expect(api["ssh"] as? [String] == ["default", "git=/tmp/git.sock", "deploy=/tmp/deploy.sock"])
         #expect(api["output"] as? [String] == ["type=registry"])
         #expect((api["labels"] as? [String: String])?["org.opencontainers.image.title"] == "api")
         let arguments = try #require(api["args"] as? [String: String])
@@ -18684,7 +18695,7 @@ struct ComposeOrchestratorTests {
                 "job": composeService(name: "job", image: "alpine") {
                     $0.build = ComposeBuild(
                         context: "job",
-                        options: ComposeBuild.Options(unsupportedFields: ["entitlements", "ssh"])
+                        options: ComposeBuild.Options(unsupportedFields: ["entitlements", "network"])
                     )
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -18697,7 +18708,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported build fields entitlements, ssh; advanced build fields need Docker Compose compatible apple/container build primitives"))
+            #expect(error == .unsupported("service 'job' uses unsupported build fields entitlements, network; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

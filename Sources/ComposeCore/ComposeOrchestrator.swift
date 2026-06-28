@@ -715,6 +715,7 @@ public struct ComposeBuildOptions {
     public var pull = false
     public var push = false
     public var quiet = false
+    public var ssh: [String] = []
     public var withDependencies = false
 
     public init() {
@@ -726,6 +727,7 @@ public struct ComposeBuildOptions {
         pull = false
         push = false
         quiet = false
+        ssh = []
         withDependencies = false
     }
 
@@ -757,6 +759,7 @@ private struct ComposeBuildBakeTarget: Encodable {
     var tags: [String]
     var target: String?
     var secrets: [String]?
+    var ssh: [String]?
     var cacheFrom: [String]?
     var cacheTo: [String]?
     var platforms: [String]?
@@ -773,6 +776,7 @@ private struct ComposeBuildBakeTarget: Encodable {
         case tags
         case target
         case secrets = "secret"
+        case ssh
         case cacheFrom = "cache-from"
         case cacheTo = "cache-to"
         case platforms
@@ -6783,6 +6787,9 @@ private extension ComposeOrchestrator {
         for secret in build.secrets ?? [] {
             args.append(contentsOf: ["--secret", try buildSecretArgument(secret)])
         }
+        for ssh in buildSSHValues(build: build, options: buildOptions) {
+            args.append(contentsOf: ["--ssh", ssh])
+        }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
         }
@@ -6855,6 +6862,7 @@ private extension ComposeOrchestrator {
         let arguments = try buildBakeArguments(project: project, build: build, buildArguments: buildOptions.buildArguments)
         let tags = buildBakeTags(project: project, service: service, build: build)
         let secrets = try buildBakeSecrets(project: project, build: build)
+        let ssh = buildSSHValues(build: build, options: buildOptions)
         return ComposeBuildBakeTarget(
             context: context,
             dockerfile: dockerfile.dockerfile,
@@ -6864,6 +6872,7 @@ private extension ComposeOrchestrator {
             tags: tags,
             target: nonEmpty(build.target),
             secrets: secrets.isEmpty ? nil : secrets,
+            ssh: ssh.isEmpty ? nil : ssh,
             cacheFrom: buildBakeValues(build.cacheFrom),
             cacheTo: buildBakeValues(build.cacheTo),
             platforms: buildBakeValues(build.platforms),
@@ -6958,6 +6967,38 @@ private extension ComposeOrchestrator {
             }
             throw ComposeError.invalidProject("build secret '\(id)' must define file or environment")
         }
+    }
+
+    /// Merges Compose-file and CLI SSH forwarding values for `container build --ssh`.
+    private func buildSSHValues(build: ComposeBuild, options buildOptions: ComposeBuildOptions) -> [String] {
+        var values: [String] = []
+        for value in build.ssh ?? [] {
+            appendSSHValue(value, to: &values, replacingExistingID: false)
+        }
+        for value in buildOptions.ssh {
+            appendSSHValue(value, to: &values, replacingExistingID: true)
+        }
+        return values
+    }
+
+    private func appendSSHValue(_ value: String, to values: inout [String], replacingExistingID: Bool) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        if replacingExistingID {
+            let id = sshID(trimmed)
+            values.removeAll { sshID($0) == id }
+        }
+        values.append(trimmed)
+    }
+
+    private func sshID(_ value: String) -> String {
+        let separator = value.contains("=") ? "=" : ":"
+        let parts = value.split(separator: Character(separator), maxSplits: 1, omittingEmptySubsequences: false)
+        let id = parts.first.map(String.init) ?? ""
+        let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedID.isEmpty ? "default" : trimmedID
     }
 
     /// Returns non-empty bake list values or nil when the Compose field is empty.

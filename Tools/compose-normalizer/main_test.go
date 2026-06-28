@@ -1541,6 +1541,9 @@ services:
       pull: true
       platforms:
         - linux/arm64
+      ssh:
+        - default
+        - git=/tmp/git.sock
       tags:
         - example/api:dev
         - example/api:test
@@ -1613,6 +1616,9 @@ services:
 	}
 	if got, want := api.Build.Platforms, []string{"linux/arm64"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build platforms = %#v, want %#v", got, want)
+	}
+	if got, want := api.Build.SSH, []string{"default", "git=/tmp/git.sock"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build ssh = %#v, want %#v", got, want)
 	}
 	if got, want := api.Build.Tags, []string{"example/api:dev", "example/api:test"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build tags = %#v, want %#v", got, want)
@@ -2019,7 +2025,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		SBOM:               "true",
 		Secrets:            []types.ServiceSecretConfig{{Source: "build_secret"}},
 		ShmSize:            types.UnitBytes(64),
-		SSH:                types.SSHConfig{{ID: "default"}},
 		Tags:               types.StringList{"example/api:extra"},
 		Ulimits:            map[string]*types.UlimitsConfig{"nofile": {Single: 1024}},
 	}, true)
@@ -2034,11 +2039,22 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		"sbom",
 		"secrets",
 		"shm_size",
-		"ssh",
 		"ulimits",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupportedBuildFields = %#v, want %#v", got, want)
+	}
+}
+
+func TestBuildSSHValues(t *testing.T) {
+	got := buildSSHValues(types.SSHConfig{
+		{ID: "default"},
+		{ID: "git", Path: "/tmp/git.sock"},
+		{Path: "/tmp/empty-id.sock"},
+	})
+	want := []string{"default", "git=/tmp/git.sock", "default=/tmp/empty-id.sock"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buildSSHValues = %#v, want %#v", got, want)
 	}
 }
 

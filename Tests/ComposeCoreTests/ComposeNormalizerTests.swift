@@ -421,7 +421,8 @@ struct ComposeNormalizerTests {
             ),
             metadata: ComposeBuild.Metadata(
                 labels: ["org.opencontainers.image.title": "api"],
-                secrets: [ComposeBuildSecret(id: "token", environment: "TOKEN")]
+                secrets: [ComposeBuildSecret(id: "token", environment: "TOKEN")],
+                ssh: ["default", "git=/tmp/git.sock"]
             ),
             options: ComposeBuild.Options(
                 target: "runtime",
@@ -446,6 +447,7 @@ struct ComposeNormalizerTests {
         #expect(build.dockerfileInline == "FROM alpine:3.20\nRUN echo inline\n")
         #expect(build.labels == ["org.opencontainers.image.title": "api"])
         #expect(build.secrets == [ComposeBuildSecret(id: "token", environment: "TOKEN")])
+        #expect(build.ssh == ["default", "git=/tmp/git.sock"])
         #expect(build.target == "runtime")
         #expect(build.noCache == true)
         #expect(build.pull == true)

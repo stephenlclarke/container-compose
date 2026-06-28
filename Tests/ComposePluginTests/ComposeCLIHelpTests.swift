@@ -119,6 +119,7 @@ struct ComposeCLIHelpTests {
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--ssh\u{001B}[0m"))
         #expect(help.contains("\u{001B}[38;5;208m--provenance\u{001B}[0m"))
         #expect(help.contains("\u{001B}[38;5;208m--sbom\u{001B}[0m"))
         #expect(help.contains("Use --provenance=false to explicitly disable."))
@@ -230,6 +231,8 @@ struct ComposeCLIHelpTests {
             "--provenance=false",
             "--sbom", "false",
             "--build-arg", "VERSION=2",
+            "--ssh", "default",
+            "--ssh", "git=/tmp/git.sock",
             "--with-dependencies",
             "api",
         ])
@@ -238,6 +241,7 @@ struct ComposeCLIHelpTests {
         #expect(command.provenance == "false")
         #expect(command.sbom == "false")
         #expect(command.buildArgs == ["VERSION=2"])
+        #expect(command.ssh == ["default", "git=/tmp/git.sock"])
         #expect(command.withDependencies)
         #expect(command.services == ["api"])
     }

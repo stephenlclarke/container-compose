@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 07:38 BST.
+Last updated: 2026-06-28 09:19 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store historical evidence here; use git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -63,6 +63,11 @@ CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution 
 swift test --disable-automatic-resolution --filter 'buildPrintRendersBakeTargetsWithoutBuildSideEffects|buildPrintRendersInlineDockerfile|buildPrintRejectsEmptyBuildArgumentNames|buildPrintOptionIsShownAsSupported|buildPrintFlagParses'
 CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildPrintRendersBakeFileFromComposeFile
 swift test --disable-automatic-resolution --filter 'buildPrintOptionIsShownAsSupported|buildPrintFlagParses'
+(cd Tools/compose-normalizer && go test ./...)
+swift test --disable-automatic-resolution --filter 'buildOptionsAddCLIBuildArgsAndMemory|buildPrintRendersBakeTargetsWithoutBuildSideEffects|groupedModelInitializersPreserveFlatNormalizedFields'
+CONTAINER_BIN=/Users/sclarke/github/container/bin/container COMPOSE_TEST_BINARY=/Users/sclarke/github/container-compose/.build/debug/compose CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildForwardsDefaultSSHFromComposeFileAndCLI
+make ci
+make cli-smoke-built
 swift test --disable-automatic-resolution --filter 'attachOutputOnlyModeFollowsDirectLogs|attachOutputOnlyModeProxiesReceivedSignalsByDefault|attachOutputOnlyModeSkipsSignalProxyWhenDisabled|attachReportsAppleContainerRuntimeGapForInteractiveOptions|attachSignalProxyOptionIsShownAsSupported|attachSignalProxyFlagParses'
 CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeDryRunAttachNoStdinFollowsLogsWithDefaultSignalProxy
 swift test --disable-automatic-resolution --filter 'attachOutputOnlyModeIgnoresDetachKeys|attachReportsAppleContainerRuntimeGapForInteractiveOptions|attachSignalProxyOptionIsShownAsSupported|attachSignalProxyFlagParses'
@@ -95,6 +100,8 @@ All passed locally after extending progress feedback from project loading and im
 `compose attach --no-stdin --detach-keys=...` now follows the supported output-only log path and ignores the detach-key setting because stdin is already disabled; interactive attach without `--no-stdin` remains blocked until apple/container exposes a reattach primitive.
 
 `compose build --provenance=false --sbom=false` now follows Docker Compose's explicit attestation disable forms through the normal build path; true provenance/SBOM attestation requests remain blocked until the build backend can produce compatible attestations.
+
+`compose build --ssh` and service `build.ssh` now flow through the normal build path and `build --print` bake output. Repeated CLI values are accepted, compose-file SSH values normalize as build metadata, and CLI SSH entries replace file entries with the same id for local socket overrides. Default SSH agent forwarding is live-tested through a compose.yml and Dockerfile build; non-default `id=path` host socket forwarding remains a backend follow-up before the option can be marked fully supported. Runtime build execution requires the matching `stephenlclarke/container` build backend and SSH-capable builder image.
 
 ## Open Blockers
 

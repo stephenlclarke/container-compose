@@ -278,7 +278,7 @@ cli-smoke-built:
 	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--sbom$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"Use --provenance=false to explicitly disable."* ]]; \
 	[[ "$$build_help_output" == *"Use --sbom=false to explicitly disable."* ]]; \
-	[[ "$$build_help_output" == *"$${ansi_escape}[31m--ssh$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--ssh$${ansi_escape}[0m"* ]]; \
 	attach_help_output="$$(".build/debug/compose" attach --help)"; \
 	[[ "$$attach_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$attach_help_output" == *"$${ansi_escape}[38;5;208m--detach-keys$${ansi_escape}[0m"* ]]; \
@@ -528,8 +528,8 @@ cli-smoke-built:
 	[[ "$$build_provenance_output" == *"unsupported compose feature: build --provenance"* ]]; \
 	build_sbom_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --sbom=true worker 2>&1 || true)"; \
 	[[ "$$build_sbom_output" == *"unsupported compose feature: build --sbom"* ]]; \
-	build_ssh_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --ssh default worker 2>&1 || true)"; \
-	[[ "$$build_ssh_output" == *"unsupported compose feature: build --ssh"* ]]; \
+	build_ssh_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --ssh default worker)"; \
+	[[ "$$build_ssh_output" == *"container build"*"--ssh default"* ]]; \
 	build_inline_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-inline.yml" build api)"; \
 	[[ "$$build_inline_output" == *"container build"* ]]; \
 	[[ "$$build_inline_output" == *"--tag example/api:inline"* ]]; \
