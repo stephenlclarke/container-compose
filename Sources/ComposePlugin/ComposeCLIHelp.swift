@@ -238,7 +238,7 @@ enum ComposeCLIHelp {
             "--project-name": .supported,
         ],
         "attach": [
-            "--detach-keys": .notSupported,
+            "--detach-keys": .partiallySupported,
             "--dry-run": .supported,
             "--index": .supported,
             "--no-stdin": .supported,
@@ -1008,7 +1008,7 @@ enum ComposeCLIHelp {
         Attach local standard input, output, and error streams to a service's running container
 
         Options:
-              --detach-keys string   Override the key sequence for detaching from a container.
+              --detach-keys string   Override the key sequence for detaching from a container. Ignored with --no-stdin output-only attach.
               --dry-run              Execute command in dry run mode
               --index int            index of the container if service has multiple replicas.
               --no-stdin             Do not attach STDIN

@@ -126,7 +126,8 @@ struct ComposeCLIHelpTests {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "attach"))
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[31m--detach-keys\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--detach-keys\u{001B}[0m"))
+        #expect(help.contains("Ignored with --no-stdin output-only attach."))
         #expect(help.contains("\u{001B}[32m--index\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--no-stdin\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--sig-proxy\u{001B}[0m"))
@@ -230,9 +231,10 @@ struct ComposeCLIHelpTests {
 
     @Test("attach signal proxy flag parses")
     func attachSignalProxyFlagParses() throws {
-        let command = try Attach.parse(["--no-stdin", "--sig-proxy=false", "--index", "2", "api"])
+        let command = try Attach.parse(["--no-stdin", "--detach-keys", "ctrl-x", "--sig-proxy=false", "--index", "2", "api"])
 
         #expect(command.noStdin)
+        #expect(command.detachKeys == "ctrl-x")
         #expect(command.sigProxy == "false")
         #expect(command.index == 2)
         #expect(command.service == "api")

@@ -436,6 +436,19 @@ struct ComposeRuntimeSmokeTests {
         )
 
         #expect(result.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
+
+        let withDetachKeys = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "attach", "--no-stdin", "--detach-keys=ctrl-x", "api",
+            ],
+            timeout: 30
+        )
+
+        #expect(withDetachKeys.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
     }
 
     @Test("runtime up exit-code-from returns selected status")

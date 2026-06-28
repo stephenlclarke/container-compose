@@ -277,7 +277,8 @@ cli-smoke-built:
 	[[ "$$build_help_output" == *"$${ansi_escape}[31m--ssh$${ansi_escape}[0m"* ]]; \
 	attach_help_output="$$(".build/debug/compose" attach --help)"; \
 	[[ "$$attach_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
-	[[ "$$attach_help_output" == *"$${ansi_escape}[31m--detach-keys$${ansi_escape}[0m"* ]]; \
+	[[ "$$attach_help_output" == *"$${ansi_escape}[38;5;208m--detach-keys$${ansi_escape}[0m"* ]]; \
+	[[ "$$attach_help_output" == *"Ignored with --no-stdin output-only attach."* ]]; \
 	[[ "$$attach_help_output" == *"$${ansi_escape}[32m--no-stdin$${ansi_escape}[0m"* ]]; \
 	[[ "$$attach_help_output" == *"$${ansi_escape}[32m--sig-proxy$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
@@ -780,6 +781,8 @@ cli-smoke-built:
 	[[ "$$logs_display_output" == *"container logs demo-api-1"* ]]; \
 	attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo attach --no-stdin api)"; \
 	[[ "$$attach_output" == *"compose-runtime logs --follow demo-api-1"* ]]; \
+	attach_detach_keys_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo attach --no-stdin --detach-keys=ctrl-x api)"; \
+	[[ "$$attach_detach_keys_output" == *"compose-runtime logs --follow demo-api-1"* ]]; \
 	attach_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo attach --no-stdin --sig-proxy=false --index 2 api)"; \
 	[[ "$$attach_index_output" == *"compose-runtime logs --follow demo-api-2"* ]]; \
 	attach_default_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach api 2>&1 || true)"; \

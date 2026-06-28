@@ -7925,7 +7925,7 @@ private extension ComposeOrchestrator {
 
     /// Validates that attach stays on the output-only log-follow path apple/container exposes today.
     func validateAttachOptions(_ attach: ComposeAttachOptions) throws -> Bool {
-        if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
+        if !attach.noStdin, let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
             throw ComposeError.unsupported("attach --detach-keys: apple/container does not expose detach-key handling for interactive attach")
         }
         if !attach.noStdin {

@@ -1497,7 +1497,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("no-stdin"), help: "Do not attach stdin. Required for the supported output-only log attach path.")
     var noStdin = false
-    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Requires interactive attach support.")
+    @Option(name: .customLong("detach-keys"), help: "Override detach key sequence. Ignored with --no-stdin output-only attach.")
     var detachKeys: String?
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1

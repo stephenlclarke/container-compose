@@ -15922,6 +15922,37 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["attached"])
     }
 
+    @Test("attach output-only mode ignores detach keys")
+    func attachOutputOnlyModeIgnoresDetachKeys() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            logManager: logManager
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions {
+                $0.noStdin = true
+                $0.detachKeys = "ctrl-x"
+                $0.sigProxy = "false"
+            }
+        )
+
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        ])
+        #expect(emitted.messages == ["attached"])
+    }
+
     @Test("attach output-only mode proxies received signals by default")
     func attachOutputOnlyModeProxiesReceivedSignalsByDefault() async throws {
         let emitted = MessageRecorder()
@@ -16114,7 +16145,6 @@ struct ComposeOrchestratorTests {
             ),
             (
                 ComposeAttachOptions {
-                    $0.noStdin = true
                     $0.sigProxy = "false"
                     $0.detachKeys = "ctrl-x"
                 },
