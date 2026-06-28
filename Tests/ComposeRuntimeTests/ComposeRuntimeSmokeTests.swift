@@ -406,6 +406,45 @@ struct ComposeRuntimeSmokeTests {
         #expect(enabled.stderr.contains("unsupported compose feature: up --menu"))
     }
 
+    @Test("runtime dry run up renders service privileged command")
+    func runtimeDryRunUpRendersServicePrivilegedCommand() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            privileged: true
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "api",
+            ],
+            timeout: 30
+        )
+
+        #expect(result.stdout.contains("+ container run --name \(project)-api-1 "))
+        #expect(result.stdout.contains("--privileged"))
+    }
+
     @Test("runtime dry run attach no-stdin follows logs with default signal proxy")
     func runtimeDryRunAttachNoStdinFollowsLogsWithDefaultSignalProxy() throws {
         guard runtimeTestsEnabled else {

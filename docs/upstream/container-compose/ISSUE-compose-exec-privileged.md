@@ -19,4 +19,4 @@ The local `stephenlclarke/container` fork now exposes a process-level privileged
 
 ## Notes
 
-This is a Compose-side integration slice over the generic process exec primitive in `stephenlclarke/container`. It does not implement service-level `privileged: true`, which remains a container-create-time runtime gap.
+This is a Compose-side integration slice over the generic process exec primitive in `stephenlclarke/container`. Service-level `privileged: true` is tracked separately in [ISSUE-service-privileged.md](ISSUE-service-privileged.md) because it is a service container create/run concern rather than an exec concern.

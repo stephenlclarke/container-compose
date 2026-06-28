@@ -5098,9 +5098,6 @@ private extension ComposeOrchestrator {
         if let gpus = service.gpus, !gpus.isEmpty {
             fields.append(("gpus", "GPU device access support needs an apple/container runtime gap PR"))
         }
-        if service.privileged == true {
-            fields.append(("privileged", "privileged mode support needs an apple/container runtime gap PR"))
-        }
         return fields
     }
 
@@ -7615,6 +7612,9 @@ private extension ComposeOrchestrator {
         if service.stdinOpen == true {
             args.append("--interactive")
         }
+        if service.privileged == true {
+            args.append("--privileged")
+        }
         if let hostname = try runtimeHostnameArgument(service: service) {
             args.append(contentsOf: ["--hostname", hostname])
         }
@@ -9929,7 +9929,8 @@ private func serviceCreateBaseProcess(service: ComposeService) -> ProcessConfigu
         environment: environment,
         workingDirectory: workingDirectory,
         terminal: service.tty == true,
-        user: user
+        user: user,
+        privileged: service.privileged == true
     )
 }
 

@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 17:54 BST.
+Last updated: 2026-06-28 18:41 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -16,7 +16,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed main-lane pins:
 
-- `stephenlclarke/container`: `0c9445db4e4b9320199120345258e15e927aeebe`
+- `stephenlclarke/container`: `9871093f3c5585775a7dc4ff957aa360baf47ac1`
 - `stephenlclarke/containerization`: `658936c53dbf112fc3f51ec7573a9ffca54baf01`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.4`
 
@@ -33,7 +33,7 @@ Most recent coverage proof:
 
 - Progress feedback: project loading, variable loading, image build, image pull, direct runtime create/start/run, foreground interactive `run`, and attached `exec` emit visible stderr progress before slow or terminal-taking operations can look hung.
 - Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the fork-backed build path, and explicit false attestation forms remain no-op opt-outs.
-- Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and lifecycle or watch `privileged: true` are covered by focused tests or runtime smoke.
+- Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
 - Packaging and quality: CodeQL gates the release-built Go normalizer path, Swift CodeQL remains blocked by fork-backed dependency rebuild timeouts, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
 

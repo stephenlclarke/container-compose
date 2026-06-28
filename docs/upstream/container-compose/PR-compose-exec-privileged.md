@@ -30,7 +30,7 @@ The implementation keeps Docker Compose policy in the plugin. The sibling `conta
 - Removed stale unsupported validation for lifecycle hook and `develop.watch sync+exec` `privileged: true`.
 - Added `--privileged` to dry-run command rendering.
 - Promoted `exec` and `exec --privileged` support metadata to supported.
-- Kept service-level `privileged: true` unsupported because it is a separate container-create-time feature.
+- Kept service-level `privileged: true` out of this exec slice because it is a separate service container create/run feature tracked in [PR-service-privileged.md](PR-service-privileged.md).
 
 ## Verification
 
@@ -51,5 +51,5 @@ git diff --check
 
 ## Follow-Ups
 
-- Keep service-level `privileged: true` unsupported until the service container create path has a reviewed runtime mapping for the broader isolation changes.
+- Service-level `privileged: true` is covered by the separate service container create/run slice in [PR-service-privileged.md](PR-service-privileged.md).
 - Keep `compose attach` partial until interactive attach and signal proxy behavior has a runtime-backed implementation.

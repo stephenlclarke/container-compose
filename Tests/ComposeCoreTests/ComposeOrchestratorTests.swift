@@ -1353,6 +1353,7 @@ struct ComposeOrchestratorTests {
                     $0.hostname = "custom-api"
                     $0.domainName = "example.test"
                     $0.extraHosts = ["db=10.0.0.5", "myhostv6=[::1]"]
+                    $0.privileged = true
                 },
             ]
         ) {
@@ -1394,6 +1395,7 @@ struct ComposeOrchestratorTests {
         #expect(create.containsSequence(["--domainname", "example.test"]))
         #expect(create.containsSequence(["--add-host", "db:10.0.0.5"]))
         #expect(create.containsSequence(["--add-host", "myhostv6:::1"]))
+        #expect(create.contains("--privileged"))
         #expect(Array(create.suffix(2)) == ["example/api:latest", "serve"])
     }
 
@@ -1499,6 +1501,7 @@ struct ComposeOrchestratorTests {
                     $0.domainName = "example.test"
                     $0.extraHosts = ["db:10.0.0.5"]
                     $0.sysctls = ["net.core.somaxconn": "1024"]
+                    $0.privileged = true
                     $0.blkioConfig = ComposeBlkioConfig(
                         weight: 300,
                         weightDevice: [ComposeBlkioWeightDevice(path: "8:0", weight: 700)],
@@ -1517,6 +1520,7 @@ struct ComposeOrchestratorTests {
         #expect(plan.hosts.map(\.ipAddress) == ["10.0.0.5"])
         #expect(plan.hosts.flatMap(\.hostnames) == ["db"])
         #expect(plan.sysctls == ["net.core.somaxconn": "1024"])
+        #expect(plan.initProcess.privileged)
         #expect(plan.blockIO?.weight == 300)
         #expect(plan.blockIO?.weightDevice.first?.major == 8)
         #expect(plan.blockIO?.weightDevice.first?.minor == 0)
@@ -17442,6 +17446,7 @@ struct ComposeOrchestratorTests {
                     $0.extraHosts = ["db=10.0.0.5"]
                     $0.capAdd = ["NET_ADMIN"]
                     $0.capDrop = ["MKNOD"]
+                    $0.privileged = true
                     $0.memLimit = "1024"
                     $0.cpus = "2"
                     $0.shmSize = "67108864"
@@ -17470,6 +17475,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--runtime", "container-runtime-linux"]))
         #expect(command.containsSequence(["--cap-add", "NET_ADMIN"]))
         #expect(command.containsSequence(["--cap-drop", "MKNOD"]))
+        #expect(command.contains("--privileged"))
         #expect(command.containsSequence(["--dns", "1.1.1.1"]))
         #expect(command.containsSequence(["--dns-search", "local"]))
         #expect(command.containsSequence(["--dns-option", "use-vc"]))
@@ -20960,9 +20966,6 @@ struct ComposeOrchestratorTests {
             ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
                 $0.networks = ["a", "b"]
             }]),
-            ComposeProject(name: "demo", services: ["api": composeService(name: "api", image: "example/api") {
-                $0.privileged = true
-            }]),
         ]
 
         for project in unsupportedProjects {
@@ -21240,11 +21243,6 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
                     ]),
                 ]
             }
-        ),
-        UnsupportedDeviceAccessFieldCase(
-            composeName: "privileged",
-            reason: "privileged mode support needs an apple/container runtime gap PR",
-            configure: { $0.privileged = true }
         ),
     ]
 }
