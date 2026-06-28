@@ -721,9 +721,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     func run() async throws {
         let formatsAttachedOutput = !(detach || wait || noStart)
         let unsupportedOptions = [
-            abortOnContainerExit ? "--abort-on-container-exit" : nil,
-            abortOnContainerFailure ? "--abort-on-container-failure" : nil,
-            exitCodeFrom == nil ? nil : "--exit-code-from",
             menu ? "--menu" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
@@ -735,12 +732,18 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
         if watch && wait {
             throw ComposeError.unsupported("up --wait cannot be combined with --watch")
         }
+        if watch && (abortOnContainerExit || abortOnContainerFailure || exitCodeFrom != nil) {
+            throw ComposeError.unsupported("up --watch cannot be combined with exit-control options")
+        }
 
         let loadedProject = try await project()
         let upOptions = ComposeUpOptions {
             $0.services = services
+            $0.abortOnContainerExit = abortOnContainerExit
+            $0.abortOnContainerFailure = abortOnContainerFailure
             $0.attach = attach
             $0.attachDependencies = attachDependencies
+            $0.exitCodeFrom = exitCodeFrom
             $0.noAttach = noAttach
             $0.build = build
             $0.quietBuild = quietBuild
@@ -777,7 +780,9 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             )
             return
         }
-        try await orchestrator().up(project: loadedProject, options: upOptions)
+        if let exitCode = try await orchestrator().up(project: loadedProject, options: upOptions), exitCode != 0 {
+            throw ExitCode(exitCode)
+        }
     }
 }
 

@@ -136,20 +136,33 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--attach-dependencies\u{001B}[0m"))
     }
 
+    @Test("up exit-control options are shown as supported")
+    func upExitControlOptionsAreShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
+
+        #expect(help.contains("\u{001B}[32m--abort-on-container-exit\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--abort-on-container-failure\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--exit-code-from\u{001B}[0m"))
+    }
+
     @Test("up raw attached output flags parse")
     func upRawAttachedOutputFlagsParse() throws {
         let command = try Up.parse([
+            "--abort-on-container-failure",
             "--attach", "api",
             "--attach", "worker",
             "--attach-dependencies",
+            "--exit-code-from", "api",
             "--no-color",
             "--no-log-prefix",
             "--timestamps",
             "api",
         ])
 
+        #expect(command.abortOnContainerFailure)
         #expect(command.attach == ["api", "worker"])
         #expect(command.attachDependencies)
+        #expect(command.exitCodeFrom == "api")
         #expect(command.noColor)
         #expect(command.noLogPrefix)
         #expect(command.timestamps)

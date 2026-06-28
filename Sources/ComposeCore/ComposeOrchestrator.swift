@@ -458,8 +458,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
 /// Options for `compose up`.
 public struct ComposeUpOptions {
     public var services: [String] = []
+    public var abortOnContainerExit = false
+    public var abortOnContainerFailure = false
     public var attach: [String] = []
     public var attachDependencies = false
+    public var exitCodeFrom: String?
     public var noAttach: [String] = []
     public var build = false
     public var noBuild = false
@@ -485,8 +488,11 @@ public struct ComposeUpOptions {
 
     public init() {
         services = []
+        abortOnContainerExit = false
+        abortOnContainerFailure = false
         attach = []
         attachDependencies = false
+        exitCodeFrom = nil
         noAttach = []
         build = false
         noBuild = false
@@ -1243,7 +1249,8 @@ private struct RuntimeLogRequest: Sendable {
     var emit: @Sendable (Data) -> Void
 }
 
-private struct ServiceContainerWaitResult {
+private struct ServiceContainerWaitResult: Sendable {
+    var containerName: String
     var exitCode: Int32
 }
 
@@ -1521,7 +1528,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     }
 
     /// Creates project resources and starts selected services in dependency order.
-    public func up(project: ComposeProject, options up: ComposeUpOptions) async throws {
+    @discardableResult
+    public func up(project: ComposeProject, options up: ComposeUpOptions) async throws -> Int32? {
         try validate(project: project)
         try validateUpOptions(up)
         let project = try projectByApplyingNoAttach(project: project, services: up.noAttach)
@@ -1533,7 +1541,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 alwaysRecreateDeps: up.alwaysRecreateDeps,
                 recreateTimeout: up.timeout
             )
-            return
+            return nil
         }
         let selectedServiceReferences = try up.noDeps && !up.services.isEmpty
             ? selectedServices(project: project, selected: up.services)
@@ -1565,6 +1573,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             return activeService
         }
         let attachLogMode = upUsesAttachLogFollow(up)
+        let exitControlMode = upUsesExitControl(up)
         let attachedLogServices = try upAttachedLogServices(project: workingProject, services: services, options: up)
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
@@ -1573,7 +1582,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             project: workingProject,
             services: services,
             scaleOverrides: scaleOverrides,
-            detach: up.detach || up.wait || attachLogMode
+            detach: up.detach || up.wait || attachLogMode || exitControlMode
         )
         let attachedForegroundService = up.timestamps ? nil : attachedOutputService
         if !up.timestamps {
@@ -1693,19 +1702,28 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if up.wait {
             try await waitForStartedServiceTargets(waitTargets, timeout: up.waitTimeout, command: "up --wait")
         }
+        if exitControlMode {
+            return try await waitForUpExitControl(project: workingProject, services: services, options: up)
+        }
         if attachLogMode {
             let targets = try await serviceContainerTargets(project: workingProject, services: attachedLogServices)
             try await followAttachedUpLogs(targets: targets, options: up)
-            return
+            return nil
         }
         if up.timestamps, let attachedOutputService, !up.detach, !up.wait {
             try await followTimestampedUpLogs(target: attachedOutputService, options: up)
         }
+        return nil
     }
 
     /// Returns whether `up` should use Compose-owned followed log attachment.
     private func upUsesAttachLogFollow(_ up: ComposeUpOptions) -> Bool {
         !up.detach && !up.wait && !up.noStart && (!up.attach.isEmpty || up.attachDependencies)
+    }
+
+    /// Returns whether `up` should stop the project after service exits.
+    private func upUsesExitControl(_ up: ComposeUpOptions) -> Bool {
+        !up.detach && !up.wait && !up.noStart && (up.abortOnContainerExit || up.abortOnContainerFailure || up.exitCodeFrom != nil)
     }
 
     /// Validates attach-related service selections before runtime side effects.
@@ -1805,6 +1823,128 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                 )
             )
         )
+    }
+
+    /// Waits for `up` exit-control conditions, tears the project down, and returns the CLI exit code.
+    private func waitForUpExitControl(project: ComposeProject, services: [ComposeService], options up: ComposeUpOptions) async throws -> Int32 {
+        let allTargets = try await serviceContainerTargets(project: project, services: services)
+        let exitCodeTargets: [ServiceContainerTarget]
+        if let exitCodeFrom = up.exitCodeFrom {
+            let selected = try selectedServices(project: project, selected: [exitCodeFrom])
+            let startedNames = Set(services.map(\.name))
+            if let service = selected.first, !startedNames.contains(service.name) {
+                throw ComposeError.invalidProject("up --exit-code-from service '\(service.name)' is not being started")
+            }
+            let selectedNames = Set(selected.map(\.name))
+            exitCodeTargets = allTargets.filter { selectedNames.contains($0.service.name) }
+        } else {
+            exitCodeTargets = []
+        }
+        guard !allTargets.isEmpty else {
+            throw ComposeError.invalidProject("up exit-control requires at least one service container")
+        }
+        if up.exitCodeFrom != nil, exitCodeTargets.isEmpty {
+            throw ComposeError.invalidProject("up --exit-code-from service has no started containers")
+        }
+
+        if options.dryRun {
+            for target in allTargets {
+                emitComposeRuntimeOperation(["wait", target.name])
+            }
+            try await down(project: project, options: ComposeDownOptions())
+            return 0
+        }
+
+        if up.exitCodeFrom != nil {
+            return try await waitForExitCodeFromAndDown(project: project, targets: allTargets, exitCodeTargets: exitCodeTargets)
+        }
+        let result = try await up.abortOnContainerFailure && !up.abortOnContainerExit
+            ? waitForFirstServiceContainerFailureOrCompletion(allTargets)
+            : waitForFirstServiceContainerExit(allTargets)
+        try await down(project: project, options: ComposeDownOptions())
+        return result.exitCode
+    }
+
+    /// Waits for any started service to exit, then returns the selected service status.
+    private func waitForExitCodeFromAndDown(
+        project: ComposeProject,
+        targets: [ServiceContainerTarget],
+        exitCodeTargets: [ServiceContainerTarget]
+    ) async throws -> Int32 {
+        let exitCodeTargetNames = Set(exitCodeTargets.map(\.name))
+        let lifecycleManager = lifecycleManager
+        let waitTasks: [Task<ServiceContainerWaitResult, Error>] = targets.map { target in
+            let containerName = target.name
+            return Task {
+                ServiceContainerWaitResult(
+                    containerName: containerName,
+                    exitCode: try await lifecycleManager.waitContainer(id: containerName)
+                )
+            }
+        }
+        defer {
+            waitTasks.forEach { $0.cancel() }
+        }
+        return try await withThrowingTaskGroup(of: ServiceContainerWaitResult.self) { group in
+            for waitTask in waitTasks {
+                group.addTask {
+                    try await waitTask.value
+                }
+            }
+
+            guard let firstResult = try await group.next() else {
+                throw ComposeError.invalidProject("up exit-control requires at least one service container")
+            }
+            try await down(project: project, options: ComposeDownOptions())
+            if exitCodeTargetNames.contains(firstResult.containerName) {
+                group.cancelAll()
+                return firstResult.exitCode
+            }
+            while let result = try await group.next() {
+                if exitCodeTargetNames.contains(result.containerName) {
+                    group.cancelAll()
+                    return result.exitCode
+                }
+            }
+            throw ComposeError.invalidProject("up --exit-code-from service did not report an exit status")
+        }
+    }
+
+    /// Waits until a selected service container fails or all selected targets exit successfully.
+    private func waitForFirstServiceContainerFailureOrCompletion(_ targets: [ServiceContainerTarget]) async throws -> ServiceContainerWaitResult {
+        let lifecycleManager = lifecycleManager
+        let waitTasks: [Task<ServiceContainerWaitResult, Error>] = targets.map { target in
+            let containerName = target.name
+            return Task {
+                ServiceContainerWaitResult(
+                    containerName: containerName,
+                    exitCode: try await lifecycleManager.waitContainer(id: containerName)
+                )
+            }
+        }
+        defer {
+            waitTasks.forEach { $0.cancel() }
+        }
+        return try await withThrowingTaskGroup(of: ServiceContainerWaitResult.self) { group in
+            for waitTask in waitTasks {
+                group.addTask {
+                    try await waitTask.value
+                }
+            }
+
+            var successfulCompletions = 0
+            while let result = try await group.next() {
+                if result.exitCode != 0 {
+                    group.cancelAll()
+                    return result
+                }
+                successfulCompletions += 1
+                if successfulCompletions == targets.count {
+                    return result
+                }
+            }
+            throw ComposeError.invalidProject("up exit-control requires at least one service container")
+        }
     }
 
     /// Follows the service that would normally own foreground output for `up --timestamps`.
@@ -6066,6 +6206,21 @@ private extension ComposeOrchestrator {
         if options.wait, options.noStart {
             throw ComposeError.invalidProject("--wait and --no-start are incompatible")
         }
+        if options.detach, options.abortOnContainerExit {
+            throw ComposeError.invalidProject("--abort-on-container-exit and --detach are incompatible")
+        }
+        if options.detach, options.abortOnContainerFailure {
+            throw ComposeError.invalidProject("--abort-on-container-failure and --detach are incompatible")
+        }
+        if options.detach, options.exitCodeFrom != nil {
+            throw ComposeError.invalidProject("--exit-code-from and --detach are incompatible")
+        }
+        if options.wait, options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil {
+            throw ComposeError.invalidProject("--wait cannot be combined with exit-control options")
+        }
+        if options.noStart, options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil {
+            throw ComposeError.invalidProject("--no-start cannot be combined with exit-control options")
+        }
         if options.noRecreate, options.renewAnonymousVolumes {
             throw ComposeError.invalidProject("--no-recreate and --renew-anon-volumes are incompatible")
         }
@@ -7601,10 +7756,12 @@ private extension ComposeOrchestrator {
     /// the first selected service container exits.
     func waitForFirstServiceContainerExit(_ targets: [ServiceContainerTarget]) async throws -> ServiceContainerWaitResult {
         let lifecycleManager = lifecycleManager
-        let waitTasks = targets.map(\.name).map { containerID in
-            Task {
+        let waitTasks: [Task<ServiceContainerWaitResult, Error>] = targets.map { target in
+            let containerName = target.name
+            return Task {
                 ServiceContainerWaitResult(
-                    exitCode: try await lifecycleManager.waitContainer(id: containerID)
+                    containerName: containerName,
+                    exitCode: try await lifecycleManager.waitContainer(id: containerName)
                 )
             }
         }

@@ -3320,6 +3320,336 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
+    @Test("up exit-code-from returns selected service status and tears down project")
+    func upExitCodeFromReturnsSelectedServiceStatusAndTearsDownProject() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-api-1": 7])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "api",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+                ComposeContainerSummary(
+                    id: "demo-db-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "db",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+            ],
+            getResponses: [
+                "demo-api-1": [nil],
+                "demo-db-1": [nil],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.stopSignal = "SIGUSR1"
+                    $0.stopGracePeriodSeconds = 9
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        let exitCode = try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.exitCodeFrom = "api"
+        })
+
+        let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        #expect(exitCode == 7)
+        #expect(dbRun.contains("--detach"))
+        #expect(apiRun.contains("--detach"))
+        let lifecycleRequests = await lifecycleManager.requests
+        #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
+        #expect(lifecycleRequests.contains(.wait(id: "demo-db-1")))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: "SIGUSR1", timeoutInSeconds: 9)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
+        #expect(await discoveryManager.listRequests == [true, true])
+    }
+
+    @Test("up exit-code-from aborts when another service exits first and returns selected status")
+    func upExitCodeFromAbortsOnOtherServiceExitAndReturnsSelectedStatus() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            waitExitCodes: [
+                "demo-api-1": 7,
+                "demo-db-1": 0,
+            ],
+            waitDelaysByID: [
+                "demo-api-1": .milliseconds(20),
+            ]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "api",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+                ComposeContainerSummary(
+                    id: "demo-db-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "db",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+            ],
+            getResponses: [
+                "demo-api-1": [nil],
+                "demo-db-1": [nil],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        let exitCode = try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.exitCodeFrom = "api"
+        })
+        let lifecycleRequests = await lifecycleManager.requests
+
+        #expect(exitCode == 7)
+        #expect(lifecycleRequests.contains(.wait(id: "demo-db-1")))
+        #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-db-1", signal: nil, timeoutInSeconds: nil)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-db-1", force: false)))
+    }
+
+    @Test("up abort-on-container-failure returns failing status and tears down project")
+    func upAbortOnContainerFailureReturnsFailingStatusAndTearsDownProject() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: [
+            "demo-api-1": 0,
+            "demo-worker-1": 8,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "api",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+                ComposeContainerSummary(
+                    id: "demo-worker-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "worker",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+            ],
+            getResponses: [
+                "demo-api-1": [nil],
+                "demo-worker-1": [nil],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]
+        )
+
+        let exitCode = try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.abortOnContainerFailure = true
+        })
+        let lifecycleRequests = await lifecycleManager.requests
+
+        #expect(exitCode == 8)
+        #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
+        #expect(lifecycleRequests.contains(.wait(id: "demo-worker-1")))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-worker-1", force: false)))
+    }
+
+    @Test("up abort-on-container-exit returns first status and tears down project")
+    func upAbortOnContainerExitReturnsFirstStatusAndTearsDownProject() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            waitExitCodes: [
+                "demo-api-1": 3,
+                "demo-worker-1": 0,
+            ],
+            waitDelaysByID: [
+                "demo-worker-1": .milliseconds(20),
+            ]
+        )
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "api",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+                ComposeContainerSummary(
+                    id: "demo-worker-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "worker",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+            ],
+            getResponses: [
+                "demo-api-1": [nil],
+                "demo-worker-1": [nil],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker"),
+            ]
+        )
+
+        let exitCode = try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.abortOnContainerExit = true
+        })
+        let lifecycleRequests = await lifecycleManager.requests
+
+        #expect(exitCode == 3)
+        #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
+        #expect(lifecycleRequests.contains(.wait(id: "demo-worker-1")))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-worker-1", signal: nil, timeoutInSeconds: nil)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-worker-1", force: false)))
+    }
+
+    @Test("up exit-control dry run renders wait then down plan")
+    func upExitControlDryRunRendersWaitThenDownPlan() async throws {
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.stopGracePeriodSeconds = 7
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        let exitCode = try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.exitCodeFrom = "api"
+        })
+
+        #expect(exitCode == 0)
+        #expect(emitted.messages.contains("+ compose-runtime wait demo-api-1"))
+        #expect(emitted.messages.contains("+ container stop --time 7 demo-api-1"))
+        #expect(emitted.messages.contains("+ container delete demo-api-1"))
+        #expect(emitted.messages.contains("+ container stop demo-db-1"))
+        #expect(emitted.messages.contains("+ container delete demo-db-1"))
+    }
+
+    @Test("up exit-control rejects detached mode before side effects")
+    func upExitControlRejectsDetachedModeBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions {
+                    $0.detach = true
+                    $0.exitCodeFrom = "api"
+                }
+            )
+            Issue.record("Expected detached exit-control validation error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("--exit-code-from and --detach are incompatible"))
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up no-attach rejects unknown services before side effects")
     func upNoAttachRejectsUnknownServicesBeforeSideEffects() async throws {
         let runner = RecordingRunner()
@@ -21154,6 +21484,7 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     private let stopErrorsByID: [String: any Error]
     private let deleteErrorsByID: [String: any Error]
     private let waitExitCodes: [String: Int32]
+    private let waitDelaysByID: [String: Duration]
     private var storage: [ContainerLifecycleRequest] = []
 
     init(
@@ -21161,13 +21492,15 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
         deleteError: (any Error)? = nil,
         stopErrorsByID: [String: any Error] = [:],
         deleteErrorsByID: [String: any Error] = [:],
-        waitExitCodes: [String: Int32] = [:]
+        waitExitCodes: [String: Int32] = [:],
+        waitDelaysByID: [String: Duration] = [:]
     ) {
         self.stopError = stopError
         self.deleteError = deleteError
         self.stopErrorsByID = stopErrorsByID
         self.deleteErrorsByID = deleteErrorsByID
         self.waitExitCodes = waitExitCodes
+        self.waitDelaysByID = waitDelaysByID
     }
 
     var requests: [ContainerLifecycleRequest] {
@@ -21202,6 +21535,9 @@ private actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
 
     func waitContainer(id: String) async throws -> Int32 {
         storage.append(.wait(id: id))
+        if let delay = waitDelaysByID[id] {
+            try await Task.sleep(for: delay)
+        }
         return waitExitCodes[id] ?? 0
     }
 

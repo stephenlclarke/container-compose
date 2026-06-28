@@ -350,6 +350,78 @@ struct ComposeRuntimeSmokeTests {
         #expect(withDependencies.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
     }
 
+    @Test("runtime up exit-code-from returns selected status")
+    func runtimeUpExitCodeFromReturnsSelectedStatus() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            command: ["sh", "-c", "exit 7"]
+            depends_on:
+              db:
+                condition: service_started
+          db:
+            image: alpine:3.20
+            command: ["sh", "-c", "sleep 60"]
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        defer {
+            _ = try? runProcess(
+                composeBinary,
+                [
+                    "--ansi", "never",
+                    "--project-name", project,
+                    "--file", composeFile.path,
+                    "down", "--volumes", "--remove-orphans",
+                ],
+                timeout: 60
+            )
+        }
+
+        let dryRun = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "--exit-code-from", "api", "api",
+            ],
+            timeout: 30
+        )
+        #expect(dryRun.stdout.contains("+ container run --name \(project)-db-1 --detach"))
+        #expect(dryRun.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(dryRun.stdout.contains("+ compose-runtime wait \(project)-api-1"))
+        #expect(dryRun.stdout.contains("+ container delete \(project)-api-1"))
+
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "up", "--exit-code-from", "api", "api",
+            ],
+            timeout: 120,
+            expectedStatus: 7
+        )
+        #expect(result.status == 7)
+    }
+
     @Test("runtime config resolves image digests")
     func runtimeConfigResolvesImageDigests() throws {
         guard runtimeTestsEnabled else {
@@ -505,6 +577,7 @@ private func runProcess(
     _ executable: String,
     _ arguments: [String],
     timeout: TimeInterval,
+    expectedStatus: Int32 = 0,
     mergeOutputForOrdering: Bool = false
 ) throws -> RuntimeProcessResult {
     let process = Process()
@@ -583,7 +656,7 @@ private func runProcess(
         stderr: stderrBuffer.string(),
         combined: combinedBuffer.string()
     )
-    guard result.status == 0 else {
+    guard result.status == expectedStatus else {
         throw ComposeError.commandFailed(
             command: command.joined(separator: " "),
             status: result.status,
