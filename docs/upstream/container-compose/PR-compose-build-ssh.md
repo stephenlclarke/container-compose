@@ -18,7 +18,7 @@ The matching container backend now accepts `container build --ssh` and forwards 
 
 CLI values are applied after compose-file values and replace any file value with the same SSH id, which gives users an override path for local agent/socket differences without editing `compose.yml`.
 
-Default SSH agent forwarding is live-tested end to end. Non-default `id=path` values are normalized, forwarded, and rendered in bake output, but arbitrary host socket path forwarding still needs a container backend follow-up before the option can be marked fully supported.
+Default SSH agent forwarding is live-tested end to end. One explicit non-default `id=/path/to/socket` value is now live-tested through the fork-backed container backend. Multiple distinct host socket paths still need a runtime follow-up before the option can be marked fully supported.
 
 ## Verification
 
@@ -30,6 +30,7 @@ swift test --disable-automatic-resolution --filter 'buildPrintOptionIsShownAsSup
 swift test --disable-automatic-resolution --filter 'buildOptionsAddCLIBuildArgsAndMemory|buildPrintRendersBakeTargetsWithoutBuildSideEffects|groupedModelInitializersPreserveFlatNormalizedFields'
 CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildPrintRendersBakeFileFromComposeFile
 CONTAINER_BIN=/Users/sclarke/github/container/bin/container COMPOSE_TEST_BINARY=/Users/sclarke/github/container-compose/.build/debug/compose CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildForwardsDefaultSSHFromComposeFileAndCLI
+CONTAINER_BIN=/Users/sclarke/github/container/bin/container COMPOSE_TEST_BINARY=/Users/sclarke/github/container-compose/.build/debug/compose CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildForwardsExplicitSSHSocketFromCLI
 make ci
 make cli-smoke-built
 git diff --check
@@ -46,6 +47,7 @@ make coverage-check
 ## Compatibility Notes
 
 - This implements SSH forwarding declarations only for the build path.
-- Default SSH agent forwarding is live-tested; non-default `id=path` sockets need backend support for arbitrary host socket attachments.
+- Default SSH agent forwarding and one explicit `id=/path/to/socket` host Unix socket are live-tested.
+- Multiple distinct host socket paths need backend support for arbitrary host socket attachments.
 - `--builder`, `--check`, true provenance output, and true SBOM output remain unsupported.
 - Runtime support requires a container build backend that accepts `container build --ssh`.

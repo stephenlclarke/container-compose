@@ -16,10 +16,10 @@
 - Service `build.ssh` values normalize into the Swift build model instead of `unsupportedFields`.
 - CLI SSH entries override compose-file entries with the same SSH id.
 - `build --print` emits Buildx bake `ssh` values for the selected build targets.
-- Help/status metadata marks `build --ssh` as partially supported until non-default host socket paths are live-tested through the backend.
+- Help/status metadata marks `build --ssh` as partially supported until multiple distinct host socket paths have a runtime primitive.
 - Focused unit tests cover the parser, normalizer, command rendering, and bake rendering.
-- A compose.yml runtime smoke covers `build.ssh` and CLI `--ssh` through `build --print`.
+- A compose.yml runtime smoke covers `build.ssh`, CLI `--ssh`, `build --print`, default SSH agent forwarding, and one explicit `id=/path/to/socket` value.
 
 ## Notes
 
-Default SSH agent forwarding depends on the matching `stephenlclarke/container` build backend support for `container build --ssh`, plus the SSH-capable builder image from `stephenlclarke/container-builder-shim`. Non-default `id=path` socket entries are preserved and forwarded, but need a backend follow-up before they can be called fully supported.
+Default SSH agent forwarding depends on the matching `stephenlclarke/container` build backend support for `container build --ssh`, plus the SSH-capable builder image from `stephenlclarke/container-builder-shim`. The backend now supports named SSH IDs and one explicit host Unix socket path by forwarding that socket into the builder container and rewriting BuildKit metadata to the guest socket path. Requests for multiple distinct host socket paths still need a backend/runtime follow-up before the option can be called fully supported.

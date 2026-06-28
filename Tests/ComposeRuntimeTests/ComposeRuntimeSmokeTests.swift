@@ -754,6 +754,63 @@ struct ComposeRuntimeSmokeTests {
         let inspect = try runProcess(containerBinary, ["image", "inspect", imageName], timeout: 30)
         #expect(inspect.stdout.contains(imageTag))
     }
+
+    @Test("runtime build forwards explicit SSH socket from CLI")
+    func runtimeBuildForwardsExplicitSSHSocketFromCLI() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
+        try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        try """
+        FROM ghcr.io/linuxcontainers/alpine:3.20
+        RUN --mount=type=ssh,id=git test -S "$SSH_AUTH_SOCK"
+        """.write(to: apiDirectory.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
+
+        let imageTag = UUID().uuidString
+        let imageName = "registry.local/compose-ssh-named:\(imageTag)"
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: \(imageName)
+            build:
+              context: ./api
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let socket = try FakeSSHAgentSocket()
+        defer {
+            socket.close()
+        }
+
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        defer {
+            _ = try? runProcess(containerBinary, ["image", "delete", imageName], timeout: 30)
+        }
+
+        try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", runtimeProjectName(),
+                "--file", composeFile.path,
+                "build", "--ssh", "git=\(socket.path)", "api",
+            ],
+            timeout: 120
+        )
+
+        let inspect = try runProcess(containerBinary, ["image", "inspect", imageName], timeout: 30)
+        #expect(inspect.stdout.contains(imageTag))
+    }
 }
 
 private var runtimeTestsEnabled: Bool {
