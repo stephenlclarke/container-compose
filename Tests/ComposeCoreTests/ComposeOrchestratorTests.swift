@@ -280,6 +280,7 @@ private func orchestratorDependencies(
     dependencies.logManager = RecordingContainerLogManager()
     dependencies.pullMetadataStore = RecordingPullMetadataStore()
     dependencies.resourceManager = RecordingContainerResourceManager()
+    dependencies.signalProxy = RecordingComposeSignalProxy()
     dependencies.statsManager = RecordingContainerStatsManager()
     dependencies.topManager = RecordingContainerTopManager()
     configure(&dependencies)
@@ -15921,6 +15922,83 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["attached"])
     }
 
+    @Test("attach output-only mode proxies received signals by default")
+    func attachOutputOnlyModeProxiesReceivedSignalsByDefault() async throws {
+        let emitted = MessageRecorder()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT", "SIGTERM"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+                $0.signalProxy = signalProxy
+            }
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions {
+                $0.noStdin = true
+            }
+        )
+
+        #expect(await signalProxy.requests == [
+            ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
+        ])
+        #expect(await lifecycleManager.requests == [
+            .kill(id: "demo-api-1", signal: "SIGINT"),
+            .kill(id: "demo-api-1", signal: "SIGTERM"),
+        ])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        ])
+        #expect(emitted.messages == ["attached"])
+    }
+
+    @Test("attach output-only mode skips signal proxy when disabled")
+    func attachOutputOnlyModeSkipsSignalProxyWhenDisabled() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let logManager = RecordingContainerLogManager(outputs: ["attached"])
+        let signalProxy = RecordingComposeSignalProxy(forwardedSignals: ["SIGINT"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            dependencies: orchestratorDependencies {
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+                $0.signalProxy = signalProxy
+            }
+        ).attach(
+            project: project,
+            serviceName: "api",
+            options: ComposeAttachOptions {
+                $0.noStdin = true
+                $0.sigProxy = "false"
+            }
+        )
+
+        #expect(await signalProxy.requests.isEmpty)
+        #expect(await lifecycleManager.requests.isEmpty)
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        ])
+    }
+
     @Test("attach output-only mode targets selected container index")
     func attachOutputOnlyModeTargetsSelectedContainerIndex() async throws {
         let emitted = MessageRecorder()
@@ -16032,14 +16110,7 @@ struct ComposeOrchestratorTests {
         let cases: [(options: ComposeAttachOptions, error: ComposeError)] = [
             (
                 ComposeAttachOptions(),
-                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin --sig-proxy=false for output-only logs")
-            ),
-            (
-                ComposeAttachOptions {
-                    $0.noStdin = true
-                    $0.sigProxy = "true"
-                },
-                .unsupported("attach --sig-proxy=true: apple/container does not expose signal proxying for interactive attach; use --sig-proxy=false with --no-stdin")
+                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin for output-only logs")
             ),
             (
                 ComposeAttachOptions {
@@ -16053,7 +16124,14 @@ struct ComposeOrchestratorTests {
                 ComposeAttachOptions {
                     $0.sigProxy = "false"
                 },
-                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin --sig-proxy=false for output-only logs")
+                .unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin for output-only logs")
+            ),
+            (
+                ComposeAttachOptions {
+                    $0.noStdin = true
+                    $0.sigProxy = "maybe"
+                },
+                .invalidProject("attach --sig-proxy must be true or false")
             ),
         ]
         let project = ComposeProject(
@@ -21575,6 +21653,31 @@ private enum ContainerResourceAPIRequest: Equatable {
     case createVolume(ComposeVolumeCreateRequest)
     case listVolumes
     case deleteVolume(name: String)
+}
+
+private actor RecordingComposeSignalProxy: ComposeSignalProxying {
+    private let forwardedSignals: [String]
+    private var storage: [[String]] = []
+
+    init(forwardedSignals: [String] = []) {
+        self.forwardedSignals = forwardedSignals
+    }
+
+    var requests: [[String]] {
+        storage
+    }
+
+    func withSignalProxy(
+        signals: [String],
+        handler: @escaping @Sendable (String) async -> Void,
+        operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        storage.append(signals)
+        for signal in forwardedSignals {
+            await handler(signal)
+        }
+        try await operation()
+    }
 }
 
 private actor RecordingContainerCopier: ContainerCopying {

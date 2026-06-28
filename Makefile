@@ -275,6 +275,11 @@ cli-smoke-built:
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--print$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[31m--ssh$${ansi_escape}[0m"* ]]; \
+	attach_help_output="$$(".build/debug/compose" attach --help)"; \
+	[[ "$$attach_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$attach_help_output" == *"$${ansi_escape}[31m--detach-keys$${ansi_escape}[0m"* ]]; \
+	[[ "$$attach_help_output" == *"$${ansi_escape}[32m--no-stdin$${ansi_escape}[0m"* ]]; \
+	[[ "$$attach_help_output" == *"$${ansi_escape}[32m--sig-proxy$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	[[ "$$stats_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
@@ -767,10 +772,10 @@ cli-smoke-built:
 	[[ "$$logs_index_output" == *"container logs demo-api-2"* ]]; \
 	logs_display_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs --no-color --no-log-prefix api)"; \
 	[[ "$$logs_display_output" == *"container logs demo-api-1"* ]]; \
-	attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false api)"; \
-	[[ "$$attach_output" == *"container logs --follow demo-api-1"* ]]; \
-	attach_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach --no-stdin --sig-proxy=false --index 2 api)"; \
-	[[ "$$attach_index_output" == *"container logs --follow demo-api-2"* ]]; \
+	attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo attach --no-stdin api)"; \
+	[[ "$$attach_output" == *"compose-runtime logs --follow demo-api-1"* ]]; \
+	attach_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo attach --no-stdin --sig-proxy=false --index 2 api)"; \
+	[[ "$$attach_index_output" == *"compose-runtime logs --follow demo-api-2"* ]]; \
 	attach_default_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" attach api 2>&1 || true)"; \
 	[[ "$$attach_default_output" == *"unsupported compose feature: attach: apple/container does not expose stdin/stdout/stderr reattach"* ]]; \
 	exec_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec api echo ok)"; \

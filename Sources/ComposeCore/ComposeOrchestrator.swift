@@ -320,17 +320,20 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
     public var execManager: ContainerExecManaging
     public var exporter: ContainerExporting
     public var logManager: ContainerLogManaging
+    public var signalProxy: ComposeSignalProxying
 
     public init(
         copier: ContainerCopying = ContainerClientCopier(),
         execManager: ContainerExecManaging = ContainerClientExecManager(),
         exporter: ContainerExporting = ContainerClientExporter(),
-        logManager: ContainerLogManaging = ContainerClientLogManager()
+        logManager: ContainerLogManaging = ContainerClientLogManager(),
+        signalProxy: ComposeSignalProxying = DispatchComposeSignalProxy()
     ) {
         self.copier = copier
         self.execManager = execManager
         self.exporter = exporter
         self.logManager = logManager
+        self.signalProxy = signalProxy
     }
 }
 
@@ -437,6 +440,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var logManager: ContainerLogManaging {
         get { commands.logManager }
         set { commands.logManager = newValue }
+    }
+
+    public var signalProxy: ComposeSignalProxying {
+        get { commands.signalProxy }
+        set { commands.signalProxy = newValue }
     }
 
     public var resourceManager: ContainerResourceManaging {
@@ -1454,6 +1462,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     private let logManager: ContainerLogManaging
     private let pullMetadataStore: ComposePullMetadataStoring
     private let resourceManager: ContainerResourceManaging
+    private let signalProxy: ComposeSignalProxying
     private let statsManager: ContainerStatsManaging
     private let topManager: ContainerTopManaging
 
@@ -1475,6 +1484,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         self.logManager = dependencies.logManager
         self.pullMetadataStore = dependencies.pullMetadataStore
         self.resourceManager = dependencies.resourceManager
+        self.signalProxy = dependencies.signalProxy
         self.statsManager = dependencies.statsManager
         self.topManager = dependencies.topManager
     }
@@ -2763,24 +2773,35 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Attaches to service output using the apple/container log stream.
     public func attach(project: ComposeProject, serviceName: String, options attach: ComposeAttachOptions) async throws {
-        try validateAttachOptions(attach)
+        let proxySignals = try validateAttachOptions(attach)
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
         let id = try await serviceContainerID(project: project, service: service, index: attach.index)
         let args = ["logs", "--follow", id]
-        if options.dryRun {
-            emitComposeRuntimeOperation(args)
-        } else {
-            try await logManager.logs(
+        let followLogs: @Sendable () async throws -> Void = {
+            try await self.logManager.logs(
                 id: id,
                 tail: nil,
                 follow: true,
                 since: nil,
                 until: nil,
                 timestamps: false,
-                emit: options.emit
+                emit: self.options.emit
             )
+        }
+        if options.dryRun {
+            emitComposeRuntimeOperation(args)
+        } else if proxySignals {
+            try await signalProxy.withSignalProxy(
+                signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
+                handler: { [lifecycleManager] signal in
+                    try? await lifecycleManager.killContainer(id: id, signal: signal)
+                },
+                operation: followLogs
+            )
+        } else {
+            try await followLogs()
         }
     }
 
@@ -7903,16 +7924,21 @@ private extension ComposeOrchestrator {
     }
 
     /// Validates that attach stays on the output-only log-follow path apple/container exposes today.
-    func validateAttachOptions(_ attach: ComposeAttachOptions) throws {
+    func validateAttachOptions(_ attach: ComposeAttachOptions) throws -> Bool {
         if let detachKeys = attach.detachKeys, !detachKeys.isEmpty {
             throw ComposeError.unsupported("attach --detach-keys: apple/container does not expose detach-key handling for interactive attach")
         }
         if !attach.noStdin {
-            throw ComposeError.unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin --sig-proxy=false for output-only logs")
+            throw ComposeError.unsupported("attach: apple/container does not expose stdin/stdout/stderr reattach for already-running service containers; use --no-stdin for output-only logs")
         }
         let sigProxy = attach.sigProxy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if sigProxy != "false" {
-            throw ComposeError.unsupported("attach --sig-proxy=\(attach.sigProxy): apple/container does not expose signal proxying for interactive attach; use --sig-proxy=false with --no-stdin")
+        switch sigProxy {
+        case "true", "1", "yes":
+            return true
+        case "false", "0", "no":
+            return false
+        default:
+            throw ComposeError.invalidProject("attach --sig-proxy must be true or false")
         }
     }
 

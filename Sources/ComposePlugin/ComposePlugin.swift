@@ -1501,7 +1501,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     var detachKeys: String?
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
-    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process. Must be false until apple/container exposes interactive attach.")
+    @Option(name: .customLong("sig-proxy"), help: "Proxy signals to the service process for output-only attach.")
     var sigProxy = "true"
     @Argument(help: "Service name.")
     var service: String

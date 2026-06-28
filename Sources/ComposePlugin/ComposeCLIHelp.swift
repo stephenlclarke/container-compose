@@ -242,7 +242,7 @@ enum ComposeCLIHelp {
             "--dry-run": .supported,
             "--index": .supported,
             "--no-stdin": .supported,
-            "--sig-proxy": .partiallySupported,
+            "--sig-proxy": .supported,
         ],
         "bridge": [
             "--dry-run": .notSupported,

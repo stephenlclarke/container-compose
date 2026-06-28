@@ -121,6 +121,17 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
     }
 
+    @Test("attach signal proxy option is shown as supported")
+    func attachSignalProxyOptionIsShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "attach"))
+
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[31m--detach-keys\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--index\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--no-stdin\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--sig-proxy\u{001B}[0m"))
+    }
+
     @Test("up raw attached output flags are shown as supported")
     func upRawAttachedOutputFlagsAreShownAsSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
@@ -194,6 +205,16 @@ struct ComposeCLIHelpTests {
         #expect(command.buildArgs == ["VERSION=2"])
         #expect(command.withDependencies)
         #expect(command.services == ["api"])
+    }
+
+    @Test("attach signal proxy flag parses")
+    func attachSignalProxyFlagParses() throws {
+        let command = try Attach.parse(["--no-stdin", "--sig-proxy=false", "--index", "2", "api"])
+
+        #expect(command.noStdin)
+        #expect(command.sigProxy == "false")
+        #expect(command.index == 2)
+        #expect(command.service == "api")
     }
 
     @Test("global progress option maps Docker Compose policies")
