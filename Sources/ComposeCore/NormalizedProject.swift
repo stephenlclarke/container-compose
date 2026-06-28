@@ -664,6 +664,16 @@ public struct ComposeBuild: Codable, Equatable {
 
     /// Optional build behavior that is not required for every service.
     public struct Options: Equatable {
+        public struct Attestations: Equatable {
+            public var provenance: String?
+            public var sbom: String?
+
+            public init(provenance: String? = nil, sbom: String? = nil) {
+                self.provenance = provenance
+                self.sbom = sbom
+            }
+        }
+
         public var target: String?
         public var noCache: Bool?
         public var pull: Bool?
@@ -679,8 +689,7 @@ public struct ComposeBuild: Codable, Equatable {
             pull: Bool? = nil,
             platforms: [String]? = nil,
             tags: [String]? = nil,
-            provenance: String? = nil,
-            sbom: String? = nil,
+            attestations: Attestations = Attestations(),
             unsupportedFields: [String]? = nil
         ) {
             self.target = target
@@ -688,8 +697,8 @@ public struct ComposeBuild: Codable, Equatable {
             self.pull = pull
             self.platforms = platforms
             self.tags = tags
-            self.provenance = provenance
-            self.sbom = sbom
+            self.provenance = attestations.provenance
+            self.sbom = attestations.sbom
             self.unsupportedFields = unsupportedFields
         }
     }

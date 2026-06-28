@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 23:21 BST.
+Last updated: 2026-06-28 23:33 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -28,7 +28,7 @@ The latest local validation for this `container-compose` slice passed with `make
 
 Most recent coverage proof:
 
-- Swift: 782 Compose tests at 89.99% line coverage; 835 `container` unit tests at 42.07% unit-only line coverage.
+- Swift: 782 Compose tests at 90.01% line coverage; 835 `container` unit tests at 42.07% unit-only line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
@@ -54,7 +54,7 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 ## Open Blockers
 
 - Package/Homebrew promotion now depends on publishing `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.4` from the matching builder-shim source before distributing the `container` build pinned above.
-- SonarQube status should be checked through `/Users/sclarke/github/pr-refresh` with `make sonar-status` after the next push.
+- SonarCloud quality gate is currently OK; recheck the new analysis after this push. The local `/Users/sclarke/github/pr-refresh` helper was not present on this machine.
 
 ## Open Follow-ups
 

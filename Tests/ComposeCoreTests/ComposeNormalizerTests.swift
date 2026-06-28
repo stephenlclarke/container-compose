@@ -430,8 +430,10 @@ struct ComposeNormalizerTests {
                 pull: true,
                 platforms: ["linux/arm64"],
                 tags: ["example/api:latest"],
-                provenance: "mode=max",
-                sbom: "true",
+                attestations: ComposeBuild.Options.Attestations(
+                    provenance: "mode=max",
+                    sbom: "true"
+                ),
                 unsupportedFields: ["ssh"]
             )
         )

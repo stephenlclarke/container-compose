@@ -9368,8 +9368,10 @@ struct ComposeOrchestratorTests {
                             pull: true,
                             platforms: ["linux/amd64", "linux/arm64"],
                             tags: ["example/api:latest", "example/api:dev", "example/api:test"],
-                            provenance: "mode=min",
-                            sbom: "false"
+                            attestations: ComposeBuild.Options.Attestations(
+                                provenance: "mode=min",
+                                sbom: "false"
+                            )
                         )
                     )
                 },
@@ -9827,8 +9829,10 @@ struct ComposeOrchestratorTests {
                             pull: true,
                             platforms: ["linux/arm64"],
                             tags: ["example/api:dev"],
-                            provenance: "mode=min",
-                            sbom: "true"
+                            attestations: ComposeBuild.Options.Attestations(
+                                provenance: "mode=min",
+                                sbom: "true"
+                            )
                         )
                     )
                 },
