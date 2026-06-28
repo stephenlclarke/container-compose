@@ -49,8 +49,8 @@ stays practical.
 
 ## apple/container Log Direction
 
-The log integration branch is a proving ground for runtime behavior, not the
-shape to send upstream as one large PR. The intended apple/container direction
+The fork-backed log integration work is a proving ground for runtime behavior,
+not the shape to send upstream as one large PR. The intended apple/container direction
 is to preserve Chris George's retrieval-options direction while keeping
 retrieval filters, replay policy, and presentation flags on separate API
 boundaries. Small follow-on changes should cover line-correct
@@ -300,7 +300,7 @@ which source, lane, branch, commit, build type, `container` pin, and
 
 Local development builds fall back to the active git checkout and
 `Package.resolved` when packaged metadata is absent. This keeps source builds
-usable while still making Homebrew-installed release and snapshot artifacts
+usable while still making Homebrew-installed release-quality branch artifacts
 traceable. Use `container system version` beside `container compose version` to
 compare the running `container` runtime and API service against the plugin's
 compiled expectations, especially when testing Stephen fork builds against

@@ -1376,7 +1376,7 @@ struct ComposeOrchestratorTests {
         #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project"] == "demo" })
         #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project.config-files-hash"]?.count == 64 })
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
-        #expect(progress.snapshot.joined() == "⠋ Creating api\n✔︎ Creating api\n")
+        #expect(progress.snapshot.joined() == "⠓ Creating api\n✔︎ Creating api\n")
 
         let create = commands[0]
         #expect(create.starts(with: ["container", "create", "--name", "demo-api-1"]))
@@ -1777,6 +1777,46 @@ struct ComposeOrchestratorTests {
         #expect(commands[1].starts(with: ["container", "create", "--name", "demo-db-1"]))
         #expect(await imageManager.requests == [
             .pullMissing("example/api"),
+            .pullMissing("postgres"),
+            .healthCheck(reference: "example/api", platform: nil),
+            .healthCheck(reference: "postgres", platform: nil),
+        ])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
+    }
+
+    @Test("create build with missing pull builds buildable images and pulls only runtime images")
+    func createBuildWithMissingPullBuildsBuildableImagesAndPullsOnlyRuntimeImages() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager).create(
+            project: project,
+            options: ComposeCreateOptions {
+                $0.build = true
+                $0.pullPolicy = "missing"
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
+        #expect(commands[0].last == "api")
+        #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(commands[2].starts(with: ["container", "create", "--name", "demo-db-1"]))
+        #expect(await imageManager.requests == [
             .pullMissing("postgres"),
             .healthCheck(reference: "example/api", platform: nil),
             .healthCheck(reference: "postgres", platform: nil),
@@ -3968,6 +4008,44 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
     }
 
+    @Test("up build with missing pull builds buildable images and pulls only runtime images")
+    func upBuildWithMissingPullBuildsBuildableImagesAndPullsOnlyRuntimeImages() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+            .success,
+        ])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let imageManager = RecordingContainerImageManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager, imageManager: imageManager)
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.build = true
+            $0.pullPolicy = "missing"
+        })
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
+        #expect(commands[0].last == "api")
+        #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(commands[2].starts(with: ["container", "run", "--name", "demo-db-1"]))
+        #expect(await imageManager.requests == [
+            .pullMissing("postgres"),
+            .healthCheck(reference: "example/api", platform: nil),
+            .healthCheck(reference: "postgres", platform: nil),
+        ])
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-db-1"])
+    }
+
     @Test("up pull if not present uses the missing-image flow")
     func upPullIfNotPresentUsesMissingImageFlow() async throws {
         let runner = RecordingRunner(responses: [
@@ -4051,9 +4129,9 @@ struct ComposeOrchestratorTests {
         })
 
         #expect(progress.snapshot.joined() == """
-        ⠋ Pulling image example/api
+        ⠓ Pulling image example/api
         ✔︎ Pulling image example/api
-        ⠋ Starting api
+        ⠓ Starting api
         ✔︎ Starting api
 
         """)
@@ -4073,7 +4151,7 @@ struct ComposeOrchestratorTests {
         let discoveryManager = RecordingContainerDiscoveryManager()
         let imageManager = RecordingContainerImageManager(onPullImage: { reference in
             #expect(reference == "example/api")
-            #expect(progress.snapshot == ["⠋ Pulling image example/api\n"])
+            #expect(progress.snapshot == ["⠓ Pulling image example/api\n"])
         })
         let project = ComposeProject(
             name: "demo",
@@ -4092,7 +4170,7 @@ struct ComposeOrchestratorTests {
             $0.pullPolicy = "always"
         })
 
-        #expect(progress.snapshot.joined().hasPrefix("⠋ Pulling image example/api\n"))
+        #expect(progress.snapshot.joined().hasPrefix("⠓ Pulling image example/api\n"))
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -4126,7 +4204,7 @@ struct ComposeOrchestratorTests {
             $0.quietPull = true
         })
 
-        #expect(progress.snapshot.joined() == "⠋ Starting api\n✔︎ Starting api\n")
+        #expect(progress.snapshot.joined() == "⠓ Starting api\n✔︎ Starting api\n")
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -9887,7 +9965,7 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.count == 1)
         #expect(emitted.snapshot == [
-            "⠋ Building api\n",
+            "⠓ Building api\n",
             "✔︎ Building api\n",
         ])
     }
@@ -9897,7 +9975,7 @@ struct ComposeOrchestratorTests {
         let emitted = LockedStringRecorder()
         let runner = ProgressAssertingRunner { arguments in
             #expect(arguments.containsSequence(["container", "build"]))
-            #expect(emitted.snapshot == ["⠋ Building api\n"])
+            #expect(emitted.snapshot == ["⠓ Building api\n"])
         }
         let project = composeProject(
             name: "demo",
@@ -9919,7 +9997,7 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.count == 1)
         #expect(emitted.snapshot == [
-            "⠋ Building api\n",
+            "⠓ Building api\n",
             "✔︎ Building api\n",
         ])
     }
@@ -11182,9 +11260,9 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.isEmpty)
         #expect(progress.snapshot.joined() == """
-        ⠋ Starting api
+        ⠓ Starting api
         ✔︎ Starting api
-        ⠋ Starting worker
+        ⠓ Starting worker
         ✔︎ Starting worker
 
         """)
@@ -14389,7 +14467,7 @@ struct ComposeOrchestratorTests {
             tty: true
         )
 
-        #expect(progress.snapshot.joined() == "⠋ Executing api\n")
+        #expect(progress.snapshot.joined() == "⠓ Executing api\n")
         #expect(runner.commands.isEmpty)
         #expect(await execManager.attachedRequests == [
             ContainerAttachedExecRequest(
@@ -17932,9 +18010,9 @@ struct ComposeOrchestratorTests {
         )
 
         #expect(progress.snapshot.joined() == """
-        ⠋ Pulling image alpine
+        ⠓ Pulling image alpine
         ✔︎ Pulling image alpine
-        ⠋ Running job
+        ⠓ Running job
         ✔︎ Running job
 
         """)
@@ -17975,7 +18053,7 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(progress.snapshot.joined() == "⠋ Running job\n✔︎ Running job\n")
+        #expect(progress.snapshot.joined() == "⠓ Running job\n✔︎ Running job\n")
         #expect(await imageManager.requests == [
             .pull("alpine"),
             .healthCheck(reference: "alpine", platform: nil),
@@ -19682,7 +19760,7 @@ struct ComposeOrchestratorTests {
         )
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(progress.snapshot.joined() == "⠋ Running shell\n")
+        #expect(progress.snapshot.joined() == "⠓ Running shell\n")
         #expect(runner.commands.first?.io == .replacingProcess)
         #expect(command.contains("--tty"))
         #expect(command.contains("--interactive"))

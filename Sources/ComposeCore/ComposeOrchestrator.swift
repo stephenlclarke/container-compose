@@ -1660,16 +1660,22 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         }
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
+        let buildBeforePull = up.build && !up.noBuild && isMissingPullPolicy(up.pullPolicy)
+        if buildBeforePull {
+            try await build(project: workingProject, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
+        }
+
         try await applyPullPolicy(
             up.pullPolicy,
             project: workingProject,
             services: services,
             quiet: up.quietPull,
             quietBuild: up.quietBuild,
-            allowBuild: !up.noBuild && !up.build
+            allowBuild: !up.noBuild && !up.build,
+            skipBuildableMissingImages: buildBeforePull
         )
 
-        if up.build {
+        if up.build && !buildBeforePull {
             try await build(project: workingProject, services: services.map(\.name), noCache: false, quiet: up.quietBuild)
         }
 
@@ -7100,7 +7106,8 @@ private extension ComposeOrchestrator {
         services: [ComposeService],
         quiet: Bool = false,
         quietBuild: Bool = false,
-        allowBuild: Bool = true
+        allowBuild: Bool = true,
+        skipBuildableMissingImages: Bool = false
     ) async throws {
         guard let policy, !policy.isEmpty else {
             try await applyServicePullPolicies(
@@ -7123,7 +7130,7 @@ private extension ComposeOrchestrator {
                 }
             )
         case "missing", "if_not_present":
-            try await pullMissingImages(services: services, quiet: quiet)
+            try await pullMissingImages(services: services, quiet: quiet, skipBuildable: skipBuildableMissingImages)
         case "never":
             return
         default:
@@ -7141,16 +7148,22 @@ private extension ComposeOrchestrator {
             return
         }
 
+        let buildBeforePull = create.build && !create.noBuild && isMissingPullPolicy(create.pullPolicy)
+        if buildBeforePull {
+            try await build(project: project, services: services.map(\.name), noCache: false, quiet: create.quietBuild)
+        }
+
         try await applyPullPolicy(
             create.pullPolicy,
             project: project,
             services: services,
             quiet: create.quietPull,
             quietBuild: create.quietBuild,
-            allowBuild: !create.noBuild && !create.build
+            allowBuild: !create.noBuild && !create.build,
+            skipBuildableMissingImages: buildBeforePull
         )
 
-        guard create.build, !create.noBuild else {
+        guard create.build, !create.noBuild, !buildBeforePull else {
             return
         }
         try await build(project: project, services: services.map(\.name), noCache: false, quiet: create.quietBuild)
@@ -7164,6 +7177,11 @@ private extension ComposeOrchestrator {
     /// Returns whether `up` should auto-build a build-only service before start.
     func shouldBuildServiceForUp(_ up: ComposeUpOptions, service: ComposeService) -> Bool {
         !up.noBuild && !up.build && service.pullPolicy != "build" && service.image == nil && service.build != nil
+    }
+
+    /// Returns whether a global pull policy should only fill genuinely missing runtime images.
+    func isMissingPullPolicy(_ policy: String?) -> Bool {
+        policy == "missing" || policy == "if_not_present"
     }
 
     /// Applies service-level `pull_policy` when no global pull override is set.
@@ -7375,8 +7393,11 @@ private extension ComposeOrchestrator {
     }
 
     /// Pulls only service images not already present in the local image store.
-    func pullMissingImages(services: [ComposeService], quiet: Bool = false) async throws {
+    func pullMissingImages(services: [ComposeService], quiet: Bool = false, skipBuildable: Bool = false) async throws {
         for service in services {
+            if skipBuildable, service.build != nil {
+                continue
+            }
             guard let image = service.image else {
                 continue
             }

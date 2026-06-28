@@ -33,7 +33,7 @@ struct ComposeProgressTests {
         }
 
         #expect(value == "loaded")
-        #expect(emitted.string == "⠋ Loading Compose model\n✔︎ Loading Compose model\n")
+        #expect(emitted.string == "⠓ Loading Compose model\n✔︎ Loading Compose model\n")
     }
 
     @Test
@@ -45,7 +45,7 @@ struct ComposeProgressTests {
         )
 
         try await reporter.activity("Loading Compose model") {
-            #expect(emitted.string == "⠋ Loading Compose model\n")
+            #expect(emitted.string == "⠓ Loading Compose model\n")
         }
     }
 
@@ -66,7 +66,7 @@ struct ComposeProgressTests {
             #expect(error == .invalidProject("broken build"))
         }
 
-        #expect(emitted.string == "⠋ Building api\n✘ Building api\n")
+        #expect(emitted.string == "⠓ Building api\n✘ Building api\n")
     }
 
     @Test
@@ -93,7 +93,7 @@ struct ComposeProgressTests {
 
         try await reporter.activity("Building api") {}
 
-        #expect(emitted.string.contains("\u{001B}[38;5;63m⠋\u{001B}[0m Building api"))
+        #expect(emitted.string.contains("\u{001B}[38;5;63m⠓\u{001B}[0m Building api"))
         #expect(emitted.string.contains("\u{001B}[32m✔︎\u{001B}[0m Building api"))
     }
 
@@ -167,10 +167,33 @@ struct ComposeProgressTests {
         )
 
         try await reporter.activity("Loading Compose model") {
-            #expect(emitted.string == "\r⠋ Loading Compose model")
+            #expect(emitted.string == "\r⠓ Loading Compose model")
         }
 
-        #expect(emitted.string == "\r⠋ Loading Compose model\r\u{001B}[K✔︎ Loading Compose model\n")
+        #expect(emitted.string == "\r⠓ Loading Compose model\r\u{001B}[K✔︎ Loading Compose model\n")
+    }
+
+    @Test
+    func `tty progress follows figure eight trail frames`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .tty,
+            emitData: { emitted.append($0) },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(1)) },
+        )
+        let expectedFrames = "\r⠓ Loading Compose model\r⠋ Loading Compose model\r⠙ Loading Compose model\r⠚ Loading Compose model"
+
+        try await reporter.activity("Loading Compose model") {
+            for _ in 0..<200 {
+                if emitted.string.contains(expectedFrames) {
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(1))
+            }
+            Issue.record("Expected figure-eight trail frames")
+        }
+
+        #expect(emitted.string.contains(expectedFrames))
     }
 
     @Test
@@ -183,7 +206,7 @@ struct ComposeProgressTests {
 
         reporter.handoff("Running shell")
 
-        #expect(emitted.string == "⠋ Running shell\n")
+        #expect(emitted.string == "⠓ Running shell\n")
     }
 
     @Test
@@ -196,7 +219,7 @@ struct ComposeProgressTests {
 
         reporter.handoff("Running shell")
 
-        #expect(emitted.string == "⠋ Running shell\n")
+        #expect(emitted.string == "⠓ Running shell\n")
     }
 
     @Test

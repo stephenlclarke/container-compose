@@ -15,7 +15,7 @@ This PR draft follows `.github/pull_request_template.md`.
 
 ## Motivation and Context
 
-This is a small, upstream-shaped slice from the current `stephenlclarke/container` `develop` fork integration lane. It builds on Chris George's log retrieval-options direction in [apple/container#1592](https://github.com/apple/container/pull/1592) and the `tail` / `until` retrieval-filter follow-up in [apple/container#1764](https://github.com/apple/container/pull/1764). Docker-shaped timestamp parsing is now owned by `container-compose`, so [apple/container#1765](https://github.com/apple/container/pull/1765) is optional Apple CLI convenience rather than a plugin dependency.
+This is a small, upstream-shaped slice from the local `stephenlclarke/container` fork integration history. It builds on Chris George's log retrieval-options direction in [apple/container#1592](https://github.com/apple/container/pull/1592) and the `tail` / `until` retrieval-filter follow-up in [apple/container#1764](https://github.com/apple/container/pull/1764). Docker-shaped timestamp parsing is now owned by `container-compose`, so [apple/container#1765](https://github.com/apple/container/pull/1765) is optional Apple CLI convenience rather than a plugin dependency.
 
 Docker Compose documents `docker compose logs --tail` as a per-container line count, and Compose services can configure local retained logs through `logging.options.max-size` and `logging.options.max-file`. External orchestrators such as `container-compose` need a runtime-owned way to request static retained log replay without polling or reading complete retained log history in the plugin.
 

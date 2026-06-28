@@ -78,10 +78,12 @@ $(brew --prefix container-compose)/libexec/container-plugins/compose
 Recreate it with:
 
 ```sh
-mkdir -p "$(brew --prefix container)/libexec/container-plugins"
+container_prefix="$(brew --prefix container)"
+compose_prefix="$(brew --prefix container-compose)"
+mkdir -p "$container_prefix/libexec/container-plugins"
 ln -sfn \
-  "$(brew --prefix container-compose)/libexec/container-plugins/compose" \
-  "$(brew --prefix container)/libexec/container-plugins/compose"
+  "$compose_prefix/libexec/container-plugins/compose" \
+  "$container_prefix/libexec/container-plugins/compose"
 brew services restart stephenlclarke/tap/container
 ```
 
@@ -124,10 +126,12 @@ brew uninstall --ignore-dependencies \
 brew install stephenlclarke/tap/container
 brew install stephenlclarke/tap/container-compose
 
-mkdir -p "$(brew --prefix container)/libexec/container-plugins"
+container_prefix="$(brew --prefix container)"
+compose_prefix="$(brew --prefix container-compose)"
+mkdir -p "$container_prefix/libexec/container-plugins"
 ln -sfn \
-  "$(brew --prefix container-compose)/libexec/container-plugins/compose" \
-  "$(brew --prefix container)/libexec/container-plugins/compose"
+  "$compose_prefix/libexec/container-plugins/compose" \
+  "$container_prefix/libexec/container-plugins/compose"
 
 brew services restart stephenlclarke/tap/container
 hash -r 2>/dev/null || true

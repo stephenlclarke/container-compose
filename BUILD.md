@@ -204,13 +204,21 @@ make docker-log-fixtures
 
 This runs `examples/logging/compose.yml` through Docker Compose and compares the captured rotated log tail behavior with `Tests/ComposeCoreTests/Fixtures/logging/docker-compose-rotated-tail.expected`. The fixture currently records `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all` for rotated `json-file` and `local` logging drivers.
 
+For the local-only command/help surface parity check, run:
+
+```sh
+make docker-compose-cli-surface-parity
+```
+
+This builds the local `compose` binary, compares root command listings, `bridge` management command listings, and every documented long option against Docker Compose V2, then writes `.build/parity/compose-cli-surface.md`. Known intentional differences are documented in `docs/parity/compose-cli-surface.md` and encoded in `Tools/parity/compose-cli-surface.allowlist`. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
+
 For the local-only `events` parity check added with the fork-backed event-stream slice, run:
 
 ```sh
 make docker-compose-events-parity
 ```
 
-This runs Docker Compose V2 against a temporary project and validates the event behavior mirrored by `container-compose`: JSON output, container-event scope, selected-service filtering, internal Compose label stripping, and one-off container suppression. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+This runs Docker Compose V2 against a temporary project and validates the event behavior mirrored by `container-compose`: JSON output, container-event scope, selected-service filtering, internal Compose label stripping, and one-off container suppression. Standalone `docker-compose` 5.1.4 may print `EOF` after emitting replay output for `events --since/--until`; the script validates the captured output and reports that as a warning. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
 
 For the local-only restart-policy parity check added with the fork-backed lifecycle slice, run:
 

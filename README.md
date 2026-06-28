@@ -61,12 +61,13 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 - [INSTALL.md](INSTALL.md): install prebuilt Homebrew assets or a local plugin archive.
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md): recover bad installs and diagnose runtime issues.
-- [BRANCHES.md](BRANCHES.md): understand active `main`, stable `release`, and tagged `release-*` install branches.
+- [BRANCHES.md](BRANCHES.md): understand active `main`, stable `release`, and tagged `release-VERSION-TAG` install branches.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.
-- [STATUS.md](STATUS.md): get the current branch lanes, blockers, and validation handoff.
+- [STATUS.md](STATUS.md): get the current dependency pins, blockers, and validation handoff.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
+- [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md): review local Docker Compose CLI surface parity and documented differences.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.
 - [SECURITY.md](SECURITY.md): report security issues.
 

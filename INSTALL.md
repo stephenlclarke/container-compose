@@ -12,7 +12,7 @@ This guide explains how to install the `container-compose` plugin and the compat
 | Release | `container-compose-release` | release | You want the latest stable release branch build. |
 | Tagged release | `container-compose-release-v0-1-0` style | release | You want a specific `release-VERSION-TAG` branch. |
 
-These lanes install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Debug snapshot formulae are not part of the current branch model.
+These lanes install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Debug formula lanes are not part of the current branch model.
 
 ## Requirements
 
@@ -125,7 +125,7 @@ container compose version --format json
 
 `container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, and the exact `containerization` source/ref compiled into the runtime. Apple package builds do not carry the Stephen fork provenance fields.
 
-`container compose version` shows the installed plugin build plus the `container` and `containerization` pins that the plugin package was built against. `release` and `release-*` packages report lane `release`; active development builds from `main` report lane `main`.
+`container compose version` shows the installed plugin build plus the `container` and `containerization` pins that the plugin package was built against. `release` and versioned release packages report lane `release`; active development builds from `main` report lane `main`.
 
 Run a read-only Compose command from a directory containing a Compose file:
 

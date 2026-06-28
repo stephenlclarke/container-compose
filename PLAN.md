@@ -2,7 +2,7 @@
 
 This is the living roadmap for `container-compose`. It should stay small enough to review in one pass. Historical validation evidence, parked-session notes, and old slice ledgers belong in git history, CI logs, or the upstream handoff drafts under `docs/upstream/`, not in this file.
 
-For current branch state, blockers, and validation status, use [STATUS.md](STATUS.md).
+For current dependency pins, blockers, and validation status, use [STATUS.md](STATUS.md).
 
 ## Direction
 
@@ -12,19 +12,21 @@ The Apple runtime forks should expose smaller Apple-native primitives that can b
 
 ## Branch Lanes
 
+Canonical branch and Homebrew lane policy lives in [BRANCHES.md](BRANCHES.md).
+
 - `main`: active development and integration lane. Keep full CI, CodeQL, and SonarQube here so the public badges describe the code under active review.
-- `release/*`: frozen release lanes. Build optimized prebuilt assets, remove branch-inappropriate SonarQube badges, and update the release Homebrew formula from published assets.
-- `snapshot/*`: frozen debug snapshot lanes. Build debug Swift prebuilt assets, keep the Go normalizer release-built, remove branch-inappropriate SonarQube badges, and update the snapshot Homebrew formula from published assets.
+- `release`: moving stable release lane. Build optimized prebuilt assets and update the release Homebrew formula from published assets.
+- `release-VERSION-TAG`: immutable copy of a promoted release tag. Build optimized prebuilt assets for versioned formulae.
 
 The `container-compose` branch must stay pinned to the required `stephenlclarke/container` and `stephenlclarke/containerization` surfaces. Do not silently drift back to incompatible `apple/container` or `apple/containerization` surfaces while fork-backed behavior is still required.
 
 ## Current Focus
 
-Keep the prebuilt install path healthy for both lanes:
+Keep the prebuilt install path healthy for the active lanes:
 
-- GitHub Actions publishes branch release assets for frozen `release/*` and `snapshot/*` branches.
+- GitHub Actions publishes branch release assets for `main`, `release`, and immutable `release-VERSION-TAG` branches.
 - Homebrew installs those prebuilt Swift and Go binaries without requiring Go, Xcode, or a Swift toolchain on the target machine.
-- Package targets always include a release-built Go normalizer, even when the Swift plugin is a debug snapshot build.
+- Package targets always include a release-built Go normalizer. Debug package lanes are not part of the current branch model.
 - CI accepts classified SwiftPM signal-pass output only when the helper proves tests passed and no failure markers were emitted.
 - Homebrew advisory jobs trust only the specific taps required by the formulas.
 - Keep auditing startup, normalization, image pull/build, and runtime handoff paths so every slow phase emits prompt stderr progress before the expensive work starts, using Docker Compose-style `--progress` policies and a compact spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner). Treat any newly observed silent startup or build wait as a progress regression: reproduce it, add a focused first-frame test, and emit a visible spinner/status row before the blocking operation begins.
@@ -49,7 +51,7 @@ Before pushing a functional slice:
 - Verify the fork dependency pins still point at the required `stephenlclarke` branches or revisions.
 - Check open Apple and peer PRs for API drift or overlapping work.
 - Run the focused tests for touched code and `make ci` for `container-compose` unless the toolchain or runtime is externally blocked.
-- Update [STATUS.md](STATUS.md) only with current branch state, blockers, and validation. Do not paste long evidence logs.
+- Update [STATUS.md](STATUS.md) only with current dependency pins, blockers, and validation. Do not paste long evidence logs.
 - Keep commits small, Conventional Commits compliant, and free of prohibited wording.
 
 ## Documentation Rules

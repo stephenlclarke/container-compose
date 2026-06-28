@@ -23,6 +23,10 @@
 #   --strict    Fail when Docker Compose V2 or the Docker daemon is unavailable.
 #   -h, --help  Show this help.
 #
+# ENVIRONMENT:
+#   DOCKER_COMPOSE  Docker Compose command to compare with. Defaults to
+#                   "docker compose" when available, otherwise docker-compose.
+#
 # This script is intentionally local-only and is not part of CI. It verifies the
 # Docker Compose V2 restart-policy HostConfig shape used by container-compose:
 # service-level restart values, deploy-over-service precedence, deploy
@@ -39,6 +43,7 @@ STRICT=0
 TMPDIR=""
 COMPOSE_FILE=""
 PROJECT_NAME="container-compose-restart-$RANDOM-$$"
+DOCKER_COMPOSE_COMMAND=()
 
 # Print a warning message to stderr.
 warning() {
@@ -89,12 +94,22 @@ skip_or_fail() {
     exit 0
 }
 
-# Check Docker Compose V2 and daemon availability.
-check_docker() {
-    if ! docker compose version >/dev/null 2>&1; then
+# Locate Docker Compose V2, accepting either plugin or standalone command form.
+detect_docker_compose() {
+    if [[ -n "${DOCKER_COMPOSE:-}" ]]; then
+        IFS=' ' read -r -a DOCKER_COMPOSE_COMMAND <<<"$DOCKER_COMPOSE"
+    elif docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_COMMAND=(docker compose)
+    elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_COMMAND=(docker-compose)
+    else
         skip_or_fail 'Docker Compose V2 is not available'
     fi
+}
 
+# Check Docker Compose V2 and daemon availability.
+check_docker() {
+    detect_docker_compose
     if ! docker info >/dev/null 2>&1; then
         skip_or_fail 'Docker daemon is not available'
     fi
@@ -141,7 +156,7 @@ YAML
 # Clean up the temporary Docker Compose project and local files.
 cleanup() {
     if [[ -n "$COMPOSE_FILE" ]]; then
-        docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
     fi
     if [[ -n "$TMPDIR" ]]; then
         rm -rf "$TMPDIR"
@@ -150,12 +165,13 @@ cleanup() {
 
 # Validate Docker Compose's rendered HostConfig restart policy values.
 validate_restart_policies() {
-    python3 - "$PROJECT_NAME" "$COMPOSE_FILE" <<'PY'
+    python3 - "$PROJECT_NAME" "$COMPOSE_FILE" "${DOCKER_COMPOSE_COMMAND[@]}" <<'PY'
 import json
 import subprocess
 import sys
 
 project, compose_file = sys.argv[1], sys.argv[2]
+compose_command = sys.argv[3:]
 expected = {
     "svcservice": ("unless-stopped", 0),
     "svczero": ("on-failure", 0),
@@ -166,7 +182,7 @@ expected = {
 
 for service, (name, maximum_retry_count) in expected.items():
     container_id = subprocess.check_output(
-        ["docker", "compose", "-p", project, "-f", compose_file, "ps", "--all", "-q", service],
+        compose_command + ["-p", project, "-f", compose_file, "ps", "--all", "-q", service],
         text=True,
     ).strip()
     if not container_id:
@@ -190,7 +206,7 @@ main() {
     create_fixture
     trap cleanup EXIT
 
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create --force-recreate >/dev/null
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create --force-recreate >/dev/null
     validate_restart_policies
     printf 'Docker Compose restart-policy parity check passed for project %s\n' "$PROJECT_NAME"
 }

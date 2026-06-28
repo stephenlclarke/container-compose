@@ -18,7 +18,7 @@
 
 Docker Compose inherits image-level Dockerfile `HEALTHCHECK` metadata when a service does not declare a replacement probe. It also allows services to tune image probes by setting timing fields such as `interval`, `timeout`, `start_period`, `start_interval`, or `retries` without repeating the probe command.
 
-The current `stephenlclarke/container` `develop` fork integration lane carries `feat(api): expose image healthcheck metadata` (`831a013`), documented by `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` / `docs/upstream/apple-container/PR-image-healthcheck-metadata.md`. That runtime slice references [apple/container#440](https://github.com/apple/container/issues/440), [apple/container#1502](https://github.com/apple/container/issues/1502), and [apple/container#1504](https://github.com/apple/container/pull/1504), and exposes Docker image config `Healthcheck` metadata through `ImageResource.Variant.healthCheck`.
+The local `stephenlclarke/container` fork integration history carries `feat(api): expose image healthcheck metadata` (`831a013`), documented by `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` / `docs/upstream/apple-container/PR-image-healthcheck-metadata.md`. That runtime slice references [apple/container#440](https://github.com/apple/container/issues/440), [apple/container#1502](https://github.com/apple/container/issues/1502), and [apple/container#1504](https://github.com/apple/container/pull/1504), and exposes Docker image config `Healthcheck` metadata through `ImageResource.Variant.healthCheck`.
 
 With that fork primitive available, this plugin can implement Compose inheritance and override semantics without adding Compose-specific code to `apple/container`.
 

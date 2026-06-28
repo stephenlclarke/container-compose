@@ -26,6 +26,8 @@
 # ENVIRONMENT:
 #   CONTAINER_COMPOSE  Path to the container-compose binary. Defaults to the
 #                      local SwiftPM debug build at .build/debug/compose.
+#   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
+#                      "docker compose" when available, otherwise docker-compose.
 #   DOCKER_COMPOSE_E2E_DIR
 #                      Sparse checkout path for docker/compose e2e fixtures.
 #                      Defaults to .build/parity/docker-compose-e2e.
@@ -51,6 +53,7 @@ DOCKER_PROJECT_NAME="container-compose-create-docker-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="container-compose-create-runtime-$RANDOM-$$"
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_PROJECT_TOUCHED=0
+DOCKER_COMPOSE_COMMAND=()
 DOCKER_COMPOSE_E2E_DIR="${DOCKER_COMPOSE_E2E_DIR:-$REPO_ROOT/.build/parity/docker-compose-e2e}"
 DOCKER_COMPOSE_E2E_FIXTURES="$DOCKER_COMPOSE_E2E_DIR/pkg/e2e/fixtures"
 DOCKER_COMPOSE_E2E_COMMIT=""
@@ -112,12 +115,22 @@ with_timeout() {
     perl -e 'alarm shift @ARGV; exec @ARGV' "$seconds" "$@"
 }
 
-# Check Docker Compose V2 and daemon availability.
-check_docker() {
-    if ! docker compose version >/dev/null 2>&1; then
+# Locate Docker Compose V2, accepting either plugin or standalone command form.
+detect_docker_compose() {
+    if [[ -n "${DOCKER_COMPOSE:-}" ]]; then
+        IFS=' ' read -r -a DOCKER_COMPOSE_COMMAND <<<"$DOCKER_COMPOSE"
+    elif docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_COMMAND=(docker compose)
+    elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_COMMAND=(docker-compose)
+    else
         skip_or_fail 'Docker Compose V2 is not available'
     fi
+}
 
+# Check Docker Compose V2 and daemon availability.
+check_docker() {
+    detect_docker_compose
     if ! docker info >/dev/null 2>&1; then
         skip_or_fail 'Docker daemon is not available'
     fi
@@ -243,7 +256,7 @@ YAML
 # Clean up the temporary Docker and container-compose projects.
 cleanup() {
     if [[ -n "$COMPOSE_FILE" ]]; then
-        docker compose -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
         if ((CONTAINER_PROJECT_TOUCHED == 1)) && [[ -x "$CONTAINER_COMPOSE" ]]; then
             with_timeout 30 "$CONTAINER_COMPOSE" -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
         fi
@@ -255,17 +268,18 @@ cleanup() {
 
 # Validate Docker Compose's rendered create-time container configuration.
 validate_docker_create() {
-    python3 - "$DOCKER_PROJECT_NAME" "$COMPOSE_FILE" "$TMPDIR" <<'PY'
+    python3 - "$DOCKER_PROJECT_NAME" "$COMPOSE_FILE" "$TMPDIR" "${DOCKER_COMPOSE_COMMAND[@]}" <<'PY'
 import json
 import subprocess
 import sys
 
 project, compose_file, tmpdir = sys.argv[1:4]
+compose_command = sys.argv[4:]
 
 
 def inspect(service):
     container_id = subprocess.check_output(
-        ["docker", "compose", "-p", project, "-f", compose_file, "ps", "--all", "-q", service],
+        compose_command + ["-p", project, "-f", compose_file, "ps", "--all", "-q", service],
         text=True,
     ).strip()
     if not container_id:
@@ -339,7 +353,7 @@ validate_container_compose_dry_run() {
     dry_run_output="$("$CONTAINER_COMPOSE" --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --force-recreate)"
 
     [[ "$dry_run_output" == *"container build --tag $CONTAINER_PROJECT_NAME-built:latest"* ]]
-    [[ "$dry_run_output" == *"--file Dockerfile $TMPDIR"* ]]
+    [[ "$dry_run_output" == *"--file $TMPDIR/Dockerfile $TMPDIR"* ]]
     [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-built-1"* ]]
     [[ "$dry_run_output" == *"container create --name $CONTAINER_PROJECT_NAME-api-1"* ]]
     [[ "$dry_run_output" == *"--log-opt max-file=3"* ]]
@@ -390,7 +404,7 @@ main() {
     create_fixture
     trap cleanup EXIT
 
-    docker compose -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --pull missing --force-recreate >/dev/null
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --pull missing --force-recreate >/dev/null
     validate_docker_create
     validate_container_compose_dry_run
     run_container_compose_create

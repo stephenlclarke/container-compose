@@ -23,6 +23,10 @@
 #   --strict    Fail when Docker Compose V2 or the Docker daemon is unavailable.
 #   -h, --help  Show this help.
 #
+# ENVIRONMENT:
+#   DOCKER_COMPOSE  Docker Compose command to compare with. Defaults to
+#                   "docker compose" when available, otherwise docker-compose.
+#
 # This script is intentionally local-only and is not part of CI. It verifies the
 # Docker Compose V2 event semantics used by container-compose: default text and
 # JSON output are container-scoped, selected service filtering excludes other
@@ -43,6 +47,7 @@ FILTERED_EVENTS_FILE=""
 TEXT_EVENTS_FILE=""
 PROJECT_NAME="container-compose-events-$RANDOM-$$"
 EVENTS_PID=""
+DOCKER_COMPOSE_COMMAND=()
 
 # Print a warning message to stderr.
 warning() {
@@ -93,12 +98,22 @@ skip_or_fail() {
     exit 0
 }
 
-# Check Docker Compose V2 and daemon availability.
-check_docker() {
-    if ! docker compose version >/dev/null 2>&1; then
+# Locate Docker Compose V2, accepting either plugin or standalone command form.
+detect_docker_compose() {
+    if [[ -n "${DOCKER_COMPOSE:-}" ]]; then
+        IFS=' ' read -r -a DOCKER_COMPOSE_COMMAND <<<"$DOCKER_COMPOSE"
+    elif docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_COMMAND=(docker compose)
+    elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_COMMAND=(docker-compose)
+    else
         skip_or_fail 'Docker Compose V2 is not available'
     fi
+}
 
+# Check Docker Compose V2 and daemon availability.
+check_docker() {
+    detect_docker_compose
     if ! docker info >/dev/null 2>&1; then
         skip_or_fail 'Docker daemon is not available'
     fi
@@ -139,16 +154,16 @@ stop_events_watcher() {
 cleanup() {
     stop_events_watcher
     if [[ -n "$COMPOSE_FILE" ]]; then
-        docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
     fi
     if [[ -n "$TMPDIR" ]]; then
         rm -rf "$TMPDIR"
     fi
 }
 
-# Start `docker compose events --json` in the background.
+# Start `Docker Compose events --json` in the background.
 start_events_watcher() {
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json api >"$EVENTS_FILE" &
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json api >"$EVENTS_FILE" &
     EVENTS_PID="$!"
     sleep 1
 }
@@ -268,7 +283,7 @@ run_filtered_replay() {
     local replay_pid
     local deadline
 
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json --since "$since" --until "$until" api >"$FILTERED_EVENTS_FILE" &
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json --since "$since" --until "$until" api >"$FILTERED_EVENTS_FILE" &
     replay_pid="$!"
     ((deadline = SECONDS + 30))
 
@@ -282,7 +297,13 @@ run_filtered_replay() {
         sleep 1
     done
 
-    wait "$replay_pid"
+    if ! wait "$replay_pid"; then
+        if [[ -s "$FILTERED_EVENTS_FILE" ]]; then
+            warning 'Docker Compose events --since/--until exited nonzero after emitting replay output; validating captured output'
+            return 0
+        fi
+        return 1
+    fi
 }
 
 # Run Docker Compose default text event replay with a bounded wait.
@@ -292,7 +313,7 @@ run_text_replay() {
     local replay_pid
     local deadline
 
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --since "$since" --until "$until" api >"$TEXT_EVENTS_FILE" &
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --since "$since" --until "$until" api >"$TEXT_EVENTS_FILE" &
     replay_pid="$!"
     ((deadline = SECONDS + 30))
 
@@ -306,7 +327,13 @@ run_text_replay() {
         sleep 1
     done
 
-    wait "$replay_pid"
+    if ! wait "$replay_pid"; then
+        if [[ -s "$TEXT_EVENTS_FILE" ]]; then
+            warning 'Docker Compose events text replay exited nonzero after emitting replay output; validating captured output'
+            return 0
+        fi
+        return 1
+    fi
 }
 
 # Validate that Docker Compose time-filtered replay keeps the same event shape.
@@ -360,13 +387,13 @@ main() {
     trap cleanup EXIT
 
     start_events_watcher
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --force-recreate api db >/dev/null
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --force-recreate api db >/dev/null
     wait_for_api_event
 
     local before_one_off
     local after_one_off
     before_one_off="$(stable_event_count)"
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run --rm api true >/dev/null
+    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run -T --rm api true >/dev/null
     sleep 3
     after_one_off="$(wc -l <"$EVENTS_FILE" | tr -d ' ')"
 

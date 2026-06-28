@@ -16,7 +16,7 @@ upstream with minimal reshaping.
 
 Use pull requests for all changes.
 
-1. Fork the repository or create a topic branch from `develop`.
+1. Fork the repository or create a topic branch from `main`.
 2. Keep each pull request focused on one bug fix, feature, or documentation
    update.
 3. Sign every commit with a GitHub-supported signature method such as SSH or
@@ -107,8 +107,8 @@ Keep every contribution easy for apple/container maintainers to assess:
 - Keep orchestration logic in Swift and Compose normalization in the Go helper.
 - Prefer the existing project structure over new abstractions.
 - Keep unsupported Compose features explicit and actionable.
-- Keep [STATUS.md](STATUS.md) aligned with current runtime blockers and
-  branch state.
+- Keep [STATUS.md](STATUS.md) aligned with current dependency pins, runtime
+  blockers, and validation state.
 - Run `make check` for fast lint and license-header validation before larger
   test runs.
 - Use deterministic names, labels, and output ordering where possible.
@@ -120,7 +120,7 @@ Keep every contribution easy for apple/container maintainers to assess:
 
 ## Keeping Protected Branches Safe
 
-Third-party contributions must not be able to break `develop` or `main`.
+Third-party contributions must not be able to break `main` or release branches.
 Maintainers should keep these guardrails enabled:
 
 - Require pull requests before merging to protected branches.
@@ -128,12 +128,11 @@ Maintainers should keep these guardrails enabled:
 - Require maintainer review for external contributors.
 - Restrict write access to trusted maintainers.
 - Avoid running untrusted pull request code with write-scoped secrets.
-- Keep one Conventional Commit per accepted issue on `develop`. If a pull
-  request needs several fixup commits during review, squash those fixups before
-  treating the issue as complete on `develop`.
-- When promoting a tested batch from `develop` to `main`, preserve the issue
-  commits rather than squash-merging the batch. This keeps `main` aligned with
-  the reviewed issue history while avoiding one CI/SonarQube run per small fix.
+- Keep pull requests focused on one accepted issue or coherent change. If a
+  pull request needs several fixup commits during review, squash those fixups
+  before merge when they do not carry useful review history.
+- Preserve meaningful issue commits when merging a tested batch. Avoid
+  combining unrelated changes just to reduce CI runs.
 
 Do not include credentials, tokens, certificates, private keys, or personal data
 in pull requests, tests, examples, logs, or screenshots.

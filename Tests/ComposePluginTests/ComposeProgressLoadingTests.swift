@@ -33,13 +33,13 @@ struct ComposeProgressLoadingTests {
             progress: progress,
             normalize: { options in
                 #expect(options.files == ["compose.yml"])
-                #expect(emitted.string == "⠋ Loading Compose model\n")
+                #expect(emitted.string == "⠓ Loading Compose model\n")
                 return ComposeProject(name: "demo", services: [:])
             }
         )
 
         #expect(project.name == "demo")
-        #expect(emitted.string == "⠋ Loading Compose model\n✔︎ Loading Compose model\n")
+        #expect(emitted.string == "⠓ Loading Compose model\n✔︎ Loading Compose model\n")
     }
 
     @Test("variable loading emits first progress row before normalizer starts")
@@ -54,13 +54,13 @@ struct ComposeProgressLoadingTests {
             progress: progress,
             variables: { options in
                 #expect(options.files == ["compose.yml"])
-                #expect(emitted.string == "⠋ Loading Compose variables\n")
+                #expect(emitted.string == "⠓ Loading Compose variables\n")
                 return [ComposeVariable(name: "TAG", defaultValue: "latest")]
             }
         )
 
         #expect(variables == [ComposeVariable(name: "TAG", defaultValue: "latest")])
-        #expect(emitted.string == "⠋ Loading Compose variables\n✔︎ Loading Compose variables\n")
+        #expect(emitted.string == "⠓ Loading Compose variables\n✔︎ Loading Compose variables\n")
     }
 }
 

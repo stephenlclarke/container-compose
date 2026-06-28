@@ -65,6 +65,64 @@ enum ComposeCLIHelp {
         commandHelp[command].map { renderedHelp($0, commandPath: [command], useANSI: shouldUseANSI(arguments: arguments)) }
     }
 
+    struct CommandSupportSnapshot: Equatable {
+        var commandPath: [String]
+        var support: String
+        var color: String
+    }
+
+    struct OptionSupportSnapshot: Equatable {
+        var commandPath: [String]
+        var option: String
+        var support: String
+        var color: String
+    }
+
+    static var commandSupportSnapshots: [CommandSupportSnapshot] {
+        supportByCommand
+            .map { key, support in
+                CommandSupportSnapshot(commandPath: commandPath(from: key), support: support.label, color: support.color)
+            }
+            .sorted { $0.commandPath.lexicographicallyPrecedes($1.commandPath) }
+    }
+
+    static var optionSupportSnapshots: [OptionSupportSnapshot] {
+        supportByOption
+            .flatMap { key, options in
+                options.map { option, support in
+                    OptionSupportSnapshot(commandPath: commandPath(from: key), option: option, support: support.label, color: support.color)
+                }
+            }
+            .sorted { left, right in
+                if left.commandPath == right.commandPath {
+                    return left.option < right.option
+                }
+                return left.commandPath.lexicographicallyPrecedes(right.commandPath)
+            }
+    }
+
+    static var documentedHelpCommandPaths: [[String]] {
+        ([[]] + commandHelp.keys.map { [$0] } + bridgeCommandHelp.keys.map(commandPath(from:)))
+            .sorted { $0.lexicographicallyPrecedes($1) }
+    }
+
+    static func helpText(commandPath: [String], arguments: [String] = []) -> String? {
+        let useANSI = shouldUseANSI(arguments: arguments)
+        if commandPath.isEmpty {
+            return renderedHelp(rootHelp, commandPath: [], useANSI: useANSI)
+        }
+        if commandPath == ["bridge"] {
+            return renderedHelp(bridgeHelp, commandPath: commandPath, useANSI: useANSI)
+        }
+        if let help = bridgeCommandHelp[commandPath.joined(separator: " ")] {
+            return renderedHelp(help, commandPath: commandPath, useANSI: useANSI)
+        }
+        if commandPath.count == 1, let help = commandHelp[commandPath[0]] {
+            return renderedHelp(help, commandPath: commandPath, useANSI: useANSI)
+        }
+        return nil
+    }
+
     private static func isHelpRequested(arguments: [String]) -> Bool {
         if arguments.contains("--help") || arguments.contains("-h") {
             return true
@@ -101,8 +159,16 @@ enum ComposeCLIHelp {
             if argument == "help" {
                 return true
             }
+            if isGlobalFlag(argument) {
+                index += 1
+                continue
+            }
             if consumesGlobalValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
                 index += 2
+                continue
+            }
+            if consumesGlobalValue(argument) {
+                index += 1
                 continue
             }
             return false
@@ -117,8 +183,22 @@ enum ComposeCLIHelp {
             if argument == "help" {
                 return true
             }
+            if isGlobalFlag(argument) {
+                index += 1
+                continue
+            }
+            if consumesGlobalValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+                index += 2
+                continue
+            }
+            if consumesGlobalValue(argument) {
+                index += 1
+                continue
+            }
             if consumesBridgeValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
                 index += 2
+            } else if consumesBridgeValue(argument) {
+                index += 1
             } else {
                 index += 1
             }
@@ -139,6 +219,10 @@ enum ComposeCLIHelp {
             }
             if consumesGlobalValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
                 index += 2
+                continue
+            }
+            if isGlobalFlag(argument) {
+                index += 1
                 continue
             }
             if consumesGlobalValue(argument) || argument.hasPrefix("--ansi=") {
@@ -236,6 +320,7 @@ enum ComposeCLIHelp {
             "--progress": .supported,
             "--project-directory": .supported,
             "--project-name": .supported,
+            "--verbose": .supported,
         ],
         "attach": [
             "--detach-keys": .partiallySupported,
@@ -391,6 +476,9 @@ enum ComposeCLIHelp {
             "--format": .supported,
             "--quiet": .supported,
         ],
+        "pause": [
+            "--dry-run": .supported,
+        ],
         "port": [
             "--dry-run": .supported,
             "--index": .supported,
@@ -488,6 +576,9 @@ enum ComposeCLIHelp {
             "--timeout": .supported,
         ],
         "top": [
+            "--dry-run": .supported,
+        ],
+        "unpause": [
             "--dry-run": .supported,
         ],
         "up": [
@@ -707,6 +798,10 @@ enum ComposeCLIHelp {
         supportByCommand[commandPath.joined(separator: " ")]
     }
 
+    private static func commandPath(from key: String) -> [String] {
+        key.isEmpty ? [] : key.split(separator: " ").map(String.init)
+    }
+
     private static func supportLevel(forOptions options: [String], commandPath: [String]) -> SupportLevel {
         let commandKey = commandPath.joined(separator: " ")
         if let commandOptions = supportByOption[commandKey] {
@@ -762,8 +857,24 @@ enum ComposeCLIHelp {
             if argument == "--help" || argument == "-h" || argument == "help" {
                 break
             }
+            if isGlobalFlag(argument) {
+                index += 1
+                continue
+            }
+            if consumesGlobalValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+                index += 2
+                continue
+            }
+            if consumesGlobalValue(argument) {
+                index += 1
+                continue
+            }
             if consumesBridgeValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
                 index += 2
+                continue
+            }
+            if consumesBridgeValue(argument) {
+                index += 1
                 continue
             }
             if !argument.hasPrefix("-") {
@@ -788,6 +899,15 @@ enum ComposeCLIHelp {
             "-f",
             "-p",
         ].contains(name)
+    }
+
+    private static func isGlobalFlag(_ argument: String) -> Bool {
+        [
+            "--all-resources",
+            "--compatibility",
+            "--dry-run",
+            "--verbose",
+        ].contains(argument)
     }
 
     private static func consumesBridgeValue(_ argument: String) -> Bool {
@@ -871,6 +991,7 @@ enum ComposeCLIHelp {
           --progress string            Set type of progress output (auto, tty, plain, json, quiet)
           --project-directory string   Specify an alternate working directory
       -p, --project-name string        Project name
+          --verbose                    Show more output
 
     Management Commands:
       bridge                  Convert compose files into another model

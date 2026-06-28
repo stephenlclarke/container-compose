@@ -60,7 +60,7 @@ git diff --check
 This support depends on fork-backed runtime functionality until matching upstream changes are accepted:
 
 - `stephenlclarke/containerization@integration/blkio-runtime` commit `e172174`
-- `stephenlclarke/container` `develop` commit `61a11f4`
+- `stephenlclarke/container` fork commit `61a11f4`
 
 Branches pinned to released upstream `apple/container` should continue to classify `pause` and `unpause` as runtime-gated.
 
