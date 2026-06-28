@@ -128,10 +128,28 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--timestamps\u{001B}[0m"))
     }
 
+    @Test("up attach options are shown as supported")
+    func upAttachOptionsAreShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
+
+        #expect(help.contains("\u{001B}[32m--attach\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--attach-dependencies\u{001B}[0m"))
+    }
+
     @Test("up raw attached output flags parse")
     func upRawAttachedOutputFlagsParse() throws {
-        let command = try Up.parse(["--no-color", "--no-log-prefix", "--timestamps", "api"])
+        let command = try Up.parse([
+            "--attach", "api",
+            "--attach", "worker",
+            "--attach-dependencies",
+            "--no-color",
+            "--no-log-prefix",
+            "--timestamps",
+            "api",
+        ])
 
+        #expect(command.attach == ["api", "worker"])
+        #expect(command.attachDependencies)
         #expect(command.noColor)
         #expect(command.noLogPrefix)
         #expect(command.timestamps)

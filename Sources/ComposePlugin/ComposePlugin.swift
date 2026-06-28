@@ -723,8 +723,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
         let unsupportedOptions = [
             abortOnContainerExit ? "--abort-on-container-exit" : nil,
             abortOnContainerFailure ? "--abort-on-container-failure" : nil,
-            attach.isEmpty ? nil : "--attach",
-            attachDependencies ? "--attach-dependencies" : nil,
             exitCodeFrom == nil ? nil : "--exit-code-from",
             menu ? "--menu" : nil,
         ].compactMap { $0 }
@@ -741,6 +739,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         let upOptions = ComposeUpOptions {
             $0.services = services
+            $0.attach = attach
+            $0.attachDependencies = attachDependencies
             $0.noAttach = noAttach
             $0.build = build
             $0.quietBuild = quietBuild

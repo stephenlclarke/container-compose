@@ -458,6 +458,8 @@ public struct ComposeOrchestratorDependencies: Sendable {
 /// Options for `compose up`.
 public struct ComposeUpOptions {
     public var services: [String] = []
+    public var attach: [String] = []
+    public var attachDependencies = false
     public var noAttach: [String] = []
     public var build = false
     public var noBuild = false
@@ -483,6 +485,8 @@ public struct ComposeUpOptions {
 
     public init() {
         services = []
+        attach = []
+        attachDependencies = false
         noAttach = []
         build = false
         noBuild = false
@@ -1521,6 +1525,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         try validate(project: project)
         try validateUpOptions(up)
         let project = try projectByApplyingNoAttach(project: project, services: up.noAttach)
+        try validateUpAttachSelections(project: project, options: up)
         if up.noStart {
             try await create(
                 project: project,
@@ -1559,6 +1564,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
             return activeService
         }
+        let attachLogMode = upUsesAttachLogFollow(up)
+        let attachedLogServices = try upAttachedLogServices(project: workingProject, services: services, options: up)
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
@@ -1566,7 +1573,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             project: workingProject,
             services: services,
             scaleOverrides: scaleOverrides,
-            detach: up.detach || up.wait
+            detach: up.detach || up.wait || attachLogMode
         )
         let attachedForegroundService = up.timestamps ? nil : attachedOutputService
         if !up.timestamps {
@@ -1686,9 +1693,118 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if up.wait {
             try await waitForStartedServiceTargets(waitTargets, timeout: up.waitTimeout, command: "up --wait")
         }
+        if attachLogMode {
+            let targets = try await serviceContainerTargets(project: workingProject, services: attachedLogServices)
+            try await followAttachedUpLogs(targets: targets, options: up)
+            return
+        }
         if up.timestamps, let attachedOutputService, !up.detach, !up.wait {
             try await followTimestampedUpLogs(target: attachedOutputService, options: up)
         }
+    }
+
+    /// Returns whether `up` should use Compose-owned followed log attachment.
+    private func upUsesAttachLogFollow(_ up: ComposeUpOptions) -> Bool {
+        !up.detach && !up.wait && !up.noStart && (!up.attach.isEmpty || up.attachDependencies)
+    }
+
+    /// Validates attach-related service selections before runtime side effects.
+    private func validateUpAttachSelections(project: ComposeProject, options up: ComposeUpOptions) throws {
+        guard !up.attach.isEmpty else {
+            return
+        }
+        let attachNames = Set(try selectedServices(project: project, selected: up.attach).map(\.name))
+        let noAttachNames = up.noAttach.isEmpty
+            ? Set<String>()
+            : Set(try selectedServices(project: project, selected: up.noAttach).map(\.name))
+        let conflictingNames = attachNames.intersection(noAttachNames)
+        if let name = conflictingNames.sorted().first {
+            throw ComposeError.invalidProject("service '\(name)' cannot be used with both --attach and --no-attach")
+        }
+    }
+
+    /// Returns the services whose logs should be followed for `up --attach`.
+    private func upAttachedLogServices(
+        project: ComposeProject,
+        services: [ComposeService],
+        options up: ComposeUpOptions
+    ) throws -> [ComposeService] {
+        guard upUsesAttachLogFollow(up) else {
+            return []
+        }
+        let startedNames = Set(services.map(\.name))
+        let noAttachNames = up.noAttach.isEmpty
+            ? Set<String>()
+            : Set(try selectedServices(project: project, selected: up.noAttach).map(\.name))
+        if up.attach.isEmpty {
+            return services.filter { service in
+                !noAttachNames.contains(service.name) && service.attach != false
+            }
+        }
+
+        let requestedAttachNames = Set(try selectedServices(project: project, selected: up.attach).map(\.name))
+        let attachNames: Set<String>
+        if up.attachDependencies, !up.noDeps {
+            attachNames = Set(try orderedServices(project: project, selected: up.attach).map(\.name))
+        } else {
+            attachNames = requestedAttachNames
+        }
+        let outsideStartedServices = attachNames.subtracting(startedNames)
+        if let name = outsideStartedServices.sorted().first {
+            throw ComposeError.invalidProject("up --attach service '\(name)' is not being started")
+        }
+        return services.filter { attachNames.contains($0.name) && !noAttachNames.contains($0.name) }
+    }
+
+    /// Follows service logs for `up --attach` and `up --attach-dependencies`.
+    private func followAttachedUpLogs(targets: [ServiceContainerTarget], options up: ComposeUpOptions) async throws {
+        guard !targets.isEmpty else {
+            return
+        }
+        if options.dryRun {
+            for target in targets {
+                emitComposeRuntimeOperation(logRuntimeArguments(
+                    id: target.name,
+                    follow: true,
+                    tail: nil,
+                    since: nil,
+                    until: nil,
+                    timestamps: up.timestamps
+                ))
+            }
+            return
+        }
+
+        let runtimeOptions = RuntimeLogOptions(
+            tail: nil,
+            since: nil,
+            until: nil,
+            timestamps: up.timestamps,
+            noLogPrefix: up.noLogPrefix,
+            colorPrefixes: up.colorPrefixes
+        )
+        if targets.count > 1 {
+            try await followLogTargets(targets, options: runtimeOptions)
+            return
+        }
+        guard let target = targets.first else {
+            return
+        }
+        try await emitLogs(
+            RuntimeLogRequest(
+                id: target.name,
+                follow: true,
+                tail: nil,
+                since: nil,
+                until: nil,
+                timestamps: up.timestamps,
+                emit: logEmitter(
+                    for: target,
+                    noLogPrefix: up.noLogPrefix,
+                    colorPrefixes: up.colorPrefixes
+                )
+            )
+        )
     }
 
     /// Follows the service that would normally own foreground output for `up --timestamps`.

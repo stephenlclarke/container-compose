@@ -321,7 +321,8 @@ cli-smoke-built:
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--publish$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--use-aliases$${ansi_escape}[0m"* ]]; \
 	up_help_output="$$(".build/debug/compose" up --help)"; \
-	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--attach$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--attach-dependencies$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-color$${ansi_escape}[0m"* ]]; \
@@ -595,13 +596,19 @@ cli-smoke-built:
 	up_no_attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --no-attach api api)"; \
 	[[ "$$up_no_attach_output" != *"--name demo-db-1 --detach"* ]]; \
 	[[ "$$up_no_attach_output" == *"--name demo-api-1 --detach"* ]]; \
+	up_attach_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --attach api api)"; \
+	[[ "$$up_attach_output" == *"--name demo-db-1 --detach"* ]]; \
+	[[ "$$up_attach_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$up_attach_output" == *"compose-runtime logs --follow demo-api-1"* ]]; \
+	[[ "$$up_attach_output" != *"compose-runtime logs --follow demo-db-1"* ]]; \
+	up_attach_dependencies_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --attach api --attach-dependencies api)"; \
+	[[ "$$up_attach_dependencies_output" == *"compose-runtime logs --follow demo-db-1"* ]]; \
+	[[ "$$up_attach_dependencies_output" == *"compose-runtime logs --follow demo-api-1"* ]]; \
 	up_attach_false_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/attach-false.yml" up api)"; \
 	[[ "$$up_attach_false_output" == *"--name demo-api-1 --detach"* ]]; \
 	for unsupported_up_option in \
 		"--abort-on-container-exit" \
 		"--abort-on-container-failure" \
-		"--attach api" \
-		"--attach-dependencies" \
 		"--exit-code-from api" \
 		"--menu"; do \
 		up_unsupported_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up $$unsupported_up_option api 2>&1 || true)"; \
