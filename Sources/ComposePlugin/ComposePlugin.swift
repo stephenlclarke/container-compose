@@ -850,7 +850,6 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
     func run() async throws {
         let unsupportedOptions = [
             builder != nil ? "--builder" : nil,
-            check ? "--check" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("build \(first)")
@@ -862,6 +861,7 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeBuildOptions {
                 $0.services = services
                 $0.buildArguments = buildArgs
+                $0.check = check
                 $0.memory = memory
                 $0.noCache = noCache
                 $0.printBake = printBake

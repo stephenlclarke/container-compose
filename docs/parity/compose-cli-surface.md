@@ -8,7 +8,9 @@ The check compares:
 - `bridge` and `bridge transformations` command listings;
 - long options rendered by every documented command help page.
 
-The check intentionally ignores help prose wrapping, support-colour annotations, and option descriptions. Runtime behavior parity remains covered by the existing local-only Docker-backed parity targets for create-time options, events, and restart policies.
+The check intentionally ignores help prose wrapping, support-colour annotations, and option descriptions. Runtime behavior parity remains covered by the existing local-only Docker-backed parity targets for build checks, create-time options, events, and restart policies.
+
+For `build --check` behavior specifically, run `make docker-compose-build-check-parity`. That target reuses Docker Compose's upstream `pkg/e2e/fixtures/build-test/minimal` fixture, compares Docker Compose V2 BuildKit lint behavior with `container compose build --print --check`, and can run the live fork-backed `container compose build --check` path when `CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1` is set.
 
 ## Documented Differences
 

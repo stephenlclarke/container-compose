@@ -16,7 +16,7 @@ The four repositories have different roles:
 - `container` is the fork-backed runtime and CLI that Homebrew installs.
 - `container-compose` is the plugin package that is installed beside the matching `container` lane.
 - `containerization` is the Swift package consumed by both `container` and `container-compose`; its branch must match the runtime lane.
-- `container-builder-shim` is Go source for the BuildKit bridge image used by `container build`; `container` pins an immutable builder image version, currently `0.13.3`, instead of installing the shim from Homebrew.
+- `container-builder-shim` is Go source for the BuildKit bridge image used by `container build`; `container` pins an immutable builder image version, currently `0.13.4`, instead of installing the shim from Homebrew.
 
 ## Active Branches
 
@@ -63,7 +63,7 @@ built with release configuration. All Go outputs across this project are release
 
 `container-compose` also pins the exact `container` commit used by CI and package metadata through `APPLE_CONTAINER_REF`. Keep that pin in the same lane as the plugin package.
 
-`container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. The current Stephen fork default is `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.3`. Update the shim source on `main`, publish an immutable image tag, then update `container` to that tag; do not point release packages at untagged or debug builder images.
+`container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. The current Stephen fork default is `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.4`. Update the shim source on `main`, publish an immutable image tag, then update `container` to that tag; do not point release packages at untagged or debug builder images.
 
 ## Homebrew Lanes
 

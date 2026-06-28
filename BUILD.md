@@ -212,6 +212,14 @@ make docker-compose-cli-surface-parity
 
 This builds the local `compose` binary, compares root command listings, `bridge` management command listings, and every documented long option against Docker Compose V2, then writes `.build/parity/compose-cli-surface.md`. Known intentional differences are documented in `docs/parity/compose-cli-surface.md` and encoded in `Tools/parity/compose-cli-surface.allowlist`. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
 
+For the local-only `build --check` parity check, run:
+
+```sh
+make docker-compose-build-check-parity
+```
+
+This refreshes Docker Compose's upstream e2e fixture checkout, copies `pkg/e2e/fixtures/build-test/minimal` into a temporary directory, tweaks only the copied Dockerfile's `FROM` casing to trigger BuildKit's `FromAsCasing` lint rule, and verifies `container compose build --print --check` renders a Buildx-compatible `call: "lint"` target without image outputs. Set `CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1` to also run live `container compose build --check`; that live mode requires a matching fork-backed `container` build backend and builder image. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
 For the local-only `events` parity check added with the fork-backed event-stream slice, run:
 
 ```sh

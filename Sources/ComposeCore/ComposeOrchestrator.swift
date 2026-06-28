@@ -709,6 +709,7 @@ public struct ComposeLogsOptions: Sendable {
 public struct ComposeBuildOptions {
     public var services: [String] = []
     public var buildArguments: [String] = []
+    public var check = false
     public var memory: String?
     public var noCache = false
     public var printBake = false
@@ -723,6 +724,7 @@ public struct ComposeBuildOptions {
     public init() {
         services = []
         buildArguments = []
+        check = false
         memory = nil
         noCache = false
         printBake = false
@@ -770,7 +772,8 @@ private struct ComposeBuildBakeTarget: Encodable {
     var attest: [String]?
     var pull: Bool?
     var noCache: Bool?
-    var output: [String]
+    var output: [String]?
+    var call: String?
 
     enum CodingKeys: String, CodingKey {
         case context
@@ -789,6 +792,7 @@ private struct ComposeBuildBakeTarget: Encodable {
         case pull
         case noCache = "no-cache"
         case output
+        case call
     }
 }
 
@@ -2370,7 +2374,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     try await buildService(project: project, service: service, options: build)
                 }
             }
-            if build.push, let image = service.image {
+            if build.push, !build.check, let image = service.image {
                 if options.dryRun {
                     try await runContainer(["image", "push", image])
                 } else {
@@ -6775,6 +6779,9 @@ private extension ComposeOrchestrator {
         if buildOptions.noCache || build.noCache == true {
             args.append("--no-cache")
         }
+        if buildOptions.check {
+            args.append("--check")
+        }
         if buildOptions.pull || build.pull == true {
             args.append("--pull")
         }
@@ -6895,7 +6902,8 @@ private extension ComposeOrchestrator {
             attest: attest.isEmpty ? nil : attest,
             pull: (buildOptions.pull || build.pull == true) ? true : nil,
             noCache: (buildOptions.noCache || build.noCache == true) ? true : nil,
-            output: [buildOptions.push && service.image != nil ? "type=registry" : "type=docker"]
+            output: buildOptions.check ? nil : [buildOptions.push && service.image != nil ? "type=registry" : "type=docker"],
+            call: buildOptions.check ? "lint" : nil
         )
     }
 

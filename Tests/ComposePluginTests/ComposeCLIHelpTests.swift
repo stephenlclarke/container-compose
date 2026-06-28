@@ -184,6 +184,7 @@ struct ComposeCLIHelpTests {
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--check\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--ssh\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--provenance\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--sbom\u{001B}[0m"))
@@ -292,6 +293,7 @@ struct ComposeCLIHelpTests {
     @Test("build print flag parses")
     func buildPrintFlagParses() throws {
         let command = try Build.parse([
+            "--check",
             "--print",
             "--provenance=false",
             "--sbom", "false",
@@ -302,6 +304,7 @@ struct ComposeCLIHelpTests {
             "api",
         ])
 
+        #expect(command.check)
         #expect(command.printBake)
         #expect(command.provenance == "false")
         #expect(command.sbom == "false")

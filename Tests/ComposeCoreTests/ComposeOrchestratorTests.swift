@@ -9881,6 +9881,35 @@ struct ComposeOrchestratorTests {
         #expect(db["output"] as? [String] == ["type=docker"])
     }
 
+    @Test("build print check renders lint bake call without output")
+    func buildPrintCheckRendersLintBakeCallWithoutOutput() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.services = ["api"]
+                $0.check = true
+                $0.printBake = true
+            }
+        )
+
+        let output = try #require(emitted.messages.first)
+        let api = try bakeTarget(try bakeJSON(output), name: "api")
+        #expect(api["call"] as? String == "lint")
+        #expect(api["output"] == nil)
+    }
+
     @Test("build print renders inline Dockerfile")
     func buildPrintRendersInlineDockerfile() async throws {
         let emitted = MessageRecorder()
@@ -10112,6 +10141,32 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.count == 1)
         #expect(runner.commands[0].arguments.contains("--no-cache"))
+    }
+
+    @Test("build check forwards check flag and skips push")
+    func buildCheckForwardsCheckFlagAndSkipsPush() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.check = true
+                $0.push = true
+            }
+        )
+
+        #expect(runner.commands.count == 1)
+        #expect(runner.commands[0].arguments.contains("--check"))
+        #expect(await imageManager.requests.isEmpty)
     }
 
     @Test("build rejects unsupported build fields before emitting commands")
