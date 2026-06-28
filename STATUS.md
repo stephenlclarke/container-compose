@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 18:41 BST.
+Last updated: 2026-06-28 19:16 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -16,17 +16,17 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed main-lane pins:
 
-- `stephenlclarke/container`: `9871093f3c5585775a7dc4ff957aa360baf47ac1`
+- `stephenlclarke/container`: `350a63ea4daa7ed819a2c66a3b87124044a4370a`
 - `stephenlclarke/containerization`: `658936c53dbf112fc3f51ec7573a9ffca54baf01`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.4`
 
 ## Latest Local Validation
 
-The latest local validation passed with focused Swift tests, the `container` release build, `container-builder-shim` Go coverage, Docker-backed build-check parity, live fork-backed build-check smoke, `make check`, `make coverage-check`, shell linting, and `git diff --check`. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation passed with focused Swift tests, the `container` release build, release-mode `exec --ulimit` and `machine run --ulimit` live smokes, `container` unit coverage, `container-builder-shim` Go coverage, Docker-backed build-check parity, live fork-backed build-check smoke, `make coverage-check`, shell linting, and `git diff --check`. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 769 tests, 89.97% line coverage.
+- Swift: 769 Compose tests at 89.97% line coverage; 831 `container` unit tests at 42.05% unit-only line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
