@@ -703,7 +703,9 @@ struct ComposeRuntimeSmokeTests {
                 "--ansi", "never",
                 "--project-name", runtimeProjectName(),
                 "--file", composeFile.path,
-                "build", "--print", "--provenance=false", "--sbom=false", "--push", "--build-arg", "CLI_ARG=2", "--ssh", "git=/tmp/git.sock", "api",
+                "build", "--builder", "default", "--print",
+                "--provenance=false", "--sbom=false", "--push",
+                "--build-arg", "CLI_ARG=2", "--ssh", "git=/tmp/git.sock", "api",
             ],
             timeout: 30
         )

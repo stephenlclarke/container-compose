@@ -709,6 +709,7 @@ public struct ComposeLogsOptions: Sendable {
 public struct ComposeBuildOptions {
     public var services: [String] = []
     public var buildArguments: [String] = []
+    public var builder: String?
     public var check = false
     public var memory: String?
     public var noCache = false
@@ -724,6 +725,7 @@ public struct ComposeBuildOptions {
     public init() {
         services = []
         buildArguments = []
+        builder = nil
         check = false
         memory = nil
         noCache = false
@@ -2359,6 +2361,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Builds images for selected services with Docker Compose compatible options.
     public func build(project: ComposeProject, options build: ComposeBuildOptions) async throws {
+        try validateBuildBuilder(build.builder)
         let services = try build.withDependencies
             ? orderedServices(project: project, selected: build.services)
             : selectedServices(project: project, selected: build.services)
@@ -2381,6 +2384,17 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     try await imageManager.pushImage(image, emit: options.emit)
                 }
             }
+        }
+    }
+
+    /// Accepts Docker Compose's default builder selection for the single local
+    /// apple/container builder, while keeping named-builder selection explicit.
+    func validateBuildBuilder(_ builder: String?) throws {
+        guard let value = builder?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return
+        }
+        guard value == "default" else {
+            throw ComposeError.unsupported("build --builder '\(value)'; only the default apple/container builder is supported")
         }
     }
 

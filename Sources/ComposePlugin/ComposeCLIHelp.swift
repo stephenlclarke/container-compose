@@ -357,7 +357,7 @@ enum ComposeCLIHelp {
         ],
         "build": [
             "--build-arg": .supported,
-            "--builder": .notSupported,
+            "--builder": .partiallySupported,
             "--check": .supported,
             "--dry-run": .supported,
             "--memory": .supported,

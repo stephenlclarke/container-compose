@@ -10173,6 +10173,59 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests.isEmpty)
     }
 
+    @Test("build accepts default builder as local single-builder selection")
+    func buildAcceptsDefaultBuilderAsLocalSingleBuilderSelection() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.builder = "default"
+            }
+        )
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["container", "build", "--tag", "example/api:latest"]))
+        #expect(!command.contains("--builder"))
+    }
+
+    @Test("build rejects non-default builders before emitting commands")
+    func buildRejectsNonDefaultBuildersBeforeEmittingCommands() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).build(
+                project: project,
+                options: ComposeBuildOptions {
+                    $0.builder = "remote"
+                }
+            )
+            Issue.record("Expected unsupported builder error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("build --builder 'remote'; only the default apple/container builder is supported"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("build rejects unsupported build fields before emitting commands")
     func buildRejectsUnsupportedBuildFieldsBeforeEmittingCommands() async throws {
         let runner = RecordingRunner()

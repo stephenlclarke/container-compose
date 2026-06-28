@@ -848,19 +848,13 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Builds selected service images.
     func run() async throws {
-        let unsupportedOptions = [
-            builder != nil ? "--builder" : nil,
-        ].compactMap { $0 }
-        if let first = unsupportedOptions.first {
-            throw ComposeError.unsupported("build \(first)")
-        }
-
         let loadedProject = try await project()
         try await orchestrator().build(
             project: loadedProject,
             options: ComposeBuildOptions {
                 $0.services = services
                 $0.buildArguments = buildArgs
+                $0.builder = builder
                 $0.check = check
                 $0.memory = memory
                 $0.noCache = noCache
