@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ArgumentParser
 import ComposeCore
 @testable import ComposePlugin
 import Testing
@@ -95,13 +96,29 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--use-aliases\u{001B}[0m"))
     }
 
-    @Test("up attached log presentation flags are shown as partial")
-    func upAttachedLogPresentationFlagsAreShownAsPartial() throws {
+    @Test("up raw attached output flags are shown as supported")
+    func upRawAttachedOutputFlagsAreShownAsSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
-        #expect(help.contains("\u{001B}[38;5;208m--no-color\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--no-log-prefix\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--no-color\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--no-log-prefix\u{001B}[0m"))
+    }
+
+    @Test("up timestamps remains partial until attached log following supports it")
+    func upTimestampsRemainsPartialUntilAttachedLogFollowingSupportsIt() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
+
         #expect(help.contains("\u{001B}[38;5;208m--timestamps\u{001B}[0m"))
+    }
+
+    @Test("up raw attached output flags parse")
+    func upRawAttachedOutputFlagsParse() throws {
+        let command = try Up.parse(["--no-color", "--no-log-prefix", "api"])
+
+        #expect(command.noColor)
+        #expect(command.noLogPrefix)
+        #expect(!command.timestamps)
+        #expect(command.services == ["api"])
     }
 
     @Test("global progress option maps Docker Compose policies")

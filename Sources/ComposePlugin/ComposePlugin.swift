@@ -729,8 +729,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             attachDependencies ? "--attach-dependencies" : nil,
             exitCodeFrom == nil ? nil : "--exit-code-from",
             menu ? "--menu" : nil,
-            noColor && formatsAttachedOutput ? "--no-color" : nil,
-            noLogPrefix && formatsAttachedOutput ? "--no-log-prefix" : nil,
             timestamps && formatsAttachedOutput ? "--timestamps" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
