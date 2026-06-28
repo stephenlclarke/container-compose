@@ -294,7 +294,12 @@ struct ComposePluginMain {
         if ComposeCLIHelp.renderRootIfNoCommand(arguments: arguments) {
             return
         }
-        await ComposePlugin.main(ComposeArgumentRewriter.rewrite(arguments))
+        let rewritten = ComposeArgumentRewriter.rewrite(arguments)
+        if let failure = ContainerPackageCompatibility.compatibilityFailure(arguments: rewritten, lane: composeBuildInfo.lane) {
+            FileHandle.standardError.write(Data((failure + "\n").utf8))
+            exit(1)
+        }
+        await ComposePlugin.main(rewritten)
     }
 }
 

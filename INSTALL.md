@@ -127,6 +127,8 @@ container compose version --format json
 
 `container compose version` shows the installed plugin build plus the `container` and `containerization` pins that the plugin package was built against. `release` and versioned release packages report lane `release`; active development builds from `main` report lane `main`.
 
+Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, or if the Homebrew lane is mixed, `container compose` stops with install guidance instead of failing later with a low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae for the plugin lane.
+
 Run a read-only Compose command from a directory containing a Compose file:
 
 ```sh

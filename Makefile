@@ -236,6 +236,18 @@ cli-smoke-built:
 	[[ "$$version_compact_format_output" == *'"version":"0.1.0"'* ]]; \
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
+	compat_tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$compat_tmp"' EXIT; \
+	printf '%s\n' '#!/usr/bin/env bash' 'if [[ "$$*" == "system version --format json" ]]; then' '  printf '\''[{"appName":"container","buildType":"release","commit":"abc123","containerization":"apple/containerization@main","distribution":"apple","source":"apple/container","version":"0.5.0"}]\n'\''' '  exit 0' 'fi' 'exit 2' > "$$compat_tmp/container"; \
+	chmod +x "$$compat_tmp/container"; \
+	set +e; \
+	compat_output="$$(CONTAINER_COMPOSE_CONTAINER="$$compat_tmp/container" ".build/debug/compose" ps 2>&1)"; \
+	compat_status="$$?"; \
+	set -e; \
+	[[ "$$compat_status" -ne 0 ]]; \
+	[[ "$$compat_output" == *"The installed Apple container components do not support the Compose functionality in this plugin."* ]]; \
+	[[ "$$compat_output" == *"brew install stephenlclarke/tap/container stephenlclarke/tap/container-compose"* ]]; \
+	[[ "$$compat_output" == *"https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md"* ]]; \
 	ansi_escape="$$(printf '\033')"; \
 	root_help_output="$$(".build/debug/compose" --help)"; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \

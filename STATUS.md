@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 19:42 BST.
+Last updated: 2026-06-28 20:00 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -22,11 +22,11 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with focused Swift tests, gated runtime build-print smoke, Docker-backed build-builder and build-check parity, CLI-surface parity, `make coverage-check`, shell linting, markdown linting, and `git diff --check`. Earlier retained validation for the paired runtime pins includes the `container` release build, release-mode `exec --ulimit` and `machine run --ulimit` live smokes, `container` unit coverage, `container-builder-shim` Go coverage, and live fork-backed build-check smoke. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with `swift build --product compose`, focused dependency-preflight Swift tests, `make cli-smoke-built`, `make coverage-check`, touched-file Swift format linting, markdown linting, and `git diff --check`. Earlier retained validation for the paired runtime pins includes the `container` release build, release-mode `exec --ulimit` and `machine run --ulimit` live smokes, `container` unit coverage, `container-builder-shim` Go coverage, Docker-backed build-builder and build-check parity, CLI-surface parity, gated runtime build-print smoke, and live fork-backed build-check smoke. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 772 Compose tests at 89.97% line coverage; 831 `container` unit tests at 42.05% unit-only line coverage.
+- Swift: 777 Compose tests at 89.98% line coverage; 831 `container` unit tests at 42.05% unit-only line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
@@ -34,6 +34,7 @@ Most recent coverage proof:
 - Progress feedback: project loading, variable loading, image build, image pull, direct runtime create/start/run, foreground interactive `run`, and attached `exec` emit visible stderr progress before slow or terminal-taking operations can look hung.
 - Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` is accepted for the local single builder, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the fork-backed build path, and explicit false attestation forms remain no-op opt-outs.
 - Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
+- Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
 - Packaging and quality: CodeQL gates the release-built Go normalizer path, Swift CodeQL remains blocked by fork-backed dependency rebuild timeouts, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
 
