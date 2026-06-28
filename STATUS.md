@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 20:52 BST.
+Last updated: 2026-06-28 21:34 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -22,11 +22,11 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with focused resource-manager and `rm` Swift tests, `make docker-compose-rm-parity`, `make coverage-check`, full Markdown lint, shell syntax/static checks for the new parity script, and `git diff --check`. Retained validation for the paired runtime pins includes `swift build --product compose`, focused dependency-preflight Swift tests, `make cli-smoke-built`, the `container` release build, release-mode `exec --ulimit` and `machine run --ulimit` live smokes, `container` unit coverage, `container-builder-shim` Go coverage, Docker-backed build-builder and build-check parity, CLI-surface parity, gated runtime build-print smoke, and live fork-backed build-check smoke. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with `make check`, `make coverage-check`, `make swift-runtime-test`, `make docker-compose-cli-surface-parity`, `make docker-compose-build-builder-parity`, `make docker-compose-build-check-parity`, `make docker-compose-create-options-parity`, `make docker-compose-events-parity`, `make docker-compose-rm-parity`, `make docker-compose-restart-policy-parity`, `make docker-compose-e2e-fixtures`, full Markdown lint, and `git diff --check`. Retained validation for the paired runtime pins includes `make check` and `make test` in `container`, `make check` and `make test` in `containerization`, and `go test ./...`, `make lint`, `make vet`, `make coverage`, `make build-linux`, and release target dry-run validation in `container-builder-shim`. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 781 Compose tests at 90.00% line coverage; 831 `container` unit tests at 42.05% unit-only line coverage.
+- Swift: 781 Compose tests at 89.96% line coverage; 831 `container` unit tests at 42.05% unit-only line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
