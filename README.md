@@ -38,7 +38,18 @@ for log-friendly rows, or `--progress tty` for the animated terminal spinner.
 `--progress auto` uses the animated spinner when stderr is a terminal and plain
 rows otherwise.
 
-Use `container system version` to see the running `container` runtime source, branch lane, commit, and compiled `containerization` ref. Use `container compose version` to see the installed plugin lane and the `container` / `containerization` pins that package was built against.
+Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and builder shim image version. Use `container compose version` to see the installed plugin lane and the `container` / `containerization` pins that package was built against.
+
+## Project Repositories
+
+This fork-backed Compose stack spans four Stephen Clarke repositories:
+
+- [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
+- [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed by Homebrew beside the plugin.
+- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift container runtime package consumed by both `container` and this plugin; `main` packages use `main`, and release packages use `release`.
+- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the Go BuildKit bridge used by `container build`; `container` pins an immutable builder image version, currently `0.13.3`.
+
+The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks the four source repositories on `main` for maintenance, while installable formulae consume prebuilt release-quality assets. All Go outputs in the stack are treated as release code, not debug helpers.
 
 ## Plugin Recognition
 

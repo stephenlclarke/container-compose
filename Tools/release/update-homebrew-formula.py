@@ -60,8 +60,8 @@ def main() -> None:
     text = replace_once(r"^  sha256 .+$", f'  sha256 "{args.sha256}"', text)
     text = replace_once(r'^  version ".+"$', f'  version "{args.version}"', text)
     text = replace_once(
-        r"This formula installs the .+ prebuilt release asset:\n        .+\.tar\.gz",
-        f"This formula installs the {args.label} prebuilt release asset:\n        {args.asset}",
+        r"This formula installs the .+ prebuilt (?:release|package) asset:\n        .+\.tar\.gz",
+        f"This formula installs the {args.label} prebuilt package asset:\n        {args.asset}",
         text,
     )
     args.formula.parent.mkdir(parents=True, exist_ok=True)

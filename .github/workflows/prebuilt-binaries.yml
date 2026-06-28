@@ -86,22 +86,32 @@ jobs:
             main)
               target="package-release"
               asset="container-compose-plugin-main-release-arm64.tar.gz"
-              release_name="Homebrew main release prebuilt"
+              release_name="Homebrew main lane prebuilt"
               config="release"
               lane="main"
               formula="container-compose.rb"
               formula_class="ContainerCompose"
-              label="main release"
+              label="main lane"
               ;;
-            release|release-*)
+            release)
               target="package-release"
               asset="container-compose-plugin-${asset_slug}-release-arm64.tar.gz"
-              release_name="Homebrew ${GITHUB_REF_NAME} release prebuilt"
+              release_name="Homebrew release lane prebuilt"
               config="release"
               lane="release"
               formula="container-compose-${formula_slug}.rb"
               formula_class="$(python3 -c 'import re, sys; print("ContainerCompose" + "".join(part.capitalize() for part in re.split(r"[^a-zA-Z0-9]+", sys.argv[1]) if part))' "$formula_slug")"
-              label="${GITHUB_REF_NAME} release"
+              label="release lane"
+              ;;
+            release-*)
+              target="package-release"
+              asset="container-compose-plugin-${asset_slug}-release-arm64.tar.gz"
+              release_name="Homebrew ${GITHUB_REF_NAME} branch prebuilt"
+              config="release"
+              lane="release"
+              formula="container-compose-${formula_slug}.rb"
+              formula_class="$(python3 -c 'import re, sys; print("ContainerCompose" + "".join(part.capitalize() for part in re.split(r"[^a-zA-Z0-9]+", sys.argv[1]) if part))' "$formula_slug")"
+              label="${GITHUB_REF_NAME} branch"
               ;;
             *)
               printf 'Unsupported branch for prebuilt packaging: %s\n' "${GITHUB_REF_NAME}" >&2

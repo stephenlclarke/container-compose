@@ -86,7 +86,7 @@ Build the Go normalizer helper:
 make go-build
 ```
 
-`make go-build` always produces the Homebrew-packaged normalizer as a release-style Go binary using `CGO_ENABLED=0`, `-trimpath`, and `-ldflags "-s -w"`. Both `make package-release` and `make package-debug` depend on that target, so debug snapshot packages still carry a release-built Go helper beside the debug Swift plugin.
+All Go outputs in this project are release-quality artifacts. `make go-build` produces the Homebrew-packaged normalizer using `CGO_ENABLED=0`, `-trimpath`, and `-ldflags "-s -w"`, and package targets do not introduce a debug Go helper.
 
 Run the plugin from source:
 
@@ -250,14 +250,14 @@ Build the plugin archive consumed by the install guide:
 make package
 ```
 
-`make package` is an alias for the release package. Build a specific lane archive with:
+`make package` is an alias for the release package. Build a local archive with:
 
 ```sh
 make package-release
 make package-debug
 ```
 
-`make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`. Package targets always include a release-built Go normalizer from `make go-build`; only the Swift `compose` executable changes between the release and debug lanes.
+`make package` uses the same `SWIFT_RELEASE_FLAGS` as `make build-release`. `make package-debug` is a local Swift debugging aid only; it still includes the release-built Go normalizer from `make go-build` and is not a Homebrew lane.
 
 The default local package target writes the archive, checksum, and staging directory:
 

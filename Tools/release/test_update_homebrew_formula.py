@@ -67,7 +67,7 @@ end
                     "--asset",
                     "new.tar.gz",
                     "--label",
-                    "release-v0.1.0 release",
+                    "release-v0.1.0 branch",
                     "--sha256",
                     "abc123",
                 ],
@@ -84,7 +84,7 @@ class ContainerComposeReleaseV010 < Formula
 
   def caveats
     <<~EOS
-      This formula installs the release-v0.1.0 release prebuilt release asset:
+      This formula installs the release-v0.1.0 branch prebuilt package asset:
         new.tar.gz
     EOS
   end

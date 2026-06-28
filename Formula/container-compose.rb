@@ -29,7 +29,7 @@ class ContainerCompose < Formula
         ln -sfn "#{opt_libexec}/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
         brew services restart container
 
-      This formula installs the main release prebuilt release asset:
+      This formula installs the main lane prebuilt package asset:
         container-compose-plugin-main-release-arm64.tar.gz
     EOS
   end
