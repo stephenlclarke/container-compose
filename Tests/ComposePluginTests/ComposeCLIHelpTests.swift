@@ -164,6 +164,14 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--exit-code-from\u{001B}[0m"))
     }
 
+    @Test("up menu option shows partial support for explicit disable")
+    func upMenuOptionShowsPartialSupportForExplicitDisable() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
+
+        #expect(help.contains("\u{001B}[38;5;208m--menu\u{001B}[0m"))
+        #expect(help.contains("Use --menu=false to explicitly disable the helper menu."))
+    }
+
     @Test("up raw attached output flags parse")
     func upRawAttachedOutputFlagsParse() throws {
         let command = try Up.parse([
@@ -185,6 +193,19 @@ struct ComposeCLIHelpTests {
         #expect(command.noColor)
         #expect(command.noLogPrefix)
         #expect(command.timestamps)
+        #expect(command.services == ["api"])
+    }
+
+    @Test("up menu false value parses through Docker Compose rewriter")
+    func upMenuFalseValueParsesThroughDockerComposeRewriter() throws {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "up",
+            "--menu=false",
+            "api",
+        ])
+        let command = try Up.parse(Array(rewritten.dropFirst()))
+
+        #expect(!command.menu)
         #expect(command.services == ["api"])
     }
 

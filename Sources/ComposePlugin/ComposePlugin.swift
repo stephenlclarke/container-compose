@@ -676,7 +676,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var exitCodeFrom: String?
     @Flag(name: .customLong("force-recreate"), help: "Recreate containers even if they already exist.")
     var forceRecreate = false
-    @Flag(name: .customLong("menu"), help: "Enable interactive shortcuts when running attached.")
+    @Flag(name: .customLong("menu"), help: "Enable interactive shortcuts when running attached. Use --menu=false to disable.")
     var menu = false
     @Flag(name: .customLong("always-recreate-deps"), help: "Recreate dependent containers.")
     var alwaysRecreateDeps = false

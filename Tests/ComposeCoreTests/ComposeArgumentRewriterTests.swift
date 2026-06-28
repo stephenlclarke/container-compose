@@ -339,6 +339,51 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes up menu boolean value forms")
+    func normalizesUpMenuBooleanValueForms() {
+        let disabled = ComposeArgumentRewriter.rewrite([
+            "up",
+            "--menu=false",
+            "--menu=0",
+            "--menu=no",
+            "api",
+        ])
+        let enabled = ComposeArgumentRewriter.rewrite([
+            "up",
+            "--menu=true",
+            "--menu=1",
+            "--menu=yes",
+            "api",
+        ])
+
+        #expect(disabled == [
+            "up",
+            "api",
+        ])
+        #expect(enabled == [
+            "up",
+            "--menu",
+            "--menu",
+            "--menu",
+            "api",
+        ])
+    }
+
+    @Test("does not rewrite up menu value forms after terminator")
+    func doesNotRewriteUpMenuValueFormsAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "up",
+            "--",
+            "--menu=false",
+        ])
+
+        #expect(rewritten == [
+            "up",
+            "--",
+            "--menu=false",
+        ])
+    }
+
     @Test("normalizes kill compact signal shorthand")
     func normalizesKillCompactSignalShorthand() {
         let rewritten = ComposeArgumentRewriter.rewrite([

@@ -501,7 +501,7 @@ enum ComposeCLIHelp {
             "--dry-run": .supported,
             "--exit-code-from": .supported,
             "--force-recreate": .supported,
-            "--menu": .notSupported,
+            "--menu": .partiallySupported,
             "--no-attach": .supported,
             "--no-build": .supported,
             "--no-color": .supported,
@@ -1398,7 +1398,7 @@ enum ComposeCLIHelp {
               --dry-run                      Execute command in dry run mode
               --exit-code-from string        Return the exit code of the selected service container
               --force-recreate               Recreate containers even if their configuration and image haven't changed
-              --menu                         Enable interactive shortcuts when running attached
+              --menu                         Enable interactive shortcuts when running attached. Use --menu=false to explicitly disable the helper menu.
               --no-attach stringArray        Do not attach to the specified services
               --no-build                     Don't build an image, even if it's policy
               --no-color                     Produce monochrome output

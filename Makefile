@@ -332,6 +332,8 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--attach-dependencies$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[38;5;208m--menu$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"Use --menu=false to explicitly disable the helper menu."* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--exit-code-from$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-color$${ansi_escape}[0m"* ]]; \
@@ -750,6 +752,10 @@ cli-smoke-built:
 	[[ "$$detached_output" == *"container run"* ]]; \
 	[[ "$$detached_output" == *"--detach"* ]]; \
 	[[ "$$detached_output" == *"--name demo-api-1 --detach"* ]]; \
+	up_menu_false_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --menu=false --no-start api)"; \
+	[[ "$$up_menu_false_output" == *"container create --name demo-api-1"* ]]; \
+	up_menu_true_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --menu=true --no-start api 2>&1 || true)"; \
+	[[ "$$up_menu_true_output" == *"unsupported compose feature: up --menu"* ]]; \
 	logs_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" logs -f api)"; \
 	[[ "$$logs_output" == *"container logs --follow"* ]]; \
 	logs_scaled_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/logs-scale.yml" logs worker)"; \

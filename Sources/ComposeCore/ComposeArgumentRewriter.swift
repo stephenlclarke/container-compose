@@ -234,8 +234,10 @@ public enum ComposeArgumentRewriter {
             return rewriteCompactCommandValueOptions(arguments, options: compactKillValueOptions)
         case "logs":
             return rewriteLogsOptions(arguments)
-        case "down", "restart", "stop", "up":
+        case "down", "restart", "stop":
             return rewriteCompactCommandValueOptions(arguments, options: compactTimeoutValueOptions)
+        case "up":
+            return rewriteUpOptions(arguments)
         case "rm":
             return rewriteRemoveOptions(arguments)
         case "run":
@@ -245,6 +247,26 @@ public enum ComposeArgumentRewriter {
         default:
             return arguments
         }
+    }
+
+    /// Normalizes Docker Compose `up` optional boolean and shorthand options.
+    private static func rewriteUpOptions(_ arguments: [String]) -> [String] {
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, let menu = rewriteOptionalBooleanFlag(argument, flag: "--menu") {
+                rewritten.append(contentsOf: menu)
+            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactTimeoutValueOptions) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
     }
 
     /// Normalizes Docker Compose `exec` boolean option value forms.
@@ -413,6 +435,23 @@ public enum ComposeArgumentRewriter {
             }
         }
         return rewritten
+    }
+
+    /// Rewrites Docker-style optional boolean flag values for ArgumentParser flags.
+    private static func rewriteOptionalBooleanFlag(_ argument: String, flag: String) -> [String]? {
+        let prefix = "\(flag)="
+        guard argument.hasPrefix(prefix) else {
+            return nil
+        }
+        let value = argument.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch value {
+        case "true", "1", "yes":
+            return [flag]
+        case "false", "0", "no":
+            return []
+        default:
+            return nil
+        }
     }
 
     /// Splits compact Docker Compose global short options such as `-fcompose.yml`.
