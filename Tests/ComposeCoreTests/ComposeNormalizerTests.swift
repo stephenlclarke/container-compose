@@ -430,6 +430,8 @@ struct ComposeNormalizerTests {
                 pull: true,
                 platforms: ["linux/arm64"],
                 tags: ["example/api:latest"],
+                provenance: "mode=max",
+                sbom: "true",
                 unsupportedFields: ["ssh"]
             )
         )
@@ -453,6 +455,8 @@ struct ComposeNormalizerTests {
         #expect(build.pull == true)
         #expect(build.platforms == ["linux/arm64"])
         #expect(build.tags == ["example/api:latest"])
+        #expect(build.provenance == "mode=max")
+        #expect(build.sbom == "true")
         #expect(build.unsupportedFields == ["ssh"])
         #expect(network.ipv4Subnet == "10.10.0.0/24")
         #expect(network.ipv6Subnet == "fd00:10::/64")

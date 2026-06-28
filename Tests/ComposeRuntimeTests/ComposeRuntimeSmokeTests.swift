@@ -686,13 +686,14 @@ struct ComposeRuntimeSmokeTests {
                 "--ansi", "never",
                 "--project-name", runtimeProjectName(),
                 "--file", composeFile.path,
-                "build", "--print", "--provenance=true", "api",
+                "build", "--print", "--provenance=mode=max", "--sbom=true", "api",
             ],
-            timeout: 30,
-            expectedStatus: 1
+            timeout: 30
         )
 
-        #expect(enabled.stderr.contains("unsupported compose feature: build --provenance"))
+        let enabledBake = try composeBakeJSON(enabled.stdout)
+        let enabledAPI = try composeBakeTarget(enabledBake, name: "api")
+        #expect(enabledAPI["attest"] as? [String] == ["type=provenance,mode=max", "type=sbom"])
     }
 
     @Test("runtime build forwards default SSH from compose file and CLI")

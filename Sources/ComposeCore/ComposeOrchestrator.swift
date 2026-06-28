@@ -715,6 +715,8 @@ public struct ComposeBuildOptions {
     public var pull = false
     public var push = false
     public var quiet = false
+    public var provenance: String?
+    public var sbom: String?
     public var ssh: [String] = []
     public var withDependencies = false
 
@@ -727,6 +729,8 @@ public struct ComposeBuildOptions {
         pull = false
         push = false
         quiet = false
+        provenance = nil
+        sbom = nil
         ssh = []
         withDependencies = false
     }
@@ -763,6 +767,7 @@ private struct ComposeBuildBakeTarget: Encodable {
     var cacheFrom: [String]?
     var cacheTo: [String]?
     var platforms: [String]?
+    var attest: [String]?
     var pull: Bool?
     var noCache: Bool?
     var output: [String]
@@ -780,6 +785,7 @@ private struct ComposeBuildBakeTarget: Encodable {
         case cacheFrom = "cache-from"
         case cacheTo = "cache-to"
         case platforms
+        case attest
         case pull
         case noCache = "no-cache"
         case output
@@ -6790,6 +6796,9 @@ private extension ComposeOrchestrator {
         for ssh in buildSSHValues(build: build, options: buildOptions) {
             args.append(contentsOf: ["--ssh", ssh])
         }
+        for attestation in buildAttestationArguments(build: build, options: buildOptions) {
+            args.append(contentsOf: [attestation.flag, attestation.value])
+        }
         for (key, value) in (build.args ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--build-arg", "\(key)=\(value)"])
         }
@@ -6863,6 +6872,7 @@ private extension ComposeOrchestrator {
         let tags = buildBakeTags(project: project, service: service, build: build)
         let secrets = try buildBakeSecrets(project: project, build: build)
         let ssh = buildSSHValues(build: build, options: buildOptions)
+        let attest = buildBakeAttestations(build: build, options: buildOptions)
         return ComposeBuildBakeTarget(
             context: context,
             dockerfile: dockerfile.dockerfile,
@@ -6876,6 +6886,7 @@ private extension ComposeOrchestrator {
             cacheFrom: buildBakeValues(build.cacheFrom),
             cacheTo: buildBakeValues(build.cacheTo),
             platforms: buildBakeValues(build.platforms),
+            attest: attest.isEmpty ? nil : attest,
             pull: (buildOptions.pull || build.pull == true) ? true : nil,
             noCache: (buildOptions.noCache || build.noCache == true) ? true : nil,
             output: [buildOptions.push && service.image != nil ? "type=registry" : "type=docker"]
@@ -6999,6 +7010,50 @@ private extension ComposeOrchestrator {
         let id = parts.first.map(String.init) ?? ""
         let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedID.isEmpty ? "default" : trimmedID
+    }
+
+    /// Returns supported attestation flags for `container build`.
+    private func buildAttestationArguments(build: ComposeBuild, options buildOptions: ComposeBuildOptions) -> [(flag: String, value: String)] {
+        var values: [(flag: String, value: String)] = []
+        if let provenance = buildAttestationValue(composeValue: build.provenance, cliValue: buildOptions.provenance) {
+            values.append(("--provenance", provenance))
+        }
+        if let sbom = buildAttestationValue(composeValue: build.sbom, cliValue: buildOptions.sbom) {
+            values.append(("--sbom", sbom))
+        }
+        return values
+    }
+
+    /// Returns supported attestation entries for Buildx bake JSON.
+    private func buildBakeAttestations(build: ComposeBuild, options buildOptions: ComposeBuildOptions) -> [String] {
+        var values: [String] = []
+        if let provenance = buildAttestationValue(composeValue: build.provenance, cliValue: buildOptions.provenance) {
+            values.append(buildBakeAttestation(type: "provenance", value: provenance))
+        }
+        if let sbom = buildAttestationValue(composeValue: build.sbom, cliValue: buildOptions.sbom) {
+            values.append(buildBakeAttestation(type: "sbom", value: sbom))
+        }
+        return values
+    }
+
+    /// Resolves Docker Compose's attestation true/false shorthand.
+    private func buildAttestationValue(composeValue: String?, cliValue: String?) -> String? {
+        guard let rawValue = cliValue ?? composeValue else {
+            return nil
+        }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch value.lowercased() {
+        case "false", "0", "no":
+            return nil
+        case "", "true", "1", "yes":
+            return "true"
+        default:
+            return value
+        }
+    }
+
+    private func buildBakeAttestation(type: String, value: String) -> String {
+        value == "true" ? "type=\(type)" : "type=\(type),\(value)"
     }
 
     /// Returns non-empty bake list values or nil when the Compose field is empty.

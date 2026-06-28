@@ -275,8 +275,8 @@ cli-smoke-built:
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--print$${ansi_escape}[0m"* ]]; \
-	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--provenance$${ansi_escape}[0m"* ]]; \
-	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--sbom$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[32m--provenance$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[32m--sbom$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"Use --provenance=false to explicitly disable."* ]]; \
 	[[ "$$build_help_output" == *"Use --sbom=false to explicitly disable."* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--ssh$${ansi_escape}[0m"* ]]; \
@@ -525,10 +525,10 @@ cli-smoke-built:
 	[[ "$$build_print_output" == *'"BUILD_PRINT_ENV" : "ok"'* ]]; \
 	[[ "$$build_print_output" == *'"type=docker"'* ]]; \
 	[[ "$$build_print_output" != *"container build"* ]]; \
-	build_provenance_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --provenance=true worker 2>&1 || true)"; \
-	[[ "$$build_provenance_output" == *"unsupported compose feature: build --provenance"* ]]; \
-	build_sbom_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --sbom=true worker 2>&1 || true)"; \
-	[[ "$$build_sbom_output" == *"unsupported compose feature: build --sbom"* ]]; \
+	build_provenance_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --provenance=mode=max worker)"; \
+	[[ "$$build_provenance_output" == *"container build"*"--provenance mode=max"* ]]; \
+	build_sbom_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --sbom=true worker)"; \
+	[[ "$$build_sbom_output" == *"container build"*"--sbom true"* ]]; \
 	build_ssh_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --ssh default worker)"; \
 	[[ "$$build_ssh_output" == *"container build"*"--ssh default"* ]]; \
 	build_inline_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-inline.yml" build api)"; \

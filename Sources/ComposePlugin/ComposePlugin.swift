@@ -851,8 +851,6 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
         let unsupportedOptions = [
             builder != nil ? "--builder" : nil,
             check ? "--check" : nil,
-            unsupportedAttestationOption("--provenance", value: provenance),
-            unsupportedAttestationOption("--sbom", value: sbom),
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("build \(first)")
@@ -870,23 +868,12 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
                 $0.pull = pull
                 $0.push = push
                 $0.quiet = quiet
+                $0.provenance = provenance
+                $0.sbom = sbom
                 $0.ssh = ssh
                 $0.withDependencies = withDependencies
             }
         )
-    }
-
-    /// Docker Compose treats false attestation values as explicit opt-outs.
-    private func unsupportedAttestationOption(_ option: String, value: String?) -> String? {
-        guard let value else {
-            return nil
-        }
-        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "false", "0", "no":
-            return nil
-        default:
-            return option
-        }
     }
 }
 

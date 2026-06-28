@@ -669,6 +669,8 @@ public struct ComposeBuild: Codable, Equatable {
         public var pull: Bool?
         public var platforms: [String]?
         public var tags: [String]?
+        public var provenance: String?
+        public var sbom: String?
         public var unsupportedFields: [String]?
 
         public init(
@@ -677,6 +679,8 @@ public struct ComposeBuild: Codable, Equatable {
             pull: Bool? = nil,
             platforms: [String]? = nil,
             tags: [String]? = nil,
+            provenance: String? = nil,
+            sbom: String? = nil,
             unsupportedFields: [String]? = nil
         ) {
             self.target = target
@@ -684,6 +688,8 @@ public struct ComposeBuild: Codable, Equatable {
             self.pull = pull
             self.platforms = platforms
             self.tags = tags
+            self.provenance = provenance
+            self.sbom = sbom
             self.unsupportedFields = unsupportedFields
         }
     }
@@ -702,6 +708,8 @@ public struct ComposeBuild: Codable, Equatable {
     public var pull: Bool?
     public var platforms: [String]?
     public var tags: [String]?
+    public var provenance: String?
+    public var sbom: String?
     public var unsupportedFields: [String]?
 
     public init(
@@ -727,6 +735,8 @@ public struct ComposeBuild: Codable, Equatable {
         self.pull = options.pull
         self.platforms = options.platforms
         self.tags = options.tags
+        self.provenance = options.provenance
+        self.sbom = options.sbom
         self.unsupportedFields = options.unsupportedFields
     }
 }

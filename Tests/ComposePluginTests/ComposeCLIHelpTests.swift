@@ -120,8 +120,8 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--ssh\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--provenance\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--sbom\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--provenance\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--sbom\u{001B}[0m"))
         #expect(help.contains("Use --provenance=false to explicitly disable."))
         #expect(help.contains("Use --sbom=false to explicitly disable."))
     }

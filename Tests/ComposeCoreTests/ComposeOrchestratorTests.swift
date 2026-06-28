@@ -9273,7 +9273,9 @@ struct ComposeOrchestratorTests {
                             noCache: true,
                             pull: true,
                             platforms: ["linux/amd64", "linux/arm64"],
-                            tags: ["example/api:latest", "example/api:dev", "example/api:test"]
+                            tags: ["example/api:latest", "example/api:dev", "example/api:test"],
+                            provenance: "mode=min",
+                            sbom: "false"
                         )
                     )
                 },
@@ -9303,6 +9305,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["--label", "org.opencontainers.image.title=api"]))
         #expect(runner.commands[0].arguments.containsSequence(["--secret", "id=file_token,src=./token.txt"]))
         #expect(runner.commands[0].arguments.containsSequence(["--secret", "id=npm_token,env=NPM_TOKEN"]))
+        #expect(runner.commands[0].arguments.containsSequence(["--provenance", "mode=min"]))
+        #expect(!runner.commands[0].arguments.contains("--sbom"))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
         #expect(runner.commands[0].arguments.last == "api")
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
@@ -9728,7 +9732,9 @@ struct ComposeOrchestratorTests {
                             noCache: true,
                             pull: true,
                             platforms: ["linux/arm64"],
-                            tags: ["example/api:dev"]
+                            tags: ["example/api:dev"],
+                            provenance: "mode=min",
+                            sbom: "true"
                         )
                     )
                 },
@@ -9753,6 +9759,8 @@ struct ComposeOrchestratorTests {
                 $0.printBake = true
                 $0.pull = true
                 $0.push = true
+                $0.provenance = "mode=max"
+                $0.sbom = "true"
                 $0.ssh = ["deploy=/tmp/deploy.sock"]
                 $0.withDependencies = true
             }
@@ -9774,6 +9782,7 @@ struct ComposeOrchestratorTests {
         #expect(api["cache-from"] as? [String] == ["type=registry,ref=example/api:cache"])
         #expect(api["cache-to"] as? [String] == ["type=local,dest=.cache"])
         #expect(api["platforms"] as? [String] == ["linux/arm64"])
+        #expect(api["attest"] as? [String] == ["type=provenance,mode=max", "type=sbom"])
         #expect(api["secret"] as? [String] == [
             "id=file_token,type=file,src=/workspace/project/token.txt",
             "id=npm_token,type=env,env=NPM_TOKEN",

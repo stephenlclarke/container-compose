@@ -241,6 +241,8 @@ type normalizedBuild struct {
 	Pull              bool                    `json:"pull,omitempty"`
 	Platforms         []string                `json:"platforms,omitempty"`
 	Tags              []string                `json:"tags,omitempty"`
+	Provenance        string                  `json:"provenance,omitempty"`
+	SBOM              string                  `json:"sbom,omitempty"`
 	UnsupportedFields []string                `json:"unsupportedFields,omitempty"`
 }
 
@@ -741,6 +743,8 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 			Pull:              service.Build.Pull,
 			Platforms:         append([]string(nil), service.Build.Platforms...),
 			Tags:              append([]string(nil), service.Build.Tags...),
+			Provenance:        service.Build.Provenance,
+			SBOM:              service.Build.SBOM,
 			UnsupportedFields: unsupportedBuildFields(service.Build, unsupportedSecrets),
 		}
 	}
@@ -1504,8 +1508,6 @@ func unsupportedBuildFields(build *types.BuildConfig, unsupportedSecrets bool) [
 	appendUnsupportedBuildField(&fields, "isolation", build.Isolation != "")
 	appendUnsupportedBuildField(&fields, "network", build.Network != "")
 	appendUnsupportedBuildField(&fields, "privileged", build.Privileged)
-	appendUnsupportedBuildField(&fields, "provenance", build.Provenance != "")
-	appendUnsupportedBuildField(&fields, "sbom", build.SBOM != "")
 	appendUnsupportedBuildField(&fields, "secrets", unsupportedSecrets)
 	appendUnsupportedBuildField(&fields, "shm_size", unitBytesValue(build.ShmSize) != "")
 	appendUnsupportedBuildField(&fields, "ulimits", len(build.Ulimits) > 0)

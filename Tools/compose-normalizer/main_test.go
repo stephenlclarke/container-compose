@@ -77,6 +77,45 @@ services:
 	}
 }
 
+func TestRunPreservesBuildAttestations(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := filepath.Join(dir, "compose.yaml")
+	writeFile(t, composeFile, `
+services:
+  api:
+    image: example/api:latest
+    build:
+      context: .
+      provenance: mode=max
+      sbom: "true"
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var project normalizedProject
+	if err := json.Unmarshal(stdout.Bytes(), &project); err != nil {
+		t.Fatalf("decode normalized JSON: %v", err)
+	}
+	build := project.Services["api"].Build
+	if build == nil {
+		t.Fatal("api build is nil")
+	}
+	if build.Provenance != "mode=max" {
+		t.Fatalf("build.Provenance = %q, want mode=max", build.Provenance)
+	}
+	if build.SBOM != "true" {
+		t.Fatalf("build.SBOM = %q, want true", build.SBOM)
+	}
+	if len(build.UnsupportedFields) != 0 {
+		t.Fatalf("build.UnsupportedFields = %#v, want empty", build.UnsupportedFields)
+	}
+}
+
 func TestRunWritesVariablesJSON(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")
@@ -2035,8 +2074,6 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		"isolation",
 		"network",
 		"privileged",
-		"provenance",
-		"sbom",
 		"secrets",
 		"shm_size",
 		"ulimits",
