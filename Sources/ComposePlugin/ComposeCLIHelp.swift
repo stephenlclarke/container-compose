@@ -278,11 +278,11 @@ enum ComposeCLIHelp {
             "--memory": .supported,
             "--no-cache": .supported,
             "--print": .supported,
-            "--provenance": .notSupported,
+            "--provenance": .partiallySupported,
             "--pull": .supported,
             "--push": .supported,
             "--quiet": .supported,
-            "--sbom": .notSupported,
+            "--sbom": .partiallySupported,
             "--ssh": .notSupported,
             "--with-dependencies": .supported,
         ],
@@ -1027,11 +1027,11 @@ enum ComposeCLIHelp {
           -m, --memory bytes            Set memory limit for the build container. Not supported by BuildKit.
               --no-cache                Do not use cache when building the image
               --print                   Print equivalent bake file
-              --provenance string       Add a provenance attestation
+              --provenance string       Add a provenance attestation. Use --provenance=false to explicitly disable.
               --pull                    Always attempt to pull a newer version of the image
               --push                    Push service images
           -q, --quiet                   Suppress the build output
-              --sbom string             Add a SBOM attestation
+              --sbom string             Add a SBOM attestation. Use --sbom=false to explicitly disable.
               --ssh string              Set SSH authentications used when building service images. (use 'default' for using your default SSH Agent)
               --with-dependencies       Also build dependencies (transitively)
         """,

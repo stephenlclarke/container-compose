@@ -657,7 +657,7 @@ struct ComposeRuntimeSmokeTests {
                 "--ansi", "never",
                 "--project-name", runtimeProjectName(),
                 "--file", composeFile.path,
-                "build", "--print", "--push", "--build-arg", "CLI_ARG=2", "api",
+                "build", "--print", "--provenance=false", "--sbom=false", "--push", "--build-arg", "CLI_ARG=2", "api",
             ],
             timeout: 30
         )
@@ -671,6 +671,20 @@ struct ComposeRuntimeSmokeTests {
         let arguments = try #require(api["args"] as? [String: String])
         #expect(arguments["FILE_ARG"] == "1")
         #expect(arguments["CLI_ARG"] == "2")
+
+        let enabled = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", runtimeProjectName(),
+                "--file", composeFile.path,
+                "build", "--print", "--provenance=true", "api",
+            ],
+            timeout: 30,
+            expectedStatus: 1
+        )
+
+        #expect(enabled.stderr.contains("unsupported compose feature: build --provenance"))
     }
 }
 

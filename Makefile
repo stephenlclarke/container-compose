@@ -274,6 +274,10 @@ cli-smoke-built:
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--print$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--provenance$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--sbom$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"Use --provenance=false to explicitly disable."* ]]; \
+	[[ "$$build_help_output" == *"Use --sbom=false to explicitly disable."* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[31m--ssh$${ansi_escape}[0m"* ]]; \
 	attach_help_output="$$(".build/debug/compose" attach --help)"; \
 	[[ "$$attach_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
@@ -513,13 +517,17 @@ cli-smoke-built:
 	build_arg_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --build-arg VERSION=2 --memory 256m worker)"; \
 	[[ "$$build_arg_output" == *"--memory 256m"* ]]; \
 	[[ "$$build_arg_output" == *"--build-arg VERSION=2"* ]]; \
-	build_print_output="$$(BUILD_PRINT_ENV=ok ".build/debug/compose" --ansi never --progress quiet -f "$$tmpdir/build-only.yml" build --print --build-arg VERSION=2 --build-arg BUILD_PRINT_ENV worker)"; \
+	build_print_output="$$(BUILD_PRINT_ENV=ok ".build/debug/compose" --ansi never --progress quiet -f "$$tmpdir/build-only.yml" build --print --provenance=false --sbom=false --build-arg VERSION=2 --build-arg BUILD_PRINT_ENV worker)"; \
 	[[ "$$build_print_output" == *'"target"'* ]]; \
 	[[ "$$build_print_output" == *'"worker"'* ]]; \
 	[[ "$$build_print_output" == *'"VERSION" : "2"'* ]]; \
 	[[ "$$build_print_output" == *'"BUILD_PRINT_ENV" : "ok"'* ]]; \
 	[[ "$$build_print_output" == *'"type=docker"'* ]]; \
 	[[ "$$build_print_output" != *"container build"* ]]; \
+	build_provenance_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --provenance=true worker 2>&1 || true)"; \
+	[[ "$$build_provenance_output" == *"unsupported compose feature: build --provenance"* ]]; \
+	build_sbom_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --sbom=true worker 2>&1 || true)"; \
+	[[ "$$build_sbom_output" == *"unsupported compose feature: build --sbom"* ]]; \
 	build_ssh_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --ssh default worker 2>&1 || true)"; \
 	[[ "$$build_ssh_output" == *"unsupported compose feature: build --ssh"* ]]; \
 	build_inline_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-inline.yml" build api)"; \

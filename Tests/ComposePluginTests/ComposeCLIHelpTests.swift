@@ -119,6 +119,10 @@ struct ComposeCLIHelpTests {
 
         #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--provenance\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--sbom\u{001B}[0m"))
+        #expect(help.contains("Use --provenance=false to explicitly disable."))
+        #expect(help.contains("Use --sbom=false to explicitly disable."))
     }
 
     @Test("attach signal proxy option is shown as supported")
@@ -221,9 +225,18 @@ struct ComposeCLIHelpTests {
 
     @Test("build print flag parses")
     func buildPrintFlagParses() throws {
-        let command = try Build.parse(["--print", "--build-arg", "VERSION=2", "--with-dependencies", "api"])
+        let command = try Build.parse([
+            "--print",
+            "--provenance=false",
+            "--sbom", "false",
+            "--build-arg", "VERSION=2",
+            "--with-dependencies",
+            "api",
+        ])
 
         #expect(command.printBake)
+        #expect(command.provenance == "false")
+        #expect(command.sbom == "false")
         #expect(command.buildArgs == ["VERSION=2"])
         #expect(command.withDependencies)
         #expect(command.services == ["api"])
