@@ -268,7 +268,11 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
         guard try await client.networkExists(id: id) else {
             return
         }
-        try await client.deleteNetwork(id: id)
+        do {
+            try await client.deleteNetwork(id: id)
+        } catch let error as ContainerizationError where error.code == .notFound {
+            return
+        }
     }
 
     /// Creates a Compose project volume through `ClientVolume`.

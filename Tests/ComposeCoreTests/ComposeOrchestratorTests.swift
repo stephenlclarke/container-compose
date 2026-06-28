@@ -461,6 +461,18 @@ private extension ComposeOrchestrator {
     convenience init(
         runner: CommandRunning,
         options: ComposeExecutionOptions,
+        discoveryManager: ContainerDiscoveryManaging,
+        lifecycleManager: ContainerLifecycleManaging
+    ) {
+        self.init(runner: runner, options: options, dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.lifecycleManager = lifecycleManager
+        })
+    }
+
+    convenience init(
+        runner: CommandRunning,
+        options: ComposeExecutionOptions,
         logManager: ContainerLogManaging
     ) {
         self.init(runner: runner, options: options, dependencies: orchestratorDependencies { $0.logManager = logManager })
@@ -10905,15 +10917,21 @@ struct ComposeOrchestratorTests {
     func lifecycleCommandsTargetSelectedServiceContainers() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
+        ])
         let execManager = RecordingContainerExecManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let logManager = RecordingContainerLogManager()
         let orchestrator = ComposeOrchestrator(
             runner: runner,
-            copier: copier,
-            execManager: execManager,
-            lifecycleManager: lifecycleManager,
-            logManager: logManager
+            dependencies: orchestratorDependencies {
+                $0.copier = copier
+                $0.discoveryManager = discoveryManager
+                $0.execManager = execManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+            }
         )
         let project = ComposeProject(
             name: "demo",
@@ -14144,6 +14162,24 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("resource manager ignores networks removed after preflight")
+    func resourceManagerIgnoresNetworksRemovedAfterPreflight() async throws {
+        let client = RecordingContainerResourceAPIClient(
+            networkDeleteError: ContainerizationError(
+                .notFound,
+                message: "network demo_default not found"
+            )
+        )
+        let manager = ContainerClientResourceManager(client: client)
+
+        try await manager.deleteNetwork(id: "demo_default")
+
+        #expect(await client.requests == [
+            .networkExists(id: "demo_default"),
+            .deleteNetwork(id: "demo_default"),
+        ])
+    }
+
     @Test("resource manager skips deleting missing volumes")
     func resourceManagerSkipsDeletingMissingVolumes() async throws {
         let client = RecordingContainerResourceAPIClient(volumes: [])
@@ -14305,10 +14341,14 @@ struct ComposeOrchestratorTests {
     @Test("rm supports force and anonymous volume removal")
     func rmSupportsForceAndAnonymousVolumeRemoval() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
         let lifecycleManager = RecordingContainerLifecycleManager()
         let resourceManager = RecordingContainerResourceManager()
         let orchestrator = ComposeOrchestrator(
             runner: runner,
+            discoveryManager: discoveryManager,
             lifecycleManager: lifecycleManager,
             resourceManager: resourceManager
         )
@@ -14331,6 +14371,7 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await lifecycleManager.requests == [
             .delete(id: "demo-api-1", force: true),
         ])
@@ -14340,9 +14381,69 @@ struct ComposeOrchestratorTests {
         #expect(!commands.contains { $0.contains("demo_cache") })
     }
 
+    @Test("rm skips running containers unless stop is requested")
+    func rmSkipsRunningContainersUnlessStopIsRequested() async throws {
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine"),
+            ]
+        )
+
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: false, force: true)
+
+        #expect(emitted.messages == ["No stopped containers"])
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("rm ignores containers that disappear during removal")
+    func rmIgnoresContainersThatDisappearDuringRemoval() async throws {
+        let missing = ContainerizationError(.notFound, message: "container not found")
+        let deleteError = ContainerizationError(.internalError, message: "failed to delete container", cause: missing)
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(deleteErrorsByID: [
+            "demo-api-1": deleteError,
+        ])
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine"),
+            ]
+        )
+
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: false, force: true)
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await lifecycleManager.requests == [
+            .delete(id: "demo-api-1", force: true),
+        ])
+    }
+
     @Test("rm cancellation avoids stop and delete")
     func rmCancellationAvoidsStopAndDelete() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
+        ])
         let lifecycleManager = RecordingContainerLifecycleManager()
         let prompts = MessageRecorder()
         let orchestrator = ComposeOrchestrator(
@@ -14353,6 +14454,7 @@ struct ComposeOrchestratorTests {
                     return false
                 })
             ),
+            discoveryManager: discoveryManager,
             lifecycleManager: lifecycleManager
         )
         let project = composeProject(
@@ -14366,12 +14468,16 @@ struct ComposeOrchestratorTests {
 
         #expect(prompts.messages == ["Going to remove demo-api-1\nAre you sure? [yN] "])
         #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
     @Test("rm confirms before stopping containers")
     func rmConfirmsBeforeStoppingContainers() async throws {
         let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
+        ])
         let lifecycleManager = RecordingContainerLifecycleManager()
         let prompts = MessageRecorder()
         let orchestrator = ComposeOrchestrator(
@@ -14382,6 +14488,7 @@ struct ComposeOrchestratorTests {
                     return true
                 })
             ),
+            discoveryManager: discoveryManager,
             lifecycleManager: lifecycleManager
         )
         let project = composeProject(
@@ -14395,9 +14502,36 @@ struct ComposeOrchestratorTests {
 
         #expect(prompts.messages == ["Going to remove demo-api-1\nAre you sure? [yN] "])
         #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-api-1", force: false),
+        ])
+    }
+
+    @Test("rm stop skips stop for already stopped containers")
+    func rmStopSkipsStopForAlreadyStoppedContainers() async throws {
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        )
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine"),
+            ]
+        )
+
+        try await orchestrator.rm(project: project, services: ["api"], stopFirst: true, force: true)
+
+        #expect(await discoveryManager.listRequests == [true])
+        #expect(await lifecycleManager.requests == [
+            .delete(id: "demo-api-1", force: true),
         ])
     }
 
@@ -14405,10 +14539,14 @@ struct ComposeOrchestratorTests {
     func rmSurfacesAnonymousVolumeRemovalFailures() async throws {
         let runner = RecordingRunner()
         let expected = ComposeError.invalidProject("anonymous volume delete failed")
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
         let lifecycleManager = RecordingContainerLifecycleManager()
         let resourceManager = RecordingContainerResourceManager(volumeDeleteError: expected)
         let orchestrator = ComposeOrchestrator(
             runner: runner,
+            discoveryManager: discoveryManager,
             lifecycleManager: lifecycleManager,
             resourceManager: resourceManager
         )
@@ -14433,6 +14571,7 @@ struct ComposeOrchestratorTests {
         }
 
         #expect(runner.commands.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await lifecycleManager.requests == [
             .delete(id: "demo-api-1", force: true),
         ])
@@ -21550,6 +21689,19 @@ private func discoveredContainers() -> [ComposeContainerSummary] {
     ]
 }
 
+private func discoveredServiceContainer(
+    id: String,
+    projectName: String = "demo",
+    serviceName: String,
+    status: String
+) -> ComposeContainerSummary {
+    ComposeContainerSummary(id: id, status: status, labels: [
+        composeProjectLabel: projectName,
+        composeServiceLabel: serviceName,
+        composeOneOffLabel: "false",
+    ])
+}
+
 private func pausedDiscoveredContainers() -> [ComposeContainerSummary] {
     discoveredContainers() + [
         ComposeContainerSummary(id: "demo-paused-1", status: "paused", labels: [
@@ -23135,6 +23287,7 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
     private let existingNetworks: Set<String>
     private let volumes: [ComposeVolumeSummary]
     private let networkCreateError: (any Error)?
+    private let networkDeleteError: (any Error)?
     private let volumeDeleteError: (any Error)?
     private var storage: [ContainerResourceAPIRequest] = []
 
@@ -23142,11 +23295,13 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
         existingNetworks: Set<String> = ["demo_default"],
         volumes: [ComposeVolumeSummary] = [],
         networkCreateError: (any Error)? = nil,
+        networkDeleteError: (any Error)? = nil,
         volumeDeleteError: (any Error)? = nil
     ) {
         self.existingNetworks = existingNetworks
         self.volumes = volumes
         self.networkCreateError = networkCreateError
+        self.networkDeleteError = networkDeleteError
         self.volumeDeleteError = volumeDeleteError
     }
 
@@ -23175,6 +23330,9 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
 
     func deleteNetwork(id: String) async throws {
         storage.append(.deleteNetwork(id: id))
+        if let networkDeleteError {
+            throw networkDeleteError
+        }
     }
 
     func createVolume(_ request: ComposeVolumeCreateRequest) async throws {

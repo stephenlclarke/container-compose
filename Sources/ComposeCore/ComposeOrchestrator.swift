@@ -1302,6 +1302,7 @@ private struct ServiceContainerTarget {
     var service: ComposeService
     var index: Int
     var name: String
+    var status: String? = nil
 }
 
 private struct RuntimeLogOptions: Sendable {
@@ -3154,7 +3155,11 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         volumes: Bool = false
     ) async throws {
         let services = try selectedServices(project: project, selected: selected)
-        let targets = try await serviceContainerTargets(project: project, services: services)
+        let targets = try await removableServiceContainerTargets(project: project, services: services, stopFirst: stopFirst)
+        if targets.isEmpty, !options.dryRun {
+            options.emit("No stopped containers")
+            return
+        }
         if !targets.isEmpty && !force && !options.dryRun {
             let names = targets.map(\.name).joined(separator: ", ")
             guard try await options.confirm("Going to remove \(names)\nAre you sure? [yN] ") else {
@@ -3162,10 +3167,18 @@ public final class ComposeOrchestrator: @unchecked Sendable {
             }
         }
         if stopFirst {
-            try await stop(project: project, services: services.map(\.name))
+            for target in targets {
+                if target.status.map({ !isRemovableStoppedContainerStatus($0) }) ?? true {
+                    try await ignoringMissingContainer {
+                        try await stopContainer(service: target.service, containerName: target.name)
+                    }
+                }
+            }
         }
         for target in targets {
-            try await deleteContainer(target.name, force: force)
+            try await ignoringMissingContainer {
+                try await deleteContainer(target.name, force: force)
+            }
         }
         if volumes {
             for volume in try anonymousVolumeRuntimeNames(project: project, targets: targets) {
@@ -3176,6 +3189,32 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     try await resourceManager.deleteVolume(name: volume)
                 }
             }
+        }
+    }
+
+    /// Resolves the service containers that `compose rm` may remove.
+    private func removableServiceContainerTargets(project: ComposeProject, services: [ComposeService], stopFirst: Bool) async throws -> [ServiceContainerTarget] {
+        if options.dryRun {
+            return try configuredServiceContainerTargets(project: project, services: services)
+        }
+        let containers = try await projectContainers(projectName: project.name, all: true)
+        return services.flatMap { service in
+            containers
+                .filter { container in
+                    guard container.serviceName == service.name, !container.isOneOff else {
+                        return false
+                    }
+                    return stopFirst || isRemovableStoppedContainerStatus(container.status)
+                }
+                .sorted(by: serviceContainerSummaryOrder(project: project, service: service))
+                .map { container in
+                    ServiceContainerTarget(
+                        service: service,
+                        index: serviceContainerIndex(project: project, service: service, containerID: container.id) ?? Int.max,
+                        name: container.id,
+                        status: container.status
+                    )
+                }
         }
     }
 
@@ -10830,6 +10869,16 @@ private func shortImageID(_ digest: String?) -> String {
         digest = String(digest[digest.index(after: colonIndex)...])
     }
     return String(digest.prefix(12))
+}
+
+/// Returns whether `compose rm` may remove a container without `--stop`.
+private func isRemovableStoppedContainerStatus(_ status: String) -> Bool {
+    switch status.lowercased() {
+    case "created", "dead", "exited", "stopped":
+        return true
+    default:
+        return false
+    }
 }
 
 /// Combines `ps --status` and `ps --filter status=...` into runtime state values.
