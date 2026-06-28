@@ -279,7 +279,7 @@ cli-smoke-built:
 	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--sbom$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"Use --provenance=false to explicitly disable."* ]]; \
 	[[ "$$build_help_output" == *"Use --sbom=false to explicitly disable."* ]]; \
-	[[ "$$build_help_output" == *"$${ansi_escape}[38;5;208m--ssh$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[32m--ssh$${ansi_escape}[0m"* ]]; \
 	attach_help_output="$$(".build/debug/compose" attach --help)"; \
 	[[ "$$attach_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$attach_help_output" == *"$${ansi_escape}[38;5;208m--detach-keys$${ansi_escape}[0m"* ]]; \

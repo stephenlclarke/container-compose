@@ -42,4 +42,4 @@ make coverage-check
 - `--memory` remains accepted by the build command but is omitted from bake output, matching Docker Compose's BuildKit behavior.
 - `--builder` and `--check` remain unsupported.
 - `--provenance` and `--sbom` support explicit false opt-outs only; true attestation output remains unsupported.
-- `--ssh` is partially supported: default agent forwarding is live-tested, while non-default `id=path` host sockets need backend attachment support.
+- `--ssh` is supported through the normal build path; default agent forwarding, non-default `id=/path` host sockets, and multiple distinct host sockets are covered by the dedicated build SSH slice.

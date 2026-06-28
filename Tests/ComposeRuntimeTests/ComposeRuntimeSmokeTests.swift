@@ -23,7 +23,7 @@ import Glibc
 import Foundation
 import Testing
 
-@Suite("Compose runtime smoke tests")
+@Suite("Compose runtime smoke tests", .serialized)
 struct ComposeRuntimeSmokeTests {
     @Test("runtime run build emits progress before build output")
     func runtimeRunBuildEmitsProgressBeforeBuildOutput() throws {
@@ -804,6 +804,72 @@ struct ComposeRuntimeSmokeTests {
                 "--project-name", runtimeProjectName(),
                 "--file", composeFile.path,
                 "build", "--ssh", "git=\(socket.path)", "api",
+            ],
+            timeout: 120
+        )
+
+        let inspect = try runProcess(containerBinary, ["image", "inspect", imageName], timeout: 30)
+        #expect(inspect.stdout.contains(imageTag))
+    }
+
+    @Test("runtime build forwards multiple explicit SSH sockets from compose file")
+    func runtimeBuildForwardsMultipleExplicitSSHSocketsFromComposeFile() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
+        try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        try """
+        FROM ghcr.io/linuxcontainers/alpine:3.20
+        RUN --mount=type=ssh,id=default,target=/tmp/default.sock \\
+            --mount=type=ssh,id=git,target=/tmp/git.sock \\
+            test -S /tmp/default.sock && test -S /tmp/git.sock
+        """.write(to: apiDirectory.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
+
+        let defaultSocket = try FakeSSHAgentSocket()
+        defer {
+            defaultSocket.close()
+        }
+        let gitSocket = try FakeSSHAgentSocket()
+        defer {
+            gitSocket.close()
+        }
+
+        let imageTag = UUID().uuidString
+        let imageName = "registry.local/compose-ssh-multiple:\(imageTag)"
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: \(imageName)
+            build:
+              context: ./api
+              ssh:
+                - default=\(defaultSocket.path)
+                - git=\(gitSocket.path)
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        defer {
+            _ = try? runProcess(containerBinary, ["image", "delete", imageName], timeout: 30)
+        }
+
+        try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", runtimeProjectName(),
+                "--file", composeFile.path,
+                "build", "api",
             ],
             timeout: 120
         )

@@ -5,7 +5,7 @@
 This change fills the Compose build SSH forwarding gap:
 
 - Stops rejecting `compose build --ssh`.
-- Marks `build --ssh` as partially supported in help.
+- Marks `build --ssh` as supported in help.
 - Adds repeated CLI SSH values to `ComposeBuildOptions`.
 - Normalizes service `build.ssh` entries from compose-go into `ComposeBuild.ssh`.
 - Forwards merged SSH values to `container build --ssh`.
@@ -18,7 +18,7 @@ The matching container backend now accepts `container build --ssh` and forwards 
 
 CLI values are applied after compose-file values and replace any file value with the same SSH id, which gives users an override path for local agent/socket differences without editing `compose.yml`.
 
-Default SSH agent forwarding is live-tested end to end. One explicit non-default `id=/path/to/socket` value is now live-tested through the fork-backed container backend. Multiple distinct host socket paths still need a runtime follow-up before the option can be marked fully supported.
+Default SSH agent forwarding is live-tested end to end. Explicit non-default `id=/path/to/socket` values and multiple distinct host socket paths are now live-tested through the fork-backed container backend.
 
 ## Verification
 
@@ -31,6 +31,7 @@ swift test --disable-automatic-resolution --filter 'buildOptionsAddCLIBuildArgsA
 CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildPrintRendersBakeFileFromComposeFile
 CONTAINER_BIN=/Users/sclarke/github/container/bin/container COMPOSE_TEST_BINARY=/Users/sclarke/github/container-compose/.build/debug/compose CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildForwardsDefaultSSHFromComposeFileAndCLI
 CONTAINER_BIN=/Users/sclarke/github/container/bin/container COMPOSE_TEST_BINARY=/Users/sclarke/github/container-compose/.build/debug/compose CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildForwardsExplicitSSHSocketFromCLI
+CONTAINER_BIN=/Users/sclarke/github/container/bin/container COMPOSE_TEST_BINARY=/Users/sclarke/github/container-compose/.build/debug/compose CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution --filter runtimeBuildForwardsMultipleExplicitSSHSocketsFromComposeFile
 make ci
 make cli-smoke-built
 git diff --check
@@ -47,7 +48,6 @@ make coverage-check
 ## Compatibility Notes
 
 - This implements SSH forwarding declarations only for the build path.
-- Default SSH agent forwarding and one explicit `id=/path/to/socket` host Unix socket are live-tested.
-- Multiple distinct host socket paths need backend support for arbitrary host socket attachments.
+- Default SSH agent forwarding, explicit `id=/path/to/socket` host Unix sockets, and multiple distinct host socket paths are live-tested.
 - `--builder`, `--check`, true provenance output, and true SBOM output remain unsupported.
 - Runtime support requires a container build backend that accepts `container build --ssh`.
