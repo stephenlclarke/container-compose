@@ -2883,8 +2883,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     user: exec.user,
                     workingDirectory: exec.workingDirectory,
                     privileged: exec.privileged,
-                    interactive: exec.interactive,
-                    tty: exec.tty
+                    terminal: .init(interactive: exec.interactive, tty: exec.tty)
                 )
             )
             if status != 0 {
@@ -4897,8 +4896,7 @@ private extension ComposeOrchestrator {
                 user: user,
                 workingDirectory: workingDirectory,
                 privileged: privileged,
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             )
         )
         if status != 0 {
@@ -4952,8 +4950,7 @@ private extension ComposeOrchestrator {
                     user: nonEmpty(hook.user),
                     workingDirectory: nonEmpty(hook.workingDir),
                     privileged: hook.privileged == true,
-                    interactive: false,
-                    tty: false
+                    terminal: .init(interactive: false, tty: false)
                 )
             )
             if status != 0 {

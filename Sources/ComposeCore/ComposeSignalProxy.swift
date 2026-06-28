@@ -31,7 +31,9 @@ public protocol ComposeSignalProxying: Sendable {
 
 /// Dispatch-backed signal proxy used by interactive-ish Compose operations.
 public struct DispatchComposeSignalProxy: ComposeSignalProxying {
-    public init() {}
+    public init() {
+        // Public initializer keeps the dispatch-backed proxy constructible outside this module.
+    }
 
     public func withSignalProxy(
         signals: [String],

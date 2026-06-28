@@ -45,6 +45,17 @@ public struct ContainerDetachedExecRequest: Sendable, Equatable {
     }
 }
 
+/// Terminal attachment mode for a Compose exec process.
+public struct ContainerAttachedExecTerminal: Sendable, Equatable {
+    public var interactive: Bool
+    public var tty: Bool
+
+    public init(interactive: Bool = true, tty: Bool = true) {
+        self.interactive = interactive
+        self.tty = tty
+    }
+}
+
 /// Compose exec request that attaches local terminal IO to the process.
 public struct ContainerAttachedExecRequest: Sendable, Equatable {
     public var id: String
@@ -55,6 +66,9 @@ public struct ContainerAttachedExecRequest: Sendable, Equatable {
     public var privileged: Bool
     public var interactive: Bool
     public var tty: Bool
+    public var terminal: ContainerAttachedExecTerminal {
+        ContainerAttachedExecTerminal(interactive: interactive, tty: tty)
+    }
 
     public init(
         id: String,
@@ -63,8 +77,7 @@ public struct ContainerAttachedExecRequest: Sendable, Equatable {
         user: String? = nil,
         workingDirectory: String? = nil,
         privileged: Bool = false,
-        interactive: Bool = true,
-        tty: Bool = true
+        terminal: ContainerAttachedExecTerminal = ContainerAttachedExecTerminal()
     ) {
         self.id = id
         self.command = command
@@ -72,8 +85,8 @@ public struct ContainerAttachedExecRequest: Sendable, Equatable {
         self.user = user
         self.workingDirectory = workingDirectory
         self.privileged = privileged
-        self.interactive = interactive
-        self.tty = tty
+        self.interactive = terminal.interactive
+        self.tty = terminal.tty
     }
 }
 

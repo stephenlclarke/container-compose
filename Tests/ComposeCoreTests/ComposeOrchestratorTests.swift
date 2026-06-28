@@ -10739,8 +10739,7 @@ struct ComposeOrchestratorTests {
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
                 command: ["echo", "ok"],
-                interactive: true,
-                tty: true
+                terminal: .init(interactive: true, tty: true)
             ),
         ])
         #expect(await logManager.requests == [
@@ -10793,8 +10792,7 @@ struct ComposeOrchestratorTests {
                 user: "1000",
                 workingDirectory: "/srv",
                 privileged: true,
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
     }
@@ -10834,8 +10832,7 @@ struct ComposeOrchestratorTests {
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
                 command: ["sh", "-c", "touch /tmp/ready"],
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1"])
@@ -10867,14 +10864,12 @@ struct ComposeOrchestratorTests {
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
                 command: ["sh", "-c", "rm -f /tmp/ready"],
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
                 command: ["sh", "-c", "touch /tmp/ready"],
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
         #expect(await lifecycleManager.requests == [
@@ -11103,8 +11098,7 @@ struct ComposeOrchestratorTests {
                 environment: ["READY=0"],
                 user: "1000",
                 workingDirectory: "/work",
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
         #expect(await lifecycleManager.requests == [
@@ -13611,8 +13605,7 @@ struct ComposeOrchestratorTests {
                 user: "1000:1000",
                 workingDirectory: "/app",
                 privileged: true,
-                interactive: true,
-                tty: false
+                terminal: .init(interactive: true, tty: false)
             )
         )
 
@@ -14346,8 +14339,7 @@ struct ComposeOrchestratorTests {
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
                 command: ["echo", "ok"],
-                interactive: true,
-                tty: false
+                terminal: .init(interactive: true, tty: false)
             ),
         ])
     }
@@ -14383,8 +14375,7 @@ struct ComposeOrchestratorTests {
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
                 command: ["sh"],
-                interactive: true,
-                tty: true
+                terminal: .init(interactive: true, tty: true)
             ),
         ])
     }
@@ -14507,8 +14498,7 @@ struct ComposeOrchestratorTests {
             ContainerAttachedExecRequest(
                 id: "demo-api-2",
                 command: ["true"],
-                interactive: true,
-                tty: true
+                terminal: .init(interactive: true, tty: true)
             ),
         ])
     }
@@ -14610,8 +14600,7 @@ struct ComposeOrchestratorTests {
                 id: "demo-api-1",
                 command: ["true"],
                 privileged: true,
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
     }
@@ -15675,8 +15664,7 @@ struct ComposeOrchestratorTests {
                 user: "1000",
                 workingDirectory: "/app",
                 privileged: true,
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
     }
@@ -15730,8 +15718,7 @@ struct ComposeOrchestratorTests {
             ContainerAttachedExecRequest(
                 id: "demo-api-1",
                 command: ["sh", "-c", "rm -rf -- /app/src/main.swift"],
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
     }
@@ -19724,8 +19711,7 @@ struct ComposeOrchestratorTests {
                 environment: ["READY=1"],
                 user: "1000",
                 workingDirectory: "/work",
-                interactive: false,
-                tty: false
+                terminal: .init(interactive: false, tty: false)
             ),
         ])
     }
