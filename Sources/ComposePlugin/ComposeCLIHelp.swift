@@ -220,7 +220,7 @@ enum ComposeCLIHelp {
         "version": .supported,
         "volumes": .supported,
         "wait": .supported,
-        "watch": .partiallySupported,
+        "watch": .supported,
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
