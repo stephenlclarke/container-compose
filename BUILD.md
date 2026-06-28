@@ -209,13 +209,13 @@ make docker-compose-cli-surface-parity
 
 This builds the local `compose` binary, compares root command listings, `bridge` management command listings, and every documented long option against Docker Compose V2, then writes `.build/parity/compose-cli-surface.md`. Known intentional differences are documented in `docs/parity/compose-cli-surface.md` and encoded in `Tools/parity/compose-cli-surface.allowlist`. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
 
-For the local-only `build --builder default` parity check, run:
+For the local-only `build --builder` parity check, run:
 
 ```sh
 make docker-compose-build-builder-parity
 ```
 
-This compares Docker Compose V2 `build --builder default --print` with `container compose build --builder default --print` using a daemon-free local fixture, then verifies non-default builder names remain rejected by `container-compose` before build side effects. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
+This compares Docker Compose V2 `build --builder default --print` and `build --builder NAME --print` with the same `container compose` commands using a daemon-free local fixture. The target proves builder selection stays out of Buildx bake JSON in print mode, while live named-builder execution is covered by the local runtime smoke path. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
 
 For the local-only `build --check` parity check, run:
 

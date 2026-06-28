@@ -30,10 +30,10 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
-# Docker Compose V2 accepts `build --builder default --print` without a daemon,
-# then verifies container-compose accepts the same default-builder spelling,
-# renders the same service bake target, and still rejects non-default builder
-# names before side effects.
+# Docker Compose V2 accepts `build --builder default --print` and
+# `build --builder NAME --print` without a daemon, then verifies
+# container-compose accepts the same builder spellings and renders the same
+# service bake target without leaking builder selection into bake JSON.
 
 set -euo pipefail
 
@@ -177,52 +177,29 @@ if target.get("output") != ["type=docker"]:
 PY
 }
 
-# Assert Docker Compose accepts the explicit default builder in print mode.
-expect_docker_default_builder_print() {
+# Assert Docker Compose accepts the selected builder in print mode.
+expect_docker_builder_print() {
+    local builder="$1"
     local output="$FIXTURE_DIR/docker-compose-builder.json"
 
     "${DOCKER_COMPOSE_COMMAND[@]}" \
         --project-directory "$FIXTURE_DIR" \
         -f "$FIXTURE_DIR/compose.yml" \
-        build --builder default --print api >"$output"
+        build --builder "$builder" --print api >"$output"
     assert_bake_target "$output" 'Docker Compose'
 }
 
-# Assert container-compose accepts the same explicit default-builder spelling.
-expect_container_default_builder_print() {
+# Assert container-compose accepts the same builder spelling.
+expect_container_builder_print() {
+    local builder="$1"
     local output="$FIXTURE_DIR/container-compose-builder.json"
 
     "$CONTAINER_COMPOSE" \
         --ansi never \
         --project-directory "$FIXTURE_DIR" \
         -f "$FIXTURE_DIR/compose.yml" \
-        build --builder default --print api >"$output"
+        build --builder "$builder" --print api >"$output"
     assert_bake_target "$output" 'container-compose'
-}
-
-# Assert non-default builder names fail before build side effects.
-expect_container_named_builder_rejected() {
-    local output
-    local command_status
-
-    set +e
-    output="$("$CONTAINER_COMPOSE" \
-        --ansi never \
-        --project-directory "$FIXTURE_DIR" \
-        -f "$FIXTURE_DIR/compose.yml" \
-        build --builder remote --print api 2>&1)"
-    command_status=$?
-    set -e
-
-    if [[ "$command_status" -eq 0 ]]; then
-        error 'container-compose accepted build --builder remote; expected unsupported-feature failure'
-        return 1
-    fi
-    if [[ "$output" != *"build --builder 'remote'; only the default apple/container builder is supported"* ]]; then
-        error 'container-compose build --builder remote did not report the expected unsupported-feature message'
-        printf '%s\n' "$output" >&2
-        return 1
-    fi
 }
 
 # Run the local-only Docker Compose V2 parity check.
@@ -233,9 +210,10 @@ main() {
     create_fixture
     trap cleanup EXIT
 
-    expect_docker_default_builder_print
-    expect_container_default_builder_print
-    expect_container_named_builder_rejected
+    expect_docker_builder_print default
+    expect_container_builder_print default
+    expect_docker_builder_print remote
+    expect_container_builder_print remote
 
     info 'Docker Compose build-builder parity passed.'
 }

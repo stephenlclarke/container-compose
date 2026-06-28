@@ -27,6 +27,6 @@ The parity target reuses Docker Compose's upstream `pkg/e2e/fixtures/build-test/
 CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1 make docker-compose-build-check-parity
 ```
 
-## Remaining Gaps
+## Related Work
 
-- `build --builder` remains unsupported until there is a compatible named-builder primitive.
+- Named builder selection is covered by the later fork-backed `build --builder NAME` slice.

@@ -10185,8 +10185,8 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests.isEmpty)
     }
 
-    @Test("build accepts default builder as local single-builder selection")
-    func buildAcceptsDefaultBuilderAsLocalSingleBuilderSelection() async throws {
+    @Test("build forwards default builder selection")
+    func buildForwardsDefaultBuilderSelection() async throws {
         let runner = RecordingRunner()
         let project = ComposeProject(
             name: "demo",
@@ -10205,12 +10205,11 @@ struct ComposeOrchestratorTests {
         )
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(command.containsSequence(["container", "build", "--tag", "example/api:latest"]))
-        #expect(!command.contains("--builder"))
+        #expect(command.containsSequence(["container", "build", "--builder", "default", "--tag", "example/api:latest"]))
     }
 
-    @Test("build rejects non-default builders before emitting commands")
-    func buildRejectsNonDefaultBuildersBeforeEmittingCommands() async throws {
+    @Test("build forwards named builders")
+    func buildForwardsNamedBuilders() async throws {
         let runner = RecordingRunner()
         let project = ComposeProject(
             name: "demo",
@@ -10221,21 +10220,15 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).build(
-                project: project,
-                options: ComposeBuildOptions {
-                    $0.builder = "remote"
-                }
-            )
-            Issue.record("Expected unsupported builder error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("build --builder 'remote'; only the default apple/container builder is supported"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.builder = "remote"
+            }
+        )
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["container", "build", "--builder", "remote", "--tag", "example/api:latest"]))
     }
 
     @Test("build rejects unsupported build fields before emitting commands")

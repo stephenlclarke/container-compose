@@ -4,7 +4,9 @@
 
 `container compose build --builder default [SERVICE...]` should follow the normal local build path instead of failing as unsupported.
 
-Docker Compose exposes `--builder` to select a Buildx builder. `container-compose` currently has one configured `apple/container` builder, so the Docker default-builder spelling is compatible as a no-op. Arbitrary named builders still imply a backend selection primitive that does not exist yet.
+Status update: this default-builder slice was later superseded by named-builder support. Current `container-compose` forwards both `default` and non-default builder names to the fork-backed `container build` backend.
+
+Docker Compose exposes `--builder` to select a Buildx builder. At the time of this slice, `container-compose` had one configured `apple/container` builder, so the Docker default-builder spelling was compatible as a no-op while arbitrary named builders still implied a backend selection primitive that did not exist yet.
 
 ## Current Gap
 
@@ -25,13 +27,13 @@ docker-compose build --builder default --print api
 
 accepted the flag and rendered Buildx bake JSON without needing a Docker daemon.
 
-## Expected Behavior
+## Historical Expected Behavior
 
 - `container compose help build` marks `--builder` partially supported.
 - `container compose build --builder default [SERVICE...]` follows the same path as `build [SERVICE...]`.
 - `container compose build --builder default --print [SERVICE...]` renders the same bake JSON as the default builder path.
-- `container compose build --builder NAME [SERVICE...]` keeps failing before runtime side effects for non-default names.
+- At the time of the default-builder slice, `container compose build --builder NAME [SERVICE...]` rejected non-default names before runtime side effects.
 
-## Remaining Gap
+## Superseded Gap
 
-Full `--builder NAME` parity remains blocked until the build backend exposes Docker-compatible named builder selection.
+Full `--builder NAME` parity is no longer blocked in the Stephen fork-backed lane; non-default names now map to separate named BuildKit builder containers through `container build --builder`.

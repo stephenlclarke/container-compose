@@ -737,6 +737,61 @@ struct ComposeRuntimeSmokeTests {
         #expect(enabledAPI["attest"] as? [String] == ["type=provenance,mode=max", "type=sbom"])
     }
 
+    @Test("runtime build uses named builder")
+    func runtimeBuildUsesNamedBuilder() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
+        try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        try """
+        FROM ghcr.io/linuxcontainers/alpine:3.20
+        RUN printf named-builder >/named-builder.txt
+        """.write(to: apiDirectory.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
+
+        let imageTag = UUID().uuidString
+        let imageName = "container-compose-named-builder:\(imageTag)"
+        let builderName = "compose-runtime-\(UUID().uuidString.lowercased())"
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: \(imageName)
+            build:
+              context: ./api
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        defer {
+            _ = try? runProcess(containerBinary, ["image", "delete", imageName], timeout: 30)
+            _ = try? runProcess(containerBinary, ["builder", "delete", "--builder", builderName, "--force"], timeout: 30)
+        }
+
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", runtimeProjectName(),
+                "--file", composeFile.path,
+                "build", "--builder", builderName, "api",
+            ],
+            timeout: 180
+        )
+
+        #expect(result.stderr.contains("Building api") || result.stdout.contains(imageName) || result.stderr.contains(imageName))
+        let inspect = try runProcess(containerBinary, ["image", "inspect", imageName], timeout: 30)
+        #expect(inspect.stdout.contains(imageName))
+    }
+
     @Test("runtime build forwards default SSH from compose file and CLI")
     func runtimeBuildForwardsDefaultSSHFromComposeFileAndCLI() throws {
         guard runtimeTestsEnabled else {

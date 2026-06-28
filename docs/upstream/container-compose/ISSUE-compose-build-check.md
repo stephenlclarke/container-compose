@@ -18,7 +18,7 @@ Docker Compose added `build --check` in [docker/compose#12765](https://github.co
 - `container compose build --check [SERVICE...]` forwards `--check` to `container build` for selected buildable services.
 - `--check --push` does not push images because check mode does not create image outputs.
 - `container compose build --print --check` renders Buildx-compatible JSON with `call: "lint"` and no image output for selected targets.
-- `--builder` remains unsupported until Apple/container exposes a named builder selection primitive.
+- Named builder selection is covered by the later fork-backed `build --builder NAME` slice.
 
 ## Runtime Dependency
 

@@ -10,13 +10,13 @@ The check compares:
 
 The check intentionally ignores help prose wrapping, support-colour annotations, and option descriptions. Runtime behavior parity remains covered by the existing local-only Docker-backed parity targets for build builder selection, build checks, create-time options, events, and restart policies.
 
-For `build --builder default` behavior specifically, run `make docker-compose-build-builder-parity`. That target compares Docker Compose V2 `build --builder default --print` with `container compose build --builder default --print` using a daemon-free local fixture, then verifies non-default builder names remain rejected by `container-compose` before build side effects.
+For `build --builder` behavior specifically, run `make docker-compose-build-builder-parity`. That target compares Docker Compose V2 `build --builder default --print` and `build --builder NAME --print` with the same `container compose` commands using a daemon-free local fixture, then verifies the selected builder does not leak into Buildx bake JSON in print mode.
 
 For `build --check` behavior specifically, run `make docker-compose-build-check-parity`. That target reuses Docker Compose's upstream `pkg/e2e/fixtures/build-test/minimal` fixture, compares Docker Compose V2 BuildKit lint behavior with `container compose build --print --check`, and can run the live fork-backed `container compose build --check` path when `CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1` is set.
 
 ## Documented Differences
 
 - Root `--verbose` is listed by `container-compose` and accepted by the parser for existing bug-report and version workflows. Docker Compose 5.1.4 standalone accepts `docker-compose --verbose version`, but does not list `--verbose` in root help. This is tracked in `Tools/parity/compose-cli-surface.allowlist`.
-- `build --builder default` is accepted as the local single-builder selection and intentionally omitted from the `container build` command. Other builder names remain unsupported until the backend exposes Docker-compatible named builder selection.
+- `build --builder default` selects the ordinary fork-backed `container build` builder, while `build --builder NAME` forwards the name to `container build` so the matching fork-backed runtime can use a separate `buildkit-NAME` builder container. Docker Compose and `container-compose` both omit builder selection from `build --print` bake JSON.
 
 No other command or long-option surface differences were observed on this MacBook Pro against Docker Compose 5.1.4 when the parity harness was added.

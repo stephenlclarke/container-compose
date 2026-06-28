@@ -40,6 +40,6 @@ make coverage-check
 
 - `--push` renders registry output only for services that declare an explicit image reference. Generated local build tags remain local output, matching the current push behavior.
 - `--memory` remains accepted by the build command but is omitted from bake output, matching Docker Compose's BuildKit behavior.
-- `--builder` remains unsupported. `--check` is rendered with `call: "lint"` and no output by the later compose build-check slice.
+- `--builder` is covered by the later named-builder slice. `--check` is rendered with `call: "lint"` and no output by the later compose build-check slice.
 - `--provenance` and `--sbom` are rendered in bake output by the later compose build attestations slice.
 - `--ssh` is supported through the normal build path; default agent forwarding, non-default `id=/path` host sockets, and multiple distinct host sockets are covered by the dedicated build SSH slice.
