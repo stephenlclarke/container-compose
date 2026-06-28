@@ -20,7 +20,7 @@ The implementation keeps Docker Compose policy in the plugin. The sibling `conta
 ## Commit Tracking
 
 - Required `container` fork commit: `39a2ce4ccb6c474d41a6146a6148d445b7fa0554` (`feat(exec): support privileged processes`).
-- Container-compose integration commit: pending local commit for subject `feat(exec): support privileged compose exec`; update this line with the final commit before raising an upstream PR.
+- Container-compose integration commit: `91794a69da897ffe548165e435eaff828271c775` (`feat(exec): support privileged compose exec`).
 
 ## Implementation Details
 
