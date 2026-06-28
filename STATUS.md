@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 21:53 BST.
+Last updated: 2026-06-28 21:55 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -48,9 +48,12 @@ Most recent coverage proof:
 - Non-default `build --builder NAME` remains blocked until the backend exposes Docker-compatible named builder selection.
 - Runtime build execution for SSH, provenance/SBOM attestations, and build checks requires the matching `stephenlclarke/container` build backend and the `0.13.4` SSH/check/attestation-capable builder image.
 
+## Upstream Compatibility
+
+Released Apple `container` compatibility is not a supported-lane functionality gap. The Homebrew preview lane requires the Stephen fork-backed runtime stack and preflights for it before runtime-backed Compose commands run. Stock Apple compatibility remains an upstream/release-channel blocker until equivalent runtime primitives are accepted by Apple and this plugin is updated to consume those upstream APIs.
+
 ## Open Blockers
 
-- Released Apple compatibility still depends on upstream acceptance of fork-backed runtime primitives.
 - Package/Homebrew promotion now depends on publishing `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.4` from the matching builder-shim source before distributing the `container` build pinned above.
 - SonarQube status should be checked through `/Users/sclarke/github/pr-refresh` with `make sonar-status` after the next push.
 
