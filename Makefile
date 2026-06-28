@@ -254,12 +254,15 @@ cli-smoke-built:
 	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[31mnot supported$${ansi_escape}[0m"* ]]; \
 	[[ "$$commit_help_output" == *"$${ansi_escape}[31m--author$${ansi_escape}[0m"* ]]; \
 	config_help_output="$$(".build/debug/compose" config --help)"; \
+	[[ "$$config_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--services$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--images$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--lock-image-digests$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--output$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--environment$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--profiles$${ansi_escape}[0m"* ]]; \
+	[[ "$$config_help_output" == *"$${ansi_escape}[32m--resolve-image-digests$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--variables$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-consistency$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-env-resolution$${ansi_escape}[0m"* ]]; \

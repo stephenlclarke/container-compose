@@ -51,6 +51,9 @@ public protocol ContainerImageAPIClienting: Sendable {
     /// Returns whether `reference` exists in the local image store.
     func imageExists(reference: String) async throws -> Bool
 
+    /// Resolves the remote manifest digest for `reference` without pulling it.
+    func imageDigest(reference: String) async throws -> String
+
     /// Returns Docker image healthcheck metadata for `reference` and `platform`.
     func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck?
 
@@ -68,6 +71,9 @@ public protocol ContainerImageAPIClienting: Sendable {
 public protocol ContainerImageManaging: Sendable {
     /// Returns whether `reference` exists in the local image store.
     func imageExists(_ reference: String) async throws -> Bool
+
+    /// Resolves the remote manifest digest for `reference` without pulling it.
+    func imageDigest(_ reference: String) async throws -> String
 
     /// Returns Docker image healthcheck metadata for `reference` and `platform`.
     func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck?
@@ -88,12 +94,14 @@ public protocol ContainerImageManaging: Sendable {
 /// Thin apple/container client wrapper around image API calls.
 public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public typealias Exists = @Sendable (String) async throws -> Bool
+    public typealias Digest = @Sendable (String) async throws -> String
     public typealias HealthCheck = @Sendable (String, String?) async throws -> ComposeImageHealthCheck?
     public typealias Pull = @Sendable (String) async throws -> Void
     public typealias Push = @Sendable (String) async throws -> String
     public typealias Delete = @Sendable (String, Bool) async throws -> String?
 
     private let existsOperation: Exists
+    private let digestOperation: Digest
     private let healthCheckOperation: HealthCheck
     private let pullOperation: Pull
     private let pushOperation: Push
@@ -103,6 +111,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public init(client: ContainerImageAPIClienting) {
         self.init(
             exists: { try await client.imageExists(reference: $0) },
+            digest: { try await client.imageDigest(reference: $0) },
             healthCheck: { try await client.imageHealthCheck(reference: $0, platform: $1) },
             pull: { try await client.pullImage(reference: $0) },
             push: { try await client.pushImage(reference: $0) },
@@ -113,12 +122,14 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Creates a facade from explicit image operation closures.
     public init(
         exists: @escaping Exists,
+        digest: @escaping Digest = { reference in throw ComposeError.unsupported("config image digest resolution for '\(reference)'") },
         healthCheck: @escaping HealthCheck = { _, _ in nil },
         pull: @escaping Pull,
         push: @escaping Push,
         delete: @escaping Delete
     ) {
         self.existsOperation = exists
+        self.digestOperation = digest
         self.healthCheckOperation = healthCheck
         self.pullOperation = pull
         self.pushOperation = push
@@ -133,6 +144,11 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Checks the local image store through `ClientImage.get(names:)`.
     public func imageExists(reference: String) async throws -> Bool {
         try await existsOperation(reference)
+    }
+
+    /// Resolves an image digest through the configured resolver.
+    public func imageDigest(reference: String) async throws -> String {
+        try await digestOperation(reference)
     }
 
     /// Reads Docker image healthcheck metadata through `ClientImage`.
@@ -167,6 +183,11 @@ public struct ContainerClientImageManager: ContainerImageManaging {
     /// Checks the local image store through the direct apple/container image API.
     public func imageExists(_ reference: String) async throws -> Bool {
         try await client.imageExists(reference: reference)
+    }
+
+    /// Resolves a remote image digest through the direct apple/container image API.
+    public func imageDigest(_ reference: String) async throws -> String {
+        try await client.imageDigest(reference: reference)
     }
 
     /// Reads Docker image healthcheck metadata through the direct apple/container image API.

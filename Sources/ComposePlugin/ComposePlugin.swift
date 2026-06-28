@@ -552,13 +552,6 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Prints the canonical project JSON emitted by the orchestrator.
     func run() async throws {
-        let unsupportedOptions = [
-            lockImageDigests ? "--lock-image-digests" : nil,
-            resolveImageDigests ? "--resolve-image-digests" : nil,
-        ].compactMap { $0 }
-        if let first = unsupportedOptions.first {
-            throw ComposeError.unsupported("config \(first)")
-        }
         var composeOptions = global.composeOptions()
         composeOptions.noConsistency = noConsistency
         composeOptions.noEnvResolution = noEnvResolution
@@ -580,22 +573,27 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
         }
 
         let loadedProject = try await global.loadProject(options: composeOptions)
-        let rendered = try orchestrator().config(
-            project: loadedProject,
-            options: ComposeConfigOptions {
-                $0.services = services
-                $0.environment = environment
-                $0.format = format
-                $0.hash = hash
-                $0.images = images
-                $0.models = models
-                $0.networks = networks
-                $0.profiles = profiles
-                $0.quiet = quiet
-                $0.servicesOnly = servicesOnly
-                $0.volumes = volumes
-            }
-        )
+        let configOptions = ComposeConfigOptions {
+            $0.services = services
+            $0.environment = environment
+            $0.format = format
+            $0.hash = hash
+            $0.images = images
+            $0.lockImageDigests = lockImageDigests
+            $0.models = models
+            $0.networks = networks
+            $0.profiles = profiles
+            $0.quiet = quiet
+            $0.resolveImageDigests = resolveImageDigests
+            $0.servicesOnly = servicesOnly
+            $0.volumes = volumes
+        }
+        let rendered: String
+        if lockImageDigests || resolveImageDigests {
+            rendered = try await orchestrator().config(project: loadedProject, resolvingImageDigests: configOptions)
+        } else {
+            rendered = try orchestrator().config(project: loadedProject, options: configOptions)
+        }
         if let output {
             try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
             return

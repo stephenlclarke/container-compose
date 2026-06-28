@@ -293,6 +293,55 @@ struct ComposeRuntimeSmokeTests {
         #expect(result.stdout.contains("+ compose-runtime logs --follow --timestamps \(project)-api-1"))
     }
 
+    @Test("runtime config resolves image digests")
+    func runtimeConfigResolvesImageDigests() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let resolved = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "config", "--resolve-image-digests", "api",
+            ],
+            timeout: 60
+        )
+        let locked = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "config", "--lock-image-digests", "api",
+            ],
+            timeout: 60
+        )
+
+        #expect(resolved.stdout.range(of: #"image: "alpine:3\.20@sha256:[a-f0-9]{64}""#, options: .regularExpression) != nil)
+        #expect(locked.stdout.range(of: #"image: "alpine:3\.20@sha256:[a-f0-9]{64}""#, options: .regularExpression) != nil)
+        #expect(locked.stdout.contains("services:\n  api:"))
+    }
+
     @Test("runtime dry run exec renders privileged command")
     func runtimeDryRunExecRendersPrivilegedCommand() throws {
         guard runtimeTestsEnabled else {

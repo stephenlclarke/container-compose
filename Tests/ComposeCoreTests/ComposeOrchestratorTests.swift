@@ -8705,6 +8705,94 @@ struct ComposeOrchestratorTests {
         #expect(lines.allSatisfy { $0.range(of: #"^(api|worker) [0-9a-f]{64}$"#, options: .regularExpression) != nil })
     }
 
+    @Test("config resolve image digests pins selected service images")
+    func configResolveImageDigestsPinsSelectedServiceImages() async throws {
+        let imageManager = RecordingContainerImageManager(digests: [
+            "example/api:latest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "worker": ComposeService(name: "worker", image: "example/worker:2"),
+            ]
+        )
+
+        let json = try await ComposeOrchestrator(imageManager: imageManager).config(
+            project: project,
+            resolvingImageDigests: ComposeConfigOptions {
+                $0.services = ["api"]
+                $0.format = "json"
+                $0.resolveImageDigests = true
+            }
+        )
+        let decoded = try JSONDecoder().decode(ComposeProject.self, from: Data(json.utf8))
+
+        #expect(decoded.services.keys.sorted() == ["api"])
+        #expect(decoded.services["api"]?.image == "example/api:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        #expect(await imageManager.requests == [.digest("example/api:latest")])
+    }
+
+    @Test("config lock image digests renders override file")
+    func configLockImageDigestsRendersOverrideFile() async throws {
+        let imageManager = RecordingContainerImageManager(digests: [
+            "example/api:latest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "example/worker:2": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+                "pinned": ComposeService(name: "pinned", image: "example/pinned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
+                "worker": ComposeService(name: "worker", image: "example/worker:2"),
+            ]
+        )
+
+        let yaml = try await ComposeOrchestrator(imageManager: imageManager).config(
+            project: project,
+            resolvingImageDigests: ComposeConfigOptions {
+                $0.lockImageDigests = true
+            }
+        )
+
+        #expect(yaml == """
+        services:
+          api:
+            image: "example/api:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          pinned:
+            image: "example/pinned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          worker:
+            image: "example/worker:2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        """)
+        #expect(await imageManager.requests == [
+            .digest("example/api:latest"),
+            .digest("example/worker:2"),
+        ])
+    }
+
+    @Test("config resolve image digests skips non image projections")
+    func configResolveImageDigestsSkipsNonImageProjections() async throws {
+        let imageManager = RecordingContainerImageManager()
+        var project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        project.environment = ["ALPHA": "one"]
+
+        let output = try await ComposeOrchestrator(imageManager: imageManager).config(
+            project: project,
+            resolvingImageDigests: ComposeConfigOptions {
+                $0.environment = true
+                $0.resolveImageDigests = true
+            }
+        )
+
+        #expect(output == "ALPHA=one")
+        #expect(await imageManager.requests.isEmpty)
+    }
+
     @Test("service init key maps to initEnabled")
     func serviceInitKeyMapsToInitEnabled() throws {
         let decoded = try JSONDecoder().decode(ComposeService.self, from: Data(#"{"name":"web","init":true}"#.utf8))
@@ -13079,6 +13167,19 @@ struct ComposeOrchestratorTests {
         #expect(await client.requests == [
             .healthCheck(reference: "example/api", platform: "linux/arm64"),
         ])
+    }
+
+    @Test("image manager resolves image digests through direct API")
+    func imageManagerResolvesImageDigestsThroughDirectAPI() async throws {
+        let client = RecordingContainerImageAPIClient(digests: [
+            "example/api:latest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ])
+        let manager = ContainerClientImageManager(client: client)
+
+        let digest = try await manager.imageDigest("example/api:latest")
+
+        #expect(digest == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        #expect(await client.requests == [.digest("example/api:latest")])
     }
 
     @Test("file pull metadata store persists pull dates")
@@ -20823,6 +20924,7 @@ private struct ContainerTopRequest: Equatable {
 
 private enum ContainerImageRequest: Equatable {
     case exists(String)
+    case digest(String)
     case healthCheck(reference: String, platform: String?)
     case pull(String)
     case pullMissing(String)
@@ -21794,6 +21896,7 @@ private actor RecordingContainerTopAPIClient: ContainerTopAPIClienting {
 private actor RecordingContainerImageManager: ContainerImageManaging {
     private var storage: [ContainerImageRequest] = []
     private var existingReferences: Set<String>
+    private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private let pullFailures: Set<String>
     private let pullMissingFailures: Set<String>
@@ -21805,6 +21908,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
 
     init(
         existingReferences: Set<String> = [],
+        digests: [String: String] = [:],
         healthChecks: [String: ComposeImageHealthCheck] = [:],
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
         pullFailures: Set<String> = [],
@@ -21816,6 +21920,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         failure: ComposeError? = nil
     ) {
         self.existingReferences = existingReferences
+        self.digests = digests
         var mappedHealthChecks = platformHealthChecks
         for (reference, healthCheck) in healthChecks {
             mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
@@ -21840,6 +21945,17 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         }
         storage.append(.exists(reference))
         return existingReferences.contains(reference)
+    }
+
+    func imageDigest(_ reference: String) async throws -> String {
+        if let failure {
+            throw failure
+        }
+        storage.append(.digest(reference))
+        guard let digest = digests[reference] else {
+            throw ComposeError.invalidProject("missing digest fixture for \(reference)")
+        }
+        return digest
     }
 
     func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
@@ -21903,6 +22019,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
 
 private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var existingReferences: Set<String>
+    private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
     private var pushOutputs: [String: String]
     private var deleteOutputs: [String: String?]
@@ -21910,12 +22027,14 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
 
     init(
         existingReferences: Set<String> = [],
+        digests: [String: String] = [:],
         healthChecks: [String: ComposeImageHealthCheck] = [:],
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
         pushOutputs: [String: String] = [:],
         deleteOutputs: [String: String?] = [:]
     ) {
         self.existingReferences = existingReferences
+        self.digests = digests
         var mappedHealthChecks = platformHealthChecks
         for (reference, healthCheck) in healthChecks {
             mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
@@ -21932,6 +22051,14 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     func imageExists(reference: String) async throws -> Bool {
         storage.append(.exists(reference))
         return existingReferences.contains(reference)
+    }
+
+    func imageDigest(reference: String) async throws -> String {
+        storage.append(.digest(reference))
+        guard let digest = digests[reference] else {
+            throw ComposeError.invalidProject("missing digest fixture for \(reference)")
+        }
+        return digest
     }
 
     func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {

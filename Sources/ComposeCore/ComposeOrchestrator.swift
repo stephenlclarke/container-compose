@@ -553,10 +553,12 @@ public struct ComposeConfigOptions {
     public var format: String?
     public var hash: String?
     public var images = false
+    public var lockImageDigests = false
     public var models = false
     public var networks = false
     public var profiles = false
     public var quiet = false
+    public var resolveImageDigests = false
     public var servicesOnly = false
     public var variables: [ComposeVariable]? = nil
     public var volumes = false
@@ -567,10 +569,12 @@ public struct ComposeConfigOptions {
         format = nil
         hash = nil
         images = false
+        lockImageDigests = false
         models = false
         networks = false
         profiles = false
         quiet = false
+        resolveImageDigests = false
         servicesOnly = false
         variables = nil
         volumes = false
@@ -1448,6 +1452,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Returns Docker Compose compatible config projections for supported flags.
     public func config(project: ComposeProject, options: ComposeConfigOptions) throws -> String {
+        if options.lockImageDigests || options.resolveImageDigests {
+            throw ComposeError.invalidProject("config image digest options require async image resolution")
+        }
         if options.quiet {
             _ = try selectedServices(project: project, selected: options.services)
             return ""
@@ -1483,6 +1490,25 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
         let scopedProject = try project.filtered(to: options.services)
         return try config(project: scopedProject, format: options.format)
+    }
+
+    /// Returns Docker Compose compatible config output that may resolve image digests.
+    public func config(project: ComposeProject, resolvingImageDigests options: ComposeConfigOptions) async throws -> String {
+        if options.lockImageDigests {
+            return try await configImageDigestLock(project: project, options: options)
+        }
+        guard options.resolveImageDigests else {
+            return try config(project: project, options: options)
+        }
+
+        var renderOptions = options
+        renderOptions.resolveImageDigests = false
+        renderOptions.lockImageDigests = false
+        guard configOutputUsesImageDigests(options: renderOptions) else {
+            return try config(project: project, options: renderOptions)
+        }
+        let resolvedProject = try await projectResolvingImageDigests(project: project, selected: options.services)
+        return try config(project: resolvedProject, options: renderOptions)
     }
 
     /// Returns Docker Compose compatible variable projection output.
@@ -3256,6 +3282,65 @@ private extension ComposeOrchestrator {
         default:
             throw ComposeError.unsupported("config --format '\(format ?? "")'; supported formats are yaml and json")
         }
+    }
+
+    /// Returns whether the selected config projection can include service image references.
+    func configOutputUsesImageDigests(options: ComposeConfigOptions) -> Bool {
+        if options.quiet || options.environment {
+            return false
+        }
+        if options.hash != nil || options.images {
+            return true
+        }
+        if options.models || options.networks || options.profiles || options.servicesOnly || options.variables != nil || options.volumes {
+            return false
+        }
+        return true
+    }
+
+    /// Returns an override file that pins service image tags to remote digests.
+    func configImageDigestLock(project: ComposeProject, options: ComposeConfigOptions) async throws -> String {
+        let selected = try selectedServices(project: project, selected: options.services)
+        var services: [String: Any] = [:]
+        for service in selected.sorted(by: { $0.name < $1.name }) {
+            guard let image = service.image?.trimmingCharacters(in: .whitespacesAndNewlines), !image.isEmpty else {
+                continue
+            }
+            services[service.name] = [
+                "image": try await imageReferenceWithResolvedDigest(image),
+            ]
+        }
+        return YAMLDocumentRenderer.render(["services": services])
+    }
+
+    /// Returns a project copy with selected service image tags pinned to digests.
+    func projectResolvingImageDigests(project: ComposeProject, selected: [String]) async throws -> ComposeProject {
+        let selectedServices = try selectedServices(project: project, selected: selected)
+        var resolvedProject = project
+        for service in selectedServices {
+            guard let image = service.image?.trimmingCharacters(in: .whitespacesAndNewlines), !image.isEmpty else {
+                continue
+            }
+            resolvedProject.services[service.name]?.image = try await imageReferenceWithResolvedDigest(image)
+        }
+        return resolvedProject
+    }
+
+    /// Returns `reference` with an explicit tag and remote manifest digest.
+    func imageReferenceWithResolvedDigest(_ reference: String) async throws -> String {
+        if reference.contains("@") {
+            return reference
+        }
+        let taggedReference = try imageReferenceWithDefaultTag(reference)
+        let digest = try await imageManager.imageDigest(taggedReference)
+        return "\(taggedReference)@\(digest)"
+    }
+
+    /// Returns a display reference with a default `latest` tag when no tag or digest is present.
+    func imageReferenceWithDefaultTag(_ reference: String) throws -> String {
+        let parsed = try Reference.parse(reference)
+        parsed.normalize()
+        return parsed.description
     }
 
     /// Returns images referenced by selected services, including generated build tags.

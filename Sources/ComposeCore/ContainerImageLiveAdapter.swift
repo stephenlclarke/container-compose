@@ -17,6 +17,7 @@
 import ContainerAPIClient
 import ContainerPersistence
 import ContainerResource
+import ContainerizationExtras
 import ContainerizationOCI
 
 /// Live apple/container image API bridge used by production orchestration.
@@ -32,6 +33,22 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let config = try await ConfigurationLoader.load()
         let result = try await ClientImage.get(names: [reference], containerSystemConfig: config)
         return result.error.isEmpty
+    }
+
+    /// Resolves the remote registry manifest digest without importing image content.
+    public func imageDigest(reference: String) async throws -> String {
+        let config = try await ConfigurationLoader.load()
+        let normalized = try ClientImage.normalizeReference(reference, containerSystemConfig: config)
+        let parsed = try Reference.parse(normalized)
+        parsed.normalize()
+        guard let tag = parsed.tag ?? parsed.digest else {
+            throw ComposeError.invalidProject("image reference '\(reference)' does not include a tag or digest")
+        }
+        let client = try RegistryClient(
+            reference: parsed.description,
+            tlsConfiguration: TLSUtils.makeEnvironmentAwareTLSConfiguration()
+        )
+        return try await client.resolve(name: parsed.path, tag: tag).digest
     }
 
     /// Resolves Docker image healthcheck metadata from the image config for the requested platform.
