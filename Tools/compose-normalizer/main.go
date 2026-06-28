@@ -1530,6 +1530,7 @@ func buildSSHValues(ssh types.SSHConfig) []string {
 		}
 		values = append(values, fmt.Sprintf("%s=%s", id, path))
 	}
+	sort.Strings(values)
 	return values
 }
 

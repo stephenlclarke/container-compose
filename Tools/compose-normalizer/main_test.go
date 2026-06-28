@@ -2048,11 +2048,11 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 
 func TestBuildSSHValues(t *testing.T) {
 	got := buildSSHValues(types.SSHConfig{
-		{ID: "default"},
 		{ID: "git", Path: "/tmp/git.sock"},
 		{Path: "/tmp/empty-id.sock"},
+		{ID: "default"},
 	})
-	want := []string{"default", "git=/tmp/git.sock", "default=/tmp/empty-id.sock"}
+	want := []string{"default", "default=/tmp/empty-id.sock", "git=/tmp/git.sock"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildSSHValues = %#v, want %#v", got, want)
 	}
