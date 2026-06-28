@@ -321,7 +321,7 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[31m--attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--detach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-attach$${ansi_escape}[0m"* ]]; \
-	[[ "$$up_help_output" == *"$${ansi_escape}[38;5;208m--no-color$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-color$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--renew-anon-volumes$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
@@ -772,8 +772,8 @@ cli-smoke-built:
 	[[ "$$exec_detach_output" != *"--tty"* ]]; \
 	exec_index_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --index 2 api true)"; \
 	[[ "$$exec_index_output" == *"container exec --interactive --tty demo-api-2 true"* ]]; \
-	exec_privileged_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --privileged api true 2>&1 || true)"; \
-	[[ "$$exec_privileged_output" == *"unsupported compose feature: exec --privileged: apple/container exec does not expose privileged process execution"* ]]; \
+	exec_privileged_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo exec --privileged api true)"; \
+	[[ "$$exec_privileged_output" == *"container exec --privileged --interactive --tty demo-api-1 true"* ]]; \
 	cp_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file .)"; \
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_relative_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:tmp/file .)"; \

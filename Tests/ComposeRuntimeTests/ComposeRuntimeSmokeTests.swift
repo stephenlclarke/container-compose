@@ -246,6 +246,51 @@ struct ComposeRuntimeSmokeTests {
         )
         #expect(servicesResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "ps-app")
     }
+
+    @Test("runtime dry run exec renders privileged command")
+    func runtimeDryRunExecRendersPrivilegedCommand() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let dockerfile = directory.appendingPathComponent("Dockerfile")
+        try """
+        FROM alpine:3.20
+        """.write(to: dockerfile, atomically: true, encoding: .utf8)
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            build:
+              context: .
+              dockerfile: Dockerfile
+            command: ["sleep", "300"]
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "exec", "--privileged", "--no-tty", "api", "id",
+            ],
+            timeout: 30
+        )
+
+        #expect(result.stdout.contains("+ container exec --privileged --interactive \(project)-api-1 id"))
+    }
 }
 
 private var runtimeTestsEnabled: Bool {

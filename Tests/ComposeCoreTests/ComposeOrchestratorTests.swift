@@ -10035,6 +10035,7 @@ struct ComposeOrchestratorTests {
                         ComposeServiceHook(
                             command: ["sh", "-c", "touch /tmp/ready"],
                             user: "1000",
+                            privileged: true,
                             workingDir: "/srv",
                             environment: ["A": "1", "B": nil]
                         ),
@@ -10054,6 +10055,7 @@ struct ComposeOrchestratorTests {
                 environment: ["A=1", "B"],
                 user: "1000",
                 workingDirectory: "/srv",
+                privileged: true,
                 interactive: false,
                 tty: false
             ),
@@ -10197,6 +10199,7 @@ struct ComposeOrchestratorTests {
                         ComposeServiceHook(
                             command: ["sh", "-c", "echo stopping"],
                             user: "app",
+                            privileged: true,
                             workingDir: "/srv",
                             environment: ["MODE": "test"]
                         ),
@@ -10215,7 +10218,7 @@ struct ComposeOrchestratorTests {
         ).stop(project: project, services: ["api"], timeout: 3)
 
         #expect(emitted.messages == [
-            "+ container exec --env MODE=test --user app --workdir /srv demo-api-1 sh -c 'echo stopping'",
+            "+ container exec --env MODE=test --user app --workdir /srv --privileged demo-api-1 sh -c 'echo stopping'",
             "+ container stop --time 3 demo-api-1",
         ])
         #expect(await execManager.attachedRequests.isEmpty)
@@ -10231,13 +10234,6 @@ struct ComposeOrchestratorTests {
                 },
                 ComposeUpOptions { $0.detach = true },
                 .invalidProject("service 'api' post_start[0] requires a command")
-            ),
-            (
-                composeService(name: "api", image: "example/api") {
-                    $0.preStop = [ComposeServiceHook(command: ["true"], privileged: true)]
-                },
-                ComposeUpOptions { $0.detach = true },
-                .unsupported("service 'api' uses pre_stop[0].privileged; apple/container exec does not expose privileged process execution")
             ),
             (
                 composeService(name: "api", image: "example/api") {
@@ -12805,7 +12801,8 @@ struct ComposeOrchestratorTests {
                 command: ["env", "ARG"],
                 environment: ["FOO=bar"],
                 user: "1000:1000",
-                workingDirectory: "/app"
+                workingDirectory: "/app",
+                privileged: true
             ),
             emit: { emitted.append($0) }
         )
@@ -12823,6 +12820,7 @@ struct ComposeOrchestratorTests {
                 terminal: false,
                 user: "1000:1000",
                 supplementalGroups: [],
+                privileged: true,
                 stdioCount: 0
             ),
         ])
@@ -12875,6 +12873,7 @@ struct ComposeOrchestratorTests {
                 environment: ["FOO=bar"],
                 user: "1000:1000",
                 workingDirectory: "/app",
+                privileged: true,
                 interactive: true,
                 tty: false
             )
@@ -12893,6 +12892,7 @@ struct ComposeOrchestratorTests {
                 terminal: false,
                 user: "1000:1000",
                 supplementalGroups: [],
+                privileged: true,
                 interactive: true,
                 tty: false
             ),
@@ -13665,6 +13665,7 @@ struct ComposeOrchestratorTests {
                 $0.environment = ["FOO=bar", "DEBUG"]
                 $0.user = "1000:1000"
                 $0.workingDirectory = "/app"
+                $0.privileged = true
             }
         )
 
@@ -13675,7 +13676,8 @@ struct ComposeOrchestratorTests {
                 command: ["env"],
                 environment: ["FOO=bar", "DEBUG"],
                 user: "1000:1000",
-                workingDirectory: "/app"
+                workingDirectory: "/app",
+                privileged: true
             ),
         ])
         #expect(emitted.messages == ["demo-api-1"])
@@ -13704,11 +13706,12 @@ struct ComposeOrchestratorTests {
             options: ComposeExecOptions {
                 $0.command = ["sleep", "60"]
                 $0.detach = true
+                $0.privileged = true
             }
         )
 
         #expect(runner.commands.isEmpty)
-        #expect(emitted.messages == ["+ container exec --detach demo-api-1 sleep 60"])
+        #expect(emitted.messages == ["+ container exec --detach --privileged demo-api-1 sleep 60"])
         #expect(await execManager.requests.isEmpty)
     }
 
@@ -13828,10 +13831,11 @@ struct ComposeOrchestratorTests {
         #expect(await execManager.attachedRequests.isEmpty)
     }
 
-    @Test("exec rejects privileged mode before runtime commands")
-    func execRejectsPrivilegedModeBeforeRuntimeCommands() async throws {
+    @Test("exec maps privileged mode to runtime requests")
+    func execMapsPrivilegedModeToRuntimeRequests() async throws {
         let runner = RecordingRunner()
-        let orchestrator = ComposeOrchestrator(runner: runner)
+        let execManager = RecordingContainerExecManager()
+        let orchestrator = ComposeOrchestrator(runner: runner, execManager: execManager)
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -13839,23 +13843,27 @@ struct ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await orchestrator.exec(
-                project: project,
-                serviceName: "api",
-                options: ComposeExecOptions {
-                    $0.command = ["true"]
-                    $0.privileged = true
-                }
-            )
-            Issue.record("Expected unsupported exec privileged error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("exec --privileged: apple/container exec does not expose privileged process execution"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await orchestrator.exec(
+            project: project,
+            serviceName: "api",
+            options: ComposeExecOptions {
+                $0.command = ["true"]
+                $0.privileged = true
+                $0.interactive = false
+                $0.tty = false
+            }
+        )
 
         #expect(runner.commands.isEmpty)
+        #expect(await execManager.attachedRequests == [
+            ContainerAttachedExecRequest(
+                id: "demo-api-1",
+                command: ["true"],
+                privileged: true,
+                interactive: false,
+                tty: false
+            ),
+        ])
     }
 
     @Test("logs accepts Compose all tail value")
@@ -14875,6 +14883,7 @@ struct ComposeOrchestratorTests {
                             exec: ComposeDevelopWatchExec(
                                 command: ["sh", "-c", "touch /tmp/reloaded"],
                                 user: "1000",
+                                privileged: true,
                                 workingDir: "/app",
                                 environment: ["A": "1", "B": nil]
                             )
@@ -14915,6 +14924,7 @@ struct ComposeOrchestratorTests {
                 environment: ["A=1", "B"],
                 user: "1000",
                 workingDirectory: "/app",
+                privileged: true,
                 interactive: false,
                 tty: false
             ),
@@ -15105,15 +15115,6 @@ struct ComposeOrchestratorTests {
             (
                 ComposeDevelopWatch(path: "src", action: "sync+exec", target: "/app/src", exec: ComposeDevelopWatchExec()),
                 .invalidProject("service 'api' develop.watch action 'sync+exec' requires an exec command")
-            ),
-            (
-                ComposeDevelopWatch(
-                    path: "src",
-                    action: "sync+exec",
-                    target: "/app/src",
-                    exec: ComposeDevelopWatchExec(command: ["true"], privileged: true)
-                ),
-                .unsupported("service 'api' develop.watch sync+exec uses privileged; apple/container exec does not expose privileged process execution")
             ),
         ]
 
@@ -20731,6 +20732,7 @@ private struct ContainerExecProcessRequest: Equatable {
     var terminal: Bool
     var user: String
     var supplementalGroups: [UInt32]
+    var privileged = false
     var stdioCount: Int
 }
 
@@ -20744,6 +20746,7 @@ private struct ContainerAttachedExecProcessRequest: Equatable {
     var terminal: Bool
     var user: String
     var supplementalGroups: [UInt32]
+    var privileged = false
     var interactive: Bool
     var tty: Bool
 }
@@ -21514,6 +21517,7 @@ private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
             terminal: configuration.terminal,
             user: configuration.user.description,
             supplementalGroups: configuration.supplementalGroups,
+            privileged: configuration.privileged,
             stdioCount: stdio.count
         ))
     }
@@ -21535,6 +21539,7 @@ private actor RecordingContainerExecAPIClient: ContainerExecAPIClienting {
             terminal: configuration.terminal,
             user: configuration.user.description,
             supplementalGroups: configuration.supplementalGroups,
+            privileged: configuration.privileged,
             interactive: interactive,
             tty: tty
         ))

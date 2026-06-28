@@ -26,19 +26,22 @@ public struct ContainerDetachedExecRequest: Sendable, Equatable {
     public var environment: [String]
     public var user: String?
     public var workingDirectory: String?
+    public var privileged: Bool
 
     public init(
         id: String,
         command: [String],
         environment: [String] = [],
         user: String? = nil,
-        workingDirectory: String? = nil
+        workingDirectory: String? = nil,
+        privileged: Bool = false
     ) {
         self.id = id
         self.command = command
         self.environment = environment
         self.user = user
         self.workingDirectory = workingDirectory
+        self.privileged = privileged
     }
 }
 
@@ -49,6 +52,7 @@ public struct ContainerAttachedExecRequest: Sendable, Equatable {
     public var environment: [String]
     public var user: String?
     public var workingDirectory: String?
+    public var privileged: Bool
     public var interactive: Bool
     public var tty: Bool
 
@@ -58,6 +62,7 @@ public struct ContainerAttachedExecRequest: Sendable, Equatable {
         environment: [String] = [],
         user: String? = nil,
         workingDirectory: String? = nil,
+        privileged: Bool = false,
         interactive: Bool = true,
         tty: Bool = true
     ) {
@@ -66,6 +71,7 @@ public struct ContainerAttachedExecRequest: Sendable, Equatable {
         self.environment = environment
         self.user = user
         self.workingDirectory = workingDirectory
+        self.privileged = privileged
         self.interactive = interactive
         self.tty = tty
     }
@@ -174,6 +180,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
             environment: request.environment,
             user: request.user,
             workingDirectory: request.workingDirectory,
+            privileged: request.privileged,
             terminal: request.tty
         )
 
@@ -197,6 +204,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
             environment: request.environment,
             user: request.user,
             workingDirectory: request.workingDirectory,
+            privileged: request.privileged,
             terminal: false
         )
 
@@ -215,6 +223,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
         environment: [String],
         user: String?,
         workingDirectory: String?,
+        privileged: Bool,
         terminal: Bool
     ) async throws -> (ContainerSnapshot, ProcessConfiguration) {
         guard let executable = command.first else {
@@ -230,6 +239,7 @@ public struct ContainerClientExecManager: ContainerExecManaging {
         configuration.executable = executable
         configuration.arguments = Array(command.dropFirst())
         configuration.terminal = terminal
+        configuration.privileged = privileged
         configuration.environment.append(
             contentsOf: try Parser.allEnv(
                 imageEnvs: [],

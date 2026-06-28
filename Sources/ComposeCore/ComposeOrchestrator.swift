@@ -2430,7 +2430,6 @@ public final class ComposeOrchestrator: @unchecked Sendable {
 
     /// Executes a command in an existing service container with Compose options.
     public func exec(project: ComposeProject, serviceName: String, options exec: ComposeExecOptions) async throws {
-        try validateExecOptions(exec)
         guard let service = project.services[serviceName] else {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
@@ -2450,6 +2449,9 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if let workingDirectory = exec.workingDirectory {
             args.append(contentsOf: ["--workdir", workingDirectory])
         }
+        if exec.privileged {
+            args.append("--privileged")
+        }
         if exec.interactive, !exec.detach {
             args.append("--interactive")
         }
@@ -2467,7 +2469,8 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                         command: exec.command,
                         environment: exec.environment,
                         user: exec.user,
-                        workingDirectory: exec.workingDirectory
+                        workingDirectory: exec.workingDirectory,
+                        privileged: exec.privileged
                     ),
                     emit: options.emit
                 )
@@ -2483,6 +2486,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
                     environment: exec.environment,
                     user: exec.user,
                     workingDirectory: exec.workingDirectory,
+                    privileged: exec.privileged,
                     interactive: exec.interactive,
                     tty: exec.tty
                 )
@@ -4107,9 +4111,6 @@ private extension ComposeOrchestrator {
         ]
         for hookSet in hookSets {
             for (index, hook) in (hookSet.hooks ?? []).enumerated() {
-                if hook.privileged == true {
-                    throw ComposeError.unsupported("service '\(service.name)' uses \(hookSet.composeName)[\(index)].privileged; apple/container exec does not expose privileged process execution")
-                }
                 guard let command = hook.command, !command.isEmpty else {
                     throw ComposeError.invalidProject("service '\(service.name)' \(hookSet.composeName)[\(index)] requires a command")
                 }
@@ -4348,7 +4349,8 @@ private extension ComposeOrchestrator {
                     command: ["sh", "-c", "rm -rf -- \(shellQuoted([destination]))"],
                     user: nil,
                     workingDirectory: nil,
-                    environment: []
+                    environment: [],
+                    privileged: false
                 )
             }
         }
@@ -4399,7 +4401,8 @@ private extension ComposeOrchestrator {
                 command: hook.command,
                 user: hook.user,
                 workingDirectory: hook.workingDirectory,
-                environment: hook.environment
+                environment: hook.environment,
+                privileged: hook.privileged
             )
         }
     }
@@ -4409,9 +4412,6 @@ private extension ComposeOrchestrator {
         guard let exec = trigger.exec else {
             throw ComposeError.invalidProject("service '\(service.name)' develop.watch action 'sync+exec' requires exec metadata")
         }
-        guard exec.privileged != true else {
-            throw ComposeError.unsupported("service '\(service.name)' develop.watch sync+exec uses privileged; apple/container exec does not expose privileged process execution")
-        }
         guard let command = exec.command, !command.isEmpty else {
             throw ComposeError.invalidProject("service '\(service.name)' develop.watch action 'sync+exec' requires an exec command")
         }
@@ -4419,7 +4419,8 @@ private extension ComposeOrchestrator {
             command: command,
             user: nonEmpty(exec.user),
             workingDirectory: nonEmpty(exec.workingDir),
-            environment: environmentArguments(exec.environment ?? [:])
+            environment: environmentArguments(exec.environment ?? [:]),
+            privileged: exec.privileged == true
         )
     }
 
@@ -4430,7 +4431,8 @@ private extension ComposeOrchestrator {
         command: [String],
         user: String?,
         workingDirectory: String?,
-        environment: [String]
+        environment: [String],
+        privileged: Bool
     ) async throws {
         let status = try await execManager.execAttached(
             request: ContainerAttachedExecRequest(
@@ -4439,6 +4441,7 @@ private extension ComposeOrchestrator {
                 environment: environment,
                 user: user,
                 workingDirectory: workingDirectory,
+                privileged: privileged,
                 interactive: false,
                 tty: false
             )
@@ -4470,9 +4473,6 @@ private extension ComposeOrchestrator {
         composeName: String
     ) async throws {
         for (index, hook) in hooks.enumerated() {
-            if hook.privileged == true {
-                throw ComposeError.unsupported("service '\(service.name)' uses \(composeName)[\(index)].privileged; apple/container exec does not expose privileged process execution")
-            }
             guard let command = hook.command, !command.isEmpty else {
                 throw ComposeError.invalidProject("service '\(service.name)' \(composeName)[\(index)] requires a command")
             }
@@ -4482,7 +4482,8 @@ private extension ComposeOrchestrator {
                 command: command,
                 user: nonEmpty(hook.user),
                 workingDirectory: nonEmpty(hook.workingDir),
-                environment: environment
+                environment: environment,
+                privileged: hook.privileged == true
             )
             if options.dryRun {
                 try await runContainer(args)
@@ -4495,6 +4496,7 @@ private extension ComposeOrchestrator {
                     environment: environment,
                     user: nonEmpty(hook.user),
                     workingDirectory: nonEmpty(hook.workingDir),
+                    privileged: hook.privileged == true,
                     interactive: false,
                     tty: false
                 )
@@ -4515,7 +4517,8 @@ private extension ComposeOrchestrator {
         command: [String],
         user: String?,
         workingDirectory: String?,
-        environment: [String]
+        environment: [String],
+        privileged: Bool
     ) -> [String] {
         var args = ["exec"]
         for value in environment {
@@ -4526,6 +4529,9 @@ private extension ComposeOrchestrator {
         }
         if let workingDirectory {
             args.append(contentsOf: ["--workdir", workingDirectory])
+        }
+        if privileged {
+            args.append("--privileged")
         }
         args.append(containerID)
         args.append(contentsOf: command)
@@ -6136,13 +6142,6 @@ private extension ComposeOrchestrator {
             return false
         }
         return ports.count == 1 || ports[0] <= ports[1]
-    }
-
-    /// Validates `compose exec` options before invoking runtime exec.
-    func validateExecOptions(_ options: ComposeExecOptions) throws {
-        if options.privileged {
-            throw ComposeError.unsupported("exec --privileged: apple/container exec does not expose privileged process execution")
-        }
     }
 
     /// Validates a Compose CLI shutdown timeout before runtime side effects.
@@ -10140,6 +10139,7 @@ private struct ComposeWatchExecHook {
     var user: String?
     var workingDirectory: String?
     var environment: [String]
+    var privileged: Bool
 }
 
 /// Returns a project suitable for ordinary runtime orchestration while

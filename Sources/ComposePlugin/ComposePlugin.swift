@@ -1073,7 +1073,7 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     var environment: [String] = []
     @Option(name: .customLong("index"), help: "Target service container index.")
     var index = 1
-    @Flag(name: .customLong("privileged"), help: "Give extended privileges to the process. Not supported by apple/container exec yet.")
+    @Flag(name: .customLong("privileged"), help: "Give extended privileges to the process.")
     var privileged = false
     @Option(name: [.customShort("u"), .customLong("user")], help: "Run the command as this user.")
     var user: String?
