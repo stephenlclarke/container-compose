@@ -138,6 +138,7 @@ swift-coverage: swift-test-build
 		exit 1; \
 	fi
 	@rm -f .build/*/debug/codecov/*.profraw .build/*/debug/codecov/*.profdata .build/codecov/fallback.profdata coverage.lcov coverage.xml
+	@find .build -maxdepth 3 -path '*/debug' -type d -exec mkdir -p '{}/codecov' \;
 	@SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_COVERAGE_TEST_ATTEMPTS)" SWIFT_TEST_ACCEPT_SIGNAL_13=0 Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --enable-code-coverage $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 	test_binary="$$(find .build -path '*.xctest/Contents/MacOS/container-composePackageTests' -type f | head -n 1)"; \
 	profile=".build/codecov/fallback.profdata"; \
