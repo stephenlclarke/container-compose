@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 23:33 BST.
+Last updated: 2026-06-28 23:45 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -28,7 +28,7 @@ The latest local validation for this `container-compose` slice passed with `make
 
 Most recent coverage proof:
 
-- Swift: 782 Compose tests at 90.01% line coverage; 835 `container` unit tests at 42.07% unit-only line coverage.
+- Swift: 782 Compose tests at 89.97% line coverage; 835 `container` unit tests at 42.07% unit-only line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State

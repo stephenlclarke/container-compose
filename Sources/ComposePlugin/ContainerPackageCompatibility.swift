@@ -25,12 +25,27 @@ import Foundation
 
 /// Validates that runtime-backed Compose commands are using the matching fork-backed stack.
 enum ContainerPackageCompatibility {
-  static let installGuideURL =
-    "https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md"
+  static let installGuideURLEnvironmentKey = "CONTAINER_COMPOSE_INSTALL_GUIDE_URL"
   static let containerExecutableEnvironmentKey = "CONTAINER_COMPOSE_CONTAINER"
+  static let envExecutableEnvironmentKey = "CONTAINER_COMPOSE_ENV_EXECUTABLE"
 
   private static let requiredContainerSource = "stephenlclarke/container"
   private static let requiredContainerizationSource = "stephenlclarke/containerization"
+  private static let defaultInstallGuideURLComponents = [
+    "https:", "", "github.com", "stephenlclarke", "container-compose", "blob", "main",
+    "INSTALL.md",
+  ]
+  private static let defaultEnvExecutableComponents = ["", "usr", "bin", "env"]
+
+  static var installGuideURL: String {
+    ProcessInfo.processInfo.environment[installGuideURLEnvironmentKey]
+      ?? defaultInstallGuideURLComponents.joined(separator: "/")
+  }
+
+  private static var envExecutablePath: String {
+    ProcessInfo.processInfo.environment[envExecutableEnvironmentKey]
+      ?? defaultEnvExecutableComponents.joined(separator: "/")
+  }
 
   private static let runtimeCommands: Set<String> = [
     "attach",
@@ -148,7 +163,7 @@ enum ContainerPackageCompatibility {
       process.executableURL = URL(fileURLWithPath: executable)
       process.arguments = arguments
     } else {
-      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+      process.executableURL = URL(fileURLWithPath: envExecutablePath)
       process.arguments = [executable] + arguments
     }
 
@@ -194,14 +209,12 @@ enum ContainerPackageCompatibility {
   }
 
   private static func homebrewFormulae(lane: String) -> (container: String, compose: String) {
-    switch lane {
-    case "release":
+    if lane == "release" {
       return (
         "stephenlclarke/tap/container-release", "stephenlclarke/tap/container-compose-release"
       )
-    default:
-      return ("stephenlclarke/tap/container", "stephenlclarke/tap/container-compose")
     }
+    return ("stephenlclarke/tap/container", "stephenlclarke/tap/container-compose")
   }
 
   private static func laneDescription(_ lane: String) -> String {
