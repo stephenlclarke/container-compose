@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 21:34 BST.
+Last updated: 2026-06-28 21:53 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -11,6 +11,8 @@ This file is the current-state handoff for `container-compose`. Keep it short. D
 ## Current Integration Assumption
 
 `container-compose` still depends on fork-backed runtime surfaces for several forward Compose behaviors. Keep each package lane pinned to the matching `stephenlclarke/container` and `stephenlclarke/containerization` surfaces until the equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
+
+Full provenance/SBOM attestation requests are supported on the required Stephen fork-backed runtime and builder-shim path. Stock Apple `container` remains unsupported for those requests until equivalent upstream build backend support exists.
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
@@ -44,8 +46,7 @@ Most recent coverage proof:
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
 - Bare `--menu` / `--menu=true` remain blocked until interactive shortcut handling exists; `--menu=false` is accepted.
 - Non-default `build --builder NAME` remains blocked until the backend exposes Docker-compatible named builder selection.
-- Non-false provenance/SBOM attestation requests require the customized `stephenlclarke/container` and `container-builder-shim` build path; explicit false forms are accepted as no-op opt-outs.
-- Runtime build execution for SSH, non-false attestations, and build checks requires the matching `stephenlclarke/container` build backend and the `0.13.4` SSH/check-capable builder image.
+- Runtime build execution for SSH, provenance/SBOM attestations, and build checks requires the matching `stephenlclarke/container` build backend and the `0.13.4` SSH/check/attestation-capable builder image.
 
 ## Open Blockers
 
@@ -59,4 +60,4 @@ Most recent coverage proof:
 
 ## Next Step
 
-Commit the completed cleanup/parity slice on `main`, then push only once the current coherent functionality batch is ready for review.
+Push the current coherent `main` batch once it is ready for review.
