@@ -516,7 +516,7 @@ enum ComposeCLIHelp {
             "--renew-anon-volumes": .supported,
             "--scale": .supported,
             "--timeout": .supported,
-            "--timestamps": .partiallySupported,
+            "--timestamps": .supported,
             "--wait": .supported,
             "--wait-timeout": .supported,
             "--watch": .supported,

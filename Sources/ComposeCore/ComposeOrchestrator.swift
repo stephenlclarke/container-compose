@@ -477,6 +477,9 @@ public struct ComposeUpOptions {
     public var waitTimeout: Int?
     public var renewAnonymousVolumes = false
     public var assumeYes = false
+    public var timestamps = false
+    public var noLogPrefix = false
+    public var colorPrefixes = false
 
     public init() {
         services = []
@@ -499,6 +502,9 @@ public struct ComposeUpOptions {
         waitTimeout = nil
         renewAnonymousVolumes = false
         assumeYes = false
+        timestamps = false
+        noLogPrefix = false
+        colorPrefixes = false
     }
 
     public init(_ configure: (inout ComposeUpOptions) -> Void) {
@@ -1530,8 +1536,16 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let externalVolumeMounts = try await resolveExternalVolumeMounts(project: workingProject, services: services)
         try validatePublishedPorts(services: services)
         try validateReplicaSupport(services: services, scaleOverrides: scaleOverrides)
-        let attachedForegroundService = try foregroundServiceTarget(project: workingProject, services: services, scaleOverrides: scaleOverrides, detach: up.detach || up.wait)
-        try validateAttachedPostStartSupport(target: attachedForegroundService)
+        let attachedOutputService = try foregroundServiceTarget(
+            project: workingProject,
+            services: services,
+            scaleOverrides: scaleOverrides,
+            detach: up.detach || up.wait
+        )
+        let attachedForegroundService = up.timestamps ? nil : attachedOutputService
+        if !up.timestamps {
+            try validateAttachedPostStartSupport(target: attachedForegroundService)
+        }
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
 
         try await applyPullPolicy(
@@ -1646,6 +1660,31 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         if up.wait {
             try await waitForStartedServiceTargets(waitTargets, timeout: up.waitTimeout, command: "up --wait")
         }
+        if up.timestamps, let attachedOutputService, !up.detach, !up.wait {
+            try await followTimestampedUpLogs(target: attachedOutputService, options: up)
+        }
+    }
+
+    /// Follows the service that would normally own foreground output for `up --timestamps`.
+    private func followTimestampedUpLogs(target: ServiceContainerTarget, options up: ComposeUpOptions) async throws {
+        let args = ["logs", "--follow", "--timestamps", target.name]
+        if self.options.dryRun {
+            emitComposeRuntimeOperation(args)
+            return
+        }
+        try await logManager.logs(
+            id: target.name,
+            tail: nil,
+            follow: true,
+            since: nil,
+            until: nil,
+            timestamps: true,
+            emit: logEmitter(
+                for: target,
+                noLogPrefix: up.noLogPrefix,
+                colorPrefixes: up.colorPrefixes
+            )
+        )
     }
 
     /// Marks services excluded from attached `up` output before target selection.

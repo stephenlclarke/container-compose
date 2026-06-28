@@ -34,5 +34,5 @@ make coverage-check
 
 ## Follow-Ups
 
-- Keep `compose up --no-color`, `compose up --no-log-prefix`, and `compose up --timestamps` partial until attached foreground `up` log rendering owns those presentation flags.
+- Attached `compose up` log-presentation flags are handled by the raw-output and timestamp slices; this watch slice does not change `up --attach`, `--attach-dependencies`, or exit-control behavior.
 - If native filesystem events replace the current polling loop, track that as a separate implementation improvement rather than a support-status blocker.

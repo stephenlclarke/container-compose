@@ -323,6 +323,7 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-attach$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-color$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--renew-anon-volumes$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${ansi_escape}[32m--timestamps$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--watch$${ansi_escape}[0m"* ]]; \
@@ -599,14 +600,14 @@ cli-smoke-built:
 		"--attach api" \
 		"--attach-dependencies" \
 		"--exit-code-from api" \
-		"--menu" \
-		"--no-color" \
-		"--no-log-prefix" \
-		"--timestamps"; do \
+		"--menu"; do \
 		up_unsupported_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up $$unsupported_up_option api 2>&1 || true)"; \
 		up_unsupported_name="$${unsupported_up_option%% *}"; \
 		[[ "$$up_unsupported_output" == *"unsupported compose feature: up $$up_unsupported_name"* ]]; \
 	done; \
+	up_timestamps_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --timestamps api)"; \
+	[[ "$$up_timestamps_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$up_timestamps_output" == *"compose-runtime logs --follow --timestamps demo-api-1"* ]]; \
 	up_watch_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" up --watch --no-deps api)"; \
 	[[ "$$up_watch_output" == *"compose: watch project demo services api"* ]]; \
 	[[ "$$up_watch_output" == *"compose: watch initial-up enabled"* ]]; \

@@ -112,20 +112,20 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--no-log-prefix\u{001B}[0m"))
     }
 
-    @Test("up timestamps remains partial until attached log following supports it")
-    func upTimestampsRemainsPartialUntilAttachedLogFollowingSupportsIt() throws {
+    @Test("up timestamps is shown as supported")
+    func upTimestampsIsShownAsSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
-        #expect(help.contains("\u{001B}[38;5;208m--timestamps\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--timestamps\u{001B}[0m"))
     }
 
     @Test("up raw attached output flags parse")
     func upRawAttachedOutputFlagsParse() throws {
-        let command = try Up.parse(["--no-color", "--no-log-prefix", "api"])
+        let command = try Up.parse(["--no-color", "--no-log-prefix", "--timestamps", "api"])
 
         #expect(command.noColor)
         #expect(command.noLogPrefix)
-        #expect(!command.timestamps)
+        #expect(command.timestamps)
         #expect(command.services == ["api"])
     }
 

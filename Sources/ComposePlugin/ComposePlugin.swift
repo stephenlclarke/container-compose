@@ -729,7 +729,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             attachDependencies ? "--attach-dependencies" : nil,
             exitCodeFrom == nil ? nil : "--exit-code-from",
             menu ? "--menu" : nil,
-            timestamps && formatsAttachedOutput ? "--timestamps" : nil,
         ].compactMap { $0 }
         if let first = unsupportedOptions.first {
             throw ComposeError.unsupported("up \(first)")
@@ -763,6 +762,9 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             $0.waitTimeout = waitTimeout
             $0.renewAnonymousVolumes = renewAnonVolumes
             $0.assumeYes = yes
+            $0.timestamps = timestamps && formatsAttachedOutput
+            $0.noLogPrefix = noLogPrefix
+            $0.colorPrefixes = global.shouldColorLogs(noColor: noColor)
         }
         if watch {
             try await orchestrator().watch(

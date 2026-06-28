@@ -3257,6 +3257,64 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
+    @Test("up timestamps detaches foreground service and follows timestamped logs")
+    func upTimestampsDetachesForegroundServiceAndFollowsTimestampedLogs() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let emitted = MessageRecorder()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let logManager = RecordingContainerLogManager(outputs: ["2026-06-18T10:00:00Z ready"])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.logManager = logManager
+            }
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.timestamps = true
+                $0.noLogPrefix = true
+            }
+        )
+
+        #expect(runner.commands[0].arguments.starts(with: ["container", "run", "--name", "demo-api-1", "--detach"]))
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true, timestamps: true),
+        ])
+        #expect(emitted.messages == ["2026-06-18T10:00:00Z ready"])
+    }
+
+    @Test("up timestamps dry run renders detached run and followed timestamped logs")
+    func upTimestampsDryRunRendersDetachedRunAndFollowedTimestampedLogs() async throws {
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) })
+        ).up(project: project, options: ComposeUpOptions {
+            $0.timestamps = true
+        })
+
+        #expect(emitted.messages.contains { $0.contains("+ container run --name demo-api-1 --detach") })
+        #expect(emitted.messages.contains("+ compose-runtime logs --follow --timestamps demo-api-1"))
+    }
+
     @Test("up build does not rebuild build-only services")
     func upBuildDoesNotRebuildBuildOnlyServices() async throws {
         let runner = RecordingRunner(responses: [

@@ -247,6 +247,52 @@ struct ComposeRuntimeSmokeTests {
         #expect(servicesResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "ps-app")
     }
 
+    @Test("runtime dry run up timestamps follows timestamped logs")
+    func runtimeDryRunUpTimestampsFollowsTimestampedLogs() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let dockerfile = directory.appendingPathComponent("Dockerfile")
+        try """
+        FROM alpine:3.20
+        """.write(to: dockerfile, atomically: true, encoding: .utf8)
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            build:
+              context: .
+              dockerfile: Dockerfile
+            command: ["echo", "timestamped-up"]
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "--timestamps", "api",
+            ],
+            timeout: 30
+        )
+
+        #expect(result.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(result.stdout.contains("+ compose-runtime logs --follow --timestamps \(project)-api-1"))
+    }
+
     @Test("runtime dry run exec renders privileged command")
     func runtimeDryRunExecRendersPrivilegedCommand() throws {
         guard runtimeTestsEnabled else {
