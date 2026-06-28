@@ -277,7 +277,7 @@ enum ComposeCLIHelp {
             "--dry-run": .supported,
             "--memory": .supported,
             "--no-cache": .supported,
-            "--print": .notSupported,
+            "--print": .supported,
             "--provenance": .notSupported,
             "--pull": .supported,
             "--push": .supported,

@@ -515,6 +515,62 @@ struct ComposeRuntimeSmokeTests {
 
         #expect(result.stdout.contains("+ container exec --privileged --interactive \(project)-api-1 id"))
     }
+
+    @Test("runtime build print renders bake file from compose file")
+    func runtimeBuildPrintRendersBakeFileFromComposeFile() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
+        try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        try """
+        FROM alpine:3.20
+        """.write(to: apiDirectory.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: example/api:latest
+            build:
+              context: ./api
+              dockerfile: Dockerfile
+              args:
+                FILE_ARG: "1"
+              tags:
+                - example/api:dev
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let result = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", runtimeProjectName(),
+                "--file", composeFile.path,
+                "build", "--print", "--push", "--build-arg", "CLI_ARG=2", "api",
+            ],
+            timeout: 30
+        )
+
+        let bake = try composeBakeJSON(result.stdout)
+        let api = try composeBakeTarget(bake, name: "api")
+        #expect((api["context"] as? String)?.hasSuffix("/api") == true)
+        #expect((api["dockerfile"] as? String)?.hasSuffix("/api/Dockerfile") == true)
+        #expect(api["tags"] as? [String] == ["example/api:dev", "example/api:latest"])
+        #expect(api["output"] as? [String] == ["type=registry"])
+        let arguments = try #require(api["args"] as? [String: String])
+        #expect(arguments["FILE_ARG"] == "1")
+        #expect(arguments["CLI_ARG"] == "2")
+    }
 }
 
 private var runtimeTestsEnabled: Bool {
@@ -542,6 +598,22 @@ private func composePsJSONRows(_ output: String) throws -> [[String: Any]] {
         throw ComposeError.invalidProject("compose ps emitted malformed JSON")
     }
     return rows
+}
+
+private func composeBakeJSON(_ output: String) throws -> [String: Any] {
+    let data = Data(output.utf8)
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw ComposeError.invalidProject("compose build --print emitted malformed JSON")
+    }
+    return object
+}
+
+private func composeBakeTarget(_ bake: [String: Any], name: String) throws -> [String: Any] {
+    guard let targets = bake["target"] as? [String: Any],
+          let target = targets[name] as? [String: Any] else {
+        throw ComposeError.invalidProject("compose build --print emitted no target named '\(name)'")
+    }
+    return target
 }
 
 private struct RuntimeProcessResult {

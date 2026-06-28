@@ -113,6 +113,14 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--privileged\u{001B}[0m"))
     }
 
+    @Test("build print option is shown as supported")
+    func buildPrintOptionIsShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "build"))
+
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--print\u{001B}[0m"))
+    }
+
     @Test("up raw attached output flags are shown as supported")
     func upRawAttachedOutputFlagsAreShownAsSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
@@ -175,6 +183,16 @@ struct ComposeCLIHelpTests {
 
         #expect(command.resolveImageDigests)
         #expect(command.lockImageDigests)
+        #expect(command.services == ["api"])
+    }
+
+    @Test("build print flag parses")
+    func buildPrintFlagParses() throws {
+        let command = try Build.parse(["--print", "--build-arg", "VERSION=2", "--with-dependencies", "api"])
+
+        #expect(command.printBake)
+        #expect(command.buildArgs == ["VERSION=2"])
+        #expect(command.withDependencies)
         #expect(command.services == ["api"])
     }
 

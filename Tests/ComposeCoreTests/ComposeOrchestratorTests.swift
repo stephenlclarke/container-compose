@@ -9686,6 +9686,162 @@ struct ComposeOrchestratorTests {
         #expect(command.last == "api")
     }
 
+    @Test("build print renders bake targets without build side effects")
+    func buildPrintRendersBakeTargetsWithoutBuildSideEffects() async throws {
+        let runner = RecordingRunner()
+        let emitted = MessageRecorder()
+        let imageManager = RecordingContainerImageManager()
+        var project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.dependsOn = [
+                        "db": ComposeDependency(condition: "service_started"),
+                    ]
+                    $0.build = ComposeBuild(
+                        context: "api",
+                        dockerfile: "Containerfile",
+                        args: ["FILE_ARG": "1"],
+                        cache: ComposeBuild.Cache(
+                            from: ["type=registry,ref=example/api:cache"],
+                            to: ["type=local,dest=.cache"]
+                        ),
+                        metadata: ComposeBuild.Metadata(
+                            labels: ["org.opencontainers.image.title": "api"],
+                            secrets: [
+                                ComposeBuildSecret(id: "file_token", file: "token.txt"),
+                                ComposeBuildSecret(id: "npm_token", environment: "NPM_TOKEN"),
+                            ]
+                        ),
+                        options: ComposeBuild.Options(
+                            target: "runtime",
+                            noCache: true,
+                            pull: true,
+                            platforms: ["linux/arm64"],
+                            tags: ["example/api:dev"]
+                        )
+                    )
+                },
+                "db": composeService(name: "db") {
+                    $0.build = ComposeBuild(context: "db")
+                },
+            ]
+        )
+        project.workingDirectory = "/workspace/project"
+        project.environment = ["ENV_ONLY": "from-env"]
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            imageManager: imageManager
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.services = ["api"]
+                $0.buildArguments = ["CLI_ARG=2", "ENV_ONLY", "MISSING_ENV"]
+                $0.noCache = true
+                $0.printBake = true
+                $0.pull = true
+                $0.push = true
+                $0.withDependencies = true
+            }
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(await imageManager.requests.isEmpty)
+        let output = try #require(emitted.messages.first)
+        let bake = try bakeJSON(output)
+        #expect(try bakeGroupTargets(bake) == ["db", "api"])
+
+        let api = try bakeTarget(bake, name: "api")
+        #expect(api["context"] as? String == "/workspace/project/api")
+        #expect(api["dockerfile"] as? String == "/workspace/project/api/Containerfile")
+        #expect(api["target"] as? String == "runtime")
+        #expect(api["pull"] as? Bool == true)
+        #expect(api["no-cache"] as? Bool == true)
+        #expect(api["tags"] as? [String] == ["example/api:dev", "example/api:latest"])
+        #expect(api["cache-from"] as? [String] == ["type=registry,ref=example/api:cache"])
+        #expect(api["cache-to"] as? [String] == ["type=local,dest=.cache"])
+        #expect(api["platforms"] as? [String] == ["linux/arm64"])
+        #expect(api["secret"] as? [String] == [
+            "id=file_token,type=file,src=/workspace/project/token.txt",
+            "id=npm_token,type=env,env=NPM_TOKEN",
+        ])
+        #expect(api["output"] as? [String] == ["type=registry"])
+        #expect((api["labels"] as? [String: String])?["org.opencontainers.image.title"] == "api")
+        let arguments = try #require(api["args"] as? [String: String])
+        #expect(arguments["FILE_ARG"] == "1")
+        #expect(arguments["CLI_ARG"] == "2")
+        #expect(arguments["ENV_ONLY"] == "from-env")
+        #expect(arguments["MISSING_ENV"] == nil)
+
+        let db = try bakeTarget(bake, name: "db")
+        #expect(db["context"] as? String == "/workspace/project/db")
+        #expect(db["dockerfile"] as? String == "/workspace/project/db/Dockerfile")
+        #expect(db["tags"] as? [String] == ["demo_db:latest"])
+        #expect(db["output"] as? [String] == ["type=docker"])
+    }
+
+    @Test("build print renders inline Dockerfile")
+    func buildPrintRendersInlineDockerfile() async throws {
+        let emitted = MessageRecorder()
+        var project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:inline") {
+                    $0.build = ComposeBuild(
+                        context: ".",
+                        dockerfileInline: "FROM alpine:3.20\nRUN echo inline\n"
+                    )
+                },
+            ]
+        )
+        project.workingDirectory = "/workspace/inline"
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) })
+        ).build(
+            project: project,
+            options: ComposeBuildOptions {
+                $0.services = ["api"]
+                $0.printBake = true
+            }
+        )
+
+        let output = try #require(emitted.messages.first)
+        let api = try bakeTarget(try bakeJSON(output), name: "api")
+        #expect(api["context"] as? String == "/workspace/inline")
+        #expect(api["dockerfile"] == nil)
+        #expect(api["dockerfile-inline"] as? String == "FROM alpine:3.20\nRUN echo inline\n")
+        #expect(api["tags"] as? [String] == ["example/api:inline"])
+    }
+
+    @Test("build print rejects empty build argument names")
+    func buildPrintRejectsEmptyBuildArgumentNames() async throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator().build(
+                project: project,
+                options: ComposeBuildOptions {
+                    $0.services = ["api"]
+                    $0.buildArguments = ["=bad"]
+                    $0.printBake = true
+                }
+            )
+            Issue.record("Expected empty build argument name error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("build --build-arg requires KEY or KEY=VALUE"))
+        }
+    }
+
     @Test("build emits progress rows when progress is enabled")
     func buildEmitsProgressRowsWhenProgressIsEnabled() async throws {
         let runner = RecordingRunner()
@@ -22797,6 +22953,31 @@ private actor DurationRecorder {
     func sleep(_ duration: Duration) async throws {
         storage.append(duration)
     }
+}
+
+private func bakeJSON(_ output: String) throws -> [String: Any] {
+    guard let data = output.data(using: .utf8),
+          let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw ComposeError.invalidProject("build --print emitted malformed bake JSON")
+    }
+    return object
+}
+
+private func bakeGroupTargets(_ bake: [String: Any]) throws -> [String] {
+    guard let groups = bake["group"] as? [String: Any],
+          let defaultGroup = groups["default"] as? [String: Any],
+          let targets = defaultGroup["targets"] as? [String] else {
+        throw ComposeError.invalidProject("build --print emitted malformed bake group")
+    }
+    return targets
+}
+
+private func bakeTarget(_ bake: [String: Any], name: String) throws -> [String: Any] {
+    guard let targets = bake["target"] as? [String: Any],
+          let target = targets[name] as? [String: Any] else {
+        throw ComposeError.invalidProject("build --print emitted no bake target named '\(name)'")
+    }
+    return target
 }
 
 private final class MessageRecorder: @unchecked Sendable {

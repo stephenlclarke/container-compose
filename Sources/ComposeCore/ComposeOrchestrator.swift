@@ -703,6 +703,7 @@ public struct ComposeBuildOptions {
     public var buildArguments: [String] = []
     public var memory: String?
     public var noCache = false
+    public var printBake = false
     public var pull = false
     public var push = false
     public var quiet = false
@@ -713,6 +714,7 @@ public struct ComposeBuildOptions {
         buildArguments = []
         memory = nil
         noCache = false
+        printBake = false
         pull = false
         push = false
         quiet = false
@@ -721,6 +723,54 @@ public struct ComposeBuildOptions {
 
     public init(_ configure: (inout ComposeBuildOptions) -> Void) {
         configure(&self)
+    }
+}
+
+private struct ComposeBuildBakeFile: Encodable {
+    var group: [String: ComposeBuildBakeGroup]
+    var target: [String: ComposeBuildBakeTarget]
+}
+
+private struct ComposeBuildBakeGroup: Encodable {
+    var targets: [String]
+}
+
+private struct ComposeBuildBakeTargetEntry {
+    var name: String
+    var target: ComposeBuildBakeTarget
+}
+
+private struct ComposeBuildBakeTarget: Encodable {
+    var context: String
+    var dockerfile: String?
+    var dockerfileInline: String?
+    var args: [String: String]?
+    var labels: [String: String]?
+    var tags: [String]
+    var target: String?
+    var secrets: [String]?
+    var cacheFrom: [String]?
+    var cacheTo: [String]?
+    var platforms: [String]?
+    var pull: Bool?
+    var noCache: Bool?
+    var output: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case context
+        case dockerfile
+        case dockerfileInline = "dockerfile-inline"
+        case args
+        case labels
+        case tags
+        case target
+        case secrets = "secret"
+        case cacheFrom = "cache-from"
+        case cacheTo = "cache-to"
+        case platforms
+        case pull
+        case noCache = "no-cache"
+        case output
     }
 }
 
@@ -2282,6 +2332,10 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let services = try build.withDependencies
             ? orderedServices(project: project, selected: build.services)
             : selectedServices(project: project, selected: build.services)
+        if build.printBake {
+            options.emit(try renderBuildBakeFile(project: project, services: services, options: build))
+            return
+        }
         for service in services where service.build != nil {
             if build.quiet || options.dryRun {
                 try await buildService(project: project, service: service, options: build)
@@ -6746,6 +6800,163 @@ private extension ComposeOrchestrator {
         let dockerfile = directory.appendingPathComponent("Dockerfile", isDirectory: false)
         try contents.write(to: dockerfile, atomically: true, encoding: .utf8)
         return dockerfile
+    }
+
+    /// Renders Docker Buildx bake JSON for `compose build --print`.
+    private func renderBuildBakeFile(project: ComposeProject, services: [ComposeService], options buildOptions: ComposeBuildOptions) throws -> String {
+        let targets = try services.compactMap { service -> ComposeBuildBakeTargetEntry? in
+            guard service.build != nil else {
+                return nil
+            }
+            return ComposeBuildBakeTargetEntry(
+                name: service.name,
+                target: try buildBakeTarget(project: project, service: service, options: buildOptions)
+            )
+        }
+        let bakeFile = ComposeBuildBakeFile(
+            group: ["default": ComposeBuildBakeGroup(targets: targets.map(\.name))],
+            target: Dictionary(uniqueKeysWithValues: targets.map { ($0.name, $0.target) })
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(bakeFile)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Converts one Compose build section into a Buildx bake target.
+    private func buildBakeTarget(project: ComposeProject, service: ComposeService, options buildOptions: ComposeBuildOptions) throws -> ComposeBuildBakeTarget {
+        guard let build = service.build else {
+            throw ComposeError.invalidProject("service '\(service.name)' has no build section")
+        }
+        try validateBuildSupport(service: service)
+        if nonEmpty(build.dockerfile) != nil, nonEmpty(build.dockerfileInline) != nil {
+            throw ComposeError.invalidProject("service '\(service.name)' cannot define both dockerfile and dockerfile_inline")
+        }
+        let context = buildBakeContext(build.context, project: project)
+        let dockerfile = try buildBakeDockerfile(context: context, build: build)
+        let arguments = try buildBakeArguments(project: project, build: build, buildArguments: buildOptions.buildArguments)
+        let tags = buildBakeTags(project: project, service: service, build: build)
+        let secrets = try buildBakeSecrets(project: project, build: build)
+        return ComposeBuildBakeTarget(
+            context: context,
+            dockerfile: dockerfile.dockerfile,
+            dockerfileInline: dockerfile.dockerfileInline,
+            args: arguments.isEmpty ? nil : arguments,
+            labels: (build.labels ?? [:]).isEmpty ? nil : build.labels,
+            tags: tags,
+            target: nonEmpty(build.target),
+            secrets: secrets.isEmpty ? nil : secrets,
+            cacheFrom: buildBakeValues(build.cacheFrom),
+            cacheTo: buildBakeValues(build.cacheTo),
+            platforms: buildBakeValues(build.platforms),
+            pull: (buildOptions.pull || build.pull == true) ? true : nil,
+            noCache: (buildOptions.noCache || build.noCache == true) ? true : nil,
+            output: [buildOptions.push && service.image != nil ? "type=registry" : "type=docker"]
+        )
+    }
+
+    /// Resolves a Buildx bake context path using Docker Compose's absolute-path style.
+    private func buildBakeContext(_ context: String?, project: ComposeProject) -> String {
+        guard let context = nonEmpty(context) else {
+            return absoluteProjectPath(".", project: project)
+        }
+        guard !context.contains("://") else {
+            return context
+        }
+        return absoluteProjectPath(context, project: project)
+    }
+
+    /// Resolves a Buildx bake Dockerfile path relative to the effective build context.
+    private func buildBakeDockerfile(context: String, build: ComposeBuild) throws -> (dockerfile: String?, dockerfileInline: String?) {
+        if let dockerfileInline = nonEmpty(build.dockerfileInline) {
+            return (nil, dockerfileInline)
+        }
+        let dockerfile = nonEmpty(build.dockerfile) ?? "Dockerfile"
+        guard !context.contains("://") else {
+            return (dockerfile, nil)
+        }
+        if (dockerfile as NSString).isAbsolutePath {
+            return (URL(fileURLWithPath: dockerfile).standardizedFileURL.path, nil)
+        }
+        return (
+            URL(fileURLWithPath: context, isDirectory: true)
+                .appendingPathComponent(dockerfile)
+                .standardizedFileURL
+                .path,
+            nil
+        )
+    }
+
+    /// Merges Compose-file and CLI build arguments for bake JSON.
+    private func buildBakeArguments(project: ComposeProject, build: ComposeBuild, buildArguments: [String]) throws -> [String: String] {
+        var arguments = build.args ?? [:]
+        for buildArgument in buildArguments {
+            let trimmed = buildArgument.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                continue
+            }
+            let parts = trimmed.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            guard let name = parts.first, !name.isEmpty else {
+                throw ComposeError.invalidProject("build --build-arg requires KEY or KEY=VALUE")
+            }
+            if parts.count == 2 {
+                arguments[name] = parts[1]
+            } else if let value = project.environment[name] ?? ProcessInfo.processInfo.environment[name] {
+                arguments[name] = value
+            }
+        }
+        return arguments
+    }
+
+    /// Returns Buildx bake tags using Compose build tags plus the service image.
+    private func buildBakeTags(project: ComposeProject, service: ComposeService, build: ComposeBuild) -> [String] {
+        var tags: [String] = []
+        for tag in build.tags ?? [] where !tag.isEmpty && !tags.contains(tag) {
+            tags.append(tag)
+        }
+        if let image = serviceImage(project: project, service: service), !tags.contains(image) {
+            tags.append(image)
+        }
+        return tags
+    }
+
+    /// Encodes supported build secrets using Buildx bake syntax.
+    private func buildBakeSecrets(project: ComposeProject, build: ComposeBuild) throws -> [String] {
+        try (build.secrets ?? []).map { secret in
+            let id = secret.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty else {
+                throw ComposeError.invalidProject("build secret id must not be empty")
+            }
+            let file = secret.file?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let environment = secret.environment?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let file, !file.isEmpty, let environment, !environment.isEmpty {
+                throw ComposeError.invalidProject("build secret '\(id)' cannot define both file and environment")
+            }
+            if let file, !file.isEmpty {
+                return "id=\(id),type=file,src=\(absoluteProjectPath(file, project: project))"
+            }
+            if let environment, !environment.isEmpty {
+                return "id=\(id),type=env,env=\(environment)"
+            }
+            throw ComposeError.invalidProject("build secret '\(id)' must define file or environment")
+        }
+    }
+
+    /// Returns non-empty bake list values or nil when the Compose field is empty.
+    private func buildBakeValues(_ values: [String]?) -> [String]? {
+        let filtered = values?.filter { !$0.isEmpty } ?? []
+        return filtered.isEmpty ? nil : filtered
+    }
+
+    /// Resolves a path relative to the normalized Compose project directory.
+    private func absoluteProjectPath(_ path: String, project: ComposeProject) -> String {
+        if (path as NSString).isAbsolutePath {
+            return URL(fileURLWithPath: path).standardizedFileURL.path
+        }
+        return URL(fileURLWithPath: project.workingDirectory, isDirectory: true)
+            .appendingPathComponent(path)
+            .standardizedFileURL
+            .path
     }
 
     /// Encodes one Compose build secret for apple/container `container build --secret`.

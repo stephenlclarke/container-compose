@@ -272,8 +272,9 @@ cli-smoke-built:
 	build_help_output="$$(".build/debug/compose" build --help)"; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
-	[[ "$$build_help_output" == *"$${ansi_escape}[31m--ssh$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[32m--print$${ansi_escape}[0m"* ]]; \
+	[[ "$$build_help_output" == *"$${ansi_escape}[31m--ssh$${ansi_escape}[0m"* ]]; \
 	stats_help_output="$$(".build/debug/compose" stats --help)"; \
 	[[ "$$stats_help_output" == *"Usage:  container compose stats [OPTIONS] [SERVICE]"* ]]; \
 	[[ "$$stats_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
@@ -504,6 +505,13 @@ cli-smoke-built:
 	build_arg_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --build-arg VERSION=2 --memory 256m worker)"; \
 	[[ "$$build_arg_output" == *"--memory 256m"* ]]; \
 	[[ "$$build_arg_output" == *"--build-arg VERSION=2"* ]]; \
+	build_print_output="$$(BUILD_PRINT_ENV=ok ".build/debug/compose" --ansi never --progress quiet -f "$$tmpdir/build-only.yml" build --print --build-arg VERSION=2 --build-arg BUILD_PRINT_ENV worker)"; \
+	[[ "$$build_print_output" == *'"target"'* ]]; \
+	[[ "$$build_print_output" == *'"worker"'* ]]; \
+	[[ "$$build_print_output" == *'"VERSION" : "2"'* ]]; \
+	[[ "$$build_print_output" == *'"BUILD_PRINT_ENV" : "ok"'* ]]; \
+	[[ "$$build_print_output" == *'"type=docker"'* ]]; \
+	[[ "$$build_print_output" != *"container build"* ]]; \
 	build_ssh_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-only.yml" build --ssh default worker 2>&1 || true)"; \
 	[[ "$$build_ssh_output" == *"unsupported compose feature: build --ssh"* ]]; \
 	build_inline_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/build-inline.yml" build api)"; \

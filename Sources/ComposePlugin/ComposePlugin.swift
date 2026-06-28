@@ -851,7 +851,6 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
         let unsupportedOptions = [
             builder != nil ? "--builder" : nil,
             check ? "--check" : nil,
-            printBake ? "--print" : nil,
             provenance != nil ? "--provenance" : nil,
             sbom != nil ? "--sbom" : nil,
             ssh != nil ? "--ssh" : nil,
@@ -868,6 +867,7 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
                 $0.buildArguments = buildArgs
                 $0.memory = memory
                 $0.noCache = noCache
+                $0.printBake = printBake
                 $0.pull = pull
                 $0.push = push
                 $0.quiet = quiet
