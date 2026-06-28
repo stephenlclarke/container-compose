@@ -209,7 +209,7 @@ enum ComposeCLIHelp {
         "push": .supported,
         "restart": .supported,
         "rm": .supported,
-        "run": .partiallySupported,
+        "run": .supported,
         "scale": .supported,
         "start": .supported,
         "stats": .supported,

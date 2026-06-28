@@ -28,7 +28,7 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32msupported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(help.contains("\u{001B}[31mnot supported\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208mrun\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208mattach\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--progress\u{001B}[0m"))
     }
 
@@ -82,6 +82,17 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--no-up\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--prune\u{001B}[0m"))
         #expect(help.contains("\u{001B}[32m--quiet\u{001B}[0m"))
+    }
+
+    @Test("run command and options are shown as supported")
+    func runCommandAndOptionsAreShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
+
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--build\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--no-deps\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--service-ports\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--use-aliases\u{001B}[0m"))
     }
 
     @Test("up attached log presentation flags are shown as partial")
