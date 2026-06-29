@@ -358,6 +358,9 @@ struct ComposeArgumentRewriterTests {
 
         #expect(disabled == [
             "up",
+            "--menu-disabled",
+            "--menu-disabled",
+            "--menu-disabled",
             "api",
         ])
         #expect(enabled == [

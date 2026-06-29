@@ -126,7 +126,7 @@ The `container` formula owns the plugin registration link inside its own
 Homebrew install root. Run the matching `container` formula's `post_install`
 hook after installing or upgrading `container-compose`.
 
-Tagged release branch formulae use the same pattern. For example, branch `release-v0.1.0` publishes `container-compose-release-v0-1-0`.
+Tagged release branch formulae use the same pattern. For example, branch `release-v0.1.1` publishes `container-compose-release-v0-1-1`.
 
 ## If Apple container Is Already Installed
 

@@ -592,7 +592,7 @@ enum ComposeCLIHelp {
             "--dry-run": .supported,
             "--exit-code-from": .supported,
             "--force-recreate": .supported,
-            "--menu": .partiallySupported,
+            "--menu": .supported,
             "--no-attach": .supported,
             "--no-build": .supported,
             "--no-color": .supported,

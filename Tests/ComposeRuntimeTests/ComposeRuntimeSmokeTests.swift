@@ -355,8 +355,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(withDependencies.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
     }
 
-    @Test("runtime dry run up accepts menu false value")
-    func runtimeDryRunUpAcceptsMenuFalseValue() throws {
+    @Test("runtime dry run up accepts menu boolean values in no-start mode")
+    func runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode() throws {
         guard runtimeTestsEnabled else {
             return
         }
@@ -399,11 +399,97 @@ struct ComposeRuntimeSmokeTests {
                 "--file", composeFile.path,
                 "--dry-run", "up", "--menu=true", "--no-start", "api",
             ],
+            timeout: 30
+        )
+
+        #expect(enabled.stdout.contains("+ container create --name \(project)-api-1"))
+
+        let disabledEnvironment = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "--menu=false", "--no-start", "api",
+            ],
+            timeout: 30,
+            environment: ["COMPOSE_MENU": "true"]
+        )
+
+        #expect(disabledEnvironment.stdout.contains("+ container create --name \(project)-api-1"))
+    }
+
+    @Test("runtime dry run up rejects menu incompatibilities before compose side effects")
+    func runtimeDryRunUpRejectsMenuIncompatibilitiesBeforeComposeSideEffects() throws {
+        guard runtimeTestsEnabled else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        try fileManager.createDirectory(at: directory.appendingPathComponent("src"), withIntermediateDirectories: true)
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            develop:
+              watch:
+                - action: sync
+                  path: ./src
+                  target: /app/src
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = runtimeProjectName()
+        let composeBinary = ProcessInfo.processInfo.environment["COMPOSE_TEST_BINARY"] ?? ".build/debug/compose"
+        let exitControl = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "--menu", "--abort-on-container-exit", "api",
+            ],
             timeout: 30,
             expectedStatus: 1
         )
+        #expect(exitControl.stderr.contains("unsupported compose feature: up --menu with exit-control options"))
+        #expect(!exitControl.stdout.contains("+ container run"))
 
-        #expect(enabled.stderr.contains("unsupported compose feature: up --menu"))
+        let watch = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "--menu", "--watch", "api",
+            ],
+            timeout: 30,
+            expectedStatus: 1
+        )
+        #expect(watch.stderr.contains("unsupported compose feature: up --menu cannot be combined with --watch yet"))
+        #expect(!watch.stdout.contains("+ container run"))
+
+        let environmentMenu = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "--dry-run", "up", "--abort-on-container-exit", "api",
+            ],
+            timeout: 30,
+            expectedStatus: 1,
+            environment: ["COMPOSE_MENU": "true"]
+        )
+        #expect(environmentMenu.stderr.contains("unsupported compose feature: up --menu with exit-control options"))
+        #expect(!environmentMenu.stdout.contains("+ container run"))
     }
 
     @Test("runtime dry run up renders service privileged command")

@@ -115,14 +115,14 @@ container compose version
 Example:
 
 ```text
-container-compose 0.1.0
+container-compose 0.1.1
   source: stephenlclarke/container-compose
   lane: main
   branch: main
   commit: d34f29c4a6a3c3fa562fafa01cf06959cbb057f7
   build: release
-  container: stephenlclarke/container@d6977a7d8a4878f8c3d8022c195efb82da10c99d (custom)
-  containerization: stephenlclarke/containerization@4d129c6d360d1d20b257818d894a64f24bd39f74 (custom)
+  container: stephenlclarke/container@5f73253b6f3d372d4dd58fb2fec6cde048d9f44e (custom)
+  containerization: stephenlclarke/containerization@cada6d31310761c7e7bf9be87a29fe4820ff628d (custom)
   compose-go: v2.12.1
 ```
 

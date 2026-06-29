@@ -20,6 +20,7 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
     public var execManager: ContainerExecManaging
     public var exporter: ContainerExporting
     public var logManager: ContainerLogManaging
+    public var upMenuController: ComposeUpMenuControlling
     public var signalProxy: ComposeSignalProxying
 
     public init(
@@ -27,12 +28,14 @@ public struct ComposeOrchestratorCommandDependencies: Sendable {
         execManager: ContainerExecManaging = ContainerClientExecManager(),
         exporter: ContainerExporting = ContainerClientExporter(),
         logManager: ContainerLogManaging = ContainerClientLogManager(),
+        upMenuController: ComposeUpMenuControlling = TerminalComposeUpMenuController(),
         signalProxy: ComposeSignalProxying = DispatchComposeSignalProxy(),
     ) {
         self.copier = copier
         self.execManager = execManager
         self.exporter = exporter
         self.logManager = logManager
+        self.upMenuController = upMenuController
         self.signalProxy = signalProxy
     }
 }
@@ -140,6 +143,11 @@ public struct ComposeOrchestratorDependencies: Sendable {
     public var logManager: ContainerLogManaging {
         get { commands.logManager }
         set { commands.logManager = newValue }
+    }
+
+    public var upMenuController: ComposeUpMenuControlling {
+        get { commands.upMenuController }
+        set { commands.upMenuController = newValue }
     }
 
     public var signalProxy: ComposeSignalProxying {

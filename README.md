@@ -40,6 +40,12 @@ Current detailed gap examples:
   platforms, pull/no-cache, builder selection, checks, provenance/SBOM
   attestations, extra hosts, build network mode, privileged builds, shared
   memory size, ulimits, `--print`, and service-context build ordering.
+- Supported `up` coverage includes attach selection, dependency attachment,
+  exit-control flags, raw output flags, timestamps, watch mode, and the
+  attached terminal `--menu` shortcut surface. The menu path supports detach,
+  watch toggle, graceful stop, and force stop shortcuts; Docker Desktop-only
+  shortcuts are intentionally absent, and menu with exit-control or
+  `up --watch` remains a documented compatibility boundary.
 - Partially supported commands: `attach` and `up`.
 - Unsupported commands: `commit` and `publish`.
 
@@ -76,7 +82,7 @@ This fork-backed Compose stack spans four Stephen Clarke repositories:
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
 - [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed by Homebrew beside the plugin.
 - [`containerization`](https://github.com/stephenlclarke/containerization): the Swift container runtime package consumed by both `container` and this plugin; `main` packages use `main`, and release packages use `release`.
-- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the Go BuildKit bridge used by `container build`; `container` pins an immutable builder image version, currently `0.13.5`.
+- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the Go BuildKit bridge used by `container build`; `container` pins an immutable builder image version, currently `0.13.6`.
 
 The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks the four source repositories on `main` for maintenance, while installable formulae consume prebuilt release-quality assets. All Go outputs in the stack are treated as release code, not debug helpers.
 

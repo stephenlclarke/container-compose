@@ -559,6 +559,7 @@ struct ComposeOrchestratorTests {
         let imageManager = RecordingContainerImageManager()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let logManager = RecordingContainerLogManager()
+        let upMenuController = RecordingComposeUpMenuController()
         let resourceManager = RecordingContainerResourceManager()
         let statsManager = RecordingContainerStatsManager()
         let topManager = RecordingContainerTopManager()
@@ -567,7 +568,8 @@ struct ComposeOrchestratorTests {
                 copier: copier,
                 execManager: execManager,
                 exporter: exporter,
-                logManager: logManager
+                logManager: logManager,
+                upMenuController: upMenuController
             ),
             runtime: ComposeOrchestratorRuntimeDependencies(
                 discoveryManager: discoveryManager,
@@ -588,6 +590,7 @@ struct ComposeOrchestratorTests {
         expectSameInstance(dependencies.imageManager, imageManager, "imageManager")
         expectSameInstance(dependencies.lifecycleManager, lifecycleManager, "lifecycleManager")
         expectSameInstance(dependencies.logManager, logManager, "logManager")
+        expectSameInstance(dependencies.upMenuController, upMenuController, "upMenuController")
         expectSameInstance(dependencies.resourceManager, resourceManager, "resourceManager")
         expectSameInstance(dependencies.statsManager, statsManager, "statsManager")
         expectSameInstance(dependencies.topManager, topManager, "topManager")
@@ -595,6 +598,9 @@ struct ComposeOrchestratorTests {
         let replacementLogManager = RecordingContainerLogManager()
         dependencies.logManager = replacementLogManager
         expectSameInstance(dependencies.commands.logManager, replacementLogManager, "commands.logManager")
+        let replacementUpMenuController = RecordingComposeUpMenuController()
+        dependencies.upMenuController = replacementUpMenuController
+        expectSameInstance(dependencies.commands.upMenuController, replacementUpMenuController, "commands.upMenuController")
     }
 
     @Test("orders selected services after dependencies")
@@ -3349,6 +3355,263 @@ struct ComposeOrchestratorTests {
             ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true, timestamps: true),
             ContainerLogRequest(id: "demo-db-1", tail: nil, follow: true, timestamps: true),
         ])
+    }
+
+    @Test("up menu follows attachable selected service logs through menu controller")
+    func upMenuFollowsAttachableSelectedServiceLogsThroughMenuController() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let menuController = RecordingComposeUpMenuController()
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: "src", action: "sync", target: "/app/src"),
+                    ])
+                },
+                "db": composeService(name: "db", image: "postgres") {
+                    $0.attach = false
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
+                emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) }
+            )),
+            dependencies: orchestratorDependencies {
+                $0.logManager = logManager
+                $0.upMenuController = menuController
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.menu = true
+        })
+
+        let dbRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-db-1"]) }?.arguments)
+        let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        #expect(dbRun.contains("--detach"))
+        #expect(apiRun.contains("--detach"))
+        #expect(await menuController.requests == [
+            ComposeUpMenuConfigurationSnapshot(
+                projectName: "demo",
+                watchEnabled: false,
+                watchAvailable: true,
+                colorEnabled: false
+            ),
+        ])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        ])
+        #expect(emitted.messages == ["api-1 | ready"])
+    }
+
+    @Test("up menu dry run emits log follow plan without invoking menu controller")
+    func upMenuDryRunEmitsLogFollowPlanWithoutInvokingMenuController() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let menuController = RecordingComposeUpMenuController()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.logManager = logManager
+                $0.upMenuController = menuController
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.menu = true
+        })
+
+        #expect(emitted.messages.contains("+ compose-runtime logs --follow demo-api-1"))
+        #expect(await menuController.requests.isEmpty)
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("up menu waits on selected services when no logs are attachable")
+    func upMenuWaitsOnSelectedServicesWhenNoLogsAreAttachable() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let menuController = RecordingComposeUpMenuController()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.attach = false
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+                $0.upMenuController = menuController
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.menu = true
+        })
+
+        let apiRun = try #require(runner.commands.first { $0.arguments.containsSequence(["--name", "demo-api-1"]) }?.arguments)
+        #expect(apiRun.contains("--detach"))
+        #expect(await menuController.requests == [
+            ComposeUpMenuConfigurationSnapshot(
+                projectName: "demo",
+                watchEnabled: false,
+                watchAvailable: false,
+                colorEnabled: false
+            ),
+        ])
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-api-1"),
+        ])
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("up menu rejects exit-control options before side effects")
+    func upMenuRejectsExitControlOptionsBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(
+                project: project,
+                options: ComposeUpOptions {
+                    $0.services = ["api"]
+                    $0.menu = true
+                    $0.abortOnContainerExit = true
+                }
+            )
+            Issue.record("Expected menu exit-control incompatibility")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("up --menu with exit-control options"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up menu watch toggle validates before reporting watch enabled")
+    func upMenuWatchToggleValidatesBeforeReportingWatchEnabled() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let menuController = RecordingComposeUpMenuController(actions: [.toggleWatch])
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("container-compose-menu-watch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: temporaryDirectory)
+        }
+        var project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: "missing-src", action: "sync", target: "/app/src"),
+                    ])
+                },
+            ]
+        )
+        project.workingDirectory = temporaryDirectory.path
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                dependencies: orchestratorDependencies {
+                    $0.logManager = logManager
+                    $0.upMenuController = menuController
+                }
+            )
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+                $0.menu = true
+            })
+            Issue.record("Expected menu watch preflight to reject the missing watch path")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("develop.watch path does not exist: missing-src"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await menuController.requests == [
+            ComposeUpMenuConfigurationSnapshot(
+                projectName: "demo",
+                watchEnabled: false,
+                watchAvailable: true,
+                colorEnabled: false
+            ),
+        ])
+        #expect(await logManager.requests.isEmpty)
+    }
+
+    @Test("up menu shortcut actions stop and kill selected service graph")
+    func upMenuShortcutActionsStopAndKillSelectedServiceGraph() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let menuController = RecordingComposeUpMenuController(actions: [.gracefulStop, .forceStop])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+                },
+                "db": ComposeService(name: "db", image: "postgres"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+                $0.upMenuController = menuController
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.menu = true
+            $0.timeout = 4
+        })
+
+        let lifecycleRequests = await lifecycleManager.requests
+        #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: 4)))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-db-1", signal: nil, timeoutInSeconds: 4)))
+        #expect(lifecycleRequests.contains(.kill(id: "demo-api-1", signal: "KILL")))
+        #expect(lifecycleRequests.contains(.kill(id: "demo-db-1", signal: "KILL")))
     }
 
     @Test("up attach rejects services outside selected start graph")
@@ -22017,6 +22280,19 @@ private struct ContainerLogRequest: Equatable {
     var timestamps = false
 }
 
+private struct ComposeUpMenuConfigurationSnapshot: Equatable {
+    var projectName: String
+    var watchEnabled: Bool
+    var watchAvailable: Bool
+    var colorEnabled: Bool
+}
+
+private enum ComposeUpMenuTestAction {
+    case gracefulStop
+    case forceStop
+    case toggleWatch
+}
+
 private struct ContainerExecProcessRequest: Equatable {
     var containerId: String
     var processId: String
@@ -22143,6 +22419,42 @@ private actor RecordingComposeSignalProxy: ComposeSignalProxying {
         storage.append(signals)
         for signal in forwardedSignals {
             await handler(signal)
+        }
+        try await operation()
+    }
+}
+
+private actor RecordingComposeUpMenuController: ComposeUpMenuControlling {
+    private let actions: [ComposeUpMenuTestAction]
+    private var storage: [ComposeUpMenuConfigurationSnapshot] = []
+
+    init(actions: [ComposeUpMenuTestAction] = []) {
+        self.actions = actions
+    }
+
+    var requests: [ComposeUpMenuConfigurationSnapshot] {
+        storage
+    }
+
+    func runMenuSession(
+        configuration: ComposeUpMenuConfiguration,
+        operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        storage.append(ComposeUpMenuConfigurationSnapshot(
+            projectName: configuration.projectName,
+            watchEnabled: configuration.watchEnabled,
+            watchAvailable: configuration.watchAvailable,
+            colorEnabled: configuration.colorEnabled
+        ))
+        for action in actions {
+            switch action {
+            case .gracefulStop:
+                try await configuration.actions.gracefulStop()
+            case .forceStop:
+                try await configuration.actions.forceStop()
+            case .toggleWatch:
+                _ = try await configuration.actions.toggleWatch(true) { _ in }
+            }
         }
         try await operation()
     }

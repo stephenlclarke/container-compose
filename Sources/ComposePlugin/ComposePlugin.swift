@@ -28,7 +28,7 @@ private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
 
 private struct ComposeBuildInfo: Codable {
-    var version: String = "0.1.0"
+    var version: String = "0.1.1"
     var source: String = "unspecified"
     var branch: String = "unspecified"
     var lane: String = "unspecified"
@@ -87,7 +87,7 @@ private struct ComposeBuildInfo: Codable {
         let root = git(["rev-parse", "--show-toplevel"]) ?? FileManager.default.currentDirectoryPath
         let branch = git(["branch", "--show-current"], root: root) ?? "unspecified"
         return ComposeBuildInfo(
-            version: "0.1.0",
+            version: "0.1.1",
             source: remoteSource(root: root),
             branch: branch,
             lane: lane(for: branch),
@@ -437,6 +437,29 @@ struct GlobalOptions: ParsableArguments {
         }
     }
 
+    /// Returns whether the `up --menu` shortcut controller should own attached output.
+    func shouldEnableUpMenu(menu: Bool, menuDisabled: Bool, attachedOutput: Bool) -> Bool {
+        guard attachedOutput, !menuDisabled else {
+            return false
+        }
+        let requested = shouldRequestUpMenu(menu: menu, menuDisabled: menuDisabled)
+        guard requested else {
+            return false
+        }
+        guard stdinIsTerminal(), stdoutIsTerminal() else {
+            return false
+        }
+        return progressStyle() != .plain
+    }
+
+    /// Returns whether CLI flags or COMPOSE_MENU explicitly request the attached `up` menu.
+    func shouldRequestUpMenu(menu: Bool, menuDisabled: Bool) -> Bool {
+        guard !menuDisabled else {
+            return false
+        }
+        return menu || composeMenuEnvironmentEnabled()
+    }
+
     /// Creates the progress renderer selected by Docker Compose-compatible global flags.
     func progressReporter() -> ComposeProgressReporter {
         ComposeProgressReporter(
@@ -475,6 +498,41 @@ struct GlobalOptions: ParsableArguments {
             return stderrSupportsANSI()
         }
     }
+}
+
+/// Returns Docker Compose-compatible boolean parsing for environment flags.
+private func composeBooleanValue(_ value: String?) -> Bool? {
+    switch value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "1", "true", "yes", "y", "on":
+        return true
+    case "0", "false", "no", "n", "off":
+        return false
+    default:
+        return nil
+    }
+}
+
+/// Returns whether COMPOSE_MENU requests the attached `up` shortcut menu.
+private func composeMenuEnvironmentEnabled() -> Bool {
+    composeBooleanValue(ProcessInfo.processInfo.environment["COMPOSE_MENU"]) ?? false
+}
+
+/// Returns whether stdin is an interactive terminal.
+private func stdinIsTerminal() -> Bool {
+#if canImport(Darwin) || canImport(Glibc)
+    isatty(STDIN_FILENO) == 1
+#else
+    false
+#endif
+}
+
+/// Returns whether stdout is an interactive terminal.
+private func stdoutIsTerminal() -> Bool {
+#if canImport(Darwin) || canImport(Glibc)
+    isatty(STDOUT_FILENO) == 1
+#else
+    false
+#endif
 }
 
 /// Returns whether stdout is an interactive terminal that can display ANSI color.
@@ -703,6 +761,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     var forceRecreate = false
     @Flag(name: .customLong("menu"), help: "Enable interactive shortcuts when running attached. Use --menu=false to disable.")
     var menu = false
+    @Flag(name: .customLong("menu-disabled"), help: .hidden)
+    var menuDisabled = false
     @Flag(name: .customLong("always-recreate-deps"), help: "Recreate dependent containers.")
     var alwaysRecreateDeps = false
     @Option(name: .customLong("no-attach"), help: "Do not attach to the specified service. May be repeated.")
@@ -745,12 +805,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     /// Creates resources and starts selected services.
     func run() async throws {
         let formatsAttachedOutput = !(detach || wait || noStart)
-        let unsupportedOptions = [
-            menu ? "--menu" : nil,
-        ].compactMap { $0 }
-        if let first = unsupportedOptions.first {
-            throw ComposeError.unsupported("up \(first)")
-        }
         if watch && detach {
             throw ComposeError.unsupported("up --detach cannot be combined with --watch")
         }
@@ -760,8 +814,20 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
         if watch && (abortOnContainerExit || abortOnContainerFailure || exitCodeFrom != nil) {
             throw ComposeError.unsupported("up --watch cannot be combined with exit-control options")
         }
+        let menuRequested = global.shouldRequestUpMenu(menu: menu, menuDisabled: menuDisabled)
+        if watch && menuRequested {
+            throw ComposeError.unsupported("up --menu cannot be combined with --watch yet")
+        }
+        if menuRequested && (abortOnContainerExit || abortOnContainerFailure || exitCodeFrom != nil) {
+            throw ComposeError.unsupported("up --menu with exit-control options")
+        }
 
         let loadedProject = try await project()
+        let menuEnabled = global.shouldEnableUpMenu(
+            menu: menu,
+            menuDisabled: menuDisabled,
+            attachedOutput: formatsAttachedOutput,
+        )
         let upOptions = ComposeUpOptions {
             $0.services = services
             $0.abortOnContainerExit = abortOnContainerExit
@@ -791,6 +857,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             $0.timestamps = timestamps && formatsAttachedOutput
             $0.noLogPrefix = noLogPrefix
             $0.colorPrefixes = global.shouldColorLogs(noColor: noColor)
+            $0.menu = menuEnabled
         }
         if watch {
             try await orchestrator().watch(

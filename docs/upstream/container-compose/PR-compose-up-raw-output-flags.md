@@ -35,4 +35,4 @@ make coverage-check
 
 ## Follow-Ups
 
-- Keep `up --attach`, `--attach-dependencies`, `--exit-code-from`, `--abort-on-container-exit`, `--abort-on-container-failure`, and `--menu` unsupported until their process-control semantics are implemented.
+- This slice deliberately left `up --attach`, `--attach-dependencies`, exit-control flags, and `--menu` to later process-control slices.

@@ -179,7 +179,7 @@ extension ComposeOrchestrator {
             project: workingProject,
             services: services,
             scaleOverrides: scaleOverrides,
-            detach: up.detach || up.wait || attachLogMode || exitControlMode,
+            detach: up.detach || up.wait || attachLogMode || exitControlMode || up.menu,
         )
         let attachedForegroundService = up.timestamps ? nil : attachedOutputService
         if !up.timestamps {
@@ -308,6 +308,24 @@ extension ComposeOrchestrator {
         if exitControlMode {
             return try await waitForUpExitControl(project: workingProject, services: services, options: up)
         }
+        if up.menu {
+            let menuServices = try upMenuLogServices(
+                project: workingProject,
+                services: services,
+                attachLogServices: attachedLogServices,
+                options: up,
+            )
+            let targets = try await serviceContainerTargets(project: workingProject, services: menuServices)
+            let startedTargets = try await serviceContainerTargets(project: workingProject, services: services)
+            try await followMenuUpLogs(
+                project: workingProject,
+                services: services,
+                targets: targets,
+                startedTargets: startedTargets,
+                options: up,
+            )
+            return nil
+        }
         if attachLogMode {
             let targets = try await serviceContainerTargets(project: workingProject, services: attachedLogServices)
             try await followAttachedUpLogs(targets: targets, options: up)
@@ -327,6 +345,24 @@ extension ComposeOrchestrator {
     /// Returns whether `up` should stop the project after service exits.
     func upUsesExitControl(_ up: ComposeUpOptions) -> Bool {
         !up.detach && !up.wait && !up.noStart && (up.abortOnContainerExit || up.abortOnContainerFailure || up.exitCodeFrom != nil)
+    }
+
+    /// Returns the services whose logs should be followed while `up --menu` owns shortcuts.
+    func upMenuLogServices(
+        project: ComposeProject,
+        services: [ComposeService],
+        attachLogServices: [ComposeService],
+        options up: ComposeUpOptions,
+    ) throws -> [ComposeService] {
+        if upUsesAttachLogFollow(up) {
+            return attachLogServices
+        }
+        let noAttachNames = try up.noAttach.isEmpty
+            ? Set<String>()
+            : Set(selectedServices(project: project, selected: up.noAttach).map(\.name))
+        return services.filter { service in
+            service.attach != false && !noAttachNames.contains(service.name)
+        }
     }
 
     /// Validates attach-related service selections before runtime side effects.
@@ -425,6 +461,141 @@ extension ComposeOrchestrator {
                 ),
             ),
         )
+    }
+
+    /// Follows attached `up` logs while a Compose-owned menu handles shortcuts.
+    func followMenuUpLogs(
+        project: ComposeProject,
+        services: [ComposeService],
+        targets: [ServiceContainerTarget],
+        startedTargets: [ServiceContainerTarget],
+        options up: ComposeUpOptions,
+    ) async throws {
+        if options.dryRun {
+            for target in targets {
+                emitComposeRuntimeOperation(logRuntimeArguments(
+                    id: target.name,
+                    follow: true,
+                    tail: nil,
+                    since: nil,
+                    until: nil,
+                    timestamps: up.timestamps,
+                ))
+            }
+            return
+        }
+        guard !targets.isEmpty || !startedTargets.isEmpty else {
+            return
+        }
+
+        let watchToggle = ComposeUpMenuWatchToggle()
+        let runtimeOptions = RuntimeLogOptions(
+            tail: nil,
+            since: nil,
+            until: nil,
+            timestamps: up.timestamps,
+            noLogPrefix: up.noLogPrefix,
+            colorPrefixes: up.colorPrefixes,
+        )
+        let sendableProject = UncheckedSendable(value: project)
+        let sendableServices = UncheckedSendable(value: services)
+        let sendableTargets = UncheckedSendable(value: targets)
+        let sendableStartedTargets = UncheckedSendable(value: startedTargets)
+        let sendableRuntimeOptions = UncheckedSendable(value: runtimeOptions)
+        let serviceNames = services.map(\.name)
+        let timeout = up.timeout
+        let quietBuild = up.quietBuild
+        let emitStatus = options.emit
+        let configuration = ComposeUpMenuConfiguration(
+            projectName: project.name,
+            watchEnabled: false,
+            watchAvailable: services.contains { service in
+                !(service.develop?.watch ?? []).isEmpty
+            },
+            colorEnabled: up.colorPrefixes,
+            emitStatus: emitStatus,
+            actions: ComposeUpMenuActions(
+                gracefulStop: { [self, sendableProject, serviceNames, timeout] in
+                    try await stop(project: sendableProject.value, services: serviceNames, timeout: timeout)
+                },
+                forceStop: { [self, sendableProject, sendableServices] in
+                    for target in try await serviceContainerTargets(project: sendableProject.value, services: sendableServices.value) {
+                        try await lifecycleManager.killContainer(id: target.name, signal: "KILL")
+                    }
+                },
+                toggleWatch: { [self, sendableProject, serviceNames, quietBuild] desiredEnabled, stateChanged in
+                    if desiredEnabled {
+                        try validateUpMenuWatchToggle(project: sendableProject.value, serviceNames: serviceNames)
+                    }
+                    return await watchToggle.setEnabled(
+                        desiredEnabled,
+                        emit: emitStatus,
+                        stateChanged: stateChanged,
+                        start: { [self, sendableProject, serviceNames, quietBuild] in
+                            try await self.watch(
+                                project: sendableProject.value,
+                                options: ComposeWatchOptions(
+                                    services: serviceNames,
+                                    noUp: true,
+                                    prune: true,
+                                    quiet: quietBuild,
+                                ),
+                            )
+                        },
+                    )
+                },
+            ),
+        )
+
+        do {
+            try await upMenuController.runMenuSession(
+                configuration: configuration
+            ) { [self, sendableTargets, sendableStartedTargets, sendableRuntimeOptions] in
+                if sendableTargets.value.isEmpty {
+                    try await waitForMenuServiceTargets(sendableStartedTargets.value)
+                    return
+                }
+                try await followLogTargets(sendableTargets.value, options: sendableRuntimeOptions.value)
+            }
+        } catch {
+            await watchToggle.stop()
+            throw error
+        }
+        await watchToggle.stop()
+    }
+
+    /// Validates a menu watch toggle before the UI reports watch as enabled.
+    func validateUpMenuWatchToggle(project: ComposeProject, serviceNames: [String]) throws {
+        let selected = try selectedServices(project: project, selected: serviceNames)
+        let watchServices = selected.filter { service in
+            guard let triggers = service.develop?.watch else {
+                return false
+            }
+            return !triggers.isEmpty
+        }
+        guard !watchServices.isEmpty else {
+            let selected = serviceNames.isEmpty ? "project" : "selected services"
+            throw ComposeError.invalidProject("\(selected) does not declare develop.watch triggers")
+        }
+        try validateWatchTriggers(services: watchServices)
+        _ = try watchPlans(project: project, services: watchServices)
+    }
+
+    /// Keeps a menu session alive when selected services intentionally have no attached logs.
+    func waitForMenuServiceTargets(_ targets: [ServiceContainerTarget]) async throws {
+        guard !targets.isEmpty else {
+            return
+        }
+        let lifecycleManager = lifecycleManager
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for target in targets {
+                let name = target.name
+                group.addTask {
+                    _ = try await lifecycleManager.waitContainer(id: name)
+                }
+            }
+            while try await group.next() != nil {}
+        }
     }
 
     /// Waits for `up` exit-control conditions, tears the project down, and returns the CLI exit code.
@@ -676,5 +847,67 @@ extension ComposeOrchestrator {
                 $0.noDeps = scale.noDeps
             },
         )
+    }
+}
+
+private struct UncheckedSendable<Value>: @unchecked Sendable {
+    var value: Value
+}
+
+private actor ComposeUpMenuWatchToggle {
+    private var taskID: UUID?
+    private var task: Task<Void, Never>?
+
+    func setEnabled(
+        _ enabled: Bool,
+        emit: @escaping @Sendable (String) -> Void,
+        stateChanged: @escaping @Sendable (Bool) async -> Void,
+        start: @escaping @Sendable () async throws -> Void,
+    ) -> Bool {
+        guard enabled else {
+            if let task {
+                task.cancel()
+                self.task = nil
+                taskID = nil
+                emit("compose: watch stopping")
+            }
+            return false
+        }
+        if task != nil {
+            return true
+        }
+
+        let id = UUID()
+        taskID = id
+        task = Task {
+            do {
+                try await start()
+            } catch is CancellationError {
+                // Normal when the menu disables watch or detaches.
+            } catch {
+                emit("Watch -> \(error)")
+            }
+            if finish(id: id) {
+                await stateChanged(false)
+            }
+        }
+        return true
+    }
+
+    func stop() {
+        if let task {
+            task.cancel()
+            self.task = nil
+            taskID = nil
+        }
+    }
+
+    private func finish(id: UUID) -> Bool {
+        guard taskID == id else {
+            return false
+        }
+        task = nil
+        taskID = nil
+        return true
     }
 }

@@ -16,7 +16,7 @@ The four repositories have different roles:
 - `container` is the fork-backed runtime and CLI that Homebrew installs.
 - `container-compose` is the plugin package that is installed beside the matching `container` lane.
 - `containerization` is the Swift package consumed by both `container` and `container-compose`; its branch must match the runtime lane.
-- `container-builder-shim` is Go source for the BuildKit bridge image used by `container build`; `container` pins an immutable builder image version, currently `0.13.5`, instead of installing the shim from Homebrew.
+- `container-builder-shim` is Go source for the BuildKit bridge image used by `container build`; `container` pins an immutable builder image version, currently `0.13.6`, instead of installing the shim from Homebrew.
 
 ## Active Branches
 
@@ -24,7 +24,7 @@ The four repositories have different roles:
 | --- | --- | --- |
 | `main` | Current development for all four repositories. | Full CI, CodeQL, SonarQube where configured, and Homebrew main prebuilt packages for installable packages. |
 | `release` | Latest stable snapshot promoted from validated `main`. | Release package validation only; no debug binaries. |
-| `release-VERSION-TAG` | Permanent copy of a release tag, for example `release-v0.1.0`. | Release package validation only; no debug binaries. |
+| `release-VERSION-TAG` | Permanent copy of a release tag, for example `release-v0.1.1`. | Release package validation only; no debug binaries. |
 
 `main` is the only active development branch because the free SonarQube tier
 only provides one useful branch signal. README badges, quality gates, and normal
@@ -63,7 +63,7 @@ built with release configuration. All Go outputs across this project are release
 
 `container-compose` also pins the exact `container` commit used by CI and package metadata through `APPLE_CONTAINER_REF`. Keep that pin in the same lane as the plugin package.
 
-`container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. The current Stephen fork default is `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.5`. Update the shim source on `main`, publish an immutable image tag, verify the GHCR manifest is available, then update `container` to that tag; do not point release packages at untagged, unpublished, or debug builder images.
+`container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. The current Stephen fork default is `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.6`. Update the shim source on `main`, publish an immutable image tag, verify the GHCR manifest is available, then update `container` to that tag; do not point release packages at untagged, unpublished, or debug builder images.
 
 ## Homebrew Lanes
 
@@ -78,14 +78,14 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 the latest stable `release` package. Treat `homebrew-release` like Docker's
 `:latest` tag for the stable lane: it is intentionally moved whenever a newer
 release is promoted. Versioned release branch copies, such as
-`release-v0.1.0`, keep their own branch-derived Homebrew tags and formula names
+`release-v0.1.1`, keep their own branch-derived Homebrew tags and formula names
 for immutable installs.
 
 The tap's `sources/*` submodules are maintenance inputs and track the four project repositories on `main`: `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim`. Release formulae do not install from those submodules; they consume the prebuilt assets published from the matching release package tags.
 
 Release formula names are derived from the branch name by lowercasing it and
 replacing non-alphanumeric separators with `-`. For example,
-`release-v0.1.0` becomes `container-compose-release-v0-1-0`.
+`release-v0.1.1` becomes `container-compose-release-v0-1-1`.
 
 Install matching formula lanes together: `container` with `container-compose`
 for `main`, or `container-release` with `container-compose-release` for the

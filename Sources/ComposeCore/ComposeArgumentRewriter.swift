@@ -257,7 +257,7 @@ public enum ComposeArgumentRewriter {
             if shouldRewriteOptions, argument == "--" {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
-            } else if shouldRewriteOptions, let menu = rewriteOptionalBooleanFlag(argument, flag: "--menu") {
+            } else if shouldRewriteOptions, let menu = rewriteOptionalBooleanFlag(argument, flag: "--menu", falseFlag: "--menu-disabled") {
                 rewritten.append(contentsOf: menu)
             } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactTimeoutValueOptions) {
                 rewritten.append(split.option)
@@ -438,7 +438,7 @@ public enum ComposeArgumentRewriter {
     }
 
     /// Rewrites Docker-style optional boolean flag values for ArgumentParser flags.
-    private static func rewriteOptionalBooleanFlag(_ argument: String, flag: String) -> [String]? {
+    private static func rewriteOptionalBooleanFlag(_ argument: String, flag: String, falseFlag: String? = nil) -> [String]? {
         let prefix = "\(flag)="
         guard argument.hasPrefix(prefix) else {
             return nil
@@ -448,7 +448,7 @@ public enum ComposeArgumentRewriter {
         case "true", "1", "yes":
             return [flag]
         case "false", "0", "no":
-            return []
+            return falseFlag.map { [$0] } ?? []
         default:
             return nil
         }

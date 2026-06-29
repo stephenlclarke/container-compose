@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-29 16:09 BST.
+Last updated: 2026-06-29 23:13 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -18,24 +18,24 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed main-lane pins:
 
-- `stephenlclarke/container`: `449d8d0626c2e640163ecf678e6ee22a85ace91c`
-- `stephenlclarke/containerization`: `4d129c6d360d1d20b257818d894a64f24bd39f74`
-- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.3`
+- `stephenlclarke/container`: `5f73253b6f3d372d4dd58fb2fec6cde048d9f44e`
+- `stephenlclarke/containerization`: `cada6d31310761c7e7bf9be87a29fe4820ff628d`
+- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with `make ci`, which includes linting, license-header checks, Swift test coverage, Go test coverage, Go release-build checks, and the CLI smoke surface. Paired support validation passed with `make check` and `make test` in both `container` and `containerization`, plus focused tests for the touched mount parsing, build export parsing, SwiftLog event handling, release provenance, configuration loading, and application-health paths. `git diff --check` passed in all three repositories. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with focused `up --menu` Swift tests, live runtime compose.yml smoke with `CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1` against the Dockerfile staging fix that is now published as `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.6`, `make docker-compose-up-menu-parity`, `make check`, full `swift test --disable-automatic-resolution`, `make cli-smoke-built`, `make coverage-check`, Markdown lint for touched docs, `bash -n` for the new parity script, and `git diff --check`. This slice is a patch-level Compose release because it completes partial `up --menu` behavior; full CLI-completion releases should use a minor bump. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 782 Compose tests at 89.87% line coverage.
-- Go normalizer: 92.52% line coverage.
+- Swift: 799 Compose tests at 89.00% line coverage.
+- Go normalizer: 92.54% line coverage.
 
 ## Recent Functional State
 
 - Progress feedback: project loading, variable loading, image build, image pull, direct runtime create/start/run, foreground interactive `run`, and attached `exec` emit visible stderr progress before slow or terminal-taking operations can look hung.
 - Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit frontend path, and explicit false attestation forms remain no-op opt-outs.
-- Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
+- Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --menu`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
@@ -44,7 +44,7 @@ Most recent coverage proof:
 ## Current Limits
 
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
-- Bare `--menu` / `--menu=true` remain blocked until interactive shortcut handling exists; `--menu=false` is accepted.
+- `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, graceful stop, and force stop shortcuts. Docker Desktop-only shortcuts are intentionally absent, and `up --menu` remains incompatible with exit-control options and the separate `up --watch` mode pending a deeper parity pass.
 - Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Non-default `build.isolation` values and build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 
 ## Upstream Compatibility
@@ -53,7 +53,7 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 
 ## Open Blockers
 
-- Future builder-shim changes must be published as an immutable GHCR image tag before `container` is updated to consume them.
+- The immutable `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.6` GHCR image has been published and manifest-verified for linux/arm64.
 - SonarCloud quality gate is currently OK on `main` with 0 unresolved issues as reported by `/Users/sclarke/github/pr-refresh` `make sonar-status`.
 
 ## Open Follow-ups

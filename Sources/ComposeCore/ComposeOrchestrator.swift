@@ -38,6 +38,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
     let imageManager: ContainerImageManaging
     let lifecycleManager: ContainerLifecycleManaging
     let logManager: ContainerLogManaging
+    let upMenuController: ComposeUpMenuControlling
     let pullMetadataStore: ComposePullMetadataStoring
     let resourceManager: ContainerResourceManaging
     let signalProxy: ComposeSignalProxying
@@ -60,6 +61,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         imageManager = dependencies.imageManager
         lifecycleManager = dependencies.lifecycleManager
         logManager = dependencies.logManager
+        upMenuController = dependencies.upMenuController
         pullMetadataStore = dependencies.pullMetadataStore
         resourceManager = dependencies.resourceManager
         signalProxy = dependencies.signalProxy

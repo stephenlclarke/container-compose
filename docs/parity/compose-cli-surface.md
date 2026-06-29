@@ -14,9 +14,12 @@ For `build --builder` behavior specifically, run `make docker-compose-build-buil
 
 For `build --check` behavior specifically, run `make docker-compose-build-check-parity`. That target reuses Docker Compose's upstream `pkg/e2e/fixtures/build-test/minimal` fixture, compares Docker Compose V2 BuildKit lint behavior with `container compose build --print --check`, and can run the live fork-backed `container compose build --check` path when `CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1` is set.
 
+For `up --menu` behavior specifically, run `make docker-compose-up-menu-parity`. That local-only target compares Docker Compose V2 and `container-compose` against a generated compose.yml fixture for `--menu=false`, `--menu=true`, and `COMPOSE_MENU=true` with explicit `--menu=false`, then verifies the current exit-control and `--watch` differences remain documented.
+
 ## Documented Differences
 
 - Root `--verbose` is listed by `container-compose` and accepted by the parser for existing bug-report and version workflows. Docker Compose 5.1.4 standalone accepts `docker-compose --verbose version`, but does not list `--verbose` in root help. This is tracked in `Tools/parity/compose-cli-surface.allowlist`.
 - `build --builder default` selects the ordinary fork-backed `container build` builder, while `build --builder NAME` forwards the name to `container build` so the matching fork-backed runtime can use a separate `buildkit-NAME` builder container. Docker Compose and `container-compose` both omit builder selection from `build --print` bake JSON.
+- Docker Compose 5.2.0 accepts `up --menu` with exit-control flags and `up --menu --watch` in dry-run mode. `container-compose` still rejects those combinations because combined menu/exit-control and menu/watch lifecycle semantics need a deeper parity pass on the Apple runtime path. `make docker-compose-up-menu-parity` treats those as documented differences while requiring parity for the supported optional-boolean menu forms.
 
-No other command or long-option surface differences were observed on this MacBook Pro against Docker Compose 5.1.4 when the parity harness was added.
+No other command or long-option surface differences were observed on this MacBook Pro against Docker Compose 5.1.4 when the CLI-surface parity harness was added.
