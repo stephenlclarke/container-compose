@@ -78,15 +78,18 @@ fi
 
 container_prefix="$(brew --prefix stephenlclarke/tap/container)"
 compose_prefix="$(brew --prefix stephenlclarke/tap/container-compose)"
+container_bin="${container_prefix}/bin/container"
 mkdir -p "${container_prefix}/libexec/container-plugins"
 ln -sfn "${compose_prefix}/libexec/container-plugins/compose" "${container_prefix}/libexec/container-plugins/compose"
 
 brew services restart stephenlclarke/tap/container
-container --version
-container compose version
-container system status
-container system version
+"${container_bin}" --version
+"${container_bin}" compose version
+"${container_bin}" system status
+"${container_bin}" system version
 ```
+
+If a terminal still runs a local debug build after installing, clear the shell's command cache with `rehash` in `zsh` or `hash -r` in `bash`, then confirm `command -v container` points at `/opt/homebrew/bin/container`.
 
 Install the latest stable release branch after the `release` branch has published assets:
 
