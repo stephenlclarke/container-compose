@@ -14,6 +14,28 @@ This guide explains how to install the `container-compose` plugin and the compat
 
 These lanes install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Debug formula lanes are not part of the current branch model.
 
+## Maintainer Release Setup
+
+The `container` and `container-compose` prebuilt workflows publish `homebrew-*` prereleases with generated release notes, upload the matching archive and checksum assets, and update `stephenlclarke/homebrew-tap` when the workflow can access a tap write token.
+
+Set `HOMEBREW_TAP_TOKEN` in both source repositories before relying on automatic tap updates. The token must be allowed to push to `stephenlclarke/homebrew-tap`; pipe it into GitHub rather than pasting it into shell history:
+
+```sh
+gh auth token | gh secret set HOMEBREW_TAP_TOKEN --repo stephenlclarke/container
+gh auth token | gh secret set HOMEBREW_TAP_TOKEN --repo stephenlclarke/container-compose
+```
+
+Verify the secret is present without printing its value:
+
+```sh
+gh secret list --repo stephenlclarke/container | grep '^HOMEBREW_TAP_TOKEN'
+gh secret list --repo stephenlclarke/container-compose | grep '^HOMEBREW_TAP_TOKEN'
+```
+
+If the secret is absent, the release assets and release notes are still published, but the workflow skips the aggregate tap update. In that case, update `stephenlclarke/homebrew-tap` manually before announcing the lane.
+
+Keep each source repository formula in `Formula/` aligned with the aggregate tap formula after a release workflow advances a `homebrew-*` tag. Formula-only commits should exercise the lightweight Homebrew workflow while the heavy Swift and Go workflows skip.
+
 ## Requirements
 
 - Apple silicon Mac.
