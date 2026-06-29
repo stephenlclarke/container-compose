@@ -49,13 +49,24 @@ Keep each source repository formula in `Formula/` aligned with the aggregate tap
 Install or refresh the latest `main` prebuilt runtime and plugin with one copy/paste block:
 
 ```sh
-set -euo pipefail
+install_script="$(mktemp "${TMPDIR:-/tmp}/container-compose-install.XXXXXX")"
+cat >"${install_script}" <<'INSTALL_CONTAINER_COMPOSE'
+set -Eeuo pipefail
+
+trap 'rc=$?; printf "\nInstall failed at line %s with exit code %s. The terminal shell is still open because this block runs in child Bash.\n" "$LINENO" "$rc" >&2; exit "$rc"' ERR
 
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 brew update
 
 brew services stop stephenlclarke/tap/container || true
+brew services stop stephenlclarke/tap/container-release || true
+
+for formula in container-release container-compose-release; do
+  if brew list --formula "${formula}" >/dev/null 2>&1; then
+    brew unlink "${formula}" >/dev/null 2>&1 || true
+  fi
+done
 
 for formula in container container-compose; do
   opt_path="$(brew --prefix)/opt/${formula}"
@@ -76,6 +87,9 @@ else
   brew install --formula stephenlclarke/tap/container-compose
 fi
 
+brew link --overwrite container
+brew link --overwrite container-compose
+
 container_prefix="$(brew --prefix stephenlclarke/tap/container)"
 container_bin="${container_prefix}/bin/container"
 
@@ -85,9 +99,17 @@ brew services restart stephenlclarke/tap/container
 "${container_bin}" compose version
 "${container_bin}" system status
 "${container_bin}" system version
+INSTALL_CONTAINER_COMPOSE
+
+install_status=0
+/bin/bash "${install_script}" || install_status=$?
+rm -f "${install_script}"
+if [ "${install_status}" -ne 0 ]; then
+  printf 'container-compose install failed with exit code %s; see the message above.\n' "${install_status}" >&2
+fi
 ```
 
-If a terminal still runs a local debug build after installing, clear the shell's command cache with `rehash` in `zsh` or `hash -r` in `bash`, then confirm `command -v container` points at `/opt/homebrew/bin/container`.
+This block deliberately runs the installer from a temporary child Bash script so `set -e` cannot close the interactive terminal and Homebrew child processes cannot consume the remaining copy/pasted commands from stdin. If a terminal still runs a local debug build after installing, clear the shell's command cache with `rehash` in `zsh` or `hash -r` in `bash`, then confirm `command -v container` points at `/opt/homebrew/bin/container`.
 
 Install the latest stable release branch after the `release` branch has published assets:
 
