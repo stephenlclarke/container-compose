@@ -33,7 +33,7 @@ struct ComposeProgressTests {
         }
 
         #expect(value == "loaded")
-        #expect(emitted.string == "⠓ Loading Compose model\n✔︎ Loading Compose model\n")
+        #expect(emitted.string == "⠓ Loading Compose model\n✓ Loading Compose model\n")
     }
 
     @Test
@@ -83,7 +83,7 @@ struct ComposeProgressTests {
     }
 
     @Test
-    func `colored plain progress wraps status marks`() async throws {
+    func `colored plain progress uses blue spinner and green done tick`() async throws {
         let emitted = LockedDataRecorder()
         let reporter = ComposeProgressReporter(
             style: .plain,
@@ -94,7 +94,30 @@ struct ComposeProgressTests {
         try await reporter.activity("Building api") {}
 
         #expect(emitted.string.contains("\u{001B}[38;5;63m⠓\u{001B}[0m Building api"))
-        #expect(emitted.string.contains("\u{001B}[32m✔︎\u{001B}[0m Building api"))
+        #expect(emitted.string.contains("\u{001B}[32m✓\u{001B}[0m Building api"))
+    }
+
+    @Test
+    func `colored plain progress uses red cross for failures`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .plain,
+            colorEnabled: true,
+            emitData: { emitted.append($0) },
+        )
+
+        do {
+            _ = try await reporter.activity("Building api") {
+                throw ComposeError.invalidProject("broken build")
+            }
+            Issue.record("Expected progress activity to rethrow")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("broken build"))
+        }
+
+        #expect(emitted.string.contains("\u{001B}[38;5;63m⠓\u{001B}[0m Building api"))
+        #expect(emitted.string.contains("\u{001B}[31m✘\u{001B}[0m Building api"))
+        #expect(!emitted.string.contains("\u{001B}[31m✓\u{001B}[0m Building api"))
     }
 
     @Test
@@ -170,7 +193,24 @@ struct ComposeProgressTests {
             #expect(emitted.string == "\r⠓ Loading Compose model")
         }
 
-        #expect(emitted.string == "\r⠓ Loading Compose model\r\u{001B}[K✔︎ Loading Compose model\n")
+        #expect(emitted.string == "\r⠓ Loading Compose model\r\u{001B}[K✓ Loading Compose model\n")
+    }
+
+    @Test
+    func `colored tty progress uses blue spinner and green done tick`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .tty,
+            colorEnabled: true,
+            emitData: { emitted.append($0) },
+            sleep: { _ in try await Task.sleep(for: .seconds(60)) },
+        )
+
+        try await reporter.activity("Loading Compose model") {
+            #expect(emitted.string == "\r\u{001B}[38;5;63m⠓\u{001B}[0m Loading Compose model")
+        }
+
+        #expect(emitted.string == "\r\u{001B}[38;5;63m⠓\u{001B}[0m Loading Compose model\r\u{001B}[K\u{001B}[32m✓\u{001B}[0m Loading Compose model\n")
     }
 
     @Test

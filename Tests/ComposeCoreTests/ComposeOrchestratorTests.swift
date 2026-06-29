@@ -1389,7 +1389,7 @@ struct ComposeOrchestratorTests {
         #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project"] == "demo" })
         #expect(resources.allSatisfy { $0.labels["com.apple.container.compose.project.config-files-hash"]?.count == 64 })
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
-        #expect(progress.snapshot.joined() == "⠓ Creating api\n✔︎ Creating api\n")
+        #expect(progress.snapshot.joined() == "⠓ Creating api\n✓ Creating api\n")
 
         let create = commands[0]
         #expect(create.starts(with: ["container", "create", "--name", "demo-api-1"]))
@@ -4146,9 +4146,9 @@ struct ComposeOrchestratorTests {
 
         #expect(progress.snapshot.joined() == """
         ⠓ Pulling image example/api
-        ✔︎ Pulling image example/api
+        ✓ Pulling image example/api
         ⠓ Starting api
-        ✔︎ Starting api
+        ✓ Starting api
 
         """)
         #expect(await imageManager.requests == [
@@ -4220,7 +4220,7 @@ struct ComposeOrchestratorTests {
             $0.quietPull = true
         })
 
-        #expect(progress.snapshot.joined() == "⠓ Starting api\n✔︎ Starting api\n")
+        #expect(progress.snapshot.joined() == "⠓ Starting api\n✓ Starting api\n")
         #expect(await imageManager.requests == [
             .pull("example/api"),
             .healthCheck(reference: "example/api", platform: nil),
@@ -10112,7 +10112,7 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.count == 1)
         #expect(emitted.snapshot == [
             "⠓ Building api\n",
-            "✔︎ Building api\n",
+            "✓ Building api\n",
         ])
     }
 
@@ -10144,7 +10144,7 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.count == 1)
         #expect(emitted.snapshot == [
             "⠓ Building api\n",
-            "✔︎ Building api\n",
+            "✓ Building api\n",
         ])
     }
 
@@ -11487,9 +11487,9 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
         #expect(progress.snapshot.joined() == """
         ⠓ Starting api
-        ✔︎ Starting api
+        ✓ Starting api
         ⠓ Starting worker
-        ✔︎ Starting worker
+        ✓ Starting worker
 
         """)
         #expect(await lifecycleManager.requests == [
@@ -18360,9 +18360,9 @@ struct ComposeOrchestratorTests {
 
         #expect(progress.snapshot.joined() == """
         ⠓ Pulling image alpine
-        ✔︎ Pulling image alpine
+        ✓ Pulling image alpine
         ⠓ Running job
-        ✔︎ Running job
+        ✓ Running job
 
         """)
         #expect(await imageManager.requests == [
@@ -18402,7 +18402,7 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        #expect(progress.snapshot.joined() == "⠓ Running job\n✔︎ Running job\n")
+        #expect(progress.snapshot.joined() == "⠓ Running job\n✓ Running job\n")
         #expect(await imageManager.requests == [
             .pull("alpine"),
             .healthCheck(reference: "alpine", platform: nil),

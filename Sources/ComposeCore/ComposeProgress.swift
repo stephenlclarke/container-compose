@@ -163,7 +163,7 @@ public struct ComposeProgressReporter: Sendable {
     private static let progressID = "container-compose"
     private static let frames = ["⠓", "⠋", "⠙", "⠚", "⠖", "⡆", "⣄", "⣠", "⢰", "⠲"]
     private static let pendingMark = "⠓"
-    private static let doneMark = "✔︎"
+    private static let doneMark = "✓"
     private static let failedMark = "✘"
     private static let progressColor = "\u{001B}[38;5;63m"
     private static let successColor = "\u{001B}[32m"

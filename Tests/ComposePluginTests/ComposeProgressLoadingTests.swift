@@ -39,7 +39,7 @@ struct ComposeProgressLoadingTests {
         )
 
         #expect(project.name == "demo")
-        #expect(emitted.string == "⠓ Loading Compose model\n✔︎ Loading Compose model\n")
+        #expect(emitted.string == "⠓ Loading Compose model\n✓ Loading Compose model\n")
     }
 
     @Test("variable loading emits first progress row before normalizer starts")
@@ -60,7 +60,7 @@ struct ComposeProgressLoadingTests {
         )
 
         #expect(variables == [ComposeVariable(name: "TAG", defaultValue: "latest")])
-        #expect(emitted.string == "⠓ Loading Compose variables\n✔︎ Loading Compose variables\n")
+        #expect(emitted.string == "⠓ Loading Compose variables\n✓ Loading Compose variables\n")
     }
 }
 
