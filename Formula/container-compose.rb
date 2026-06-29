@@ -24,8 +24,8 @@ class ContainerCompose < Formula
 
     plugin_dir = container_opt/"libexec/container-plugins"
     plugin_dir.mkpath
-    rm_rf plugin_dir/"compose"
-    ln_s opt_libexec/"container-plugins/compose", plugin_dir/"compose"
+    FileUtils.rm_rf plugin_dir/"compose"
+    FileUtils.ln_s opt_libexec/"container-plugins/compose", plugin_dir/"compose"
   end
 
   def caveats
