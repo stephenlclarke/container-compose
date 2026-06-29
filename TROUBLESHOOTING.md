@@ -28,11 +28,7 @@ brew trust --tap stephenlclarke/tap
 brew install stephenlclarke/tap/container
 brew install stephenlclarke/tap/container-compose
 
-mkdir -p "$(brew --prefix container)/libexec/container-plugins"
-ln -sfn \
-  "$(brew --prefix container-compose)/libexec/container-plugins/compose" \
-  "$(brew --prefix container)/libexec/container-plugins/compose"
-
+brew postinstall stephenlclarke/tap/container-compose
 brew services restart stephenlclarke/tap/container
 
 container compose help
@@ -77,7 +73,14 @@ For the main lane, the link target should point under:
 $(brew --prefix container-compose)/libexec/container-plugins/compose
 ```
 
-Recreate it with:
+Refresh it with the formula `post_install` hook:
+
+```sh
+brew postinstall stephenlclarke/tap/container-compose
+brew services restart stephenlclarke/tap/container
+```
+
+If the link still points at the wrong lane, recreate it manually:
 
 ```sh
 container_prefix="$(brew --prefix container)"
@@ -131,13 +134,7 @@ brew uninstall --ignore-dependencies \
 brew install stephenlclarke/tap/container
 brew install stephenlclarke/tap/container-compose
 
-container_prefix="$(brew --prefix container)"
-compose_prefix="$(brew --prefix container-compose)"
-mkdir -p "$container_prefix/libexec/container-plugins"
-ln -sfn \
-  "$compose_prefix/libexec/container-plugins/compose" \
-  "$container_prefix/libexec/container-plugins/compose"
-
+brew postinstall stephenlclarke/tap/container-compose
 brew services restart stephenlclarke/tap/container
 hash -r 2>/dev/null || true
 ```
@@ -151,10 +148,7 @@ brew uninstall --ignore-dependencies \
   container-compose container-compose-release container container-release || true
 brew install stephenlclarke/tap/container-release
 brew install stephenlclarke/tap/container-compose-release
-mkdir -p "$(brew --prefix container-release)/libexec/container-plugins"
-ln -sfn \
-  "$(brew --prefix container-compose-release)/libexec/container-plugins/compose" \
-  "$(brew --prefix container-release)/libexec/container-plugins/compose"
+brew postinstall stephenlclarke/tap/container-compose-release
 brew services restart stephenlclarke/tap/container-release
 hash -r 2>/dev/null || true
 ```

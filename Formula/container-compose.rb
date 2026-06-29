@@ -18,16 +18,26 @@ class ContainerCompose < Formula
     bin.install_symlink plugin/"bin/compose" => "container-compose"
   end
 
+  def post_install
+    container_opt = HOMEBREW_PREFIX/"opt/container"
+    return unless container_opt.exist?
+
+    plugin_dir = container_opt/"libexec/container-plugins"
+    plugin_dir.mkpath
+    rm_rf plugin_dir/"compose"
+    ln_s opt_libexec/"container-plugins/compose", plugin_dir/"compose"
+  end
+
   def caveats
     <<~EOS
       The plugin is installed under:
         #{opt_libexec}/container-plugins/compose
 
-      To make the Homebrew-installed container CLI discover it, link it into
-      container's user plugin directory and restart the container service:
-        mkdir -p "$(brew --prefix container)/libexec/container-plugins"
-        ln -sfn "#{opt_libexec}/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
-        brew services restart container
+      The formula links the plugin into the Homebrew container install root:
+        $(brew --prefix stephenlclarke/tap/container)/libexec/container-plugins/compose
+
+      Restart stephenlclarke/tap/container after installing or upgrading this plugin:
+        brew services restart stephenlclarke/tap/container
 
       This formula installs the main lane prebuilt package asset:
         container-compose-plugin-main-release-arm64.tar.gz

@@ -77,10 +77,7 @@ else
 fi
 
 container_prefix="$(brew --prefix stephenlclarke/tap/container)"
-compose_prefix="$(brew --prefix stephenlclarke/tap/container-compose)"
 container_bin="${container_prefix}/bin/container"
-mkdir -p "${container_prefix}/libexec/container-plugins"
-ln -sfn "${compose_prefix}/libexec/container-plugins/compose" "${container_prefix}/libexec/container-plugins/compose"
 
 brew services restart stephenlclarke/tap/container
 "${container_bin}" --version
@@ -97,11 +94,12 @@ Install the latest stable release branch after the `release` branch has publishe
 brew tap stephenlclarke/tap
 brew install stephenlclarke/tap/container-release
 brew install stephenlclarke/tap/container-compose-release
-mkdir -p "$(brew --prefix container-release)/libexec/container-plugins"
-ln -sfn "$(brew --prefix container-compose-release)/libexec/container-plugins/compose" "$(brew --prefix container-release)/libexec/container-plugins/compose"
 brew services restart container-release
 container compose version
 ```
+
+The `container-compose` formula links the plugin into the matching Homebrew
+`container` install root during `post_install`.
 
 Tagged release branch formulae use the same pattern. For example, branch `release-v0.1.0` publishes `container-compose-release-v0-1-0`.
 
@@ -135,11 +133,9 @@ git -C "$(brew --repo stephenlclarke/container-compose)" checkout "$branch"
 brew install stephenlclarke/container-compose/container-compose
 ```
 
-Register the plugin with the Homebrew-installed `container` keg:
+Restart the Homebrew-installed `container` service and verify discovery:
 
 ```sh
-mkdir -p "$(brew --prefix container)/libexec/container-plugins"
-ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
 brew services restart container
 container compose version
 ```
