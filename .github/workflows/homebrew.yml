@@ -22,6 +22,9 @@ on:
       - main
       - release
       - "release-*"
+    paths:
+      - "Formula/**"
+      - ".github/workflows/homebrew.yml"
   pull_request:
     branches:
       - main
@@ -29,6 +32,9 @@ on:
       - opened
       - synchronize
       - reopened
+    paths:
+      - "Formula/**"
+      - ".github/workflows/homebrew.yml"
   workflow_dispatch:
 
 permissions:
@@ -52,10 +58,34 @@ jobs:
           set -euo pipefail
           ruby -c Formula/container-compose.rb
 
-      - name: Inspect formula
+      - name: Tap local formula
         shell: bash
         run: |
           set -euo pipefail
           brew tap stephenlclarke/container-compose "${GITHUB_WORKSPACE}"
           brew trust --tap stephenlclarke/container-compose
+
+      - name: Audit formula
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew audit --formula --strict --online stephenlclarke/container-compose/container-compose
+
+      - name: Fetch formula archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew fetch --formula --force stephenlclarke/container-compose/container-compose
+
+      - name: Install and test formula
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install --formula stephenlclarke/container-compose/container-compose
+          brew test --formula stephenlclarke/container-compose/container-compose
+
+      - name: Inspect formula
+        shell: bash
+        run: |
+          set -euo pipefail
           brew info --formula stephenlclarke/container-compose/container-compose
