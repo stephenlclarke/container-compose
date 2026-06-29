@@ -30,6 +30,11 @@ use `--ansi never` for plain output. Commands or option modes that do not yet
 have backing `apple/container` functionality fail with an explicit
 `unsupported compose feature` message.
 
+The top-level help output is the quickest support overview. Run
+`container compose COMMAND --help` for command-specific option support.
+
+![container compose help output showing supported, partially supported, and unsupported commands](docs/images/container-compose-help-support.png)
+
 Long-running project loading, image pull/build, and non-interactive runtime
 handoff steps emit Compose-owned progress on stderr so scriptable stdout output
 stays clean. Use `--progress quiet` to suppress these rows, `--progress plain`
