@@ -84,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           brew install --formula stephenlclarke/container-compose/container-compose
-          brew test --formula stephenlclarke/container-compose/container-compose
+          brew test stephenlclarke/container-compose/container-compose
 
       - name: Inspect formula
         shell: bash
