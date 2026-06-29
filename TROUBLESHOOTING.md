@@ -44,7 +44,8 @@ Expected result:
 - `container compose help` prints the Compose command help instead of reporting
   an unknown plugin.
 - `container compose version` prints the plugin build metadata, including the
-  installed lane and the `container` / `containerization` pins.
+  installed lane, embedded `compose-go` version, and the `container` /
+  `containerization` pins.
 
 If Homebrew is configured with `HOMEBREW_REQUIRE_TAP_TRUST`, any non-official
 tap used by installed formulae must be trusted before Homebrew will load those
@@ -106,7 +107,8 @@ container system version
 
 Apple package builds do not show the Stephen fork provenance fields in
 `container system version`. Fork-backed builds include source owner, lane,
-branch, commit, and the compiled `containerization` ref.
+branch, commit, compiled `containerization` ref, and pinned
+`container-builder-shim` image.
 
 Stop the currently running runtime, remove the Apple package while keeping user
 data, then install the fork-backed main lane. If `container system stop` hangs,
@@ -172,8 +174,9 @@ container compose version
 
 For the release lane, replace `container` with `container-release` in the
 `brew --prefix` command above. The verification should show Stephen fork
-provenance for the runtime and matching `container` / `containerization` pins
-for the Compose package.
+provenance for the runtime, the runtime's pinned `container-builder-shim`
+image, and matching `container` / `containerization` / `compose-go` pins for the
+Compose package.
 
 If `command -v container` still resolves to `/usr/local/bin/container` after
 the uninstall, start a new shell or check `PATH` ordering. On Apple silicon,

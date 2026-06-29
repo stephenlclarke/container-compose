@@ -296,7 +296,8 @@ project as JSON.
 Packaged builds include `compose/resources/build-info.json`. The Swift plugin
 loads that file for `container compose version` so users and maintainers can see
 which source, lane, branch, commit, build type, `container` pin, and
-`containerization` pin produced the installed plugin.
+`containerization` pin produced the installed plugin, plus the embedded
+`compose-go` module version used by the normalizer.
 
 Local development builds fall back to the active git checkout and
 `Package.resolved` when packaged metadata is absent. This keeps source builds

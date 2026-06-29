@@ -38,7 +38,7 @@ for log-friendly rows, or `--progress tty` for the animated terminal spinner.
 `--progress auto` uses the animated spinner when stderr is a terminal and plain
 rows otherwise.
 
-Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and builder shim image version. Use `container compose version` to see the installed plugin lane and the `container` / `containerization` pins that package was built against.
+Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and pinned `container-builder-shim` image. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and the `container` / `containerization` pins that package was built against.
 
 ## Project Repositories
 

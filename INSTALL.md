@@ -178,9 +178,9 @@ container compose version
 container compose version --format json
 ```
 
-`container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, and the exact `containerization` source/ref compiled into the runtime. Apple package builds do not carry the Stephen fork provenance fields.
+`container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, exact `containerization` source/ref, and pinned `container-builder-shim` image compiled into the runtime. Apple package builds do not carry the Stephen fork provenance fields.
 
-`container compose version` shows the installed plugin build plus the `container` and `containerization` pins that the plugin package was built against. `release` and versioned release packages report lane `release`; active development builds from `main` report lane `main`.
+`container compose version` shows the installed plugin build, embedded `compose-go` version, and the `container` and `containerization` pins that the plugin package was built against. `release` and versioned release packages report lane `release`; active development builds from `main` report lane `main`.
 
 Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, or if the Homebrew lane is mixed, `container compose` stops with install guidance instead of failing later with a low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae for the plugin lane.
 

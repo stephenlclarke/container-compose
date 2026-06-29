@@ -115,7 +115,15 @@ container compose version
 Example:
 
 ```text
-container-compose version 0.1.0
+container-compose 0.1.0
+  source: stephenlclarke/container-compose
+  lane: main
+  branch: main
+  commit: d34f29c4a6a3c3fa562fafa01cf06959cbb057f7
+  build: release
+  container: stephenlclarke/container@449d8d0626c2e640163ecf678e6ee22a85ace91c (custom)
+  containerization: stephenlclarke/containerization@4d129c6d360d1d20b257818d894a64f24bd39f74 (custom)
+  compose-go: v2.12.1
 ```
 
 ### Plugin Installation Source

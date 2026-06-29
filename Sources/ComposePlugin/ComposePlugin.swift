@@ -38,6 +38,7 @@ private struct ComposeBuildInfo: Codable {
     var containerRef: String = "unspecified"
     var containerizationSource: String = "unspecified"
     var containerizationRef: String = "unspecified"
+    var composeGoVersion: String?
 
     var containerDistribution: String {
         distribution(source: containerSource, appleSource: "apple/container")
@@ -95,7 +96,8 @@ private struct ComposeBuildInfo: Codable {
             containerSource: "stephenlclarke/container",
             containerRef: firstLine(in: "\(root)/APPLE_CONTAINER_REF") ?? "unspecified",
             containerizationSource: normalizedSource(packageResolvedValue(root: root, key: "location") ?? "unspecified"),
-            containerizationRef: packageResolvedState(root: root) ?? "unspecified"
+            containerizationRef: packageResolvedState(root: root) ?? "unspecified",
+            composeGoVersion: goModuleVersion(root: root, module: "github.com/compose-spec/compose-go/v2")
         )
     }
 
@@ -133,6 +135,7 @@ private struct ComposeVersionOutput: Encodable {
     let containerizationSource: String
     let containerizationRef: String
     let containerizationDistribution: String
+    let composeGoVersion: String
 
     init(_ info: ComposeBuildInfo) {
         self.version = info.version
@@ -147,6 +150,7 @@ private struct ComposeVersionOutput: Encodable {
         self.containerizationSource = info.containerizationSource
         self.containerizationRef = info.containerizationRef
         self.containerizationDistribution = info.containerizationDistribution
+        self.composeGoVersion = info.composeGoVersion ?? "unspecified"
     }
 }
 
@@ -229,6 +233,22 @@ private extension ComposeBuildInfo {
             return nil
         }
         return pins.first { $0["identity"] as? String == "containerization" }
+    }
+
+    static func goModuleVersion(root: String, module: String) -> String? {
+        guard let text = try? String(contentsOfFile: "\(root)/Tools/compose-normalizer/go.mod", encoding: .utf8) else {
+            return nil
+        }
+        for line in text.split(whereSeparator: \.isNewline) {
+            let fields = line.split { $0 == " " || $0 == "\t" }
+            if fields.count >= 3 && String(fields[0]) == "require" && String(fields[1]) == module {
+                return String(fields[2])
+            }
+            if fields.count >= 2 && String(fields[0]) == module {
+                return String(fields[1])
+            }
+        }
+        return nil
     }
 }
 
@@ -1650,6 +1670,7 @@ struct Version: ParsableCommand {
             print("  build: \(composeBuildInfo.buildType)")
             print("  container: \(composeBuildInfo.containerSource)@\(composeBuildInfo.containerRef) (\(composeBuildInfo.containerDistribution))")
             print("  containerization: \(composeBuildInfo.containerizationSource)@\(composeBuildInfo.containerizationRef) (\(composeBuildInfo.containerizationDistribution))")
+            print("  compose-go: \(composeBuildInfo.composeGoVersion ?? "unspecified")")
         case "json":
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]

@@ -301,7 +301,7 @@ dist/compose/resources/compose-normalizer
 
 GitHub Actions publishes `main`, `release`, and `release-*` branch assets using branch-specific archive names such as `container-compose-plugin-main-release-arm64.tar.gz` and `container-compose-plugin-release-v0.1.0-release-arm64.tar.gz`. All branch packages are optimized release archives. The branch package workflow writes the asset URL, version, and SHA-256 into the matching Homebrew formula. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
 
-Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, `container` pin from `APPLE_CONTAINER_REF`, and `containerization` pin from `Package.resolved`. Local development builds fall back to the current git checkout when the packaged metadata file is absent.
+Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, `container` pin from `APPLE_CONTAINER_REF`, `containerization` pin from `Package.resolved`, and embedded `compose-go` module version from the Go normalizer. Local development builds fall back to the current git checkout when the packaged metadata file is absent.
 
 Use [INSTALL.md](INSTALL.md) to install, upgrade, verify, or remove the packaged plugin on a target machine.
 

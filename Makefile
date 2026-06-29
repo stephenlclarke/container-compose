@@ -43,6 +43,7 @@ CONTAINER_SOURCE ?= stephenlclarke/container
 CONTAINER_REF ?= $(shell sed -n '1{s/[[:space:]]//g;p;q;}' APPLE_CONTAINER_REF 2>/dev/null || printf 'unspecified')
 CONTAINERIZATION_SOURCE ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); print((pin or {}).get("location", "unspecified").replace("https://github.com/", "").removesuffix(".git"))' 2>/dev/null || printf 'unspecified')
 CONTAINERIZATION_REF ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); state=(pin or {}).get("state", {}); print(state.get("revision") or state.get("branch") or state.get("version") or "unspecified")' 2>/dev/null || printf 'unspecified')
+COMPOSE_GO_VERSION ?= $(shell $(PYTHON) Tools/release/go-module-version.py --go-mod Tools/compose-normalizer/go.mod github.com/compose-spec/compose-go/v2 2>/dev/null || printf 'unspecified')
 SONAR_QUALITYGATE_WAIT ?= false
 SONAR_SCAN_ATTEMPTS ?= 3
 XCODE_SELECT_DEVELOPER_DIR ?= $(shell xcode-select -p 2>/dev/null || true)
@@ -224,12 +225,14 @@ cli-smoke-built:
 	[[ "$$version_pretty_output" == *"container-compose 0.1.0"* ]]; \
 	[[ "$$version_pretty_output" == *"container:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"containerization:"*" (custom)"* ]]; \
+	[[ "$$version_pretty_output" == *"compose-go: $(COMPOSE_GO_VERSION)"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
 	[[ "$$version_json_output" == *'"version":"0.1.0"'* ]]; \
 	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
 	[[ "$$version_json_output" == *'"containerDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationSource":'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationDistribution":"custom"'* ]]; \
+	[[ "$$version_json_output" == *'"composeGoVersion":"$(COMPOSE_GO_VERSION)"'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
 	[[ "$$version_short_format_output" == *'"version":"0.1.0"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
@@ -1074,7 +1077,8 @@ package-built:
 		--container-source "$(CONTAINER_SOURCE)" \
 		--container-ref "$(CONTAINER_REF)" \
 		--containerization-source "$(CONTAINERIZATION_SOURCE)" \
-		--containerization-ref "$(CONTAINERIZATION_REF)"
+		--containerization-ref "$(CONTAINERIZATION_REF)" \
+		--compose-go-version "$(COMPOSE_GO_VERSION)"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 	shasum -a 256 "$(PLUGIN_ARCHIVE)" > "$(PLUGIN_ARCHIVE).sha256"
 

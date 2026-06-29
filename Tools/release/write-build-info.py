@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--container-ref", required=True)
     parser.add_argument("--containerization-source", required=True)
     parser.add_argument("--containerization-ref", required=True)
+    parser.add_argument("--compose-go-version", required=True)
     return parser.parse_args()
 
 
@@ -55,6 +56,7 @@ def main() -> int:
         "containerRef": args.container_ref,
         "containerizationSource": args.containerization_source,
         "containerizationRef": args.containerization_ref,
+        "composeGoVersion": args.compose_go_version,
     }
     output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
