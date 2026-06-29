@@ -46,16 +46,46 @@ Keep each source repository formula in `Formula/` aligned with the aggregate tap
 
 ## Install From The Aggregate Tap
 
-Install the latest `main` prebuilt:
+Install or refresh the latest `main` prebuilt runtime and plugin with one copy/paste block:
 
 ```sh
+set -euo pipefail
+
 brew tap stephenlclarke/tap
-brew install stephenlclarke/tap/container
-brew install stephenlclarke/tap/container-compose
-mkdir -p "$(brew --prefix container)/libexec/container-plugins"
-ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" "$(brew --prefix container)/libexec/container-plugins/compose"
-brew services start container
+brew trust --tap stephenlclarke/tap
+brew update
+
+brew services stop stephenlclarke/tap/container || true
+
+for formula in container container-compose; do
+  opt_path="$(brew --prefix)/opt/${formula}"
+  if [[ -d "${opt_path}" && ! -L "${opt_path}" ]]; then
+    mv "${opt_path}" "${opt_path}.backup.$(date +%Y%m%d%H%M%S)"
+  fi
+done
+
+if brew list --formula container >/dev/null 2>&1; then
+  brew reinstall --force --formula stephenlclarke/tap/container
+else
+  brew install --formula stephenlclarke/tap/container
+fi
+
+if brew list --formula container-compose >/dev/null 2>&1; then
+  brew reinstall --force --formula stephenlclarke/tap/container-compose
+else
+  brew install --formula stephenlclarke/tap/container-compose
+fi
+
+container_prefix="$(brew --prefix stephenlclarke/tap/container)"
+compose_prefix="$(brew --prefix stephenlclarke/tap/container-compose)"
+mkdir -p "${container_prefix}/libexec/container-plugins"
+ln -sfn "${compose_prefix}/libexec/container-plugins/compose" "${container_prefix}/libexec/container-plugins/compose"
+
+brew services restart stephenlclarke/tap/container
+container --version
 container compose version
+container system status
+container system version
 ```
 
 Install the latest stable release branch after the `release` branch has published assets:
