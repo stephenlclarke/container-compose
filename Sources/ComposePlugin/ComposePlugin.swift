@@ -1660,7 +1660,7 @@ struct Version: ParsableCommand {
             return
         }
 
-        switch format.lowercased() {
+        switch format {
         case "pretty":
             print(composePluginVersionString)
             print("  source: \(composeBuildInfo.source)")

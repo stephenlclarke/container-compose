@@ -106,6 +106,20 @@ struct ComposeCLIHelpTests {
         }
     }
 
+    @Test("version format rejects uppercase json")
+    func versionFormatRejectsUppercaseJSON() throws {
+        let command = try Version.parse(["--format", "JSON"])
+
+        do {
+            try command.run()
+            Issue.record("Expected uppercase JSON format to be rejected")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("version --format 'JSON'; supported formats are pretty and json"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("up no-attach is shown as supported")
     func upNoAttachIsShownAsSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
