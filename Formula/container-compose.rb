@@ -18,25 +18,14 @@ class ContainerCompose < Formula
     bin.install_symlink plugin/"bin/compose" => "container-compose"
   end
 
-  def post_install
-    container_opt = HOMEBREW_PREFIX/"opt/container"
-    return unless container_opt.exist?
-
-    plugin_dir = container_opt/"libexec/container-plugins"
-    plugin_dir.mkpath
-    FileUtils.rm_rf plugin_dir/"compose"
-    FileUtils.ln_s opt_libexec/"container-plugins/compose", plugin_dir/"compose"
-  end
-
   def caveats
     <<~EOS
       The plugin is installed under:
         #{opt_libexec}/container-plugins/compose
 
-      The formula links the plugin into the Homebrew container install root:
-        $(brew --prefix stephenlclarke/tap/container)/libexec/container-plugins/compose
-
-      Restart stephenlclarke/tap/container after installing or upgrading this plugin:
+      The container formula owns the plugin registration link. Refresh it and
+      restart stephenlclarke/tap/container after installing or upgrading this plugin:
+        brew postinstall stephenlclarke/tap/container
         brew services restart stephenlclarke/tap/container
 
       This formula installs the main lane prebuilt package asset:

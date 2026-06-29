@@ -28,7 +28,7 @@ brew trust --tap stephenlclarke/tap
 brew install stephenlclarke/tap/container
 brew install stephenlclarke/tap/container-compose
 
-brew postinstall stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 
 container compose help
@@ -73,10 +73,10 @@ For the main lane, the link target should point under:
 $(brew --prefix container-compose)/libexec/container-plugins/compose
 ```
 
-Refresh it with the formula `post_install` hook:
+Refresh it with the `container` formula's `post_install` hook:
 
 ```sh
-brew postinstall stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 ```
 
@@ -134,7 +134,7 @@ brew uninstall --ignore-dependencies \
 brew install stephenlclarke/tap/container
 brew install stephenlclarke/tap/container-compose
 
-brew postinstall stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 hash -r 2>/dev/null || true
 ```
@@ -148,7 +148,7 @@ brew uninstall --ignore-dependencies \
   container-compose container-compose-release container container-release || true
 brew install stephenlclarke/tap/container-release
 brew install stephenlclarke/tap/container-compose-release
-brew postinstall stephenlclarke/tap/container-compose-release
+brew postinstall stephenlclarke/tap/container-release
 brew services restart stephenlclarke/tap/container-release
 hash -r 2>/dev/null || true
 ```

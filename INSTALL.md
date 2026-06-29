@@ -79,6 +79,7 @@ fi
 container_prefix="$(brew --prefix stephenlclarke/tap/container)"
 container_bin="${container_prefix}/bin/container"
 
+brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 "${container_bin}" --version
 "${container_bin}" compose version
@@ -94,12 +95,14 @@ Install the latest stable release branch after the `release` branch has publishe
 brew tap stephenlclarke/tap
 brew install stephenlclarke/tap/container-release
 brew install stephenlclarke/tap/container-compose-release
-brew services restart container-release
+brew postinstall stephenlclarke/tap/container-release
+brew services restart stephenlclarke/tap/container-release
 container compose version
 ```
 
-The `container-compose` formula links the plugin into the matching Homebrew
-`container` install root during `post_install`.
+The `container` formula owns the plugin registration link inside its own
+Homebrew install root. Run the matching `container` formula's `post_install`
+hook after installing or upgrading `container-compose`.
 
 Tagged release branch formulae use the same pattern. For example, branch `release-v0.1.0` publishes `container-compose-release-v0-1-0`.
 
@@ -136,7 +139,8 @@ brew install stephenlclarke/container-compose/container-compose
 Restart the Homebrew-installed `container` service and verify discovery:
 
 ```sh
-brew services restart container
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
 container compose version
 ```
 
