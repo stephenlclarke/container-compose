@@ -121,7 +121,7 @@ container-compose 0.1.1
   branch: main
   commit: d34f29c4a6a3c3fa562fafa01cf06959cbb057f7
   build: release
-  container: stephenlclarke/container@5f73253b6f3d372d4dd58fb2fec6cde048d9f44e (custom)
+  container: stephenlclarke/container@d13a7688e8c7bb5f96a545955011053587b3fbf5 (custom)
   containerization: stephenlclarke/containerization@cada6d31310761c7e7bf9be87a29fe4820ff628d (custom)
   compose-go: v2.12.1
 ```
