@@ -76,7 +76,7 @@ This fork-backed Compose stack spans four Stephen Clarke repositories:
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
 - [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed by Homebrew beside the plugin.
 - [`containerization`](https://github.com/stephenlclarke/containerization): the Swift container runtime package consumed by both `container` and this plugin; `main` packages use `main`, and release packages use `release`.
-- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the Go BuildKit bridge used by `container build`; `container` pins an immutable builder image version, currently `0.13.3`.
+- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the Go BuildKit bridge used by `container build`; `container` pins an immutable builder image version, currently `0.13.5`.
 
 The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks the four source repositories on `main` for maintenance, while installable formulae consume prebuilt release-quality assets. All Go outputs in the stack are treated as release code, not debug helpers.
 
