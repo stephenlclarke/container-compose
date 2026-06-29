@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-28 23:45 BST.
+Last updated: 2026-06-29 11:22 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -20,15 +20,15 @@ Current reviewed main-lane pins:
 
 - `stephenlclarke/container`: `449d8d0626c2e640163ecf678e6ee22a85ace91c`
 - `stephenlclarke/containerization`: `4d129c6d360d1d20b257818d894a64f24bd39f74`
-- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.4`
+- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.3`
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with `make check`, `make coverage-check`, `make swift-runtime-test`, `make docker-compose-cli-surface-parity`, `make docker-compose-build-builder-parity`, `make docker-compose-build-check-parity`, `make docker-compose-create-options-parity`, `make docker-compose-events-parity`, `make docker-compose-rm-parity`, `make docker-compose-restart-policy-parity`, `make docker-compose-e2e-fixtures`, full Markdown lint, and `git diff --check`. Retained validation for the paired runtime pins includes `make check` and `make test` in `container`, `make check` and `make test` in `containerization`, and `go test ./...`, `make lint`, `make vet`, `make coverage`, `make build-linux`, and release target dry-run validation in `container-builder-shim`. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with `make ci`, which includes linting, license-header checks, Swift test coverage, Go test coverage, Go release-build checks, and the CLI smoke surface. Paired support validation passed with `make check` and `make test` in both `container` and `containerization`, plus focused tests for the touched mount parsing, build export parsing, SwiftLog event handling, release provenance, configuration loading, and application-health paths. `git diff --check` passed in all three repositories. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 782 Compose tests at 89.97% line coverage; 835 `container` unit tests at 42.07% unit-only line coverage.
+- Swift: 782 Compose tests at 89.87% line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
@@ -45,7 +45,7 @@ Most recent coverage proof:
 
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
 - Bare `--menu` / `--menu=true` remain blocked until interactive shortcut handling exists; `--menu=false` is accepted.
-- Runtime build execution for named builders, SSH, provenance/SBOM attestations, and build checks requires the matching `stephenlclarke/container` build backend and the `0.13.4` SSH/check/attestation-capable builder image.
+- Runtime build execution for named builders, SSH, provenance/SBOM attestations, and build checks requires the matching `stephenlclarke/container` build backend and the `0.13.3` SSH/check/attestation-capable builder image.
 
 ## Upstream Compatibility
 
@@ -53,8 +53,8 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 
 ## Open Blockers
 
-- Package/Homebrew promotion now depends on publishing `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.4` from the matching builder-shim source before distributing the `container` build pinned above.
-- SonarCloud quality gate is currently OK; recheck the new analysis after this push. The local `/Users/sclarke/github/pr-refresh` helper was not present on this machine.
+- Future builder-shim changes must be published as an immutable GHCR image tag before `container` is updated to consume them.
+- SonarCloud quality gate is currently OK on `main` with 0 unresolved issues as reported by `/Users/sclarke/github/pr-refresh` `make sonar-status`.
 
 ## Open Follow-ups
 

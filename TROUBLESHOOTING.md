@@ -10,9 +10,9 @@ Homebrew installed `container` from an old source tap, or the plugin symlink
 points at the wrong formula lane.
 
 The reset below removes old plugin lanes, removes the old source-style
-`stephenlclarke/container` tap if it exists, reinstalls the current main lane
-from the aggregate tap, relinks the plugin into the active `container` prefix,
-and restarts the service.
+`stephenlclarke/container` and `stephenlclarke/container-compose` taps if they
+exist, reinstalls the current main lane from the aggregate tap, relinks the
+plugin into the active `container` prefix, and restarts the service.
 
 ```sh
 brew services stop stephenlclarke/tap/container || brew services stop container || true
@@ -20,6 +20,7 @@ brew services stop stephenlclarke/tap/container || brew services stop container 
 brew uninstall --ignore-dependencies stephenlclarke/container/container || true
 brew uninstall container-compose container-compose-release container || true
 brew untap stephenlclarke/container || true
+brew untap stephenlclarke/container-compose || true
 
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
@@ -121,6 +122,8 @@ fi
 
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
+brew untap stephenlclarke/container || true
+brew untap stephenlclarke/container-compose || true
 brew uninstall --ignore-dependencies \
   container-compose container-compose-release container container-release || true
 brew install stephenlclarke/tap/container
