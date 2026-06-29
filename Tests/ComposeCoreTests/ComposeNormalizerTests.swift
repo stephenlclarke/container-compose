@@ -411,9 +411,11 @@ struct ComposeNormalizerTests {
     @Test("grouped model initializers preserve flat normalized fields")
     func groupedModelInitializersPreserveFlatNormalizedFields() throws {
         let build = ComposeBuild(
-            context: "api",
-            dockerfile: "Containerfile",
-            dockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
+            contexts: ComposeBuild.Contexts(
+                context: "api",
+                dockerfile: "Containerfile",
+                dockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
+                additionalContexts: ["shared": "/workspace/shared"]),
             args: ["VERSION": "1"],
             cache: ComposeBuild.Cache(
                 from: ["type=registry,ref=example/api:cache"],
@@ -425,11 +427,20 @@ struct ComposeNormalizerTests {
                 ssh: ["default", "git=/tmp/git.sock"]
             ),
             options: ComposeBuild.Options(
-                target: "runtime",
-                noCache: true,
-                pull: true,
-                platforms: ["linux/arm64"],
-                tags: ["example/api:latest"],
+                image: ComposeBuild.Options.Image(
+                    target: "runtime",
+                    noCache: true,
+                    pull: true,
+                    platforms: ["linux/arm64"],
+                    tags: ["example/api:latest"]),
+                frontend: ComposeBuild.Options.Frontend(
+                    entitlements: ["network.host"],
+                    extraHosts: ["build.local=127.0.0.1"],
+                    isolation: "default",
+                    network: "host",
+                    privileged: true,
+                    shmSize: "67108864",
+                    ulimits: ["nofile=1024:2048"]),
                 attestations: ComposeBuild.Options.Attestations(
                     provenance: "mode=max",
                     sbom: "true"
@@ -448,6 +459,7 @@ struct ComposeNormalizerTests {
 
         #expect(build.cacheFrom == ["type=registry,ref=example/api:cache"])
         #expect(build.cacheTo == ["type=local,dest=.cache"])
+        #expect(build.additionalContexts == ["shared": "/workspace/shared"])
         #expect(build.dockerfileInline == "FROM alpine:3.20\nRUN echo inline\n")
         #expect(build.labels == ["org.opencontainers.image.title": "api"])
         #expect(build.secrets == [ComposeBuildSecret(id: "token", environment: "TOKEN")])
@@ -457,6 +469,13 @@ struct ComposeNormalizerTests {
         #expect(build.pull == true)
         #expect(build.platforms == ["linux/arm64"])
         #expect(build.tags == ["example/api:latest"])
+        #expect(build.entitlements == ["network.host"])
+        #expect(build.extraHosts == ["build.local=127.0.0.1"])
+        #expect(build.isolation == "default")
+        #expect(build.network == "host")
+        #expect(build.privileged == true)
+        #expect(build.shmSize == "67108864")
+        #expect(build.ulimits == ["nofile=1024:2048"])
         #expect(build.provenance == "mode=max")
         #expect(build.sbom == "true")
         #expect(build.unsupportedFields == ["ssh"])

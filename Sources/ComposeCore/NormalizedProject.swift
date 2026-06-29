@@ -664,6 +664,56 @@ public struct ComposeBuild: Codable, Equatable {
 
     /// Optional build behavior that is not required for every service.
     public struct Options: Equatable {
+        public struct Image: Equatable {
+            public var target: String?
+            public var noCache: Bool?
+            public var pull: Bool?
+            public var platforms: [String]?
+            public var tags: [String]?
+
+            public init(
+                target: String? = nil,
+                noCache: Bool? = nil,
+                pull: Bool? = nil,
+                platforms: [String]? = nil,
+                tags: [String]? = nil
+            ) {
+                self.target = target
+                self.noCache = noCache
+                self.pull = pull
+                self.platforms = platforms
+                self.tags = tags
+            }
+        }
+
+        public struct Frontend: Equatable {
+            public var entitlements: [String]?
+            public var extraHosts: [String]?
+            public var isolation: String?
+            public var network: String?
+            public var privileged: Bool?
+            public var shmSize: String?
+            public var ulimits: [String]?
+
+            public init(
+                entitlements: [String]? = nil,
+                extraHosts: [String]? = nil,
+                isolation: String? = nil,
+                network: String? = nil,
+                privileged: Bool? = nil,
+                shmSize: String? = nil,
+                ulimits: [String]? = nil
+            ) {
+                self.entitlements = entitlements
+                self.extraHosts = extraHosts
+                self.isolation = isolation
+                self.network = network
+                self.privileged = privileged
+                self.shmSize = shmSize
+                self.ulimits = ulimits
+            }
+        }
+
         public struct Attestations: Equatable {
             public var provenance: String?
             public var sbom: String?
@@ -679,44 +729,83 @@ public struct ComposeBuild: Codable, Equatable {
         public var pull: Bool?
         public var platforms: [String]?
         public var tags: [String]?
+        public var entitlements: [String]?
+        public var extraHosts: [String]?
+        public var isolation: String?
+        public var network: String?
+        public var privileged: Bool?
+        public var shmSize: String?
+        public var ulimits: [String]?
         public var provenance: String?
         public var sbom: String?
         public var unsupportedFields: [String]?
 
         public init(
-            target: String? = nil,
-            noCache: Bool? = nil,
-            pull: Bool? = nil,
-            platforms: [String]? = nil,
-            tags: [String]? = nil,
+            image: Image = Image(),
+            frontend: Frontend = Frontend(),
             attestations: Attestations = Attestations(),
             unsupportedFields: [String]? = nil
         ) {
-            self.target = target
-            self.noCache = noCache
-            self.pull = pull
-            self.platforms = platforms
-            self.tags = tags
+            self.target = image.target
+            self.noCache = image.noCache
+            self.pull = image.pull
+            self.platforms = image.platforms
+            self.tags = image.tags
+            self.entitlements = frontend.entitlements
+            self.extraHosts = frontend.extraHosts
+            self.isolation = frontend.isolation
+            self.network = frontend.network
+            self.privileged = frontend.privileged
+            self.shmSize = frontend.shmSize
+            self.ulimits = frontend.ulimits
             self.provenance = attestations.provenance
             self.sbom = attestations.sbom
             self.unsupportedFields = unsupportedFields
         }
     }
 
+    /// Build context inputs used to locate Dockerfile and named BuildKit contexts.
+    public struct Contexts: Equatable {
+        public var context: String?
+        public var dockerfile: String?
+        public var dockerfileInline: String?
+        public var additionalContexts: [String: String]?
+
+        public init(
+            context: String? = nil,
+            dockerfile: String? = nil,
+            dockerfileInline: String? = nil,
+            additionalContexts: [String: String]? = nil
+        ) {
+            self.context = context
+            self.dockerfile = dockerfile
+            self.dockerfileInline = dockerfileInline
+            self.additionalContexts = additionalContexts
+        }
+    }
+
     public var context: String?
     public var dockerfile: String?
     public var dockerfileInline: String?
+    public var additionalContexts: [String: String]?
     public var args: [String: String]?
     public var cacheFrom: [String]?
     public var cacheTo: [String]?
+    public var entitlements: [String]?
+    public var extraHosts: [String]?
+    public var isolation: String?
     public var labels: [String: String]?
+    public var network: String?
+    public var privileged: Bool?
     public var secrets: [ComposeBuildSecret]?
+    public var shmSize: String?
     public var ssh: [String]?
     public var target: String?
     public var noCache: Bool?
     public var pull: Bool?
     public var platforms: [String]?
     public var tags: [String]?
+    public var ulimits: [String]?
     public var provenance: String?
     public var sbom: String?
     public var unsupportedFields: [String]?
@@ -730,20 +819,47 @@ public struct ComposeBuild: Codable, Equatable {
         metadata: Metadata = Metadata(),
         options: Options = Options()
     ) {
-        self.context = context
-        self.dockerfile = dockerfile
-        self.dockerfileInline = dockerfileInline
+        self.init(
+            contexts: Contexts(
+                context: context,
+                dockerfile: dockerfile,
+                dockerfileInline: dockerfileInline),
+            args: args,
+            cache: cache,
+            metadata: metadata,
+            options: options
+        )
+    }
+
+    public init(
+        contexts: Contexts,
+        args: [String: String]? = nil,
+        cache: Cache = Cache(),
+        metadata: Metadata = Metadata(),
+        options: Options = Options()
+    ) {
+        self.context = contexts.context
+        self.dockerfile = contexts.dockerfile
+        self.dockerfileInline = contexts.dockerfileInline
+        self.additionalContexts = contexts.additionalContexts
         self.args = args
         self.cacheFrom = cache.from
         self.cacheTo = cache.to
+        self.entitlements = options.entitlements
+        self.extraHosts = options.extraHosts
+        self.isolation = options.isolation
         self.labels = metadata.labels
+        self.network = options.network
+        self.privileged = options.privileged
         self.secrets = metadata.secrets
+        self.shmSize = options.shmSize
         self.ssh = metadata.ssh
         self.target = options.target
         self.noCache = options.noCache
         self.pull = options.pull
         self.platforms = options.platforms
         self.tags = options.tags
+        self.ulimits = options.ulimits
         self.provenance = options.provenance
         self.sbom = options.sbom
         self.unsupportedFields = options.unsupportedFields

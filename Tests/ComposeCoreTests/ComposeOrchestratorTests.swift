@@ -5427,8 +5427,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["run", "--name", "demo-api-1"]))
     }
 
-    @Test("up rejects unsupported build fields before creating resources")
-    func upRejectsUnsupportedBuildFieldsBeforeCreatingResources() async throws {
+    @Test("up rejects unmapped build fields before creating resources")
+    func upRejectsUnmappedBuildFieldsBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -5436,7 +5436,7 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api") {
                     $0.build = ComposeBuild(
                         context: "api",
-                        options: ComposeBuild.Options(unsupportedFields: ["additional_contexts", "ssh"])
+                        options: ComposeBuild.Options(unsupportedFields: ["isolation", "secrets"])
                     )
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -5449,7 +5449,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported build fields additional_contexts, ssh; advanced build fields need Docker Compose compatible apple/container build primitives"))
+            #expect(error == .unsupported("service 'api' uses unsupported build fields isolation, secrets; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -9363,11 +9363,12 @@ struct ComposeOrchestratorTests {
                             ]
                         ),
                         options: ComposeBuild.Options(
-                            target: "runtime",
-                            noCache: true,
-                            pull: true,
-                            platforms: ["linux/amd64", "linux/arm64"],
-                            tags: ["example/api:latest", "example/api:dev", "example/api:test"],
+                            image: ComposeBuild.Options.Image(
+                                target: "runtime",
+                                noCache: true,
+                                pull: true,
+                                platforms: ["linux/amd64", "linux/arm64"],
+                                tags: ["example/api:latest", "example/api:dev", "example/api:test"]),
                             attestations: ComposeBuild.Options.Attestations(
                                 provenance: "mode=min",
                                 sbom: "false"
@@ -9447,12 +9448,22 @@ struct ComposeOrchestratorTests {
 
         try await orchestrator.build(project: project, services: ["api", "worker", "remote"], noCache: false)
 
-        #expect(runner.commands[0].arguments.containsSequence([
+        let apiCommand = try #require(runner.commands.first { command in
+            command.arguments.last == "/tmp/container-compose-build-context/api"
+        }?.arguments)
+        let workerCommand = try #require(runner.commands.first { command in
+            command.arguments.last == "worker"
+        }?.arguments)
+        let remoteCommand = try #require(runner.commands.first { command in
+            command.arguments.last == "https://example.com/repo.git"
+        }?.arguments)
+
+        #expect(apiCommand.containsSequence([
             "--file",
             "/tmp/container-compose-build-context/api/docker/Dockerfile",
         ]))
-        #expect(runner.commands[1].arguments.containsSequence(["--file", "worker/Containerfile"]))
-        #expect(runner.commands[2].arguments.containsSequence(["--file", "Containerfile"]))
+        #expect(workerCommand.containsSequence(["--file", "worker/Containerfile"]))
+        #expect(remoteCommand.containsSequence(["--file", "Containerfile"]))
     }
 
     @Test("build materializes inline Dockerfile for container build")
@@ -9762,12 +9773,29 @@ struct ComposeOrchestratorTests {
         let project = composeProject(
             name: "demo",
             services: [
+                "base": composeService(name: "base", image: "example/base:latest") {
+                    $0.build = ComposeBuild(context: "base")
+                },
                 "api": composeService(name: "api", image: "example/api:latest") {
                     $0.build = ComposeBuild(
-                        context: "api",
+                        contexts: ComposeBuild.Contexts(
+                            context: "api",
+                            additionalContexts: [
+                                "base": "service:base",
+                                "shared": "/workspace/shared",
+                            ]),
                         args: ["FILE_ARG": "1"],
                         metadata: ComposeBuild.Metadata(
                             ssh: ["default", "git=/tmp/git.sock"]
+                        ),
+                        options: ComposeBuild.Options(
+                            frontend: ComposeBuild.Options.Frontend(
+                                entitlements: ["network.host"],
+                                extraHosts: ["build.local=127.0.0.1"],
+                                network: "host",
+                                privileged: true,
+                                shmSize: "67108864",
+                                ulimits: ["nofile=1024:2048"])
                         )
                     )
                 },
@@ -9784,15 +9812,62 @@ struct ComposeOrchestratorTests {
             }
         )
 
-        let command = try #require(runner.commands.first?.arguments)
+        #expect(runner.commands.count == 2)
+        let baseCommand = try #require(runner.commands.first?.arguments)
+        #expect(baseCommand.last == "base")
+
+        let command = try #require(runner.commands.last?.arguments)
         #expect(command.containsSequence(["--memory", "256m"]))
         #expect(!command.containsSequence(["--ssh", "default"]))
         #expect(command.containsSequence(["--ssh", "git=/tmp/git.sock"]))
         #expect(command.containsSequence(["--ssh", "default=/tmp/cli.sock"]))
         #expect(command.containsSequence(["--ssh", "deploy=/tmp/deploy.sock"]))
+        #expect(command.containsSequence(["--build-context", "base=docker-image://example/base:latest"]))
+        #expect(command.containsSequence(["--build-context", "shared=/workspace/shared"]))
+        #expect(command.containsSequence(["--allow", "network.host"]))
+        #expect(command.containsSequence(["--add-host", "build.local=127.0.0.1"]))
+        #expect(command.containsSequence(["--network", "host"]))
+        #expect(command.contains("--privileged"))
+        #expect(command.containsSequence(["--shm-size", "67108864"]))
+        #expect(command.containsSequence(["--ulimit", "nofile=1024:2048"]))
         #expect(command.containsSequence(["--build-arg", "FILE_ARG=1"]))
         #expect(command.containsSequence(["--build-arg", "CLI_ARG=2"]))
         #expect(command.last == "api")
+    }
+
+    @Test("build rejects unknown service additional contexts before side effects")
+    func buildRejectsUnknownServiceAdditionalContextsBeforeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(
+                        contexts: ComposeBuild.Contexts(
+                            context: "api",
+                            additionalContexts: [
+                                "base": "service:missing",
+                            ])
+                    )
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).build(
+                project: project,
+                options: ComposeBuildOptions {
+                    $0.services = ["api"]
+                }
+            )
+            Issue.record("Expected unknown build additional_contexts service failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("build additional_contexts references unknown service 'missing'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("build print renders bake targets without build side effects")
@@ -9808,8 +9883,13 @@ struct ComposeOrchestratorTests {
                         "db": ComposeDependency(condition: "service_started"),
                     ]
                     $0.build = ComposeBuild(
-                        context: "api",
-                        dockerfile: "Containerfile",
+                        contexts: ComposeBuild.Contexts(
+                            context: "api",
+                            dockerfile: "Containerfile",
+                            additionalContexts: [
+                                "db": "service:db",
+                                "shared": "/workspace/project/shared",
+                            ]),
                         args: ["FILE_ARG": "1"],
                         cache: ComposeBuild.Cache(
                             from: ["type=registry,ref=example/api:cache"],
@@ -9824,11 +9904,19 @@ struct ComposeOrchestratorTests {
                             ssh: ["default", "git=/tmp/git.sock"]
                         ),
                         options: ComposeBuild.Options(
-                            target: "runtime",
-                            noCache: true,
-                            pull: true,
-                            platforms: ["linux/arm64"],
-                            tags: ["example/api:dev"],
+                            image: ComposeBuild.Options.Image(
+                                target: "runtime",
+                                noCache: true,
+                                pull: true,
+                                platforms: ["linux/arm64"],
+                                tags: ["example/api:dev"]),
+                            frontend: ComposeBuild.Options.Frontend(
+                                entitlements: ["network.host"],
+                                extraHosts: ["build.local=127.0.0.1"],
+                                network: "host",
+                                privileged: true,
+                                shmSize: "67108864",
+                                ulimits: ["nofile=1024:2048"]),
                             attestations: ComposeBuild.Options.Attestations(
                                 provenance: "mode=min",
                                 sbom: "true"
@@ -9860,7 +9948,6 @@ struct ComposeOrchestratorTests {
                 $0.provenance = "mode=max"
                 $0.sbom = "true"
                 $0.ssh = ["deploy=/tmp/deploy.sock"]
-                $0.withDependencies = true
             }
         )
 
@@ -9879,6 +9966,16 @@ struct ComposeOrchestratorTests {
         #expect(api["tags"] as? [String] == ["example/api:dev", "example/api:latest"])
         #expect(api["cache-from"] as? [String] == ["type=registry,ref=example/api:cache"])
         #expect(api["cache-to"] as? [String] == ["type=local,dest=.cache"])
+        #expect(api["contexts"] as? [String: String] == [
+            "db": "target:db",
+            "shared": "/workspace/project/shared",
+        ])
+        #expect(api["entitlements"] as? [String] == ["network.host"])
+        #expect(api["extra-hosts"] as? [String] == ["build.local=127.0.0.1"])
+        #expect(api["network"] as? String == "host")
+        #expect(api["privileged"] as? Bool == true)
+        #expect(api["shm-size"] as? String == "67108864")
+        #expect(api["ulimits"] as? [String] == ["nofile=1024:2048"])
         #expect(api["platforms"] as? [String] == ["linux/arm64"])
         #expect(api["attest"] as? [String] == ["type=provenance,mode=max", "type=sbom"])
         #expect(api["secret"] as? [String] == [
@@ -10151,7 +10248,9 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api:latest") {
                     $0.build = ComposeBuild(
                         context: "api",
-                        options: ComposeBuild.Options(noCache: true)
+                        options: ComposeBuild.Options(
+                            image: ComposeBuild.Options.Image(noCache: true)
+                        )
                     )
                 },
             ]
@@ -19023,8 +19122,8 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.contains("--rm"))
     }
 
-    @Test("run rejects unsupported build fields before creating resources")
-    func runRejectsUnsupportedBuildFieldsBeforeCreatingResources() async throws {
+    @Test("run rejects unmapped build fields before creating resources")
+    func runRejectsUnmappedBuildFieldsBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
@@ -19032,7 +19131,7 @@ struct ComposeOrchestratorTests {
                 "job": composeService(name: "job", image: "alpine") {
                     $0.build = ComposeBuild(
                         context: "job",
-                        options: ComposeBuild.Options(unsupportedFields: ["entitlements", "network"])
+                        options: ComposeBuild.Options(unsupportedFields: ["isolation", "secrets"])
                     )
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -19045,7 +19144,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported build fields entitlements, network; advanced build fields need Docker Compose compatible apple/container build primitives"))
+            #expect(error == .unsupported("service 'job' uses unsupported build fields isolation, secrets; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

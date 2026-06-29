@@ -86,6 +86,27 @@ extension ComposeOrchestrator {
         for cacheDestination in build.cacheTo ?? [] where !cacheDestination.isEmpty {
             args.append(contentsOf: ["--cache-out", cacheDestination])
         }
+        for (name, source) in try buildContextArguments(project: project, build: build).sorted(by: { $0.key < $1.key }) {
+            args.append(contentsOf: ["--build-context", "\(name)=\(source)"])
+        }
+        for entitlement in build.entitlements ?? [] where !entitlement.isEmpty {
+            args.append(contentsOf: ["--allow", entitlement])
+        }
+        for extraHost in build.extraHosts ?? [] where !extraHost.isEmpty {
+            args.append(contentsOf: ["--add-host", extraHost])
+        }
+        if let network = nonEmpty(build.network) {
+            args.append(contentsOf: ["--network", network])
+        }
+        if build.privileged == true {
+            args.append("--privileged")
+        }
+        if let shmSize = nonEmpty(build.shmSize) {
+            args.append(contentsOf: ["--shm-size", shmSize])
+        }
+        for ulimit in build.ulimits ?? [] where !ulimit.isEmpty {
+            args.append(contentsOf: ["--ulimit", ulimit])
+        }
         for (key, value) in (build.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(key)=\(value)"])
         }
@@ -106,6 +127,55 @@ extension ComposeOrchestrator {
         }
         args.append(build.context ?? ".")
         try await runContainer(args)
+    }
+
+    /// Returns selected build services after runtime and `additional_contexts`
+    /// service dependencies needed by the build graph.
+    func orderedBuildServices(
+        project: ComposeProject,
+        selected: [String],
+        includeRuntimeDependencies: Bool
+    ) throws -> [ComposeService] {
+        let selectedSet = Set(selected)
+        var visiting = Set<String>()
+        var visited = Set<String>()
+        var ordered: [ComposeService] = []
+
+        func visit(_ name: String) throws {
+            if visited.contains(name) {
+                return
+            }
+            if visiting.contains(name) {
+                throw ComposeError.invalidProject("build dependency cycle involving '\(name)'")
+            }
+            guard let service = project.services[name] else {
+                throw ComposeError.invalidProject("unknown service '\(name)'")
+            }
+            visiting.insert(name)
+            if includeRuntimeDependencies {
+                for (dependency, metadata) in serviceDependencies(service) {
+                    if metadata.required == false, project.services[dependency] == nil {
+                        continue
+                    }
+                    try visit(dependency)
+                }
+            }
+            for dependency in try buildAdditionalContextServiceNames(build: service.build) {
+                guard project.services[dependency] != nil else {
+                    throw ComposeError.invalidProject("build additional_contexts references unknown service '\(dependency)'")
+                }
+                try visit(dependency)
+            }
+            visiting.remove(name)
+            visited.insert(name)
+            ordered.append(service)
+        }
+
+        let roots = selected.isEmpty ? project.services.keys.sorted() : selectedSet.sorted()
+        for name in roots {
+            try visit(name)
+        }
+        return ordered
     }
 
     /// Resolves Compose `dockerfile` relative to the build context for apple/container.
@@ -168,6 +238,7 @@ extension ComposeOrchestrator {
         let context = buildBakeContext(build.context, project: project)
         let dockerfile = try buildBakeDockerfile(context: context, build: build)
         let arguments = try buildBakeArguments(project: project, build: build, buildArguments: buildOptions.buildArguments)
+        let contexts = try buildBakeContexts(project: project, build: build)
         let tags = buildBakeTags(project: project, service: service, build: build)
         let secrets = try buildBakeSecrets(project: project, build: build)
         let ssh = buildSSHValues(build: build, options: buildOptions)
@@ -178,6 +249,13 @@ extension ComposeOrchestrator {
             dockerfileInline: dockerfile.dockerfileInline,
             args: arguments.isEmpty ? nil : arguments,
             labels: (build.labels ?? [:]).isEmpty ? nil : build.labels,
+            contexts: contexts.isEmpty ? nil : contexts,
+            entitlements: buildBakeValues(build.entitlements),
+            extraHosts: buildBakeValues(build.extraHosts),
+            network: nonEmpty(build.network),
+            privileged: build.privileged == true ? true : nil,
+            shmSize: nonEmpty(build.shmSize),
+            ulimits: buildBakeValues(build.ulimits),
             tags: tags,
             target: nonEmpty(build.target),
             secrets: secrets.isEmpty ? nil : secrets,
@@ -256,6 +334,80 @@ extension ComposeOrchestrator {
             tags.append(image)
         }
         return tags
+    }
+
+    func buildContextArguments(project: ComposeProject, build: ComposeBuild) throws -> [String: String] {
+        try (build.additionalContexts ?? [:]).reduce(into: [String: String]()) { result, item in
+            let name = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                throw ComposeError.invalidProject("build additional_contexts name must not be empty")
+            }
+            result[name] = try containerBuildContextSource(project: project, source: item.value)
+        }
+    }
+
+    func containerBuildContextSource(project: ComposeProject, source: String) throws -> String {
+        let value = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            throw ComposeError.invalidProject("build additional_contexts source must not be empty")
+        }
+        guard value.hasPrefix("service:") else {
+            return value
+        }
+        guard let serviceName = buildServiceContextName(value) else {
+            throw ComposeError.invalidProject("build additional_contexts service source must include a service name")
+        }
+        guard let service = project.services[serviceName], let image = serviceImage(project: project, service: service) else {
+            throw ComposeError.invalidProject("build additional_contexts references unknown service '\(serviceName)'")
+        }
+        return "docker-image://\(image)"
+    }
+
+    func buildBakeContexts(project: ComposeProject, build: ComposeBuild) throws -> [String: String] {
+        try (build.additionalContexts ?? [:]).reduce(into: [String: String]()) { result, item in
+            let name = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                throw ComposeError.invalidProject("build additional_contexts name must not be empty")
+            }
+            let source = item.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !source.isEmpty else {
+                throw ComposeError.invalidProject("build additional_contexts source must not be empty")
+            }
+            guard source.hasPrefix("service:") else {
+                result[name] = source
+                return
+            }
+            guard let serviceName = buildServiceContextName(source) else {
+                throw ComposeError.invalidProject("build additional_contexts service source must include a service name")
+            }
+            guard project.services[serviceName] != nil else {
+                throw ComposeError.invalidProject("build additional_contexts references unknown service '\(serviceName)'")
+            }
+            result[name] = "target:\(serviceName)"
+        }
+    }
+
+    func buildServiceContextName(_ source: String) -> String? {
+        guard source.hasPrefix("service:") else {
+            return nil
+        }
+        let serviceName = String(source.dropFirst("service:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return serviceName.isEmpty ? nil : serviceName
+    }
+
+    func buildAdditionalContextServiceNames(build: ComposeBuild?) throws -> [String] {
+        var names: [String] = []
+        for source in (build?.additionalContexts ?? [:]).values {
+            let value = source.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard value.hasPrefix("service:") else {
+                continue
+            }
+            guard let serviceName = buildServiceContextName(value) else {
+                throw ComposeError.invalidProject("build additional_contexts service source must include a service name")
+            }
+            names.append(serviceName)
+        }
+        return Array(Set(names)).sorted()
     }
 
     /// Encodes supported build secrets using Buildx bake syntax.

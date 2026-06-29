@@ -286,6 +286,7 @@ cli-smoke-built:
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-normalize$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--no-path-resolution$${ansi_escape}[0m"* ]]; \
 	build_help_output="$$(".build/debug/compose" build --help)"; \
+	[[ "$$build_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--build-arg$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--memory$${ansi_escape}[0m"* ]]; \
 	[[ "$$build_help_output" == *"$${ansi_escape}[32m--no-cache$${ansi_escape}[0m"* ]]; \

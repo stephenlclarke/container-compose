@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-29 11:22 BST.
+Last updated: 2026-06-29 16:09 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -10,9 +10,9 @@ This file is the current-state handoff for `container-compose`. Keep it short. D
 
 ## Current Integration Assumption
 
-`container-compose` still depends on fork-backed runtime surfaces for several forward Compose behaviors. Keep each package lane pinned to the matching `stephenlclarke/container` and `stephenlclarke/containerization` surfaces until the equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
+`container-compose` is supported as part of the fork-backed Stephen runtime bundle. Keep each package lane pinned to the matching `stephenlclarke/container`, `stephenlclarke/containerization`, and `container-builder-shim` surfaces until equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
 
-Full provenance/SBOM attestation requests are supported on the required Stephen fork-backed runtime and builder-shim path. Stock Apple `container` remains unsupported for those requests until equivalent upstream build backend support exists.
+Full build support, including BuildKit checks, SSH forwarding, additional contexts, provenance/SBOM attestations, and Dockerfile frontend options, assumes that bundled Stephen runtime path.
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
@@ -34,7 +34,7 @@ Most recent coverage proof:
 ## Recent Functional State
 
 - Progress feedback: project loading, variable loading, image build, image pull, direct runtime create/start/run, foreground interactive `run`, and attached `exec` emit visible stderr progress before slow or terminal-taking operations can look hung.
-- Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, and explicit false attestation forms remain no-op opt-outs.
+- Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit frontend path, and explicit false attestation forms remain no-op opt-outs.
 - Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
@@ -45,7 +45,7 @@ Most recent coverage proof:
 
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
 - Bare `--menu` / `--menu=true` remain blocked until interactive shortcut handling exists; `--menu=false` is accepted.
-- Runtime build execution for named builders, SSH, provenance/SBOM attestations, and build checks requires the matching `stephenlclarke/container` build backend and the `0.13.3` SSH/check/attestation-capable builder image.
+- Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Non-default `build.isolation` values and build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 
 ## Upstream Compatibility
 

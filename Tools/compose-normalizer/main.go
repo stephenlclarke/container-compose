@@ -227,23 +227,31 @@ type normalizedServiceModel struct {
 
 // normalizedBuild keeps the build fields needed to call `container build`.
 type normalizedBuild struct {
-	Context           string                  `json:"context,omitempty"`
-	Dockerfile        string                  `json:"dockerfile,omitempty"`
-	DockerfileInline  string                  `json:"dockerfileInline,omitempty"`
-	Args              map[string]string       `json:"args,omitempty"`
-	CacheFrom         []string                `json:"cacheFrom,omitempty"`
-	CacheTo           []string                `json:"cacheTo,omitempty"`
-	Labels            map[string]string       `json:"labels,omitempty"`
-	Secrets           []normalizedBuildSecret `json:"secrets,omitempty"`
-	SSH               []string                `json:"ssh,omitempty"`
-	Target            string                  `json:"target,omitempty"`
-	NoCache           bool                    `json:"noCache,omitempty"`
-	Pull              bool                    `json:"pull,omitempty"`
-	Platforms         []string                `json:"platforms,omitempty"`
-	Tags              []string                `json:"tags,omitempty"`
-	Provenance        string                  `json:"provenance,omitempty"`
-	SBOM              string                  `json:"sbom,omitempty"`
-	UnsupportedFields []string                `json:"unsupportedFields,omitempty"`
+	Context            string                  `json:"context,omitempty"`
+	Dockerfile         string                  `json:"dockerfile,omitempty"`
+	DockerfileInline   string                  `json:"dockerfileInline,omitempty"`
+	AdditionalContexts map[string]string       `json:"additionalContexts,omitempty"`
+	Args               map[string]string       `json:"args,omitempty"`
+	CacheFrom          []string                `json:"cacheFrom,omitempty"`
+	CacheTo            []string                `json:"cacheTo,omitempty"`
+	Entitlements       []string                `json:"entitlements,omitempty"`
+	ExtraHosts         []string                `json:"extraHosts,omitempty"`
+	Isolation          string                  `json:"isolation,omitempty"`
+	Labels             map[string]string       `json:"labels,omitempty"`
+	Network            string                  `json:"network,omitempty"`
+	Privileged         bool                    `json:"privileged,omitempty"`
+	Secrets            []normalizedBuildSecret `json:"secrets,omitempty"`
+	ShmSize            string                  `json:"shmSize,omitempty"`
+	SSH                []string                `json:"ssh,omitempty"`
+	Target             string                  `json:"target,omitempty"`
+	NoCache            bool                    `json:"noCache,omitempty"`
+	Pull               bool                    `json:"pull,omitempty"`
+	Platforms          []string                `json:"platforms,omitempty"`
+	Tags               []string                `json:"tags,omitempty"`
+	Ulimits            []string                `json:"ulimits,omitempty"`
+	Provenance         string                  `json:"provenance,omitempty"`
+	SBOM               string                  `json:"sbom,omitempty"`
+	UnsupportedFields  []string                `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedBuildSecret contains the apple/container `container build --secret` fields
@@ -729,23 +737,31 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 	if service.Build != nil {
 		buildSecrets, unsupportedSecrets := buildSecretValues(service.Build, secrets)
 		result.Build = &normalizedBuild{
-			Context:           service.Build.Context,
-			Dockerfile:        service.Build.Dockerfile,
-			DockerfileInline:  service.Build.DockerfileInline,
-			Args:              buildArgs(service.Build.Args),
-			CacheFrom:         append([]string(nil), service.Build.CacheFrom...),
-			CacheTo:           append([]string(nil), service.Build.CacheTo...),
-			Labels:            mapLabels(service.Build.Labels),
-			Secrets:           buildSecrets,
-			SSH:               buildSSHValues(service.Build.SSH),
-			Target:            service.Build.Target,
-			NoCache:           service.Build.NoCache,
-			Pull:              service.Build.Pull,
-			Platforms:         append([]string(nil), service.Build.Platforms...),
-			Tags:              append([]string(nil), service.Build.Tags...),
-			Provenance:        service.Build.Provenance,
-			SBOM:              service.Build.SBOM,
-			UnsupportedFields: unsupportedBuildFields(service.Build, unsupportedSecrets),
+			Context:            service.Build.Context,
+			Dockerfile:         service.Build.Dockerfile,
+			DockerfileInline:   service.Build.DockerfileInline,
+			AdditionalContexts: mapMapping(service.Build.AdditionalContexts),
+			Args:               buildArgs(service.Build.Args),
+			CacheFrom:          append([]string(nil), service.Build.CacheFrom...),
+			CacheTo:            append([]string(nil), service.Build.CacheTo...),
+			Entitlements:       append([]string(nil), service.Build.Entitlements...),
+			ExtraHosts:         hostListValues(service.Build.ExtraHosts, "="),
+			Isolation:          service.Build.Isolation,
+			Labels:             mapLabels(service.Build.Labels),
+			Network:            service.Build.Network,
+			Privileged:         service.Build.Privileged,
+			Secrets:            buildSecrets,
+			ShmSize:            unitBytesValue(service.Build.ShmSize),
+			SSH:                buildSSHValues(service.Build.SSH),
+			Target:             service.Build.Target,
+			NoCache:            service.Build.NoCache,
+			Pull:               service.Build.Pull,
+			Platforms:          append([]string(nil), service.Build.Platforms...),
+			Tags:               append([]string(nil), service.Build.Tags...),
+			Ulimits:            ulimitValues(service.Build.Ulimits),
+			Provenance:         service.Build.Provenance,
+			SBOM:               service.Build.SBOM,
+			UnsupportedFields:  unsupportedBuildFields(service.Build, unsupportedSecrets),
 		}
 	}
 	if service.HealthCheck != nil {
@@ -1496,22 +1512,24 @@ func buildSecretID(secret types.ServiceSecretConfig) (string, bool) {
 	return target, !strings.Contains(target, "/")
 }
 
-// unsupportedBuildFields reports Compose build fields not mapped to container build yet.
+// unsupportedBuildFields reports Compose build fields not mapped to container build.
 func unsupportedBuildFields(build *types.BuildConfig, unsupportedSecrets bool) []string {
 	if build == nil {
 		return nil
 	}
 	fields := []string{}
-	appendUnsupportedBuildField(&fields, "additional_contexts", len(build.AdditionalContexts) > 0)
-	appendUnsupportedBuildField(&fields, "entitlements", len(build.Entitlements) > 0)
-	appendUnsupportedBuildField(&fields, "extra_hosts", len(build.ExtraHosts) > 0)
-	appendUnsupportedBuildField(&fields, "isolation", build.Isolation != "")
-	appendUnsupportedBuildField(&fields, "network", build.Network != "")
-	appendUnsupportedBuildField(&fields, "privileged", build.Privileged)
+	appendUnsupportedBuildField(&fields, "isolation", unsupportedBuildIsolation(build.Isolation))
 	appendUnsupportedBuildField(&fields, "secrets", unsupportedSecrets)
-	appendUnsupportedBuildField(&fields, "shm_size", unitBytesValue(build.ShmSize) != "")
-	appendUnsupportedBuildField(&fields, "ulimits", len(build.Ulimits) > 0)
 	return fields
+}
+
+func unsupportedBuildIsolation(isolation string) bool {
+	switch strings.ToLower(strings.TrimSpace(isolation)) {
+	case "", "default":
+		return false
+	default:
+		return true
+	}
 }
 
 // buildSSHValues encodes Compose build.ssh entries as container build --ssh values.
@@ -1677,6 +1695,15 @@ func ulimitValues(ulimits map[string]*types.UlimitsConfig) []string {
 		return nil
 	}
 	return result
+}
+
+func hostListValues(hosts types.HostsList, separator string) []string {
+	values := hosts.AsList(separator)
+	if len(values) == 0 {
+		return nil
+	}
+	sort.Strings(values)
+	return values
 }
 
 // firstNonEmpty selects the first non-empty normalized name candidate.

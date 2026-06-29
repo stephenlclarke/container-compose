@@ -33,20 +33,19 @@ have backing `apple/container` functionality fail with an explicit
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
-![container compose help output showing supported, partially supported, and unsupported commands](docs/images/container-compose-help-support.png)
-
 Current detailed gap examples:
 
-- Partially supported commands: `attach`, `build`, and `up`.
+- Supported `build` coverage includes Compose build args, additional contexts,
+  file/env build secrets, SSH forwarding, cache hints, labels, target stages,
+  platforms, pull/no-cache, builder selection, checks, provenance/SBOM
+  attestations, extra hosts, build network mode, privileged builds, shared
+  memory size, ulimits, `--print`, and service-context build ordering.
+- Partially supported commands: `attach` and `up`.
 - Unsupported commands: `commit` and `publish`.
 
 **Partially supported `attach`:**
 
 ![container compose attach help showing partially supported attach options](docs/images/container-compose-help-attach-partial.png)
-
-**Partially supported `build`:**
-
-![container compose build help showing partially supported build options](docs/images/container-compose-help-build-partial.png)
 
 **Unsupported `commit`:**
 

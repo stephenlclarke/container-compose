@@ -272,7 +272,7 @@ enum ComposeCLIHelp {
         "bridge transformations create": .notSupported,
         "bridge transformations list": .notSupported,
         "bridge transformations ls": .notSupported,
-        "build": .partiallySupported,
+        "build": .supported,
         "commit": .notSupported,
         "config": .supported,
         "cp": .supported,

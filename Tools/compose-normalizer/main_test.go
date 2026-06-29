@@ -1570,22 +1570,35 @@ services:
         EMPTY:
       additional_contexts:
         shared: ./shared
+        base: docker-image://example/base:latest
       cache_from:
         - type=registry,ref=example/api:cache
       cache_to:
         - type=local,dest=.cache
+      entitlements:
+        - network.host
+      extra_hosts:
+        - build.local=127.0.0.1
+      isolation: default
       labels:
         build.label: "true"
+      network: host
       no_cache: true
+      privileged: true
       pull: true
       platforms:
         - linux/arm64
+      shm_size: 64m
       ssh:
         - default
         - git=/tmp/git.sock
       tags:
         - example/api:dev
         - example/api:test
+      ulimits:
+        nofile:
+          soft: 1024
+          hard: 2048
     environment:
       FROM_ENV:
     env_file:
@@ -1638,17 +1651,35 @@ services:
 	if got, want := api.Build.Args, map[string]string{"VERSION": "1"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build args = %#v, want %#v", got, want)
 	}
+	if got, want := api.Build.AdditionalContexts, map[string]string{"shared": filepath.Join(dir, "shared"), "base": "docker-image://example/base:latest"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build additional contexts = %#v, want %#v", got, want)
+	}
 	if got, want := api.Build.CacheFrom, []string{"type=registry,ref=example/api:cache"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build cache from = %#v, want %#v", got, want)
 	}
 	if got, want := api.Build.CacheTo, []string{"type=local,dest=.cache"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build cache to = %#v, want %#v", got, want)
 	}
+	if got, want := api.Build.Entitlements, []string{"network.host"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build entitlements = %#v, want %#v", got, want)
+	}
+	if got, want := api.Build.ExtraHosts, []string{"build.local=127.0.0.1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build extra hosts = %#v, want %#v", got, want)
+	}
+	if got, want := api.Build.Isolation, "default"; got != want {
+		t.Fatalf("build isolation = %q, want %q", got, want)
+	}
 	if got, want := api.Build.Labels, map[string]string{"build.label": "true"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build labels = %#v, want %#v", got, want)
 	}
+	if got, want := api.Build.Network, "host"; got != want {
+		t.Fatalf("build network = %q, want %q", got, want)
+	}
 	if !api.Build.NoCache {
 		t.Fatal("api.Build.NoCache = false, want true")
+	}
+	if !api.Build.Privileged {
+		t.Fatal("api.Build.Privileged = false, want true")
 	}
 	if !api.Build.Pull {
 		t.Fatal("api.Build.Pull = false, want true")
@@ -1662,8 +1693,14 @@ services:
 	if got, want := api.Build.Tags, []string{"example/api:dev", "example/api:test"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build tags = %#v, want %#v", got, want)
 	}
-	if got, want := api.Build.UnsupportedFields, []string{"additional_contexts"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("unsupported build fields = %#v, want %#v", got, want)
+	if got, want := api.Build.ShmSize, "67108864"; got != want {
+		t.Fatalf("build shm size = %q, want %q", got, want)
+	}
+	if got, want := api.Build.Ulimits, []string{"nofile=1024:2048"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("build ulimits = %#v, want %#v", got, want)
+	}
+	if fields := api.Build.UnsupportedFields; len(fields) != 0 {
+		t.Fatalf("unsupported build fields = %#v, want empty", fields)
 	}
 	inline := project.Services["inline"]
 	if inline.Build == nil {
@@ -2046,7 +2083,7 @@ func TestNetworkIPAMValues(t *testing.T) {
 	}
 }
 
-func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
+func TestUnsupportedBuildFieldsReportsOnlyUnmappedBuildOptions(t *testing.T) {
 	got := unsupportedBuildFields(&types.BuildConfig{
 		AdditionalContexts: types.Mapping{"shared": "./shared"},
 		CacheFrom:          types.StringList{"type=registry,ref=example/api:cache"},
@@ -2054,7 +2091,7 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		DockerfileInline:   "FROM alpine",
 		Entitlements:       []string{"network.host"},
 		ExtraHosts:         types.HostsList{"build.local": []string{"127.0.0.1"}},
-		Isolation:          "default",
+		Isolation:          "hyperv",
 		Labels:             types.Labels{"build.label": "true"},
 		Network:            "host",
 		Platforms:          types.StringList{"linux/arm64"},
@@ -2068,15 +2105,8 @@ func TestUnsupportedBuildFieldsReportsAdvancedBuildOptions(t *testing.T) {
 		Ulimits:            map[string]*types.UlimitsConfig{"nofile": {Single: 1024}},
 	}, true)
 	want := []string{
-		"additional_contexts",
-		"entitlements",
-		"extra_hosts",
 		"isolation",
-		"network",
-		"privileged",
 		"secrets",
-		"shm_size",
-		"ulimits",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupportedBuildFields = %#v, want %#v", got, want)

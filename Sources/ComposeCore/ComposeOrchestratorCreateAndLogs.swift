@@ -231,9 +231,11 @@ public extension ComposeOrchestrator {
 
     /// Builds images for selected services with Docker Compose compatible options.
     func build(project: ComposeProject, options build: ComposeBuildOptions) async throws {
-        let services = try build.withDependencies
-            ? orderedServices(project: project, selected: build.services)
-            : selectedServices(project: project, selected: build.services)
+        let services = try orderedBuildServices(
+            project: project,
+            selected: build.services,
+            includeRuntimeDependencies: build.withDependencies
+        )
         if build.printBake {
             try options.emit(renderBuildBakeFile(project: project, services: services, options: build))
             return

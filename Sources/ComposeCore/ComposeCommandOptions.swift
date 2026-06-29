@@ -318,6 +318,13 @@ struct ComposeBuildBakeTarget: Encodable {
     var dockerfileInline: String?
     var args: [String: String]?
     var labels: [String: String]?
+    var contexts: [String: String]?
+    var entitlements: [String]?
+    var extraHosts: [String]?
+    var network: String?
+    var privileged: Bool?
+    var shmSize: String?
+    var ulimits: [String]?
     var tags: [String]
     var target: String?
     var secrets: [String]?
@@ -337,6 +344,13 @@ struct ComposeBuildBakeTarget: Encodable {
         case dockerfileInline = "dockerfile-inline"
         case args
         case labels
+        case contexts
+        case entitlements
+        case extraHosts = "extra-hosts"
+        case network
+        case privileged
+        case shmSize = "shm-size"
+        case ulimits
         case tags
         case target
         case secrets = "secret"
