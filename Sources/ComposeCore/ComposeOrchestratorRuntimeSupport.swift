@@ -19,7 +19,7 @@
 #elseif canImport(Glibc)
     import Glibc
 #endif
-import ContainerizationError
+import ContainerAPIClient
 import ContainerizationExtras
 import ContainerizationOCI
 import ContainerResource
@@ -114,9 +114,6 @@ extension ComposeOrchestrator {
         var fields: [(composeName: String, reason: String)] = []
         if service.credentialSpec != nil {
             fields.append(("credential_spec", "credential spec support needs an apple/container runtime gap PR"))
-        }
-        if let rules = service.deviceCgroupRules, !rules.isEmpty {
-            fields.append(("device_cgroup_rules", "device cgroup rule support needs an apple/container runtime gap PR"))
         }
         if let devices = service.devices, !devices.isEmpty {
             fields.append(("devices", "host device access support needs an apple/container runtime gap PR"))
@@ -408,6 +405,19 @@ extension ComposeOrchestrator {
         try appendThrottleArguments(blkio.deviceReadIOps, key: "read-iops", field: "blkio_config.device_read_iops", serviceName: service.name, to: &result)
         try appendThrottleArguments(blkio.deviceWriteIOps, key: "write-iops", field: "blkio_config.device_write_iops", serviceName: service.name, to: &result)
         return result
+    }
+
+    /// Returns Docker-compatible device cgroup rules for service create/run.
+    func runtimeDeviceCgroupRuleArguments(service: ComposeService) throws -> [String] {
+        guard let rules = service.deviceCgroupRules, !rules.isEmpty else {
+            return []
+        }
+        do {
+            _ = try Parser.deviceCgroupRules(rules)
+        } catch {
+            throw ComposeError.invalidProject("service '\(service.name)' has invalid device_cgroup_rules; entries must use '<type> <major>:<minor> <access>' such as 'c 1:3 mr'")
+        }
+        return rules
     }
 
     /// Converts Compose `blkio_config` into typed OCI block I/O runtime data.

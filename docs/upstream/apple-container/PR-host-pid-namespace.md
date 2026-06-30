@@ -28,7 +28,7 @@ References:
 ## Commit Tracking
 
 - Initial PID container code commit: `727ed4e75245f6ac1499fcd4a8330982bf0cbb6d` in `stephenlclarke/container` (`feat(runtime): add host PID namespace option`).
-- Current reviewed container pin: `110f340456d2a25cb0256094bd671c6b91c949e4`, which adds the separate host-network runtime path used by the same `container-compose` namespace-mode slice.
+- Host-namespace slice container pin: `110f340456d2a25cb0256094bd671c6b91c949e4`, which added the separate host-network runtime path used by that `container-compose` namespace-mode slice.
 - Required `containerization` fork commit: `93b6e729e95a3e81cf94f662b4e5716fa9d3068d` (`feat(runtime): allow host PID namespace specs`).
 - Compose integration code is tracked in `docs/upstream/container-compose/PR-host-namespace-modes.md`.
 

@@ -38,7 +38,7 @@ References:
 
 Docker Compose treats `privileged` as a service-level runtime field. The local parity behavior now accepts the same field and maps it to the closest available `container` fork primitive.
 
-Known difference: this implementation grants the init process the runtime's extended Linux capability set. It does not claim Docker's full privileged-mode behavior for host devices, seccomp, AppArmor, or related isolation knobs. Compose fields that require those missing primitives, including `devices`, `device_cgroup_rules`, and `gpus`, remain explicitly blocked and documented as separate runtime gaps.
+Known difference: this implementation grants the init process the runtime's extended Linux capability set. It does not claim Docker's full privileged-mode behavior for host devices, seccomp, AppArmor, or related isolation knobs. Compose fields that require those missing primitives, including `devices` and `gpus`, remain explicitly blocked and documented as separate runtime gaps.
 
 The Docker Compose e2e fixture checkout was checked before adding the local parity smoke. The only matching fixture currently found was `pkg/e2e/fixtures/build-test/privileged/compose.yaml`, which exercises `build.privileged`, so this service-level slice uses a small local compose.yml fixture instead.
 

@@ -17,7 +17,7 @@ The API stays Apple-shaped and runtime-native: callers set `LinuxContainer.Confi
 
 - Lower runtime code commit: `93b6e729e95a3e81cf94f662b4e5716fa9d3068d` in `stephenlclarke/containerization` (`feat(runtime): allow host PID namespace specs`).
 - Initial container API/CLI PID commit: `727ed4e75245f6ac1499fcd4a8330982bf0cbb6d` in `stephenlclarke/container` (`feat(runtime): add host PID namespace option`), tracked separately in `docs/upstream/apple-container/PR-host-pid-namespace.md`.
-- Current reviewed container pin: `110f340456d2a25cb0256094bd671c6b91c949e4`, which also includes the separate host-network runtime path used by the same `container-compose` namespace-mode slice.
+- Host-namespace slice container pin: `110f340456d2a25cb0256094bd671c6b91c949e4`, which also included the separate host-network runtime path used by that `container-compose` namespace-mode slice.
 - Compose integration code is tracked in `docs/upstream/container-compose/PR-host-namespace-modes.md`.
 
 ## Implementation Details

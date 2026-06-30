@@ -12,7 +12,7 @@ Docker Compose documents `privileged` as a service field, and Compose files can 
 - `compose create` emits `container create --privileged` for affected services.
 - `compose up` and service start planning set `ProcessConfiguration.privileged` for the init process.
 - `compose run` inherits service-level `privileged: true` and emits `container run --privileged`.
-- Unsupported device access fields such as `devices`, `device_cgroup_rules`, and `gpus` remain rejected before resource creation.
+- Unsupported host device and GPU access fields such as `devices` and `gpus` remain rejected before resource creation.
 - Runtime dry-run smoke covers a compose.yml with service-level `privileged: true`.
 
 ## Parity Notes

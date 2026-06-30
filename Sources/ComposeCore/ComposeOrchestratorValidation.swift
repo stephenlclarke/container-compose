@@ -268,6 +268,7 @@ extension ComposeOrchestrator {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
         _ = try runtimeBlkioArguments(service: service)
+        _ = try runtimeDeviceCgroupRuleArguments(service: service)
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }

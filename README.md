@@ -58,6 +58,10 @@ Current detailed gap examples:
   `container --network host` runtime path while avoiding Compose project network
   attachment. Service/container namespace-sharing forms remain explicit runtime
   gaps.
+- Supported device-cgroup coverage includes service `device_cgroup_rules`,
+  which maps to the fork-backed `container run/create --device-cgroup-rule`
+  runtime path. Host device mappings and GPU requests remain explicit runtime
+  gaps.
 - Supported local Deploy metadata includes replicas, local job modes,
   stop-first update delays, restart policy fields, CPU/memory reservation
   hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local

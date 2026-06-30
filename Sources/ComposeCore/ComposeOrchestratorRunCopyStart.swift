@@ -216,6 +216,9 @@ extension ComposeOrchestrator {
         for blkio in try runtimeBlkioArguments(service: service) {
             args.append(contentsOf: ["--blkio", blkio])
         }
+        for rule in try runtimeDeviceCgroupRuleArguments(service: service) {
+            args.append(contentsOf: ["--device-cgroup-rule", rule])
+        }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])
         }

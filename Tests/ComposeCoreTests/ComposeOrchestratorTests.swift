@@ -6246,6 +6246,31 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--blkio", "device=8:0,read-bps=1048576"]))
     }
 
+    @Test("up maps device cgroup rules to runtime arguments")
+    func upMapsDeviceCgroupRulesToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deviceCgroupRules = [
+                        "c 1:3 mr",
+                        "a *:* rwm",
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--device-cgroup-rule", "c 1:3 mr"]))
+        #expect(command.containsSequence(["--device-cgroup-rule", "a *:* rwm"]))
+    }
+
     @Test("up treats develop watch metadata as harmless")
     func upTreatsDevelopWatchMetadataAsHarmless() async throws {
         let runner = RecordingRunner()
@@ -20078,6 +20103,52 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--blkio", "device=8:0,write-iops=2000"]))
     }
 
+    @Test("run maps device cgroup rules to runtime arguments")
+    func runMapsDeviceCgroupRulesToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.deviceCgroupRules = [
+                        "c 1:3 mr",
+                        "a *:* rwm",
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--device-cgroup-rule", "c 1:3 mr"]))
+        #expect(command.containsSequence(["--device-cgroup-rule", "a *:* rwm"]))
+    }
+
+    @Test("run rejects invalid device cgroup rules before runtime commands")
+    func runRejectsInvalidDeviceCgroupRulesBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.deviceCgroupRules = ["x 1:3 rwm"]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected invalid device cgroup rule error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'job' has invalid device_cgroup_rules; entries must use '<type> <major>:<minor> <access>' such as 'c 1:3 mr'"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects invalid block IO config before runtime commands")
     func runRejectsInvalidBlockIOConfigBeforeRuntimeCommands() async throws {
         let runner = RecordingRunner()
@@ -22520,11 +22591,6 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
             composeName: "credential_spec",
             reason: "credential spec support needs an apple/container runtime gap PR",
             configure: { $0.credentialSpec = .object(["file": .string("credential-spec.json")]) }
-        ),
-        UnsupportedDeviceAccessFieldCase(
-            composeName: "device_cgroup_rules",
-            reason: "device cgroup rule support needs an apple/container runtime gap PR",
-            configure: { $0.deviceCgroupRules = ["c 1:3 mr"] }
         ),
         UnsupportedDeviceAccessFieldCase(
             composeName: "devices",

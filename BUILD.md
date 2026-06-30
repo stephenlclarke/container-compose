@@ -265,6 +265,14 @@ make docker-compose-deploy-resource-reservations-parity
 
 This compares Docker Compose V2 and `container-compose` for a Compose file with `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory`. Docker Compose preserves those scheduler hints in `config --format json` and accepts local dry-run `up --no-start`; `container-compose` mirrors the local behavior by accepting the metadata without reporting those reservations as unsupported deploy fields. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
 
+For the local-only device cgroup rule parity check, run:
+
+```sh
+make docker-compose-device-cgroup-rules-parity
+```
+
+This compares Docker Compose V2 and `container-compose` for a Compose file with service `device_cgroup_rules`. Docker Compose preserves the rules in `config --format json` and projects them to Docker Engine `HostConfig.DeviceCgroupRules`; `container-compose` preserves the normalized config and maps `up`, `create`, and one-off `run` to repeatable fork-backed `container --device-cgroup-rule` arguments. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
 For the local-only `build --check` parity check, run:
 
 ```sh
