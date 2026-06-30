@@ -26,7 +26,7 @@ References:
 
 ## Commit Tracking
 
-- Container code commit: `87baba19845e7fb34f936a3f90a35af8af48a573` in `stephenlclarke/container` (`feat(runtime): add device mapping flag`).
+- Container code commit: `87baba1ab1bd7bed036e9cb891fd146893c44382` in `stephenlclarke/container` (`feat(runtime): add device mapping flag`).
 - Lower runtime code commit: `149a1f5dc9a6d42bef2224cca54bd341bcdd5c6d` in `stephenlclarke/containerization` (`feat(runtime): allow OCI device nodes`).
 - Compose mapping code is tracked separately in `docs/upstream/container-compose/PR-service-devices.md`.
 

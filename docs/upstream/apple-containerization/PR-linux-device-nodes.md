@@ -16,7 +16,7 @@ The API stays Apple-shaped and runtime-native: callers provide `[Containerizatio
 ## Commit Tracking
 
 - Lower runtime code commit: `149a1f5dc9a6d42bef2224cca54bd341bcdd5c6d` in `stephenlclarke/containerization` (`feat(runtime): allow OCI device nodes`).
-- Container API/CLI commit: `87baba19845e7fb34f936a3f90a35af8af48a573` in `stephenlclarke/container` (`feat(runtime): add device mapping flag`), tracked separately in `docs/upstream/apple-container/PR-device-mappings.md`.
+- Container API/CLI commit: `87baba1ab1bd7bed036e9cb891fd146893c44382` in `stephenlclarke/container` (`feat(runtime): add device mapping flag`), tracked separately in `docs/upstream/apple-container/PR-device-mappings.md`.
 - Compose integration code is tracked in `docs/upstream/container-compose/PR-service-devices.md`.
 
 ## Implementation Details
