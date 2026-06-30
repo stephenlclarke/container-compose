@@ -10,6 +10,8 @@ CODEX-SCHEDULE.md
 RESUME.md
 PLAN.md
 STATUS.md
+HOMEBREW_TAP_RUNBOOK.md
+CONTAINER_STACK_RELEASE.sh
 container-compose-plugin.tar.gz
 container-compose-plugin-*.tar.gz
 container-compose-plugin-*.tar.gz.sha256

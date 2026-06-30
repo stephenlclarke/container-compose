@@ -120,7 +120,7 @@ Keep every contribution easy for apple/container maintainers to assess:
 
 ## Keeping Protected Branches Safe
 
-Third-party contributions must not be able to break `main` or release branches.
+Third-party contributions must not be able to break `main`, release tags, or active `develop/VERSION` slices.
 Maintainers should keep these guardrails enabled:
 
 - Require pull requests before merging to protected branches.

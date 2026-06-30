@@ -1,132 +1,152 @@
 # Branch Guide
 
-This guide is the branch policy for these Stephen Clarke repositories:
+This guide is the branch and Homebrew policy for these Stephen Clarke repositories:
 
 - `stephenlclarke/container-compose`
 - `stephenlclarke/container`
 - `stephenlclarke/containerization`
 - `stephenlclarke/container-builder-shim`
 
-Keep this file in `container-compose` only. Do not copy it into the Apple
-repositories, and do not maintain separate `BRANCHES.md` files in the companion
-forks.
+Keep this file in `container-compose` only. Do not copy it into the Apple repositories, and do not maintain separate `BRANCHES.md` files in the companion forks.
 
-The four repositories have different roles:
+## Repository Roles
 
 - `container` is the fork-backed runtime and CLI that Homebrew installs.
-- `container-compose` is the plugin package that is installed beside the matching `container` lane.
-- `containerization` is the Swift package consumed by both `container` and `container-compose`; its branch must match the runtime lane.
-- `container-builder-shim` is Go source for the BuildKit bridge image used by `container build`; `container` pins an immutable builder image version, currently `0.13.6`, instead of installing the shim from Homebrew.
+- `container-compose` is the plugin package installed beside the matching `container` formula.
+- `containerization` is the Swift runtime package consumed by both `container` and `container-compose`.
+- `container-builder-shim` is Go source for the BuildKit bridge image used by `container build`; `container` pins an immutable builder image version instead of installing the shim from Homebrew.
 
 ## Active Branches
 
 | Branch | Purpose | Build and quality rule |
 | --- | --- | --- |
-| `main` | Current development for all four repositories. | Full CI, CodeQL, SonarQube where configured, and Homebrew main prebuilt packages for installable packages. |
-| `release` | Latest stable snapshot promoted from validated `main`. | Release package validation only; no debug binaries. |
-| `release-VERSION-TAG` | Permanent copy of a release tag, for example `release-v0.4.2`. | Release package validation only; no debug binaries. |
+| `main` | Releasable integration branch for all four repositories. | Full CI, CodeQL, SonarQube where configured, and stable Homebrew release generation after a source tag. |
+| `develop/VERSION` | Short-lived development slice for the next version. | Full or agreed pre-release CI; published GitHub release is marked pre-release and not latest. |
+| `hotfix/VERSION` | Optional short-lived branch from an older source tag when current `main` cannot be released. | Focused fix validation plus the stable tag workflow for the patched version. |
 
-`main` is the only active development branch because the free SonarQube tier
-only provides one useful branch signal. README badges, quality gates, and normal
-integration work should therefore stay on `main`.
+`main` stays releasable. Development work happens on a short-lived `develop/VERSION` branch, then is squashed back to `main`. The next development branch is created only after the current `main` version has been tagged as the latest stable release point.
 
-`release` is the moving stable snapshot branch. Each promoted release should
-also be tagged in every repository and copied to a matching
-`release-VERSION-TAG` branch so the exact source state remains installable.
+Do not use long-lived `release`, `release-*`, `snapshot/*`, or compatibility side branches as active lanes for these four repositories.
 
-Do not use `develop`, `snapshot/*`, or compatibility side branches as active
-lanes for these four repositories.
+## Version Rhythm
+
+The version currently on `main` is the release that will become latest before the next development slice starts. The incremented version belongs to the next work slice.
+
+Example:
+
+| Step | `main` version | Release label |
+| --- | --- | --- |
+| Current releasable state | `0.0.1` | `0.0.1` latest |
+| Start next slice | `0.0.2` on `develop/0.0.2` | `0.0.2` pre-release |
+| Squash `develop/0.0.2` to `main`, then start following slice | `0.0.2` | `0.0.2` latest |
+| Following slice | `0.0.3` on `develop/0.0.3` | `0.0.3` pre-release |
+
+Use bare semantic source tags such as `0.4.2`, matching Apple repository tag conventions. Do not create new `v0.4.2` source tags.
 
 ## Release Flow
 
-1. Validate `main` in `container-compose`, `container`, `containerization`, and the builder shim image version pinned by `container`.
-2. Tag the release in each repository that participates in the promoted source snapshot. The builder shim tag must already match the image version pinned by `container`.
-3. Fast-forward or reset the `release` branch to the tagged commit in each
-   lane-tracked repository.
-4. Create a branch copy named `release-VERSION-TAG` from the same tag in each
-   lane-tracked repository.
-5. Publish Homebrew prebuilt assets for `main`, `release`, and each
-   `release-VERSION-TAG` branch.
+Use the local release helper from the `container-compose` checkout:
 
-All release branch artifacts must be release builds. The Swift packages must be
-built with release configuration. All Go outputs across this project are release-quality code paths: `container-compose` packages the normalizer with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags, and `container-builder-shim` builds the Linux image binary with the same release-oriented shape. Debug package lanes are not part of this branch model.
+```sh
+./CONTAINER_STACK_RELEASE.sh plan
+./CONTAINER_STACK_RELEASE.sh tag-current
+./CONTAINER_STACK_RELEASE.sh start-dev --+
+```
 
-## Dependency Lanes
+The script is dry-run by default. Add `--execute` only after the plan is correct.
 
-`container` and `container-compose` consume `containerization` by branch:
+Stable-only release:
 
-| Consumer lane | `containerization` branch |
-| --- | --- |
-| `main` | `main` |
-| `release` | `release` |
-| `release-VERSION-TAG` | matching `release-VERSION-TAG` when that branch exists, otherwise the immutable release tag used for the copied lane |
+```sh
+./CONTAINER_STACK_RELEASE.sh tag-current --execute
+```
 
-`container-compose` also pins the exact `container` commit used by CI and package metadata through `APPLE_CONTAINER_REF`. Keep that pin in the same lane as the plugin package.
+Start a new development slice:
 
-`container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. The current Stephen fork default is `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.6`. Update the shim source on `main`, publish an immutable image tag, verify the GHCR manifest is available, then update `container` to that tag; do not point release packages at untagged, unpublished, or debug builder images.
+```sh
+./CONTAINER_STACK_RELEASE.sh start-dev --+ --execute
+```
 
-## Homebrew Lanes
+Version selectors for `start-dev`:
+
+- `--+`: patch bump.
+- `-+-`: minor bump and reset patch to `0`.
+- `+--`: major bump and reset minor and patch to `0`.
+- `MAJOR.MINOR.PATCH`: explicit next development version.
+
+When a revision is incremented, all revisions to the right reset to `0`.
+
+The script:
+
+1. Verifies clean worktrees and Stephen-owned push remotes.
+2. Refuses writable Apple remotes.
+3. Tags the current `main` version as the stable/latest release point.
+4. Creates `develop/NEXT_VERSION` from `main`.
+5. Bumps version declarations on the development branch.
+6. Commits and pushes the development branch only when `--execute` is present.
+
+## Dependency Rules
+
+`container-compose` must stay pinned to the required `stephenlclarke/container` and `stephenlclarke/containerization` surfaces while fork-backed behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` surfaces.
+
+`container-compose` pins the exact `container` commit used by CI and package metadata through `APPLE_CONTAINER_REF`.
+
+`container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. Update the shim source on `main`, publish an immutable image tag, verify the GHCR manifest is available, then update `container` to that tag. Do not point stable packages at untagged, unpublished, or debug builder images.
+
+## Homebrew Policy
 
 The aggregate tap is `stephenlclarke/homebrew-tap`.
 
-| Repository | Main formula | Release formula pattern |
-| --- | --- | --- |
-| `container` | `container` | `container-release`, plus branch-derived formula names when matching runtime release branches exist |
-| `container-compose` | `container-compose` | `container-compose-release`, `container-compose-release-v0-4-2`, and other branch-derived formula names |
+Maintain one stable formula per installable repository:
 
-`homebrew-main` tracks the latest `main` package, and `homebrew-release` tracks
-the latest stable `release` package. Treat `homebrew-release` like Docker's
-`:latest` tag for the stable lane: it is intentionally moved whenever a newer
-release is promoted. Versioned release branch copies, such as
-`release-v0.4.2`, keep their own branch-derived Homebrew tags and formula names
-for immutable installs.
+| Repository | Stable formula |
+| --- | --- |
+| `container` | `container` |
+| `container-compose` | `container-compose` |
 
-The tap's `sources/*` submodules are maintenance inputs and track the four project repositories on `main`: `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim`. Release formulae do not install from those submodules; they consume the prebuilt assets published from the matching release package tags.
+Stable formulae point at the newest validated stable release assets. They do not point at `develop/VERSION` pre-release assets.
 
-Release formula names are derived from the branch name by lowercasing it and
-replacing non-alphanumeric separators with `-`. For example,
-`release-v0.4.2` becomes `container-compose-release-v0-4-2`.
+Development pre-releases use tags named `VERSION-pre`, for example `0.4.3-pre`, so the later stable source tag `0.4.3` remains available and immutable.
 
-Install matching formula lanes together: `container` with `container-compose`
-for `main`, or `container-release` with `container-compose-release` for the
-moving stable release. After installing a compose formula, link the plugin into
-the matching Homebrew-installed `container` prefix:
+The tap's `sources/*` submodules are maintenance inputs and track the project repositories on `main`: `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim`. Stable formulae do not install from those submodules; they consume verified prebuilt GitHub release assets.
+
+Install matching formulae together:
 
 ```sh
-mkdir -p "$(brew --prefix container)/libexec/container-plugins"
-ln -sfn "$(brew --prefix container-compose)/libexec/container-plugins/compose" \
-  "$(brew --prefix container)/libexec/container-plugins/compose"
-brew services restart container
+brew tap stephenlclarke/tap
+brew install stephenlclarke/tap/container
+brew install stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
+container system version
 container compose version
 ```
 
-For the moving stable release lane, use the same commands with
-`container-release` and `container-compose-release`.
+## Release Assets
+
+Stable source tags and GitHub release objects are retained. Uploaded binary assets for older releases may be pruned only after the release notes include Homebrew source-build instructions.
+
+The release notes for pruned assets must tell users how to rebuild from the retained source tag, usually with `brew extract --version` into a personal tap followed by `brew install --build-from-source`.
 
 ## Local Checkouts
 
-For current development, use `main` in all four repositories:
+For current integration work, use `main` in all four repositories:
 
 ```sh
-git -C ~/github/container-builder-shim checkout main
-git -C ~/github/containerization checkout main
-git -C ~/github/container checkout main
-git -C ~/github/container-compose checkout main
+git -C ~/github/container-builder-shim switch main
+git -C ~/github/containerization switch main
+git -C ~/github/container switch main
+git -C ~/github/container-compose switch main
 ```
 
-For stable validation, use matching `release` branches for the lane-tracked Swift repositories and the immutable builder shim tag pinned by `container`:
+For active development, use the short-lived branch only in repositories that need source changes for that slice:
 
 ```sh
-git -C ~/github/containerization checkout release
-git -C ~/github/container checkout release
-git -C ~/github/container-compose checkout release
+git -C ~/github/container-compose switch develop/0.5.1
 ```
 
-For a tagged release copy, use the same `release-VERSION-TAG` branch name in the lane-tracked repositories and verify that `container` still points at the intended builder shim image tag.
+Companion repositories may remain on `main` when their current tagged asset is reused by the stack manifest.
 
 ## Archived Names
 
-The former `develop`, `snapshot/*`, `regression`, `apple-container-compatible`,
-logs, restart-policy, and full-compose branches are historical references only.
-Old handoff notes may mention them, but new work should target `main`, `release`,
-or a `release-VERSION-TAG` branch.
+The former long-lived `release`, `release-*`, `snapshot/*`, `regression`, `apple-container-compatible`, logs, restart-policy, and full-compose branches are historical references only. Old handoff notes may mention them, but new work should target `main`, short-lived `develop/VERSION`, or short-lived `hotfix/VERSION` branches.

@@ -107,10 +107,10 @@ This fork-backed Compose stack spans four Stephen Clarke repositories:
 
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
 - [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed by Homebrew beside the plugin.
-- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift container runtime package consumed by both `container` and this plugin; `main` packages use `main`, and release packages use `release`.
+- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift container runtime package consumed by both `container` and this plugin; stable packages pin validated commits or tags from Stephen-owned surfaces.
 - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the Go BuildKit bridge used by `container build`; `container` pins an immutable builder image version, currently `0.13.6`.
 
-The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks the four source repositories on `main` for maintenance, while installable formulae consume prebuilt release-quality assets. All Go outputs in the stack are treated as release code, not debug helpers.
+The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks the four source repositories on `main` for maintenance, while the stable install formulae consume prebuilt release-quality assets from bare semantic source tags such as `0.4.2`. Development slices use short-lived `develop/VERSION` branches and pre-release GitHub assets; the stable tap formulae do not point at those pre-release assets. All Go outputs in the stack are treated as release code, not debug helpers.
 
 ## Plugin Recognition
 
@@ -122,7 +122,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 - [INSTALL.md](INSTALL.md): install prebuilt Homebrew assets or a local plugin archive.
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md): recover bad installs and diagnose runtime issues.
-- [BRANCHES.md](BRANCHES.md): understand active `main`, stable `release`, and tagged `release-VERSION-TAG` install branches.
+- [BRANCHES.md](BRANCHES.md): understand `main`, short-lived `develop/VERSION` branches, bare semantic tags, and the stable Homebrew tap policy.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.

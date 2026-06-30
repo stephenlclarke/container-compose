@@ -7,11 +7,11 @@ This guide tracks common install and runtime issues for the Homebrew-installed
 
 Use this when `container compose` is missing, `container compose version` hangs,
 Homebrew installed `container` from an old source tap, or the plugin symlink
-points at the wrong formula lane.
+points at the wrong formula.
 
-The reset below removes old plugin lanes, removes the old source-style
+The reset below removes retired plugin lanes, removes the old source-style
 `stephenlclarke/container` and `stephenlclarke/container-compose` taps if they
-exist, reinstalls the current main lane from the aggregate tap, relinks the
+exist, reinstalls the current stable lane from the aggregate tap, relinks the
 plugin into the active `container` prefix, and restarts the service.
 
 ```sh
@@ -60,14 +60,14 @@ brew trust --tap stephenlclarke/tap
 ## Plugin Symlink Does Not Point At The Active Container Prefix
 
 `container` discovers plugins from its active install root. After switching
-between main and release formulae, confirm that the `compose` plugin link is
+between install sources, confirm that the `compose` plugin link is
 inside the currently selected `container` prefix:
 
 ```sh
 ls -l "$(brew --prefix container)/libexec/container-plugins/compose"
 ```
 
-For the main lane, the link target should point under:
+The link target should point under:
 
 ```text
 $(brew --prefix container-compose)/libexec/container-plugins/compose
@@ -114,7 +114,7 @@ branch, commit, compiled `containerization` ref, and pinned
 `container-builder-shim` image.
 
 Stop the currently running runtime, remove the Apple package while keeping user
-data, then install the fork-backed main lane. If `container system stop` hangs,
+data, then install the fork-backed stable lane. If `container system stop` hangs,
 skip it and continue with the uninstall script.
 
 ```sh
@@ -139,20 +139,6 @@ brew services restart stephenlclarke/tap/container
 hash -r 2>/dev/null || true
 ```
 
-If you want the latest stable release lane instead of `main`, replace the
-Homebrew install and plugin-link block with `container-release` and
-`container-compose-release` together:
-
-```sh
-brew uninstall --ignore-dependencies \
-  container-compose container-compose-release container container-release || true
-brew install stephenlclarke/tap/container-release
-brew install stephenlclarke/tap/container-compose-release
-brew postinstall stephenlclarke/tap/container-release
-brew services restart stephenlclarke/tap/container-release
-hash -r 2>/dev/null || true
-```
-
 Verify that the shell and service now use the fork-backed Homebrew install:
 
 ```sh
@@ -166,11 +152,7 @@ container system version
 container compose version
 ```
 
-For the release lane, replace `container` with `container-release` in the
-`brew --prefix` command above. The verification should show Stephen fork
-provenance for the runtime, the runtime's pinned `container-builder-shim`
-image, and matching `container` / `containerization` / `compose-go` pins for the
-Compose package.
+The verification should show Stephen fork provenance for the runtime, the runtime's pinned `container-builder-shim` image, and matching `container` / `containerization` / `compose-go` pins for the Compose package.
 
 If `command -v container` still resolves to `/usr/local/bin/container` after
 the uninstall, start a new shell or check `PATH` ordering. On Apple silicon,
@@ -184,11 +166,11 @@ CLI and service provenance:
 ```sh
 command -v container
 realpath "$(command -v container)"
-brew list --versions container container-compose container-compose-release
+brew list --versions container container-compose
 brew services list | grep container
 container system version
 container compose version
 ```
 
-The Homebrew main lane should use the `container` formula from
+The Homebrew stable lane should use the `container` formula from
 `stephenlclarke/tap` and the `container-compose` formula from the same tap.

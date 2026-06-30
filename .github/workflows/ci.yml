@@ -20,8 +20,9 @@ on:
   push:
     branches:
       - main
-      - release
-      - "release-*"
+      - "develop/**"
+    tags:
+      - "*.*.*"
   pull_request:
     branches:
       - main
@@ -176,33 +177,16 @@ jobs:
           markdownlint --version
 
       - name: Run local CI workflow
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        if: >
+          github.event_name == 'pull_request' ||
+          github.ref == 'refs/heads/main' ||
+          startsWith(github.ref, 'refs/heads/develop/') ||
+          github.ref_type == 'tag'
         timeout-minutes: 45
         run: make ci
         working-directory: container-compose
         env:
           HAWKEYE_AUTO_INSTALL: "1"
-
-      - name: Run release branch validation
-        if: >
-          github.event_name == 'push' &&
-          (github.ref == 'refs/heads/release' ||
-           startsWith(github.ref, 'refs/heads/release-'))
-        timeout-minutes: 45
-        shell: bash
-        working-directory: container-compose
-        run: |
-          set -euo pipefail
-          case "${GITHUB_REF_NAME}" in
-            release|release-*)
-              ruby -c Formula/container-compose.rb
-              make package-release PLUGIN_ARCHIVE=container-compose-plugin-release-arm64.tar.gz
-              ;;
-            *)
-              printf 'Unsupported release branch: %s\n' "${GITHUB_REF_NAME}" >&2
-              exit 1
-              ;;
-          esac
 
       - name: Cache SonarQube packages
         if: >

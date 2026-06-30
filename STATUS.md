@@ -1,12 +1,12 @@
 # Status
 
-Last updated: 2026-06-30 17:09 BST.
+Last updated: 2026-06-30 17:45 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
 ## Current State
 
-`main` is the active development lane, and installable Homebrew lanes consume prebuilt release-quality assets. Keep branch policy, release lane naming, and Homebrew lane details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
+`main` is the releasable integration lane. New work should happen on short-lived `develop/VERSION` branches, then be squashed back to `main`. Stable Homebrew formulae consume prebuilt release-quality assets from bare semantic source tags; development slices publish pre-release assets only. Keep branch policy and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
 
 ## Current Integration Assumption
 

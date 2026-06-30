@@ -20,8 +20,9 @@ on:
   push:
     branches:
       - main
-      - release
-      - "release-*"
+      - "develop/**"
+    tags:
+      - "*.*.*"
     paths:
       - "Formula/**"
       - ".github/workflows/homebrew.yml"

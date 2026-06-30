@@ -14,9 +14,9 @@ The Apple runtime forks should expose smaller Apple-native primitives that can b
 
 Canonical branch and Homebrew lane policy lives in [BRANCHES.md](BRANCHES.md).
 
-- `main`: active development and integration lane. Keep full CI, CodeQL, and SonarQube here so the public badges describe the code under active review.
-- `release`: moving stable release lane. Build optimized prebuilt assets and update the release Homebrew formula from published assets.
-- `release-VERSION-TAG`: immutable copy of a promoted release tag. Build optimized prebuilt assets for versioned formulae.
+- `main`: releasable integration lane. Keep full CI, CodeQL, and SonarQube here so the public badges describe the code under active review.
+- `develop/VERSION`: short-lived development slice for the next version. Publish pre-release assets only; squash validated work back to `main`.
+- Bare semantic tags such as `0.4.2`: stable release points on `main`. Tag-triggered CI builds optimized prebuilt assets and updates the single stable Homebrew formula per installable repo.
 
 The `container-compose` branch must stay pinned to the required `stephenlclarke/container` and `stephenlclarke/containerization` surfaces. Do not silently drift back to incompatible `apple/container` or `apple/containerization` surfaces while fork-backed behavior is still required.
 
@@ -24,9 +24,9 @@ The `container-compose` branch must stay pinned to the required `stephenlclarke/
 
 Keep the prebuilt install path healthy for the active lanes:
 
-- GitHub Actions publishes branch release assets for `main`, `release`, and immutable `release-VERSION-TAG` branches.
+- GitHub Actions publishes stable release assets from bare semantic tags and pre-release assets from short-lived `develop/VERSION` branches.
 - Homebrew installs those prebuilt Swift and Go binaries without requiring Go, Xcode, or a Swift toolchain on the target machine.
-- Package targets always include a release-built Go normalizer. Debug package lanes are not part of the current branch model.
+- Package targets always include a release-built Go normalizer. Stable Homebrew formulae point only at validated stable tag assets.
 - CI accepts classified SwiftPM signal-pass output only when the helper proves tests passed and no failure markers were emitted.
 - Homebrew advisory jobs trust only the specific taps required by the formulas.
 - Keep auditing startup, normalization, image pull/build, and runtime handoff paths so every slow phase emits prompt stderr progress before the expensive work starts, using Docker Compose-style `--progress` policies and a compact spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner). Treat any newly observed silent startup or build wait as a progress regression: reproduce it, add a focused first-frame test, and emit a visible spinner/status row before the blocking operation begins.

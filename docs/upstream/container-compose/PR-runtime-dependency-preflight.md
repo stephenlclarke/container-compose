@@ -31,7 +31,7 @@ git diff --check
 
 - `container compose ps`, `up`, `run`, `exec`, `logs`, `build` execution, and other runtime-backed commands now fail early when the active `container` executable is Apple's stock package.
 - `container compose version`, help output, `config`, dry-run commands, and `build --print` remain available so users can inspect a broken or mixed install.
-- Release-lane plugin packages suggest `container-release` / `container-compose-release`; other lanes suggest the main formulae.
+- Runtime preflight guidance should suggest the stable `container` / `container-compose` formulae from `stephenlclarke/tap`; retired release-lane formula names should not appear in new install guidance.
 
 ## Remaining Risks
 
