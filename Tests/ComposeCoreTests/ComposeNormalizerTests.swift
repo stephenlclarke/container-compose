@@ -339,6 +339,9 @@ struct ComposeNormalizerTests {
               context: .
               secrets:
                 - source: file_token
+                  uid: "1000"
+                  gid: "1000"
+                  mode: 0440
                 - source: env_token
                   target: npm_token
           worker:

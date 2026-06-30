@@ -115,7 +115,7 @@ container compose version
 Example:
 
 ```text
-container-compose 0.1.2
+container-compose 0.1.3
   source: stephenlclarke/container-compose
   lane: main
   branch: main

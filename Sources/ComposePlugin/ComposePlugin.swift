@@ -28,7 +28,7 @@ private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
 
 private struct ComposeBuildInfo: Codable {
-    var version: String = "0.1.2"
+    var version: String = "0.1.3"
     var source: String = "unspecified"
     var branch: String = "unspecified"
     var lane: String = "unspecified"
@@ -87,7 +87,7 @@ private struct ComposeBuildInfo: Codable {
         let root = git(["rev-parse", "--show-toplevel"]) ?? FileManager.default.currentDirectoryPath
         let branch = git(["branch", "--show-current"], root: root) ?? "unspecified"
         return ComposeBuildInfo(
-            version: "0.1.2",
+            version: "0.1.3",
             source: remoteSource(root: root),
             branch: branch,
             lane: lane(for: branch),

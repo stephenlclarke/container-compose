@@ -1473,10 +1473,13 @@ func buildSecretValues(build *types.BuildConfig, secrets map[string]types.Secret
 	unsupported := false
 	for _, secret := range build.Secrets {
 		id, ok := buildSecretID(secret)
-		if !ok || secret.UID != "" || secret.GID != "" || secret.Mode != nil {
+		if !ok {
 			unsupported = true
 			continue
 		}
+		// Docker Compose accepts build secret uid/gid/mode metadata, but
+		// BuildKit does not implement it. Keep the effective secret source and
+		// ignore those metadata fields for build execution parity.
 		source, ok := secrets[secret.Source]
 		if !ok {
 			unsupported = true

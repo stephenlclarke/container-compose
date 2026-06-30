@@ -453,6 +453,9 @@ services:
       context: .
       secrets:
         - source: token
+          uid: "1000"
+          gid: "1000"
+          mode: 0440
         - source: npm
           target: npm_token
   worker:
