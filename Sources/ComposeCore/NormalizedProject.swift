@@ -892,6 +892,26 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         }
     }
 
+    /// Optional mount behavior grouped to keep call sites readable.
+    public struct MountOptions: Codable, Equatable, Sendable {
+        public var readOnly: Bool?
+        public var bindCreateHostPath: Bool?
+        public var volumeLabels: [String: String]?
+        public var tmpfs: TmpfsOptions
+
+        public init(
+            readOnly: Bool? = nil,
+            bindCreateHostPath: Bool? = nil,
+            volumeLabels: [String: String]? = nil,
+            tmpfs: TmpfsOptions = TmpfsOptions()
+        ) {
+            self.readOnly = readOnly
+            self.bindCreateHostPath = bindCreateHostPath
+            self.volumeLabels = volumeLabels
+            self.tmpfs = tmpfs
+        }
+    }
+
     public var type: String?
     public var source: String?
     public var target: String?
@@ -907,23 +927,39 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         type: String? = nil,
         source: String? = nil,
         target: String? = nil,
-        readOnly: Bool? = nil,
-        bindCreateHostPath: Bool? = nil,
-        volumeLabels: [String: String]? = nil,
-        tmpfs: TmpfsOptions = TmpfsOptions(),
+        options: MountOptions = MountOptions(),
         raw: String? = nil,
         unsupportedFields: [String]? = nil
     ) {
         self.type = type
         self.source = source
         self.target = target
-        self.readOnly = readOnly
-        self.bindCreateHostPath = bindCreateHostPath
-        self.volumeLabels = volumeLabels
-        self.tmpfsSize = tmpfs.size
-        self.tmpfsMode = tmpfs.mode
+        self.readOnly = options.readOnly
+        self.bindCreateHostPath = options.bindCreateHostPath
+        self.volumeLabels = options.volumeLabels
+        self.tmpfsSize = options.tmpfs.size
+        self.tmpfsMode = options.tmpfs.mode
         self.raw = raw
         self.unsupportedFields = unsupportedFields
+    }
+
+    public init(
+        type: String? = nil,
+        source: String? = nil,
+        target: String? = nil,
+        readOnly: Bool? = nil,
+        bindCreateHostPath: Bool? = nil,
+        raw: String? = nil,
+        unsupportedFields: [String]? = nil
+    ) {
+        self.init(
+            type: type,
+            source: source,
+            target: target,
+            options: MountOptions(readOnly: readOnly, bindCreateHostPath: bindCreateHostPath),
+            raw: raw,
+            unsupportedFields: unsupportedFields
+        )
     }
 }
 

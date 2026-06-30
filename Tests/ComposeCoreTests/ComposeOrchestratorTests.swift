@@ -834,7 +834,7 @@ struct ComposeOrchestratorTests {
                             type: "volume",
                             source: "cache",
                             target: "/cache",
-                            volumeLabels: ["com.example.mount": "service"]
+                            options: .init(volumeLabels: ["com.example.mount": "service"])
                         ),
                     ]
                 },
@@ -876,7 +876,7 @@ struct ComposeOrchestratorTests {
                         ComposeMount(
                             type: "volume",
                             target: "/scratch",
-                            volumeLabels: ["com.example.mount": "anonymous"]
+                            options: .init(volumeLabels: ["com.example.mount": "anonymous"])
                         ),
                     ]
                 },
@@ -913,7 +913,7 @@ struct ComposeOrchestratorTests {
                         ComposeMount(
                             type: "volume",
                             target: "/scratch",
-                            volumeLabels: ["com.example.mount": "anonymous"]
+                            options: .init(volumeLabels: ["com.example.mount": "anonymous"])
                         ),
                     ]
                 },
@@ -942,7 +942,7 @@ struct ComposeOrchestratorTests {
                         ComposeMount(
                             type: "volume",
                             target: "/scratch",
-                            volumeLabels: ["com.example.mount": "run"]
+                            options: .init(volumeLabels: ["com.example.mount": "run"])
                         ),
                     ]
                 },
@@ -20411,8 +20411,7 @@ struct ComposeOrchestratorTests {
                         ComposeMount(
                             type: "tmpfs",
                             target: "/scratch",
-                            readOnly: true,
-                            tmpfs: .init(size: "67108864", mode: "1777")
+                            options: .init(readOnly: true, tmpfs: .init(size: "67108864", mode: "1777"))
                         ),
                     ]
                 },

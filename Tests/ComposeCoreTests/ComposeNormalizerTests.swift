@@ -190,12 +190,12 @@ struct ComposeNormalizerTests {
                 type: "volume",
                 source: "data",
                 target: "/data",
-                volumeLabels: ["com.example.mount": "named"]
+                options: .init(volumeLabels: ["com.example.mount": "named"])
             ),
             ComposeMount(
                 type: "volume",
                 target: "/scratch",
-                volumeLabels: ["com.example.mount": "anonymous"]
+                options: .init(volumeLabels: ["com.example.mount": "anonymous"])
             ),
         ])
         #expect(project.services["api"]?.stopSignal == "SIGUSR1")

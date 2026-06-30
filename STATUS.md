@@ -24,11 +24,11 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for service long-form `volume.labels`, local Docker Compose 5.2.0 parity probes, focused Swift and Go normalizer/orchestration tests, `go test ./... -cover`, `make docker-compose-volume-labels-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `SONAR_QUALITYGATE_WAIT=true make sonar-scan`, `bash -n Tools/parity/check-compose-volume-labels.sh`, `shellcheck Tools/parity/check-compose-volume-labels.sh`, and `git diff --check`. This slice is a minor Compose release because it completes a Compose-file mount functionality gap, so the plugin version is `0.4.0`. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for service long-form `volume.labels`, local Docker Compose 5.2.0 parity probes, focused Swift and Go normalizer/orchestration tests, `go test ./... -cover`, `make docker-compose-volume-labels-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `SONAR_QUALITYGATE_WAIT=true make sonar-scan`, `bash -n Tools/parity/check-compose-volume-labels.sh`, `shellcheck Tools/parity/check-compose-volume-labels.sh`, and `git diff --check`. The `volume.labels` gap completed the `0.4.x` feature line; the current plugin version is `0.4.1` so the same functionality includes the Sonar-clean mount initializer patch. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 813 Compose tests at 89.05% line coverage.
+- Swift: 813 Compose tests at 89.04% line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State

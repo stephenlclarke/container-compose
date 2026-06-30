@@ -8,7 +8,7 @@
 - Keeps named service mount labels as config metadata, matching Docker Compose runtime behavior.
 - Adds focused Go normalizer and Swift orchestration coverage.
 - Adds a local-only Docker Compose parity target for service volume labels.
-- Bumps the plugin minor version to `0.4.0`.
+- Bumps the plugin release line to `0.4.1` (`0.4.0` feature work plus the Sonar-clean patch).
 - Updates README, status, parity/build docs, and release metadata.
 
 ## Type of Change
