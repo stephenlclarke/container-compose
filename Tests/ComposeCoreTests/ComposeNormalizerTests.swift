@@ -677,8 +677,6 @@ struct ComposeNormalizerTests {
         #expect(api.memLimit?.isEmpty == false)
         #expect(api.unsupportedDeployFields == [
             "resources.limits.pids",
-            "resources.reservations.cpus",
-            "resources.reservations.memory",
         ])
     }
 

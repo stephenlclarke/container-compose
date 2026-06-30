@@ -1905,7 +1905,7 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 		NanoCPUs:    types.NanoCPUs(0.5),
 		MemoryBytes: types.UnitBytes(128),
 		Pids:        32,
-	}}}); !reflect.DeepEqual(fields, []string{"resources.reservations.cpus", "resources.reservations.memory", "resources.reservations.pids"}) {
+	}}}); !reflect.DeepEqual(fields, []string{"resources.reservations.pids"}) {
 		t.Fatalf("unsupportedDeployFields(resource reservations) = %#v, want granular reservation fields", fields)
 	}
 	if got := unitBytesValue(0); got != "" {

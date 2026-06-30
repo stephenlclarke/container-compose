@@ -48,8 +48,9 @@ Current detailed gap examples:
   shortcuts are intentionally absent, and menu with exit-control or
   `up --watch` remains a documented compatibility boundary.
 - Supported local Deploy metadata includes replicas, local job modes,
-  stop-first update delays, restart policy fields, and Swarm
-  `endpoint_mode` acceptance as Docker-compatible local metadata.
+  stop-first update delays, restart policy fields, CPU/memory reservation
+  hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local
+  metadata.
 - Partially supported commands: `attach` and `up`.
 - Unsupported commands: `commit` and `publish`.
 

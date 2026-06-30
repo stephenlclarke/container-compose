@@ -2863,6 +2863,50 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
+    @Test("up accepts deploy CPU and memory reservations as local metadata")
+    func upAcceptsDeployCPUAndMemoryReservationsAsLocalMetadata() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            deploy:
+              resources:
+                reservations:
+                  cpus: "0.25"
+                  memory: 32M
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "demo",
+            projectDirectory: directory.path
+        ))
+        let api = try #require(project.services["api"])
+        #expect(api.unsupportedDeployFields == nil)
+
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.noStart = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
     @Test("up no-start no-deps creates only selected services")
     func upNoStartNoDepsCreatesOnlySelectedServices() async throws {
         let runner = RecordingRunner(responses: [
@@ -5941,14 +5985,14 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects deploy resource reservations as apple/container runtime gaps")
-    func upRejectsDeployResourceReservationsAsAppleContainerRuntimeGaps() async throws {
+    @Test("up rejects unsupported deploy resource reservations as apple/container runtime gaps")
+    func upRejectsUnsupportedDeployResourceReservationsAsAppleContainerRuntimeGaps() async throws {
         let runner = RecordingRunner()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.unsupportedDeployFields = ["resources.reservations.memory"]
+                    $0.unsupportedDeployFields = ["resources.reservations.pids"]
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
             ]
@@ -5960,7 +6004,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported deploy resource reservation error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses deploy.resources.reservations.memory; resource reservations need an apple/container scheduler/resource reservation gap PR"))
+            #expect(error == .unsupported("service 'api' uses deploy.resources.reservations.pids; resource reservations need an apple/container scheduler/resource reservation gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

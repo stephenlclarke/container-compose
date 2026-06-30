@@ -1013,15 +1013,13 @@ func unsupportedDeployLimitFields(resource *types.Resource) []string {
 	return fields
 }
 
-// unsupportedDeployReservationFields reports deploy resource reservations that
-// need a platform guarantee primitive rather than an ordinary hard limit.
+// unsupportedDeployReservationFields reports deploy resource reservations beyond
+// the CPU/memory scheduler metadata Docker Compose local mode accepts.
 func unsupportedDeployReservationFields(resource *types.Resource) []string {
 	if resource == nil {
 		return nil
 	}
 	fields := []string{}
-	appendUnsupportedDeployField(&fields, "resources.reservations.cpus", resource.NanoCPUs != 0)
-	appendUnsupportedDeployField(&fields, "resources.reservations.memory", resource.MemoryBytes != 0)
 	appendUnsupportedDeployField(&fields, "resources.reservations.pids", resource.Pids != 0)
 	appendUnsupportedDeployField(&fields, "resources.reservations.devices", len(resource.Devices) > 0)
 	appendUnsupportedDeployField(&fields, "resources.reservations.generic_resources", len(resource.GenericResources) > 0)

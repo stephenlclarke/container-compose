@@ -34,7 +34,7 @@ MARKDOWNLINT ?= markdownlint
 COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
-COMPOSE_VERSION ?= 0.1.4
+COMPOSE_VERSION ?= 0.1.5
 CONTAINER_COMPOSE_SOURCE ?= $(shell $(PYTHON) -c 'import subprocess; result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True); url = result.stdout.strip() if result.returncode == 0 else ""; url = url[len("git@github.com:"):] if url.startswith("git@github.com:") else url; url = url[len("https://github.com/"):] if url.startswith("https://github.com/") else url; url = url[:-4] if url.endswith(".git") else url; print(url)')
 CONTAINER_COMPOSE_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --short HEAD)
 CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BRANCH)"; print("main" if branch == "main" else "release" if branch == "release" or branch.startswith("release-") else "detached" if branch in ("", "HEAD") else "development")')
@@ -89,7 +89,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-deploy-endpoint-mode-parity docker-compose-up-menu-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-up-menu-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -220,23 +220,23 @@ cli-smoke-built:
 	.build/debug/compose --ansi never version >/dev/null
 	.build/debug/compose version --dry-run >/dev/null
 	version_short_output="$$(".build/debug/compose" version --short)"; \
-	[[ "$$version_short_output" == "0.1.4" ]]; \
+	[[ "$$version_short_output" == "0.1.5" ]]; \
 	version_pretty_output="$$(".build/debug/compose" version)"; \
-	[[ "$$version_pretty_output" == *"container-compose 0.1.4"* ]]; \
+	[[ "$$version_pretty_output" == *"container-compose 0.1.5"* ]]; \
 	[[ "$$version_pretty_output" == *"container:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"containerization:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"compose-go: $(COMPOSE_GO_VERSION)"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
-	[[ "$$version_json_output" == *'"version":"0.1.4"'* ]]; \
+	[[ "$$version_json_output" == *'"version":"0.1.5"'* ]]; \
 	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
 	[[ "$$version_json_output" == *'"containerDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationSource":'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"composeGoVersion":"$(COMPOSE_GO_VERSION)"'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
-	[[ "$$version_short_format_output" == *'"version":"0.1.4"'* ]]; \
+	[[ "$$version_short_format_output" == *'"version":"0.1.5"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
-	[[ "$$version_compact_format_output" == *'"version":"0.1.4"'* ]]; \
+	[[ "$$version_compact_format_output" == *'"version":"0.1.5"'* ]]; \
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	compat_tmp="$$(mktemp -d)"; \
@@ -436,7 +436,7 @@ cli-smoke-built:
 	printf 'services:\n  api:\n    image: alpine\n    build:\n      context: ./api\n    volumes:\n      - ./src:/src\n' > "$$tmpdir/relative-paths.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - missing\n' > "$$tmpdir/missing-dependency.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
-	[[ "$$version_compact_global_output" == "0.1.4" ]]; \
+	[[ "$$version_compact_global_output" == "0.1.5" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
 	[[ "$$config_output" == *"name: \"demo\""* ]]; \
 	[[ "$$config_output" == *"services:"* ]]; \
@@ -998,6 +998,9 @@ docker-compose-build-secret-metadata-parity: build
 
 docker-compose-deploy-endpoint-mode-parity: build
 	./Tools/parity/check-compose-deploy-endpoint-mode.sh --strict
+
+docker-compose-deploy-resource-reservations-parity: build
+	./Tools/parity/check-compose-deploy-resource-reservations.sh --strict
 
 docker-compose-up-menu-parity: build
 	./Tools/parity/check-compose-up-menu.sh --strict
