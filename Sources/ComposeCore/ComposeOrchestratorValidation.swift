@@ -254,9 +254,10 @@ extension ComposeOrchestrator {
                 }
             }
         }
-        if let networkMode = service.networkMode, !networkMode.isEmpty, !isNoNetworkMode(networkMode) {
+        if let networkMode = service.networkMode, !networkMode.isEmpty, !isSupportedNetworkMode(networkMode) {
             throw ComposeError.unsupported("service '\(service.name)' uses network_mode '\(networkMode)'; network mode support needs an apple/container runtime gap PR")
         }
+        _ = try runtimePIDArgument(service: service)
         if let gap = unsupportedRuntimeStringFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
@@ -336,6 +337,16 @@ extension ComposeOrchestrator {
     /// Returns whether the service explicitly disables container networking.
     func isNoNetworkMode(_ networkMode: String?) -> Bool {
         networkMode == "none"
+    }
+
+    /// Returns whether the service requests Docker Compose host network mode.
+    func isHostNetworkMode(_ networkMode: String?) -> Bool {
+        networkMode == "host"
+    }
+
+    /// Returns whether the service selects a network namespace mode this runtime can represent.
+    func isSupportedNetworkMode(_ networkMode: String) -> Bool {
+        isNoNetworkMode(networkMode) || isHostNetworkMode(networkMode)
     }
 
     /// Allows MAC addresses only for the single-network attachment that apple/container

@@ -156,9 +156,14 @@ extension ComposeOrchestrator {
         }
         if isNoNetworkMode(service.networkMode) {
             args.append(contentsOf: ["--network", "none"])
+        } else if isHostNetworkMode(service.networkMode) {
+            args.append(contentsOf: ["--network", "host"])
         } else if let network = (service.networks ?? []).first {
             let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
             args.append(contentsOf: ["--network", networkArgument])
+        }
+        if let pid = try runtimePIDArgument(service: service) {
+            args.append(contentsOf: ["--pid", pid])
         }
         if let platform = service.platform, !platform.isEmpty {
             args.append(contentsOf: ["--platform", platform])

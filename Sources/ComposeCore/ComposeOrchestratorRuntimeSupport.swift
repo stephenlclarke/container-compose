@@ -44,7 +44,6 @@ extension ComposeOrchestrator {
             ("cgroup_parent", service.cgroupParent, "cgroup parent support needs an apple/container runtime gap PR"),
             ("ipc", service.ipc, "IPC namespace support needs an apple/container runtime gap PR"),
             ("isolation", service.isolation, "isolation support needs an apple/container runtime gap PR"),
-            ("pid", service.pid, "PID namespace support needs an apple/container runtime gap PR"),
             ("userns_mode", service.usernsMode, "user namespace support needs an apple/container runtime gap PR"),
             ("uts", service.uts, "UTS namespace support needs an apple/container runtime gap PR"),
         ].compactMap { composeName, value, reason in
@@ -53,6 +52,17 @@ extension ComposeOrchestrator {
             }
             return (composeName, value, reason)
         }
+    }
+
+    /// Returns the apple/container PID namespace argument for Docker-compatible Compose PID modes.
+    func runtimePIDArgument(service: ComposeService) throws -> String? {
+        guard let pid = service.pid, !pid.isEmpty else {
+            return nil
+        }
+        guard pid == "host" else {
+            throw ComposeError.unsupported("service '\(service.name)' uses pid '\(pid)'; only pid: host is supported")
+        }
+        return "host"
     }
 
     /// Returns unsupported CPU scheduler fields beyond the supported `cpus` limit.

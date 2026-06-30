@@ -1211,6 +1211,61 @@ struct ComposeOrchestratorTests {
         #expect(await resourceManager.requests.isEmpty)
     }
 
+    @Test("up maps network mode host to runtime host networking")
+    func upMapsNetworkModeHostToRuntimeHostNetworking() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "host"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "host"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up maps pid host to container pid argument")
+    func upMapsPIDHostToContainerPIDArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.pid = "host"
+                    $0.networks = ["default"]
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "demo_default"]))
+        #expect(command.containsSequence(["--pid", "host"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
+    }
+
     @Test("up starts present optional dependencies in dependency order")
     func upStartsPresentOptionalDependenciesInDependencyOrder() async throws {
         let runner = RecordingRunner(responses: [
@@ -1824,6 +1879,63 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--network", "none"]))
         #expect(!command.contains("demo_default"))
         #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("create maps network mode host to runtime host networking")
+    func createMapsNetworkModeHostToRuntimeHostNetworking() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.networkMode = "host"
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--network", "host"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("create maps pid host to container pid argument")
+    func createMapsPIDHostToContainerPIDArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "alpine") {
+                    $0.pid = "host"
+                    $0.networks = ["default"]
+                },
+            ]
+        ) {
+            $0.networks = ["default": ComposeNetwork(name: "default")]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).create(project: project, options: ComposeCreateOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create", "--name", "demo-api-1"]))
+        #expect(command.containsSequence(["--network", "demo_default"]))
+        #expect(command.containsSequence(["--pid", "host"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
     }
 
     @Test("create skips missing optional dependencies")
@@ -6020,6 +6132,33 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
+
+    @Test("up rejects unsupported pid mode before creating resources")
+    func upRejectsUnsupportedPIDModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pid = "service:db"
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported PID mode error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses pid 'service:db'; only pid: host is supported"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("up rejects unsupported CPU resource fields before creating resources")
@@ -19748,31 +19887,51 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported network mode before creating resources")
-    func runRejectsUnsupportedNetworkModeBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
+    @Test("run maps network mode host to runtime host networking")
+    func runMapsNetworkModeHostToRuntimeHostNetworking() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
                     $0.networkMode = "host"
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "host"]))
+        #expect(!command.contains("demo_default"))
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("run maps pid host to container pid argument")
+    func runMapsPIDHostToContainerPIDArgument() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pid = "host"
+                    $0.networks = ["default"]
                 },
             ]
         ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+            $0.networks = ["default": ComposeNetwork(name: "default")]
         }
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported network mode error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses network_mode 'host'; network mode support needs an apple/container runtime gap PR"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
+            .run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--network", "demo_default"]))
+        #expect(command.containsSequence(["--pid", "host"]))
+        #expect(await resourceManager.requests.map(\.name) == ["demo_default"])
     }
 
     @Test("run rejects unsupported namespace and cgroup fields before creating resources")
@@ -19802,6 +19961,33 @@ struct ComposeOrchestratorTests {
 
             #expect(runner.commands.isEmpty)
         }
+    }
+
+    @Test("run rejects unsupported pid mode before creating resources")
+    func runRejectsUnsupportedPIDModeBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pid = "container:legacy"
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected unsupported PID mode error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'job' uses pid 'container:legacy'; only pid: host is supported"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("run rejects unsupported CPU resource fields before creating resources")
@@ -22174,12 +22360,6 @@ private func unsupportedRuntimeStringFieldCases() -> [UnsupportedRuntimeStringFi
             value: "default",
             reason: "isolation support needs an apple/container runtime gap PR",
             configure: { $0.isolation = "default" }
-        ),
-        UnsupportedRuntimeStringFieldCase(
-            composeName: "pid",
-            value: "host",
-            reason: "PID namespace support needs an apple/container runtime gap PR",
-            configure: { $0.pid = "host" }
         ),
         UnsupportedRuntimeStringFieldCase(
             composeName: "userns_mode",

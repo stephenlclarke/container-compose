@@ -297,6 +297,14 @@ make docker-compose-rm-parity
 
 This runs Docker Compose V2 against a temporary project and validates the `rm` behavior mirrored by `container-compose`: missing service containers report `No stopped containers`, running containers are not removed without `--stop`, and `rm --stop --force` removes a running service container. The target also runs the focused local Swift tests for the same `container-compose` behavior. It is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
 
+For the local-only host namespace parity check, run:
+
+```sh
+make docker-compose-host-namespaces-parity
+```
+
+This runs Docker Compose V2 against a temporary project and validates the host namespace behavior mirrored by `container-compose`: `network_mode: host` emits the Stephen fork-backed `container --network host` path without attaching the Compose project network, `pid: host` sets Docker-compatible host PID mode while keeping normal service networking, and service/container namespace-sharing forms stay documented unsupported modes in `container-compose`. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
+
 For the local-only create-options parity check, run:
 
 ```sh

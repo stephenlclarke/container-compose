@@ -89,7 +89,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-up-menu-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -1010,6 +1010,9 @@ docker-compose-deploy-resource-reservations-parity: build
 
 docker-compose-up-menu-parity: build
 	./Tools/parity/check-compose-up-menu.sh --strict
+
+docker-compose-host-namespaces-parity: build
+	./Tools/parity/check-compose-host-namespaces.sh --strict
 
 docker-compose-create-options-parity:
 	./Tools/parity/check-compose-create-options.sh --strict

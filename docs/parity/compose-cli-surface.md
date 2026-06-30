@@ -24,6 +24,8 @@ For `build --check` behavior specifically, run `make docker-compose-build-check-
 
 For `up --menu` behavior specifically, run `make docker-compose-up-menu-parity`. That local-only target compares Docker Compose V2 and `container-compose` against a generated compose.yml fixture for `--menu=false`, `--menu=true`, `COMPOSE_MENU=true` with explicit `--menu=false`, `--menu` with exit-control options, and `--menu --watch`.
 
+For host namespace behavior specifically, run `make docker-compose-host-namespaces-parity`. That local-only target compares Docker Compose V2 and `container-compose` using a Compose file with `network_mode: host` and `pid: host`, then verifies service/container namespace-sharing forms remain explicit documented gaps.
+
 ## Documented Differences
 
 - Root `--verbose` is listed by `container-compose` and accepted by the parser for existing bug-report and version workflows. Docker Compose 5.2.0 standalone accepts `docker-compose --verbose version`, but does not list `--verbose` in root help. This is tracked in `Tools/parity/compose-cli-surface.allowlist`.
@@ -32,4 +34,5 @@ For `up --menu` behavior specifically, run `make docker-compose-up-menu-parity`.
 - Build-secret `uid`, `gid`, and `mode` metadata is accepted for build file/env secrets. Docker Compose V2 preserves that metadata in config output, but BuildKit does not implement it and Docker Compose omits it from bake secret entries; `container-compose` mirrors the build behavior and its normalized config reports the effective BuildKit secret ID plus file/env source.
 - `deploy.endpoint_mode` is accepted as Swarm metadata in local mode. Docker Compose V2 preserves the raw Deploy value in config output and accepts local dry-run `up --no-start`; `container-compose` mirrors the local execution behavior and does not report the field as unsupported.
 - `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory` are accepted as scheduler metadata in local mode. Docker Compose V2 preserves the raw Deploy reservation values in config output and accepts local dry-run `up --no-start`; `container-compose` mirrors the local execution behavior and does not report those fields as unsupported.
-No unexpected command or long-option surface differences were observed on this MacBook Pro against Docker Compose 5.2.0 when the CLI-surface parity harness was refreshed for this slice.
+- Host namespace mode support is currently the host-only subset: `pid: host` maps to the fork-backed runtime PID primitive, and `network_mode: host` maps to the Stephen fork-backed `container --network host` path without attaching the Compose project network. Docker Compose also provides `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME`; those forms remain blocked until the runtime exposes Docker-compatible namespace-joining primitives.
+No unexpected command or long-option surface differences were observed on this MacBook Pro against Docker Compose 5.2.0 when the CLI-surface parity harness was last refreshed.

@@ -53,6 +53,11 @@ Current detailed gap examples:
   `volume.labels` preservation. Anonymous `volume.labels` are applied to the
   created runtime volume; named service mount labels remain config metadata,
   matching Docker Compose.
+- Supported namespace-mode coverage includes `network_mode: none` and
+  `pid: host`. `network_mode: host` maps to the Stephen fork-backed
+  `container --network host` runtime path while avoiding Compose project network
+  attachment. Service/container namespace-sharing forms remain explicit runtime
+  gaps.
 - Supported local Deploy metadata includes replicas, local job modes,
   stop-first update delays, restart policy fields, CPU/memory reservation
   hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local
