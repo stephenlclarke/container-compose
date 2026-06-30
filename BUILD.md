@@ -273,6 +273,14 @@ make docker-compose-device-cgroup-rules-parity
 
 This compares Docker Compose V2 and `container-compose` for a Compose file with service `device_cgroup_rules`. Docker Compose preserves the rules in `config --format json` and projects them to Docker Engine `HostConfig.DeviceCgroupRules`; `container-compose` preserves the normalized config and maps `up`, `create`, and one-off `run` to repeatable fork-backed `container --device-cgroup-rule` arguments. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
 
+For the local-only service device parity check, run:
+
+```sh
+make docker-compose-devices-parity
+```
+
+This compares Docker Compose V2 and `container-compose` for a Compose file with service `devices`. Docker Compose preserves the mappings in `config --format json` and projects them to Docker Engine `HostConfig.Devices`; `container-compose` preserves the normalized config and maps `up`, `create`, and one-off `run` to repeatable fork-backed `container --device` arguments for the runtime-supported Linux VM device table. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
 For the local-only top-level network `driver_opts` parity check, run:
 
 ```sh

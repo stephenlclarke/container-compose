@@ -32,7 +32,7 @@ References:
 
 ## Implementation Details
 
-- Removed `device_cgroup_rules` from the unsupported device-access field group while keeping `credential_spec`, `devices`, and `gpus` blocked.
+- Removed `device_cgroup_rules` from the unsupported device-access field group while keeping `credential_spec`, `devices`, and `gpus` blocked at the time of that slice. Service `devices` is now tracked separately in [PR-service-devices.md](PR-service-devices.md).
 - Added `runtimeDeviceCgroupRuleArguments(service:)` to validate Compose rule strings through `ContainerAPIClient.Parser.deviceCgroupRules`.
 - Added repeatable `--device-cgroup-rule` rendering in the service create/run command path.
 - Added pre-side-effect validation so invalid rule strings fail before runtime resources are prepared.
@@ -49,7 +49,7 @@ Supported on the fork-backed integration stack:
 
 Known remaining device gaps:
 
-- `services.<name>.devices` remains blocked until host-device passthrough exists.
+- `services.<name>.devices` is supported for the runtime-supported Linux VM device table by the later service-device slice.
 - `services.<name>.gpus` remains blocked until GPU passthrough exists.
 - Deploy resource device reservations remain blocked because they imply scheduler/device semantics beyond this local runtime mapping.
 

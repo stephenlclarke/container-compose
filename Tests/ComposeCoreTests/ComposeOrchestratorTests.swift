@@ -6349,6 +6349,123 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--device-cgroup-rule", "a *:* rwm"]))
     }
 
+    @Test("up maps devices to runtime arguments")
+    func upMapsDevicesToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.devices = [
+                        .object([
+                            "source": .string("/dev/null"),
+                            "target": .string("/dev/xnull"),
+                            "permissions": .string("rw"),
+                        ]),
+                        .string("/dev/random:/dev/xrandom"),
+                        .string("/dev/zero"),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--device", "/dev/null:/dev/xnull:rw"]))
+        #expect(command.containsSequence(["--device", "/dev/random:/dev/xrandom"]))
+        #expect(command.containsSequence(["--device", "/dev/zero"]))
+    }
+
+    @Test("up rejects invalid devices before creating resources")
+    func upRejectsInvalidDevicesBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.devices = [.string("dev/null:/dev/xnull")]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid devices error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' has invalid devices; entries must use HOST[:CONTAINER[:PERMISSIONS]] with absolute paths and r/w/m permissions"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects non-string device object fields")
+    func upRejectsNonStringDeviceObjectFields() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.devices = [
+                        .object([
+                            "source": .string("/dev/null"),
+                            "target": .number(1),
+                        ]),
+                    ]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid devices error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' has invalid devices; entries must use HOST[:CONTAINER[:PERMISSIONS]] with absolute paths and r/w/m permissions"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects relative device targets")
+    func upRejectsRelativeDeviceTargets() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.devices = [
+                        .string("/dev/null:rw"),
+                        .object([
+                            "source": .string("/dev/zero"),
+                            "target": .string("zero"),
+                        ]),
+                    ]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected invalid devices error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' has invalid devices; entries must use HOST[:CONTAINER[:PERMISSIONS]] with absolute paths and r/w/m permissions"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up treats develop watch metadata as harmless")
     func upTreatsDevelopWatchMetadataAsHarmless() async throws {
         let runner = RecordingRunner()
@@ -20207,6 +20324,56 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--device-cgroup-rule", "a *:* rwm"]))
     }
 
+    @Test("run maps devices to runtime arguments")
+    func runMapsDevicesToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.devices = [
+                        .object([
+                            "source": .string("/dev/null"),
+                            "target": .string("/dev/xnull"),
+                            "permissions": .string("rw"),
+                        ]),
+                        .string("/dev/zero"),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--device", "/dev/null:/dev/xnull:rw"]))
+        #expect(command.containsSequence(["--device", "/dev/zero"]))
+    }
+
+    @Test("run rejects invalid devices before runtime commands")
+    func runRejectsInvalidDevicesBeforeRuntimeCommands() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.devices = [.string("/dev/null:/dev/xnull:z")]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            Issue.record("Expected invalid devices error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'job' has invalid devices; entries must use HOST[:CONTAINER[:PERMISSIONS]] with absolute paths and r/w/m permissions"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects invalid device cgroup rules before runtime commands")
     func runRejectsInvalidDeviceCgroupRulesBeforeRuntimeCommands() async throws {
         let runner = RecordingRunner()
@@ -22673,19 +22840,6 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
             composeName: "credential_spec",
             reason: "credential spec support needs an apple/container runtime gap PR",
             configure: { $0.credentialSpec = .object(["file": .string("credential-spec.json")]) }
-        ),
-        UnsupportedDeviceAccessFieldCase(
-            composeName: "devices",
-            reason: "host device access support needs an apple/container runtime gap PR",
-            configure: {
-                $0.devices = [
-                    .object([
-                        "source": .string("/dev/fuse"),
-                        "target": .string("/dev/fuse"),
-                        "permissions": .string("rwm"),
-                    ]),
-                ]
-            }
         ),
         UnsupportedDeviceAccessFieldCase(
             composeName: "gpus",

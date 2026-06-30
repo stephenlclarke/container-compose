@@ -44,7 +44,7 @@ git diff --check
 
 - Default behavior is unchanged because `deviceCgroupRules` defaults to an empty array.
 - This does not expose Docker or Compose syntax in `containerization`.
-- This does not create device nodes or implement host-device/GPU passthrough; it only projects cgroup permission rules into the OCI spec.
+- Device node creation is handled by the later OCI device-node slice. This cgroup-rule slice does not implement GPU or arbitrary macOS hardware passthrough; it only projects cgroup permission rules into the OCI spec.
 
 ## Remaining Risks
 

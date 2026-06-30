@@ -38,7 +38,7 @@ With this change, `container-compose` supports the cgroup-rule subset:
 
 `container-compose` owns Compose model validation, Docker-compatible rule-string acceptance, dry-run rendering, and Docker Compose parity tests.
 
-`apple/container` owns the native CLI/API entry point and typed runtime-data bridge for Linux device cgroup rules. `apple/containerization` owns projecting those rules into the generated OCI runtime spec. Host `devices` and `gpus` are not solved by this slice because they need separate device-passthrough primitives.
+`apple/container` owns the native CLI/API entry point and typed runtime-data bridge for Linux device cgroup rules. `apple/containerization` owns projecting those rules into the generated OCI runtime spec. Service `devices` is handled by the later supported Linux VM device slice; `gpus` still needs a separate device-passthrough primitive.
 
 ## Minimal example
 

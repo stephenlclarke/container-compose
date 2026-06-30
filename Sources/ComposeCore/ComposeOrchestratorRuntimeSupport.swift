@@ -109,14 +109,11 @@ extension ComposeOrchestrator {
         return fields
     }
 
-    /// Returns unsupported host device, GPU, and credential access fields.
+    /// Returns unsupported GPU and credential access fields.
     func unsupportedDeviceAccessFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
         if service.credentialSpec != nil {
             fields.append(("credential_spec", "credential spec support needs an apple/container runtime gap PR"))
-        }
-        if let devices = service.devices, !devices.isEmpty {
-            fields.append(("devices", "host device access support needs an apple/container runtime gap PR"))
         }
         if let gpus = service.gpus, !gpus.isEmpty {
             fields.append(("gpus", "GPU device access support needs an apple/container runtime gap PR"))
@@ -418,6 +415,91 @@ extension ComposeOrchestrator {
             throw ComposeError.invalidProject("service '\(service.name)' has invalid device_cgroup_rules; entries must use '<type> <major>:<minor> <access>' such as 'c 1:3 mr'")
         }
         return rules
+    }
+
+    /// Returns Docker-compatible Linux device mappings for service create/run.
+    func runtimeDeviceArguments(service: ComposeService) throws -> [String] {
+        guard let devices = service.devices, !devices.isEmpty else {
+            return []
+        }
+        do {
+            return try devices.map { try runtimeDeviceArgument($0) }
+        } catch {
+            throw ComposeError.invalidProject("service '\(service.name)' has invalid devices; entries must use HOST[:CONTAINER[:PERMISSIONS]] with absolute paths and r/w/m permissions")
+        }
+    }
+
+    private func runtimeDeviceArgument(_ value: ComposeValue) throws -> String {
+        switch value {
+        case .string(let spec):
+            return try runtimeDeviceArgument(spec)
+        case .object(let object):
+            guard case .string(let source)? = object["source"] else {
+                throw ComposeError.invalidProject("missing device source")
+            }
+            let target = try optionalStringField("target", in: object)
+            let permissions = try optionalStringField("permissions", in: object)
+
+            return try runtimeDeviceArgument(source: source, target: target, permissions: permissions)
+        default:
+            throw ComposeError.invalidProject("invalid device value")
+        }
+    }
+
+    private func runtimeDeviceArgument(_ spec: String) throws -> String {
+        let parts = spec.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard !parts.isEmpty, parts.count <= 3 else {
+            throw ComposeError.invalidProject("invalid device string")
+        }
+
+        let source = parts[0]
+        let target = parts.count >= 2 ? parts[1] : nil
+        let permissions = parts.count == 3 ? parts[2] : nil
+        return try runtimeDeviceArgument(source: source, target: target, permissions: permissions)
+    }
+
+    private func runtimeDeviceArgument(source: String, target: String?, permissions: String?) throws -> String {
+        guard isAbsoluteDevicePath(source) else {
+            throw ComposeError.invalidProject("device source must be absolute")
+        }
+        if let target, !isAbsoluteDevicePath(target) {
+            throw ComposeError.invalidProject("device target must be absolute")
+        }
+        if let permissions, !isDevicePermissions(permissions) {
+            throw ComposeError.invalidProject("invalid device permissions")
+        }
+
+        let spec: String
+        if let target, let permissions {
+            spec = "\(source):\(target):\(permissions)"
+        } else if let target {
+            spec = "\(source):\(target)"
+        } else if let permissions {
+            spec = "\(source):\(permissions)"
+        } else {
+            spec = source
+        }
+        _ = try Parser.devices([spec])
+        return spec
+    }
+
+    private func optionalStringField(_ name: String, in object: [String: ComposeValue]) throws -> String? {
+        guard let value = object[name] else {
+            return nil
+        }
+        guard case .string(let rawValue) = value else {
+            throw ComposeError.invalidProject("device \(name) must be a string")
+        }
+        return rawValue
+    }
+
+    private func isAbsoluteDevicePath(_ value: String) -> Bool {
+        value.hasPrefix("/") && !value.isEmpty
+    }
+
+    private func isDevicePermissions(_ value: String) -> Bool {
+        let allowed = Set("rwm")
+        return !value.isEmpty && value.allSatisfy { allowed.contains($0) }
     }
 
     /// Converts Compose `blkio_config` into typed OCI block I/O runtime data.

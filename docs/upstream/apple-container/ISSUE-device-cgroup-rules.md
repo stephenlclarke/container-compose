@@ -14,7 +14,7 @@ The useful Apple-facing shape is a Linux-specific runtime-data bridge:
 - parse or accept typed device cgroup rules at the CLI/API boundary;
 - carry the rules through `LinuxRuntimeData` in `RuntimeConfiguration.runtimeData`;
 - have the Linux runtime assign those rules to `LinuxContainer.Configuration.deviceCgroupRules`;
-- keep host device injection, GPU passthrough, and Compose service policy outside this primitive.
+- keep device node injection, GPU passthrough, and Compose service policy outside this primitive.
 
 Existing upstream context reviewed while scoping this slice:
 
@@ -26,7 +26,7 @@ Existing upstream context reviewed while scoping this slice:
 - [apple/containerization#74](https://github.com/apple/containerization/issues/74), [apple/containerization#480](https://github.com/apple/containerization/issues/480), and [apple/containerization#569](https://github.com/apple/containerization/pull/569): broader device/GPU runtime context.
 - [apple/container discussion #1469](https://github.com/apple/container/discussions/1469) and [discussion #62](https://github.com/apple/container/discussions/62): passthrough demand signals.
 
-This change is intentionally narrower than those passthrough requests. Device cgroup rules set permissions in the OCI runtime spec; they do not mount or expose host devices by themselves.
+This change is intentionally narrower than those passthrough requests. Device cgroup rules set permissions in the OCI runtime spec; they do not create device nodes by themselves. Docker `--device` / Compose `devices` is handled by the later supported Linux VM device mapping slice.
 
 ## Code of Conduct
 

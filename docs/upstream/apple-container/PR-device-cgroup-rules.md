@@ -61,10 +61,10 @@ git diff --check
 
 - Existing runtime-data payloads remain decodable because missing `deviceCgroupRules` defaults to `[]`.
 - The default runtime behavior is unchanged when no rule is supplied.
-- This does not implement Docker `--device`, Compose `devices`, GPU passthrough, USB sharing, or SD-card passthrough.
+- Docker `--device` / Compose `devices` is handled by the later supported Linux VM device mapping slice. This cgroup-rule slice does not implement GPU passthrough, USB sharing, SD-card passthrough, or arbitrary macOS hardware passthrough.
 - Upstream maintainers may prefer typed API-only configuration and may choose not to expose the Docker-shaped CLI parser directly. The parser exists in the Stephen fork because the current Compose plugin path still uses command vectors for service create/run.
 
 ## Remaining Risks
 
 - The runtime applies cgroup rules only; it does not guarantee the referenced device node exists inside the container.
-- Host-device and GPU passthrough still need separate Virtualization/containerization primitives.
+- GPU and arbitrary host hardware passthrough still need separate Virtualization/containerization primitives.

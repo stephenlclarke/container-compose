@@ -31,7 +31,7 @@ Keep the prebuilt install path healthy for the active lanes:
 - Homebrew advisory jobs trust only the specific taps required by the formulas.
 - Keep auditing startup, normalization, image pull/build, and runtime handoff paths so every slow phase emits prompt stderr progress before the expensive work starts, using Docker Compose-style `--progress` policies and a compact spinner inspired by Stephen Clarke's [`mac-spinner`](https://github.com/stephenlclarke/mac-sync/blob/main/bin/mac-spinner). Treat any newly observed silent startup or build wait as a progress regression: reproduce it, add a focused first-frame test, and emit a visible spinner/status row before the blocking operation begins.
 - Structured `--progress json` output is available for Compose-owned phases; underlying Apple build subprocess output remains governed by the runtime command being invoked.
-- Current compose-file gap queue: finish the remaining `network_mode` / `pid` namespace values where possible, then complete `devices`, then return to network `driver_opts`.
+- Current compose-file gap queue: continue the strict scan around `gpus`, arbitrary macOS hardware passthrough, generic service endpoint `driver_opts`, Deploy device reservations, and service/container namespace-sharing forms.
 
 ## Upstreamable Runtime Slices
 

@@ -64,10 +64,13 @@ Current detailed gap examples:
   `driver_opts` support is currently limited to Docker-compatible MTU values
   because Apple attachment options expose MTU but not arbitrary endpoint driver
   options.
-- Supported device-cgroup coverage includes service `device_cgroup_rules`,
-  which maps to the fork-backed `container run/create --device-cgroup-rule`
-  runtime path. Host device mappings and GPU requests remain explicit runtime
-  gaps.
+- Supported device coverage includes service `device_cgroup_rules`, which maps
+  to the fork-backed `container run/create --device-cgroup-rule` runtime path,
+  and service `devices`, which maps Docker Compose device entries to
+  fork-backed `container run/create --device` arguments for supported Linux VM
+  device paths such as `/dev/null` and `/dev/zero`. Device source paths and
+  explicit target paths must be absolute. GPU requests and arbitrary macOS
+  hardware passthrough remain explicit runtime gaps.
 - Supported local Deploy metadata includes replicas, local job modes,
   stop-first update delays, restart policy fields, CPU/memory reservation
   hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local
