@@ -8,7 +8,7 @@
 - Keeps named service mount labels as config metadata, matching Docker Compose runtime behavior.
 - Adds focused Go normalizer and Swift orchestration coverage.
 - Adds a local-only Docker Compose parity target for service volume labels.
-- Bumps the plugin release line to `0.4.1` (`0.4.0` feature work plus the Sonar-clean patch).
+- Bumps the plugin release line to `0.4.2` (`0.4.0` feature work plus the Sonar-clean patch and the AddressSanitizer-proven menu watch-state race fix).
 - Updates README, status, parity/build docs, and release metadata.
 
 ## Type of Change
@@ -54,6 +54,7 @@ make docker-compose-volume-labels-parity
 make check
 make cli-smoke-built
 make coverage-check
+SWIFT_TEST_RESULT_LOG=.build/swift-asan-local.log SWIFT_TEST_ATTEMPTS=2 Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=address --no-parallel --filter ComposeUpMenuTests
 SONAR_QUALITYGATE_WAIT=true make sonar-scan
 git diff --check
 ```

@@ -81,6 +81,7 @@ struct ComposeUpMenuTests {
     @Test("watch toggle redraws disabled state when asynchronous watch stops")
     func watchToggleRedrawsDisabledStateWhenAsynchronousWatchStops() async throws {
         let statuses = LockedStringRecorder()
+        let releaseStop = AsyncSignal()
         let watchStopped = AsyncSignal()
         let state = ComposeUpMenuSessionState(watchEnabled: false)
         let operationTask = pendingOperationTask()
@@ -95,6 +96,7 @@ struct ComposeUpMenuTests {
                 toggleWatch: { desiredEnabled, stateChanged in
                     if desiredEnabled {
                         Task {
+                            await releaseStop.wait()
                             await stateChanged(false)
                             await watchStopped.signal()
                         }
@@ -110,12 +112,49 @@ struct ComposeUpMenuTests {
             operationTask: operationTask,
             configuration: configuration,
         )
+        #expect(statuses.values == ["d Detach   w Disable Watch"])
+        #expect(await state.watchIsEnabled)
+
+        await releaseStop.signal()
         try await wait(for: watchStopped, timeout: .seconds(1))
 
         #expect(statuses.values == [
             "d Detach   w Disable Watch",
             "d Detach   w Enable Watch",
         ])
+        #expect(!(await state.watchIsEnabled))
+    }
+
+    @Test("watch toggle keeps callback state when watch stops before action returns")
+    func watchToggleKeepsCallbackStateWhenWatchStopsBeforeActionReturns() async throws {
+        let statuses = LockedStringRecorder()
+        let state = ComposeUpMenuSessionState(watchEnabled: false)
+        let operationTask = pendingOperationTask()
+        defer {
+            operationTask.cancel()
+        }
+        let configuration = menuConfiguration(
+            statuses: statuses,
+            actions: ComposeUpMenuActions(
+                gracefulStop: {},
+                forceStop: {},
+                toggleWatch: { desiredEnabled, stateChanged in
+                    if desiredEnabled {
+                        await stateChanged(false)
+                    }
+                    return desiredEnabled
+                },
+            ),
+        )
+
+        await TerminalComposeUpMenuController.handle(
+            key: .toggleWatch,
+            state: state,
+            operationTask: operationTask,
+            configuration: configuration,
+        )
+
+        #expect(statuses.values == ["d Detach   w Enable Watch"])
         #expect(!(await state.watchIsEnabled))
     }
 

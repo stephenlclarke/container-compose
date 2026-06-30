@@ -169,11 +169,12 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
             return
         }
         do {
+            let watchVersion = await state.watchChangeVersion
             let applied = try await configuration.actions.toggleWatch(true) { enabled in
                 await state.setWatchEnabled(enabled)
                 configuration.emitStatus(await menuLine(configuration: configuration, state: state))
             }
-            await state.setWatchEnabled(applied)
+            await state.setWatchEnabled(applied, ifWatchVersion: watchVersion)
         } catch is CancellationError {
             await state.setWatchEnabled(false)
         } catch {
@@ -202,18 +203,21 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
             let previous = await state.watchIsEnabled
             let desired = !previous
             do {
+                let watchVersion = await state.watchChangeVersion
                 let applied = try await configuration.actions.toggleWatch(desired) { enabled in
                     await state.setWatchEnabled(enabled)
                     configuration.emitStatus(await menuLine(configuration: configuration, state: state))
                 }
-                await state.setWatchEnabled(applied)
+                let didApply = await state.setWatchEnabled(applied, ifWatchVersion: watchVersion)
+                if didApply {
+                    configuration.emitStatus(await menuLine(configuration: configuration, state: state))
+                }
             } catch is CancellationError {
                 await state.setWatchEnabled(previous)
             } catch {
                 await state.setWatchEnabled(previous)
                 configuration.emitStatus("Watch -> \(error)")
             }
-            configuration.emitStatus(await menuLine(configuration: configuration, state: state))
         case .interrupt:
             let count = await state.recordInterrupt()
             if count == 1 {
@@ -301,6 +305,7 @@ actor ComposeUpMenuSessionState {
     private var detached = false
     private var interruptCount = 0
     private var watchEnabled: Bool
+    private var watchVersion = 0
 
     init(watchEnabled: Bool) {
         self.watchEnabled = watchEnabled
@@ -314,12 +319,26 @@ actor ComposeUpMenuSessionState {
         watchEnabled
     }
 
+    var watchChangeVersion: Int {
+        watchVersion
+    }
+
     func markDetached() {
         detached = true
     }
 
     func setWatchEnabled(_ enabled: Bool) {
         watchEnabled = enabled
+        watchVersion += 1
+    }
+
+    @discardableResult
+    func setWatchEnabled(_ enabled: Bool, ifWatchVersion expectedVersion: Int) -> Bool {
+        guard watchVersion == expectedVersion else {
+            return false
+        }
+        setWatchEnabled(enabled)
+        return true
     }
 
     func recordInterrupt() -> Int {
