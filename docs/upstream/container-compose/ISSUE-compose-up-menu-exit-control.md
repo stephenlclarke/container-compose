@@ -32,4 +32,4 @@ The Apple runtime does not need a new primitive for this combination. `container
 - `container compose up --menu --abort-on-container-exit SERVICE` is accepted.
 - `container compose up --menu --abort-on-container-failure SERVICE` is accepted.
 - `container compose up --menu --exit-code-from SERVICE` is accepted and returns the selected service status.
-- `up --menu --watch` remains a separate documented gap until the watch and menu lifecycle loops are reconciled.
+- Command-level `up --menu --watch` is a separate lifecycle concern and is covered by the later menu-watch parity slice.

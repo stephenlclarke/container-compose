@@ -48,6 +48,7 @@ public struct ComposeUpOptions {
     public var noLogPrefix = false
     public var colorPrefixes = false
     public var menu = false
+    public var menuWatch = false
 
     public init() {
         services = []
@@ -79,6 +80,7 @@ public struct ComposeUpOptions {
         noLogPrefix = false
         colorPrefixes = false
         menu = false
+        menuWatch = false
     }
 
     public init(_ configure: (inout ComposeUpOptions) -> Void) {

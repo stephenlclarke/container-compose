@@ -7,7 +7,6 @@
 - Preserves menu detach behavior: a user detach cancels attached log ownership without forcing exit-control teardown.
 - Preserves existing exit-control behavior: an exit-control result tears the project down and returns the selected or failing status.
 - Updates the local Docker Compose parity script so menu plus exit-control is required parity.
-- Keeps `up --menu --watch` as the remaining documented menu combination gap.
 - Bumps the plugin patch version to `0.1.6`.
 - Updates README, status, parity docs, and upstream handoff notes.
 
@@ -29,7 +28,7 @@ The upstream search did not find guidance to reject this combination. This slice
 - Removed CLI and orchestrator validation that rejected `up --menu` with exit-control options.
 - Added a menu operation race that follows logs while waiting for the existing exit-control path.
 - Stores the exit-control status from the menu session and returns it from `compose up`.
-- Leaves `up --menu --watch` rejected until a dedicated watch/menu lifecycle pass.
+- Leaves command-level `up --menu --watch` to a dedicated watch/menu lifecycle pass, now covered by the follow-up menu-watch slice.
 - Updated focused Swift tests, runtime dry-run smoke, and `Tools/parity/check-compose-up-menu.sh`. The local dry-run harness verifies Docker Compose accepts the combination and verifies `container-compose` accepts it while preserving the existing exit-control dry-run wait/down plan.
 
 ## Validation
@@ -41,7 +40,7 @@ gh api graphql -f query='query($q:String!){ search(query:$q, type:DISCUSSION, fi
 docker-compose --ansi never --dry-run --project-directory "$tmpdir" -p cc-menu-probe -f "$tmpdir/compose.yml" up --menu --abort-on-container-exit api
 docker-compose --ansi never --dry-run --project-directory "$tmpdir" -p cc-menu-probe -f "$tmpdir/compose.yml" up --menu --watch api
 swift test --disable-automatic-resolution --filter 'upMenu|upExitControl|upAbortOnContainer'
-CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$PWD/.build/debug/compose" swift test --disable-automatic-resolution --filter 'runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndRejectsMenuWatch'
+CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$PWD/.build/debug/compose" swift test --disable-automatic-resolution --filter 'runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndMenuWatch'
 bash -n Tools/parity/check-compose-up-menu.sh
 shellcheck Tools/parity/check-compose-up-menu.sh
 make docker-compose-up-menu-parity
@@ -59,4 +58,4 @@ This change makes `container-compose` more permissive for an option combination 
 
 ## Remaining Risks
 
-- `up --menu --watch` still needs a dedicated parity pass because the command-level watch loop and the menu toggle loop currently own overlapping lifecycle responsibilities.
+- Command-level `up --menu --watch` is covered by the later menu-watch parity slice and is no longer a documented boundary.

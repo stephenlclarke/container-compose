@@ -28,7 +28,7 @@ private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
 
 private struct ComposeBuildInfo: Codable {
-    var version: String = "0.1.6"
+    var version: String = "0.2.0"
     var source: String = "unspecified"
     var branch: String = "unspecified"
     var lane: String = "unspecified"
@@ -87,7 +87,7 @@ private struct ComposeBuildInfo: Codable {
         let root = git(["rev-parse", "--show-toplevel"]) ?? FileManager.default.currentDirectoryPath
         let branch = git(["branch", "--show-current"], root: root) ?? "unspecified"
         return ComposeBuildInfo(
-            version: "0.1.6",
+            version: "0.2.0",
             source: remoteSource(root: root),
             branch: branch,
             lane: lane(for: branch),
@@ -815,9 +815,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             throw ComposeError.unsupported("up --watch cannot be combined with exit-control options")
         }
         let menuRequested = global.shouldRequestUpMenu(menu: menu, menuDisabled: menuDisabled)
-        if watch && menuRequested {
-            throw ComposeError.unsupported("up --menu cannot be combined with --watch yet")
-        }
 
         let loadedProject = try await project()
         let menuEnabled = global.shouldEnableUpMenu(
@@ -825,6 +822,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             menuDisabled: menuDisabled,
             attachedOutput: formatsAttachedOutput,
         )
+        let dryRunMenuWatch = global.dryRun && watch && menuRequested
+        let interactiveMenuWatch = watch && menuEnabled
         let upOptions = ComposeUpOptions {
             $0.services = services
             $0.abortOnContainerExit = abortOnContainerExit
@@ -854,9 +853,10 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             $0.timestamps = timestamps && formatsAttachedOutput
             $0.noLogPrefix = noLogPrefix
             $0.colorPrefixes = global.shouldColorLogs(noColor: noColor)
-            $0.menu = menuEnabled
+            $0.menu = menuEnabled || dryRunMenuWatch
+            $0.menuWatch = interactiveMenuWatch
         }
-        if watch {
+        if watch && !interactiveMenuWatch && !dryRunMenuWatch {
             try await orchestrator().watch(
                 project: loadedProject,
                 options: ComposeWatchOptions(

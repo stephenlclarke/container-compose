@@ -22,7 +22,7 @@ For Deploy CPU/memory reservation behavior specifically, run `make docker-compos
 
 For `build --check` behavior specifically, run `make docker-compose-build-check-parity`. That target reuses Docker Compose's upstream `pkg/e2e/fixtures/build-test/minimal` fixture, compares Docker Compose V2 BuildKit lint behavior with `container compose build --print --check`, and can run the live fork-backed `container compose build --check` path when `CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1` is set.
 
-For `up --menu` behavior specifically, run `make docker-compose-up-menu-parity`. That local-only target compares Docker Compose V2 and `container-compose` against a generated compose.yml fixture for `--menu=false`, `--menu=true`, `COMPOSE_MENU=true` with explicit `--menu=false`, and `--menu` with exit-control options, then verifies the current `--menu --watch` difference remains documented.
+For `up --menu` behavior specifically, run `make docker-compose-up-menu-parity`. That local-only target compares Docker Compose V2 and `container-compose` against a generated compose.yml fixture for `--menu=false`, `--menu=true`, `COMPOSE_MENU=true` with explicit `--menu=false`, `--menu` with exit-control options, and `--menu --watch`.
 
 ## Documented Differences
 
@@ -32,6 +32,4 @@ For `up --menu` behavior specifically, run `make docker-compose-up-menu-parity`.
 - Build-secret `uid`, `gid`, and `mode` metadata is accepted for build file/env secrets. Docker Compose V2 preserves that metadata in config output, but BuildKit does not implement it and Docker Compose omits it from bake secret entries; `container-compose` mirrors the build behavior and its normalized config reports the effective BuildKit secret ID plus file/env source.
 - `deploy.endpoint_mode` is accepted as Swarm metadata in local mode. Docker Compose V2 preserves the raw Deploy value in config output and accepts local dry-run `up --no-start`; `container-compose` mirrors the local execution behavior and does not report the field as unsupported.
 - `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory` are accepted as scheduler metadata in local mode. Docker Compose V2 preserves the raw Deploy reservation values in config output and accepts local dry-run `up --no-start`; `container-compose` mirrors the local execution behavior and does not report those fields as unsupported.
-- Docker Compose 5.2.0 accepts `up --menu --watch` in dry-run mode. `container-compose` still rejects that combination because combined menu/watch lifecycle semantics need a deeper parity pass on the Apple runtime path. `make docker-compose-up-menu-parity` treats that as a documented difference while requiring parity for optional-boolean menu forms and menu plus exit-control options.
-
 No unexpected command or long-option surface differences were observed on this MacBook Pro against Docker Compose 5.2.0 when the CLI-surface parity harness was refreshed for this slice.

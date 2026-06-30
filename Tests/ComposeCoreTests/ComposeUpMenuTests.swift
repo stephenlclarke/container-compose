@@ -119,6 +119,41 @@ struct ComposeUpMenuTests {
         #expect(!(await state.watchIsEnabled))
     }
 
+    @Test("initial watch enable shares menu session state")
+    func initialWatchEnableSharesMenuSessionState() async throws {
+        let statuses = LockedStringRecorder()
+        let actions = LockedStringRecorder()
+        let releaseStop = AsyncSignal()
+        let watchStopped = AsyncSignal()
+        let state = ComposeUpMenuSessionState(watchEnabled: true)
+        let configuration = menuConfiguration(
+            watchEnabled: true,
+            statuses: statuses,
+            actions: ComposeUpMenuActions(
+                gracefulStop: {},
+                forceStop: {},
+                toggleWatch: { desiredEnabled, stateChanged in
+                    actions.append("watch=\(desiredEnabled)")
+                    Task {
+                        await releaseStop.wait()
+                        await stateChanged(false)
+                        await watchStopped.signal()
+                    }
+                    return desiredEnabled
+                },
+            ),
+        )
+
+        await TerminalComposeUpMenuController.enableInitialWatchIfNeeded(configuration: configuration, state: state)
+        #expect(actions.values == ["watch=true"])
+        #expect(await state.watchIsEnabled)
+
+        await releaseStop.signal()
+        try await wait(for: watchStopped, timeout: .seconds(1))
+        #expect(statuses.values == ["d Detach   w Enable Watch"])
+        #expect(!(await state.watchIsEnabled))
+    }
+
     @Test("watch toggle without watch configuration does not run action")
     func watchToggleWithoutWatchConfigurationDoesNotRunAction() async throws {
         let statuses = LockedStringRecorder()
@@ -266,13 +301,14 @@ private func wait(for signal: AsyncSignal, timeout: Duration) async throws {
 }
 
 private func menuConfiguration(
+    watchEnabled: Bool = false,
     watchAvailable: Bool = true,
     statuses: LockedStringRecorder,
     actions: ComposeUpMenuActions,
 ) -> ComposeUpMenuConfiguration {
     ComposeUpMenuConfiguration(
         projectName: "demo",
-        watchEnabled: false,
+        watchEnabled: watchEnabled,
         watchAvailable: watchAvailable,
         colorEnabled: false,
         emitStatus: { statuses.append($0) },

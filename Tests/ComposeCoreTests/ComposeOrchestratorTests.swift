@@ -2145,6 +2145,44 @@ struct ComposeOrchestratorTests {
                 },
                 "--no-recreate and --renew-anon-volumes are incompatible"
             ),
+            (
+                ComposeUpOptions {
+                    $0.menuWatch = true
+                },
+                "up --watch requires --menu in menu watch mode"
+            ),
+            (
+                ComposeUpOptions {
+                    $0.menu = true
+                    $0.menuWatch = true
+                    $0.noStart = true
+                },
+                "up --watch cannot be combined with --no-start"
+            ),
+            (
+                ComposeUpOptions {
+                    $0.menu = true
+                    $0.menuWatch = true
+                    $0.detach = true
+                },
+                "up --watch cannot be combined with --detach"
+            ),
+            (
+                ComposeUpOptions {
+                    $0.menu = true
+                    $0.menuWatch = true
+                    $0.wait = true
+                },
+                "up --watch cannot be combined with --wait"
+            ),
+            (
+                ComposeUpOptions {
+                    $0.menu = true
+                    $0.menuWatch = true
+                    $0.abortOnContainerExit = true
+                },
+                "up --watch cannot be combined with exit-control options"
+            ),
         ]
 
         for testCase in incompatibleOptionCases {
@@ -3497,6 +3535,103 @@ struct ComposeOrchestratorTests {
             ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
         ])
         #expect(emitted.messages == ["api-1 | ready"])
+    }
+
+    @Test("up menu watch starts the menu with watch already enabled")
+    func upMenuWatchStartsTheMenuWithWatchAlreadyEnabled() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sourceDirectory = directory.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let menuController = RecordingComposeUpMenuController()
+        let emitted = MessageRecorder()
+        var project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.develop = ComposeDevelop(watch: [
+                        ComposeDevelopWatch(path: "src", action: "sync", target: "/app/src"),
+                    ])
+                },
+            ]
+        )
+        project.workingDirectory = directory.path
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
+                    emitData: { emitted.append(String(decoding: $0, as: UTF8.self)) }
+                )
+            ),
+            dependencies: orchestratorDependencies {
+                $0.logManager = logManager
+                $0.upMenuController = menuController
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.menu = true
+            $0.menuWatch = true
+            $0.quietBuild = true
+        })
+
+        let apiRun = try #require(runner.commands.first?.arguments)
+        #expect(apiRun.contains("--detach"))
+        #expect(await menuController.requests == [
+            ComposeUpMenuConfigurationSnapshot(
+                projectName: "demo",
+                watchEnabled: true,
+                watchAvailable: true,
+                colorEnabled: false
+            ),
+        ])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        ])
+        #expect(emitted.messages == ["api-1 | ready"])
+    }
+
+    @Test("up menu watch rejects missing develop triggers before runtime side effects")
+    func upMenuWatchRejectsMissingDevelopTriggersBeforeRuntimeSideEffects() async throws {
+        let runner = RecordingRunner()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let menuController = RecordingComposeUpMenuController()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                dependencies: orchestratorDependencies {
+                    $0.logManager = logManager
+                    $0.upMenuController = menuController
+                }
+            )
+            .up(project: project, options: ComposeUpOptions {
+                $0.services = ["api"]
+                $0.menu = true
+                $0.menuWatch = true
+            })
+            Issue.record("Expected menu watch preflight to reject missing watch triggers")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("selected services does not declare develop.watch triggers"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+        #expect(await menuController.requests.isEmpty)
+        #expect(await logManager.requests.isEmpty)
     }
 
     @Test("up menu dry run emits log follow plan without invoking menu controller")

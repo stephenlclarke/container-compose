@@ -10,7 +10,7 @@ This change implements the first Docker Compose-compatible `up --menu` path insi
 - Starts menu-enabled `up` service graphs detached, then follows attachable service logs through a Compose-owned menu controller.
 - Handles `d` detach, `w` watch toggle through the existing watch engine, first `Ctrl+C` graceful stop, second `Ctrl+C` force stop, and Enter redraw.
 - Supports `up --menu` with exit-control options by running menu log follow beside the existing exit-control waiter.
-- Marks `--menu` supported in CLI help while documenting the remaining command-level `up --menu --watch` boundary in `README.md` and `STATUS.md`.
+- Marks `--menu` supported in CLI help; the later `up --menu --watch` slice starts the menu with watch already enabled.
 
 ## Rationale
 
@@ -21,8 +21,8 @@ The Apple runtime does not expose an interactive attach primitive, but `up --men
 Run focused local validation:
 
 ```sh
-swift test --disable-automatic-resolution --filter 'ComposeUpMenuTests|normalizesUpMenuBooleanValueForms|upMenuOptionShowsSupportedInteractiveShortcutHelp|upMenuFalseValueParsesThroughDockerComposeRewriter|runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndRejectsMenuWatch|upMenuFollowsAttachableSelectedServiceLogsThroughMenuController|upMenuDryRunEmitsLogFollowPlanWithoutInvokingMenuController|upMenuAcceptsExitControlOptionsAndReturnsTheSelectedStatus|upMenuShortcutActionsStopAndKillSelectedServiceGraph|dependencyGroupsPreserveIndividuallyConfiguredCollaborators'
-CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$PWD/.build/debug/compose" swift test --disable-automatic-resolution --filter 'runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndRejectsMenuWatch'
+swift test --disable-automatic-resolution --filter 'ComposeUpMenuTests|normalizesUpMenuBooleanValueForms|upMenuOptionShowsSupportedInteractiveShortcutHelp|upMenuFalseValueParsesThroughDockerComposeRewriter|runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndMenuWatch|upMenuFollowsAttachableSelectedServiceLogsThroughMenuController|upMenuDryRunEmitsLogFollowPlanWithoutInvokingMenuController|upMenuAcceptsExitControlOptionsAndReturnsTheSelectedStatus|upMenuShortcutActionsStopAndKillSelectedServiceGraph|dependencyGroupsPreserveIndividuallyConfiguredCollaborators'
+CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$PWD/.build/debug/compose" swift test --disable-automatic-resolution --filter 'runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndMenuWatch'
 ```
 
 Before release promotion, run the broader local gate:
@@ -39,5 +39,4 @@ git diff --check
 ## Compatibility Notes
 
 - Docker Desktop-only `v`, `o`, and `l` shortcuts are intentionally absent because they target Docker Desktop UI surfaces.
-- `up --menu` and `up --watch` remain separate modes until their combined behavior gets a dedicated Docker parity pass.
-- Docker Compose 5.2.0 accepts the watch combination in dry-run mode; `make docker-compose-up-menu-parity` treats that as a documented difference while requiring parity for the supported optional-boolean menu forms and menu plus exit-control options.
+- Command-level `up --menu --watch` is covered by the later menu-watch parity slice and is no longer a documented boundary.

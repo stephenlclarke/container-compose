@@ -419,8 +419,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(disabledEnvironment.stdout.contains("+ container create --name \(project)-api-1"))
     }
 
-    @Test("runtime dry run up accepts menu exit-control and rejects menu watch")
-    func runtimeDryRunUpAcceptsMenuExitControlAndRejectsMenuWatch() throws {
+    @Test("runtime dry run up accepts menu exit-control and menu watch")
+    func runtimeDryRunUpAcceptsMenuExitControlAndMenuWatch() throws {
         guard runtimeTestsEnabled else {
             return
         }
@@ -470,11 +470,11 @@ struct ComposeRuntimeSmokeTests {
                 "--file", composeFile.path,
                 "--dry-run", "up", "--menu", "--watch", "api",
             ],
-            timeout: 30,
-            expectedStatus: 1
+            timeout: 30
         )
-        #expect(watch.stderr.contains("unsupported compose feature: up --menu cannot be combined with --watch yet"))
-        #expect(!watch.stdout.contains("+ container run"))
+        #expect(watch.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(watch.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
+        #expect(!watch.stderr.contains("unsupported compose feature"))
 
         let environmentMenu = try runProcess(
             composeBinary,

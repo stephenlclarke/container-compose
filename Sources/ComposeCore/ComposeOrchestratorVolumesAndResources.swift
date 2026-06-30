@@ -174,6 +174,21 @@ extension ComposeOrchestrator {
         if options.alwaysRecreateDeps, options.noRecreate {
             throw ComposeError.invalidProject("--always-recreate-deps and --no-recreate are incompatible")
         }
+        if options.menuWatch, !options.menu {
+            throw ComposeError.invalidProject("up --watch requires --menu in menu watch mode")
+        }
+        if options.menuWatch, options.noStart {
+            throw ComposeError.invalidProject("up --watch cannot be combined with --no-start")
+        }
+        if options.menuWatch, options.detach {
+            throw ComposeError.invalidProject("up --watch cannot be combined with --detach")
+        }
+        if options.menuWatch, options.wait {
+            throw ComposeError.invalidProject("up --watch cannot be combined with --wait")
+        }
+        if options.menuWatch, options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil {
+            throw ComposeError.invalidProject("up --watch cannot be combined with exit-control options")
+        }
     }
 
     /// Validates command-level `compose create` option combinations before runtime side effects.

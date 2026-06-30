@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-30 09:22 BST.
+Last updated: 2026-06-30 10:07 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,18 +24,18 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for `up --menu` with exit-control options, local Docker Compose 5.2.0 parity probes, focused Swift tests, `python3 -m unittest Tools/release/test_update_homebrew_formula.py`, `make docker-compose-up-menu-parity`, `make docker-compose-cli-surface-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `bash -n Tools/parity/check-compose-up-menu.sh`, `shellcheck Tools/parity/check-compose-up-menu.sh`, Markdown lint, and `git diff --check`. This slice is a patch-level Compose release because it completes one partial `up --menu` parity option; full CLI-completion releases should use a minor bump. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for `up --menu --watch`, local Docker Compose 5.2.0 dry-run parity probes, focused Swift tests, runtime dry-run smoke, `python3 -m unittest Tools/release/test_update_homebrew_formula.py`, `make docker-compose-up-menu-parity`, `make docker-compose-cli-surface-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `bash -n Tools/parity/check-compose-up-menu.sh`, `shellcheck Tools/parity/check-compose-up-menu.sh`, Markdown lint, and `git diff --check`. This slice is a minor Compose release because it completes a command-level menu/watch functionality gap, so the plugin version is `0.2.0`. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 801 Compose tests at 88.99% line coverage.
+- Swift: 804 Compose tests at 89.00% line coverage.
 - Go normalizer: 92.45% line coverage.
 
 ## Recent Functional State
 
 - Progress feedback: project loading, variable loading, image build, image pull, direct runtime create/start/run, foreground interactive `run`, and attached `exec` emit visible stderr progress before slow or terminal-taking operations can look hung.
 - Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, file/env-backed `build.secrets` map to BuildKit secret IDs while Docker Compose-compatible `uid`/`gid`/`mode` metadata is accepted and ignored for build execution, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `isolation`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit-compatible build model, and explicit false attestation forms remain no-op opt-outs.
-- Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --menu`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
+- Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --menu`, command-level `up --menu --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
 - Deploy metadata: Docker Compose-compatible `deploy.endpoint_mode` and CPU/memory Deploy reservations are accepted as local metadata, while Swarm-only deploy modes, start-first update ordering, pids/device/generic reservations, and unmapped Deploy resource limits remain blocked by Apple runtime semantics and fail before side effects.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
@@ -45,7 +45,7 @@ Most recent coverage proof:
 ## Current Limits
 
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
-- `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, graceful stop, force stop shortcuts, and exit-control options. Docker Desktop-only shortcuts are intentionally absent, and `up --menu --watch` remains incompatible pending a deeper watch/menu parity pass.
+- `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, command-level `--watch` start, graceful stop, force stop shortcuts, and exit-control options. Docker Desktop-only shortcuts are intentionally absent.
 - Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 
 ## Upstream Compatibility

@@ -168,6 +168,9 @@ extension ComposeOrchestrator {
             }
             return activeService
         }
+        if up.menuWatch {
+            try validateUpMenuWatchToggle(project: workingProject, serviceNames: services.map(\.name))
+        }
         let scaleOverrides = try parseScaleOverrides(project: project, scales: up.scales)
         let dependencyRecreateServices = try servicesToRecreateBecauseDependencies(
             project: workingProject,
@@ -544,12 +547,38 @@ extension ComposeOrchestrator {
         let timeout = up.timeout
         let quietBuild = up.quietBuild
         let emitStatus = options.emit
+        let watchAvailable = services.contains { service in
+            !(service.develop?.watch ?? []).isEmpty
+        }
+        let startMenuWatch: @Sendable () async throws -> Void = { [self, sendableProject, serviceNames, quietBuild] in
+            try await self.watch(
+                project: sendableProject.value,
+                options: ComposeWatchOptions(
+                    services: serviceNames,
+                    noUp: true,
+                    prune: true,
+                    quiet: quietBuild,
+                ),
+            )
+        }
+        let setMenuWatchEnabled: @Sendable (
+            Bool,
+            @escaping @Sendable (Bool) async -> Void
+        ) async throws -> Bool = { [self, sendableProject, serviceNames, emitStatus, startMenuWatch] desiredEnabled, stateChanged in
+            if desiredEnabled {
+                try validateUpMenuWatchToggle(project: sendableProject.value, serviceNames: serviceNames)
+            }
+            return await watchToggle.setEnabled(
+                desiredEnabled,
+                emit: emitStatus,
+                stateChanged: stateChanged,
+                start: startMenuWatch,
+            )
+        }
         let configuration = ComposeUpMenuConfiguration(
             projectName: project.name,
-            watchEnabled: false,
-            watchAvailable: services.contains { service in
-                !(service.develop?.watch ?? []).isEmpty
-            },
+            watchEnabled: up.menuWatch,
+            watchAvailable: watchAvailable,
             colorEnabled: up.colorPrefixes,
             emitStatus: emitStatus,
             actions: ComposeUpMenuActions(
@@ -561,26 +590,8 @@ extension ComposeOrchestrator {
                         try await lifecycleManager.killContainer(id: target.name, signal: "KILL")
                     }
                 },
-                toggleWatch: { [self, sendableProject, serviceNames, quietBuild] desiredEnabled, stateChanged in
-                    if desiredEnabled {
-                        try validateUpMenuWatchToggle(project: sendableProject.value, serviceNames: serviceNames)
-                    }
-                    return await watchToggle.setEnabled(
-                        desiredEnabled,
-                        emit: emitStatus,
-                        stateChanged: stateChanged,
-                        start: { [self, sendableProject, serviceNames, quietBuild] in
-                            try await self.watch(
-                                project: sendableProject.value,
-                                options: ComposeWatchOptions(
-                                    services: serviceNames,
-                                    noUp: true,
-                                    prune: true,
-                                    quiet: quietBuild,
-                                ),
-                            )
-                        },
-                    )
+                toggleWatch: { desiredEnabled, stateChanged in
+                    try await setMenuWatchEnabled(desiredEnabled, stateChanged)
                 },
             ),
         )

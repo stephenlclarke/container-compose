@@ -122,7 +122,8 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
             terminal.restore()
         }
 
-        let state = ComposeUpMenuSessionState(watchEnabled: configuration.watchEnabled)
+        let state = ComposeUpMenuSessionState(watchEnabled: configuration.watchEnabled && configuration.watchAvailable)
+        await Self.enableInitialWatchIfNeeded(configuration: configuration, state: state)
         configuration.emitStatus(await Self.menuLine(configuration: configuration, state: state))
         let operationTask = Task {
             try await operation()
@@ -157,6 +158,28 @@ public struct TerminalComposeUpMenuController: ComposeUpMenuControlling {
 
         inputTask.cancel()
         await inputTask.value
+    }
+
+    static func enableInitialWatchIfNeeded(configuration: ComposeUpMenuConfiguration, state: ComposeUpMenuSessionState) async {
+        guard configuration.watchEnabled else {
+            return
+        }
+        guard configuration.watchAvailable else {
+            await state.setWatchEnabled(false)
+            return
+        }
+        do {
+            let applied = try await configuration.actions.toggleWatch(true) { enabled in
+                await state.setWatchEnabled(enabled)
+                configuration.emitStatus(await menuLine(configuration: configuration, state: state))
+            }
+            await state.setWatchEnabled(applied)
+        } catch is CancellationError {
+            await state.setWatchEnabled(false)
+        } catch {
+            await state.setWatchEnabled(false)
+            configuration.emitStatus("Watch -> \(error)")
+        }
     }
 
     static func handle(

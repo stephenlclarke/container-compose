@@ -12,8 +12,8 @@ Docker Compose treats `--menu` as an optional boolean flag and enables an attach
 - `container compose up --menu=false`, `--menu=0`, and `--menu=no` explicitly disable menu activation, including when `COMPOSE_MENU` is set.
 - `container compose up --menu=true --no-start SERVICE` remains a no-op for the menu and renders the normal create plan in dry-run mode.
 - The menu supports `d` detach, `w` watch toggle for services with `develop.watch`, first `Ctrl+C` graceful stop, second `Ctrl+C` force stop, and Enter redraw.
-- `up --menu` with `up --watch` remains rejected until Docker-compatible combined menu/watch semantics are implemented.
-- Focused tests cover argument rewriting, parser integration, help status, dry-run behavior, menu key handling, menu action handling, menu log-follow orchestration, exit-control combination behavior, and the documented watch incompatibility guard.
+- `up --menu --watch` starts the menu with watch already enabled when attached terminal conditions allow the menu, and dry-run mode renders the same ordinary create/start preview Docker Compose emits.
+- Focused tests cover argument rewriting, parser integration, help status, dry-run behavior, menu key handling, menu action handling, menu log-follow orchestration, exit-control combination behavior, and menu-watch parity.
 
 ## Notes
 

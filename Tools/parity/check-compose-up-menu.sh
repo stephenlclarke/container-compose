@@ -31,9 +31,8 @@
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 and container-compose both accept the supported `up --menu`
-# optional-boolean forms and exit-control combinations against a compose.yml
-# fixture, and it keeps the current container-compose watch menu boundary
-# documented as an expected Docker difference.
+# optional-boolean forms, exit-control combinations, and watch combination
+# against a compose.yml fixture.
 
 set -euo pipefail
 
@@ -264,16 +263,17 @@ check_menu_exit_control() {
     assert_container_menu_exit_control_plan
 }
 
-# Check the currently documented Docker difference for menu watch mode.
-check_documented_boundaries() {
+# Assert Docker Compose and container-compose both accept menu watch mode.
+check_menu_watch() {
     expect_status 'Docker Compose accepts --menu with --watch dry-run' 0 \
         "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
         --dry-run up --menu --watch api
 
-    expect_status 'container-compose documents --menu with --watch as unsupported' 1 \
+    expect_status 'container-compose accepts --menu with --watch dry-run' 0 \
         "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
         --dry-run up --menu --watch api
-    assert_file_contains "$LAST_STDERR_FILE" 'unsupported compose feature: up --menu cannot be combined with --watch yet'
+    assert_file_contains "$LAST_STDOUT_FILE" "container run --name $PROJECT_NAME-api-1 --detach"
+    assert_file_contains "$LAST_STDOUT_FILE" "compose-runtime logs --follow $PROJECT_NAME-api-1"
 }
 
 # Run the local-only Docker Compose V2 parity check.
@@ -286,9 +286,9 @@ main() {
 
     check_supported_menu_forms
     check_menu_exit_control
-    check_documented_boundaries
+    check_menu_watch
 
-    info 'Docker Compose up-menu parity passed with documented watch difference.'
+    info 'Docker Compose up-menu parity passed.'
 }
 
 main "$@"
