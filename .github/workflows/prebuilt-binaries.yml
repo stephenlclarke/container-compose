@@ -57,7 +57,7 @@ jobs:
           changed_files="${RUNNER_TEMP}/changed-files.txt"
           before="${{ github.event.before }}"
           after="${GITHUB_SHA}"
-          if [[ "$before" =~ ^0+$ ]]; then
+          if [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
             git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
           else
             git diff --name-only "$before" "$after" > "$changed_files"
