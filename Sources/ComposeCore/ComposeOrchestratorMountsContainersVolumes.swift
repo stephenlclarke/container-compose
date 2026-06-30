@@ -58,6 +58,56 @@ extension ComposeOrchestrator {
         args.append(contentsOf: ["--volume", value])
     }
 
+    /// Rejects missing bind sources when Compose explicitly opted out of
+    /// Docker-compatible host path creation.
+    func validateBindMountSourcePolicy(project: ComposeProject, service: ComposeService) throws {
+        let mounts = try effectiveServiceVolumes(project: project, service: service)
+        for mount in mounts where mount.type == "bind" && mount.bindCreateHostPath == false {
+            guard let source = nonEmpty(mount.source) else {
+                continue
+            }
+            let sourceURL = bindMountSourceURL(project: project, source: source)
+            if !FileManager.default.fileExists(atPath: sourceURL.path) {
+                throw ComposeError.invalidProject("service '\(service.name)' bind mount source '\(sourceURL.path)' does not exist and bind.create_host_path is false")
+            }
+        }
+    }
+
+    /// Creates missing bind source directories for Compose bind mounts that use
+    /// the Docker-compatible default `create_host_path: true` behavior.
+    func prepareBindMountSources(project: ComposeProject, service: ComposeService, mounts: [ComposeMount]) throws {
+        guard !options.dryRun else {
+            return
+        }
+        for mount in mounts where mount.type == "bind" && mount.bindCreateHostPath == true {
+            guard let source = nonEmpty(mount.source) else {
+                continue
+            }
+            let sourceURL = bindMountSourceURL(project: project, source: source)
+            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                continue
+            }
+            do {
+                try FileManager.default.createDirectory(at: sourceURL, withIntermediateDirectories: true)
+            } catch {
+                throw ComposeError.invalidProject("service '\(service.name)' bind mount source '\(sourceURL.path)' could not be created: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Resolves a normalized bind source path. compose-go normally emits
+    /// absolute sources, while hand-built tests can still use relative paths.
+    func bindMountSourceURL(project: ComposeProject, source: String) -> URL {
+        let expanded = (source as NSString).expandingTildeInPath
+        if expanded.hasPrefix("/") {
+            return URL(fileURLWithPath: expanded).standardizedFileURL
+        }
+        return URL(
+            fileURLWithPath: expanded,
+            relativeTo: URL(fileURLWithPath: project.workingDirectory, isDirectory: true),
+        ).standardizedFileURL
+    }
+
     /// Returns whether a tmpfs mount needs the typed `--mount` form.
     func mountRequiresTypedTmpfsArgument(_ mount: ComposeMount) -> Bool {
         mount.readOnly == true || nonEmpty(mount.tmpfsSize) != nil || nonEmpty(mount.tmpfsMode) != nil

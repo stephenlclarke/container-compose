@@ -281,6 +281,7 @@ extension ComposeOrchestrator {
         }
         try validateServiceLabels(project: project, service: service)
         try validateVolumesFromSupport(service: service, project: project)
+        try validateBindMountSourcePolicy(project: project, service: service)
         if let gap = unsupportedServiceVolumeShortcutFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName); \(gap.reason)")
         }

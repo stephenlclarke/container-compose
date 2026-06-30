@@ -299,14 +299,15 @@ type normalizedServiceHook struct {
 
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
 type normalizedMount struct {
-	Type              string   `json:"type,omitempty"`
-	Source            string   `json:"source,omitempty"`
-	Target            string   `json:"target,omitempty"`
-	ReadOnly          bool     `json:"readOnly,omitempty"`
-	TmpfsSize         string   `json:"tmpfsSize,omitempty"`
-	TmpfsMode         string   `json:"tmpfsMode,omitempty"`
-	Raw               string   `json:"raw,omitempty"`
-	UnsupportedFields []string `json:"unsupportedFields,omitempty"`
+	Type               string   `json:"type,omitempty"`
+	Source             string   `json:"source,omitempty"`
+	Target             string   `json:"target,omitempty"`
+	ReadOnly           bool     `json:"readOnly,omitempty"`
+	BindCreateHostPath *bool    `json:"bindCreateHostPath,omitempty"`
+	TmpfsSize          string   `json:"tmpfsSize,omitempty"`
+	TmpfsMode          string   `json:"tmpfsMode,omitempty"`
+	Raw                string   `json:"raw,omitempty"`
+	UnsupportedFields  []string `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedNetwork contains project-level network metadata.
@@ -1170,16 +1171,26 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 	result := make([]normalizedMount, 0, len(volumes))
 	for _, volume := range volumes {
 		result = append(result, normalizedMount{
-			Type:              volume.Type,
-			Source:            volume.Source,
-			Target:            volume.Target,
-			ReadOnly:          volume.ReadOnly,
-			TmpfsSize:         tmpfsSizeValue(volume),
-			TmpfsMode:         tmpfsModeValue(volume),
-			UnsupportedFields: unsupportedMountFields(volume),
+			Type:               volume.Type,
+			Source:             volume.Source,
+			Target:             volume.Target,
+			ReadOnly:           volume.ReadOnly,
+			BindCreateHostPath: bindCreateHostPathValue(volume),
+			TmpfsSize:          tmpfsSizeValue(volume),
+			TmpfsMode:          tmpfsModeValue(volume),
+			UnsupportedFields:  unsupportedMountFields(volume),
 		})
 	}
 	return result
+}
+
+// bindCreateHostPathValue preserves Compose bind mount source creation policy.
+func bindCreateHostPathValue(volume types.ServiceVolumeConfig) *bool {
+	if volume.Type != "bind" || volume.Bind == nil {
+		return nil
+	}
+	value := bool(volume.Bind.CreateHostPath)
+	return &value
 }
 
 // tmpfsSizeValue returns the normalized byte count for long-form tmpfs mounts.

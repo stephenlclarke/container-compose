@@ -6775,6 +6775,86 @@ struct ComposeOrchestratorTests {
         #expect(run.containsSequence(["--volume", "demo_cache:/cache"]))
     }
 
+    @Test("up creates missing bind sources when create host path is enabled")
+    func upCreatesMissingBindSourcesWhenCreateHostPathIsEnabled() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+        let source = directory.appendingPathComponent("created")
+
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(
+                        type: "bind",
+                        source: source.path,
+                        target: "/data",
+                        bindCreateHostPath: true
+                    )]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions())
+
+        var isDirectory = ObjCBool(false)
+        #expect(fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory))
+        #expect(isDirectory.boolValue)
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(run.containsSequence(["--volume", "\(source.path):/data"]))
+    }
+
+    @Test("up rejects missing bind sources when create host path is disabled")
+    func upRejectsMissingBindSourcesWhenCreateHostPathIsDisabled() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+        let source = directory.appendingPathComponent("required")
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(
+                        type: "bind",
+                        source: source.path,
+                        target: "/data",
+                        bindCreateHostPath: false
+                    )]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                discoveryManager: RecordingContainerDiscoveryManager(),
+                resourceManager: resourceManager
+            ).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected missing bind source error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' bind mount source '\(source.path)' does not exist and bind.create_host_path is false"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(!fileManager.fileExists(atPath: source.path))
+        #expect(runner.commands.isEmpty)
+        #expect(await resourceManager.requests.isEmpty)
+    }
+
     @Test("up rejects volume subpath as apple/container mount gap")
     func upRejectsVolumeSubpathAsAppleContainerMountGap() async throws {
         let runner = RecordingRunner()
@@ -7440,6 +7520,36 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--volume", "\(otherConfig.path):/etc/other.conf:ro"]))
         #expect(command.containsSequence(["--volume", "\(secret.path):/run/secrets/app_secret:ro"]))
         #expect(command.containsSequence(["--volume", "\(otherSecret.path):/run/secrets/custom-token:ro"]))
+    }
+
+    @Test("up does not create missing file-backed config sources")
+    func upDoesNotCreateMissingFileBackedConfigSources() async throws {
+        let runner = RecordingRunner()
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let config = directory.appendingPathComponent("missing.conf")
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.configs = [.object(["source": .string("app_config"), "target": .string("/etc/app.conf")])]
+                },
+            ]
+        ) {
+            $0.workingDirectory = directory.path
+            $0.configs = ["app_config": .object(["file": .string("missing.conf")])]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!FileManager.default.fileExists(atPath: config.path))
+        #expect(command.containsSequence(["--volume", "\(config.path):/etc/app.conf:ro"]))
     }
 
     @Test("up materializes inline configs and environment backed secrets")
@@ -18258,6 +18368,10 @@ struct ComposeOrchestratorTests {
 
     @Test("run supports one-off containers and option flags")
     func runSupportsOneOffContainersAndOptionFlags() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let hostSource = directory.appendingPathComponent("host").path
+
         let runner = RecordingRunner()
         let orchestrator = ComposeOrchestrator(runner: runner)
         let project = ComposeProject(
@@ -18269,7 +18383,7 @@ struct ComposeOrchestratorTests {
                     $0.envFiles = [".env"]
                     $0.ports = ["8080:80"]
                     $0.volumes = [
-                        ComposeMount(type: "bind", source: "/host", target: "/container", readOnly: true),
+                        ComposeMount(type: "bind", source: hostSource, target: "/container", readOnly: true, bindCreateHostPath: true),
                         ComposeMount(type: "tmpfs", target: "/tmp"),
                         ComposeMount(type: "volume", target: "/anon"),
                     ]
@@ -18308,7 +18422,8 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--env", "EMPTY"]))
         #expect(command.containsSequence(["--env-file", ".env"]))
         #expect(!command.containsSequence(["--publish", "8080:80"]))
-        #expect(command.containsSequence(["--volume", "/host:/container:ro"]))
+        #expect(FileManager.default.fileExists(atPath: hostSource))
+        #expect(command.containsSequence(["--volume", "\(hostSource):/container:ro"]))
         #expect(command.containsSequence(["--tmpfs", "/tmp"]))
         #expect(command.containsSequence(["--workdir", "/work"]))
         #expect(command.containsSequence(["--user", "1000"]))
@@ -20167,6 +20282,45 @@ struct ComposeOrchestratorTests {
         #expect(!command.containsSequence(["--tmpfs", "/scratch"]))
     }
 
+    @Test("run rejects missing bind sources when create host path is disabled")
+    func runRejectsMissingBindSourcesWhenCreateHostPathIsDisabled() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+        let source = directory.appendingPathComponent("required")
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.volumes = [ComposeMount(
+                        type: "bind",
+                        source: source.path,
+                        target: "/data",
+                        bindCreateHostPath: false
+                    )]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner)
+                .run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]))
+            Issue.record("Expected missing bind source error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'job' bind mount source '\(source.path)' does not exist and bind.create_host_path is false"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(!fileManager.fileExists(atPath: source.path))
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("run rejects unsupported API socket mounting before creating resources")
     func runRejectsUnsupportedAPISocketBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -21187,13 +21341,18 @@ struct ComposeOrchestratorTests {
 
     @Test("run applies one-off volume overrides")
     func runAppliesOneOffVolumeOverrides() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let defaultSource = directory.appendingPathComponent("default").path
+        let overrideSource = directory.appendingPathComponent("host").path
+
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.volumes = [ComposeMount(type: "bind", source: "/default", target: "/default")]
+                    $0.volumes = [ComposeMount(type: "bind", source: defaultSource, target: "/default", bindCreateHostPath: true)]
                 },
             ]
         )
@@ -21202,7 +21361,7 @@ struct ComposeOrchestratorTests {
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["ls"]) {
-                $0.volumes = ["/host:/container:ro", "cache:/cache", "/scratch"]
+                $0.volumes = ["\(overrideSource):/container:ro", "cache:/cache", "/scratch"]
             }
         )
 
@@ -21216,8 +21375,10 @@ struct ComposeOrchestratorTests {
             ])),
         ])
         let command = try #require(runner.commands.last?.arguments)
-        #expect(command.containsSequence(["--volume", "/default:/default"]))
-        #expect(command.containsSequence(["--volume", "/host:/container:ro"]))
+        #expect(FileManager.default.fileExists(atPath: defaultSource))
+        #expect(FileManager.default.fileExists(atPath: overrideSource))
+        #expect(command.containsSequence(["--volume", "\(defaultSource):/default"]))
+        #expect(command.containsSequence(["--volume", "\(overrideSource):/container:ro"]))
         #expect(command.containsSequence(["--volume", "demo_cache:/cache"]))
         #expect(command.contains { $0.hasPrefix("demo_anon-") && $0.hasSuffix(":/scratch") })
         #expect(Array(command.suffix(2)) == ["alpine", "ls"])

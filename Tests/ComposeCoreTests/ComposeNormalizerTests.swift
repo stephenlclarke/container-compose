@@ -411,6 +411,47 @@ struct ComposeNormalizerTests {
         #expect(mount.unsupportedFields == nil)
     }
 
+    @Test("normalizes bind create host path policy")
+    func normalizesBindCreateHostPathPolicy() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          defaulted:
+            image: alpine:3.20
+            volumes:
+              - ./defaulted:/defaulted
+          required:
+            image: alpine:3.20
+            volumes:
+              - type: bind
+                source: ./required
+                target: /required
+                bind:
+                  create_host_path: false
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        let defaulted = try #require(project.services["defaulted"]?.volumes?.first)
+        let required = try #require(project.services["required"]?.volumes?.first)
+        #expect(defaulted.type == "bind")
+        #expect(defaulted.bindCreateHostPath == true)
+        #expect(required.type == "bind")
+        #expect(required.bindCreateHostPath == false)
+    }
+
     @Test("grouped model initializers preserve flat normalized fields")
     func groupedModelInitializersPreserveFlatNormalizedFields() throws {
         let build = ComposeBuild(

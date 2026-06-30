@@ -47,6 +47,9 @@ Current detailed gap examples:
   watch toggle, command-level `--watch` start, graceful stop, force stop
   shortcuts, and exit-control flags; Docker Desktop-only shortcuts are
   intentionally absent.
+- Supported service mount coverage includes named volumes, bind mounts,
+  anonymous volumes, tmpfs mounts, long-form tmpfs options, `volumes_from`, and
+  Docker-compatible bind `create_host_path` handling.
 - Supported local Deploy metadata includes replicas, local job modes,
   stop-first update delays, restart policy fields, CPU/memory reservation
   hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local

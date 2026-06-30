@@ -30,6 +30,10 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 )
 
+func boolPtr(value bool) *bool {
+	return &value
+}
+
 func TestStringListRecordsRepeatedFlags(t *testing.T) {
 	var values stringList
 	var nilValues *stringList
@@ -713,6 +717,56 @@ func TestMountValuesPreservesSupportedTmpfsOptions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("mountValues(tmpfs) = %#v, want %#v", got, want)
+	}
+}
+
+func TestMountValuesPreservesBindCreateHostPath(t *testing.T) {
+	createPath := types.OptOut(true)
+	requirePath := types.OptOut(false)
+	got := mountValues([]types.ServiceVolumeConfig{
+		{
+			Type:   "bind",
+			Source: "/host/default",
+			Target: "/default",
+			Bind: &types.ServiceVolumeBind{
+				CreateHostPath: createPath,
+			},
+		},
+		{
+			Type:   "bind",
+			Source: "/host/required",
+			Target: "/required",
+			Bind: &types.ServiceVolumeBind{
+				CreateHostPath: requirePath,
+			},
+		},
+		{
+			Type:   "volume",
+			Source: "cache",
+			Target: "/cache",
+		},
+	})
+	want := []normalizedMount{
+		{
+			Type:               "bind",
+			Source:             "/host/default",
+			Target:             "/default",
+			BindCreateHostPath: boolPtr(true),
+		},
+		{
+			Type:               "bind",
+			Source:             "/host/required",
+			Target:             "/required",
+			BindCreateHostPath: boolPtr(false),
+		},
+		{
+			Type:   "volume",
+			Source: "cache",
+			Target: "/cache",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mountValues(bind create_host_path) = %#v, want %#v", got, want)
 	}
 }
 

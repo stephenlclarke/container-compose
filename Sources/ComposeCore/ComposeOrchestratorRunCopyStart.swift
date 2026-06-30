@@ -135,13 +135,20 @@ extension ComposeOrchestrator {
             containerIndex: run.containerIndex,
             replicaCount: run.replicaCount,
         )
-        for mount in try effectiveServiceVolumes(
+        let mounts = try effectiveServiceVolumes(
             project: project,
             service: service,
             externalVolumeMounts: externalVolumeMounts,
             materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
             materializeConfigSecrets: !options.dryRun,
-        ) {
+        )
+        let composeDeclaredMounts = try effectiveServiceVolumes(
+            project: project,
+            service: service,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+        )
+        try prepareBindMountSources(project: project, service: service, mounts: composeDeclaredMounts)
+        for mount in mounts {
             try appendMount(mount, context: mountContext, args: &args)
         }
         for tmpfs in service.tmpfs ?? [] {

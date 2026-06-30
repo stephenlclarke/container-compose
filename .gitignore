@@ -11,6 +11,8 @@ RESUME.md
 PLAN.md
 STATUS.md
 container-compose-plugin.tar.gz
+container-compose-plugin-*.tar.gz
+container-compose-plugin-*.tar.gz.sha256
 coverage.report
 coverage.lcov
 coverage.xml
