@@ -95,6 +95,68 @@ extension ComposeOrchestrator {
         }
     }
 
+    /// Creates deterministic anonymous volumes when Compose attached labels to
+    /// the long-form anonymous mount. Named service volume labels are config
+    /// metadata in Docker Compose and do not affect the named volume resource.
+    func ensureLabeledAnonymousVolumes(
+        project: ComposeProject,
+        service: ComposeService,
+        context: MountRenderContext,
+        externalVolumeMounts: ExternalVolumeMounts = [:]
+    ) async throws {
+        let requests = try labeledAnonymousVolumeCreateRequests(
+            project: project,
+            service: service,
+            context: context,
+            externalVolumeMounts: externalVolumeMounts
+        )
+        for request in requests {
+            if options.dryRun {
+                var args = ["volume", "create"]
+                for label in request.labels.sorted(by: { $0.key < $1.key }) {
+                    args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
+                }
+                args.append(request.name)
+                try await runContainer(args, check: false)
+            } else {
+                try await resourceManager.createVolume(request)
+            }
+        }
+    }
+
+    /// Returns create requests for anonymous volumes that carry long-form
+    /// service volume labels.
+    func labeledAnonymousVolumeCreateRequests(
+        project: ComposeProject,
+        service: ComposeService,
+        context: MountRenderContext,
+        externalVolumeMounts: ExternalVolumeMounts = [:]
+    ) throws -> [ComposeVolumeCreateRequest] {
+        let mounts = try effectiveServiceVolumes(
+            project: project,
+            service: service,
+            externalVolumeMounts: externalVolumeMounts,
+            materializedConfigSecretRoot: options.materializedConfigSecretDirectory,
+            materializeConfigSecrets: false,
+        )
+        var requestsByName: [String: ComposeVolumeCreateRequest] = [:]
+        for mount in mounts where mount.type == "volume" {
+            guard mount.source?.isEmpty != false,
+                  let target = mount.target,
+                  let labels = mount.volumeLabels,
+                  !labels.isEmpty
+            else {
+                continue
+            }
+            let name = anonymousVolumeRuntimeName(context: context, target: target)
+            requestsByName[name] = ComposeVolumeCreateRequest(
+                name: name,
+                labels: resourceLabels(project: project, labels: labels)
+            )
+        }
+        return requestsByName.values.sorted { $0.name < $1.name }
+    }
+
     /// Resolves a normalized bind source path. compose-go normally emits
     /// absolute sources, while hand-built tests can still use relative paths.
     func bindMountSourceURL(project: ComposeProject, source: String) -> URL {

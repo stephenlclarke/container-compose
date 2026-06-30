@@ -241,6 +241,14 @@ make docker-compose-bind-create-host-path-parity
 
 This compares Docker Compose V2 and `container-compose` for default bind mounts and explicit `bind.create_host_path: false`. Docker Compose preserves the explicit false policy in `config --format json`, accepts the default bind policy, and rejects a missing source when host-path creation is disabled; `container-compose` mirrors that CLI behavior and creates missing bind source directories itself before Apple runtime handoff when the policy is true or defaulted. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
 
+For the local-only service volume-label parity check, run:
+
+```sh
+make docker-compose-volume-labels-parity
+```
+
+This compares Docker Compose V2 and `container-compose` for service long-form `volume.labels`. Docker Compose preserves named and anonymous mount labels in `config --format json`, applies labels only to anonymous runtime volumes, and keeps named service mount labels off the named volume resource; `container-compose` mirrors that behavior by preserving the config metadata, creating labeled anonymous Apple volumes before runtime handoff, and leaving named service mount labels as metadata. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
 For the local-only Deploy endpoint-mode parity check, run:
 
 ```sh
@@ -339,7 +347,7 @@ dist/compose/resources/build-info.json
 dist/compose/resources/compose-normalizer
 ```
 
-GitHub Actions publishes `main`, `release`, and `release-*` branch assets using branch-specific archive names such as `container-compose-plugin-main-release-arm64.tar.gz` and `container-compose-plugin-release-v0.3.0-release-arm64.tar.gz`. All branch packages are optimized release archives. The branch package workflow writes the asset URL, version, and SHA-256 into the matching Homebrew formula. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
+GitHub Actions publishes `main`, `release`, and `release-*` branch assets using branch-specific archive names such as `container-compose-plugin-main-release-arm64.tar.gz` and `container-compose-plugin-release-v0.4.0-release-arm64.tar.gz`. All branch packages are optimized release archives. The branch package workflow writes the asset URL, version, and SHA-256 into the matching Homebrew formula. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
 
 Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, `container` pin from `APPLE_CONTAINER_REF`, `containerization` pin from `Package.resolved`, and embedded `compose-go` module version from the Go normalizer. Local development builds fall back to the current git checkout when the packaged metadata file is absent.
 

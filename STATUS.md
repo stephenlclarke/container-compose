@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-30 11:55 BST.
+Last updated: 2026-06-30 12:39 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,12 +24,12 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for bind `create_host_path`, local Docker Compose 5.2.0 parity probes, focused Swift and Go normalizer tests, `go test ./...`, `make docker-compose-bind-create-host-path-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `SONAR_QUALITYGATE_WAIT=true make sonar-scan`, `bash -n Tools/parity/check-compose-bind-create-host-path.sh`, `shellcheck Tools/parity/check-compose-bind-create-host-path.sh`, and `git diff --check`. This slice is a minor Compose release because it completes a Compose-file mount functionality gap, so the plugin version is `0.3.0`. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for service long-form `volume.labels`, local Docker Compose 5.2.0 parity probes, focused Swift and Go normalizer/orchestration tests, `go test ./... -cover`, `make docker-compose-volume-labels-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `SONAR_QUALITYGATE_WAIT=true make sonar-scan`, `bash -n Tools/parity/check-compose-volume-labels.sh`, `shellcheck Tools/parity/check-compose-volume-labels.sh`, and `git diff --check`. This slice is a minor Compose release because it completes a Compose-file mount functionality gap, so the plugin version is `0.4.0`. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 809 Compose tests at 89.01% line coverage.
-- Go normalizer: 92.50% line coverage.
+- Swift: 813 Compose tests at 89.05% line coverage.
+- Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
 
@@ -37,7 +37,7 @@ Most recent coverage proof:
 - Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, file/env-backed `build.secrets` map to BuildKit secret IDs while Docker Compose-compatible `uid`/`gid`/`mode` metadata is accepted and ignored for build execution, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `isolation`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit-compatible build model, and explicit false attestation forms remain no-op opt-outs.
 - Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --menu`, command-level `up --menu --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
 - Deploy metadata: Docker Compose-compatible `deploy.endpoint_mode` and CPU/memory Deploy reservations are accepted as local metadata, while Swarm-only deploy modes, start-first update ordering, pids/device/generic reservations, and unmapped Deploy resource limits remain blocked by Apple runtime semantics and fail before side effects.
-- Mount behavior: bind mounts preserve Docker Compose `bind.create_host_path` policy; missing sources are rejected before side effects when the policy is false, while default or true bind sources are created as host directories before Apple runtime create/run handoff. Runtime-inherited `volumes_from` mounts from external containers pass through without host-path preparation.
+- Mount behavior: bind mounts preserve Docker Compose `bind.create_host_path` policy; missing sources are rejected before side effects when the policy is false, while default or true bind sources are created as host directories before Apple runtime create/run handoff. Service long-form `volume.labels` are preserved in config; anonymous volume labels are applied to deterministic runtime volumes before create/run handoff, and named service mount labels remain metadata because Docker Compose keeps named resource labels under top-level `volumes.<name>.labels`. Runtime-inherited `volumes_from` mounts from external containers pass through without host-path preparation.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.

@@ -88,6 +88,18 @@ struct ComposeNormalizerTests {
               nproc: 512
             sysctls:
               net.core.somaxconn: "1024"
+            volumes:
+              - type: volume
+                source: data
+                target: /data
+                volume:
+                  labels:
+                    com.example.mount: named
+              - type: volume
+                target: /scratch
+                volume:
+                  labels:
+                    com.example.mount: anonymous
             stop_signal: SIGUSR1
             stop_grace_period: 90s
             links:
@@ -173,6 +185,19 @@ struct ComposeNormalizerTests {
         #expect(project.services["api"]?.shmSize == "67108864")
         #expect(project.services["api"]?.ulimits == ["nofile=1024:2048", "nproc=512"])
         #expect(project.services["api"]?.sysctls == ["net.core.somaxconn": "1024"])
+        #expect(project.services["api"]?.volumes == [
+            ComposeMount(
+                type: "volume",
+                source: "data",
+                target: "/data",
+                volumeLabels: ["com.example.mount": "named"]
+            ),
+            ComposeMount(
+                type: "volume",
+                target: "/scratch",
+                volumeLabels: ["com.example.mount": "anonymous"]
+            ),
+        ])
         #expect(project.services["api"]?.stopSignal == "SIGUSR1")
         #expect(project.services["api"]?.stopGracePeriodSeconds == 90)
         #expect(project.services["api"]?.links == ["redis:cache"])

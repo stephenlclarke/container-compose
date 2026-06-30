@@ -897,6 +897,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
     public var target: String?
     public var readOnly: Bool?
     public var bindCreateHostPath: Bool?
+    public var volumeLabels: [String: String]?
     public var tmpfsSize: String?
     public var tmpfsMode: String?
     public var raw: String?
@@ -908,6 +909,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         target: String? = nil,
         readOnly: Bool? = nil,
         bindCreateHostPath: Bool? = nil,
+        volumeLabels: [String: String]? = nil,
         tmpfs: TmpfsOptions = TmpfsOptions(),
         raw: String? = nil,
         unsupportedFields: [String]? = nil
@@ -917,6 +919,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         self.target = target
         self.readOnly = readOnly
         self.bindCreateHostPath = bindCreateHostPath
+        self.volumeLabels = volumeLabels
         self.tmpfsSize = tmpfs.size
         self.tmpfsMode = tmpfs.mode
         self.raw = raw

@@ -897,6 +897,17 @@ extension ComposeOrchestrator {
                 ),
             )
         }
+        try await ensureLabeledAnonymousVolumes(
+            project: project,
+            service: service,
+            context: MountRenderContext(
+                project: project,
+                service: service,
+                containerIndex: request.runOptions.containerIndex,
+                replicaCount: request.runOptions.replicaCount,
+            ),
+            externalVolumeMounts: request.externalVolumeMounts
+        )
 
         let arguments = try await runArguments(
             project: project,

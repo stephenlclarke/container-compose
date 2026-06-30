@@ -48,8 +48,11 @@ Current detailed gap examples:
   shortcuts, and exit-control flags; Docker Desktop-only shortcuts are
   intentionally absent.
 - Supported service mount coverage includes named volumes, bind mounts,
-  anonymous volumes, tmpfs mounts, long-form tmpfs options, `volumes_from`, and
-  Docker-compatible bind `create_host_path` handling.
+  anonymous volumes, tmpfs mounts, long-form tmpfs options, `volumes_from`,
+  Docker-compatible bind `create_host_path` handling, and long-form
+  `volume.labels` preservation. Anonymous `volume.labels` are applied to the
+  created runtime volume; named service mount labels remain config metadata,
+  matching Docker Compose.
 - Supported local Deploy metadata includes replicas, local job modes,
   stop-first update delays, restart policy fields, CPU/memory reservation
   hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local

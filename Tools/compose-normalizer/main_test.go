@@ -679,7 +679,7 @@ volumes:
 
 	cases := map[string][]string{
 		"bindy":   {"consistency", "bind.selinux", "bind.propagation", "bind.recursive"},
-		"named":   {"volume.labels", "volume.subpath"},
+		"named":   {"volume.subpath"},
 		"scratch": nil,
 		"imagey":  {"type", "image.subpath"},
 	}
@@ -767,6 +767,52 @@ func TestMountValuesPreservesBindCreateHostPath(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("mountValues(bind create_host_path) = %#v, want %#v", got, want)
+	}
+}
+
+func TestMountValuesPreservesVolumeLabels(t *testing.T) {
+	got := mountValues([]types.ServiceVolumeConfig{
+		{
+			Type:   "volume",
+			Source: "cache",
+			Target: "/cache",
+			Volume: &types.ServiceVolumeVolume{
+				Labels: types.Mapping{
+					"com.example.mount": "named",
+					"owner":             "platform",
+				},
+			},
+		},
+		{
+			Type:   "volume",
+			Target: "/scratch",
+			Volume: &types.ServiceVolumeVolume{
+				Labels: types.Mapping{
+					"com.example.mount": "anonymous",
+				},
+			},
+		},
+	})
+	want := []normalizedMount{
+		{
+			Type:   "volume",
+			Source: "cache",
+			Target: "/cache",
+			VolumeLabels: map[string]string{
+				"com.example.mount": "named",
+				"owner":             "platform",
+			},
+		},
+		{
+			Type:   "volume",
+			Target: "/scratch",
+			VolumeLabels: map[string]string{
+				"com.example.mount": "anonymous",
+			},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mountValues(volume labels) = %#v, want %#v", got, want)
 	}
 }
 

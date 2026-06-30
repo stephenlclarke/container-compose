@@ -299,15 +299,16 @@ type normalizedServiceHook struct {
 
 // normalizedMount keeps mount data in a compact runtime-oriented shape.
 type normalizedMount struct {
-	Type               string   `json:"type,omitempty"`
-	Source             string   `json:"source,omitempty"`
-	Target             string   `json:"target,omitempty"`
-	ReadOnly           bool     `json:"readOnly,omitempty"`
-	BindCreateHostPath *bool    `json:"bindCreateHostPath,omitempty"`
-	TmpfsSize          string   `json:"tmpfsSize,omitempty"`
-	TmpfsMode          string   `json:"tmpfsMode,omitempty"`
-	Raw                string   `json:"raw,omitempty"`
-	UnsupportedFields  []string `json:"unsupportedFields,omitempty"`
+	Type               string            `json:"type,omitempty"`
+	Source             string            `json:"source,omitempty"`
+	Target             string            `json:"target,omitempty"`
+	ReadOnly           bool              `json:"readOnly,omitempty"`
+	BindCreateHostPath *bool             `json:"bindCreateHostPath,omitempty"`
+	VolumeLabels       map[string]string `json:"volumeLabels,omitempty"`
+	TmpfsSize          string            `json:"tmpfsSize,omitempty"`
+	TmpfsMode          string            `json:"tmpfsMode,omitempty"`
+	Raw                string            `json:"raw,omitempty"`
+	UnsupportedFields  []string          `json:"unsupportedFields,omitempty"`
 }
 
 // normalizedNetwork contains project-level network metadata.
@@ -1176,6 +1177,7 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 			Target:             volume.Target,
 			ReadOnly:           volume.ReadOnly,
 			BindCreateHostPath: bindCreateHostPathValue(volume),
+			VolumeLabels:       volumeLabelsValue(volume),
 			TmpfsSize:          tmpfsSizeValue(volume),
 			TmpfsMode:          tmpfsModeValue(volume),
 			UnsupportedFields:  unsupportedMountFields(volume),
@@ -1191,6 +1193,15 @@ func bindCreateHostPathValue(volume types.ServiceVolumeConfig) *bool {
 	}
 	value := bool(volume.Bind.CreateHostPath)
 	return &value
+}
+
+// volumeLabelsValue preserves long-form service volume labels for config
+// output and for anonymous volume creation parity.
+func volumeLabelsValue(volume types.ServiceVolumeConfig) map[string]string {
+	if volume.Type != "volume" || volume.Volume == nil || len(volume.Volume.Labels) == 0 {
+		return nil
+	}
+	return map[string]string(volume.Volume.Labels)
 }
 
 // tmpfsSizeValue returns the normalized byte count for long-form tmpfs mounts.
@@ -1223,7 +1234,6 @@ func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
 		appendUnsupportedMountFieldWhen(&fields, "bind.recursive", volume.Bind.Recursive != "")
 	}
 	if volume.Volume != nil {
-		appendUnsupportedMountFieldWhen(&fields, "volume.labels", len(volume.Volume.Labels) > 0)
 		appendUnsupportedMountFieldWhen(&fields, "volume.subpath", volume.Volume.Subpath != "")
 	}
 	if volume.Image != nil {

@@ -821,6 +821,157 @@ struct ComposeOrchestratorTests {
         #expect(request.labels["com.example.volume"] == "cache")
     }
 
+    @Test("up treats named service volume labels as config metadata")
+    func upKeepsNamedServiceVolumeLabelsOutOfVolumeCreate() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            source: "cache",
+                            target: "/cache",
+                            volumeLabels: ["com.example.mount": "service"]
+                        ),
+                    ]
+                },
+            ]
+        ) {
+            $0.volumes = [
+                "cache": ComposeVolume(
+                    name: "cache",
+                    labels: ["com.example.volume": "project"]
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let request = try #require(await resourceManager.requests.compactMap { event -> ComposeVolumeCreateRequest? in
+            if case .createVolume(let request) = event {
+                return request
+            }
+            return nil
+        }.first)
+        #expect(request.name == "demo_cache")
+        #expect(request.labels["com.example.volume"] == "project")
+        #expect(request.labels["com.example.mount"] == nil)
+    }
+
+    @Test("up creates labeled anonymous volumes before container create")
+    func upCreatesLabeledAnonymousVolumesBeforeContainerCreate() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            target: "/scratch",
+                            volumeLabels: ["com.example.mount": "anonymous"]
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let request = try #require(await resourceManager.requests.compactMap { event -> ComposeVolumeCreateRequest? in
+            if case .createVolume(let request) = event {
+                return request
+            }
+            return nil
+        }.first)
+        #expect(request.name.hasPrefix("demo_anon-"))
+        #expect(request.labels["com.apple.container.compose.project"] == "demo")
+        #expect(request.labels["com.example.mount"] == "anonymous")
+
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--volume", "\(request.name):/scratch"]))
+    }
+
+    @Test("up dry run renders labeled anonymous volume create")
+    func upDryRunRendersLabeledAnonymousVolumeCreate() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            target: "/scratch",
+                            volumeLabels: ["com.example.mount": "anonymous"]
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages.contains { message in
+            message.contains("container volume create")
+                && message.contains("--label com.example.mount=anonymous")
+                && message.contains("demo_anon-")
+        })
+    }
+
+    @Test("run creates labeled anonymous volumes before one-off container")
+    func runCreatesLabeledAnonymousVolumesBeforeOneOffContainer() async throws {
+        let runner = RecordingRunner()
+        let resourceManager = RecordingContainerResourceManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "volume",
+                            target: "/scratch",
+                            volumeLabels: ["com.example.mount": "run"]
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            resourceManager: resourceManager
+        ).run(
+            project: project,
+            serviceName: "job",
+            options: composeRunOptions(command: ["true"])
+        )
+
+        let request = try #require(await resourceManager.requests.compactMap { event -> ComposeVolumeCreateRequest? in
+            if case .createVolume(let request) = event {
+                return request
+            }
+            return nil
+        }.first)
+        #expect(request.name.hasPrefix("demo_anon-"))
+        #expect(request.labels["com.example.mount"] == "run")
+
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.containsSequence(["--volume", "\(request.name):/scratch"]))
+        #expect(Array(command.suffix(2)) == ["alpine", "true"])
+    }
+
     @Test("up maps list entrypoint to executable and command prefix")
     func upMapsListEntrypointToExecutableAndCommandPrefix() async throws {
         let runner = RecordingRunner()
