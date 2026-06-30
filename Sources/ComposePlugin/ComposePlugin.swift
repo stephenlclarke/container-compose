@@ -28,7 +28,7 @@ private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
 
 private struct ComposeBuildInfo: Codable {
-    var version: String = "0.1.5"
+    var version: String = "0.1.6"
     var source: String = "unspecified"
     var branch: String = "unspecified"
     var lane: String = "unspecified"
@@ -87,7 +87,7 @@ private struct ComposeBuildInfo: Codable {
         let root = git(["rev-parse", "--show-toplevel"]) ?? FileManager.default.currentDirectoryPath
         let branch = git(["branch", "--show-current"], root: root) ?? "unspecified"
         return ComposeBuildInfo(
-            version: "0.1.5",
+            version: "0.1.6",
             source: remoteSource(root: root),
             branch: branch,
             lane: lane(for: branch),
@@ -817,9 +817,6 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
         let menuRequested = global.shouldRequestUpMenu(menu: menu, menuDisabled: menuDisabled)
         if watch && menuRequested {
             throw ComposeError.unsupported("up --menu cannot be combined with --watch yet")
-        }
-        if menuRequested && (abortOnContainerExit || abortOnContainerFailure || exitCodeFrom != nil) {
-            throw ComposeError.unsupported("up --menu with exit-control options")
         }
 
         let loadedProject = try await project()

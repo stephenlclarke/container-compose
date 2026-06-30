@@ -44,8 +44,8 @@ Current detailed gap examples:
 - Supported `up` coverage includes attach selection, dependency attachment,
   exit-control flags, raw output flags, timestamps, watch mode, and the
   attached terminal `--menu` shortcut surface. The menu path supports detach,
-  watch toggle, graceful stop, and force stop shortcuts; Docker Desktop-only
-  shortcuts are intentionally absent, and menu with exit-control or
+  watch toggle, graceful stop, force stop shortcuts, and exit-control flags;
+  Docker Desktop-only shortcuts are intentionally absent, and menu with
   `up --watch` remains a documented compatibility boundary.
 - Supported local Deploy metadata includes replicas, local job modes,
   stop-first update delays, restart policy fields, CPU/memory reservation

@@ -9,8 +9,8 @@ This change implements the first Docker Compose-compatible `up --menu` path insi
 - Validates explicit `--menu` and `COMPOSE_MENU=true` incompatibilities before terminal gating so non-interactive scripts do not silently drop requested menu semantics.
 - Starts menu-enabled `up` service graphs detached, then follows attachable service logs through a Compose-owned menu controller.
 - Handles `d` detach, `w` watch toggle through the existing watch engine, first `Ctrl+C` graceful stop, second `Ctrl+C` force stop, and Enter redraw.
-- Keeps `up --menu` with exit-control options rejected until combined exit/menu semantics are implemented.
-- Marks `--menu` supported in CLI help while documenting the remaining command-level `up` boundaries in `README.md` and `STATUS.md`.
+- Supports `up --menu` with exit-control options by running menu log follow beside the existing exit-control waiter.
+- Marks `--menu` supported in CLI help while documenting the remaining command-level `up --menu --watch` boundary in `README.md` and `STATUS.md`.
 
 ## Rationale
 
@@ -21,8 +21,8 @@ The Apple runtime does not expose an interactive attach primitive, but `up --men
 Run focused local validation:
 
 ```sh
-swift test --filter 'ComposeUpMenuTests|normalizesUpMenuBooleanValueForms|upMenuOptionShowsSupportedInteractiveShortcutHelp|upMenuFalseValueParsesThroughDockerComposeRewriter|runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpRejectsMenuIncompatibilitiesBeforeComposeSideEffects|upMenuFollowsAttachableSelectedServiceLogsThroughMenuController|upMenuDryRunEmitsLogFollowPlanWithoutInvokingMenuController|upMenuRejectsExitControlOptionsBeforeSideEffects|upMenuShortcutActionsStopAndKillSelectedServiceGraph|dependencyGroupsPreserveIndividuallyConfiguredCollaborators'
-CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$PWD/.build/debug/compose" swift test --skip-build --filter 'runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpRejectsMenuIncompatibilitiesBeforeComposeSideEffects'
+swift test --disable-automatic-resolution --filter 'ComposeUpMenuTests|normalizesUpMenuBooleanValueForms|upMenuOptionShowsSupportedInteractiveShortcutHelp|upMenuFalseValueParsesThroughDockerComposeRewriter|runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndRejectsMenuWatch|upMenuFollowsAttachableSelectedServiceLogsThroughMenuController|upMenuDryRunEmitsLogFollowPlanWithoutInvokingMenuController|upMenuAcceptsExitControlOptionsAndReturnsTheSelectedStatus|upMenuShortcutActionsStopAndKillSelectedServiceGraph|dependencyGroupsPreserveIndividuallyConfiguredCollaborators'
+CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$PWD/.build/debug/compose" swift test --disable-automatic-resolution --filter 'runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode|runtimeDryRunUpAcceptsMenuExitControlAndRejectsMenuWatch'
 ```
 
 Before release promotion, run the broader local gate:
@@ -39,6 +39,5 @@ git diff --check
 ## Compatibility Notes
 
 - Docker Desktop-only `v`, `o`, and `l` shortcuts are intentionally absent because they target Docker Desktop UI surfaces.
-- `up --menu` remains incompatible with `--abort-on-container-exit`, `--abort-on-container-failure`, and `--exit-code-from`.
 - `up --menu` and `up --watch` remain separate modes until their combined behavior gets a dedicated Docker parity pass.
-- Docker Compose 5.2.0 accepts the exit-control and watch combinations in dry-run mode; `make docker-compose-up-menu-parity` treats those as documented differences while requiring parity for the supported optional-boolean menu forms.
+- Docker Compose 5.2.0 accepts the watch combination in dry-run mode; `make docker-compose-up-menu-parity` treats that as a documented difference while requiring parity for the supported optional-boolean menu forms and menu plus exit-control options.

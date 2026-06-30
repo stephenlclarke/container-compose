@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-30 08:35 BST.
+Last updated: 2026-06-30 09:12 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,11 +24,11 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory`, local Docker Compose 5.2.0 parity probes, focused Go and Swift tests, `python3 -m unittest Tools/release/test_update_homebrew_formula.py`, `make docker-compose-deploy-resource-reservations-parity`, `make docker-compose-cli-surface-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `bash -n Tools/parity/check-compose-deploy-resource-reservations.sh`, `shellcheck Tools/parity/check-compose-deploy-resource-reservations.sh`, Markdown lint, and `git diff --check`. This slice is a patch-level Compose release because it completes one Compose-file deploy metadata compatibility option; full CLI-completion releases should use a minor bump. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for `up --menu` with exit-control options, local Docker Compose 5.2.0 parity probes, focused Swift tests, `python3 -m unittest Tools/release/test_update_homebrew_formula.py`, `make docker-compose-up-menu-parity`, `make docker-compose-cli-surface-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `bash -n Tools/parity/check-compose-up-menu.sh`, `shellcheck Tools/parity/check-compose-up-menu.sh`, Markdown lint, and `git diff --check`. This slice is a patch-level Compose release because it completes one partial `up --menu` parity option; full CLI-completion releases should use a minor bump. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
-- Swift: 800 Compose tests at 89.00% line coverage.
+- Swift: 801 Compose tests at 88.99% line coverage.
 - Go normalizer: 92.45% line coverage.
 
 ## Recent Functional State
@@ -45,7 +45,7 @@ Most recent coverage proof:
 ## Current Limits
 
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
-- `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, graceful stop, and force stop shortcuts. Docker Desktop-only shortcuts are intentionally absent, and `up --menu` remains incompatible with exit-control options and the separate `up --watch` mode pending a deeper parity pass.
+- `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, graceful stop, force stop shortcuts, and exit-control options. Docker Desktop-only shortcuts are intentionally absent, and `up --menu --watch` remains incompatible pending a deeper watch/menu parity pass.
 - Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 
 ## Upstream Compatibility

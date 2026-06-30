@@ -41,4 +41,4 @@ make coverage-check
 - `up --exit-code-from SERVICE` requires the selected service to be part of the selected start graph.
 - Exit-control options are incompatible with `--detach`, `--wait`, and `--no-start` because those modes either release process control or do not start containers.
 - `up --watch` remains a separate watch-engine mode and rejects exit-control combinations.
-- `up --menu` remains a separate attached menu mode and is still incompatible with exit-control options.
+- `up --menu` can now be combined with exit-control options; the menu follows logs while the existing exit-control waiter decides teardown and process status.

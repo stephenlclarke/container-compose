@@ -419,8 +419,8 @@ struct ComposeRuntimeSmokeTests {
         #expect(disabledEnvironment.stdout.contains("+ container create --name \(project)-api-1"))
     }
 
-    @Test("runtime dry run up rejects menu incompatibilities before compose side effects")
-    func runtimeDryRunUpRejectsMenuIncompatibilitiesBeforeComposeSideEffects() throws {
+    @Test("runtime dry run up accepts menu exit-control and rejects menu watch")
+    func runtimeDryRunUpAcceptsMenuExitControlAndRejectsMenuWatch() throws {
         guard runtimeTestsEnabled else {
             return
         }
@@ -456,11 +456,11 @@ struct ComposeRuntimeSmokeTests {
                 "--file", composeFile.path,
                 "--dry-run", "up", "--menu", "--abort-on-container-exit", "api",
             ],
-            timeout: 30,
-            expectedStatus: 1
+            timeout: 30
         )
-        #expect(exitControl.stderr.contains("unsupported compose feature: up --menu with exit-control options"))
-        #expect(!exitControl.stdout.contains("+ container run"))
+        #expect(exitControl.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(exitControl.stdout.contains("+ compose-runtime wait \(project)-api-1"))
+        #expect(exitControl.stdout.contains("+ container delete \(project)-api-1"))
 
         let watch = try runProcess(
             composeBinary,
@@ -485,11 +485,11 @@ struct ComposeRuntimeSmokeTests {
                 "--dry-run", "up", "--abort-on-container-exit", "api",
             ],
             timeout: 30,
-            expectedStatus: 1,
             environment: ["COMPOSE_MENU": "true"]
         )
-        #expect(environmentMenu.stderr.contains("unsupported compose feature: up --menu with exit-control options"))
-        #expect(!environmentMenu.stdout.contains("+ container run"))
+        #expect(environmentMenu.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(environmentMenu.stdout.contains("+ compose-runtime wait \(project)-api-1"))
+        #expect(environmentMenu.stdout.contains("+ container delete \(project)-api-1"))
     }
 
     @Test("runtime dry run up renders service privileged command")

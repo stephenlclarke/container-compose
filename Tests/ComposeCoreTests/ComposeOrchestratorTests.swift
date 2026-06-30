@@ -3529,6 +3529,41 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
+    @Test("up menu dry run emits exit-control plan without invoking menu controller")
+    func upMenuDryRunEmitsExitControlPlanWithoutInvokingMenuController() async throws {
+        let emitted = MessageRecorder()
+        let logManager = RecordingContainerLogManager(outputs: ["ignored"])
+        let menuController = RecordingComposeUpMenuController()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        let exitCode = try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies {
+                $0.logManager = logManager
+                $0.upMenuController = menuController
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.menu = true
+            $0.abortOnContainerFailure = true
+        })
+
+        #expect(exitCode == 0)
+        #expect(emitted.messages.contains("+ compose-runtime logs --follow demo-api-1"))
+        #expect(emitted.messages.contains("+ compose-runtime wait demo-api-1"))
+        #expect(emitted.messages.contains("+ container stop demo-api-1"))
+        #expect(emitted.messages.contains("+ container delete demo-api-1"))
+        #expect(await menuController.requests.isEmpty)
+        #expect(await logManager.requests.isEmpty)
+    }
+
     @Test("up menu waits on selected services when no logs are attachable")
     func upMenuWaitsOnSelectedServicesWhenNoLogsAreAttachable() async throws {
         let runner = RecordingRunner(responses: [
@@ -3575,33 +3610,70 @@ struct ComposeOrchestratorTests {
         #expect(await logManager.requests.isEmpty)
     }
 
-    @Test("up menu rejects exit-control options before side effects")
-    func upMenuRejectsExitControlOptionsBeforeSideEffects() async throws {
-        let runner = RecordingRunner()
+    @Test("up menu accepts exit-control options and returns the selected status")
+    func upMenuAcceptsExitControlOptionsAndReturnsTheSelectedStatus() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-api-1": 6])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "running",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "api",
+                        composeOneOffLabel: "false",
+                    ]
+                ),
+            ],
+            getResponses: [
+                "demo-api-1": [nil],
+            ]
+        )
+        let logManager = RecordingContainerLogManager(outputs: ["ready\n"])
+        let menuController = RecordingComposeUpMenuController()
         let project = ComposeProject(
             name: "demo",
             services: [
-                "api": ComposeService(name: "api", image: "example/api"),
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.stopGracePeriodSeconds = 3
+                },
             ]
         )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(
-                project: project,
-                options: ComposeUpOptions {
-                    $0.services = ["api"]
-                    $0.menu = true
-                    $0.abortOnContainerExit = true
-                }
-            )
-            Issue.record("Expected menu exit-control incompatibility")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("up --menu with exit-control options"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        let exitCode = try await ComposeOrchestrator(
+            runner: runner,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+                $0.logManager = logManager
+                $0.upMenuController = menuController
+            }
+        )
+        .up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.menu = true
+            $0.exitCodeFrom = "api"
+        })
 
-        #expect(runner.commands.isEmpty)
+        #expect(exitCode == 6)
+        #expect(await menuController.requests == [
+            ComposeUpMenuConfigurationSnapshot(
+                projectName: "demo",
+                watchEnabled: false,
+                watchAvailable: false,
+                colorEnabled: false
+            ),
+        ])
+        #expect(await logManager.requests == [
+            ContainerLogRequest(id: "demo-api-1", tail: nil, follow: true),
+        ])
+        let lifecycleRequests = await lifecycleManager.requests
+        #expect(lifecycleRequests.contains(.wait(id: "demo-api-1")))
+        #expect(lifecycleRequests.contains(.stop(id: "demo-api-1", signal: nil, timeoutInSeconds: 3)))
+        #expect(lifecycleRequests.contains(.delete(id: "demo-api-1", force: false)))
     }
 
     @Test("up menu watch toggle validates before reporting watch enabled")

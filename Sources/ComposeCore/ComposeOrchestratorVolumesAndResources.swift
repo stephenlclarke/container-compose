@@ -174,9 +174,6 @@ extension ComposeOrchestrator {
         if options.alwaysRecreateDeps, options.noRecreate {
             throw ComposeError.invalidProject("--always-recreate-deps and --no-recreate are incompatible")
         }
-        if options.menu, options.abortOnContainerExit || options.abortOnContainerFailure || options.exitCodeFrom != nil {
-            throw ComposeError.unsupported("up --menu with exit-control options")
-        }
     }
 
     /// Validates command-level `compose create` option combinations before runtime side effects.

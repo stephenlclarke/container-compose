@@ -30,10 +30,10 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
-# Docker Compose V2 and container-compose both accept the supported
-# `up --menu` optional-boolean forms against a compose.yml fixture, and it
-# keeps the current container-compose exit-control/watch menu boundaries
-# documented as expected Docker differences.
+# Docker Compose V2 and container-compose both accept the supported `up --menu`
+# optional-boolean forms and exit-control combinations against a compose.yml
+# fixture, and it keeps the current container-compose watch menu boundary
+# documented as an expected Docker difference.
 
 set -euo pipefail
 
@@ -227,17 +227,45 @@ check_supported_menu_forms() {
     assert_file_contains "$LAST_STDOUT_FILE" "container create --name $PROJECT_NAME-api-1"
 }
 
-# Check the currently documented Docker differences for combined menu modes.
-check_documented_boundaries() {
-    expect_status 'Docker Compose accepts --menu with exit-control dry-run' 0 \
+# Assert container-compose preserves the dry-run exit-control lifecycle plan.
+assert_container_menu_exit_control_plan() {
+    assert_file_contains "$LAST_STDOUT_FILE" "container run --name $PROJECT_NAME-api-1 --detach"
+    assert_file_contains "$LAST_STDOUT_FILE" "compose-runtime wait $PROJECT_NAME-api-1"
+    assert_file_contains "$LAST_STDOUT_FILE" "container delete $PROJECT_NAME-api-1"
+}
+
+# Assert Docker Compose and container-compose both accept menu exit-control.
+check_menu_exit_control() {
+    expect_status 'Docker Compose accepts --menu with --abort-on-container-exit dry-run' 0 \
         "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
         --dry-run up --menu --abort-on-container-exit api
 
-    expect_status 'container-compose documents --menu with exit-control as unsupported' 1 \
+    expect_status 'container-compose accepts --menu with --abort-on-container-exit dry-run' 0 \
         "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
         --dry-run up --menu --abort-on-container-exit api
-    assert_file_contains "$LAST_STDERR_FILE" 'unsupported compose feature: up --menu with exit-control options'
+    assert_container_menu_exit_control_plan
 
+    expect_status 'Docker Compose accepts --menu with --abort-on-container-failure dry-run' 0 \
+        "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
+        --dry-run up --menu --abort-on-container-failure api
+
+    expect_status 'container-compose accepts --menu with --abort-on-container-failure dry-run' 0 \
+        "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
+        --dry-run up --menu --abort-on-container-failure api
+    assert_container_menu_exit_control_plan
+
+    expect_status 'Docker Compose accepts --menu with --exit-code-from dry-run' 0 \
+        "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
+        --dry-run up --menu --exit-code-from api api
+
+    expect_status 'container-compose accepts --menu with --exit-code-from dry-run' 0 \
+        "$CONTAINER_COMPOSE" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
+        --dry-run up --menu --exit-code-from api api
+    assert_container_menu_exit_control_plan
+}
+
+# Check the currently documented Docker difference for menu watch mode.
+check_documented_boundaries() {
     expect_status 'Docker Compose accepts --menu with --watch dry-run' 0 \
         "${DOCKER_COMPOSE_COMMAND[@]}" --ansi never -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
         --dry-run up --menu --watch api
@@ -257,9 +285,10 @@ main() {
     trap cleanup EXIT
 
     check_supported_menu_forms
+    check_menu_exit_control
     check_documented_boundaries
 
-    info 'Docker Compose up-menu parity passed with documented exit-control/watch differences.'
+    info 'Docker Compose up-menu parity passed with documented watch difference.'
 }
 
 main "$@"
