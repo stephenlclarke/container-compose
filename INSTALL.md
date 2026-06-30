@@ -10,7 +10,7 @@ This guide explains how to install the `container-compose` plugin and the compat
 | --- | --- | --- | --- |
 | Main | `container-compose` | release | You want the latest development build. |
 | Release | `container-compose-release` | release | You want the latest stable release branch build. |
-| Tagged release | `container-compose-release-v0-1-0` style | release | You want a specific `release-VERSION-TAG` branch. |
+| Tagged Compose release | `container-compose-release-v0-2-0` style | release | You want a specific Compose `release-VERSION-TAG` branch. |
 
 These lanes install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Debug formula lanes are not part of the current branch model.
 
@@ -126,7 +126,7 @@ The `container` formula owns the plugin registration link inside its own
 Homebrew install root. Run the matching `container` formula's `post_install`
 hook after installing or upgrading `container-compose`.
 
-Tagged release branch formulae use the same pattern. For example, branch `release-v0.1.1` publishes `container-compose-release-v0-1-1`.
+Tagged Compose release branch formulae use the same pattern. For example, branch `release-v0.2.0` publishes `container-compose-release-v0-2-0`. Tagged Compose formulae currently pair with the moving `container-release` runtime formula unless a matching versioned runtime formula is published for the same stack release.
 
 ## If Apple container Is Already Installed
 

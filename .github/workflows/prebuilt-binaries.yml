@@ -277,9 +277,13 @@ jobs:
           url="https://github.com/stephenlclarke/container-compose/releases/download/${RELEASE_TAG}/${ASSET}"
           sha256="$(awk '{print $1}' "${RUNNER_TEMP}/${ASSET}.sha256")"
           plugin_version="$(sed -n 's/^COMPOSE_VERSION ?= //p' container-compose/Makefile | head -n 1)"
+          template="homebrew-tap/Formula/container-compose.rb"
+          if [[ "$FORMULA" == container-compose-release-v*.rb ]]; then
+            template="homebrew-tap/Formula/container-compose-release.rb"
+          fi
           python3 container-compose/Tools/release/update-homebrew-formula.py \
             --formula "homebrew-tap/Formula/${FORMULA}" \
-            --template "homebrew-tap/Formula/container-compose.rb" \
+            --template "$template" \
             --formula-class "${{ steps.lane.outputs.formula_class }}" \
             --url "$url" \
             --version "$VERSION" \
@@ -295,7 +299,8 @@ jobs:
         working-directory: homebrew-tap
         run: |
           set -euo pipefail
-          if git diff --quiet -- Formula; then
+          untracked_formulae="$(git ls-files --others --exclude-standard -- Formula)"
+          if git diff --quiet -- Formula && [[ -z "$untracked_formulae" ]]; then
             printf 'Homebrew tap formula already points at %s\n' "${{ steps.lane.outputs.asset }}"
             exit 0
           fi

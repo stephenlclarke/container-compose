@@ -24,7 +24,7 @@ The four repositories have different roles:
 | --- | --- | --- |
 | `main` | Current development for all four repositories. | Full CI, CodeQL, SonarQube where configured, and Homebrew main prebuilt packages for installable packages. |
 | `release` | Latest stable snapshot promoted from validated `main`. | Release package validation only; no debug binaries. |
-| `release-VERSION-TAG` | Permanent copy of a release tag, for example `release-v0.1.1`. | Release package validation only; no debug binaries. |
+| `release-VERSION-TAG` | Permanent copy of a release tag, for example `release-v0.2.0`. | Release package validation only; no debug binaries. |
 
 `main` is the only active development branch because the free SonarQube tier
 only provides one useful branch signal. README badges, quality gates, and normal
@@ -71,21 +71,21 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 
 | Repository | Main formula | Release formula pattern |
 | --- | --- | --- |
-| `container` | `container` | `container-release`, `container-release-v0-1-0`, and other branch-derived formula names |
-| `container-compose` | `container-compose` | `container-compose-release`, `container-compose-release-v0-1-0`, and other branch-derived formula names |
+| `container` | `container` | `container-release`, plus branch-derived formula names when matching runtime release branches exist |
+| `container-compose` | `container-compose` | `container-compose-release`, `container-compose-release-v0-2-0`, and other branch-derived formula names |
 
 `homebrew-main` tracks the latest `main` package, and `homebrew-release` tracks
 the latest stable `release` package. Treat `homebrew-release` like Docker's
 `:latest` tag for the stable lane: it is intentionally moved whenever a newer
 release is promoted. Versioned release branch copies, such as
-`release-v0.1.1`, keep their own branch-derived Homebrew tags and formula names
+`release-v0.2.0`, keep their own branch-derived Homebrew tags and formula names
 for immutable installs.
 
 The tap's `sources/*` submodules are maintenance inputs and track the four project repositories on `main`: `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim`. Release formulae do not install from those submodules; they consume the prebuilt assets published from the matching release package tags.
 
 Release formula names are derived from the branch name by lowercasing it and
 replacing non-alphanumeric separators with `-`. For example,
-`release-v0.1.1` becomes `container-compose-release-v0-1-1`.
+`release-v0.2.0` becomes `container-compose-release-v0-2-0`.
 
 Install matching formula lanes together: `container` with `container-compose`
 for `main`, or `container-release` with `container-compose-release` for the
