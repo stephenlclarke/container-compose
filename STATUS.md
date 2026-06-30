@@ -24,7 +24,7 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for host namespace modes, focused Swift orchestration tests, fork-side `containerization` and `container` PID/host-network tests, `bash -n Tools/parity/check-compose-host-namespaces.sh`, `shellcheck Tools/parity/check-compose-host-namespaces.sh`, `make docker-compose-host-namespaces-parity`, Markdown lint, and `git diff --check`. This slice adds the host-only namespace subset on top of `0.4.2`; release promotion will bump the patch version to `0.4.3` unless a fuller CLI slice is completed before tagging.
+The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for host namespace modes, focused Swift orchestration tests, fork-side `containerization` and `container` PID/host-network tests, `bash -n Tools/parity/check-compose-host-namespaces.sh`, `shellcheck Tools/parity/check-compose-host-namespaces.sh`, `make docker-compose-host-namespaces-parity`, Markdown lint, and `git diff --check`. This slice adds the host-only namespace subset and promotes the plugin version to `0.4.3`.
 
 Most recent coverage proof:
 
