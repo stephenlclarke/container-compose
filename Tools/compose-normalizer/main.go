@@ -901,7 +901,6 @@ func unsupportedDeployFields(deploy *types.DeployConfig) []string {
 	fields = append(fields, unsupportedUpdateConfigFields(deploy.UpdateConfig)...)
 	fields = append(fields, unsupportedDeployLimitFields(deploy.Resources.Limits)...)
 	fields = append(fields, unsupportedDeployReservationFields(deploy.Resources.Reservations)...)
-	appendUnsupportedDeployField(&fields, "endpoint_mode", deploy.EndpointMode != "")
 	return fields
 }
 

@@ -1377,7 +1377,6 @@ services:
 	want := []string{
 		"resources.limits.pids",
 		"resources.reservations.devices",
-		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(api.UnsupportedDeployFields, want) {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want %#v", api.UnsupportedDeployFields, want)
@@ -1999,7 +1998,6 @@ func TestUnsupportedDeployFieldsReportsSwarmDeployOptions(t *testing.T) {
 		"mode",
 		"resources.limits.pids",
 		"resources.reservations.generic_resources",
-		"endpoint_mode",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unsupportedDeployFields = %#v, want %#v", got, want)

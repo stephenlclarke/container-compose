@@ -69,7 +69,7 @@ end
                     "--version",
                     "release-v0.1.0-release-abcdef123456",
                     "--plugin-version",
-                    "0.1.3",
+                    "0.1.4",
                     "--asset",
                     "new.tar.gz",
                     "--label",
@@ -96,7 +96,7 @@ class ContainerComposeReleaseV010 < Formula
   end
 
   test do
-    assert_match "0.1.3", shell_output("#{bin}/container-compose version --short")
+    assert_match "0.1.4", shell_output("#{bin}/container-compose version --short")
   end
 end
                 """.strip(),

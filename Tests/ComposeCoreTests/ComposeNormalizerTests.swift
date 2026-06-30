@@ -655,6 +655,7 @@ struct ComposeNormalizerTests {
           api:
             image: nginx:latest
             deploy:
+              endpoint_mode: dnsrr
               resources:
                 limits:
                   cpus: "1.5"

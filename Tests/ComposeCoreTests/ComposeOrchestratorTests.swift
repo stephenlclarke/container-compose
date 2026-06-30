@@ -2822,6 +2822,47 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-db-1", "demo-api-1"])
     }
 
+    @Test("up accepts deploy endpoint mode metadata normalized by compose-go")
+    func upAcceptsDeployEndpointModeMetadataNormalizedByComposeGo() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            deploy:
+              endpoint_mode: dnsrr
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "demo",
+            projectDirectory: directory.path
+        ))
+        let api = try #require(project.services["api"])
+        #expect(api.unsupportedDeployFields == nil)
+
+        let runner = RecordingRunner()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        try await ComposeOrchestrator(runner: runner, discoveryManager: discoveryManager).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.noStart = true
+            }
+        )
+
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.contains { $0.starts(with: ["container", "create", "--name", "demo-api-1"]) })
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+    }
+
     @Test("up no-start no-deps creates only selected services")
     func upNoStartNoDepsCreatesOnlySelectedServices() async throws {
         let runner = RecordingRunner(responses: [
@@ -19461,33 +19502,6 @@ struct ComposeOrchestratorTests {
             Issue.record("Expected start-first deploy update error")
         } catch let error as ComposeError {
             #expect(error == .unsupported("service 'job' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
-    @Test("run rejects deploy endpoint mode as a networking runtime gap")
-    func runRejectsDeployEndpointModeAsNetworkingRuntimeGap() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "job": composeService(name: "job", image: "alpine") {
-                    $0.unsupportedDeployFields = ["endpoint_mode"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                },
-            ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
-
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported deploy endpoint mode error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses deploy.endpoint_mode; service endpoint mode support needs an apple/container networking gap PR"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
