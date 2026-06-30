@@ -739,6 +739,7 @@ struct ComposeOrchestratorTests {
             #expect(request.isInternal == false)
             #expect(request.ipv4Subnet == nil)
             #expect(request.ipv6Subnet == nil)
+            #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project.working-directory"] == "/tmp/demo")
             #expect(request.labels["com.apple.container.compose.project.config-files-hash"] != nil)
         } else {
@@ -1067,9 +1068,56 @@ struct ComposeOrchestratorTests {
             #expect(request.isInternal == true)
             #expect(request.ipv4Subnet == "10.77.0.0/24")
             #expect(request.ipv6Subnet == "fd77::/64")
+            #expect(request.driverOpts == [:])
             #expect(request.labels["com.apple.container.compose.project"] == "demo")
             #expect(request.labels["com.apple.container.compose.project.config-files-hash"] != nil)
             #expect(request.labels["com.example.network"] == "backend")
+        } else {
+            Issue.record("Expected network creation through direct API")
+        }
+        #expect(runner.commands.map(\.arguments)[0].containsSequence(["--network", "demo_backend"]))
+    }
+
+    @Test("up creates network driver options through direct API")
+    func upCreatesNetworkDriverOptionsThroughDirectAPI() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+        ])
+        let resourceManager = RecordingContainerResourceManager()
+        let discoveryManager = RecordingContainerDiscoveryManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    driverOpts: [
+                        "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
+                        "com.docker.network.driver.mtu": "1450",
+                    ]
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            resourceManager: resourceManager
+        ).up(project: project, options: ComposeUpOptions())
+
+        let resources = await resourceManager.requests
+        #expect(resources.count == 1)
+        if case .createNetwork(let request) = resources[0] {
+            #expect(request.name == "demo_backend")
+            #expect(request.driverOpts == [
+                "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
+                "com.docker.network.driver.mtu": "1450",
+            ])
         } else {
             Issue.record("Expected network creation through direct API")
         }
@@ -1107,6 +1155,36 @@ struct ComposeOrchestratorTests {
         })
     }
 
+    @Test("up dry run renders network driver options")
+    func upDryRunRendersNetworkDriverOptions() async throws {
+        let emitted = MessageRecorder()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.networks = ["backend"]
+                },
+            ]
+        ) {
+            $0.networks = [
+                "backend": ComposeNetwork(
+                    name: "backend",
+                    driverOpts: [
+                        "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
+                        "com.docker.network.driver.mtu": "1450",
+                    ]
+                ),
+            ]
+        }
+
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .up(project: project, options: ComposeUpOptions())
+
+        #expect(emitted.messages.contains { message in
+            message.contains("container network create --option com.docker.network.bridge.host_binding_ipv4=127.0.0.1 --option com.docker.network.driver.mtu=1450")
+        })
+    }
+
     @Test("up rejects unsupported project network IPAM before side effects")
     func upRejectsUnsupportedProjectNetworkIPAMBeforeSideEffects() async throws {
         let runner = RecordingRunner()
@@ -1132,7 +1210,7 @@ struct ComposeOrchestratorTests {
                 .up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported project network IPAM error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields ipam.config.gateway; only internal and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields ipam.config.gateway; only internal, driver_opts, and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -15190,6 +15268,7 @@ struct ComposeOrchestratorTests {
             isInternal: true,
             ipv4Subnet: "10.10.0.0/24",
             ipv6Subnet: "fd00:10::/64",
+            driverOpts: ["variant": "vzNAT"],
             labels: labels
         ))
         try await manager.createVolume(ComposeVolumeCreateRequest(
@@ -15210,6 +15289,7 @@ struct ComposeOrchestratorTests {
                 plugin: "container-network-vmnet",
                 ipv4Subnet: "10.10.0.0/24",
                 ipv6Subnet: "fd00:10::/64",
+                options: ["variant": "vzNAT"],
                 labels: labels
             ),
             .createVolume(ComposeVolumeCreateRequest(
@@ -15324,6 +15404,7 @@ struct ComposeOrchestratorTests {
                 plugin: "container-network-vmnet",
                 ipv4Subnet: nil,
                 ipv6Subnet: nil,
+                options: [:],
                 labels: [:]
             ),
         ])
@@ -15399,6 +15480,7 @@ struct ComposeOrchestratorTests {
                 plugin: "container-network-vmnet",
                 ipv4Subnet: nil,
                 ipv6Subnet: nil,
+                options: [:],
                 labels: labels
             ),
             .createVolume(ComposeVolumeCreateRequest(
@@ -23212,6 +23294,7 @@ private enum ContainerResourceAPIRequest: Equatable {
         plugin: String,
         ipv4Subnet: String?,
         ipv6Subnet: String?,
+        options: [String: String],
         labels: [String: String]
     )
     case networkExists(id: String)
@@ -24546,6 +24629,7 @@ private actor RecordingContainerResourceAPIClient: ContainerResourceAPIClienting
             plugin: configuration.plugin,
             ipv4Subnet: configuration.ipv4Subnet?.description,
             ipv6Subnet: configuration.ipv6Subnet?.description,
+            options: configuration.options,
             labels: configuration.labels.dictionary
         ))
         if let networkCreateError {

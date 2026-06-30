@@ -562,6 +562,10 @@ extension ComposeOrchestrator {
         if let ipv6Subnet = network.ipv6Subnet, !ipv6Subnet.isEmpty {
             args.append(contentsOf: ["--subnet-v6", ipv6Subnet])
         }
+        let driverOpts = network.driverOpts ?? [:]
+        for option in driverOpts.sorted(by: { $0.key < $1.key }) {
+            args.append(contentsOf: ["--option", "\(option.key)=\(option.value)"])
+        }
         for label in resourceLabels(project: project) {
             args.append(contentsOf: ["--label", label])
         }
@@ -578,6 +582,7 @@ extension ComposeOrchestrator {
                 isInternal: network.isInternal == true,
                 ipv4Subnet: network.ipv4Subnet,
                 ipv6Subnet: network.ipv6Subnet,
+                driverOpts: driverOpts,
                 labels: resourceLabels(project: project, labels: network.labels),
             ))
         }

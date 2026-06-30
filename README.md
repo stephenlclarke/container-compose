@@ -58,6 +58,12 @@ Current detailed gap examples:
   `container --network host` runtime path while avoiding Compose project network
   attachment. Service/container namespace-sharing forms remain explicit runtime
   gaps.
+- Supported network-resource coverage includes top-level network `driver_opts`,
+  which are preserved in config output and passed to Apple network creation as
+  plugin-specific `--option key=value` values. Service network attachment
+  `driver_opts` support is currently limited to Docker-compatible MTU values
+  because Apple attachment options expose MTU but not arbitrary endpoint driver
+  options.
 - Supported device-cgroup coverage includes service `device_cgroup_rules`,
   which maps to the fork-backed `container run/create --device-cgroup-rule`
   runtime path. Host device mappings and GPU requests remain explicit runtime

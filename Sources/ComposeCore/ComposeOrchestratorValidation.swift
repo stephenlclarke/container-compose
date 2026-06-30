@@ -331,7 +331,7 @@ extension ComposeOrchestrator {
                 continue
             }
             let fieldList = fields.joined(separator: ", ")
-            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); only internal and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks")
+            throw ComposeError.unsupported("network '\(name)' uses unsupported fields \(fieldList); only internal, driver_opts, and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks")
         }
     }
 

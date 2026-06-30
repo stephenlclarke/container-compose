@@ -316,6 +316,7 @@ type normalizedNetwork struct {
 	Name              string            `json:"name"`
 	External          bool              `json:"external,omitempty"`
 	Driver            string            `json:"driver,omitempty"`
+	DriverOpts        map[string]string `json:"driverOpts,omitempty"`
 	Internal          bool              `json:"internal,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`
 	IPv4Subnet        string            `json:"ipv4Subnet,omitempty"`
@@ -604,6 +605,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 			Name:              firstNonEmpty(network.Name, name),
 			External:          bool(network.External),
 			Driver:            network.Driver,
+			DriverOpts:        mapOptions(network.DriverOpts),
 			Internal:          network.Internal,
 			Labels:            mapLabels(network.Labels),
 			IPv4Subnet:        ipv4Subnet,

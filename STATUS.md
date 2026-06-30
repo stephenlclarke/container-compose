@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-30 16:46 BST.
+Last updated: 2026-06-30 17:09 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,11 +24,11 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for the device area, focused Swift orchestration tests, fork-side `containerization` and `container` device-cgroup-rule tests, `bash -n Tools/parity/check-compose-device-cgroup-rules.sh`, `shellcheck Tools/parity/check-compose-device-cgroup-rules.sh`, `make docker-compose-device-cgroup-rules-parity`, `make cli-smoke-built`, `make coverage-check`, and `git diff --check`. This slice adds service `device_cgroup_rules` support and promotes the plugin version to `0.4.4`.
+The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for the network `driver_opts` area, focused Swift orchestration and normalizer tests, Go normalizer tests, `bash -n Tools/parity/check-compose-network-driver-opts.sh`, `shellcheck Tools/parity/check-compose-network-driver-opts.sh`, `make docker-compose-network-driver-opts-parity`, `make build cli-smoke-built`, `make coverage-check`, and `SONAR_QUALITYGATE_WAIT=true make sonar-scan`. This slice adds top-level network `driver_opts` support and promotes the plugin version to `0.5.0`.
 
 Most recent coverage proof:
 
-- Swift: 824 Compose tests at 89.10% line coverage.
+- Swift: 826 Compose tests at 89.11% line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
@@ -39,6 +39,7 @@ Most recent coverage proof:
 - Deploy metadata: Docker Compose-compatible `deploy.endpoint_mode` and CPU/memory Deploy reservations are accepted as local metadata, while Swarm-only deploy modes, start-first update ordering, pids/device/generic reservations, and unmapped Deploy resource limits remain blocked by Apple runtime semantics and fail before side effects.
 - Mount behavior: bind mounts preserve Docker Compose `bind.create_host_path` policy; missing sources are rejected before side effects when the policy is false, while default or true bind sources are created as host directories before Apple runtime create/run handoff. Service long-form `volume.labels` are preserved in config; anonymous volume labels are applied to deterministic runtime volumes before create/run handoff, and named service mount labels remain metadata because Docker Compose keeps named resource labels under top-level `volumes.<name>.labels`. Runtime-inherited `volumes_from` mounts from external containers pass through without host-path preparation.
 - Namespace modes: `network_mode: none` and `pid: host` are accepted for service containers and one-off `run`. `network_mode: host` maps to the Stephen fork-backed `container --network host` runtime path without attaching the Compose project network. Service/container namespace-sharing forms remain blocked pending a Docker-compatible runtime namespace-join primitive.
+- Network resources: top-level `networks.<name>.driver_opts` are preserved in normalized config and passed to Apple network creation through plugin-specific options. Service network attachment `driver_opts` support remains limited to Docker-compatible MTU keys because Apple attachment options expose MTU but not arbitrary endpoint driver options.
 - Device controls: service `device_cgroup_rules` is accepted for service containers and one-off `run`, validated before side effects, and mapped to the Stephen fork-backed `container --device-cgroup-rule` runtime path. Host device mappings and GPU requests remain blocked pending Docker-compatible passthrough primitives.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
@@ -51,6 +52,7 @@ Most recent coverage proof:
 - `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, command-level `--watch` start, graceful stop, force stop shortcuts, and exit-control options. Docker Desktop-only shortcuts are intentionally absent.
 - Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 - Namespace sharing via `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME` remains blocked until the runtime exposes Docker-compatible namespace-joining primitives.
+- Arbitrary service network attachment `driver_opts` remain blocked until the runtime exposes a Docker-compatible endpoint option surface; Docker-compatible MTU options are already mapped.
 - Host `devices`, `gpus`, and Deploy device reservations remain blocked until the runtime exposes Docker-compatible host-device, GPU, and scheduler/device-resource primitives.
 
 ## Upstream Compatibility
@@ -68,4 +70,4 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 
 ## Next Step
 
-Continue the device-area scan with true host `devices` and `gpus` blockers documented, then return to the requested network `driver_opts` slice.
+Continue the strict gap scan with true host `devices`, `gpus`, generic service endpoint `driver_opts`, and Deploy device reservations treated as runtime-primitive blockers unless matching Apple-shaped fork primitives are added.

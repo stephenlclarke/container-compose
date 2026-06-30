@@ -971,6 +971,9 @@ services:
     image: redis:7
 networks:
   backend:
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: 127.0.0.1
+      com.docker.network.driver.mtu: "1450"
     labels:
       role: test
 volumes:
@@ -1231,6 +1234,12 @@ volumes:
 	}
 	if got, want := project.Networks["backend"].Labels, map[string]string{"role": "test"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("backend labels = %#v, want %#v", got, want)
+	}
+	if got, want := project.Networks["backend"].DriverOpts, map[string]string{
+		"com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
+		"com.docker.network.driver.mtu":               "1450",
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("backend driver opts = %#v, want %#v", got, want)
 	}
 	if got, want := project.Volumes["data"].Labels, map[string]string{"role": "state"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("data labels = %#v, want %#v", got, want)

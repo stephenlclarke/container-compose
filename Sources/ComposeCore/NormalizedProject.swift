@@ -979,6 +979,7 @@ public struct ComposeNetwork: Codable, Equatable {
     public var name: String
     public var external: Bool?
     public var driver: String?
+    public var driverOpts: [String: String]?
     public var isInternal: Bool?
     public var labels: [String: String]?
     public var ipv4Subnet: String?
@@ -989,6 +990,7 @@ public struct ComposeNetwork: Codable, Equatable {
         name: String,
         external: Bool? = nil,
         driver: String? = nil,
+        driverOpts: [String: String]? = nil,
         isInternal: Bool? = nil,
         labels: [String: String]? = nil,
         subnets: Subnets = Subnets(),
@@ -997,6 +999,7 @@ public struct ComposeNetwork: Codable, Equatable {
         self.name = name
         self.external = external
         self.driver = driver
+        self.driverOpts = driverOpts
         self.isInternal = isInternal
         self.labels = labels
         self.ipv4Subnet = subnets.ipv4Subnet
@@ -1008,6 +1011,7 @@ public struct ComposeNetwork: Codable, Equatable {
         case name
         case external
         case driver
+        case driverOpts
         case isInternal = "internal"
         case labels
         case ipv4Subnet

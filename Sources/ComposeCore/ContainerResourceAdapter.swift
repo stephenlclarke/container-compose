@@ -59,6 +59,7 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
     public var isInternal: Bool
     public var ipv4Subnet: String?
     public var ipv6Subnet: String?
+    public var driverOpts: [String: String]
     public var labels: [String: String]
 
     public init(
@@ -66,12 +67,14 @@ public struct ComposeNetworkCreateRequest: Equatable, Sendable {
         isInternal: Bool = false,
         ipv4Subnet: String? = nil,
         ipv6Subnet: String? = nil,
+        driverOpts: [String: String] = [:],
         labels: [String: String] = [:]
     ) {
         self.name = name
         self.isInternal = isInternal
         self.ipv4Subnet = ipv4Subnet
         self.ipv6Subnet = ipv6Subnet
+        self.driverOpts = driverOpts
         self.labels = labels
     }
 }
@@ -254,7 +257,7 @@ public struct ContainerClientResourceManager: ContainerResourceManaging {
             ipv6Subnet: try request.ipv6Subnet.map { try CIDRv6($0) },
             labels: try ResourceLabels(request.labels),
             plugin: "container-network-vmnet",
-            options: [:]
+            options: request.driverOpts
         )
         do {
             try await client.createNetwork(configuration: configuration)
