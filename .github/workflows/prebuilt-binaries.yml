@@ -276,12 +276,14 @@ jobs:
           set -euo pipefail
           url="https://github.com/stephenlclarke/container-compose/releases/download/${RELEASE_TAG}/${ASSET}"
           sha256="$(awk '{print $1}' "${RUNNER_TEMP}/${ASSET}.sha256")"
+          plugin_version="$(sed -n 's/^COMPOSE_VERSION ?= //p' container-compose/Makefile | head -n 1)"
           python3 container-compose/Tools/release/update-homebrew-formula.py \
             --formula "homebrew-tap/Formula/${FORMULA}" \
             --template "homebrew-tap/Formula/container-compose.rb" \
             --formula-class "${{ steps.lane.outputs.formula_class }}" \
             --url "$url" \
             --version "$VERSION" \
+            --plugin-version "$plugin_version" \
             --asset "$ASSET" \
             --label "$LABEL" \
             --sha256 "$sha256"

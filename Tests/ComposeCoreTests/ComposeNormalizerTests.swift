@@ -436,7 +436,7 @@ struct ComposeNormalizerTests {
                 frontend: ComposeBuild.Options.Frontend(
                     entitlements: ["network.host"],
                     extraHosts: ["build.local=127.0.0.1"],
-                    isolation: "default",
+                    isolation: "hyperv",
                     network: "host",
                     privileged: true,
                     shmSize: "67108864",
@@ -471,7 +471,7 @@ struct ComposeNormalizerTests {
         #expect(build.tags == ["example/api:latest"])
         #expect(build.entitlements == ["network.host"])
         #expect(build.extraHosts == ["build.local=127.0.0.1"])
-        #expect(build.isolation == "default")
+        #expect(build.isolation == "hyperv")
         #expect(build.network == "host")
         #expect(build.privileged == true)
         #expect(build.shmSize == "67108864")

@@ -5699,7 +5699,7 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api") {
                     $0.build = ComposeBuild(
                         context: "api",
-                        options: ComposeBuild.Options(unsupportedFields: ["isolation", "secrets"])
+                        options: ComposeBuild.Options(unsupportedFields: ["secrets"])
                     )
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -5712,7 +5712,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses unsupported build fields isolation, secrets; advanced build fields need Docker Compose compatible apple/container build primitives"))
+            #expect(error == .unsupported("service 'api' uses unsupported build fields secrets; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -19394,7 +19394,7 @@ struct ComposeOrchestratorTests {
                 "job": composeService(name: "job", image: "alpine") {
                     $0.build = ComposeBuild(
                         context: "job",
-                        options: ComposeBuild.Options(unsupportedFields: ["isolation", "secrets"])
+                        options: ComposeBuild.Options(unsupportedFields: ["secrets"])
                     )
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                 },
@@ -19407,7 +19407,7 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported build field error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported build fields isolation, secrets; advanced build fields need Docker Compose compatible apple/container build primitives"))
+            #expect(error == .unsupported("service 'job' uses unsupported build fields secrets; advanced build fields need Docker Compose compatible apple/container build primitives"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-30 00:12 BST.
+Last updated: 2026-06-30 07:30 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,17 +24,17 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with focused `up --menu` Swift tests, live runtime compose.yml smoke with `CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1` against the Dockerfile staging fix that is now published as `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.6`, `make docker-compose-up-menu-parity`, `make check`, full `swift test --disable-automatic-resolution`, `make cli-smoke-built`, `make coverage-check`, Markdown lint for touched docs, `bash -n` for the new parity script, and `git diff --check`. This slice is a patch-level Compose release because it completes partial `up --menu` behavior; full CLI-completion releases should use a minor bump. Detailed command history belongs in git history and CI logs, not this handoff.
+The latest local validation for this `container-compose` slice passed with upstream issue/PR review for `build.isolation`, local Docker Compose parity probes, focused Go and Swift tests, `python3 -m unittest Tools/release/test_update_homebrew_formula.py`, `make docker-compose-build-isolation-parity`, `make docker-compose-cli-surface-parity`, `make check`, `make cli-smoke-built`, `make coverage-check`, `bash -n Tools/parity/check-compose-build-isolation.sh`, and `git diff --check`. This slice is a patch-level Compose release because it completes one Compose-file build option; full CLI-completion releases should use a minor bump. Detailed command history belongs in git history and CI logs, not this handoff.
 
 Most recent coverage proof:
 
 - Swift: 799 Compose tests at 89.00% line coverage.
-- Go normalizer: 92.54% line coverage.
+- Go normalizer: 92.49% line coverage.
 
 ## Recent Functional State
 
 - Progress feedback: project loading, variable loading, image build, image pull, direct runtime create/start/run, foreground interactive `run`, and attached `exec` emit visible stderr progress before slow or terminal-taking operations can look hung.
-- Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit frontend path, and explicit false attestation forms remain no-op opt-outs.
+- Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `isolation`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit-compatible build model, and explicit false attestation forms remain no-op opt-outs.
 - Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --menu`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
@@ -45,7 +45,7 @@ Most recent coverage proof:
 
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
 - `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, graceful stop, and force stop shortcuts. Docker Desktop-only shortcuts are intentionally absent, and `up --menu` remains incompatible with exit-control options and the separate `up --watch` mode pending a deeper parity pass.
-- Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Non-default `build.isolation` values and build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
+- Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 
 ## Upstream Compatibility
 

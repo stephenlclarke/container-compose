@@ -1579,7 +1579,7 @@ services:
         - network.host
       extra_hosts:
         - build.local=127.0.0.1
-      isolation: default
+      isolation: hyperv
       labels:
         build.label: "true"
       network: host
@@ -1666,7 +1666,7 @@ services:
 	if got, want := api.Build.ExtraHosts, []string{"build.local=127.0.0.1"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("build extra hosts = %#v, want %#v", got, want)
 	}
-	if got, want := api.Build.Isolation, "default"; got != want {
+	if got, want := api.Build.Isolation, "hyperv"; got != want {
 		t.Fatalf("build isolation = %q, want %q", got, want)
 	}
 	if got, want := api.Build.Labels, map[string]string{"build.label": "true"}; !reflect.DeepEqual(got, want) {
@@ -2105,7 +2105,6 @@ func TestUnsupportedBuildFieldsReportsOnlyUnmappedBuildOptions(t *testing.T) {
 		Ulimits:            map[string]*types.UlimitsConfig{"nofile": {Single: 1024}},
 	}, true)
 	want := []string{
-		"isolation",
 		"secrets",
 	}
 	if !reflect.DeepEqual(got, want) {

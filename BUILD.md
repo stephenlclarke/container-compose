@@ -217,6 +217,14 @@ make docker-compose-build-builder-parity
 
 This compares Docker Compose V2 `build --builder default --print` and `build --builder NAME --print` with the same `container compose` commands using a daemon-free local fixture. The target proves builder selection stays out of Buildx bake JSON in print mode, while live named-builder execution is covered by the local runtime smoke path. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
 
+For the local-only `build.isolation` parity check, run:
+
+```sh
+make docker-compose-build-isolation-parity
+```
+
+This compares Docker Compose V2 and `container-compose` for a Compose file with `build.isolation: hyperv`: both preserve the value in `config --format json`, omit it from `build --print` Buildx bake JSON on this platform, and accept the build path without treating the field as an unsupported feature. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
 For the local-only `build --check` parity check, run:
 
 ```sh
@@ -299,7 +307,7 @@ dist/compose/resources/build-info.json
 dist/compose/resources/compose-normalizer
 ```
 
-GitHub Actions publishes `main`, `release`, and `release-*` branch assets using branch-specific archive names such as `container-compose-plugin-main-release-arm64.tar.gz` and `container-compose-plugin-release-v0.1.1-release-arm64.tar.gz`. All branch packages are optimized release archives. The branch package workflow writes the asset URL, version, and SHA-256 into the matching Homebrew formula. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
+GitHub Actions publishes `main`, `release`, and `release-*` branch assets using branch-specific archive names such as `container-compose-plugin-main-release-arm64.tar.gz` and `container-compose-plugin-release-v0.1.2-release-arm64.tar.gz`. All branch packages are optimized release archives. The branch package workflow writes the asset URL, version, and SHA-256 into the matching Homebrew formula. The Homebrew formulas consume those prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
 
 Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, `container` pin from `APPLE_CONTAINER_REF`, `containerization` pin from `Package.resolved`, and embedded `compose-go` module version from the Go normalizer. Local development builds fall back to the current git checkout when the packaged metadata file is absent.
 

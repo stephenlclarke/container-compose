@@ -1,2 +1,2 @@
 # scope|path|direction|name|reason
-option|root|local-only|--verbose|Accepted by container-compose for existing bug-report and version workflows; Docker Compose 5.1.4 standalone accepts `docker-compose --verbose version` but does not list the flag in root help.
+option|root|local-only|--verbose|Accepted by container-compose for existing bug-report and version workflows; Docker Compose 5.2.0 standalone accepts `docker-compose --verbose version` but does not list the flag in root help.

@@ -1518,18 +1518,8 @@ func unsupportedBuildFields(build *types.BuildConfig, unsupportedSecrets bool) [
 		return nil
 	}
 	fields := []string{}
-	appendUnsupportedBuildField(&fields, "isolation", unsupportedBuildIsolation(build.Isolation))
 	appendUnsupportedBuildField(&fields, "secrets", unsupportedSecrets)
 	return fields
-}
-
-func unsupportedBuildIsolation(isolation string) bool {
-	switch strings.ToLower(strings.TrimSpace(isolation)) {
-	case "", "default":
-		return false
-	default:
-		return true
-	}
 }
 
 // buildSSHValues encodes Compose build.ssh entries as container build --ssh values.

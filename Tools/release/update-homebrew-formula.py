@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--formula-class")
     parser.add_argument("--url", required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--plugin-version")
     parser.add_argument("--asset", required=True)
     parser.add_argument("--label", required=True)
     parser.add_argument("--sha256", required=True)
@@ -59,6 +60,12 @@ def main() -> None:
     text = replace_once(r'^  url ".+"$', f'  url "{args.url}"', text)
     text = replace_once(r"^  sha256 .+$", f'  sha256 "{args.sha256}"', text)
     text = replace_once(r'^  version ".+"$', f'  version "{args.version}"', text)
+    if args.plugin_version is not None:
+        text = replace_once(
+            r'assert_match "[^"]+", shell_output\("#\{bin\}/container-compose version --short"\)',
+            f'assert_match "{args.plugin_version}", shell_output("#{{bin}}/container-compose version --short")',
+            text,
+        )
     text = replace_once(
         r"This formula installs the .+ prebuilt (?:release|package) asset:\n        .+\.tar\.gz",
         f"This formula installs the {args.label} prebuilt package asset:\n        {args.asset}",

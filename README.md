@@ -38,8 +38,9 @@ Current detailed gap examples:
 - Supported `build` coverage includes Compose build args, additional contexts,
   file/env build secrets, SSH forwarding, cache hints, labels, target stages,
   platforms, pull/no-cache, builder selection, checks, provenance/SBOM
-  attestations, extra hosts, build network mode, privileged builds, shared
-  memory size, ulimits, `--print`, and service-context build ordering.
+  attestations, extra hosts, build network mode, Buildx-compatible isolation
+  acceptance, privileged builds, shared memory size, ulimits, `--print`, and
+  service-context build ordering.
 - Supported `up` coverage includes attach selection, dependency attachment,
   exit-control flags, raw output flags, timestamps, watch mode, and the
   attached terminal `--menu` shortcut surface. The menu path supports detach,

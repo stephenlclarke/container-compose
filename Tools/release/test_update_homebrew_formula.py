@@ -45,6 +45,10 @@ class ContainerCompose < Formula
         old.tar.gz
     EOS
   end
+
+  test do
+    assert_match "0.1.1", shell_output("#{bin}/container-compose version --short")
+  end
 end
                 """.strip(),
                 encoding="utf-8",
@@ -64,6 +68,8 @@ end
                     "https://example.invalid/new.tar.gz",
                     "--version",
                     "release-v0.1.0-release-abcdef123456",
+                    "--plugin-version",
+                    "0.1.2",
                     "--asset",
                     "new.tar.gz",
                     "--label",
@@ -87,6 +93,10 @@ class ContainerComposeReleaseV010 < Formula
       This formula installs the release-v0.1.0 branch prebuilt package asset:
         new.tar.gz
     EOS
+  end
+
+  test do
+    assert_match "0.1.2", shell_output("#{bin}/container-compose version --short")
   end
 end
                 """.strip(),
