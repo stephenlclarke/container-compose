@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-30 09:12 BST.
+Last updated: 2026-06-30 09:22 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -55,7 +55,7 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 ## Open Blockers
 
 - The immutable `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.6` GHCR image has been published and manifest-verified for linux/arm64.
-- SonarCloud quality gate is currently OK on `main` with 0 unresolved issues as reported by `/Users/sclarke/github/pr-refresh` `make sonar-status`.
+- SonarCloud quality gate is currently OK on `main` with 0 unresolved issues after `SONAR_QUALITYGATE_WAIT=true make sonar-scan` and a SonarCloud issues API check for branch `main`.
 
 ## Open Follow-ups
 
