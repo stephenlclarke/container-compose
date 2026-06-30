@@ -683,7 +683,7 @@ extension ComposeOrchestrator {
                     _ = try await lifecycleManager.waitContainer(id: name)
                 }
             }
-            while try await group.next() != nil {}
+            try await group.waitForAll()
         }
     }
 
