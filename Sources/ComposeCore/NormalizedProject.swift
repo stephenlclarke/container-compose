@@ -955,16 +955,14 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         readOnly: Bool? = nil,
         bindCreateHostPath: Bool? = nil,
         bindPropagation: String? = nil,
-        raw: String? = nil,
-        unsupportedFields: [String]? = nil
+        raw: String? = nil
     ) {
         self.init(
             type: type,
             source: source,
             target: target,
             options: MountOptions(readOnly: readOnly, bindCreateHostPath: bindCreateHostPath, bindPropagation: bindPropagation),
-            raw: raw,
-            unsupportedFields: unsupportedFields
+            raw: raw
         )
     }
 }

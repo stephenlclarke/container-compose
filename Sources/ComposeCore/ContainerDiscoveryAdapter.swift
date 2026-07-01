@@ -408,7 +408,7 @@ private extension ComposeContainerSummary {
                 type: "block",
                 source: filesystem.source,
                 target: filesystem.destination,
-                readOnly: readOnly,
+                options: ComposeMount.MountOptions(readOnly: readOnly),
                 unsupportedFields: ["apple.container.block"]
             )
         }
