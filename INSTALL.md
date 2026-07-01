@@ -22,71 +22,27 @@ The stable formulae install prebuilt GitHub release assets. They do not build Sw
 
 ## Install From The Aggregate Tap
 
-Install or refresh the stable runtime and plugin with one copy/paste block:
+For a normal install, tap the repository, install the matched runtime and plugin, then start the service:
 
 ```sh
-install_script="$(mktemp "${TMPDIR:-/tmp}/container-compose-install.XXXXXX")"
-cat >"${install_script}" <<'INSTALL_CONTAINER_COMPOSE'
-set -Eeuo pipefail
-
-trap 'rc=$?; printf "\nInstall failed at line %s with exit code %s. The terminal shell is still open because this block runs in child Bash.\n" "$LINENO" "$rc" >&2; exit "$rc"' ERR
-
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 brew update
-
-brew services stop stephenlclarke/tap/container || true
-
-for formula in container-release container-compose-release; do
-  if brew list --formula "${formula}" >/dev/null 2>&1; then
-    brew uninstall --ignore-dependencies "${formula}" || true
-  fi
-done
-
-for formula in container container-compose; do
-  opt_path="$(brew --prefix)/opt/${formula}"
-  if [[ -d "${opt_path}" && ! -L "${opt_path}" ]]; then
-    mv "${opt_path}" "${opt_path}.backup.$(date +%Y%m%d%H%M%S)"
-  fi
-done
-
-if brew list --formula container >/dev/null 2>&1; then
-  brew reinstall --force --formula stephenlclarke/tap/container
-else
-  brew install --formula stephenlclarke/tap/container
-fi
-
-if brew list --formula container-compose >/dev/null 2>&1; then
-  brew reinstall --force --formula stephenlclarke/tap/container-compose
-else
-  brew install --formula stephenlclarke/tap/container-compose
-fi
-
-brew link --overwrite container
-brew link --overwrite container-compose
-
-container_prefix="$(brew --prefix stephenlclarke/tap/container)"
-container_bin="${container_prefix}/bin/container"
-
+brew install --formula stephenlclarke/tap/container
+brew install --formula stephenlclarke/tap/container-compose
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
-"${container_bin}" --version
-"${container_bin}" compose version
-"${container_bin}" system status
-"${container_bin}" system version
-INSTALL_CONTAINER_COMPOSE
-
-install_status=0
-/bin/bash "${install_script}" || install_status=$?
-rm -f "${install_script}"
-if [ "${install_status}" -ne 0 ]; then
-  printf 'container-compose install failed with exit code %s; see the message above.\n' "${install_status}" >&2
-fi
 ```
 
-This block deliberately runs the installer from a temporary child Bash script so `set -e` cannot close the interactive terminal and Homebrew child processes cannot consume the remaining copy/pasted commands from stdin. If a terminal still runs a local debug build after installing, clear the shell's command cache with `rehash` in `zsh` or `hash -r` in `bash`, then confirm `command -v container` points at `/opt/homebrew/bin/container`.
+Then verify the installed stack:
 
-The `container` formula owns the plugin registration link inside its own Homebrew install root. Run the `container` formula's `post_install` hook after installing or upgrading `container-compose`.
+```sh
+container compose version
+container system version
+container system status
+```
+
+The `container` formula owns the plugin registration link inside its Homebrew install root. The `brew postinstall` command refreshes that link after installing or upgrading `container-compose`.
 
 ## If Apple container Is Already Installed
 
@@ -102,9 +58,11 @@ To avoid path and service ambiguity, remove the Apple package install before ins
 sudo /usr/local/bin/uninstall-container.sh -k
 ```
 
-Then install `container` and `container-compose` from the aggregate tap with the block above.
+Then install `container` and `container-compose` from the aggregate tap with the commands above.
 
 Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
+
+If the machine has old source taps, retired `container-release` formulae, or a mixed Homebrew/Apple install, use the reset steps in [TROUBLESHOOTING.md](TROUBLESHOOTING.md#bad-homebrew-install-or-mixed-runtime) instead of the normal install path.
 
 ## Install A Local Plugin Archive
 
@@ -154,18 +112,18 @@ container compose config
 
 ## Upgrade An Existing Installation
 
-Stop the active service, uninstall old retired lanes, install the stable lane, then register the plugin again:
+Refresh the tap, upgrade the two formulae, then restart the service:
 
 ```sh
-brew services stop container || true
-brew uninstall --ignore-dependencies container-release container-compose-release || true
-brew reinstall --force --formula stephenlclarke/tap/container
-brew reinstall --force --formula stephenlclarke/tap/container-compose
+brew update
+brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 container system version
 container compose version
 ```
+
+If Homebrew says a formula is already current but the install still looks mixed, use the reset flow in [TROUBLESHOOTING.md](TROUBLESHOOTING.md#bad-homebrew-install-or-mixed-runtime).
 
 ## Uninstall
 
