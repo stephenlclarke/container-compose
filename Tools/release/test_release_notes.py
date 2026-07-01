@@ -39,11 +39,12 @@ def load_module():
 class ReleaseNotesTests(unittest.TestCase):
     """Release notes should show the commits packaged by each lane."""
 
-    def test_prerelease_tag_lists_commits_since_previous_package(self) -> None:
+    def test_prerelease_tag_lists_commits_since_previous_stable_release(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
             self.git(repo, "tag", "--no-sign", "0.6.1-pre")
             self.commit(repo, "feat(mounts): support bind propagation")
             self.commit(repo, "docs: refresh compose guidance")
@@ -58,7 +59,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.6.1-pre`", notes)
+            self.assertIn("Commits since `0.6.0`", notes)
             self.assertIn("## Homebrew Formula", notes)
             self.assertIn("## Promotion", notes)
             self.assertIn("## Asset Retention", notes)
@@ -68,12 +69,15 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
 
-    def test_prerelease_tag_rerun_has_empty_commit_range(self) -> None:
+    def test_prerelease_tag_rerun_keeps_full_stable_range(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(repo, "ci(release): simplify package publishing")
             self.git(repo, "tag", "--no-sign", "0.6.1-pre")
+            self.commit(repo, "fix(release): commit new tap formula files")
 
             notes = module.render_release_notes(
                 repo=repo,
@@ -85,8 +89,9 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `0.6.1-pre`", notes)
-            self.assertIn("No source commits changed", notes)
+            self.assertIn("Commits since `0.6.0`", notes)
+            self.assertIn("ci(release): simplify package publishing", notes)
+            self.assertIn("fix(release): commit new tap formula files", notes)
             self.assertNotIn("chore: initial import", notes)
 
     def test_semver_tag_lists_commits_since_previous_semver_release(self) -> None:

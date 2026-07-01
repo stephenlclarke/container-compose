@@ -118,9 +118,26 @@ def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
     if head_commit is None:
         raise ValueError(f"could not resolve release head: {head_ref}")
 
+    if is_moving_release_tag(release_tag):
+        previous_tag = previous_stable_tag(repo, release_tag, head_ref)
+        if previous_tag is not None:
+            return ReleaseRange(
+                base_ref=f"refs/tags/{previous_tag}",
+                base_label=previous_tag,
+                head_ref=head_ref,
+                head_commit=head_commit,
+            )
+
+        return ReleaseRange(
+            base_ref=None,
+            base_label=None,
+            head_ref=head_ref,
+            head_commit=head_commit,
+        )
+
     tagged_commit = commit_for_ref(repo, f"refs/tags/{release_tag}")
     if tagged_commit is not None:
-        if tagged_commit != head_commit or is_moving_release_tag(release_tag):
+        if tagged_commit != head_commit:
             return ReleaseRange(
                 base_ref=f"refs/tags/{release_tag}",
                 base_label=release_tag,
