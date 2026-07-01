@@ -8,8 +8,8 @@ The aggregate Homebrew tap publishes one stable install lane:
 
 | Formula | Build type | Use when |
 | --- | --- | --- |
-| `container` | release | You need the fork-backed Apple `container` runtime required by this preview stack. |
-| `container-compose` | release | You need the latest validated stable Compose plugin. |
+| `container-compose` | release | Install this. It depends on the matched fork-backed `container` runtime. |
+| `container` | release | Installed automatically as the runtime dependency for `container-compose`. |
 
 The stable formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
 
@@ -36,13 +36,12 @@ fi
 
 If this is a first-time install and Apple's `container` package is not already installed, both commands above safely do nothing.
 
-Then install the matched Homebrew `container` and `container-compose` formulae, refresh the plugin registration, and start the Homebrew service:
+Then install `container-compose`. Homebrew installs the matched `container` runtime dependency, then the `postinstall` command refreshes the plugin registration before the service starts:
 
 ```sh
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 brew update
-brew install --formula stephenlclarke/tap/container
 brew install --formula stephenlclarke/tap/container-compose
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
