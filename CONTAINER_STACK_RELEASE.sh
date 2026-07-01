@@ -18,12 +18,12 @@ Modes:
       plan. This mode never mutates repositories.
 
   tag-current
-      Tag the current validated main state as the latest stable release using
-      the current container-compose COMPOSE_VERSION value. This is the manual
-      release point that triggers release generation and tap updates.
+      Tag the current validated container-compose main state as the latest
+      stable release using the current COMPOSE_VERSION value. This is the
+      manual release point that triggers release generation and tap updates.
 
   start-dev VERSION_SELECTOR
-      First tag the current main state as the latest stable release, then
+      First tag the current container-compose main state as the latest stable release, then
       create a short-lived develop/VERSION branch from main in container-compose,
       bump COMPOSE_VERSION to VERSION, update local version expectations, commit
       the bump, and push the branch. CI for that branch should publish
@@ -51,7 +51,7 @@ Rules enforced:
   - Apple remotes are read-only and must not be push targets.
   - Stephen-owned remotes are the only push targets.
   - Worktrees must be clean before release or dev-slice changes.
-  - Stable release tags point at current main before the next dev version bump.
+  - Stable container-compose release tags point at current main before the next dev version bump.
   - Existing tags are never moved.
   - Long-lived release branches are not used.
 USAGE
@@ -394,21 +394,29 @@ tag_repo_main_if_needed() {
   run git -C "${path}" push "${remote}" "refs/tags/${version}"
 }
 
-# Tag the current stack state as the stable/latest release point.
-tag_current_stable() {
-  local version repo
-  version="$(current_compose_version)"
-  print_header "tag current main as ${version} latest"
+print_component_refs() {
+  local repo path
+  printf '\nComponent refs recorded by package metadata or companion release processes:\n'
   for repo in "${REPOS[@]}"; do
-    tag_repo_main_if_needed "${repo}" "${version}"
+    path="$(repo_path "${repo}")"
+    printf '  %-26s %s\n' "${repo}" "$(git -C "${path}" rev-parse main)"
   done
+}
+
+# Tag the current compose state as the stable/latest release point.
+tag_current_stable() {
+  local version
+  version="$(current_compose_version)"
+  print_header "tag container-compose main as ${version} latest"
+  tag_repo_main_if_needed "${COMPOSE_REPO}" "${version}"
+  print_component_refs
   cat <<EOF
 
 Stable release point:
   version: ${version}
   label: latest
-  release generation: tag-triggered workflow
-  tap update: one stable formula per repo after stack artifacts are ready
+  release generation: container-compose tag-triggered workflow
+  tap update: stable container-compose formula after package artifacts are ready
 EOF
 }
 
@@ -515,10 +523,10 @@ plan() {
 Process:
   1. Keep main as the releasable integration branch.
   2. Start short-lived work with start-dev VERSION_SELECTOR.
-  3. The script tags the current main version as latest before the bump.
+  3. The script tags the current container-compose main version as latest before the bump.
   4. The develop/VERSION branch carries the next version and publishes as pre-release.
   5. Squash the validated develop/VERSION branch to main.
-  6. The next start-dev run tags that main state as latest before opening the following slice.
+  6. The next start-dev run tags that container-compose main state as latest before opening the following slice.
 EOF
 }
 

@@ -50,6 +50,8 @@ make start-dev-release VERSION_SELECTOR=--+
 
 `make release-plan` is a dry run. `make promote-release` and `make start-dev-release` execute the checked operation after the helper validates clean worktrees and Stephen-owned push targets.
 
+`make promote-release` creates the stable source tag in `container-compose` only. Companion repositories keep their own release tag histories; the compose package records their exact refs in build metadata instead of forcing every component to reuse the compose semver tag.
+
 Common flows:
 
 ```sh
