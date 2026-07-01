@@ -213,6 +213,7 @@ jobs:
               asset="container-compose-plugin-release-arm64.tar.gz"
               formula="container-compose.rb"
               formula_class="ContainerCompose"
+              formula_conflicts_with="container-compose-pre"
               formula_version="${compose_version}"
               package_lane="stable"
               ;;
@@ -235,6 +236,7 @@ jobs:
               asset="container-compose-plugin-release-arm64.tar.gz"
               formula="container-compose-pre.rb"
               formula_class="ContainerComposePre"
+              formula_conflicts_with="container-compose"
               formula_version="${release_tag}"
               package_lane="development"
               ;;
@@ -255,6 +257,7 @@ jobs:
             printf 'asset=%s\n' "${asset}"
             printf 'formula=%s\n' "${formula}"
             printf 'formula_class=%s\n' "${formula_class}"
+            printf 'formula_conflicts_with=%s\n' "${formula_conflicts_with}"
             printf 'formula_version=%s\n' "${formula_version}"
             printf 'package_lane=%s\n' "${package_lane}"
           } >> "$GITHUB_OUTPUT"
@@ -465,6 +468,7 @@ jobs:
           ASSET: ${{ steps.lane.outputs.asset }}
           FORMULA: ${{ steps.lane.outputs.formula }}
           FORMULA_CLASS: ${{ steps.lane.outputs.formula_class }}
+          FORMULA_CONFLICTS_WITH: ${{ steps.lane.outputs.formula_conflicts_with }}
           FORMULA_VERSION: ${{ steps.lane.outputs.formula_version }}
           RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
           VERSION: ${{ steps.lane.outputs.compose_version }}
@@ -479,6 +483,7 @@ jobs:
             --formula "homebrew-tap/Formula/${FORMULA}" \
             --template "container-compose/Formula/container-compose.rb" \
             --formula-class "${FORMULA_CLASS}" \
+            --conflicts-with "${FORMULA_CONFLICTS_WITH}" \
             --url "$url" \
             --version "$FORMULA_VERSION" \
             --plugin-version "$VERSION" \
