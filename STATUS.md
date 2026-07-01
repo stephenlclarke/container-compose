@@ -18,7 +18,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed main-lane pins:
 
-- `stephenlclarke/container`: `d85c597cc02fcf1600a3f13f630012e326c7021f`
+- `stephenlclarke/container`: `d85c597bea2a2291ac97898fd05d0c6fa4f8f437`
 - `stephenlclarke/containerization`: `149a1f5dc9a6d42bef2224cca54bd341bcdd5c6d`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
