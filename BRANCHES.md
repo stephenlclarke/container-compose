@@ -85,6 +85,26 @@ The script:
 5. Bumps version declarations on the development branch.
 6. Commits and pushes the development branch only when `--execute` is present.
 
+## Release Credentials
+
+Release workflows publish source-repo assets first. They update `stephenlclarke/homebrew-tap` only when the source repository has a `HOMEBREW_TAP_TOKEN` secret with permission to push to that tap.
+
+Set or rotate the secret without printing the token value:
+
+```sh
+gh auth token | gh secret set HOMEBREW_TAP_TOKEN --repo stephenlclarke/container
+gh auth token | gh secret set HOMEBREW_TAP_TOKEN --repo stephenlclarke/container-compose
+```
+
+Verify the secret name is present without exposing the value:
+
+```sh
+gh secret list --repo stephenlclarke/container | grep '^HOMEBREW_TAP_TOKEN'
+gh secret list --repo stephenlclarke/container-compose | grep '^HOMEBREW_TAP_TOKEN'
+```
+
+If the secret is absent, release assets and release notes can still be published, but the release should not be announced until the aggregate tap formulae have been updated and validated.
+
 ## Dependency Rules
 
 `container-compose` must stay pinned to the required `stephenlclarke/container` and `stephenlclarke/containerization` surfaces while fork-backed behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` surfaces.
@@ -110,17 +130,7 @@ Development pre-releases use tags named `VERSION-pre`, for example `0.4.3-pre`, 
 
 The tap's `sources/*` submodules are maintenance inputs and track the project repositories on `main`: `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim`. Stable formulae do not install from those submodules; they consume verified prebuilt GitHub release assets.
 
-Install matching formulae together:
-
-```sh
-brew tap stephenlclarke/tap
-brew install stephenlclarke/tap/container
-brew install stephenlclarke/tap/container-compose
-brew postinstall stephenlclarke/tap/container
-brew services restart stephenlclarke/tap/container
-container system version
-container compose version
-```
+Install, upgrade, verification, and uninstall commands live in [INSTALL.md](INSTALL.md). Keep the copy/paste Homebrew flow there so the install path has one source of truth.
 
 ## Release Assets
 

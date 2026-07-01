@@ -1,6 +1,6 @@
 # Installing container-compose
 
-This guide explains how to install the `container-compose` plugin and the compatible fork-backed `container` runtime. Source build, test, and package steps are covered in [BUILD.md](BUILD.md); branch and release rules are covered in [BRANCHES.md](BRANCHES.md).
+This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the compatible fork-backed `container` runtime. Source build and package steps are covered in [BUILD.md](BUILD.md); branch, tag, and release policy is covered in [BRANCHES.md](BRANCHES.md).
 
 ## Install Lane
 
@@ -11,33 +11,7 @@ The aggregate Homebrew tap publishes one stable install lane:
 | `container` | release | You need the fork-backed Apple `container` runtime required by this preview stack. |
 | `container-compose` | release | You need the latest validated stable Compose plugin. |
 
-Development slices are published as GitHub pre-releases from `develop/VERSION` branches for maintainer validation. The stable Homebrew formulae do not point at those pre-release assets.
-
-These formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation.
-
-## Maintainer Release Setup
-
-Release generation is tag-triggered. The manual release helper tags the current `main` state as the latest stable release point before creating a short-lived `develop/VERSION` branch for the next version.
-
-Stable source tags use bare semantic versions such as `0.4.2`, matching Apple repository conventions. They are created only in Stephen-owned repositories and forks.
-
-The release workflows upload assets and checksums, generate release notes, and update `stephenlclarke/homebrew-tap` when the workflow can access a tap write token.
-
-Set `HOMEBREW_TAP_TOKEN` in the source repositories that update the aggregate tap. The token must be allowed to push to `stephenlclarke/homebrew-tap`; pipe it into GitHub rather than pasting it into shell history:
-
-```sh
-gh auth token | gh secret set HOMEBREW_TAP_TOKEN --repo stephenlclarke/container
-gh auth token | gh secret set HOMEBREW_TAP_TOKEN --repo stephenlclarke/container-compose
-```
-
-Verify the secret is present without printing its value:
-
-```sh
-gh secret list --repo stephenlclarke/container | grep '^HOMEBREW_TAP_TOKEN'
-gh secret list --repo stephenlclarke/container-compose | grep '^HOMEBREW_TAP_TOKEN'
-```
-
-If the secret is absent, release assets and release notes can still be published, but the workflow must not announce the release until the aggregate tap formulae are updated and validated.
+The stable formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
 
 ## Requirements
 
@@ -132,29 +106,9 @@ Then install `container` and `container-compose` from the aggregate tap with the
 
 Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
 
-## Install From A Source Branch
-
-Use this path only when testing a source branch directly, not for normal Homebrew installs:
-
-```sh
-branch=main
-brew tap stephenlclarke/container-compose https://github.com/stephenlclarke/container-compose
-git -C "$(brew --repo stephenlclarke/container-compose)" fetch origin
-git -C "$(brew --repo stephenlclarke/container-compose)" checkout "$branch"
-brew install stephenlclarke/container-compose/container-compose
-```
-
-Restart the Homebrew-installed `container` service and verify discovery:
-
-```sh
-brew postinstall stephenlclarke/tap/container
-brew services restart stephenlclarke/tap/container
-container compose version
-```
-
 ## Install A Local Plugin Archive
 
-Build a local plugin archive with `make package`, then install or replace the plugin under the active `container` install root:
+Build a local plugin archive with `make package` as described in [BUILD.md](BUILD.md), then install or replace the plugin under the active `container` install root:
 
 ```sh
 sudo rm -rf /usr/local/libexec/container-plugins/compose
@@ -188,7 +142,7 @@ container compose version --format json
 
 `container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, exact `containerization` source/ref, and pinned `container-builder-shim` image compiled into the runtime. Apple package builds do not carry the Stephen fork provenance fields.
 
-`container compose version` shows the installed plugin build, embedded `compose-go` version, and the `container` and `containerization` pins that the plugin package was built against. Stable Homebrew packages report the stable release metadata from their source tag; active development packages from `develop/VERSION` report their development branch and pre-release version.
+`container compose version` shows the installed plugin build, embedded `compose-go` version, and the `container` and `containerization` pins that the plugin package was built against. Stable Homebrew packages report stable release metadata from their source tag; local or development packages report their package lane and source revision.
 
 Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, or if the Homebrew install is mixed, `container compose` stops with install guidance instead of failing later with a low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae.
 

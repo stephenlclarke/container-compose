@@ -106,14 +106,14 @@ Use `container system version` to see the running `container` runtime source, br
 
 ## Project Repositories
 
-This fork-backed Compose stack spans four Stephen Clarke repositories:
+The supported preview install is a matched Stephen fork-backed stack:
 
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
-- [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed by Homebrew beside the plugin.
-- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift container runtime package consumed by both `container` and this plugin; stable packages pin validated commits or tags from Stephen-owned surfaces.
-- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the Go BuildKit bridge used by `container build`; `container` pins an immutable builder image version, currently `0.13.6`.
+- [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed beside the plugin.
+- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift runtime package pinned by the stack.
+- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the BuildKit bridge image pinned by `container`.
 
-The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks the four source repositories on `main` for maintenance, while the stable install formulae consume prebuilt release-quality assets from bare semantic source tags such as `0.4.2`. Development slices use short-lived `develop/VERSION` branches and pre-release GitHub assets; the stable tap formulae do not point at those pre-release assets. All Go outputs in the stack are treated as release code, not debug helpers.
+Install and upgrade commands live in [INSTALL.md](INSTALL.md). Branch, tag, release, and Homebrew lane policy lives in [BRANCHES.md](BRANCHES.md).
 
 ## Plugin Recognition
 
@@ -123,10 +123,10 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 ## Documentation
 
-- [INSTALL.md](INSTALL.md): install prebuilt Homebrew assets or a local plugin archive.
+- [INSTALL.md](INSTALL.md): install, upgrade, verify, and uninstall the fork-backed Homebrew stack or a local plugin archive.
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md): recover bad installs and diagnose runtime issues.
-- [BRANCHES.md](BRANCHES.md): understand `main`, short-lived `develop/VERSION` branches, bare semantic tags, and the stable Homebrew tap policy.
-- [BUILD.md](BUILD.md): build, test, package, and run contributor validation.
+- [BRANCHES.md](BRANCHES.md): understand `main`, short-lived development branches, semantic tags, release assets, and Homebrew lane policy.
+- [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.
 - [STATUS.md](STATUS.md): get the current dependency pins, blockers, and validation handoff.

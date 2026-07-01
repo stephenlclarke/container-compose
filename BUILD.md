@@ -147,7 +147,7 @@ GitHub Actions keeps the expensive and security-oriented checks in separate work
 | `Quality / Swift ASan` | Pushes to `main`, every PR, and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=address` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
 | `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=thread` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
 | `Quality / SwiftLint/SwiftFormat Advisory` | Pushes to `main`, every PR, and manual runs | Runs `swiftlint lint --strict --quiet Package.swift Sources Tests` and `swiftformat Package.swift Sources Tests --lint --swift-version 6.2`. These checks are advisory until a repo-owned SwiftLint and SwiftFormat baseline/configuration lands, because the current default tools report existing repository-wide style drift. |
-| `Homebrew / Formula Syntax` | Pushes to `main`, `develop/*`, semantic release tags, PRs to `main`, and manual runs | Validates the Homebrew formula Ruby syntax and inspects `container-compose` through `brew info`. |
+| `Homebrew / Formula Syntax` | Pushes to `main`, `develop/*`, semantic release tags, PRs to `main`, and manual runs | Validates the Homebrew formula Ruby syntax and inspects `container-compose` through `brew info`; install flow details live in [INSTALL.md](INSTALL.md). |
 | `CodeQL / Analyze Go` | Pushes to `main`, PRs to `main`, weekly schedule, and manual runs | Runs CodeQL over the Go normalizer using the same release build path as packaged Homebrew artifacts. Swift remains covered by `make ci`, ASan, SonarCloud, and focused tests; Swift CodeQL is not part of the push gate because CodeQL's Swift compiler trace rebuilds the fork-backed Apple dependency graph and times out on GitHub-hosted macOS runners before reaching `container-compose` sources. |
 
 SwiftPM on the current Apple Swift 6.3.2 toolchain exposes `address`, `thread`, `undefined`, `scudo`, and `fuzzer` sanitizer modes. It does not expose a separate `leak` mode, so there is no standalone Leak Sanitizer job yet; keep ASan as the PR sanitizer gate and add a dedicated LSan job only when the supported SwiftPM sanitizer list includes it.
@@ -379,7 +379,7 @@ dist/compose/resources/build-info.json
 dist/compose/resources/compose-normalizer
 ```
 
-GitHub Actions publishes stable assets from bare semantic source tags such as `0.4.2` and pre-release assets from short-lived `develop/VERSION` branches. Stable package archives use release builds, and the stable tag workflow writes the asset URL, version, and SHA-256 into the single stable Homebrew formula. Development-slice pre-release assets are for maintainer validation and do not update the stable formula. The Homebrew formula consumes prebuilt assets so target machines do not need Go, Xcode, or a Swift toolchain just to install.
+GitHub Actions uses the same package layout for published assets. Branch, tag, pre-release, and Homebrew formula policy lives in [BRANCHES.md](BRANCHES.md); target-machine installation lives in [INSTALL.md](INSTALL.md).
 
 Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, `container` pin from `APPLE_CONTAINER_REF`, `containerization` pin from `Package.resolved`, and embedded `compose-go` module version from the Go normalizer. Local development builds fall back to the current git checkout when the packaged metadata file is absent.
 
