@@ -470,6 +470,7 @@ struct ComposeNormalizerTests {
                 target: /required
                 bind:
                   create_host_path: false
+                  propagation: rslave
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -484,6 +485,7 @@ struct ComposeNormalizerTests {
         #expect(defaulted.bindCreateHostPath == true)
         #expect(required.type == "bind")
         #expect(required.bindCreateHostPath == false)
+        #expect(required.bindPropagation == "rslave")
     }
 
     @Test("grouped model initializers preserve flat normalized fields")

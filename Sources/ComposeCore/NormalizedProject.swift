@@ -896,17 +896,20 @@ public struct ComposeMount: Codable, Equatable, Sendable {
     public struct MountOptions: Codable, Equatable, Sendable {
         public var readOnly: Bool?
         public var bindCreateHostPath: Bool?
+        public var bindPropagation: String?
         public var volumeLabels: [String: String]?
         public var tmpfs: TmpfsOptions
 
         public init(
             readOnly: Bool? = nil,
             bindCreateHostPath: Bool? = nil,
+            bindPropagation: String? = nil,
             volumeLabels: [String: String]? = nil,
             tmpfs: TmpfsOptions = TmpfsOptions()
         ) {
             self.readOnly = readOnly
             self.bindCreateHostPath = bindCreateHostPath
+            self.bindPropagation = bindPropagation
             self.volumeLabels = volumeLabels
             self.tmpfs = tmpfs
         }
@@ -917,6 +920,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
     public var target: String?
     public var readOnly: Bool?
     public var bindCreateHostPath: Bool?
+    public var bindPropagation: String?
     public var volumeLabels: [String: String]?
     public var tmpfsSize: String?
     public var tmpfsMode: String?
@@ -936,6 +940,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         self.target = target
         self.readOnly = options.readOnly
         self.bindCreateHostPath = options.bindCreateHostPath
+        self.bindPropagation = options.bindPropagation
         self.volumeLabels = options.volumeLabels
         self.tmpfsSize = options.tmpfs.size
         self.tmpfsMode = options.tmpfs.mode
@@ -949,6 +954,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
         target: String? = nil,
         readOnly: Bool? = nil,
         bindCreateHostPath: Bool? = nil,
+        bindPropagation: String? = nil,
         raw: String? = nil,
         unsupportedFields: [String]? = nil
     ) {
@@ -956,7 +962,7 @@ public struct ComposeMount: Codable, Equatable, Sendable {
             type: type,
             source: source,
             target: target,
-            options: MountOptions(readOnly: readOnly, bindCreateHostPath: bindCreateHostPath),
+            options: MountOptions(readOnly: readOnly, bindCreateHostPath: bindCreateHostPath, bindPropagation: bindPropagation),
             raw: raw,
             unsupportedFields: unsupportedFields
         )

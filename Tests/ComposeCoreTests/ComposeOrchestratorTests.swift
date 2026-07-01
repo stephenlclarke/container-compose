@@ -1733,6 +1733,41 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("create maps bind propagation to volume options")
+    func createMapsBindPropagationToVolumeOptions() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "bind",
+                            source: directory.path,
+                            target: "/host",
+                            readOnly: true,
+                            bindPropagation: "rshared"
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+            .create(project: project, options: ComposeCreateOptions())
+
+        let create = try #require(runner.commands.first?.arguments)
+        #expect(create.containsSequence(["--volume", "\(directory.path):/host:ro,rshared"]))
+    }
+
     @Test("create maps local logging options to runtime policy")
     func createMapsLocalLoggingOptionsToRuntimePolicy() async throws {
         for testCase in supportedLocalServiceLoggingOptionCases() {
@@ -7371,6 +7406,41 @@ struct ComposeOrchestratorTests {
         #expect(!fileManager.fileExists(atPath: source.path))
         #expect(runner.commands.isEmpty)
         #expect(await resourceManager.requests.isEmpty)
+    }
+
+    @Test("up maps bind propagation to volume options")
+    func upMapsBindPropagationToVolumeOptions() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "node-exporter": composeService(name: "node-exporter", image: "example/node-exporter") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "bind",
+                            source: directory.path,
+                            target: "/host",
+                            readOnly: true,
+                            bindPropagation: "rslave"
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: project, options: ComposeUpOptions())
+
+        let run = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(run.containsSequence(["--volume", "\(directory.path):/host:ro,rslave"]))
     }
 
     @Test("up rejects volume subpath as apple/container mount gap")
@@ -20895,7 +20965,7 @@ struct ComposeOrchestratorTests {
                             type: "bind",
                             source: "/host",
                             target: "/cache",
-                            unsupportedFields: ["consistency", "bind.propagation"]
+                            unsupportedFields: ["consistency", "bind.recursive"]
                         ),
                     ]
                 },
@@ -20906,7 +20976,90 @@ struct ComposeOrchestratorTests {
             try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
             Issue.record("Expected unsupported advanced mount option error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses unsupported volume fields consistency, bind.propagation; advanced service volume options need an apple/container mount primitive gap PR"))
+            #expect(error == .unsupported("service 'job' uses unsupported volume fields consistency, bind.recursive; advanced service volume options need an apple/container mount primitive gap PR"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("run maps bind propagation values to volume options")
+    func runMapsBindPropagationValuesToVolumeOptions() async throws {
+        let fileManager = FileManager.default
+        for propagation in ["private", "rprivate", "shared", "rshared", "slave", "rslave"] {
+            let directory = fileManager.temporaryDirectory
+                .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer {
+                try? fileManager.removeItem(at: directory)
+            }
+
+            let runner = RecordingRunner()
+            let project = ComposeProject(
+                name: "demo",
+                services: [
+                    "job": composeService(name: "job", image: "alpine") {
+                        $0.volumes = [
+                            ComposeMount(
+                                type: "bind",
+                                source: directory.path,
+                                target: "/host",
+                                readOnly: true,
+                                bindPropagation: propagation
+                            ),
+                        ]
+                    },
+                ]
+            )
+
+            try await ComposeOrchestrator(runner: runner).run(
+                project: project,
+                serviceName: "job",
+                options: composeRunOptions(command: ["true"])
+            )
+
+            let command = try #require(runner.commands.first?.arguments)
+            #expect(command.containsSequence(["--volume", "\(directory.path):/host:ro,\(propagation)"]))
+        }
+    }
+
+    @Test("run rejects unsupported bind propagation values before runtime")
+    func runRejectsUnsupportedBindPropagationValuesBeforeRuntime() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let runner = RecordingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.volumes = [
+                        ComposeMount(
+                            type: "bind",
+                            source: directory.path,
+                            target: "/host",
+                            bindPropagation: "recursive-shared"
+                        ),
+                    ]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner).run(
+                project: project,
+                serviceName: "job",
+                options: composeRunOptions(command: ["true"])
+            )
+            Issue.record("Expected unsupported bind propagation error")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("bind propagation 'recursive-shared' is not supported; use private, rprivate, shared, rshared, slave, or rslave"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

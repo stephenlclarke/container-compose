@@ -304,6 +304,7 @@ type normalizedMount struct {
 	Target             string            `json:"target,omitempty"`
 	ReadOnly           bool              `json:"readOnly,omitempty"`
 	BindCreateHostPath *bool             `json:"bindCreateHostPath,omitempty"`
+	BindPropagation    string            `json:"bindPropagation,omitempty"`
 	VolumeLabels       map[string]string `json:"volumeLabels,omitempty"`
 	TmpfsSize          string            `json:"tmpfsSize,omitempty"`
 	TmpfsMode          string            `json:"tmpfsMode,omitempty"`
@@ -1179,6 +1180,7 @@ func mountValues(volumes []types.ServiceVolumeConfig) []normalizedMount {
 			Target:             volume.Target,
 			ReadOnly:           volume.ReadOnly,
 			BindCreateHostPath: bindCreateHostPathValue(volume),
+			BindPropagation:    bindPropagationValue(volume),
 			VolumeLabels:       volumeLabelsValue(volume),
 			TmpfsSize:          tmpfsSizeValue(volume),
 			TmpfsMode:          tmpfsModeValue(volume),
@@ -1195,6 +1197,14 @@ func bindCreateHostPathValue(volume types.ServiceVolumeConfig) *bool {
 	}
 	value := bool(volume.Bind.CreateHostPath)
 	return &value
+}
+
+// bindPropagationValue preserves supported Docker bind propagation semantics.
+func bindPropagationValue(volume types.ServiceVolumeConfig) string {
+	if volume.Type != "bind" || volume.Bind == nil {
+		return ""
+	}
+	return volume.Bind.Propagation
 }
 
 // volumeLabelsValue preserves long-form service volume labels for config
@@ -1232,7 +1242,6 @@ func unsupportedMountFields(volume types.ServiceVolumeConfig) []string {
 	appendUnsupportedMountFieldWhen(&fields, "consistency", volume.Consistency != "")
 	if volume.Bind != nil {
 		appendUnsupportedMountFieldWhen(&fields, "bind.selinux", volume.Bind.SELinux != "")
-		appendUnsupportedMountFieldWhen(&fields, "bind.propagation", volume.Bind.Propagation != "")
 		appendUnsupportedMountFieldWhen(&fields, "bind.recursive", volume.Bind.Recursive != "")
 	}
 	if volume.Volume != nil {

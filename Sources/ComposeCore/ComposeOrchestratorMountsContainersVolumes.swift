@@ -52,10 +52,36 @@ extension ComposeOrchestrator {
         }
 
         var value = "\(mappedSource):\(target)"
-        if mount.readOnly == true {
-            value += ":ro"
+        let options = try volumeMountOptions(mount)
+        if !options.isEmpty {
+            value += ":\(options.joined(separator: ","))"
         }
         args.append(contentsOf: ["--volume", value])
+    }
+
+    /// Returns the apple/container short volume options for a Compose mount.
+    func volumeMountOptions(_ mount: ComposeMount) throws -> [String] {
+        var options: [String] = []
+        if mount.readOnly == true {
+            options.append("ro")
+        }
+        if let propagation = nonEmpty(mount.bindPropagation) {
+            guard mount.type == "bind" else {
+                throw ComposeError.invalidProject("bind propagation is only supported on bind mounts")
+            }
+            options.append(try supportedBindPropagationOption(propagation))
+        }
+        return options
+    }
+
+    /// Validates a Compose bind propagation value before runtime handoff.
+    func supportedBindPropagationOption(_ propagation: String) throws -> String {
+        switch propagation {
+        case "private", "rprivate", "shared", "rshared", "slave", "rslave":
+            return propagation
+        default:
+            throw ComposeError.invalidProject("bind propagation '\(propagation)' is not supported; use private, rprivate, shared, rshared, slave, or rslave")
+        }
     }
 
     /// Rejects missing bind sources when Compose explicitly opted out of

@@ -678,7 +678,7 @@ volumes:
 	}
 
 	cases := map[string][]string{
-		"bindy":   {"consistency", "bind.selinux", "bind.propagation", "bind.recursive"},
+		"bindy":   {"consistency", "bind.selinux", "bind.recursive"},
 		"named":   {"volume.subpath"},
 		"scratch": nil,
 		"imagey":  {"type", "image.subpath"},
@@ -691,6 +691,9 @@ volumes:
 		if got := mounts[0].UnsupportedFields; !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s unsupported volume fields = %#v, want %#v", serviceName, got, want)
 		}
+	}
+	if got := project.Services["bindy"].Volumes[0].BindPropagation; got != "rshared" {
+		t.Fatalf("bindy bind propagation = %q, want rshared", got)
 	}
 }
 
@@ -730,6 +733,7 @@ func TestMountValuesPreservesBindCreateHostPath(t *testing.T) {
 			Target: "/default",
 			Bind: &types.ServiceVolumeBind{
 				CreateHostPath: createPath,
+				Propagation:    "rprivate",
 			},
 		},
 		{
@@ -752,6 +756,7 @@ func TestMountValuesPreservesBindCreateHostPath(t *testing.T) {
 			Source:             "/host/default",
 			Target:             "/default",
 			BindCreateHostPath: boolPtr(true),
+			BindPropagation:    "rprivate",
 		},
 		{
 			Type:               "bind",
