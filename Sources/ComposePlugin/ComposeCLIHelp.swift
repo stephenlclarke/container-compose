@@ -281,6 +281,7 @@ enum ComposeCLIHelp {
         "events": .supported,
         "exec": .supported,
         "export": .supported,
+        "help": .supported,
         "images": .supported,
         "kill": .supported,
         "logs": .supported,
@@ -1007,6 +1008,7 @@ enum ComposeCLIHelp {
       events                  Receive real time events from containers
       exec                    Execute a command in a running container
       export                  Export a service container's filesystem as a tar archive
+      help                    Help about any command
       images                  List images used by the created containers
       kill                    Force stop service containers
       logs                    View output from containers

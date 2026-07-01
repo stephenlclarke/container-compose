@@ -43,6 +43,15 @@ struct ComposeCLIHelpTests {
         #expect(!help.contains("\u{001B}["))
     }
 
+    @Test("root help lists help command")
+    func rootHelpListsHelpCommand() {
+        let plain = ComposeCLIHelp.rootHelpText(arguments: ["--ansi", "never"])
+        let coloured = ComposeCLIHelp.rootHelpText(arguments: [])
+
+        #expect(plain.contains("  help                    Help about any command"))
+        #expect(coloured.contains("  \u{001B}[32mhelp\u{001B}[0m                    Help about any command"))
+    }
+
     @Test("every rendered help option has support metadata")
     func everyRenderedHelpOptionHasSupportMetadata() throws {
         let rootOptions = Set(
