@@ -18,13 +18,21 @@ The stable formulae install prebuilt GitHub release assets. They do not build Sw
 - Apple silicon Mac.
 - macOS 26 or newer.
 - Homebrew.
-- No running `container` service from a different install source while switching to the fork-backed Homebrew stack.
+- If Apple's signed `container` package is already installed, replace it with the Homebrew stack below. The Compose plugin requires the matched fork-backed `container` runtime for runtime-backed commands.
 
-## Install From The Aggregate Tap
+## Install The Matched Stack
 
-For a normal install, tap the repository, install the matched runtime and plugin, then start the service:
+Most users will already have Apple's signed `container` package installed. Run this block to stop that runtime, remove Apple's package while keeping user data, install the matched Homebrew `container` and `container-compose` formulae, then start the Homebrew service:
 
 ```sh
+if command -v container >/dev/null 2>&1; then
+  container system stop || true
+fi
+
+if [ -x /usr/local/bin/uninstall-container.sh ]; then
+  sudo /usr/local/bin/uninstall-container.sh -k
+fi
+
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 brew update
@@ -43,22 +51,6 @@ container system status
 ```
 
 The `container` formula owns the plugin registration link inside its Homebrew install root. The `brew postinstall` command refreshes that link after installing or upgrading `container-compose`.
-
-## If Apple container Is Already Installed
-
-If `container` was installed from Apple's signed package, stop it before installing this fork-backed lane:
-
-```sh
-container system stop || true
-```
-
-To avoid path and service ambiguity, remove the Apple package install before installing the Homebrew lane. Keep user data with `-k` or remove user data with `-d`:
-
-```sh
-sudo /usr/local/bin/uninstall-container.sh -k
-```
-
-Then install `container` and `container-compose` from the aggregate tap with the commands above.
 
 Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
 
