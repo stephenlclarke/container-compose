@@ -9,6 +9,12 @@ by installers; target-machine installation steps live in [INSTALL.md](INSTALL.md
 - macOS with an Apple Swift 6.2 or newer toolchain. Xcode from the Mac App Store,
   Xcode from <https://developer.apple.com/download/>, or the Apple Command Line
   Tools can provide the required Swift compiler.
+- Keep the local Swift toolchain aligned with the version used by the Apple
+  `container` and `containerization` repositories for the lane being tested.
+  Those projects can adopt Swift APIs and standard-library/runtime behavior with
+  the toolchain; building this fork stack with a different Swift version can
+  fail because functions are missing, renamed, or called with different
+  signatures.
 - Go 1.23 or newer for the Compose normalizer helper. Install Go from
   <https://go.dev/dl/> or with Homebrew:
 
