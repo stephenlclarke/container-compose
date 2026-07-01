@@ -1,0 +1,194 @@
+# docker-compose.yaml
+
+networks:
+  monitoring:
+    name: monitoring
+    driver: bridge
+
+services:
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    labels:
+      - logging=promtail
+    volumes:
+      - /opt/bitbucket-runners/nginx/conf.d:/etc/nginx/conf.d:ro
+      - /opt/bitbucket-runners/nginx/certs:/etc/nginx/certs:ro
+      - /opt/bitbucket-runners/nginx/html:/usr/share/nginx/html:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [monitoring]
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/alloy:v1.9.2
+    container_name: promtail
+    environment:
+      - HOST_LABEL=${HOSTNAME:-ULTUK2M30000}
+    command:
+      - run
+      - --stability.level=public-preview
+      - --storage.path=/var/lib/promtail
+      - --server.http.listen-addr=0.0.0.0:9080
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./promtail/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/var/lib/promtail
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /var/lib/systemd:/var/lib/systemd:ro
+    networks: [monitoring]
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: cadvisor
+    privileged: true
+    devices: ["/dev/kmsg:/dev/kmsg"]
+    labels:
+      - logging=promtail
+    ports:
+      - "9105:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [monitoring]
+    restart: unless-stopped
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.9.1
+    container_name: node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --web.listen-address=:9100
+      - --path.rootfs=/host/root
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+    labels:
+      - logging=promtail
+    volumes:
+      - /:/host/root:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+
+  pushgateway:
+    image: prom/pushgateway:v1.11.1
+    container_name: pushgateway
+    command:
+      - --web.listen-address=:9091
+      - --persistence.file=/var/lib/pushgateway/metrics.db
+      - --persistence.interval=30s
+    labels:
+      - logging=promtail
+    ports:
+      - "9091:9091"
+    volumes:
+      - pushgateway_data:/var/lib/pushgateway
+    networks: [monitoring]
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yaml
+      - --storage.path=/alertmanager
+      - --web.route-prefix=/alertmanager
+      - --web.external-url=http://10.125.220.59/alertmanager
+    labels:
+      - logging=promtail
+    volumes:
+      - ./alertmanager/alertmanager.yaml:/etc/alertmanager/alertmanager.yaml:ro
+      - alertmanager_data:/alertmanager
+    networks: [monitoring]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.7.1
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver
+      - --web.enable-admin-api
+      - --web.route-prefix=/prometheus
+      - --web.external-url=http://10.125.220.59/prometheus
+    labels:
+      - logging=promtail
+    volumes:
+      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./prometheus/targets:/etc/prometheus/targets:ro
+      - prometheus_data:/prometheus
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [monitoring]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.5.7
+    container_name: loki
+    command: -config.file=/etc/loki/config.yaml -target=all
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    labels:
+      - logging=promtail
+    networks: [monitoring]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.3.2
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_SERVER_ROOT_URL: "http://10.125.220.59/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_DOMAIN: "ULTUK2M30000"
+      GF_SERVER_ENFORCE_DOMAIN: "false"
+    labels:
+      - logging=promtail
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana-provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks: [monitoring]
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    container_name: tempo
+    command: ["-config.file=/etc/tempo/config.yaml", "-target=all"]
+    labels:
+      - logging=promtail
+    volumes:
+      - ./tempo/tempo-config.yaml:/etc/tempo/config.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    networks: [monitoring]
+    restart: unless-stopped
+
+volumes:
+  grafana_data: {}
+  loki_data: {}
+  promtail_positions: {}
+  prometheus_data: {}
+  pushgateway_data: {}
+  alertmanager_data: {}
+  tempo_data: {}

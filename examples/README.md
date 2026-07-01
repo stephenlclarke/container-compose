@@ -64,3 +64,7 @@ Remove any project resources left behind during manual experiments with:
 ```sh
 ../container/bin/container compose -f examples/compose.yml down
 ```
+
+## Monitoring Stack
+
+[monitoring-stack/docker-compose.yaml](monitoring-stack/docker-compose.yaml) captures a larger Grafana/Prometheus/Loki/Tempo monitoring stack used as a compatibility example for real-world service options. It intentionally includes host-specific bind mounts and configuration paths; copy or adapt those paths before running it directly.
