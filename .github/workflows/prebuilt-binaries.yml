@@ -55,7 +55,7 @@ jobs:
           case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
             branch:main)
               release_tag="homebrew-main"
-              release_title="container-compose latest"
+              release_title="${compose_version}"
               release_label="Main lane"
               release_latest="false"
               release_prerelease="true"
@@ -77,7 +77,7 @@ jobs:
                 exit 1
               fi
               release_tag="${GITHUB_REF_NAME}"
-              release_title="container-compose ${compose_version}"
+              release_title="${compose_version}"
               release_label="Latest"
               release_latest="true"
               release_prerelease="false"
@@ -97,7 +97,7 @@ jobs:
                 exit 1
               fi
               release_tag="${branch_version}-pre"
-              release_title="container-compose ${compose_version}"
+              release_title="${compose_version}"
               release_label="Pre-release"
               release_latest="false"
               release_prerelease="true"
