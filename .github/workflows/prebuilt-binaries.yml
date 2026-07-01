@@ -211,31 +211,20 @@ jobs:
           set -euo pipefail
           sha256="$(awk '{print $1}' "${RUNNER_TEMP}/${ASSET}.sha256")"
 
+          notes="$(mktemp)"
+          git fetch --force --tags origin
+          python3 Tools/release/release-notes.py \
+            --release-tag "${RELEASE_TAG}" \
+            --release-label "${RELEASE_LABEL}" \
+            --compose-version "${COMPOSE_VERSION}" \
+            --asset "${ASSET}" \
+            --asset-sha "${sha256}" \
+            --head "${GITHUB_SHA}" > "${notes}"
+
           if [[ "${GITHUB_REF_TYPE}" == "branch" ]]; then
             git tag --force "${RELEASE_TAG}" "${GITHUB_SHA}"
             git push --force origin "refs/tags/${RELEASE_TAG}"
           fi
-
-          notes="$(mktemp)"
-          cat >"${notes}" <<EOF
-          ## Summary
-
-          - ${RELEASE_LABEL} package for the \`${COMPOSE_VERSION}\` container-compose slice.
-          - Keeps the fork-backed container, containerization, and builder-shim compatibility metadata intact.
-          - Publishes the release-quality Swift plugin and non-debug Go normalizer package.
-
-          ## Validation
-
-          - \`make ci\` passed.
-          - \`make package-release PLUGIN_ARCHIVE=${ASSET}\` passed.
-          - \`make go-release-check\` passed as part of package validation.
-          - \`git diff --check\` passed as part of \`make ci\`.
-
-          ## Assets
-
-          - \`${ASSET}\` SHA-256:
-            \`${sha256}\`.
-          EOF
 
           if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             create_args=(
