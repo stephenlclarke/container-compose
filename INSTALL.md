@@ -187,7 +187,7 @@ fi
 
 brew uninstall --ignore-dependencies stephenlclarke/container/container || true
 brew uninstall --ignore-dependencies \
-  container-compose container-compose-release container container-release || true
+  container-compose container-compose-pre container-compose-release container container-release || true
 brew untap stephenlclarke/container || true
 brew untap stephenlclarke/container-compose || true
 
