@@ -150,8 +150,8 @@ GitHub Actions keeps the expensive and security-oriented checks in separate work
 | Workflow | Trigger | Coverage |
 | --- | --- | --- |
 | `CI / Validate` | Pushes to `main` and `develop/*`, PRs to `main`, semantic release tags, and manual runs | Runs `make ci` on `main` and PRs, including Swift Testing/XCTest through SwiftPM, Go tests, Markdown linting, Hawkeye license-header validation, coverage gates, and the CLI smoke test. Stable tag validation also builds a release plugin artifact so the package layout stays covered. |
-| `Quality / Swift ASan` | Pushes to `main`, every PR, and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=address` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
-| `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Runs `swift test --disable-automatic-resolution --sanitize=thread` against the checked-in `APPLE_CONTAINER_REF` dependency checkout. |
+| `Quality / Swift ASan` | Pushes to `main`, every PR, and manual runs | Resolves the current `stephenlclarke/container:main` commit, checks out that exact dependency revision, then runs `swift test --disable-automatic-resolution --sanitize=address`. |
+| `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Resolves the current `stephenlclarke/container:main` commit, checks out that exact dependency revision, then runs `swift test --disable-automatic-resolution --sanitize=thread`. |
 | `Quality / SwiftLint/SwiftFormat Advisory` | Pushes to `main`, every PR, and manual runs | Runs `swiftlint lint --strict --quiet Package.swift Sources Tests` and `swiftformat Package.swift Sources Tests --lint --swift-version 6.2`. These checks are advisory until a repo-owned SwiftLint and SwiftFormat baseline/configuration lands, because the current default tools report existing repository-wide style drift. |
 | `Homebrew / Formula Syntax` | Pushes to `main`, `develop/*`, semantic release tags, PRs to `main`, and manual runs | Validates the Homebrew formula Ruby syntax and inspects `container-compose` through `brew info`; install flow details live in [INSTALL.md](INSTALL.md). |
 | `CodeQL / Analyze Go` | Pushes to `main`, PRs to `main`, weekly schedule, and manual runs | Runs CodeQL over the Go normalizer using the same release build path as packaged Homebrew artifacts. Swift remains covered by `make ci`, ASan, SonarCloud, and focused tests; Swift CodeQL is not part of the push gate because CodeQL's Swift compiler trace rebuilds the fork-backed Apple dependency graph and times out on GitHub-hosted macOS runners before reaching `container-compose` sources. |
@@ -387,7 +387,7 @@ dist/compose/resources/compose-normalizer
 
 GitHub Actions uses the same package layout for published assets. Branch, tag, pre-release, and Homebrew formula policy lives in [BRANCHES.md](BRANCHES.md); target-machine installation lives in [INSTALL.md](INSTALL.md).
 
-Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, `container` pin from `APPLE_CONTAINER_REF`, `containerization` pin from `Package.resolved`, and embedded `compose-go` module version from the Go normalizer. Local development builds fall back to the current git checkout when the packaged metadata file is absent.
+Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, the resolved `container` dependency commit, `containerization` pin from `Package.resolved`, and embedded `compose-go` module version from the Go normalizer. Local development builds fall back to the current git checkout and sibling `../container` checkout when the packaged metadata file is absent.
 
 Use [INSTALL.md](INSTALL.md) to install, upgrade, verify, or remove the packaged plugin on a target machine.
 

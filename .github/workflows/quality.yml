@@ -107,16 +107,14 @@ jobs:
           path: container-compose
           fetch-depth: 0
 
-      - name: Read container ref
+      - name: Resolve container ref
         id: apple-container-ref
         shell: bash
         run: |
           set -euo pipefail
-          ref="$(
-            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
-          )"
+          ref="$(python3 container-compose/Tools/release/resolve-container-ref.py)"
           if [[ -z "$ref" ]]; then
-            printf 'APPLE_CONTAINER_REF is empty\n' >&2
+            printf 'container ref is empty\n' >&2
             exit 1
           fi
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
@@ -126,7 +124,7 @@ jobs:
         with:
           repository: stephenlclarke/container
           path: container
-          ref: main
+          ref: ${{ steps.apple-container-ref.outputs.ref }}
 
       - name: Verify container dependency ref
         shell: bash
@@ -147,7 +145,7 @@ jobs:
           {
             swift --version 2>&1
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
-            shasum -a 256 container-compose/APPLE_CONTAINER_REF
+            printf 'container_ref=%s\n' "${{ steps.apple-container-ref.outputs.ref }}"
             shasum -a 256 container/Package.swift container/Package.resolved
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
@@ -193,16 +191,14 @@ jobs:
           path: container-compose
           fetch-depth: 0
 
-      - name: Read container ref
+      - name: Resolve container ref
         id: apple-container-ref
         shell: bash
         run: |
           set -euo pipefail
-          ref="$(
-            sed -n '1{s/[[:space:]]//g;p;q;}' container-compose/APPLE_CONTAINER_REF
-          )"
+          ref="$(python3 container-compose/Tools/release/resolve-container-ref.py)"
           if [[ -z "$ref" ]]; then
-            printf 'APPLE_CONTAINER_REF is empty\n' >&2
+            printf 'container ref is empty\n' >&2
             exit 1
           fi
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
@@ -212,7 +208,7 @@ jobs:
         with:
           repository: stephenlclarke/container
           path: container
-          ref: main
+          ref: ${{ steps.apple-container-ref.outputs.ref }}
 
       - name: Verify container dependency ref
         shell: bash
@@ -233,7 +229,7 @@ jobs:
           {
             swift --version 2>&1
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
-            shasum -a 256 container-compose/APPLE_CONTAINER_REF
+            printf 'container_ref=%s\n' "${{ steps.apple-container-ref.outputs.ref }}"
             shasum -a 256 container/Package.swift container/Package.resolved
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 

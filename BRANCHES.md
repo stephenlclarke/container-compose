@@ -109,7 +109,7 @@ If the secret is absent, release assets and release notes can still be published
 
 `container-compose` must stay pinned to the required `stephenlclarke/container` and `stephenlclarke/containerization` surfaces while fork-backed behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` surfaces.
 
-`container-compose` pins the exact `container` commit used by CI and package metadata through `APPLE_CONTAINER_REF`.
+`container-compose` resolves the exact `container` commit used by CI and package metadata automatically from the checked-out `../container` dependency, or from `stephenlclarke/container:main` when no sibling checkout is available. The resolver lives at `Tools/release/resolve-container-ref.py`; do not reintroduce a hand-maintained pin file.
 
 `container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. Update the shim source on `main`, publish an immutable image tag, verify the GHCR manifest is available, then update `container` to that tag. Do not point stable packages at untagged, unpublished, or debug builder images.
 

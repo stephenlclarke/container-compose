@@ -94,7 +94,7 @@ private struct ComposeBuildInfo: Codable {
             commit: git(["rev-parse", "HEAD"], root: root) ?? "unspecified",
             buildType: defaultBuildType,
             containerSource: "stephenlclarke/container",
-            containerRef: firstLine(in: "\(root)/APPLE_CONTAINER_REF") ?? "unspecified",
+            containerRef: localContainerRef(root: root) ?? "unspecified",
             containerizationSource: normalizedSource(packageResolvedValue(root: root, key: "location") ?? "unspecified"),
             containerizationRef: packageResolvedState(root: root) ?? "unspecified",
             composeGoVersion: goModuleVersion(root: root, module: "github.com/compose-spec/compose-go/v2")
@@ -208,11 +208,12 @@ private extension ComposeBuildInfo {
         return value.isEmpty ? nil : value
     }
 
-    static func firstLine(in path: String) -> String? {
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
-            return nil
-        }
-        return text.split(whereSeparator: \.isNewline).first.map(String.init)
+    static func localContainerRef(root: String) -> String? {
+        let dependencyRoot = URL(fileURLWithPath: root)
+            .deletingLastPathComponent()
+            .appendingPathComponent("container")
+            .path
+        return git(["rev-parse", "HEAD"], root: dependencyRoot)
     }
 
     static func packageResolvedValue(root: String, key: String) -> String? {
