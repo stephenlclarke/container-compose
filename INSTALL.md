@@ -110,11 +110,23 @@ container compose config
 
 ## Upgrade An Existing Installation
 
-Refresh the tap, upgrade the two formulae, then restart the service:
+Yes. After the matched stack is installed, ordinary Homebrew upgrades keep `container` and `container-compose` up to date:
+
+```sh
+brew update
+brew upgrade
+```
+
+If you only want to update this stack, upgrade the two formulae directly:
 
 ```sh
 brew update
 brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose
+```
+
+After either upgrade path, refresh the plugin registration, restart the service, and verify the installed versions:
+
+```sh
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 container system version
