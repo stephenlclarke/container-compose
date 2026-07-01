@@ -39,53 +39,53 @@ def load_module():
 class ReleaseNotesTests(unittest.TestCase):
     """Release notes should show the commits packaged by each lane."""
 
-    def test_moving_main_tag_lists_commits_since_previous_package(self) -> None:
+    def test_prerelease_tag_lists_commits_since_previous_package(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             self.init_repo(repo)
-            self.git(repo, "tag", "--no-sign", "homebrew-main")
+            self.git(repo, "tag", "--no-sign", "0.6.1-pre")
             self.commit(repo, "feat(mounts): support bind propagation")
             self.commit(repo, "docs: refresh compose guidance")
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="homebrew-main",
-                release_label="Main lane",
-                compose_version="0.6.0",
-                asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz",
+                release_tag="0.6.1-pre",
+                release_label="Pre-release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
                 asset_sha="abc123",
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `homebrew-main`", notes)
+            self.assertIn("Commits since `0.6.1-pre`", notes)
             self.assertIn("## Homebrew Formula", notes)
             self.assertIn("## Promotion", notes)
             self.assertIn("## Asset Retention", notes)
-            self.assertIn("`homebrew-main` pre-release also updates the tap", notes)
+            self.assertIn("`stephenlclarke/tap/container-compose-pre`", notes)
             self.assertIn("A pre-release is not renamed into a stable release.", notes)
             self.assertIn("feat(mounts): support bind propagation", notes)
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
 
-    def test_moving_main_tag_rerun_has_empty_commit_range(self) -> None:
+    def test_prerelease_tag_rerun_has_empty_commit_range(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             self.init_repo(repo)
-            self.git(repo, "tag", "--no-sign", "homebrew-main")
+            self.git(repo, "tag", "--no-sign", "0.6.1-pre")
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="homebrew-main",
-                release_label="Main lane",
-                compose_version="0.6.0",
-                asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz",
+                release_tag="0.6.1-pre",
+                release_label="Pre-release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
                 asset_sha="abc123",
                 head_ref="HEAD",
             )
 
-            self.assertIn("Commits since `homebrew-main`", notes)
+            self.assertIn("Commits since `0.6.1-pre`", notes)
             self.assertIn("No source commits changed", notes)
             self.assertNotIn("chore: initial import", notes)
 
@@ -112,6 +112,35 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("Commits since `0.5.0`", notes)
             self.assertIn("fix(cli): report help topic", notes)
             self.assertIn("feat(examples): add monitoring stack", notes)
+            self.assertNotIn("chore: initial import", notes)
+
+    def test_semver_tag_uses_promoted_prerelease_changes_after_squash(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.git(repo, "switch", "-c", "develop/0.6.1")
+            self.commit(repo, "feat(release): simplify package lanes")
+            self.commit(repo, "ci(release): prune older assets")
+            self.git(repo, "tag", "--no-sign", "0.6.1-pre")
+            self.git(repo, "switch", "main")
+            self.commit(repo, "ci(release): simplify package lanes")
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="Latest",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("Promoted changes from `0.6.1-pre` since `0.6.0`", notes)
+            self.assertIn("feat(release): simplify package lanes", notes)
+            self.assertIn("ci(release): prune older assets", notes)
             self.assertNotIn("chore: initial import", notes)
 
     def test_first_release_lists_current_commit(self) -> None:

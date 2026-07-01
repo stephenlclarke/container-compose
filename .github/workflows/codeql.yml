@@ -46,7 +46,7 @@ jobs:
     name: Detect Relevant Changes
     runs-on: ubuntu-latest
     outputs:
-      heavy: ${{ steps.filter.outputs.heavy }}
+      go: ${{ steps.filter.outputs.go }}
     steps:
       - name: Checkout for push diff
         if: github.event_name == 'push'
@@ -79,29 +79,26 @@ jobs:
               fi
               ;;
             *)
-              printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+              printf 'go=true\n' >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
 
-          heavy=false
+          go=false
           while IFS= read -r path; do
             case "$path" in
-              *.md|docs/*|Formula/*)
-                ;;
-              *)
-                heavy=true
-                break
+              Tools/compose-normalizer/**|.github/workflows/codeql.yml|.github/codeql/**|Makefile)
+                go=true
                 ;;
             esac
           done < "$changed_files"
 
-          printf 'heavy=%s\n' "$heavy" >> "$GITHUB_OUTPUT"
+          printf 'go=%s\n' "$go" >> "$GITHUB_OUTPUT"
 
   analyze:
     name: Analyze Go
     needs: changes
-    if: needs.changes.outputs.heavy == 'true'
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

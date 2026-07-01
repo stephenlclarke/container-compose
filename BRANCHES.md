@@ -30,7 +30,7 @@ Do not create new long-lived `release`, `release-*`, `snapshot/*`, compatibility
 
 ## Version And Release Rhythm
 
-`main` is the current integration and package lane. Normal work lands on `main`; the main-lane prebuilt workflow then publishes the moving `homebrew-main` package used by the install guide.
+`main` is the current integration branch and the source of the next stable release. Normal work lands on `main`; installable binary packages are published from `develop/VERSION` pre-release tags and bare semantic stable tags.
 
 When a formal version boundary is needed, `main` contains the version that will become the next stable source tag. A development slice increments the version on `develop/VERSION`, publishes pre-release assets only, then lands back on `main` before the stable tag is created.
 
@@ -38,7 +38,7 @@ Use bare semantic source tags such as `0.5.1`, matching Apple repository convent
 
 ## Release Helper
 
-`CONTAINER_STACK_RELEASE.sh` is a maintainer helper for release boundaries and versioned development slices. It is not required for ordinary edits on `main`, and it does not replace the automated `homebrew-main` package lane.
+`CONTAINER_STACK_RELEASE.sh` is a maintainer helper for release boundaries and versioned development slices. It is not required for ordinary edits on `main`.
 
 Run it from the `container-compose` checkout:
 
@@ -74,9 +74,11 @@ Before it changes anything, the helper checks that worktrees are clean, push rem
 Use it in this order:
 
 1. Finish and validate work on `main`.
-2. Let the main-lane prebuilt workflows update the moving Homebrew packages.
-3. Run `tag-current --execute` only when the current `main` state should become an immutable stable source tag.
-4. Run `start-dev VERSION_SELECTOR --execute` only when opening the next short-lived `develop/VERSION` slice.
+2. Run `start-dev VERSION_SELECTOR --execute` only when opening the next short-lived `develop/VERSION` slice.
+3. Let the `develop/VERSION` prebuilt workflow publish `VERSION-pre` and update `container-compose-pre`.
+4. Squash the validated slice back to `main`.
+5. Run `tag-current --execute` only when the current `main` state should become an immutable stable source tag.
+6. Let the stable tag workflow publish `VERSION` and update `container-compose`.
 
 ## Dependency Pins
 
@@ -93,9 +95,10 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 | Formula | Installs |
 | --- | --- |
 | `container` | Current fork-backed runtime from the moving `homebrew-main` package lane. |
-| `container-compose` | Current plugin package from the moving `homebrew-main` package lane; depends on the matching `container` formula. |
+| `container-compose` | Current stable plugin package from the latest semantic release; depends on the matching `container` formula. |
+| `container-compose-pre` | Current development plugin package from the latest `develop/VERSION` pre-release; depends on the matching `container` formula. |
 
-The install formulae consume validated GitHub release assets from the moving `homebrew-main` releases. `container-compose` rebuilds its main-lane package from `main` and records the published `stephenlclarke/container` `homebrew-main` commit in package metadata, so `brew upgrade` can keep the plugin and runtime pins aligned. The `container` main-lane package workflow triggers the matching `container-compose` package workflow after it updates the runtime formula. `container-compose` formula versions use `COMPOSE_VERSION-main.GITHUB_RUN_NUMBER.SHORT_SHA` so Homebrew sees each main-lane package as an upgrade from older stable or main-lane installs. Development pre-release assets from `develop/VERSION` are not installed by the aggregate tap, and the tap does not install from `sources/*` submodules.
+The install formulae consume validated GitHub release assets. `container-compose-pre` follows the latest `VERSION-pre` release and is opt-in for testing the next slice. `container-compose` follows the latest stable semantic release and is what normal users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 

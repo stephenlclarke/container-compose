@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-SEMVER_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+(?:-pre)?$")
+STABLE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+$")
+PRE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+-pre$")
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def commit_for_ref(repo: Path, ref: str) -> str | None:
     return git_output(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")
 
 
-def previous_release_tag(repo: Path, release_tag: str, head_ref: str) -> str | None:
+def previous_stable_tag(repo: Path, release_tag: str, head_ref: str) -> str | None:
     tags = git_output(
         repo,
         "for-each-ref",
@@ -88,13 +89,28 @@ def previous_release_tag(repo: Path, release_tag: str, head_ref: str) -> str | N
     for tag in tags.splitlines():
         if tag == release_tag:
             continue
-        if SEMVER_RELEASE_PATTERN.fullmatch(tag):
+        if STABLE_RELEASE_PATTERN.fullmatch(tag):
             return tag
     return None
 
 
 def is_moving_release_tag(release_tag: str) -> bool:
-    return release_tag == "homebrew-main" or release_tag.endswith("-pre")
+    return PRE_RELEASE_PATTERN.fullmatch(release_tag) is not None
+
+
+def is_stable_release_tag(release_tag: str) -> bool:
+    return STABLE_RELEASE_PATTERN.fullmatch(release_tag) is not None
+
+
+def promoted_prerelease_ref(repo: Path, release_tag: str) -> tuple[str, str] | None:
+    if not is_stable_release_tag(release_tag):
+        return None
+
+    prerelease_tag = f"{release_tag}-pre"
+    commit = commit_for_ref(repo, f"refs/tags/{prerelease_tag}")
+    if commit is None:
+        return None
+    return prerelease_tag, commit
 
 
 def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
@@ -112,7 +128,7 @@ def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
                 head_commit=head_commit,
             )
 
-    previous_tag = previous_release_tag(repo, release_tag, head_ref)
+    previous_tag = previous_stable_tag(repo, release_tag, head_ref)
     if previous_tag is not None:
         return ReleaseRange(
             base_ref=f"refs/tags/{previous_tag}",
@@ -147,6 +163,36 @@ def commits_for_range(repo: Path, selected_range: ReleaseRange) -> list[CommitSu
     return commits
 
 
+def change_range(repo: Path, release_tag: str, head_ref: str) -> tuple[ReleaseRange, str | None]:
+    selected_range = release_range(repo, release_tag, head_ref)
+    promoted = promoted_prerelease_ref(repo, release_tag)
+    if promoted is None:
+        return selected_range, None
+
+    prerelease_tag, prerelease_commit = promoted
+    previous_tag = previous_stable_tag(repo, release_tag, head_ref)
+    if previous_tag is None:
+        return (
+            ReleaseRange(
+                base_ref=None,
+                base_label=None,
+                head_ref=f"refs/tags/{prerelease_tag}",
+                head_commit=prerelease_commit,
+            ),
+            prerelease_tag,
+        )
+
+    return (
+        ReleaseRange(
+            base_ref=f"refs/tags/{previous_tag}",
+            base_label=previous_tag,
+            head_ref=f"refs/tags/{prerelease_tag}",
+            head_commit=prerelease_commit,
+        ),
+        prerelease_tag,
+    )
+
+
 def render_release_notes(
     *,
     repo: Path,
@@ -157,7 +203,7 @@ def render_release_notes(
     asset_sha: str,
     head_ref: str,
 ) -> str:
-    selected_range = release_range(repo, release_tag, head_ref)
+    selected_range, promoted_tag = change_range(repo, release_tag, head_ref)
     commits = commits_for_range(repo, selected_range)
     head_short = selected_range.head_commit[:12]
 
@@ -172,7 +218,13 @@ def render_release_notes(
         "",
     ]
 
-    if selected_range.base_label is None:
+    if promoted_tag is not None and selected_range.base_label is None:
+        lines.append(f"- Promoted changes from `{promoted_tag}` through `{head_short}`:")
+    elif promoted_tag is not None:
+        lines.append(
+            f"- Promoted changes from `{promoted_tag}` since `{selected_range.base_label}` through `{head_short}`:"
+        )
+    elif selected_range.base_label is None:
         lines.append(f"- Commits included through `{head_short}`:")
     else:
         lines.append(
@@ -190,15 +242,14 @@ def render_release_notes(
             "## Homebrew Formula",
             "",
             "- The stable release updates `stephenlclarke/tap/container-compose` to the stable asset and semver formula version.",
-            "- The `homebrew-main` pre-release also updates the tap, but uses a moving `COMPOSE_VERSION-main.RUN.SHORTSHA` formula version so `brew upgrade` can advance main-lane installs.",
-            "- `develop/VERSION` pre-releases publish GitHub assets for review only and do not update the aggregate tap.",
+            "- The `develop/VERSION` pre-release updates `stephenlclarke/tap/container-compose-pre` to the latest prerelease asset.",
             "- The formula depends on the matched `stephenlclarke/tap/container` runtime package.",
             "",
             "## Promotion",
             "",
             "- A pre-release is not renamed into a stable release.",
             "- Promotion means merging the validated development slice back to `main`, creating the bare semver source tag, and letting the stable tag workflow build fresh release assets.",
-            "- The stable workflow then marks the semver release as GitHub `Latest` and updates the Homebrew formula from the pre-release/main lane to the stable asset.",
+            "- The stable workflow then marks the semver release as GitHub `Latest` and updates the stable Homebrew formula.",
             "",
             "## Asset Retention",
             "",
@@ -207,10 +258,11 @@ def render_release_notes(
             "",
             "## Validation",
             "",
-            "- `make ci` passed.",
+            "- The package commit passed CI `Validate`, or the manual release-validation fallback passed before packaging.",
+            "- CI runs `make ci-fast` plus the release coverage gate; the manual fallback runs `make ci` when no successful CI result exists for the same SHA.",
             f"- `make package-release PLUGIN_ARCHIVE={asset}` passed.",
             "- `make go-release-check` passed as part of package validation.",
-            "- `git diff --check` passed as part of `make ci`.",
+            "- `git diff --check` passed as part of `make check`.",
             "",
             "## Assets",
             "",
