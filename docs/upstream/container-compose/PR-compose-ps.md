@@ -40,7 +40,7 @@ Before release promotion, also run:
 make swift-test
 make go-test
 make coverage-check
-markdownlint README.md INSTALL.md TROUBLESHOOTING.md BRANCHES.md docs/upstream/container-compose/ISSUE-compose-ps.md docs/upstream/container-compose/PR-compose-ps.md
+markdownlint README.md INSTALL.md BRANCHES.md docs/upstream/container-compose/ISSUE-compose-ps.md docs/upstream/container-compose/PR-compose-ps.md
 ```
 
 ## Follow-Ups

@@ -59,7 +59,7 @@ The `container` formula owns the plugin registration link inside its Homebrew in
 
 Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
 
-If the machine has old source taps, retired `container-release` formulae, or a mixed Homebrew/Apple install, use the reset steps in [TROUBLESHOOTING.md](TROUBLESHOOTING.md#bad-homebrew-install-or-mixed-runtime) instead of the normal install path.
+If the machine has old source taps, retired `container-release` formulae, or a mixed Homebrew/Apple install, use the [reset flow](#bad-homebrew-install-or-mixed-runtime) instead of the normal install path.
 
 ## Install A Local Plugin Archive
 
@@ -132,7 +132,7 @@ container system version
 container compose version
 ```
 
-If Homebrew says a formula is already current but the install still looks mixed, use the reset flow in [TROUBLESHOOTING.md](TROUBLESHOOTING.md#bad-homebrew-install-or-mixed-runtime).
+If Homebrew says a formula is already current but the install still looks mixed, use the [reset flow](#bad-homebrew-install-or-mixed-runtime).
 
 ## Uninstall
 
@@ -152,10 +152,73 @@ sudo rm -rf /usr/local/libexec/container-plugins/compose
 
 ## Troubleshooting
 
+### Bad Homebrew Install Or Mixed Runtime
+
+Use this reset when `container compose` is missing, `container compose version` hangs, Homebrew installed `container` from an old source tap, the shell still finds Apple's package, or the plugin symlink points at the wrong formula.
+
+```sh
+brew services stop stephenlclarke/tap/container || brew services stop container || true
+container system stop || true
+
+if [ -x /usr/local/bin/uninstall-container.sh ]; then
+  sudo /usr/local/bin/uninstall-container.sh -k
+fi
+
+brew uninstall --ignore-dependencies stephenlclarke/container/container || true
+brew uninstall --ignore-dependencies \
+  container-compose container-compose-release container container-release || true
+brew untap stephenlclarke/container || true
+brew untap stephenlclarke/container-compose || true
+
+brew tap stephenlclarke/tap
+brew trust --tap stephenlclarke/tap
+brew install --formula stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
+hash -r 2>/dev/null || true
+```
+
+Expected result:
+
+- `container compose help` prints Compose help instead of reporting an unknown plugin.
+- `container compose version` prints plugin metadata including the installed lane, embedded `compose-go` version, and the `container` / `containerization` pins.
+- `container system version` shows Stephen fork provenance for the runtime and its pinned `containerization` and `container-builder-shim` refs.
+
+### Check The Active Container Binary
+
+If the reset still looks wrong, verify what the shell and service are using:
+
+```sh
+command -v container
+realpath "$(command -v container)"
+pkgutil --pkgs | grep -i 'container' || true
+brew list --versions container container-compose
+brew services list | grep container
+container system version
+container compose version
+```
+
+Apple package builds do not show Stephen fork provenance in `container system version`. If `command -v container` still resolves to `/usr/local/bin/container`, start a new shell or check `PATH` ordering. On Apple silicon, Homebrew's `/opt/homebrew/bin` should usually appear before `/usr/local/bin`.
+
+### Check Plugin Registration
+
 If `container compose` is not found, verify that the plugin symlink points into the active Homebrew `container` prefix:
 
 ```sh
 ls -l "$(brew --prefix container)/libexec/container-plugins/compose"
+```
+
+The link target should point under:
+
+```text
+$(brew --prefix container-compose)/libexec/container-plugins/compose
+```
+
+Refresh it with the `container` formula's `post_install` hook:
+
+```sh
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
 ```
 
 If Compose normalization fails after installation, verify that the normalizer exists and is executable:

@@ -123,8 +123,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 ## Documentation
 
-- [INSTALL.md](INSTALL.md): install, upgrade, verify, and uninstall the fork-backed Homebrew stack or a local plugin archive.
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md): recover bad installs and diagnose runtime issues.
+- [INSTALL.md](INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
 - [BRANCHES.md](BRANCHES.md): understand `main`, short-lived development branches, semantic tags, release assets, and Homebrew lane policy.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
