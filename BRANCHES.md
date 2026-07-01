@@ -116,4 +116,4 @@ After a non-main branch has been squashed or merged into `main`, delete that bra
 
 ## Release Retention
 
-Keep stable source tags and GitHub release objects. Release automation keeps binary assets on one pre-release and one stable release. Older release assets are pruned only after their release notes include a copy/paste Homebrew source-install block that rebuilds from the retained source tag.
+Keep stable source tags and GitHub release objects. Release automation keeps binary assets on one pre-release and one stable release. Older release assets are pruned only after their release notes include the original prebuilt asset SHA-256 and a copy/paste Homebrew source-install block that rebuilds from the retained source tag.

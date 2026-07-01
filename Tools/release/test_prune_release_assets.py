@@ -67,12 +67,26 @@ class ReleaseAssetPruningTests(unittest.TestCase):
         module = load_module()
         release = self.release(module, "0.5.0", prerelease=False)
 
-        body = module.body_with_source_install("## Summary\n\nOld notes.\n", release)
-        repeated = module.body_with_source_install(body, release)
+        body = module.body_with_source_install(
+            "## Summary\n\nOld notes.\n",
+            release,
+            prebuilt_sha256="a" * 64,
+        )
+        repeated = module.body_with_source_install(
+            body,
+            release,
+            prebuilt_sha256="a" * 64,
+        )
 
         self.assertEqual(body, repeated)
         self.assertIn("## Source Install From This Release", body)
-        self.assertIn('url "https://github.com/stephenlclarke/container-compose/archive/refs/tags/0.5.0.tar.gz"', body)
+        self.assertIn("Original pruned prebuilt asset SHA-256", body)
+        self.assertIn("a" * 64, body)
+        self.assertIn('url "https://github.com/stephenlclarke/container-compose.git"', body)
+        self.assertIn('tag: "0.5.0"', body)
+        self.assertIn('revision: "abcdef1234567890"', body)
+        self.assertIn('PLUGIN_ARCHIVE=#{archive}', body)
+        self.assertIn('Local rebuild SHA-256 #{rebuilt_sha256}', body)
         self.assertIn('brew install --build-from-source "${FORMULA}"', body)
 
     def release(
@@ -89,7 +103,11 @@ class ReleaseAssetPruningTests(unittest.TestCase):
             prerelease=prerelease,
             draft=False,
             published_at=published_at,
-            assets=({"id": 1, "name": f"{tag_name}.tar.gz"},),
+            target_commitish="abcdef1234567890",
+            assets=(
+                {"id": 1, "name": f"{tag_name}.tar.gz"},
+                {"id": 2, "name": f"{tag_name}.tar.gz.sha256"},
+            ),
             body="## Summary\n",
         )
 

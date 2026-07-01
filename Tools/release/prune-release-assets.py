@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ from typing import Any
 
 
 SOURCE_INSTALL_HEADING = "## Source Install From This Release"
+SHA256_PATTERN = re.compile(r"\b[0-9a-fA-F]{64}\b")
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ class Release:
     prerelease: bool
     draft: bool
     published_at: str
+    target_commitish: str
     assets: tuple[dict[str, Any], ...]
     body: str
 
@@ -65,6 +68,7 @@ def release_from_json(value: dict[str, Any]) -> Release:
         prerelease=bool(value.get("prerelease")),
         draft=bool(value.get("draft")),
         published_at=value.get("published_at") or value.get("created_at") or "",
+        target_commitish=value.get("target_commitish") or value["tag_name"],
         assets=tuple(value.get("assets") or ()),
         body=value.get("body") or "",
     )
@@ -93,9 +97,29 @@ def releases_to_prune(releases: list[Release], current_tag: str) -> list[Release
     ]
 
 
-def source_install_section(release: Release) -> str:
+def prebuilt_asset_name(release: Release) -> str:
+    for asset in release.assets:
+        name = asset.get("name") or ""
+        if name.endswith(".tar.gz"):
+            return name
+    return "container-compose-plugin-release-arm64.tar.gz"
+
+
+def source_install_section(
+    release: Release,
+    *,
+    prebuilt_sha256: str | None = None,
+) -> str:
+    original_sha = prebuilt_sha256 or "unknown"
+    asset_name = prebuilt_asset_name(release)
     return f"""\
 {SOURCE_INSTALL_HEADING}
+
+Original pruned prebuilt asset SHA-256:
+
+```text
+{original_sha}
+```
 
 The binary assets for this release were pruned. The source tag remains available. To rebuild and install this release with Homebrew, paste:
 
@@ -106,8 +130,9 @@ cat >"${{FORMULA}}" <<RUBY
 class ContainerComposeSource < Formula
   desc "Docker Compose style plugin for Apple's container CLI"
   homepage "https://github.com/stephenlclarke/container-compose"
-  url "https://github.com/stephenlclarke/container-compose/archive/refs/tags/{release.tag_name}.tar.gz"
-  sha256 :no_check
+  url "https://github.com/stephenlclarke/container-compose.git",
+      tag: "{release.tag_name}",
+      revision: "{release.target_commitish}"
   license "Apache-2.0"
 
   depends_on arch: :arm64
@@ -116,7 +141,14 @@ class ContainerComposeSource < Formula
   depends_on "stephenlclarke/tap/container"
 
   def install
-    system "make", "package-release"
+    original_prebuilt_sha256 = "{original_sha}"
+    archive = "{asset_name}"
+    system "make", "package-release", "PLUGIN_ARCHIVE=#{{archive}}"
+    rebuilt_sha256 = `shasum -a 256 #{{archive}}`.split.first
+    if original_prebuilt_sha256 != "unknown" && rebuilt_sha256 != original_prebuilt_sha256
+      opoo "Local rebuild SHA-256 #{{rebuilt_sha256}} differs from pruned prebuilt SHA-256 #{{original_prebuilt_sha256}}."
+      opoo "The install continues because local Swift, Go, and gzip output may not be byte-identical to the original CI artifact."
+    end
     plugin = libexec/"container-plugins/compose"
     plugin.install Dir["dist/compose/*"]
     bin.install_symlink plugin/"bin/compose" => "container-compose"
@@ -133,13 +165,24 @@ brew services restart stephenlclarke/tap/container
 """
 
 
-def body_with_source_install(existing_body: str, release: Release) -> str:
+def body_without_source_install(existing_body: str) -> str:
     stripped = existing_body.rstrip()
-    if SOURCE_INSTALL_HEADING in stripped:
-        return stripped + "\n"
+    heading_index = stripped.find(SOURCE_INSTALL_HEADING)
+    if heading_index == -1:
+        return stripped
+    return stripped[:heading_index].rstrip()
+
+
+def body_with_source_install(
+    existing_body: str,
+    release: Release,
+    *,
+    prebuilt_sha256: str | None = None,
+) -> str:
+    stripped = body_without_source_install(existing_body)
     if stripped:
-        return stripped + "\n\n" + source_install_section(release)
-    return source_install_section(release)
+        return stripped + "\n\n" + source_install_section(release, prebuilt_sha256=prebuilt_sha256)
+    return source_install_section(release, prebuilt_sha256=prebuilt_sha256)
 
 
 def gh_output(arguments: list[str]) -> str:
@@ -164,8 +207,47 @@ def load_releases(repo: str) -> list[Release]:
     return releases
 
 
+def release_asset_sha256(repo: str, release: Release) -> str | None:
+    checksum_assets = [
+        asset for asset in release.assets if (asset.get("name") or "").endswith(".sha256")
+    ]
+    if checksum_assets:
+        with tempfile.TemporaryDirectory() as directory:
+            checksum_name = checksum_assets[0]["name"]
+            subprocess.run(
+                [
+                    "gh",
+                    "release",
+                    "download",
+                    release.tag_name,
+                    "--repo",
+                    repo,
+                    "--pattern",
+                    checksum_name,
+                    "--dir",
+                    directory,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            checksum_text = (Path(directory) / checksum_name).read_text(encoding="utf-8")
+            match = SHA256_PATTERN.search(checksum_text)
+            if match is not None:
+                return match.group(0).lower()
+
+    match = SHA256_PATTERN.search(release.body)
+    if match is not None:
+        return match.group(0).lower()
+    return None
+
+
 def edit_release_notes(repo: str, release: Release) -> None:
-    body = body_with_source_install(release.body, release)
+    body = body_with_source_install(
+        release.body,
+        release,
+        prebuilt_sha256=release_asset_sha256(repo, release),
+    )
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as notes:
         notes.write(body)
         notes_path = Path(notes.name)
