@@ -210,14 +210,16 @@ struct ComposeNormalizerTests {
         #expect(project.services["isolated"]?.networkMode == "none")
         #expect(project.networks["default"] == ComposeNetwork(
             name: "sample_default",
-            driverOpts: [
-                "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
-                "com.docker.network.driver.mtu": "1450",
-            ],
-            isInternal: true,
-            subnets: ComposeNetwork.Subnets(
-                ipv4Subnet: "10.10.0.0/24",
-                ipv6Subnet: "fd00:10::/64"
+            options: ComposeNetwork.Options(
+                driverOpts: [
+                    "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
+                    "com.docker.network.driver.mtu": "1450",
+                ],
+                isInternal: true,
+                subnets: ComposeNetwork.Subnets(
+                    ipv4Subnet: "10.10.0.0/24",
+                    ipv6Subnet: "fd00:10::/64"
+                )
             )
         ))
         #expect(project.volumes["data"] == ComposeVolume(
@@ -526,10 +528,12 @@ struct ComposeNormalizerTests {
         )
         let network = ComposeNetwork(
             name: "backend",
-            isInternal: true,
-            subnets: ComposeNetwork.Subnets(
-                ipv4Subnet: "10.10.0.0/24",
-                ipv6Subnet: "fd00:10::/64"
+            options: ComposeNetwork.Options(
+                isInternal: true,
+                subnets: ComposeNetwork.Subnets(
+                    ipv4Subnet: "10.10.0.0/24",
+                    ipv6Subnet: "fd00:10::/64"
+                )
             )
         )
 

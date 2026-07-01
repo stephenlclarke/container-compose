@@ -976,6 +976,35 @@ public struct ComposeNetwork: Codable, Equatable {
         }
     }
 
+    /// Optional network attributes grouped to keep construction call sites readable.
+    public struct Options: Equatable {
+        public var external: Bool?
+        public var driver: String?
+        public var driverOpts: [String: String]?
+        public var isInternal: Bool?
+        public var labels: [String: String]?
+        public var subnets: Subnets
+        public var unsupportedFields: [String]?
+
+        public init(
+            external: Bool? = nil,
+            driver: String? = nil,
+            driverOpts: [String: String]? = nil,
+            isInternal: Bool? = nil,
+            labels: [String: String]? = nil,
+            subnets: Subnets = Subnets(),
+            unsupportedFields: [String]? = nil
+        ) {
+            self.external = external
+            self.driver = driver
+            self.driverOpts = driverOpts
+            self.isInternal = isInternal
+            self.labels = labels
+            self.subnets = subnets
+            self.unsupportedFields = unsupportedFields
+        }
+    }
+
     public var name: String
     public var external: Bool?
     public var driver: String?
@@ -988,23 +1017,17 @@ public struct ComposeNetwork: Codable, Equatable {
 
     public init(
         name: String,
-        external: Bool? = nil,
-        driver: String? = nil,
-        driverOpts: [String: String]? = nil,
-        isInternal: Bool? = nil,
-        labels: [String: String]? = nil,
-        subnets: Subnets = Subnets(),
-        unsupportedFields: [String]? = nil
+        options: Options = Options()
     ) {
         self.name = name
-        self.external = external
-        self.driver = driver
-        self.driverOpts = driverOpts
-        self.isInternal = isInternal
-        self.labels = labels
-        self.ipv4Subnet = subnets.ipv4Subnet
-        self.ipv6Subnet = subnets.ipv6Subnet
-        self.unsupportedFields = unsupportedFields
+        self.external = options.external
+        self.driver = options.driver
+        self.driverOpts = options.driverOpts
+        self.isInternal = options.isInternal
+        self.labels = options.labels
+        self.ipv4Subnet = options.subnets.ipv4Subnet
+        self.ipv6Subnet = options.subnets.ipv6Subnet
+        self.unsupportedFields = options.unsupportedFields
     }
 
     enum CodingKeys: String, CodingKey {

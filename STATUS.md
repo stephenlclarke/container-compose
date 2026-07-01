@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-06-30 18:26 BST.
+Last updated: 2026-07-01 09:27 BST.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -18,7 +18,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed main-lane pins:
 
-- `stephenlclarke/container`: `87baba1ab1bd7bed036e9cb891fd146893c44382`
+- `stephenlclarke/container`: `d85c597cc02fcf1600a3f13f630012e326c7021f`
 - `stephenlclarke/containerization`: `149a1f5dc9a6d42bef2224cca54bd341bcdd5c6d`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 

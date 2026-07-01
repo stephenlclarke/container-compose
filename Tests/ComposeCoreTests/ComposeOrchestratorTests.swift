@@ -152,7 +152,7 @@ private func projectWithRuntimeResources(networkName: String, volumeName: String
             },
         ]
     ) {
-        $0.networks = ["shared": ComposeNetwork(name: networkName, external: true)]
+        $0.networks = ["shared": ComposeNetwork(name: networkName, options: ComposeNetwork.Options(external: true))]
         $0.volumes = ["cache": ComposeVolume(name: volumeName, external: true)]
     }
 }
@@ -1045,11 +1045,13 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "backend",
-                    isInternal: true,
-                    labels: ["com.example.network": "backend"],
-                    subnets: ComposeNetwork.Subnets(
-                        ipv4Subnet: "10.77.0.0/24",
-                        ipv6Subnet: "fd77::/64"
+                    options: ComposeNetwork.Options(
+                        isInternal: true,
+                        labels: ["com.example.network": "backend"],
+                        subnets: ComposeNetwork.Subnets(
+                            ipv4Subnet: "10.77.0.0/24",
+                            ipv6Subnet: "fd77::/64"
+                        )
                     )
                 ),
             ]
@@ -1096,10 +1098,12 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "backend",
-                    driverOpts: [
-                        "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
-                        "com.docker.network.driver.mtu": "1450",
-                    ]
+                    options: ComposeNetwork.Options(
+                        driverOpts: [
+                            "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
+                            "com.docker.network.driver.mtu": "1450",
+                        ]
+                    )
                 ),
             ]
         }
@@ -1138,10 +1142,12 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "backend",
-                    isInternal: true,
-                    subnets: ComposeNetwork.Subnets(
-                        ipv4Subnet: "10.77.0.0/24",
-                        ipv6Subnet: "fd77::/64"
+                    options: ComposeNetwork.Options(
+                        isInternal: true,
+                        subnets: ComposeNetwork.Subnets(
+                            ipv4Subnet: "10.77.0.0/24",
+                            ipv6Subnet: "fd77::/64"
+                        )
                     )
                 ),
             ]
@@ -1169,10 +1175,12 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "backend",
-                    driverOpts: [
-                        "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
-                        "com.docker.network.driver.mtu": "1450",
-                    ]
+                    options: ComposeNetwork.Options(
+                        driverOpts: [
+                            "com.docker.network.bridge.host_binding_ipv4": "127.0.0.1",
+                            "com.docker.network.driver.mtu": "1450",
+                        ]
+                    )
                 ),
             ]
         }
@@ -1200,7 +1208,7 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "backend",
-                    unsupportedFields: ["ipam.config.gateway"]
+                    options: ComposeNetwork.Options(unsupportedFields: ["ipam.config.gateway"])
                 ),
             ]
         }
@@ -3424,7 +3432,7 @@ struct ComposeOrchestratorTests {
                 },
             ]
         ) {
-            $0.networks = ["shared": ComposeNetwork(name: "corp-net", external: true)]
+            $0.networks = ["shared": ComposeNetwork(name: "corp-net", options: ComposeNetwork.Options(external: true))]
             $0.volumes = ["data": ComposeVolume(name: "corp-data", external: true)]
         }
 
