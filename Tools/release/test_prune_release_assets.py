@@ -82,6 +82,18 @@ class ReleaseAssetPruningTests(unittest.TestCase):
             ["0.5.0"],
         )
 
+    def test_prunes_older_stable_assets_when_current_stable_release_is_not_visible_yet(self) -> None:
+        module = load_module()
+        releases = [
+            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-07-01T10:00:00Z"),
+            self.release(module, "0.6.0", prerelease=False, published_at="2026-06-30T10:00:00Z"),
+        ]
+
+        self.assertEqual(
+            [release.tag_name for release in module.releases_to_prune(releases, "0.6.1")],
+            ["0.6.0"],
+        )
+
     def test_pruned_notes_include_source_build_formula_once(self) -> None:
         module = load_module()
         release = self.release(module, "0.5.0", prerelease=False)
