@@ -18,28 +18,14 @@ class ContainerCompose < Formula
     bin.install_symlink plugin/"bin/compose" => "container-compose"
   end
 
-  def post_install
-    plugin = opt_libexec/"container-plugins/compose"
-    plugin_dir = formula_opt_prefix("stephenlclarke/tap/container")/"libexec/container-plugins"
-    plugin_dir.mkpath
-
-    plugin_link = plugin_dir/"compose"
-    if plugin_link.symlink? || plugin_link.file?
-      rm plugin_link
-    elsif plugin_link.directory?
-      rm_r plugin_link
-    end
-
-    ln_s plugin, plugin_link
-  end
-
   def caveats
     <<~EOS
       The plugin is installed under:
         #{opt_libexec}/container-plugins/compose
 
-      This formula links the plugin into the active container install root.
-      Restart stephenlclarke/tap/container after installing or upgrading this plugin:
+      The container formula owns the plugin registration link. Refresh it and
+      restart stephenlclarke/tap/container after installing or upgrading this plugin:
+        brew postinstall stephenlclarke/tap/container
         brew services restart stephenlclarke/tap/container
 
       This formula installs the stable release prebuilt package asset:
@@ -51,9 +37,5 @@ class ContainerCompose < Formula
     assert_match "0.5.0", shell_output("#{bin}/container-compose version --short")
     assert_path_exists libexec/"container-plugins/compose/config.toml"
     assert_predicate libexec/"container-plugins/compose/resources/compose-normalizer", :executable?
-
-    plugin_link = formula_opt_prefix("stephenlclarke/tap/container")/"libexec/container-plugins/compose"
-    assert_predicate plugin_link, :symlink?
-    assert_equal opt_libexec/"container-plugins/compose", plugin_link.readlink
   end
 end
