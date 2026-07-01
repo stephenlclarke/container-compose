@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default="../container")
     parser.add_argument("--remote", default="https://github.com/stephenlclarke/container.git")
+    parser.add_argument("--tag", default="homebrew-main")
     parser.add_argument("--branch", default="main")
     return parser.parse_args()
 
@@ -55,9 +56,21 @@ def remote_branch_ref(remote: str, branch: str) -> str | None:
     return fields[0] if fields else None
 
 
+def remote_tag_ref(remote: str, tag: str) -> str | None:
+    output = git_output(["git", "ls-remote", remote, f"refs/tags/{tag}"])
+    if output is None:
+        return None
+    fields = output.split()
+    return fields[0] if fields else None
+
+
 def main() -> int:
     args = parse_args()
-    ref = local_repo_ref(Path(args.repo)) or remote_branch_ref(args.remote, args.branch)
+    ref = (
+        local_repo_ref(Path(args.repo))
+        or remote_tag_ref(args.remote, args.tag)
+        or remote_branch_ref(args.remote, args.branch)
+    )
     if ref is None:
         print(
             f"could not resolve container ref from {args.repo} or {args.remote} {args.branch}",

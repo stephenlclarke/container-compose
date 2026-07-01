@@ -69,7 +69,7 @@ Before it changes anything, the helper checks that worktrees are clean, push rem
 
 `container-compose` must stay on the Stephen fork surfaces while fork-backed runtime behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
 
-The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout, or from `stephenlclarke/container:main` when no sibling checkout exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce a hand-maintained pin file.
+The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout for local development, then from the published `stephenlclarke/container` `homebrew-main` tag, and finally from `stephenlclarke/container:main` only when no published package tag exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce a hand-maintained pin file.
 
 `container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. Publish and verify an immutable GHCR builder image before updating `container` to a new shim tag.
 
@@ -79,10 +79,10 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 
 | Formula | Installs |
 | --- | --- |
-| `container` | Stable fork-backed runtime. |
-| `container-compose` | Stable plugin package; depends on the matching `container` formula. |
+| `container` | Current fork-backed runtime from the moving `homebrew-main` package lane. |
+| `container-compose` | Current plugin package from the moving `homebrew-main` package lane; depends on the matching `container` formula. |
 
-Stable formulae consume validated GitHub release assets from stable tags. They do not point at `develop/VERSION` pre-release assets and do not install from tap `sources/*` submodules.
+The install formulae consume validated GitHub release assets from the moving `homebrew-main` releases. `container-compose` rebuilds its main-lane package from `main` and records the published `stephenlclarke/container` `homebrew-main` commit in package metadata, so `brew upgrade` can keep the plugin and runtime pins aligned. The `container` main-lane package workflow triggers the matching `container-compose` package workflow after it updates the runtime formula. Development pre-release assets from `develop/VERSION` are not installed by the aggregate tap, and the tap does not install from `sources/*` submodules.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 

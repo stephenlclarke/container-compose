@@ -4,14 +4,14 @@ This guide explains how to install, upgrade, verify, and uninstall the `containe
 
 ## Install Lane
 
-The aggregate Homebrew tap publishes one stable install lane:
+The aggregate Homebrew tap publishes one current stack lane:
 
 | Formula | Build type | Use when |
 | --- | --- | --- |
-| `container-compose` | release | Install this. It depends on the matched fork-backed `container` runtime. |
-| `container` | release | Installed automatically as the runtime dependency for `container-compose`. |
+| `container-compose` | main release build | Install this. It depends on the matched fork-backed `container` runtime. |
+| `container` | main release build | Installed automatically as the runtime dependency for `container-compose`. |
 
-The stable formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
+The formulae install prebuilt GitHub release assets from the moving `homebrew-main` package lane. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
 
 ## Requirements
 
@@ -97,7 +97,7 @@ container compose version --format json
 
 `container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, exact `containerization` source/ref, and pinned `container-builder-shim` image compiled into the runtime. Apple package builds do not carry the Stephen fork provenance fields.
 
-`container compose version` shows the installed plugin build, embedded `compose-go` version, and the `container` and `containerization` pins that the plugin package was built against. Stable Homebrew packages report stable release metadata from their source tag; local or development packages report their package lane and source revision.
+`container compose version` shows the installed plugin build, embedded `compose-go` version, and the `container` and `containerization` pins that the plugin package was built against. Homebrew packages report their package lane and source revision.
 
 Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, if the Homebrew install is mixed, or if the installed `container` / `containerization` refs do not match the plugin package pins, `container compose` stops with upgrade guidance instead of failing later with a stale unsupported-feature or low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae.
 

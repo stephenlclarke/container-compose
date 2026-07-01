@@ -19,6 +19,7 @@ name: Prebuilt Binaries
 on:
   push:
     branches:
+      - main
       - "develop/**"
     tags:
       - "*.*.*"
@@ -52,6 +53,17 @@ jobs:
           set -euo pipefail
           compose_version="$(sed -n 's/^COMPOSE_VERSION ?= //p' Makefile | head -n 1)"
           case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
+            branch:main)
+              release_tag="homebrew-main"
+              release_title="container-compose main lane prebuilt"
+              release_label="Main lane"
+              release_latest="false"
+              release_prerelease="true"
+              update_tap="true"
+              asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz"
+              formula_version="main-release-${GITHUB_SHA:0:12}"
+              package_lane="main"
+              ;;
             tag:*)
               if [[ ! "${GITHUB_REF_NAME}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
                 printf 'Stable release tags must be bare semver: %s\n' "${GITHUB_REF_NAME}" >&2
@@ -67,6 +79,9 @@ jobs:
               release_latest="true"
               release_prerelease="false"
               update_tap="true"
+              asset="container-compose-plugin-release-arm64.tar.gz"
+              formula_version="${compose_version}"
+              package_lane="stable"
               ;;
             branch:develop/*)
               branch_version="${GITHUB_REF_NAME#develop/}"
@@ -84,6 +99,9 @@ jobs:
               release_latest="false"
               release_prerelease="true"
               update_tap="false"
+              asset="container-compose-plugin-release-arm64.tar.gz"
+              formula_version="${compose_version}"
+              package_lane="development"
               ;;
             *)
               printf 'Unsupported release ref: %s %s\n' "${GITHUB_REF_TYPE}" "${GITHUB_REF_NAME}" >&2
@@ -99,9 +117,11 @@ jobs:
             printf 'release_latest=%s\n' "${release_latest}"
             printf 'release_prerelease=%s\n' "${release_prerelease}"
             printf 'update_tap=%s\n' "${update_tap}"
-            printf 'asset=container-compose-plugin-release-arm64.tar.gz\n'
+            printf 'asset=%s\n' "${asset}"
             printf 'formula=container-compose.rb\n'
             printf 'formula_class=ContainerCompose\n'
+            printf 'formula_version=%s\n' "${formula_version}"
+            printf 'package_lane=%s\n' "${package_lane}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Resolve container ref
@@ -162,7 +182,7 @@ jobs:
         env:
           CONTAINER_COMPOSE_BRANCH: ${{ github.ref_name }}
           CONTAINER_COMPOSE_COMMIT: ${{ github.sha }}
-          CONTAINER_COMPOSE_LANE: ${{ github.ref_type == 'tag' && 'stable' || 'development' }}
+          CONTAINER_COMPOSE_LANE: ${{ steps.lane.outputs.package_lane }}
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
@@ -242,6 +262,8 @@ jobs:
             fi
             if [[ "${RELEASE_LATEST}" == "true" ]]; then
               edit_args+=(--latest)
+            else
+              edit_args+=(--latest=false)
             fi
             "${edit_args[@]}"
           fi
@@ -278,6 +300,7 @@ jobs:
         if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
         env:
           ASSET: ${{ steps.lane.outputs.asset }}
+          FORMULA_VERSION: ${{ steps.lane.outputs.formula_version }}
           RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
           VERSION: ${{ steps.lane.outputs.compose_version }}
         shell: bash
@@ -292,10 +315,10 @@ jobs:
             --template "homebrew-tap/Formula/container-compose.rb" \
             --formula-class ContainerCompose \
             --url "$url" \
-            --version "$VERSION" \
+            --version "$FORMULA_VERSION" \
             --plugin-version "$VERSION" \
             --asset "$ASSET" \
-            --label "stable release" \
+            --label "${{ steps.lane.outputs.release_label }}" \
             --sha256 "$sha256"
           ruby -c homebrew-tap/Formula/container-compose.rb
           git -C homebrew-tap diff -- Formula/container-compose.rb

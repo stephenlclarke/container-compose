@@ -65,6 +65,36 @@ class ContainerRefResolutionTests(unittest.TestCase):
                     str(remote),
                     "--branch",
                     "main",
+                    "--tag",
+                    "missing-tag",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.stdout.strip(), expected)
+
+    def test_prefers_remote_homebrew_tag_before_remote_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            remote = Path(directory) / "container"
+            self.init_repo(remote)
+            expected = self.git(remote, "rev-parse", "HEAD")
+            self.git(remote, "tag", "--no-sign", "homebrew-main")
+            (remote / "README.md").write_text("# test\n\nupdated\n", encoding="utf-8")
+            self.git(remote, "add", "README.md")
+            self.git(remote, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "test update")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("resolve-container-ref.py")),
+                    "--repo",
+                    str(Path(directory) / "missing-checkout"),
+                    "--remote",
+                    str(remote),
+                    "--branch",
+                    "main",
                 ],
                 check=True,
                 capture_output=True,
