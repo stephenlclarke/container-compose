@@ -374,7 +374,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t style_paths < "${RUNNER_TEMP}/swift-style-paths.txt"
+          style_paths=()
+          while IFS= read -r path; do
+            style_paths+=("$path")
+          done < "${RUNNER_TEMP}/swift-style-paths.txt"
           swiftlint lint --strict --quiet "${style_paths[@]}"
 
       - name: Run SwiftFormat lint
@@ -382,5 +385,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t style_paths < "${RUNNER_TEMP}/swift-style-paths.txt"
+          style_paths=()
+          while IFS= read -r path; do
+            style_paths+=("$path")
+          done < "${RUNNER_TEMP}/swift-style-paths.txt"
           swiftformat "${style_paths[@]}" --lint --swift-version 6.2
