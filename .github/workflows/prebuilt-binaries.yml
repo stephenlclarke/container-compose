@@ -123,7 +123,18 @@ jobs:
         with:
           repository: stephenlclarke/container
           path: container
-          ref: ${{ steps.container-ref.outputs.ref }}
+          ref: main
+
+      - name: Verify container dependency ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C container rev-parse HEAD)"
+          expected="${{ steps.container-ref.outputs.ref }}"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'container checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
+            exit 1
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v6
