@@ -46,7 +46,7 @@ References:
 - Required the referenced external container to have exactly one attachment on the source service's runtime network.
 - Generated `ALIAS=IP` transient host entries, letting the existing `extra_hosts` projection currently produce `--add-host ALIAS:IP` through the command-vector bridge.
 - Kept multi-network, missing-container, and no-shared-network cases as clear pre-side-effect errors.
-- Updated `PLAN.md` and `STATUS.md`.
+- Updated `STATUS.md` and relevant project docs.
 
 ## Docker Compose Compatibility Notes
 
@@ -82,7 +82,7 @@ git diff --check
 ## container-compose Checks
 
 - [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
-- [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
+- [x] I updated `STATUS.md` or relevant upstream docs for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.
 - [x] I signed my commits with a GitHub-supported signature method.

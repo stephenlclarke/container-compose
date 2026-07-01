@@ -71,7 +71,7 @@ Results: passed locally on 2026-06-22. The focused Swift run executed 5 tests. T
 ## container-compose Checks
 
 - [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
-- [x] I updated `PLAN.md` for newly discovered gaps, or no update is needed.
+- [x] I updated `STATUS.md` or relevant upstream docs for newly discovered gaps, or no update is needed.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.
 - [x] I signed my commits with a GitHub-supported signature method.

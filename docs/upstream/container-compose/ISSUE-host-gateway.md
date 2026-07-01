@@ -58,4 +58,4 @@ Expected runtime behavior on the fork-backed integration branch:
 
 - [x] I agree to follow this project's Code of Conduct.
 - [x] I checked `STATUS.md`.
-- [x] I checked `PLAN.md`.
+- [x] I checked `STATUS.md` and relevant upstream docs.

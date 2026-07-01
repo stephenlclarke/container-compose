@@ -112,7 +112,8 @@ This boundary keeps Compose compatibility work honest:
   API, `container-compose` should map it directly where possible.
 - If `compose-go` accepts a surface but apple/container lacks the primitive,
   `container-compose` should reject it clearly and track the missing primitive
-  in [PLAN.md](PLAN.md) as future apple/container upstream work.
+  in [STATUS.md](STATUS.md) or the relevant `docs/upstream/` handoff as future
+  apple/container upstream work.
 - If apple/container has the primitive but this plugin has not mapped it yet,
   the gap belongs in this repository's backlog.
 

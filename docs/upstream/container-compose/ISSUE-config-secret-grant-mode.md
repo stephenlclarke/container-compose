@@ -87,10 +87,10 @@ Expected runtime behavior:
 - Docker Compose service secrets: [services.secrets](https://docs.docker.com/reference/compose-file/services/#secrets)
 - Related materialization issue: `ISSUE-config-secret-materialization.md`
 - Related compatibility docs: `STATUS.md`
-- Related plan docs: `PLAN.md`
+- Related planning docs: `STATUS.md` and relevant upstream docs
 
 ## Code Of Conduct And Documentation
 
 - [x] I agree to follow this project's Code of Conduct.
 - [x] I checked `STATUS.md`.
-- [x] I checked `PLAN.md`.
+- [x] I checked `STATUS.md` and relevant upstream docs.

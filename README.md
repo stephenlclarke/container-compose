@@ -111,8 +111,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [BRANCHES.md](BRANCHES.md): understand `main`, short-lived development branches, semantic tags, release assets, and Homebrew lane policy.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
-- [PLAN.md](PLAN.md): review the current roadmap and Apple-facing slice order.
-- [STATUS.md](STATUS.md): get the current dependency pins, blockers, and validation handoff.
+- [STATUS.md](STATUS.md): get the current dependency pins, blockers, active gaps, and validation handoff.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
 - [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md): review local Docker Compose CLI surface parity and documented differences.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.

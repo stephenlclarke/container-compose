@@ -66,4 +66,4 @@ This is the current command-vector bridge output; typed execution should pass `C
 
 - [x] I agree to follow this project's Code of Conduct.
 - [x] I checked `STATUS.md`.
-- [x] I checked `PLAN.md`.
+- [x] I checked `STATUS.md` and relevant upstream docs.

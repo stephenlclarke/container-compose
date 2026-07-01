@@ -90,7 +90,7 @@ Before release promotion, run the broader local gate:
 make check
 make coverage-check
 make cli-smoke-built
-npx --yes markdownlint-cli2 README.md BUILD.md PLAN.md STATUS.md docs/parity/compose-cli-surface.md docs/upstream/apple-containerization/ISSUE-host-pid-namespace.md docs/upstream/apple-containerization/PR-host-pid-namespace.md docs/upstream/apple-container/ISSUE-host-pid-namespace.md docs/upstream/apple-container/PR-host-pid-namespace.md docs/upstream/apple-container/ISSUE-host-network-mode.md docs/upstream/apple-container/PR-host-network-mode.md docs/upstream/container-compose/ISSUE-host-namespace-modes.md docs/upstream/container-compose/PR-host-namespace-modes.md
+npx --yes markdownlint-cli2 README.md BUILD.md STATUS.md docs/parity/compose-cli-surface.md docs/upstream/apple-containerization/ISSUE-host-pid-namespace.md docs/upstream/apple-containerization/PR-host-pid-namespace.md docs/upstream/apple-container/ISSUE-host-pid-namespace.md docs/upstream/apple-container/PR-host-pid-namespace.md docs/upstream/apple-container/ISSUE-host-network-mode.md docs/upstream/apple-container/PR-host-network-mode.md docs/upstream/container-compose/ISSUE-host-namespace-modes.md docs/upstream/container-compose/PR-host-namespace-modes.md
 ```
 
 ## Follow-Ups

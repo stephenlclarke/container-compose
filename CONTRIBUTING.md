@@ -91,8 +91,8 @@ Keep every contribution easy for apple/container maintainers to assess:
 - Preserve the Swift orchestration and Go `compose-go` normalization boundary
   described in [DESIGN.md](DESIGN.md).
 - Keep unsupported Compose surfaces explicit in [STATUS.md](STATUS.md)
-  and [PLAN.md](PLAN.md), separating plugin gaps from apple/container runtime
-  primitive gaps.
+  or the relevant `docs/upstream/` handoff, separating plugin gaps from
+  apple/container runtime primitive gaps.
 - Follow the Apache License, Version 2.0, and keep license headers current with
   `make update-licenses`.
 - Use `make fmt`, `make check`, and `make pre-commit` so formatting and license

@@ -38,7 +38,7 @@ References:
 - Added validation for empty names and names containing `=`, because the runtime CLI syntax uses `name=value`.
 - Added `up` and one-off `run` command mapping tests.
 - Added an invalid-name regression test.
-- Updated `STATUS.md` and `STATUS.md`.
+- Updated `STATUS.md`.
 
 ## Docker Compose Compatibility Notes
 

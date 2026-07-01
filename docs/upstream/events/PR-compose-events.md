@@ -125,7 +125,7 @@ This optional parity target is not run by CI and should stay out of Apple-facing
 ## container-compose Checks
 
 - [x] I updated `STATUS.md` for runtime primitive changes, or no update is needed.
-- [x] I updated `PLAN.md` for the active slab.
+- [x] I updated `STATUS.md` or relevant upstream docs for the active slab.
 - [x] I updated `STATUS.md`.
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I recorded source/reference issues and PRs, including why they were or were not used as a base.
