@@ -265,6 +265,19 @@ jobs:
             "${RUNNER_TEMP}/${ASSET}.sha256" \
             --clobber
 
+      - name: Prune older release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          python3 Tools/release/prune-release-assets.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --current-tag "${RELEASE_TAG}" \
+            --execute
+
       - name: Check Homebrew tap token
         if: steps.lane.outputs.update_tap == 'true'
         id: tap-token

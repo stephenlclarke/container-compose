@@ -59,6 +59,11 @@ class ReleaseNotesTests(unittest.TestCase):
             )
 
             self.assertIn("Commits since `homebrew-main`", notes)
+            self.assertIn("## Homebrew Formula", notes)
+            self.assertIn("## Promotion", notes)
+            self.assertIn("## Asset Retention", notes)
+            self.assertIn("`homebrew-main` pre-release also updates the tap", notes)
+            self.assertIn("A pre-release is not renamed into a stable release.", notes)
             self.assertIn("feat(mounts): support bind propagation", notes)
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
