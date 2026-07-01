@@ -22,7 +22,7 @@ The stable formulae install prebuilt GitHub release assets. They do not build Sw
 
 ## Install The Matched Stack
 
-Most users will already have Apple's signed `container` package installed. Run this block to stop that runtime, remove Apple's package while keeping user data, install the matched Homebrew `container` and `container-compose` formulae, then start the Homebrew service:
+Most users will already have Apple's signed `container` package installed. First, stop that runtime and remove Apple's package while keeping user data:
 
 ```sh
 if command -v container >/dev/null 2>&1; then
@@ -32,7 +32,13 @@ fi
 if [ -x /usr/local/bin/uninstall-container.sh ]; then
   sudo /usr/local/bin/uninstall-container.sh -k
 fi
+```
 
+If this is a first-time install and Apple's `container` package is not already installed, both commands above safely do nothing.
+
+Then install the matched Homebrew `container` and `container-compose` formulae, refresh the plugin registration, and start the Homebrew service:
+
+```sh
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 brew update
