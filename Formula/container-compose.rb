@@ -10,8 +10,6 @@ class ContainerCompose < Formula
   depends_on macos: :sequoia
   depends_on "stephenlclarke/tap/container"
 
-  conflicts_with "container-compose-pre", because: "both formulae install the container-compose command and compose plugin"
-
   def install
     plugin = libexec/"container-plugins/compose"
     payload = (buildpath/"compose").directory? ? Dir["compose/*"] : Dir["*"]

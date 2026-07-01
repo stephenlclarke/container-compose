@@ -66,8 +66,6 @@ end
                     str(template),
                     "--formula-class",
                     "ContainerComposeReleaseV010",
-                    "--conflicts-with",
-                    "container-compose",
                     "--url",
                     "https://example.invalid/new.tar.gz",
                     "--version",
@@ -93,8 +91,6 @@ class ContainerComposeReleaseV010 < Formula
   version "release-v0.1.0-release-abcdef123456"
 
   depends_on "stephenlclarke/tap/container"
-
-  conflicts_with "container-compose", because: "both formulae install the container-compose command and compose plugin"
 
   def caveats
     <<~EOS

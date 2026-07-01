@@ -29,7 +29,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--formula", required=True, type=Path)
     parser.add_argument("--template", type=Path)
     parser.add_argument("--formula-class")
-    parser.add_argument("--conflicts-with")
     parser.add_argument("--url", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--plugin-version")
@@ -46,32 +45,6 @@ def replace_once(pattern: str, replacement: str, text: str) -> str:
     return updated
 
 
-def update_conflict(formula_name: str | None, text: str) -> str:
-    conflict_pattern = r'^  conflicts_with "[^"]+", because: ".+"$'
-    conflict_line = (
-        f'  conflicts_with "{formula_name}", because: '
-        '"both formulae install the container-compose command and compose plugin"'
-    )
-    if formula_name is None:
-        return text
-
-    updated, count = re.subn(conflict_pattern, conflict_line, text, count=1, flags=re.MULTILINE)
-    if count == 1:
-        return updated
-
-    dependency_pattern = r'(^  depends_on "stephenlclarke/tap/container"$)'
-    updated, count = re.subn(
-        dependency_pattern,
-        rf"\1\n\n{conflict_line}",
-        text,
-        count=1,
-        flags=re.MULTILINE,
-    )
-    if count != 1:
-        raise SystemExit("expected container dependency before conflict insertion")
-    return updated
-
-
 def main() -> None:
     args = parse_args()
     if args.formula.exists():
@@ -83,7 +56,6 @@ def main() -> None:
 
     if args.formula_class is not None:
         text = replace_once(r"^class \w+ < Formula$", f"class {args.formula_class} < Formula", text)
-    text = update_conflict(args.conflicts_with, text)
 
     text = replace_once(r'^  url ".+"$', f'  url "{args.url}"', text)
     text = replace_once(r"^  sha256 .+$", f'  sha256 "{args.sha256}"', text)
