@@ -15,9 +15,9 @@ services:
     labels:
       - logging=promtail
     volumes:
-      - /opt/bitbucket-runners/nginx/conf.d:/etc/nginx/conf.d:ro
-      - /opt/bitbucket-runners/nginx/certs:/etc/nginx/certs:ro
-      - /opt/bitbucket-runners/nginx/html:/usr/share/nginx/html:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [monitoring]
     restart: unless-stopped
@@ -26,7 +26,7 @@ services:
     image: grafana/alloy:v1.9.2
     container_name: promtail
     environment:
-      - HOST_LABEL=${HOSTNAME:-ULTUK2M30000}
+      - HOST_LABEL=${MONITORING_HOSTNAME:-example-host}
     command:
       - run
       - --stability.level=public-preview
@@ -35,6 +35,7 @@ services:
       - /etc/alloy/config.alloy
     volumes:
       - ./promtail/alloy-config.alloy:/etc/alloy/config.alloy:ro
+      # Host observability mounts are intentionally host-specific and not portable.
       - /var/lib/docker:/var/lib/docker:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - promtail_positions:/var/lib/promtail
@@ -55,6 +56,7 @@ services:
     ports:
       - "9105:8080"
     volumes:
+      # Host observability mounts are intentionally host-specific and not portable.
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
@@ -77,6 +79,7 @@ services:
     labels:
       - logging=promtail
     volumes:
+      # Host observability mounts are intentionally host-specific and not portable.
       - /:/host/root:ro,rslave
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -104,7 +107,7 @@ services:
       - --config.file=/etc/alertmanager/alertmanager.yaml
       - --storage.path=/alertmanager
       - --web.route-prefix=/alertmanager
-      - --web.external-url=http://10.125.220.59/alertmanager
+      - --web.external-url=http://${MONITORING_HOST:-localhost}/alertmanager
     labels:
       - logging=promtail
     volumes:
@@ -124,7 +127,7 @@ services:
       - --web.enable-remote-write-receiver
       - --web.enable-admin-api
       - --web.route-prefix=/prometheus
-      - --web.external-url=http://10.125.220.59/prometheus
+      - --web.external-url=http://${MONITORING_HOST:-localhost}/prometheus
     labels:
       - logging=promtail
     volumes:
@@ -154,10 +157,10 @@ services:
     container_name: grafana
     environment:
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
-      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
-      GF_SERVER_ROOT_URL: "http://10.125.220.59/grafana/"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}"
+      GF_SERVER_ROOT_URL: "http://${MONITORING_HOST:-localhost}/grafana/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
-      GF_SERVER_DOMAIN: "ULTUK2M30000"
+      GF_SERVER_DOMAIN: "${MONITORING_HOSTNAME:-example-host}"
       GF_SERVER_ENFORCE_DOMAIN: "false"
     labels:
       - logging=promtail
