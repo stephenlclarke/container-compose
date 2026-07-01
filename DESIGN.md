@@ -272,8 +272,8 @@ CLI compatibility paths currently include:
   adapter is available in this repo yet.
 - Create/run flags that are supported by apple/container but not yet represented
   by a focused direct adapter in this repo, including service no-network mode,
-  explicit host-published ports, network MAC/MTU options, and long-form tmpfs
-  size/mode options.
+  explicit host-published ports, network MAC/MTU options, bind propagation
+  options, and long-form tmpfs size/mode options.
 - Dynamic host-port allocation, where `container-compose` allocates ephemeral
   host ports first and then passes explicit `--publish <host>:<target>`
   bindings to apple/container.
@@ -302,11 +302,12 @@ which source, lane, branch, commit, build type, `container` pin, and
 
 Local development builds fall back to the active git checkout and
 `Package.resolved` when packaged metadata is absent. This keeps source builds
-usable while still making Homebrew-installed release-quality branch artifacts
-traceable. Use `container system version` beside `container compose version` to
-compare the running `container` runtime and API service against the plugin's
-compiled expectations, especially when testing Stephen fork builds against
-Apple upstream packages.
+usable while still making Homebrew-installed packages traceable across the
+moving `homebrew-main` lane, development pre-releases, and stable source tags.
+Use `container system version` beside `container compose version` to compare the
+running `container` runtime and API service against the plugin's compiled
+expectations, especially when testing Stephen fork builds against Apple upstream
+packages.
 
 ## Orchestration Model
 

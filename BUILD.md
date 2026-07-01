@@ -150,6 +150,7 @@ GitHub Actions keeps the expensive and security-oriented checks in separate work
 | Workflow | Trigger | Coverage |
 | --- | --- | --- |
 | `CI / Validate` | Pushes to `main` and `develop/*`, PRs to `main`, semantic release tags, and manual runs | Runs `make ci` on `main` and PRs, including Swift Testing/XCTest through SwiftPM, Go tests, Markdown linting, Hawkeye license-header validation, coverage gates, and the CLI smoke test. Stable tag validation also builds a release plugin artifact so the package layout stays covered. |
+| `Prebuilt Binaries / Package` | Pushes to `main`, `develop/*`, semantic release tags, and manual runs | Runs release validation, builds the plugin archive, publishes the matching GitHub release asset, and updates `stephenlclarke/homebrew-tap` for installable lanes. The `main` branch publishes the moving `homebrew-main` package consumed by [INSTALL.md](INSTALL.md); `develop/VERSION` publishes `VERSION-pre` without updating the aggregate tap; semantic tags publish stable assets. |
 | `Quality / Swift ASan` | Pushes to `main`, every PR, and manual runs | Resolves the current `stephenlclarke/container:main` commit, checks out that exact dependency revision, then runs `swift test --disable-automatic-resolution --sanitize=address`. |
 | `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Resolves the current `stephenlclarke/container:main` commit, checks out that exact dependency revision, then runs `swift test --disable-automatic-resolution --sanitize=thread`. |
 | `Quality / SwiftLint/SwiftFormat Advisory` | Pushes to `main`, every PR, and manual runs | Runs `swiftlint lint --strict --quiet Package.swift Sources Tests` and `swiftformat Package.swift Sources Tests --lint --swift-version 6.2`. These checks are advisory until a repo-owned SwiftLint and SwiftFormat baseline/configuration lands, because the current default tools report existing repository-wide style drift. |
@@ -246,6 +247,14 @@ make docker-compose-bind-create-host-path-parity
 ```
 
 This compares Docker Compose V2 and `container-compose` for default bind mounts and explicit `bind.create_host_path: false`. Docker Compose preserves the explicit false policy in `config --format json`, accepts the default bind policy, and rejects a missing source when host-path creation is disabled; `container-compose` mirrors that CLI behavior and creates missing bind source directories itself before Apple runtime handoff when the policy is true or defaulted. The target is not used by `make ci` because Apple-facing CI must not require Docker or Docker Compose.
+
+For the local-only bind propagation parity check, run:
+
+```sh
+make docker-compose-bind-propagation-parity
+```
+
+This compares Docker Compose V2 and `container-compose` for long-form service `bind.propagation`. Docker Compose preserves `bind.propagation` and read-only bind metadata in `config --format json`; `container-compose` preserves the same normalized surface and verifies `--dry-run up --no-start` renders the changed Apple runtime argument as a short `--volume ...:ro,rslave` mount option. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
 
 For the local-only service volume-label parity check, run:
 
@@ -385,7 +394,7 @@ dist/compose/resources/build-info.json
 dist/compose/resources/compose-normalizer
 ```
 
-GitHub Actions uses the same package layout for published assets. Branch, tag, pre-release, and Homebrew formula policy lives in [BRANCHES.md](BRANCHES.md); target-machine installation lives in [INSTALL.md](INSTALL.md).
+GitHub Actions uses the same package layout for published assets. Branch, tag, pre-release, release-helper, and Homebrew formula policy lives in [BRANCHES.md](BRANCHES.md); target-machine installation lives in [INSTALL.md](INSTALL.md).
 
 Plugin archives include `compose/resources/build-info.json`. The `compose version` command reads that file and reports the package lane, branch, commit, build type, the resolved `container` dependency commit, `containerization` pin from `Package.resolved`, and embedded `compose-go` module version from the Go normalizer. Local development builds fall back to the current git checkout and sibling `../container` checkout when the packaged metadata file is absent.
 

@@ -1,12 +1,12 @@
 # Status
 
-Last updated: 2026-07-01 09:27 BST.
+Last updated: 2026-07-01.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
 ## Current State
 
-`main` is the releasable integration lane. New work should happen on short-lived `develop/VERSION` branches, then be squashed back to `main`. Stable Homebrew formulae consume prebuilt release-quality assets from bare semantic source tags; development slices publish pre-release assets only. Keep branch policy and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
+`main` is the current releasable integration and Homebrew main-lane source. Normal work lands on `main`; the moving `homebrew-main` package lane publishes installable `container` and `container-compose` builds from that state. Use short-lived `develop/VERSION` branches only for versioned development slices, then squash them back to `main` and delete them. Keep branch policy, `CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
 
 ## Current Integration Assumption
 
@@ -18,17 +18,17 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed main-lane pins:
 
-- `stephenlclarke/container`: `d85c597bea2a2291ac97898fd05d0c6fa4f8f437`
+- `stephenlclarke/container`: `83dc1d504caabafd91d85cc38c42f0e100836c12`
 - `stephenlclarke/containerization`: `149a1f5dc9a6d42bef2224cca54bd341bcdd5c6d`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with upstream issue/PR/discussion review for service `devices`, focused `containerization`, `container`, and `container-compose` Swift tests, `bash -n Tools/parity/check-compose-devices.sh`, `shellcheck Tools/parity/check-compose-devices.sh`, Markdown lint for all current `container-compose` docs, `make docker-compose-devices-parity`, `git diff --check`, and `make coverage-check` (Swift 89.13%, Go 92.52%). This slice adds Docker Compose service `devices` support for supported Linux VM device paths such as `/dev/null` and `/dev/zero` and promotes the plugin version to `0.6.0`.
+The latest local validation for this `container-compose` slice passed with `make ci`, focused release-helper unit tests, workflow YAML parsing, Homebrew formula-version ordering checks, `git diff --check`, and a local Homebrew upgrade/install verification of the matched `container` / `container-compose` main-lane stack.
 
 Most recent coverage proof:
 
-- Swift: 832 Compose tests at 89.13% line coverage.
+- Swift: 834 Compose tests at 89.03% line coverage.
 - Go normalizer: 92.52% line coverage.
 
 ## Recent Functional State
@@ -37,7 +37,7 @@ Most recent coverage proof:
 - Build and image behavior: Compose `dockerfile` paths resolve relative to build context, list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, file/env-backed `build.secrets` map to BuildKit secret IDs while Docker Compose-compatible `uid`/`gid`/`mode` metadata is accepted and ignored for build execution, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `isolation`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit-compatible build model, and explicit false attestation forms remain no-op opt-outs.
 - Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --menu`, command-level `up --menu --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
 - Deploy metadata: Docker Compose-compatible `deploy.endpoint_mode` and CPU/memory Deploy reservations are accepted as local metadata, while Swarm-only deploy modes, start-first update ordering, pids/device/generic reservations, and unmapped Deploy resource limits remain blocked by Apple runtime semantics and fail before side effects.
-- Mount behavior: bind mounts preserve Docker Compose `bind.create_host_path` policy; missing sources are rejected before side effects when the policy is false, while default or true bind sources are created as host directories before Apple runtime create/run handoff. Service long-form `volume.labels` are preserved in config; anonymous volume labels are applied to deterministic runtime volumes before create/run handoff, and named service mount labels remain metadata because Docker Compose keeps named resource labels under top-level `volumes.<name>.labels`. Runtime-inherited `volumes_from` mounts from external containers pass through without host-path preparation.
+- Mount behavior: bind mounts preserve Docker Compose `bind.create_host_path` policy; missing sources are rejected before side effects when the policy is false, while default or true bind sources are created as host directories before Apple runtime create/run handoff. Bind `propagation` values are passed as runtime mount options. Service long-form `volume.labels` are preserved in config; anonymous volume labels are applied to deterministic runtime volumes before create/run handoff, and named service mount labels remain metadata because Docker Compose keeps named resource labels under top-level `volumes.<name>.labels`. Runtime-inherited `volumes_from` mounts from external containers pass through without host-path preparation.
 - Namespace modes: `network_mode: none` and `pid: host` are accepted for service containers and one-off `run`. `network_mode: host` maps to the Stephen fork-backed `container --network host` runtime path without attaching the Compose project network. Service/container namespace-sharing forms remain blocked pending a Docker-compatible runtime namespace-join primitive.
 - Network resources: top-level `networks.<name>.driver_opts` are preserved in normalized config and passed to Apple network creation through plugin-specific options. Service network attachment `driver_opts` support remains limited to Docker-compatible MTU keys because Apple attachment options expose MTU but not arbitrary endpoint driver options.
 - Device controls: service `device_cgroup_rules` is accepted for service containers and one-off `run`, validated before side effects, and mapped to the Stephen fork-backed `container --device-cgroup-rule` runtime path. Service `devices` is accepted for supported Linux VM device paths and mapped to the Stephen fork-backed `container --device` runtime path. GPU requests and arbitrary macOS hardware passthrough remain blocked pending Docker-compatible passthrough primitives.
@@ -45,6 +45,7 @@ Most recent coverage proof:
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
 - Packaging and quality: CodeQL gates the release-built Go normalizer path, Swift CodeQL remains blocked by fork-backed dependency rebuild timeouts, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
+- Main-lane packaging: `container` publishes the moving `homebrew-main` runtime package and triggers the matching `container-compose` package workflow after the tap formula moves. `container-compose` records the published runtime commit in package metadata and publishes an upgradeable `COMPOSE_VERSION-main.GITHUB_RUN_NUMBER.SHORT_SHA` Homebrew formula version so `brew upgrade` keeps the installed stack aligned.
 
 ## Current Limits
 

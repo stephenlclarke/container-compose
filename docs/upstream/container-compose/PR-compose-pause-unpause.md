@@ -33,7 +33,7 @@ References:
 - Added `ComposeOrchestrator.pause(project:services:)` and `ComposeOrchestrator.unpause(project:services:)`.
 - Changed the plugin `Pause` and `Unpause` commands from unsupported placeholders to async project commands.
 - Preserved dry-run behavior with Compose-owned direct runtime markers, `compose-runtime pause <id>` and `compose-runtime unpause <id>`, instead of depending on Apple CLI command shapes.
-- Updated compatibility documentation and PLAN tracking to describe fork-backed support and upstream gating.
+- Updated compatibility documentation, status, and branch policy tracking to describe fork-backed support and upstream gating.
 - Updated `Package.resolved` to pin `containerization` to the same fork revision used by the matching `container` branch.
 
 ## Testing

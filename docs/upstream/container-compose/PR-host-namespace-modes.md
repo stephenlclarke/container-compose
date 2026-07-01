@@ -26,8 +26,8 @@ Docker Compose accepts both host and sharing namespace modes. The Stephen fork-b
 - Added `runtimePIDArgument(service:)`, accepting only `host` and rendering `--pid host`.
 - Added focused unit coverage for `up` and one-off `run` positive/negative paths.
 - Added `Tools/parity/check-compose-host-namespaces.sh` and `make docker-compose-host-namespaces-parity`.
-- Updated README, BUILD, STATUS, PLAN, parity docs, and upstream handoff drafts.
-- Refreshed `Package.resolved` and `APPLE_CONTAINER_REF` to the matching Stephen fork commits.
+- Updated README, BUILD, STATUS, BRANCHES, parity docs, and upstream handoff drafts.
+- Refreshed `Package.resolved` and verified the automatic container dependency resolver selected the matching Stephen fork commits.
 
 ## Docker Compose Parity
 

@@ -40,6 +40,12 @@ Compose compatibility gap. Use [SUPPORT.md](SUPPORT.md) for usage questions,
 security routing, and deciding whether a report belongs in an issue or a
 discussion.
 
+## Maintainer Development Cycle
+
+For Stephen-owned stack work, keep `main` as the current integration branch in `container-builder-shim`, `containerization`, `container`, and `container-compose`. Start a short-lived branch only when it makes review or version slicing clearer. When a non-main branch has been squashed or merged back to `main`, delete it locally and remotely unless it is still needed for an open review.
+
+Most work does not need the release helper. Use `CONTAINER_STACK_RELEASE.sh` only at a version boundary: `plan` to inspect clean four-repo state, `tag-current --execute` to mark the current `main` state as a stable source tag, and `start-dev VERSION_SELECTOR --execute` to open the next `develop/VERSION` slice. The moving `homebrew-main` package lane is handled by GitHub Actions after `main` changes land.
+
 apple/container uses squash-and-merge for upstream pull requests, so make the
 pull request title and body clear enough to stand alone as the final change
 description. Use imperative wording, describe what changed, and include the

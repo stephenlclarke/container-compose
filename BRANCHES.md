@@ -30,13 +30,17 @@ Do not create new long-lived `release`, `release-*`, `snapshot/*`, compatibility
 
 ## Version And Release Rhythm
 
-`main` contains the version that will become the next stable release. A development slice increments the version on `develop/VERSION`, publishes pre-release assets only, then lands back on `main` before the stable tag is created.
+`main` is the current integration and package lane. Normal work lands on `main`; the main-lane prebuilt workflow then publishes the moving `homebrew-main` package used by the install guide.
+
+When a formal version boundary is needed, `main` contains the version that will become the next stable source tag. A development slice increments the version on `develop/VERSION`, publishes pre-release assets only, then lands back on `main` before the stable tag is created.
 
 Use bare semantic source tags such as `0.5.1`, matching Apple repository conventions. Do not create new `v0.5.1` tags. Development pre-release assets use `VERSION-pre`, for example `0.5.2-pre`, so the later stable `0.5.2` tag remains available and immutable.
 
 ## Release Helper
 
-Run releases from the `container-compose` checkout:
+`CONTAINER_STACK_RELEASE.sh` is a maintainer helper for release boundaries and versioned development slices. It is not required for ordinary edits on `main`, and it does not replace the automated `homebrew-main` package lane.
+
+Run it from the `container-compose` checkout:
 
 ```sh
 ./CONTAINER_STACK_RELEASE.sh plan
@@ -65,6 +69,13 @@ Common flows:
 
 Before it changes anything, the helper checks that worktrees are clean, push remotes are Stephen-owned, and Apple remotes are not writable release targets.
 
+Use it in this order:
+
+1. Finish and validate work on `main`.
+2. Let the main-lane prebuilt workflows update the moving Homebrew packages.
+3. Run `tag-current --execute` only when the current `main` state should become an immutable stable source tag.
+4. Run `start-dev VERSION_SELECTOR --execute` only when opening the next short-lived `develop/VERSION` slice.
+
 ## Dependency Pins
 
 `container-compose` must stay on the Stephen fork surfaces while fork-backed runtime behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
@@ -82,7 +93,7 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 | `container` | Current fork-backed runtime from the moving `homebrew-main` package lane. |
 | `container-compose` | Current plugin package from the moving `homebrew-main` package lane; depends on the matching `container` formula. |
 
-The install formulae consume validated GitHub release assets from the moving `homebrew-main` releases. `container-compose` rebuilds its main-lane package from `main` and records the published `stephenlclarke/container` `homebrew-main` commit in package metadata, so `brew upgrade` can keep the plugin and runtime pins aligned. The `container` main-lane package workflow triggers the matching `container-compose` package workflow after it updates the runtime formula. Development pre-release assets from `develop/VERSION` are not installed by the aggregate tap, and the tap does not install from `sources/*` submodules.
+The install formulae consume validated GitHub release assets from the moving `homebrew-main` releases. `container-compose` rebuilds its main-lane package from `main` and records the published `stephenlclarke/container` `homebrew-main` commit in package metadata, so `brew upgrade` can keep the plugin and runtime pins aligned. The `container` main-lane package workflow triggers the matching `container-compose` package workflow after it updates the runtime formula. `container-compose` formula versions use `COMPOSE_VERSION-main.GITHUB_RUN_NUMBER.SHORT_SHA` so Homebrew sees each main-lane package as an upgrade from older stable or main-lane installs. Development pre-release assets from `develop/VERSION` are not installed by the aggregate tap, and the tap does not install from `sources/*` submodules.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 

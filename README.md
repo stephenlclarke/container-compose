@@ -50,9 +50,10 @@ Current detailed gap examples:
 - Supported service mount coverage includes named volumes, bind mounts,
   anonymous volumes, tmpfs mounts, long-form tmpfs options, `volumes_from`,
   Docker-compatible bind `create_host_path` handling, and long-form
-  `volume.labels` preservation. Anonymous `volume.labels` are applied to the
-  created runtime volume; named service mount labels remain config metadata,
-  matching Docker Compose.
+  `volume.labels` preservation. Bind `propagation` values are preserved as
+  runtime mount options. Anonymous `volume.labels` are applied to the created
+  runtime volume; named service mount labels remain config metadata, matching
+  Docker Compose.
 - Supported namespace-mode coverage includes `network_mode: none` and
   `pid: host`. `network_mode: host` maps to the Stephen fork-backed
   `container --network host` runtime path while avoiding Compose project network
@@ -97,7 +98,7 @@ The supported preview install is a matched Stephen fork-backed stack:
 - [`containerization`](https://github.com/stephenlclarke/containerization): the Swift runtime package pinned by the stack.
 - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the BuildKit bridge image pinned by `container`.
 
-Install and upgrade commands live in [INSTALL.md](INSTALL.md). Branch, tag, release, and Homebrew lane policy lives in [BRANCHES.md](BRANCHES.md).
+Install and upgrade commands live in [INSTALL.md](INSTALL.md). Branch, tag, release-helper, and Homebrew lane policy lives in [BRANCHES.md](BRANCHES.md).
 
 ## Plugin Recognition
 
@@ -108,7 +109,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BRANCHES.md](BRANCHES.md): understand `main`, short-lived development branches, semantic tags, release assets, and Homebrew lane policy.
+- [BRANCHES.md](BRANCHES.md): understand `main`, short-lived development branches, semantic tags, `CONTAINER_STACK_RELEASE.sh`, release assets, and Homebrew lane policy.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](STATUS.md): get the current dependency pins, blockers, active gaps, and validation handoff.

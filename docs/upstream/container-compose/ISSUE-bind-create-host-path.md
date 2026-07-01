@@ -44,4 +44,4 @@ This does not require a new Apple runtime primitive. The plugin can preserve com
 - `container compose config --format json` preserves the normalized bind `create_host_path` policy for orchestration.
 - `container compose up`, `create`, and `run` reject missing bind sources when `bind.create_host_path: false`.
 - Default or true `bind.create_host_path` bind sources are created as host directories before Apple runtime create/run handoff.
-- Advanced bind options such as propagation, recursive mode, and SELinux labels remain separate Apple runtime gaps.
+- Advanced bind options such as recursive mode and SELinux labels remain separate Apple runtime gaps.

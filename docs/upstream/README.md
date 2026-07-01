@@ -47,8 +47,8 @@ Refreshed on 2026-06-23.
 Use these to confirm handoff docs have not drifted back into sibling forks:
 
 ```sh
-find /Users/sclarke/github/container -path /Users/sclarke/github/container/.build -prune -o -path /Users/sclarke/github/container/.git -prune -o \( -name 'ISSUE*.md' -o -name 'ISSUES*.md' -o -name 'PR*.md' \) -print
-find /Users/sclarke/github/containerization -path /Users/sclarke/github/containerization/.build -prune -o -path /Users/sclarke/github/containerization/.git -prune -o \( -name 'ISSUE*.md' -o -name 'ISSUES*.md' -o -name 'PR*.md' \) -print
+find /Users/sclarke/github/container \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE*.md' -o -name 'ISSUES*.md' -o -name 'PR*.md' \) -print
+find /Users/sclarke/github/containerization \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE*.md' -o -name 'ISSUES*.md' -o -name 'PR*.md' \) -print
 ```
 
 Both commands should print nothing. After moving or editing handoff docs here, run:
