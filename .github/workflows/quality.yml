@@ -284,8 +284,8 @@ jobs:
             Tools/ci/run-swift-test.sh swift test --disable-automatic-resolution --sanitize=thread --no-parallel
         working-directory: container-compose
 
-  swift-style-advisory:
-    name: SwiftLint/SwiftFormat Advisory
+  swift-style:
+    name: SwiftLint/SwiftFormat
     needs: changes
     if: github.event_name != 'schedule' && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
@@ -293,6 +293,8 @@ jobs:
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install Swift style tools
         env:
@@ -311,22 +313,74 @@ jobs:
           swiftlint version
           swiftformat --version
 
-      - name: Run SwiftLint
+      - name: Collect Swift style paths
+        id: style-paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          set +e
-          swiftlint lint --strict --quiet Package.swift Sources Tests
-          status="$?"
-          if [[ "$status" -ne 0 ]]; then
-            printf '::warning title=SwiftLint advisory::swiftlint exited with status %s\n' "$status"
+          set -euo pipefail
+          changed_files="${RUNNER_TEMP}/changed-files.txt"
+          style_paths="${RUNNER_TEMP}/swift-style-paths.txt"
+
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" \
+                --paginate \
+                --jq '.[].filename' > "$changed_files"
+              ;;
+            push)
+              before="${{ github.event.before }}"
+              after="${GITHUB_SHA}"
+              if [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+                git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
+              else
+                git diff --name-only "$before" "$after" > "$changed_files"
+              fi
+              ;;
+            workflow_dispatch)
+              {
+                if [[ -f Package.swift ]]; then
+                  printf 'Package.swift\n'
+                fi
+                find Sources Tests -type f -name '*.swift' -print
+              } > "$changed_files"
+              ;;
+            *)
+              : > "$changed_files"
+              ;;
+          esac
+
+          while IFS= read -r path; do
+            case "$path" in
+              Package.swift|Sources/*.swift|Tests/*.swift)
+                printf '%s\n' "$path"
+                ;;
+            esac
+          done < "$changed_files" | sort -u > "$style_paths"
+
+          if [[ ! -s "$style_paths" ]]; then
+            printf 'No Swift style paths selected.\n'
+            printf 'has_paths=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          exit 0
+
+          printf 'Selected Swift style paths:\n'
+          sed 's/^/  /' "$style_paths"
+          printf 'has_paths=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Run SwiftLint
+        if: steps.style-paths.outputs.has_paths == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t style_paths < "${RUNNER_TEMP}/swift-style-paths.txt"
+          swiftlint lint --strict --quiet "${style_paths[@]}"
 
       - name: Run SwiftFormat lint
+        if: steps.style-paths.outputs.has_paths == 'true'
+        shell: bash
         run: |
-          set +e
-          swiftformat Package.swift Sources Tests --lint --swift-version 6.2
-          status="$?"
-          if [[ "$status" -ne 0 ]]; then
-            printf '::warning title=SwiftFormat advisory::swiftformat exited with status %s\n' "$status"
-          fi
-          exit 0
+          set -euo pipefail
+          mapfile -t style_paths < "${RUNNER_TEMP}/swift-style-paths.txt"
+          swiftformat "${style_paths[@]}" --lint --swift-version 6.2

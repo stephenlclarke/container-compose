@@ -97,8 +97,42 @@ jobs:
 
           printf 'heavy=%s\n' "$heavy" >> "$GITHUB_OUTPUT"
 
-  validate:
-    name: Validate
+  source_checks:
+    name: Source Checks
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v7
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Install Markdown lint
+        run: npm install --global markdownlint-cli@0.48.0
+
+      - name: Cache local repo tools
+        uses: actions/cache@v6
+        with:
+          path: container-compose/.local/bin
+          key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
+
+      - name: Run source checks
+        timeout-minutes: 15
+        run: make check
+        working-directory: container-compose
+        env:
+          HAWKEYE_AUTO_INSTALL: "1"
+
+  validate_runtime:
+    name: Validate Runtime
     needs: changes
     if: needs.changes.outputs.heavy == 'true'
     runs-on: macos-26
@@ -170,29 +204,15 @@ jobs:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
-      - name: Install Markdown lint
-        run: npm install --global markdownlint-cli@0.48.0
-
-      - name: Cache local repo tools
-        uses: actions/cache@v6
-        with:
-          path: container-compose/.local/bin
-          key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
-
       - name: Print toolchain versions
         run: |
           swift --version
           xcodebuild -version
-          markdownlint --version
 
       - name: Run quick validation
-        if: >
-          github.event_name == 'pull_request' ||
-          github.ref == 'refs/heads/main' ||
-          startsWith(github.ref, 'refs/heads/develop/') ||
-          github.ref_type == 'tag'
+        if: github.event_name == 'pull_request'
         timeout-minutes: 45
-        run: make ci-fast
+        run: make test go-build cli-smoke-built
         working-directory: container-compose
         env:
           HAWKEYE_AUTO_INSTALL: "1"
@@ -205,6 +225,18 @@ jobs:
           github.event_name == 'workflow_dispatch'
         timeout-minutes: 45
         run: make coverage-check
+        working-directory: container-compose
+        env:
+          HAWKEYE_AUTO_INSTALL: "1"
+
+      - name: Run built CLI smoke
+        if: >
+          github.ref == 'refs/heads/main' ||
+          startsWith(github.ref, 'refs/heads/develop/') ||
+          github.ref_type == 'tag' ||
+          github.event_name == 'workflow_dispatch'
+        timeout-minutes: 10
+        run: make go-build cli-smoke-built
         working-directory: container-compose
         env:
           HAWKEYE_AUTO_INSTALL: "1"
@@ -278,3 +310,52 @@ jobs:
           SONAR_QUALITYGATE_WAIT: "true"
         run: make sonar-scan
         working-directory: container-compose
+
+  validate:
+    name: Validate
+    needs:
+      - changes
+      - source_checks
+      - validate_runtime
+    if: always() && needs.changes.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check parallel validation jobs
+        env:
+          SOURCE_CHECKS_RESULT: ${{ needs.source_checks.result }}
+          VALIDATE_RUNTIME_RESULT: ${{ needs.validate_runtime.result }}
+        run: |
+          set -euo pipefail
+          if [[ "${SOURCE_CHECKS_RESULT}" != "success" ]]; then
+            printf 'Source Checks concluded %s\n' "${SOURCE_CHECKS_RESULT}" >&2
+            exit 1
+          fi
+          if [[ "${VALIDATE_RUNTIME_RESULT}" != "success" ]]; then
+            printf 'Validate Runtime concluded %s\n' "${VALIDATE_RUNTIME_RESULT}" >&2
+            exit 1
+          fi
+          printf 'Source Checks and Validate Runtime passed.\n'
+
+  validate-lightweight:
+    name: Validate Lightweight
+    needs: changes
+    if: needs.changes.outputs.heavy != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@v7
+
+      - name: Install Markdown lint
+        run: npm install --global markdownlint-cli@0.48.0
+
+      - name: Validate Markdown and formula sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t markdown_files < <(git ls-files '*.md' | sort)
+          if (( ${#markdown_files[@]} > 0 )); then
+            markdownlint "${markdown_files[@]}"
+          fi
+          if [[ -f Formula/container-compose.rb ]]; then
+            ruby -c Formula/container-compose.rb
+          fi
