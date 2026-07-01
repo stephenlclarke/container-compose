@@ -43,21 +43,21 @@ Use bare semantic source tags such as `0.5.1`, matching Apple repository convent
 Run it from the `container-compose` checkout:
 
 ```sh
-./CONTAINER_STACK_RELEASE.sh plan
-./CONTAINER_STACK_RELEASE.sh tag-current
-./CONTAINER_STACK_RELEASE.sh start-dev --+
+make release-plan
+make promote-release
+make start-dev-release VERSION_SELECTOR=--+
 ```
 
-The helper is dry-run by default. Add `--execute` only after the plan is correct.
+`make release-plan` is a dry run. `make promote-release` and `make start-dev-release` execute the checked operation after the helper validates clean worktrees and Stephen-owned push targets.
 
 Common flows:
 
 ```sh
 # Tag current main as the stable release.
-./CONTAINER_STACK_RELEASE.sh tag-current --execute
+make promote-release
 
 # Start the next patch development slice.
-./CONTAINER_STACK_RELEASE.sh start-dev --+ --execute
+make start-dev-release VERSION_SELECTOR=--+
 ```
 
 `start-dev` accepts:

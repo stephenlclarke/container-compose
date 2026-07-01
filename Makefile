@@ -89,13 +89,28 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release-plan promote-release release-promote start-dev-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
 workflow: ci package
 
 ci: check coverage-check go-build cli-smoke-built
+
+release-plan:
+	./CONTAINER_STACK_RELEASE.sh plan
+
+promote-release:
+	./CONTAINER_STACK_RELEASE.sh tag-current --execute
+
+release-promote: promote-release
+
+start-dev-release:
+	@test -n "$(VERSION_SELECTOR)" || { \
+		printf 'VERSION_SELECTOR is required, for example: make start-dev-release VERSION_SELECTOR=--+\n' >&2; \
+		exit 2; \
+	}
+	./CONTAINER_STACK_RELEASE.sh start-dev "$(VERSION_SELECTOR)" --execute
 
 resolve:
 	$(SWIFT) package resolve
