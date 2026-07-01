@@ -11,8 +11,9 @@ points at the wrong formula.
 
 The reset below removes retired plugin lanes, removes the old source-style
 `stephenlclarke/container` and `stephenlclarke/container-compose` taps if they
-exist, reinstalls the current stable lane from the aggregate tap, relinks the
-plugin into the active `container` prefix, and restarts the service.
+exist, reinstalls the current stable lane from the aggregate tap, lets the
+`container-compose` formula relink the plugin into the active `container`
+prefix, and restarts the service.
 
 ```sh
 brew services stop stephenlclarke/tap/container || brew services stop container || true
@@ -25,10 +26,8 @@ brew untap stephenlclarke/container-compose || true
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 
-brew install stephenlclarke/tap/container
 brew install stephenlclarke/tap/container-compose
 
-brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 
 container compose help
@@ -73,10 +72,10 @@ The link target should point under:
 $(brew --prefix container-compose)/libexec/container-plugins/compose
 ```
 
-Refresh it with the `container` formula's `post_install` hook:
+Refresh it with the `container-compose` formula's `post_install` hook:
 
 ```sh
-brew postinstall stephenlclarke/tap/container
+brew postinstall stephenlclarke/tap/container-compose
 brew services restart stephenlclarke/tap/container
 ```
 
@@ -131,10 +130,8 @@ brew untap stephenlclarke/container || true
 brew untap stephenlclarke/container-compose || true
 brew uninstall --ignore-dependencies \
   container-compose container-compose-release container container-release || true
-brew install stephenlclarke/tap/container
 brew install stephenlclarke/tap/container-compose
 
-brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 hash -r 2>/dev/null || true
 ```

@@ -36,14 +36,13 @@ fi
 
 If this is a first-time install and Apple's `container` package is not already installed, both commands above safely do nothing.
 
-Then install `container-compose`. Homebrew installs the matched `container` runtime dependency, then the `postinstall` command refreshes the plugin registration before the service starts:
+Then install `container-compose`. Homebrew installs the matched `container` runtime dependency, and the `container-compose` formula registers the plugin before the service starts:
 
 ```sh
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 brew update
 brew install --formula stephenlclarke/tap/container-compose
-brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 ```
 
@@ -55,7 +54,7 @@ container system version
 container system status
 ```
 
-The `container` formula owns the plugin registration link inside its Homebrew install root. The `brew postinstall` command refreshes that link after installing or upgrading `container-compose`.
+The `container-compose` formula registers the plugin inside the active Homebrew `container` install root during install and upgrade.
 
 Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
 
@@ -123,10 +122,9 @@ brew update
 brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose
 ```
 
-After either upgrade path, refresh the plugin registration, restart the service, and verify the installed versions:
+After either upgrade path, restart the service and verify the installed versions:
 
 ```sh
-brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 container system version
 container compose version
