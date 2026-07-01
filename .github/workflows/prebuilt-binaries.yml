@@ -55,7 +55,7 @@ jobs:
           case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
             branch:main)
               release_tag="homebrew-main"
-              release_title="container-compose ${compose_version} main lane prebuilt"
+              release_title="container-compose latest"
               release_label="Main lane"
               release_latest="false"
               release_prerelease="true"
