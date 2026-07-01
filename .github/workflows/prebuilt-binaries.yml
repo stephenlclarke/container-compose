@@ -61,7 +61,10 @@ jobs:
               release_prerelease="true"
               update_tap="true"
               asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz"
-              formula_version="main-release-${GITHUB_SHA:0:12}"
+              formula_version="$(python3 Tools/release/homebrew-main-version.py \
+                --plugin-version "${compose_version}" \
+                --run-number "${GITHUB_RUN_NUMBER}" \
+                --sha "${GITHUB_SHA}")"
               package_lane="main"
               ;;
             tag:*)
