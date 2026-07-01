@@ -185,24 +185,32 @@ jobs:
           xcodebuild -version
           markdownlint --version
 
-      - name: Run local CI workflow
+      - name: Run quick validation
         if: >
           github.event_name == 'pull_request' ||
           github.ref == 'refs/heads/main' ||
           startsWith(github.ref, 'refs/heads/develop/') ||
           github.ref_type == 'tag'
         timeout-minutes: 45
-        run: make ci
+        run: make ci-fast
+        working-directory: container-compose
+        env:
+          HAWKEYE_AUTO_INSTALL: "1"
+
+      - name: Run coverage gate
+        if: >
+          github.ref == 'refs/heads/main' ||
+          startsWith(github.ref, 'refs/heads/develop/') ||
+          github.ref_type == 'tag' ||
+          github.event_name == 'workflow_dispatch'
+        timeout-minutes: 45
+        run: make coverage-check
         working-directory: container-compose
         env:
           HAWKEYE_AUTO_INSTALL: "1"
 
       - name: Cache SonarQube packages
-        if: >
-          (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
-          (github.event_name != 'pull_request' ||
-            (github.event.pull_request.head.repo.full_name == github.repository &&
-             github.actor != 'dependabot[bot]'))
+        if: github.ref == 'refs/heads/main'
         uses: actions/cache@v6
         with:
           path: ~/.sonar/cache
@@ -210,11 +218,7 @@ jobs:
           restore-keys: ${{ runner.os }}-sonar
 
       - name: Install Sonar Scanner CLI
-        if: >
-          (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
-          (github.event_name != 'pull_request' ||
-            (github.event.pull_request.head.repo.full_name == github.repository &&
-             github.actor != 'dependabot[bot]'))
+        if: github.ref == 'refs/heads/main'
         env:
           SONAR_SCANNER_GPG_FINGERPRINT: 679F1EE92B19609DE816FDE81DB198F93525EC1A
           SONAR_SCANNER_VERSION: 8.1.0.6389
@@ -267,27 +271,10 @@ jobs:
           printf '%s\n' "$scanner_bin" >> "$GITHUB_PATH"
 
       - name: SonarQube scan
-        if: >
-          (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') &&
-          (github.event_name != 'pull_request' ||
-            (github.event.pull_request.head.repo.full_name == github.repository &&
-             github.actor != 'dependabot[bot]'))
+        if: github.ref == 'refs/heads/main'
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_QUALITYGATE_WAIT: "true"
         run: make sonar-scan
         working-directory: container-compose
-
-      - name: Build plugin package
-        if: github.ref == 'refs/heads/main'
-        timeout-minutes: 20
-        run: make package-release PLUGIN_ARCHIVE=container-compose-plugin.tar.gz
-        working-directory: container-compose
-
-      - name: Upload plugin artifact
-        if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
-        with:
-          name: container-compose-plugin
-          path: container-compose/container-compose-plugin.tar.gz

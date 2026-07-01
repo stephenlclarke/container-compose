@@ -76,7 +76,10 @@ def release_from_json(value: dict[str, Any]) -> Release:
 
 def retained_tags(releases: list[Release], current_tag: str) -> set[str]:
     retained = {current_tag}
+    current_release = next((release for release in releases if release.tag_name == current_tag), None)
     for prerelease in (True, False):
+        if current_release is not None and current_release.prerelease == prerelease:
+            continue
         channel_releases = [
             release
             for release in releases

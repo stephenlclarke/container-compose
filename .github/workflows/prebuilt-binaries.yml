@@ -17,97 +17,229 @@
 name: Prebuilt Binaries
 
 on:
-  push:
-    branches:
-      - main
-      - "develop/**"
-    tags:
-      - "*.*.*"
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Optional develop/VERSION branch or MAJOR.MINOR.PATCH tag to package"
+        required: false
+        type: string
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
-  group: prebuilt-binaries-${{ github.ref_type }}-${{ github.ref_name }}
-  cancel-in-progress: false
+  group: prebuilt-binaries-${{ github.event.workflow_run.head_branch || inputs.ref || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_run' || startsWith(github.event.workflow_run.head_branch, 'develop/') }}
 
 jobs:
   package:
-    name: Package ${{ github.ref_name }}
-    if: github.repository == 'stephenlclarke/container-compose'
+    name: Package
+    if: >
+      github.repository == 'stephenlclarke/container-compose' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     runs-on: macos-26
     steps:
+      - name: Resolve publish context
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_REF: ${{ inputs.ref }}
+          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          publish=false
+          ref_type=""
+          ref_name=""
+          checkout_ref=""
+          sha=""
+
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+
+          resolve_remote_ref() {
+            local ref="$1"
+            if [[ "$ref" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+              local tag_sha
+              tag_sha="$(
+                git ls-remote --tags "$remote" "refs/tags/${ref}" "refs/tags/${ref}^{}" \
+                  | awk '{print $1}' \
+                  | tail -n 1
+              )"
+              if [[ -z "$tag_sha" ]]; then
+                printf 'stable tag not found: %s\n' "$ref" >&2
+                exit 1
+              fi
+              ref_type="tag"
+              ref_name="$ref"
+              checkout_ref="$tag_sha"
+              sha="$tag_sha"
+              publish=true
+              return
+            fi
+
+            if [[ "$ref" == develop/* ]]; then
+              local branch_sha
+              branch_sha="$(
+                git ls-remote --heads "$remote" "refs/heads/${ref}" \
+                  | awk '{print $1}' \
+                  | tail -n 1
+              )"
+              if [[ -z "$branch_sha" ]]; then
+                printf 'develop branch not found: %s\n' "$ref" >&2
+                exit 1
+              fi
+              ref_type="branch"
+              ref_name="$ref"
+              checkout_ref="$branch_sha"
+              sha="$branch_sha"
+              publish=true
+              return
+            fi
+
+            printf 'unsupported package ref: %s\n' "$ref" >&2
+            exit 1
+          }
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            if [[ "${WORKFLOW_RUN_EVENT}" != "push" ]]; then
+              printf 'Skipping non-push CI event: %s\n' "${WORKFLOW_RUN_EVENT}"
+            else
+              validate_conclusion="$(
+                gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs" \
+                  --jq '.jobs[] | select(.name == "Validate") | .conclusion' \
+                  | tail -n 1
+              )"
+              if [[ "${validate_conclusion}" != "success" ]]; then
+                printf 'Skipping package publish because CI Validate concluded %s.\n' "${validate_conclusion:-missing}"
+              elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == develop/* ]]; then
+                ref_type="branch"
+                ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
+                checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
+                sha="${WORKFLOW_RUN_HEAD_SHA}"
+                publish=true
+              elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+                ref_type="tag"
+                ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
+                checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
+                sha="${WORKFLOW_RUN_HEAD_SHA}"
+
+                tag_sha="$(
+                  git ls-remote --tags "$remote" "refs/tags/${ref_name}" "refs/tags/${ref_name}^{}" \
+                    | awk '{print $1}' \
+                    | tail -n 1
+                )"
+                if [[ "${tag_sha}" != "${sha}" ]]; then
+                  printf 'tag %s points at %s, but CI validated %s\n' "${ref_name}" "${tag_sha:-missing}" "${sha}" >&2
+                  exit 1
+                fi
+                publish=true
+              else
+                printf 'Skipping non-package CI ref: %s\n' "${WORKFLOW_RUN_HEAD_BRANCH}"
+              fi
+            fi
+          elif [[ -n "${DISPATCH_REF}" ]]; then
+            resolve_remote_ref "${DISPATCH_REF}"
+          elif [[ "${GITHUB_REF_TYPE}" == "branch" && "${GITHUB_REF_NAME}" == develop/* ]]; then
+            ref_type="branch"
+            ref_name="${GITHUB_REF_NAME}"
+            checkout_ref="${GITHUB_SHA}"
+            sha="${GITHUB_SHA}"
+            publish=true
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            ref_type="tag"
+            ref_name="${GITHUB_REF_NAME}"
+            checkout_ref="${GITHUB_SHA}"
+            sha="${GITHUB_SHA}"
+            publish=true
+          else
+            printf 'Unsupported manual package ref: %s %s\n' "${GITHUB_REF_TYPE}" "${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+          {
+            printf 'publish=%s\n' "${publish}"
+            printf 'ref_type=%s\n' "${ref_type}"
+            printf 'ref_name=%s\n' "${ref_name}"
+            printf 'checkout_ref=%s\n' "${checkout_ref}"
+            printf 'sha=%s\n' "${sha}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Checkout container-compose
+        if: steps.publish.outputs.publish == 'true'
         uses: actions/checkout@v7
         with:
           path: container-compose
           fetch-depth: 0
+          ref: ${{ steps.publish.outputs.checkout_ref }}
           token: ${{ github.token }}
 
       - name: Select release lane
+        if: steps.publish.outputs.publish == 'true'
         id: lane
         shell: bash
         working-directory: container-compose
+        env:
+          PUBLISH_REF_TYPE: ${{ steps.publish.outputs.ref_type }}
+          PUBLISH_REF_NAME: ${{ steps.publish.outputs.ref_name }}
         run: |
           set -euo pipefail
           compose_version="$(sed -n 's/^COMPOSE_VERSION ?= //p' Makefile | head -n 1)"
-          case "${GITHUB_REF_TYPE}:${GITHUB_REF_NAME}" in
-            branch:main)
-              release_tag="homebrew-main"
-              release_title="${compose_version}"
-              release_label="Main lane"
-              release_latest="false"
-              release_prerelease="true"
-              update_tap="true"
-              asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz"
-              formula_version="$(python3 Tools/release/homebrew-main-version.py \
-                --plugin-version "${compose_version}" \
-                --run-number "${GITHUB_RUN_NUMBER}" \
-                --sha "${GITHUB_SHA}")"
-              package_lane="main"
-              ;;
+          case "${PUBLISH_REF_TYPE}:${PUBLISH_REF_NAME}" in
             tag:*)
-              if [[ ! "${GITHUB_REF_NAME}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-                printf 'Stable release tags must be bare semver: %s\n' "${GITHUB_REF_NAME}" >&2
+              if [[ ! "${PUBLISH_REF_NAME}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+                printf 'Stable release tags must be bare semver: %s\n' "${PUBLISH_REF_NAME}" >&2
                 exit 1
               fi
-              if [[ "${compose_version}" != "${GITHUB_REF_NAME}" ]]; then
-                printf 'COMPOSE_VERSION %s does not match stable tag %s\n' "${compose_version}" "${GITHUB_REF_NAME}" >&2
+              if [[ "${compose_version}" != "${PUBLISH_REF_NAME}" ]]; then
+                printf 'COMPOSE_VERSION %s does not match stable tag %s\n' "${compose_version}" "${PUBLISH_REF_NAME}" >&2
                 exit 1
               fi
-              release_tag="${GITHUB_REF_NAME}"
+              release_tag="${PUBLISH_REF_NAME}"
               release_title="${compose_version}"
               release_label="Latest"
               release_latest="true"
               release_prerelease="false"
               update_tap="true"
               asset="container-compose-plugin-release-arm64.tar.gz"
+              formula="container-compose.rb"
+              formula_class="ContainerCompose"
               formula_version="${compose_version}"
               package_lane="stable"
               ;;
             branch:develop/*)
-              branch_version="${GITHUB_REF_NAME#develop/}"
+              branch_version="${PUBLISH_REF_NAME#develop/}"
               if [[ ! "${branch_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-                printf 'Develop branch must be develop/MAJOR.MINOR.PATCH: %s\n' "${GITHUB_REF_NAME}" >&2
+                printf 'Develop branch must be develop/MAJOR.MINOR.PATCH: %s\n' "${PUBLISH_REF_NAME}" >&2
                 exit 1
               fi
               if [[ "${compose_version}" != "${branch_version}" ]]; then
-                printf 'COMPOSE_VERSION %s does not match develop branch %s\n' "${compose_version}" "${GITHUB_REF_NAME}" >&2
+                printf 'COMPOSE_VERSION %s does not match develop branch %s\n' "${compose_version}" "${PUBLISH_REF_NAME}" >&2
                 exit 1
               fi
               release_tag="${branch_version}-pre"
-              release_title="${compose_version}"
+              release_title="${release_tag}"
               release_label="Pre-release"
               release_latest="false"
               release_prerelease="true"
-              update_tap="false"
+              update_tap="true"
               asset="container-compose-plugin-release-arm64.tar.gz"
-              formula_version="${compose_version}"
+              formula="container-compose-pre.rb"
+              formula_class="ContainerComposePre"
+              formula_version="${release_tag}"
               package_lane="development"
               ;;
             *)
-              printf 'Unsupported release ref: %s %s\n' "${GITHUB_REF_TYPE}" "${GITHUB_REF_NAME}" >&2
+              printf 'Unsupported release ref: %s %s\n' "${PUBLISH_REF_TYPE}" "${PUBLISH_REF_NAME}" >&2
               exit 1
               ;;
           esac
@@ -121,13 +253,14 @@ jobs:
             printf 'release_prerelease=%s\n' "${release_prerelease}"
             printf 'update_tap=%s\n' "${update_tap}"
             printf 'asset=%s\n' "${asset}"
-            printf 'formula=container-compose.rb\n'
-            printf 'formula_class=ContainerCompose\n'
+            printf 'formula=%s\n' "${formula}"
+            printf 'formula_class=%s\n' "${formula_class}"
             printf 'formula_version=%s\n' "${formula_version}"
             printf 'package_lane=%s\n' "${package_lane}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Resolve container ref
+        if: steps.publish.outputs.publish == 'true'
         id: container-ref
         shell: bash
         run: |
@@ -140,6 +273,7 @@ jobs:
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
+        if: steps.publish.outputs.publish == 'true'
         uses: actions/checkout@v7
         with:
           repository: stephenlclarke/container
@@ -147,6 +281,7 @@ jobs:
           ref: ${{ steps.container-ref.outputs.ref }}
 
       - name: Verify container dependency ref
+        if: steps.publish.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -158,21 +293,38 @@ jobs:
           fi
 
       - name: Set up Go
+        if: steps.publish.outputs.publish == 'true'
         uses: actions/setup-go@v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
+      - name: Wait for CI result
+        id: ci-result
+        if: steps.publish.outputs.publish == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 container-compose/Tools/ci/wait-for-workflow-success.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --workflow ci.yml \
+            --sha "${{ steps.publish.outputs.sha }}" \
+            --timeout-seconds 900 \
+            --poll-seconds 15
+
       - name: Install Markdown lint
+        if: steps.publish.outputs.publish == 'true' && github.event_name == 'workflow_dispatch' && steps.ci-result.outputs.passed != 'true'
         run: npm install --global markdownlint-cli@0.48.0
 
       - name: Cache local repo tools
+        if: steps.publish.outputs.publish == 'true' && github.event_name == 'workflow_dispatch' && steps.ci-result.outputs.passed != 'true'
         uses: actions/cache@v6
         with:
           path: container-compose/.local/bin
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
 
       - name: Run release validation
+        if: steps.publish.outputs.publish == 'true' && github.event_name == 'workflow_dispatch' && steps.ci-result.outputs.passed != 'true'
         timeout-minutes: 45
         run: make ci
         working-directory: container-compose
@@ -180,14 +332,16 @@ jobs:
           HAWKEYE_AUTO_INSTALL: "1"
 
       - name: Build release package
+        if: steps.publish.outputs.publish == 'true'
         run: make package-release PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
         working-directory: container-compose
         env:
-          CONTAINER_COMPOSE_BRANCH: ${{ github.ref_name }}
-          CONTAINER_COMPOSE_COMMIT: ${{ github.sha }}
+          CONTAINER_COMPOSE_BRANCH: ${{ steps.publish.outputs.ref_name }}
+          CONTAINER_COMPOSE_COMMIT: ${{ steps.publish.outputs.sha }}
           CONTAINER_COMPOSE_LANE: ${{ steps.lane.outputs.package_lane }}
 
       - name: Upload workflow artifact
+        if: steps.publish.outputs.publish == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.lane.outputs.asset }}
@@ -196,6 +350,7 @@ jobs:
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}.sha256
 
       - name: Publish GitHub release
+        if: steps.publish.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ASSET: ${{ steps.lane.outputs.asset }}
@@ -205,6 +360,8 @@ jobs:
           RELEASE_LABEL: ${{ steps.lane.outputs.release_label }}
           RELEASE_LATEST: ${{ steps.lane.outputs.release_latest }}
           RELEASE_PRERELEASE: ${{ steps.lane.outputs.release_prerelease }}
+          PUBLISH_REF_TYPE: ${{ steps.publish.outputs.ref_type }}
+          PUBLISH_SHA: ${{ steps.publish.outputs.sha }}
         shell: bash
         working-directory: container-compose
         run: |
@@ -219,17 +376,17 @@ jobs:
             --compose-version "${COMPOSE_VERSION}" \
             --asset "${ASSET}" \
             --asset-sha "${sha256}" \
-            --head "${GITHUB_SHA}" > "${notes}"
+            --head "${PUBLISH_SHA}" > "${notes}"
 
-          if [[ "${GITHUB_REF_TYPE}" == "branch" ]]; then
-            git tag --force "${RELEASE_TAG}" "${GITHUB_SHA}"
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            git tag --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
             git push --force origin "refs/tags/${RELEASE_TAG}"
           fi
 
           if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             create_args=(
               gh release create "${RELEASE_TAG}"
-              --target "${GITHUB_SHA}"
+              --target "${PUBLISH_SHA}"
               --title "${RELEASE_TITLE}"
               --notes-file "${notes}"
             )
@@ -245,7 +402,7 @@ jobs:
           else
             edit_args=(
               gh release edit "${RELEASE_TAG}"
-              --target "${GITHUB_SHA}"
+              --target "${PUBLISH_SHA}"
               --title "${RELEASE_TITLE}"
               --notes-file "${notes}"
             )
@@ -266,6 +423,7 @@ jobs:
             --clobber
 
       - name: Prune older release assets
+        if: steps.publish.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
@@ -279,7 +437,7 @@ jobs:
             --execute
 
       - name: Check Homebrew tap token
-        if: steps.lane.outputs.update_tap == 'true'
+        if: steps.publish.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true'
         id: tap-token
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -294,7 +452,7 @@ jobs:
           printf 'available=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Checkout Homebrew tap
-        if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.publish.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
         uses: actions/checkout@v7
         with:
           repository: stephenlclarke/homebrew-tap
@@ -302,9 +460,11 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Update Homebrew tap formula
-        if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.publish.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
         env:
           ASSET: ${{ steps.lane.outputs.asset }}
+          FORMULA: ${{ steps.lane.outputs.formula }}
+          FORMULA_CLASS: ${{ steps.lane.outputs.formula_class }}
           FORMULA_VERSION: ${{ steps.lane.outputs.formula_version }}
           RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
           VERSION: ${{ steps.lane.outputs.compose_version }}
@@ -316,31 +476,32 @@ jobs:
           curl -fsSL "${url}" -o "${tmp}/${ASSET}"
           sha256="$(shasum -a 256 "${tmp}/${ASSET}" | awk '{print $1}')"
           python3 container-compose/Tools/release/update-homebrew-formula.py \
-            --formula "homebrew-tap/Formula/container-compose.rb" \
-            --template "homebrew-tap/Formula/container-compose.rb" \
-            --formula-class ContainerCompose \
+            --formula "homebrew-tap/Formula/${FORMULA}" \
+            --template "container-compose/Formula/container-compose.rb" \
+            --formula-class "${FORMULA_CLASS}" \
             --url "$url" \
             --version "$FORMULA_VERSION" \
             --plugin-version "$VERSION" \
             --asset "$ASSET" \
             --label "${{ steps.lane.outputs.release_label }}" \
             --sha256 "$sha256"
-          ruby -c homebrew-tap/Formula/container-compose.rb
-          git -C homebrew-tap diff -- Formula/container-compose.rb
+          ruby -c "homebrew-tap/Formula/${FORMULA}"
+          git -C homebrew-tap diff -- "Formula/${FORMULA}"
 
       - name: Commit Homebrew tap update
-        if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
+        if: steps.publish.outputs.publish == 'true' && steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
         shell: bash
         working-directory: homebrew-tap
         run: |
           set -euo pipefail
-          if git diff --quiet -- Formula/container-compose.rb; then
+          formula="${{ steps.lane.outputs.formula }}"
+          if [[ -z "$(git status --porcelain -- "Formula/${formula}")" ]]; then
             printf 'Homebrew tap formula already points at %s\n' "${{ steps.lane.outputs.asset }}"
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/container-compose.rb
+          git add "Formula/${formula}"
           git commit -m "chore(homebrew): update container-compose ${{ steps.lane.outputs.compose_version }}"
           git push

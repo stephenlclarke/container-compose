@@ -20,11 +20,25 @@ on:
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/quality.yml"
+      - "Package.swift"
+      - "Package.resolved"
+      - "Sources/**"
+      - "Tests/**"
+      - "Tools/ci/run-swift-test.sh"
   pull_request:
     types:
       - opened
       - synchronize
       - reopened
+    paths:
+      - ".github/workflows/quality.yml"
+      - "Package.swift"
+      - "Package.resolved"
+      - "Sources/**"
+      - "Tests/**"
+      - "Tools/ci/run-swift-test.sh"
   schedule:
     - cron: "23 3 * * *"
   workflow_dispatch:
@@ -43,6 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       heavy: ${{ steps.filter.outputs.heavy }}
+      swift: ${{ steps.filter.outputs.swift }}
     steps:
       - name: Checkout for push diff
         if: github.event_name == 'push'
@@ -76,28 +91,35 @@ jobs:
               ;;
             *)
               printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+              printf 'swift=true\n' >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
 
           heavy=false
+          swift=false
           while IFS= read -r path; do
             case "$path" in
               *.md|docs/*|Formula/*)
                 ;;
               *)
                 heavy=true
-                break
+                ;;
+            esac
+            case "$path" in
+              Package.swift|Package.resolved|Sources/**|Tests/**|*.swift)
+                swift=true
                 ;;
             esac
           done < "$changed_files"
 
           printf 'heavy=%s\n' "$heavy" >> "$GITHUB_OUTPUT"
+          printf 'swift=%s\n' "$swift" >> "$GITHUB_OUTPUT"
 
   swift-address-sanitizer:
     name: Swift ASan
     needs: changes
-    if: github.event_name != 'schedule' && needs.changes.outputs.heavy == 'true'
+    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -181,7 +203,7 @@ jobs:
   swift-thread-sanitizer:
     name: Swift TSan Nightly
     needs: changes
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.heavy == 'true'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -265,7 +287,7 @@ jobs:
   swift-style-advisory:
     name: SwiftLint/SwiftFormat Advisory
     needs: changes
-    if: github.event_name != 'schedule' && needs.changes.outputs.heavy == 'true'
+    if: github.event_name != 'schedule' && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:

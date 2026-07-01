@@ -6,7 +6,7 @@ This file is the current-state handoff for `container-compose`. Keep it short. D
 
 ## Current State
 
-`main` is the current releasable integration and Homebrew main-lane source. Normal work lands on `main`; the moving `homebrew-main` package lane publishes installable `container` and `container-compose` builds from that state. Use short-lived `develop/VERSION` branches only for versioned development slices, then squash them back to `main` and delete them. Keep branch policy, `CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
+`main` is the current releasable integration branch and source of stable semantic tags. Use short-lived `develop/VERSION` branches only for versioned development slices, publish them as `VERSION-pre`, then squash them back to `main` and delete them. Keep branch policy, `CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
 
 ## Current Integration Assumption
 
@@ -16,7 +16,7 @@ Full build support, including BuildKit checks, SSH forwarding, additional contex
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
-Current reviewed main-lane pins:
+Current reviewed package pins:
 
 - `stephenlclarke/container`: `83dc1d504caabafd91d85cc38c42f0e100836c12`
 - `stephenlclarke/containerization`: `149a1f5dc9a6d42bef2224cca54bd341bcdd5c6d`
@@ -24,7 +24,7 @@ Current reviewed main-lane pins:
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with `make ci`, focused release-helper unit tests, workflow YAML parsing, Homebrew formula-version ordering checks, `git diff --check`, and a local Homebrew upgrade/install verification of the matched `container` / `container-compose` main-lane stack.
+The latest local validation for this `container-compose` slice passed with `make ci`, focused release-helper unit tests, workflow YAML parsing, Homebrew formula checks, `git diff --check`, and a local Homebrew upgrade/install verification of the matched `container` / `container-compose` stack.
 
 Most recent coverage proof:
 
@@ -45,7 +45,7 @@ Most recent coverage proof:
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
 - Packaging and quality: CodeQL gates the release-built Go normalizer path, Swift CodeQL remains blocked by fork-backed dependency rebuild timeouts, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
-- Main-lane packaging: `container` publishes the moving `homebrew-main` runtime package and triggers the matching `container-compose` package workflow after the tap formula moves. `container-compose` records the published runtime commit in package metadata and publishes an upgradeable `COMPOSE_VERSION-main.GITHUB_RUN_NUMBER.SHORT_SHA` Homebrew formula version so `brew upgrade` keeps the installed stack aligned.
+- Packaging: `container` still publishes the moving `homebrew-main` runtime package. `container-compose-pre` follows the latest `VERSION-pre` development release, and `container-compose` follows the latest stable semantic release. Both plugin packages record the published runtime commit in package metadata so `brew upgrade` keeps the installed stack aligned and runtime/plugin mismatches fail fast.
 
 ## Current Limits
 

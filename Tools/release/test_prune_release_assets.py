@@ -40,13 +40,13 @@ class ReleaseAssetPruningTests(unittest.TestCase):
     def test_prunes_older_prerelease_assets_when_current_is_prerelease(self) -> None:
         module = load_module()
         releases = [
-            self.release(module, "homebrew-main", prerelease=True, published_at="2026-07-01T10:00:00Z"),
+            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-07-01T10:00:00Z"),
             self.release(module, "0.5.1-pre", prerelease=True, published_at="2026-06-30T10:00:00Z"),
             self.release(module, "0.5.0", prerelease=False, published_at="2026-06-29T10:00:00Z"),
         ]
 
         self.assertEqual(
-            [release.tag_name for release in module.releases_to_prune(releases, "homebrew-main")],
+            [release.tag_name for release in module.releases_to_prune(releases, "0.6.1-pre")],
             ["0.5.1-pre"],
         )
 
@@ -54,7 +54,26 @@ class ReleaseAssetPruningTests(unittest.TestCase):
         module = load_module()
         releases = [
             self.release(module, "0.6.0", prerelease=False, published_at="2026-07-01T10:00:00Z"),
-            self.release(module, "homebrew-main", prerelease=True, published_at="2026-06-30T10:00:00Z"),
+            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-06-30T10:00:00Z"),
+            self.release(module, "0.5.0", prerelease=False, published_at="2026-06-29T10:00:00Z"),
+        ]
+
+        self.assertEqual(
+            [release.tag_name for release in module.releases_to_prune(releases, "0.6.0")],
+            ["0.5.0"],
+        )
+
+    def test_prunes_older_stable_assets_when_current_stable_assets_are_not_visible_yet(self) -> None:
+        module = load_module()
+        releases = [
+            self.release(
+                module,
+                "0.6.0",
+                prerelease=False,
+                published_at="2026-07-01T10:00:00Z",
+                assets=(),
+            ),
+            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-06-30T10:00:00Z"),
             self.release(module, "0.5.0", prerelease=False, published_at="2026-06-29T10:00:00Z"),
         ]
 
@@ -96,7 +115,12 @@ class ReleaseAssetPruningTests(unittest.TestCase):
         *,
         prerelease: bool,
         published_at: str = "2026-07-01T10:00:00Z",
+        assets=None,
     ):
+        release_assets = (
+            {"id": 1, "name": f"{tag_name}.tar.gz"},
+            {"id": 2, "name": f"{tag_name}.tar.gz.sha256"},
+        ) if assets is None else assets
         return module.Release(
             tag_name=tag_name,
             name=tag_name,
@@ -104,10 +128,7 @@ class ReleaseAssetPruningTests(unittest.TestCase):
             draft=False,
             published_at=published_at,
             target_commitish="abcdef1234567890",
-            assets=(
-                {"id": 1, "name": f"{tag_name}.tar.gz"},
-                {"id": 2, "name": f"{tag_name}.tar.gz.sha256"},
-            ),
+            assets=release_assets,
             body="## Summary\n",
         )
 

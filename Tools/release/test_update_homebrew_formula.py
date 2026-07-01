@@ -39,6 +39,8 @@ class ContainerCompose < Formula
   sha256 :no_check
   version "old"
 
+  depends_on "stephenlclarke/tap/container"
+
   def caveats
     <<~EOS
       This formula installs the old release prebuilt release asset:
@@ -87,6 +89,8 @@ class ContainerComposeReleaseV010 < Formula
   url "https://example.invalid/new.tar.gz"
   sha256 "abc123"
   version "release-v0.1.0-release-abcdef123456"
+
+  depends_on "stephenlclarke/tap/container"
 
   def caveats
     <<~EOS

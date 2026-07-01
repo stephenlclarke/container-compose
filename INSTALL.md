@@ -4,14 +4,15 @@ This guide explains how to install, upgrade, verify, and uninstall the `containe
 
 ## Install Lane
 
-The aggregate Homebrew tap publishes one current stack lane:
+The aggregate Homebrew tap publishes the stable stack by default and an opt-in pre-release plugin formula for maintainers:
 
 | Formula | Build type | Use when |
 | --- | --- | --- |
-| `container-compose` | main release build | Install this. It depends on the matched fork-backed `container` runtime. |
-| `container` | main release build | Installed automatically as the runtime dependency for `container-compose`. |
+| `container-compose` | stable release build | Install this. It depends on the matched fork-backed `container` runtime. |
+| `container-compose-pre` | pre-release build | Use only when testing the next `develop/VERSION` slice before it is promoted. |
+| `container` | runtime build | Installed automatically as the runtime dependency for either plugin formula. |
 
-The formulae install prebuilt GitHub release assets from the moving `homebrew-main` package lane. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
+The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
 
 ## Requirements
 
@@ -42,6 +43,28 @@ Then install `container-compose`. Homebrew installs the matched `container` runt
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
 brew update
+brew install --formula stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
+```
+
+`container-compose` and `container-compose-pre` are alternate lanes. Homebrew can upgrade whichever lane is installed, but it will not automatically uninstall the other lane when switching because both formulae install the same `container-compose` command and Compose plugin.
+
+```sh
+# Stay on stable
+brew upgrade stephenlclarke/tap/container-compose
+
+# Stay on pre-release
+brew upgrade stephenlclarke/tap/container-compose-pre
+
+# Switch stable -> pre-release
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose
+brew install --formula stephenlclarke/tap/container-compose-pre
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
+
+# Switch pre-release -> stable
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose-pre
 brew install --formula stephenlclarke/tap/container-compose
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
