@@ -248,8 +248,10 @@ cli-smoke-built:
 	compat_status="$$?"; \
 	set -e; \
 	[[ "$$compat_status" -ne 0 ]]; \
-	[[ "$$compat_output" == *"The installed Apple container components do not support the Compose functionality in this plugin."* ]]; \
-	[[ "$$compat_output" == *"brew install stephenlclarke/tap/container stephenlclarke/tap/container-compose"* ]]; \
+	[[ "$$compat_output" == *"The installed container components do not match the Compose functionality in this plugin."* ]]; \
+	[[ "$$compat_output" == *"brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose || brew install --formula stephenlclarke/tap/container-compose"* ]]; \
+	[[ "$$compat_output" == *"brew postinstall stephenlclarke/tap/container"* ]]; \
+	[[ "$$compat_output" == *"brew services restart stephenlclarke/tap/container"* ]]; \
 	[[ "$$compat_output" == *"https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md"* ]]; \
 	ansi_escape="$$(printf '\033')"; \
 	root_help_output="$$(".build/debug/compose" --help)"; \

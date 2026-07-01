@@ -98,6 +98,8 @@ enum ContainerPackageCompatibility {
   static func compatibilityFailure(
     arguments: [String],
     lane: String,
+    expectedContainerRef: String? = nil,
+    expectedContainerizationRef: String? = nil,
     run: ([String]) throws -> Data = runContainerCommand
   ) -> String? {
     guard requiresRuntimeCheck(arguments: arguments) else {
@@ -107,7 +109,12 @@ enum ContainerPackageCompatibility {
     do {
       let data = try run(["system", "version", "--format", "json"])
       let components = try decodeComponents(from: data)
-      return compatibilityFailure(components: components, lane: lane)
+      return compatibilityFailure(
+        components: components,
+        lane: lane,
+        expectedContainerRef: expectedContainerRef,
+        expectedContainerizationRef: expectedContainerizationRef
+      )
     } catch {
       return installGuidance(
         lane: lane,
@@ -119,9 +126,12 @@ enum ContainerPackageCompatibility {
   }
 
   /// Checks decoded system-version components for the fork-backed runtime metadata.
-  static func compatibilityFailure(components: [ContainerSystemVersionComponent], lane: String)
-    -> String?
-  {
+  static func compatibilityFailure(
+    components: [ContainerSystemVersionComponent],
+    lane: String,
+    expectedContainerRef: String? = nil,
+    expectedContainerizationRef: String? = nil
+  ) -> String? {
     guard let container = components.first(where: { $0.appName == "container" }) else {
       return installGuidance(
         lane: lane, detected: ["container: missing from system version output"])
@@ -143,7 +153,64 @@ enum ContainerPackageCompatibility {
       )
     }
 
+    let expectedContainerRef = concreteRef(expectedContainerRef)
+    let expectedContainerizationRef = concreteRef(expectedContainerizationRef)
+    if expectedContainerRef != nil || expectedContainerizationRef != nil {
+      let detected = packageMismatchDetails(
+        container: container,
+        expectedContainerRef: expectedContainerRef,
+        expectedContainerizationRef: expectedContainerizationRef
+      )
+      if !detected.isEmpty {
+        return installGuidance(lane: lane, detected: detected)
+      }
+    }
+
     return nil
+  }
+
+  private static func packageMismatchDetails(
+    container: ContainerSystemVersionComponent,
+    expectedContainerRef: String?,
+    expectedContainerizationRef: String?
+  ) -> [String] {
+    var detected: [String] = []
+    if let expectedContainerRef,
+      !refsMatch(container.commit, expectedContainerRef)
+    {
+      detected.append(
+        "container: \(container.source ?? "unknown")@\(container.commit ?? "unknown") (expected \(expectedContainerRef))"
+      )
+    }
+    if let expectedContainerizationRef,
+      !refsMatch(container.containerizationRef, expectedContainerizationRef)
+    {
+      detected.append(
+        "containerization: \(container.containerization ?? "unknown") (expected \(expectedContainerizationRef))"
+      )
+    }
+    return detected
+  }
+
+  private static func concreteRef(_ ref: String?) -> String? {
+    guard let ref = ref?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !ref.isEmpty,
+      ref != "unspecified",
+      ref != "main"
+    else {
+      return nil
+    }
+    return ref
+  }
+
+  private static func refsMatch(_ actual: String?, _ expected: String) -> Bool {
+    guard let actual = actual?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !actual.isEmpty,
+      actual != "unspecified"
+    else {
+      return false
+    }
+    return actual == expected
   }
 
   private static func commandName(in arguments: [String]) -> String? {
@@ -187,13 +254,16 @@ enum ContainerPackageCompatibility {
   private static func installGuidance(lane: String, detected: [String]) -> String {
     let formulae = homebrewFormulae(lane: lane)
     return """
-      container-compose requires Stephen Clarke's customized container stack.
+      container-compose requires the matching Stephen Clarke container stack.
 
-      The installed Apple container components do not support the Compose functionality in this plugin.
-      Install the corresponding components from Stephen Clarke's Homebrew tap, then run this command again.
+      The installed container components do not match the Compose functionality in this plugin.
+      Upgrade the corresponding components from Stephen Clarke's Homebrew tap, then run this command again.
 
         brew tap stephenlclarke/tap
-        brew install \(formulae.container) \(formulae.compose)
+        brew update
+        brew upgrade \(formulae.container) \(formulae.compose) || brew install --formula \(formulae.compose)
+        brew postinstall \(formulae.container)
+        brew services restart \(formulae.container)
 
       Detailed install instructions:
       \(installGuideURL)
@@ -240,6 +310,17 @@ struct ContainerSystemVersionComponent: Decodable, Equatable {
       return nil
     }
     return String(source)
+  }
+
+  var containerizationRef: String? {
+    guard let containerization else {
+      return nil
+    }
+    let parts = containerization.split(separator: "@", maxSplits: 1)
+    guard parts.count == 2 else {
+      return nil
+    }
+    return String(parts[1])
   }
 }
 

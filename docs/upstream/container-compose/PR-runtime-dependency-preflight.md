@@ -3,9 +3,9 @@
 ## Summary
 
 - Adds a runtime dependency preflight for Compose commands that require the installed `container` stack.
-- Checks `container system version --format json` for Stephen Clarke's fork-backed `container` and `containerization` provenance.
+- Checks `container system version --format json` for Stephen Clarke's fork-backed `container` and `containerization` provenance plus exact package-pin alignment when concrete refs are available.
 - Leaves help, `version`, `config`, dry-run commands, and `build --print` available without a runtime preflight.
-- Reports a clear install message when Apple stock components or missing components are detected.
+- Reports a clear upgrade/install message when Apple stock, missing, or mismatched components are detected.
 - Points users to <https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md>.
 - Adds unit coverage plus CLI smoke coverage with a fake Apple-style `container` executable.
 
@@ -13,7 +13,7 @@
 
 `container-compose` now requires the customized `stephenlclarke/container` and `stephenlclarke/containerization` stack for runtime-backed Compose behavior. Treating full provenance/SBOM, build-check, events, logs, restart, privileged, and related surfaces as optional fork-only caveats is less useful than failing early when the installed runtime stack is wrong.
 
-The preflight checks source/distribution provenance instead of exact commit equality so normal Homebrew lane updates do not fail solely because a matching lane has moved. Exact pins remain visible through `container compose version --format json` and the package build metadata.
+The preflight checks source/distribution provenance first, then compares the active `container` and `containerization` refs with the package metadata when the package has concrete refs. This prevents an old plugin package from running against a newer fork-backed runtime and surfacing stale unsupported-feature errors.
 
 ## Validation
 
@@ -31,8 +31,8 @@ git diff --check
 
 - `container compose ps`, `up`, `run`, `exec`, `logs`, `build` execution, and other runtime-backed commands now fail early when the active `container` executable is Apple's stock package.
 - `container compose version`, help output, `config`, dry-run commands, and `build --print` remain available so users can inspect a broken or mixed install.
-- Runtime preflight guidance should suggest the stable `container` / `container-compose` formulae from `stephenlclarke/tap`; retired release-lane formula names should not appear in new install guidance.
+- Runtime preflight guidance should suggest upgrading the stable `container` / `container-compose` formulae from `stephenlclarke/tap`, refreshing the `container` postinstall hook, and restarting the service; retired release-lane formula names should not appear in new install guidance.
 
 ## Remaining Risks
 
-- Provenance-only checks cannot prove every runtime primitive exists. They prevent the most common mixed Apple/fork install failure; exact capability drift remains covered by package pins, focused tests, and runtime smoke.
+- Exact ref checks cannot prove every runtime primitive behaves correctly. They prevent mixed Apple/fork installs and stale plugin/runtime package drift; capability behavior remains covered by focused tests and runtime smoke.

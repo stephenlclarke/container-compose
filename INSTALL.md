@@ -99,7 +99,7 @@ container compose version --format json
 
 `container compose version` shows the installed plugin build, embedded `compose-go` version, and the `container` and `containerization` pins that the plugin package was built against. Stable Homebrew packages report stable release metadata from their source tag; local or development packages report their package lane and source revision.
 
-Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, or if the Homebrew install is mixed, `container compose` stops with install guidance instead of failing later with a low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae.
+Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, if the Homebrew install is mixed, or if the installed `container` / `containerization` refs do not match the plugin package pins, `container compose` stops with upgrade guidance instead of failing later with a stale unsupported-feature or low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae.
 
 Run a read-only Compose command from a directory containing a Compose file:
 

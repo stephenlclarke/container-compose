@@ -315,7 +315,12 @@ struct ComposePluginMain {
             return
         }
         let rewritten = ComposeArgumentRewriter.rewrite(arguments)
-        if let failure = ContainerPackageCompatibility.compatibilityFailure(arguments: rewritten, lane: composeBuildInfo.lane) {
+        if let failure = ContainerPackageCompatibility.compatibilityFailure(
+            arguments: rewritten,
+            lane: composeBuildInfo.lane,
+            expectedContainerRef: composeBuildInfo.containerRef,
+            expectedContainerizationRef: composeBuildInfo.containerizationRef
+        ) {
             FileHandle.standardError.write(Data((failure + "\n").utf8))
             exit(1)
         }

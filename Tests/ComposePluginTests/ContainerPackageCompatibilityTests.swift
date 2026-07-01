@@ -71,19 +71,58 @@ struct ContainerPackageCompatibilityTests {
     let message = try #require(
       ContainerPackageCompatibility.compatibilityFailure(components: components, lane: "main"))
     #expect(
-      message.contains("container-compose requires Stephen Clarke's customized container stack."))
+      message.contains("container-compose requires the matching Stephen Clarke container stack."))
     #expect(
       message.contains(
-        "The installed Apple container components do not support the Compose functionality in this plugin."
+        "The installed container components do not match the Compose functionality in this plugin."
       ))
     #expect(
       message.contains(
-        "brew install stephenlclarke/tap/container stephenlclarke/tap/container-compose"))
+        "brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose || brew install --formula stephenlclarke/tap/container-compose"
+      ))
+    #expect(message.contains("brew postinstall stephenlclarke/tap/container"))
+    #expect(message.contains("brew services restart stephenlclarke/tap/container"))
     #expect(message.contains(ContainerPackageCompatibility.installGuideURL))
     #expect(message.contains("- container: stephenlclarke/container"))
     #expect(message.contains("- containerization: stephenlclarke/containerization"))
     #expect(message.contains("- container: apple/container (distribution: apple)"))
     #expect(message.contains("- containerization: apple/containerization@main"))
+  }
+
+  @Test("mismatched package pins report install guidance")
+  func mismatchedPackagePinsReportInstallGuidance() throws {
+    let components = [
+      ContainerSystemVersionComponent(
+        appName: "container",
+        buildType: "release",
+        commit: "new-container",
+        containerization: "stephenlclarke/containerization@new-containerization",
+        distribution: "custom",
+        source: "stephenlclarke/container",
+        version: "homebrew-main"
+      )
+    ]
+
+    let message = try #require(
+      ContainerPackageCompatibility.compatibilityFailure(
+        components: components,
+        lane: "main",
+        expectedContainerRef: "old-container",
+        expectedContainerizationRef: "old-containerization"
+      ))
+    #expect(
+      message.contains("container-compose requires the matching Stephen Clarke container stack."))
+    #expect(
+      message.contains(
+        "- container: stephenlclarke/container@new-container (expected old-container)"))
+    #expect(
+      message.contains(
+        "- containerization: stephenlclarke/containerization@new-containerization (expected old-containerization)"
+      ))
+    #expect(
+      message.contains(
+        "brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose || brew install --formula stephenlclarke/tap/container-compose"
+      ))
   }
 
   @Test("release lane guidance points at release formulae")
@@ -93,7 +132,7 @@ struct ContainerPackageCompatibilityTests {
 
     #expect(
       message.contains(
-        "brew install stephenlclarke/tap/container-release stephenlclarke/tap/container-compose-release"
+        "brew upgrade stephenlclarke/tap/container-release stephenlclarke/tap/container-compose-release || brew install --formula stephenlclarke/tap/container-compose-release"
       ))
     #expect(message.contains("matching release lane formula from stephenlclarke/tap"))
   }
@@ -111,7 +150,7 @@ struct ContainerPackageCompatibilityTests {
     )
 
     #expect(
-      message.contains("container-compose requires Stephen Clarke's customized container stack."))
+      message.contains("container-compose requires the matching Stephen Clarke container stack."))
     #expect(message.contains("container: unavailable (container: command not found)"))
     #expect(message.contains(ContainerPackageCompatibility.installGuideURL))
   }

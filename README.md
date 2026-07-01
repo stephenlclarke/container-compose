@@ -78,22 +78,6 @@ Current detailed gap examples:
 - Partially supported commands: `attach` and `up`.
 - Unsupported commands: `commit` and `publish`.
 
-**Partially supported `attach`:**
-
-![container compose attach help showing partially supported attach options](docs/images/container-compose-help-attach-partial.png)
-
-**Unsupported `commit`:**
-
-![container compose commit help showing commit is not supported](docs/images/container-compose-help-commit-unsupported.png)
-
-**Unsupported `publish`:**
-
-![container compose publish help showing publish is not supported](docs/images/container-compose-help-publish-unsupported.png)
-
-**Partially supported `up`:**
-
-![container compose up help showing partially supported up options](docs/images/container-compose-help-up-partial.png)
-
 Long-running project loading, image pull/build, and non-interactive runtime
 handoff steps emit Compose-owned progress on stderr so scriptable stdout output
 stays clean. Use `--progress quiet` to suppress these rows, `--progress plain`
