@@ -495,7 +495,7 @@ jobs:
         run: |
           set -euo pipefail
           formula="${{ steps.lane.outputs.formula }}"
-          if git diff --quiet -- "Formula/${formula}"; then
+          if [[ -z "$(git status --porcelain -- "Formula/${formula}")" ]]; then
             printf 'Homebrew tap formula already points at %s\n' "${{ steps.lane.outputs.asset }}"
             exit 0
           fi
