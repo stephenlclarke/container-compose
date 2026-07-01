@@ -50,19 +50,21 @@ brew services restart stephenlclarke/tap/container
 
 `container-compose` and `container-compose-pre` are alternate lanes. Homebrew can upgrade whichever lane is installed, but it will not automatically uninstall the other lane when switching because both formulae install the same `container-compose` command and Compose plugin.
 
-To switch from stable to the current pre-release plugin:
-
 ```sh
-brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose || true
+# Stay on stable
+brew upgrade stephenlclarke/tap/container-compose
+
+# Stay on pre-release
+brew upgrade stephenlclarke/tap/container-compose-pre
+
+# Switch stable -> pre-release
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose
 brew install --formula stephenlclarke/tap/container-compose-pre
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
-```
 
-To switch back from pre-release to stable:
-
-```sh
-brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose-pre || true
+# Switch pre-release -> stable
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose-pre
 brew install --formula stephenlclarke/tap/container-compose
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
