@@ -63,6 +63,27 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
 
+    def test_moving_main_tag_rerun_has_empty_commit_range(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "homebrew-main")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="homebrew-main",
+                release_label="Main lane",
+                compose_version="0.6.0",
+                asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("Commits since `homebrew-main`", notes)
+            self.assertIn("No source commits changed", notes)
+            self.assertNotIn("chore: initial import", notes)
+
     def test_semver_tag_lists_commits_since_previous_semver_release(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:

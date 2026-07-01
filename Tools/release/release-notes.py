@@ -93,19 +93,24 @@ def previous_release_tag(repo: Path, release_tag: str, head_ref: str) -> str | N
     return None
 
 
+def is_moving_release_tag(release_tag: str) -> bool:
+    return release_tag == "homebrew-main" or release_tag.endswith("-pre")
+
+
 def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
     head_commit = commit_for_ref(repo, head_ref)
     if head_commit is None:
         raise ValueError(f"could not resolve release head: {head_ref}")
 
     tagged_commit = commit_for_ref(repo, f"refs/tags/{release_tag}")
-    if tagged_commit is not None and tagged_commit != head_commit:
-        return ReleaseRange(
-            base_ref=f"refs/tags/{release_tag}",
-            base_label=release_tag,
-            head_ref=head_ref,
-            head_commit=head_commit,
-        )
+    if tagged_commit is not None:
+        if tagged_commit != head_commit or is_moving_release_tag(release_tag):
+            return ReleaseRange(
+                base_ref=f"refs/tags/{release_tag}",
+                base_label=release_tag,
+                head_ref=head_ref,
+                head_commit=head_commit,
+            )
 
     previous_tag = previous_release_tag(repo, release_tag, head_ref)
     if previous_tag is not None:
