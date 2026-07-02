@@ -18,7 +18,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `2521727bbe89319ad8f975f73140ab016c6689ed`
+- `stephenlclarke/container`: `718947d32a6a75466e3e844dbc61b32abc54bb49`
 - `stephenlclarke/containerization`: `4ee1e3f180a62463595ce4f1a99ccfc2a4b326b1`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
