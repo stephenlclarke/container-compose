@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-07-02.
+Last updated: 2026-07-03.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -18,18 +18,18 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `718947d32a6a75466e3e844dbc61b32abc54bb49`
-- `stephenlclarke/containerization`: `4ee1e3f180a62463595ce4f1a99ccfc2a4b326b1`
+- `stephenlclarke/container`: `43a791efa11844299c787719369828a822231c84`
+- `stephenlclarke/containerization`: `b544db9b81a575d6b58ca31f3f900bc8ce23f7d1`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
 ## Latest Local Validation
 
-The latest local validation for this `container-compose` slice passed with `make ci`, focused release-helper unit tests, workflow YAML parsing, Homebrew formula checks, `git diff --check`, and a local Homebrew upgrade/install verification of the matched `container` / `container-compose` stack.
+The latest local validation for this support-pin refresh passed with `make check`, `make go-build go-test`, scratch-path `swift build --disable-automatic-resolution --product compose`, `make cli-smoke-built`, `npx --yes markdownlint-cli STATUS.md`, and `git diff --check`. Full `make ci` was attempted; it passed Python helper tests but was cancelled while waiting on another active SwiftPM coverage build holding the shared `.build` lock.
 
-Most recent coverage proof:
+Most recent full coverage proof remains the previous clean `make ci` pass:
 
-- Swift: 834 Compose tests at 89.03% line coverage.
-- Go normalizer: 92.52% line coverage.
+- Swift: 838 Compose tests at 89.03% line coverage.
+- Go normalizer: 92.55% line coverage.
 
 ## Recent Functional State
 
