@@ -24,12 +24,12 @@ Current reviewed package pins:
 
 ## Latest Local Validation
 
-The latest local validation for this support-pin refresh passed with `make check`, `make go-build go-test`, scratch-path `swift build --disable-automatic-resolution --product compose`, `make cli-smoke-built`, `npx --yes markdownlint-cli STATUS.md`, and `git diff --check`. Full `make ci` was attempted; it passed Python helper tests but was cancelled while waiting on another active SwiftPM coverage build holding the shared `.build` lock.
+The latest local validation for this support-pin refresh passed with `make ci`, `npx --yes markdownlint-cli STATUS.md`, and `git diff --check`.
 
-Most recent full coverage proof remains the previous clean `make ci` pass:
+Current full coverage proof:
 
-- Swift: 838 Compose tests at 89.03% line coverage.
-- Go normalizer: 92.55% line coverage.
+- Swift: 838 Compose tests at 89.15% line coverage.
+- Go normalizer: 92.5% line coverage.
 
 ## Recent Functional State
 
