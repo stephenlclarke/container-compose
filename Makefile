@@ -167,6 +167,13 @@ swift-coverage: swift-test-build
 		exit 2; \
 	fi; \
 	raw_profile_count="$$(find .build -path .build/index-build -prune -o -name '*.profraw' -type f -print | wc -l | tr -d ' ')"; \
+	for _ in 1 2 3 4 5 6 7 8 9 10; do \
+		if [[ "$$raw_profile_count" -gt 0 ]]; then \
+			break; \
+		fi; \
+		sleep 1; \
+		raw_profile_count="$$(find .build -path .build/index-build -prune -o -name '*.profraw' -type f -print | wc -l | tr -d ' ')"; \
+	done; \
 	if [[ "$$raw_profile_count" -eq 0 ]]; then \
 		printf 'Swift coverage profile is missing and no raw .profraw files were found\n' >&2; \
 		exit 2; \
