@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-07-03.
+Last updated: 2026-07-04.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -24,12 +24,12 @@ Current reviewed package pins:
 
 ## Latest Local Validation
 
-The latest local validation for this support-pin refresh passed with `make ci`, `npx --yes markdownlint-cli STATUS.md`, and `git diff --check`.
+The latest local validation for this compatibility refresh passed with `make ci`, `npx --yes markdownlint-cli STATUS.md`, and `git diff --check`.
 
 Current full coverage proof:
 
-- Swift: 838 Compose tests at 89.15% line coverage.
-- Go normalizer: 92.5% line coverage.
+- Swift: 838 Compose tests at 89.04% line coverage.
+- Go normalizer: 92.55% line coverage.
 
 ## Recent Functional State
 
@@ -52,6 +52,7 @@ Current full coverage proof:
 - Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
 - `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, command-level `--watch` start, graceful stop, force stop shortcuts, and exit-control options. Docker Desktop-only shortcuts are intentionally absent.
 - Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
+- Nested bind mounts that overlay a subdirectory within an earlier bind mount remain an Apple runtime gap tracked by [apple/container#1890](https://github.com/apple/container/issues/1890); the plugin can preserve and order the mount entries, but Docker-compatible mount-over-mount behavior depends on runtime support.
 - Namespace sharing via `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME` remains blocked until the runtime exposes Docker-compatible namespace-joining primitives.
 - Arbitrary service network attachment `driver_opts` remain blocked until the runtime exposes a Docker-compatible endpoint option surface; Docker-compatible MTU options are already mapped.
 - Service `devices` currently resolves only the runtime-supported Linux VM device table, including `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, `/dev/tty`, `/dev/console`, and `/dev/ptmx`. Source paths and explicit target paths must be absolute. Docker Compose can pass relative target strings through the Engine API in ambiguous short-form cases such as `/dev/null:rw`; the fork-backed CLI bridge rejects those forms so `rw` is not silently treated as Docker CLI permissions.
