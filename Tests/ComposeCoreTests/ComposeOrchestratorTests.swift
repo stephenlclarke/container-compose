@@ -2118,9 +2118,9 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
-        #expect(commands[0].last == "api")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(commands[1].containsSequence(["container", "build", "--tag", "demo_worker:latest"]))
-        #expect(commands[1].last == "worker")
+        #expect(commands[1].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
         #expect(commands[2].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(commands[3].starts(with: ["container", "create", "--name", "demo-worker-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
@@ -2150,7 +2150,7 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
-        #expect(commands[0].last == "api")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
@@ -2219,7 +2219,7 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
-        #expect(commands[0].last == "api")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(commands[1].starts(with: ["container", "create", "--name", "demo-api-1"]))
         #expect(commands[2].starts(with: ["container", "create", "--name", "demo-db-1"]))
         #expect(await imageManager.requests == [
@@ -2274,7 +2274,7 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "demo_worker:latest"]))
-        #expect(commands[0].last == "worker")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
         #expect(commands[1].starts(with: ["container", "create", "--name", "demo-worker-1"]))
         #expect(await discoveryManager.getRequests == ["demo-worker-1"])
     }
@@ -4774,9 +4774,9 @@ struct ComposeOrchestratorTests {
         let buildCommands = runner.commands.map(\.arguments).filter { $0.starts(with: ["container", "build"]) }
         #expect(buildCommands.count == 2)
         #expect(buildCommands[0].containsSequence(["--tag", "example/api"]))
-        #expect(buildCommands[0].last == "api")
+        #expect(buildCommands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(buildCommands[1].containsSequence(["--tag", "demo_worker:latest"]))
-        #expect(buildCommands[1].last == "worker")
+        #expect(buildCommands[1].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-worker-1"])
     }
 
@@ -4835,7 +4835,7 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
-        #expect(commands[0].last == "api")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
@@ -4990,7 +4990,7 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/api"]))
-        #expect(commands[0].last == "api")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(commands[1].starts(with: ["container", "run", "--name", "demo-api-1"]))
         #expect(commands[2].starts(with: ["container", "run", "--name", "demo-db-1"]))
         #expect(await imageManager.requests == [
@@ -10643,7 +10643,13 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.filter { $0 == "example/api:latest" }.count == 1)
         #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:dev"]))
         #expect(runner.commands[0].arguments.containsSequence(["--tag", "example/api:test"]))
-        #expect(runner.commands[0].arguments.containsSequence(["--file", "api/Containerfile"]))
+        #expect(runner.commands[0].arguments.containsSequence([
+            "--file",
+            URL(fileURLWithPath: project.workingDirectory, isDirectory: true)
+                .appendingPathComponent("api/Containerfile")
+                .standardizedFileURL
+                .path,
+        ]))
         #expect(runner.commands[0].arguments.containsSequence(["--target", "runtime"]))
         #expect(runner.commands[0].arguments.contains("--no-cache"))
         #expect(runner.commands[0].arguments.contains("--pull"))
@@ -10658,8 +10664,9 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands[0].arguments.containsSequence(["--provenance", "mode=min"]))
         #expect(!runner.commands[0].arguments.contains("--sbom"))
         #expect(runner.commands[0].arguments.containsSequence(["--build-arg", "VERSION=1"]))
-        #expect(runner.commands[0].arguments.last == "api")
+        #expect(runner.commands[0].arguments.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(runner.commands[1].arguments.containsSequence(["--tag", "demo_worker:latest"]))
+        #expect(runner.commands[1].arguments.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path)
         #expect(runner.commands.count == 2)
         #expect(await imageManager.requests == [
             .pull("example/api:latest"),
@@ -10696,27 +10703,40 @@ struct ComposeOrchestratorTests {
                         dockerfile: "Containerfile"
                     )
                 },
+                "default": composeService(name: "default") {
+                    $0.build = ComposeBuild()
+                },
             ]
         )
 
-        try await orchestrator.build(project: project, services: ["api", "worker", "remote"], noCache: false)
+        try await orchestrator.build(project: project, services: ["api", "worker", "remote", "default"], noCache: false)
 
         let apiCommand = try #require(runner.commands.first { command in
             command.arguments.last == "/tmp/container-compose-build-context/api"
         }?.arguments)
         let workerCommand = try #require(runner.commands.first { command in
-            command.arguments.last == "worker"
+            command.arguments.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("worker").standardizedFileURL.path
         }?.arguments)
         let remoteCommand = try #require(runner.commands.first { command in
             command.arguments.last == "https://example.com/repo.git"
+        }?.arguments)
+        let defaultCommand = try #require(runner.commands.first { command in
+            command.arguments.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).standardizedFileURL.path
         }?.arguments)
 
         #expect(apiCommand.containsSequence([
             "--file",
             "/tmp/container-compose-build-context/api/docker/Dockerfile",
         ]))
-        #expect(workerCommand.containsSequence(["--file", "worker/Containerfile"]))
+        #expect(workerCommand.containsSequence([
+            "--file",
+            URL(fileURLWithPath: project.workingDirectory, isDirectory: true)
+                .appendingPathComponent("worker/Containerfile")
+                .standardizedFileURL
+                .path,
+        ]))
         #expect(remoteCommand.containsSequence(["--file", "Containerfile"]))
+        #expect(!defaultCommand.contains("--file"))
     }
 
     @Test("build materializes inline Dockerfile for container build")
@@ -10742,7 +10762,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["container", "build", "--tag", "example/api:inline"]))
         #expect(dockerfilePath.contains("container-compose-demo-api-"))
         #expect(dockerfilePath.hasSuffix("/Dockerfile"))
-        #expect(command.last == "api")
+        #expect(command.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(runner.dockerfileContents == ["FROM alpine:3.20\nRUN echo inline\n"])
         #expect(!FileManager.default.fileExists(atPath: dockerfilePath))
     }
@@ -11016,7 +11036,7 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.contains("--pull"))
         #expect(command.contains("--quiet"))
-        #expect(command.last == "api")
+        #expect(command.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
         #expect(await imageManager.requests == [.push("example/api:latest")])
     }
 
@@ -11067,7 +11087,6 @@ struct ComposeOrchestratorTests {
 
         #expect(runner.commands.count == 2)
         let baseCommand = try #require(runner.commands.first?.arguments)
-        #expect(baseCommand.last == "base")
 
         let command = try #require(runner.commands.last?.arguments)
         #expect(command.containsSequence(["--memory", "256m"]))
@@ -11085,7 +11104,8 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--ulimit", "nofile=1024:2048"]))
         #expect(command.containsSequence(["--build-arg", "FILE_ARG=1"]))
         #expect(command.containsSequence(["--build-arg", "CLI_ARG=2"]))
-        #expect(command.last == "api")
+        #expect(baseCommand.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("base").standardizedFileURL.path)
+        #expect(command.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
     }
 
     @Test("build rejects unknown service additional contexts before side effects")
@@ -11462,9 +11482,9 @@ struct ComposeOrchestratorTests {
         let commands = runner.commands.map(\.arguments)
         #expect(commands.count == 2)
         #expect(commands[0].containsSequence(["--tag", "example/db:latest"]))
-        #expect(commands[0].last == "db")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("db").standardizedFileURL.path)
         #expect(commands[1].containsSequence(["--tag", "example/api:latest"]))
-        #expect(commands[1].last == "api")
+        #expect(commands[1].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
     }
 
     @Test("build push skips services without explicit image references")
@@ -11664,7 +11684,7 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.first)
         #expect(command.executable == "custom-env")
         #expect(command.arguments.containsSequence(["container", "build", "--tag", "example/api:latest"]))
-        #expect(command.arguments.last == "api")
+        #expect(command.arguments.last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("api").standardizedFileURL.path)
     }
 
     @Test("down removes project resources in dependency order")
@@ -19692,7 +19712,7 @@ struct ComposeOrchestratorTests {
 
         let commands = runner.commands.map(\.arguments)
         #expect(commands[0].containsSequence(["container", "build", "--tag", "example/job"]))
-        #expect(commands[0].last == "job")
+        #expect(commands[0].last == URL(fileURLWithPath: project.workingDirectory, isDirectory: true).appendingPathComponent("job").standardizedFileURL.path)
         #expect(commands[1].starts(with: ["container", "run", "--name"]))
         #expect(Array(commands[1].suffix(2)) == ["example/job", "true"])
     }

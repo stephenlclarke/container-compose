@@ -53,7 +53,7 @@ extension ComposeOrchestrator {
             if nonEmpty(build.dockerfileInline) != nil {
                 throw ComposeError.invalidProject("service '\(service.name)' cannot define both dockerfile and dockerfile_inline")
             }
-            args.append(contentsOf: ["--file", buildDockerfilePath(dockerfile, build: build)])
+            args.append(contentsOf: ["--file", buildDockerfilePath(dockerfile, build: build, project: project)])
         } else if let dockerfileInline = nonEmpty(build.dockerfileInline) {
             let dockerfileURL = try materializeInlineDockerfile(project: project, service: service, contents: dockerfileInline)
             inlineDockerfileDirectory = dockerfileURL.deletingLastPathComponent()
@@ -125,7 +125,7 @@ extension ComposeOrchestrator {
         for buildArgument in buildOptions.buildArguments where !buildArgument.isEmpty {
             args.append(contentsOf: ["--build-arg", buildArgument])
         }
-        args.append(build.context ?? ".")
+        args.append(containerBuildContext(build.context, project: project))
         try await runContainer(args)
     }
 
@@ -179,20 +179,29 @@ extension ComposeOrchestrator {
     }
 
     /// Resolves Compose `dockerfile` relative to the build context for apple/container.
-    func buildDockerfilePath(_ dockerfile: String, build: ComposeBuild) -> String {
+    func buildDockerfilePath(_ dockerfile: String, build: ComposeBuild, project: ComposeProject) -> String {
         if (dockerfile as NSString).isAbsolutePath {
+            return URL(fileURLWithPath: dockerfile).standardizedFileURL.path
+        }
+        let context = containerBuildContext(build.context, project: project)
+        guard !context.contains("://") else {
             return dockerfile
         }
-        guard let context = nonEmpty(build.context), !context.contains("://"), context != "." else {
-            return dockerfile
+        return URL(fileURLWithPath: context, isDirectory: true)
+            .appendingPathComponent(dockerfile)
+            .standardizedFileURL
+            .path
+    }
+
+    /// Resolves local Compose build contexts before `container build` handoff.
+    func containerBuildContext(_ context: String?, project: ComposeProject) -> String {
+        guard let context = nonEmpty(context) else {
+            return absoluteProjectPath(".", project: project)
         }
-        if (context as NSString).isAbsolutePath {
-            return URL(fileURLWithPath: context, isDirectory: true)
-                .appendingPathComponent(dockerfile)
-                .standardizedFileURL
-                .path
+        guard !context.contains("://") else {
+            return context
         }
-        return (context as NSString).appendingPathComponent(dockerfile)
+        return absoluteProjectPath(context, project: project)
     }
 
     /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for apple/container build.
