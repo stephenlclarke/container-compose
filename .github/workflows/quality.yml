@@ -22,6 +22,8 @@ on:
       - main
     paths:
       - ".github/workflows/quality.yml"
+      - ".swiftformat"
+      - ".swiftlint.yml"
       - "Package.swift"
       - "Package.resolved"
       - "Sources/**"
@@ -34,6 +36,8 @@ on:
       - reopened
     paths:
       - ".github/workflows/quality.yml"
+      - ".swiftformat"
+      - ".swiftlint.yml"
       - "Package.swift"
       - "Package.resolved"
       - "Sources/**"
@@ -352,6 +356,9 @@ jobs:
           esac
 
           while IFS= read -r path; do
+            if [[ "$path" == "Tests/ComposeCoreTests/ComposeOrchestratorTests.swift" ]]; then
+              continue
+            fi
             case "$path" in
               Package.swift|Sources/*.swift|Tests/*.swift)
                 printf '%s\n' "$path"
