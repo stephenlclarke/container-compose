@@ -14,6 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+// swiftlint:disable file_length function_body_length line_length trailing_comma type_body_length type_name
+
 import ComposeCore
 import ContainerResource
 import ContainerizationError
