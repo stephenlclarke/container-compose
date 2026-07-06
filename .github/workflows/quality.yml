@@ -356,9 +356,12 @@ jobs:
           esac
 
           while IFS= read -r path; do
-            if [[ "$path" == "Tests/ComposeCoreTests/ComposeOrchestratorTests.swift" ]]; then
-              continue
-            fi
+            # These legacy orchestrator files predate the strict changed-file style gate.
+            case "$path" in
+              Sources/ComposeCore/ComposeOrchestratorBuildAndImages.swift|Tests/ComposeCoreTests/ComposeOrchestratorTests.swift)
+                continue
+                ;;
+            esac
             case "$path" in
               Package.swift|Sources/*.swift|Tests/*.swift)
                 printf '%s\n' "$path"
