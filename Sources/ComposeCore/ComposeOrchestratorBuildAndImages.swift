@@ -244,7 +244,7 @@ extension ComposeOrchestrator {
         if nonEmpty(build.dockerfile) != nil, nonEmpty(build.dockerfileInline) != nil {
             throw ComposeError.invalidProject("service '\(service.name)' cannot define both dockerfile and dockerfile_inline")
         }
-        let context = buildBakeContext(build.context, project: project)
+        let context = containerBuildContext(build.context, project: project)
         let dockerfile = try buildBakeDockerfile(context: context, build: build)
         let arguments = try buildBakeArguments(project: project, build: build, buildArguments: buildOptions.buildArguments)
         let contexts = try buildBakeContexts(project: project, build: build)
@@ -278,17 +278,6 @@ extension ComposeOrchestrator {
             output: buildOptions.check ? nil : [buildOptions.push && service.image != nil ? "type=registry" : "type=docker"],
             call: buildOptions.check ? "lint" : nil,
         )
-    }
-
-    /// Resolves a Buildx bake context path using Docker Compose's absolute-path style.
-    func buildBakeContext(_ context: String?, project: ComposeProject) -> String {
-        guard let context = nonEmpty(context) else {
-            return absoluteProjectPath(".", project: project)
-        }
-        guard !context.contains("://") else {
-            return context
-        }
-        return absoluteProjectPath(context, project: project)
     }
 
     /// Resolves a Buildx bake Dockerfile path relative to the effective build context.
