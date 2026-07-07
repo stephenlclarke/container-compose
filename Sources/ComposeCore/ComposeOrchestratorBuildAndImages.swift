@@ -180,17 +180,8 @@ extension ComposeOrchestrator {
 
     /// Resolves Compose `dockerfile` relative to the build context for apple/container.
     func buildDockerfilePath(_ dockerfile: String, build: ComposeBuild, project: ComposeProject) -> String {
-        if (dockerfile as NSString).isAbsolutePath {
-            return URL(fileURLWithPath: dockerfile).standardizedFileURL.path
-        }
         let context = containerBuildContext(build.context, project: project)
-        guard !context.contains("://") else {
-            return dockerfile
-        }
-        return URL(fileURLWithPath: context, isDirectory: true)
-            .appendingPathComponent(dockerfile)
-            .standardizedFileURL
-            .path
+        return resolvedDockerfilePath(dockerfile, context: context)
     }
 
     /// Resolves local Compose build contexts before `container build` handoff.
@@ -286,19 +277,21 @@ extension ComposeOrchestrator {
             return (nil, dockerfileInline)
         }
         let dockerfile = nonEmpty(build.dockerfile) ?? "Dockerfile"
+        return (resolvedDockerfilePath(dockerfile, context: context), nil)
+    }
+
+    /// Resolves a Dockerfile path against an already-normalized build context.
+    func resolvedDockerfilePath(_ dockerfile: String, context: String) -> String {
         guard !context.contains("://") else {
-            return (dockerfile, nil)
+            return dockerfile
         }
         if (dockerfile as NSString).isAbsolutePath {
-            return (URL(fileURLWithPath: dockerfile).standardizedFileURL.path, nil)
+            return URL(fileURLWithPath: dockerfile).standardizedFileURL.path
         }
-        return (
-            URL(fileURLWithPath: context, isDirectory: true)
-                .appendingPathComponent(dockerfile)
-                .standardizedFileURL
-                .path,
-            nil,
-        )
+        return URL(fileURLWithPath: context, isDirectory: true)
+            .appendingPathComponent(dockerfile)
+            .standardizedFileURL
+            .path
     }
 
     /// Merges Compose-file and CLI build arguments for bake JSON.
