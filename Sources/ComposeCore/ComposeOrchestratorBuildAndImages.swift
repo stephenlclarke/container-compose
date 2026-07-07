@@ -186,13 +186,8 @@ extension ComposeOrchestrator {
 
     /// Resolves local Compose build contexts before `container build` handoff.
     func containerBuildContext(_ context: String?, project: ComposeProject) -> String {
-        guard let context = nonEmpty(context) else {
-            return absoluteProjectPath(".", project: project)
-        }
-        guard !context.contains("://") else {
-            return context
-        }
-        return absoluteProjectPath(context, project: project)
+        let context = nonEmpty(context) ?? "."
+        return isRemoteBuildReference(context) ? context : absoluteProjectPath(context, project: project)
     }
 
     /// Writes Compose `dockerfile_inline` content to a temporary Dockerfile for apple/container build.
@@ -282,7 +277,7 @@ extension ComposeOrchestrator {
 
     /// Resolves a Dockerfile path against an already-normalized build context.
     func resolvedDockerfilePath(_ dockerfile: String, context: String) -> String {
-        guard !context.contains("://") else {
+        if isRemoteBuildReference(context) {
             return dockerfile
         }
         if (dockerfile as NSString).isAbsolutePath {
@@ -292,6 +287,10 @@ extension ComposeOrchestrator {
             .appendingPathComponent(dockerfile)
             .standardizedFileURL
             .path
+    }
+
+    func isRemoteBuildReference(_ value: String) -> Bool {
+        value.contains("://")
     }
 
     /// Merges Compose-file and CLI build arguments for bake JSON.
