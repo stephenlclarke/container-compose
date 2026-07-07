@@ -28,7 +28,7 @@ The latest local validation for this compatibility refresh passed with `make ci`
 
 Current full coverage proof:
 
-- Swift: 838 Compose tests at 89.02% line coverage.
+- Swift: 838 Compose tests at 89.06% line coverage.
 - Go normalizer: 92.55% line coverage.
 
 ## Recent Functional State
