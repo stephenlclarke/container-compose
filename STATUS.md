@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-07-06.
+Last updated: 2026-07-07.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -18,7 +18,7 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `43a791efa11844299c787719369828a822231c84`
+- `stephenlclarke/container`: `c312b3c3545216a20c3d48e5980a2ad18c8fcbd4`
 - `stephenlclarke/containerization`: `b544db9b81a575d6b58ca31f3f900bc8ce23f7d1`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
@@ -28,7 +28,7 @@ The latest local validation for this compatibility refresh passed with `make ci`
 
 Current full coverage proof:
 
-- Swift: 838 Compose tests at 89.04% line coverage.
+- Swift: 838 Compose tests at 89.02% line coverage.
 - Go normalizer: 92.55% line coverage.
 
 ## Recent Functional State
