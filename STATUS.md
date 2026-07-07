@@ -28,7 +28,7 @@ The latest local validation for this compatibility refresh passed with `make ci`
 
 Current full coverage proof:
 
-- Swift: 838 Compose tests at 89.06% line coverage.
+- Swift: 838 Compose tests at 89.07% line coverage.
 - Go normalizer: 92.55% line coverage.
 
 ## Recent Functional State
@@ -44,7 +44,7 @@ Current full coverage proof:
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
-- Packaging and quality: CodeQL gates the release-built Go normalizer path, Swift CodeQL remains blocked by fork-backed dependency rebuild timeouts, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
+- Packaging and quality: CodeQL gates the release-built Go normalizer path and the current fork-backed Swift dependency graph, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
 - Packaging: `container` still publishes the moving `homebrew-main` runtime package. `container-compose-pre` follows the latest `VERSION-pre` development release, and `container-compose` follows the latest stable semantic release. Both plugin packages record the published runtime commit in package metadata so `brew upgrade` keeps the installed stack aligned and runtime/plugin mismatches fail fast.
 
 ## Current Limits
