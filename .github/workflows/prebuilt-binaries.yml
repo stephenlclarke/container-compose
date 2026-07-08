@@ -230,7 +230,7 @@ jobs:
               release_label="Main lane"
               release_latest="false"
               release_prerelease="true"
-              update_tap="true"
+              update_tap="false"
               asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz"
               formula="container-compose.rb"
               formula_class="ContainerCompose"

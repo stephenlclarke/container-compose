@@ -30,7 +30,7 @@ Do not create new long-lived `release`, `release-*`, `snapshot/*`, compatibility
 
 ## Version And Release Rhythm
 
-`main` is the current integration branch and the source of the next stable release. Normal work lands on `main`; installable binary packages are published from the main lane, from `develop/VERSION` pre-release tags, and from bare semantic stable tags.
+`main` is the current integration branch and the source of the next stable release. Normal work lands on `main`; binary package artifacts are built from the main lane for validation, while installable Homebrew formula updates come only from `develop/VERSION` pre-release tags and bare semantic stable tags.
 
 When a formal version boundary is needed, `main` contains the version that will become the next stable source tag. A development slice increments the version on `develop/VERSION`, publishes pre-release assets only, then lands back on `main` before the stable tag is created.
 
@@ -83,7 +83,7 @@ Use it in this order:
 
 1. Finish and validate work on `main`.
 2. Run `release VERSION_SELECTOR --execute` for the stable release, package publication, and Homebrew tap update.
-3. Let the stable tag workflow publish `VERSION` and update `container-compose`.
+3. Let the dispatched stable package workflow publish `VERSION` and update `container-compose`.
 4. Run `start-dev VERSION_SELECTOR --execute` only when opening a separate short-lived `develop/VERSION` pre-release slice.
 5. Let the `develop/VERSION` prebuilt workflow publish `VERSION-pre.RUN.SHA` and update `container-compose-pre`.
 
