@@ -356,8 +356,11 @@ jobs:
           esac
 
           while IFS= read -r path; do
-            # These legacy orchestrator files predate the strict changed-file style gate.
+            # These legacy command and orchestrator files predate the strict changed-file style gate.
             case "$path" in
+              Sources/ComposePlugin/ComposePlugin.swift)
+                continue
+                ;;
               Sources/ComposeCore/ComposeOrchestratorBuildAndImages.swift|Tests/ComposeCoreTests/ComposeOrchestratorTests.swift)
                 continue
                 ;;
