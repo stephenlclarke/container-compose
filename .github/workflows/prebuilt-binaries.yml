@@ -417,10 +417,17 @@ jobs:
             --head "${PUBLISH_SHA}" > "${notes}"
 
           tag_target="$(
-            git ls-remote --tags --refs origin "refs/tags/${RELEASE_TAG}" \
-              | awk '{print $1}' \
+            git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" \
+              | awk '$2 ~ /\^\{\}$/ { print $1 }' \
               | tail -n 1
           )"
+          if [[ -z "${tag_target}" ]]; then
+            tag_target="$(
+              git ls-remote --tags --refs origin "refs/tags/${RELEASE_TAG}" \
+                | awk '{ print $1 }' \
+                | tail -n 1
+            )"
+          fi
           if [[ -n "$tag_target" && "$tag_target" != "$PUBLISH_SHA" ]]; then
             printf 'release tag %s already points at %s, refusing to retarget it to %s\n' \
               "$RELEASE_TAG" "$tag_target" "$PUBLISH_SHA" >&2
