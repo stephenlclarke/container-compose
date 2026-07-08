@@ -68,12 +68,28 @@ private struct ComposeBuildInfo: Codable {
     }
 
     private static func packagedBuildInfoPath() -> String {
-        let executable = URL(fileURLWithPath: CommandLine.arguments.first ?? "")
+        let executable = URL(fileURLWithPath: executablePath()).resolvingSymlinksInPath()
         return executable
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("resources/build-info.json")
             .path
+    }
+
+    private static func executablePath() -> String {
+        #if canImport(Darwin)
+        var size: UInt32 = 0
+        _NSGetExecutablePath(nil, &size)
+        var buffer = [CChar](repeating: 0, count: Int(size))
+        if _NSGetExecutablePath(&buffer, &size) == 0 {
+            return FileManager.default.string(
+                withFileSystemRepresentation: buffer,
+                length: Int(strlen(buffer))
+            )
+        }
+        #endif
+
+        return CommandLine.arguments.first ?? ""
     }
 
     private static func decode(path: String) -> ComposeBuildInfo? {

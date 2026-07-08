@@ -273,6 +273,16 @@ cli-smoke-built:
 	[[ "$$version_short_format_output" == *'"version":"0.6.3"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
 	[[ "$$version_compact_format_output" == *'"version":"0.6.3"'* ]]; \
+	package_tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$package_tmp"' EXIT; \
+	mkdir -p "$$package_tmp/compose/bin" "$$package_tmp/compose/resources" "$$package_tmp/bin"; \
+	cp .build/debug/compose "$$package_tmp/compose/bin/compose"; \
+	printf '%s\n' '{"version":"0.6.3","source":"stephenlclarke/container-compose","branch":"symlink-smoke","lane":"stable","commit":"packaged-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"container-smoke","containerizationSource":"stephenlclarke/containerization","containerizationRef":"containerization-smoke","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$package_tmp/compose/resources/build-info.json"; \
+	ln -s ../compose/bin/compose "$$package_tmp/bin/container-compose"; \
+	packaged_version_output="$$(cd /tmp && "$$package_tmp/bin/container-compose" version --format json)"; \
+	[[ "$$packaged_version_output" == *'"branch":"symlink-smoke"'* ]]; \
+	[[ "$$packaged_version_output" == *'"lane":"stable"'* ]]; \
+	[[ "$$packaged_version_output" == *'"containerRef":"container-smoke"'* ]]; \
 	version_bad_format_output="$$(".build/debug/compose" version --format yaml 2>&1 || true)"; \
 	[[ "$$version_bad_format_output" == *"unsupported compose feature: version --format 'yaml'; supported formats are pretty and json"* ]]; \
 	compat_tmp="$$(mktemp -d)"; \
