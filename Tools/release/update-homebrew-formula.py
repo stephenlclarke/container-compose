@@ -15,7 +15,7 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Update a Homebrew formula to point at a branch release asset."""
+"""Update a Homebrew formula to point at a release package asset."""
 
 from __future__ import annotations
 

@@ -7,8 +7,6 @@ Usage:
   CONTAINER_STACK_RELEASE.sh plan
   CONTAINER_STACK_RELEASE.sh release VERSION_SELECTOR [--execute]
   CONTAINER_STACK_RELEASE.sh package VERSION [--execute]
-  CONTAINER_STACK_RELEASE.sh tag-current [--execute]
-  CONTAINER_STACK_RELEASE.sh start-dev VERSION_SELECTOR [--execute]
 
 Purpose:
   Coordinate the simplified Stephen-owned container stack release flow without
@@ -16,8 +14,8 @@ Purpose:
 
 Modes:
   plan
-      Inspect the four local main branches and print the release/dev-slice
-      plan. This mode never mutates repositories.
+      Inspect the four local main branches and print the next release plan.
+      This mode never mutates repositories.
 
   release VERSION_SELECTOR
       Deterministically promote the current four-repo stack to the next stable
@@ -28,30 +26,18 @@ Modes:
       tag, pushes that tag, dispatches the stable package workflow, and waits
       for that workflow to publish the release assets and Homebrew tap update.
 
+      Version selectors:
+        9.0.2  use the explicit 9.0.2 stable release version
+        --+    increment patch from the latest semantic release tag
+        -+-    increment minor and reset patch to 0
+        +--    increment major and reset minor and patch to 0
+
   package VERSION
       Re-run the stable package workflow for an existing semantic source tag,
       then verify the release archive, checksum asset, and Homebrew formula
       URL/SHA without moving any tags.
 
-  tag-current
-      Tag the current validated container-compose main state as the latest
-      stable release using the current COMPOSE_VERSION value, then dispatch and
-      wait for the stable package workflow.
-
-  start-dev VERSION_SELECTOR
-      First tag the current container-compose main state as the latest stable release, then
-      create a short-lived develop/VERSION branch from main in container-compose,
-      bump COMPOSE_VERSION to VERSION, update local version expectations, commit
-      the bump, and push the branch. CI for that branch should publish an
-      immutable VERSION-pre.RUN.SHA pre-release/dev slice.
-
-      Version selectors:
-        9.0.2  use the explicit 9.0.2 next development version
-        --+    increment patch from the current COMPOSE_VERSION
-        -+-    increment minor and reset patch to 0
-        +--    increment major and reset minor and patch to 0
-
-      Source tags are bare MAJOR.MINOR.PATCH for Apple compatibility.
+  Source tags are bare MAJOR.MINOR.PATCH for Apple compatibility.
 
 Options:
   --execute
@@ -66,8 +52,8 @@ Repository layout expected:
 Rules enforced:
   - Apple remotes are read-only and must not be push targets.
   - Stephen-owned remotes are the only push targets.
-  - Worktrees must be clean before release or dev-slice changes.
-  - Stable container-compose release tags point at current main before the next dev version bump.
+  - Worktrees must be clean before release changes.
+  - Stable container-compose release tags point at the validated main commit.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
   - Existing tags are never moved.
@@ -85,9 +71,9 @@ shift || true
 VERSION_SELECTOR=""
 EXECUTE=0
 case "${MODE}" in
-  plan|tag-current)
+  plan)
     ;;
-  release|package|start-dev)
+  release|package)
     VERSION_SELECTOR="${1:-}"
     if [[ -z "${VERSION_SELECTOR}" ]]; then
       if [[ "${MODE}" == "package" ]]; then
@@ -350,11 +336,6 @@ resolve_version_selector() {
   exit 2
 }
 
-# Resolve an explicit or symbolic next development version.
-resolve_next_version() {
-  resolve_version_selector "$1" "$(current_compose_version)"
-}
-
 # Resolve the release version from the latest semantic tag, not mutable files.
 resolve_release_version() {
   local latest
@@ -372,18 +353,6 @@ ensure_semver_version() {
     printf 'version must be MAJOR.MINOR.PATCH: %s\n' "${version}" >&2
     exit 2
   fi
-}
-
-# Ensure a target version is newer than the current compose version.
-ensure_next_version_increases() {
-  local current="$1" next="$2"
-  python3 - "$current" "$next" <<'PY'
-import sys
-current = tuple(int(part) for part in sys.argv[1].split("."))
-next_version = tuple(int(part) for part in sys.argv[2].split("."))
-if next_version <= current:
-    raise SystemExit(f"next development version {sys.argv[2]} must be greater than current stable {sys.argv[1]}")
-PY
 }
 
 ensure_release_version_is_valid() {
@@ -700,11 +669,6 @@ Stable release point:
 EOF
 }
 
-# Tag the current compose state as the stable/latest release point.
-tag_current_stable() {
-  tag_stable_version "$(current_compose_version)"
-}
-
 # Rebuild and verify an existing stable package without moving its source tag.
 package_existing_stable() {
   local version="$1" remote
@@ -784,52 +748,6 @@ source.write_text(text, encoding="utf-8")
 PY
 }
 
-# Create and optionally push the next short-lived dev slice branch.
-start_dev_slice() {
-  local current next branch path remote
-  current="$(current_compose_version)"
-  next="$(resolve_next_version "${VERSION_SELECTOR}")"
-  ensure_next_version_increases "${current}" "${next}"
-  path="$(repo_path "${COMPOSE_REPO}")"
-  remote="$(push_remote "${COMPOSE_REPO}")"
-  branch="develop/${next}"
-
-  printf 'current stable version: %s\n' "${current}"
-  printf 'next development version: %s\n' "${next}"
-  if git -C "${path}" show-ref --verify --quiet "refs/heads/${branch}"; then
-    printf 'branch %s already exists locally; refusing to overwrite it\n' "${branch}" >&2
-    exit 1
-  fi
-  if git -C "${path}" ls-remote --exit-code --heads "${remote}" "${branch}" >/dev/null 2>&1; then
-    printf 'branch %s already exists remotely; refusing to overwrite it\n' "${branch}" >&2
-    exit 1
-  fi
-
-  tag_current_stable
-
-  print_header "start ${branch}"
-  run git -C "${path}" switch -c "${branch}" main
-  if [[ "${EXECUTE}" == "1" ]]; then
-    bump_compose_version_files "${current}" "${next}"
-  else
-    printf 'would update: %s\n' "${path}/Makefile"
-    printf 'would update: %s\n' "${path}/Sources/ComposePlugin/ComposePlugin.swift"
-  fi
-  run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift
-  run git -C "${path}" commit -m "chore(release): start ${next} development"
-  run git -C "${path}" push "${remote}" "refs/heads/${branch}"
-
-  cat <<EOF
-
-Development slice:
-  branch: ${branch}
-  version: ${next}
-  release tag: ${next}-pre.RUN.SHA
-  label: pre-release
-  merge rule: squash ${branch} back to main after validation
-EOF
-}
-
 # Print current stack release status.
 plan() {
   local repo current latest next_patch next_minor next_major changed
@@ -869,8 +787,6 @@ Process:
      and verifies the release assets plus Homebrew tap update.
   4. Use package VERSION to rebuild and verify an existing stable tag without
      moving tags.
-  5. Use start-dev VERSION_SELECTOR only when opening a separate pre-release
-     develop/VERSION slice.
 EOF
 }
 
@@ -885,13 +801,5 @@ case "${MODE}" in
   package)
     prepare_all_main
     package_existing_stable "${VERSION_SELECTOR}"
-    ;;
-  tag-current)
-    prepare_all_main
-    tag_current_stable
-    ;;
-  start-dev)
-    prepare_all_main
-    start_dev_slice
     ;;
 esac

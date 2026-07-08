@@ -13,7 +13,7 @@ This directory is the durable handoff area for Apple-facing issue and pull reque
 - When Docker behavior is the target, check Docker's own documentation and the Docker Compose implementation before settling the slice boundary. Record the relevant docs/source links in the issue and PR drafts when they affect shape, output, filtering, or test fixtures.
 - Keep the draft files in this repository even when the code lives in sibling forks. That makes `container-compose` the single project handoff for runtime gaps, upstream links, and commit IDs.
 - Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE*.md` or `PR*.md` draft files in the sibling `container` or `containerization` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
-- Historical drafts may mention old proving branches such as `develop`, `integration/*`, `snapshot/*`, or named runtime slices. Treat those as provenance for the commits listed in the draft, not as active branch policy; current lane rules live in [BRANCHES.md](../../BRANCHES.md).
+- Historical drafts may mention proving branches or named runtime slices. Treat those as provenance for the commits listed in the draft, not as active branch policy; current release rules live in [BRANCHES.md](../../BRANCHES.md).
 
 ## Final Upstream Review Gate
 

@@ -1,6 +1,6 @@
 # Branch Guide
 
-This is the branch, release, and Homebrew lane policy for Stephen Clarke's container stack forks:
+This is the branch, release, and Homebrew policy for Stephen Clarke's container stack forks:
 
 - `stephenlclarke/container-compose`
 - `stephenlclarke/container`
@@ -20,72 +20,50 @@ Keep this guide in `container-compose` only. Do not copy it into Apple upstream 
 
 ## Branch Policy
 
-| Branch | Use |
-| --- | --- |
-| `main` | Current, most up-to-date, releasable branch for all four repositories. Keep it green and ready for stable tags. |
-| `develop/VERSION` | Short-lived development slice for the next version. Squash validated work back to `main`, then delete the branch. |
-| `hotfix/VERSION` | Short-lived patch branch from an older source tag only when current `main` cannot be released. Squash or cherry-pick back, then delete the branch. |
+`main` is the current, most up-to-date, releasable branch for all four repositories. Keep it green and ready for a stable release at the end of every completed slice.
 
-Do not create new long-lived `release`, `release-*`, `snapshot/*`, compatibility, or feature-integration lanes. Historical branches with those names are references only.
+Use short-lived topic branches only when they make review or recovery clearer. Land validated work back on `main` before release, then delete the branch locally and remotely unless it is still needed for an open review.
+
+Do not create additional long-lived integration or packaging lanes. Historical non-main branches are references only.
 
 ## Version And Release Rhythm
 
-`main` is the current integration branch and the source of the next stable release. Normal work lands on `main`; binary package artifacts are built from the main lane for validation, while installable Homebrew formula updates come only from `develop/VERSION` pre-release tags and bare semantic stable tags.
+Normal work lands on `main`. After each completed and validated slice, create the next stable release with:
 
-When a formal version boundary is needed, `main` contains the version that will become the next stable source tag. A development slice increments the version on `develop/VERSION`, publishes pre-release assets only, then lands back on `main` before the stable tag is created.
+```sh
+make release VERSION_SELECTOR=--+
+```
 
-Use bare semantic source tags such as `0.5.1`, matching Apple repository conventions. Do not create new `v0.5.1` tags. Development pre-release assets use immutable `VERSION-pre.RUN.SHA` tags, for example `0.5.2-pre.123.abcdef123456`, so the later stable `0.5.2` tag remains available and immutable.
+The release helper resolves symbolic selectors from the latest local semantic `container-compose` tag, not from mutable working-tree state. Bare semantic source tags such as `0.6.5` match Apple repository conventions; do not create `v0.6.5` tags. Existing tags are never moved.
+
+Main-lane package artifacts are validation artifacts only. They prove that the current `main` branch can produce an installable archive, but they do not update the stable Homebrew formula. Only bare semantic release tags update `stephenlclarke/tap/container-compose`.
 
 ## Release Helper
 
-`CONTAINER_STACK_RELEASE.sh` is a maintainer helper for release boundaries and versioned development slices. It is not required for ordinary edits on `main`.
+`CONTAINER_STACK_RELEASE.sh` is the maintainer helper for stack release boundaries. It is not required for ordinary edits on `main`.
 
-Run it from the `container-compose` checkout:
+Run it from the `container-compose` checkout through Makefile targets:
 
 ```sh
 make release-plan
 make release VERSION_SELECTOR=--+
-make promote-release
-make start-dev-release VERSION_SELECTOR=--+
+make repackage-release VERSION=0.6.5
 ```
 
-`make release-plan` is a dry run. `make release`, `make promote-release`, and `make start-dev-release` execute the checked operation after the helper validates clean worktrees and Stephen-owned push targets.
+`make release-plan` is a dry run. `make release` validates clean worktrees and Stephen-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, and waits for the release assets and Homebrew tap update.
 
-Use `make release VERSION_SELECTOR=--+` for the normal stable release path. It resolves the selector from the latest semantic `container-compose` tag, bumps the Compose version files on `main` only when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that semver tag, and waits for the release assets and Homebrew tap update. Existing tags are never moved.
+`make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again and verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA.
+
+`VERSION_SELECTOR` accepts:
+
+- `--+`: patch bump from the latest semantic tag.
+- `-+-`: minor bump from the latest semantic tag and reset patch to `0`.
+- `+--`: major bump from the latest semantic tag and reset minor and patch to `0`.
+- `MAJOR.MINOR.PATCH`: explicit stable release version.
 
 The container package wait and Compose package wait both default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_RELEASE_WAIT_SECONDS`, `CONTAINER_STACK_RELEASE_POLL_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, or `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`.
 
-`make promote-release` creates the stable source tag in `container-compose` only. Companion repositories keep their own release tag histories; the compose package records their exact refs in build metadata instead of forcing every component to reuse the compose semver tag.
-
-Common flows:
-
-```sh
-# Promote the next patch release from current main.
-make release VERSION_SELECTOR=--+
-
-# Tag current main as the stable release.
-make promote-release
-
-# Start the next patch development slice.
-make start-dev-release VERSION_SELECTOR=--+
-```
-
-`start-dev` accepts:
-
-- `--+`: patch bump.
-- `-+-`: minor bump and reset patch to `0`.
-- `+--`: major bump and reset minor and patch to `0`.
-- `MAJOR.MINOR.PATCH`: explicit next development version.
-
-Before it changes anything, the helper checks that worktrees are clean, push remotes are Stephen-owned, and Apple remotes are not writable release targets.
-
-Use it in this order:
-
-1. Finish and validate work on `main`.
-2. Run `release VERSION_SELECTOR --execute` for the stable release, package publication, and Homebrew tap update.
-3. Let the dispatched stable package workflow publish `VERSION` and update `container-compose`.
-4. Run `start-dev VERSION_SELECTOR --execute` only when opening a separate short-lived `develop/VERSION` pre-release slice.
-5. Let the `develop/VERSION` prebuilt workflow publish `VERSION-pre.RUN.SHA` and update `container-compose-pre`.
+The helper refuses Apple push targets. Stephen-owned remotes are the only release push targets.
 
 ## Dependency Pins
 
@@ -95,7 +73,7 @@ The exact `container` commit used by CI and package metadata is resolved automat
 
 `container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. Publish and verify an immutable GHCR builder image before updating `container` to a new shim tag.
 
-## Homebrew Lanes
+## Homebrew Formulae
 
 The aggregate tap is `stephenlclarke/homebrew-tap`.
 
@@ -103,9 +81,8 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 | --- | --- |
 | `container` | Current fork-backed runtime from the latest immutable `homebrew-main-RUN-SHA` package lane. |
 | `container-compose` | Current stable plugin package from the latest semantic release; depends on the matching `container` formula. |
-| `container-compose-pre` | Current development plugin package from the latest `develop/VERSION` pre-release; depends on the matching `container` formula. |
 
-The install formulae consume validated GitHub release assets. `container-compose-pre` follows the latest immutable `VERSION-pre.RUN.SHA` release and is opt-in for testing the next slice. `container-compose` follows the latest stable semantic release and is what normal users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
+The install formulae consume validated GitHub release assets. `container-compose` follows the latest stable semantic release and is what users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 
@@ -122,10 +99,8 @@ git -C ~/github/container switch main
 git -C ~/github/container-compose switch main
 ```
 
-Use `develop/VERSION` only in repositories that need source changes for the current slice. Repositories that do not change should remain on `main`.
-
-After a non-main branch has been squashed or merged into `main`, delete that branch locally and remotely unless it is still needed for an open review.
+After a non-main branch has been landed on `main`, delete that branch locally and remotely unless it is still needed for an open review.
 
 ## Release Retention
 
-Keep stable source tags and GitHub release objects. Release automation keeps binary assets on one pre-release and one stable release. Older release assets are pruned only after their release notes include the original prebuilt asset SHA-256 and a copy/paste Homebrew source-install block that rebuilds from the retained source tag.
+Keep stable source tags and GitHub release objects. Release automation keeps binary assets on the latest main validation release and the latest stable release. Older release assets are pruned only after their release notes include the original prebuilt asset SHA-256 and a copy/paste Homebrew source-install block that rebuilds from the retained source tag.

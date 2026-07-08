@@ -6,7 +6,7 @@ This file is the current-state handoff for `container-compose`. Keep it short. D
 
 ## Current State
 
-`main` is the current releasable integration branch and source of stable semantic tags. Use short-lived `develop/VERSION` branches only for versioned development slices, publish them as `VERSION-pre`, then squash them back to `main` and delete them. Keep branch policy, `CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
+`main` is the current releasable integration branch and source of stable semantic tags. Land validated slices on `main`, then use `make release VERSION_SELECTOR=--+` to produce the next stable release and Homebrew tap update. Keep branch policy, `CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
 
 ## Current Integration Assumption
 
@@ -42,10 +42,10 @@ Current full coverage proof:
 - Network resources: top-level `networks.<name>.driver_opts` are preserved in normalized config and passed to Apple network creation through plugin-specific options. Service network attachment `driver_opts` support remains limited to Docker-compatible MTU keys because Apple attachment options expose MTU but not arbitrary endpoint driver options.
 - Device controls: service `device_cgroup_rules` is accepted for service containers and one-off `run`, validated before side effects, and mapped to the Stephen fork-backed `container --device-cgroup-rule` runtime path. Service `devices` is accepted for supported Linux VM device paths and mapped to the Stephen fork-backed `container --device` runtime path. GPU requests and arbitrary macOS hardware passthrough remain blocked pending Docker-compatible passthrough primitives.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
-- Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew lane guidance and the GitHub install URL.
+- Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew formula guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
 - Packaging and quality: CodeQL gates the release-built Go normalizer path and the current fork-backed Swift dependency graph, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
-- Packaging: `container` still publishes the moving `homebrew-main` runtime package. `container-compose-pre` follows the latest `VERSION-pre` development release, and `container-compose` follows the latest stable semantic release. Both plugin packages record the published runtime commit in package metadata so `brew upgrade` keeps the installed stack aligned and runtime/plugin mismatches fail fast.
+- Packaging: `container` still publishes the moving `homebrew-main` runtime package. `container-compose` follows the latest stable semantic release and records the published runtime commit in package metadata so `brew upgrade` keeps the installed stack aligned and runtime/plugin mismatches fail fast.
 
 ## Current Limits
 

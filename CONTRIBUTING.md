@@ -42,9 +42,9 @@ discussion.
 
 ## Maintainer Development Cycle
 
-For Stephen-owned stack work, keep `main` as the current integration branch in `container-builder-shim`, `containerization`, `container`, and `container-compose`. Start a short-lived branch only when it makes review or version slicing clearer. When a non-main branch has been squashed or merged back to `main`, delete it locally and remotely unless it is still needed for an open review.
+For Stephen-owned stack work, keep `main` as the current integration branch in `container-builder-shim`, `containerization`, `container`, and `container-compose`. Start a short-lived branch only when it makes review or recovery clearer. Land validated work on `main` before release, then delete the branch locally and remotely unless it is still needed for an open review.
 
-Most work does not need the release helper. Use `CONTAINER_STACK_RELEASE.sh` only at a version boundary: `plan` to inspect clean four-repo state, `release VERSION_SELECTOR --execute` to promote a stable release from `main`, `start-dev VERSION_SELECTOR --execute` to open a separate `develop/VERSION` pre-release slice, and `tag-current --execute` only when the Compose version is already correct and only the stable source tag is needed. The helper explicitly dispatches and waits for the semantic-tag package workflow so GitHub Actions publishes stable releases for `container-compose`; `develop/VERSION` workflows publish immutable `VERSION-pre.RUN.SHA` releases for `container-compose-pre`.
+Most work does not need the release helper. Use `CONTAINER_STACK_RELEASE.sh` only at a version boundary: `plan` to inspect clean four-repo state, `release VERSION_SELECTOR --execute` to promote a stable release from `main`, and `package VERSION --execute` only to repair an existing stable tag without moving it. The helper explicitly dispatches and waits for the semantic-tag package workflow so GitHub Actions publishes stable releases for `container-compose` and updates the stable Homebrew formula.
 
 apple/container uses squash-and-merge for upstream pull requests, so make the
 pull request title and body clear enough to stand alone as the final change
@@ -126,7 +126,7 @@ Keep every contribution easy for apple/container maintainers to assess:
 
 ## Keeping Protected Branches Safe
 
-Third-party contributions must not be able to break `main`, release tags, or active `develop/VERSION` slices.
+Third-party contributions must not be able to break `main` or release tags.
 Maintainers should keep these guardrails enabled:
 
 - Require pull requests before merging to protected branches.

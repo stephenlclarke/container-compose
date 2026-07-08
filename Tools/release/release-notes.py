@@ -27,9 +27,6 @@ from pathlib import Path
 
 
 STABLE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+$")
-PRE_RELEASE_PATTERN = re.compile(
-    r"^[0-9]+[.][0-9]+[.][0-9]+-pre(?:[.][0-9]+[.][0-9a-fA-F]{12,})?$"
-)
 
 
 @dataclass(frozen=True)
@@ -96,61 +93,14 @@ def previous_stable_tag(repo: Path, release_tag: str, head_ref: str) -> str | No
     return None
 
 
-def is_moving_release_tag(release_tag: str) -> bool:
-    return PRE_RELEASE_PATTERN.fullmatch(release_tag) is not None
-
-
 def is_stable_release_tag(release_tag: str) -> bool:
     return STABLE_RELEASE_PATTERN.fullmatch(release_tag) is not None
-
-
-def promoted_prerelease_ref(repo: Path, release_tag: str) -> tuple[str, str] | None:
-    if not is_stable_release_tag(release_tag):
-        return None
-
-    prerelease_pattern = re.compile(
-        rf"^{re.escape(release_tag)}-pre(?:[.][0-9]+[.][0-9a-fA-F]{{12,}})?$"
-    )
-    tags = git_output(
-        repo,
-        "for-each-ref",
-        "--sort=-creatordate",
-        "--format=%(refname:short)",
-        "refs/tags",
-    )
-    if tags is None:
-        return None
-
-    for prerelease_tag in tags.splitlines():
-        if prerelease_pattern.fullmatch(prerelease_tag) is None:
-            continue
-        commit = commit_for_ref(repo, f"refs/tags/{prerelease_tag}")
-        if commit is not None:
-            return prerelease_tag, commit
-    return None
 
 
 def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
     head_commit = commit_for_ref(repo, head_ref)
     if head_commit is None:
         raise ValueError(f"could not resolve release head: {head_ref}")
-
-    if is_moving_release_tag(release_tag):
-        previous_tag = previous_stable_tag(repo, release_tag, head_ref)
-        if previous_tag is not None:
-            return ReleaseRange(
-                base_ref=f"refs/tags/{previous_tag}",
-                base_label=previous_tag,
-                head_ref=head_ref,
-                head_commit=head_commit,
-            )
-
-        return ReleaseRange(
-            base_ref=None,
-            base_label=None,
-            head_ref=head_ref,
-            head_commit=head_commit,
-        )
 
     tagged_commit = commit_for_ref(repo, f"refs/tags/{release_tag}")
     if tagged_commit is not None:
@@ -197,36 +147,6 @@ def commits_for_range(repo: Path, selected_range: ReleaseRange) -> list[CommitSu
     return commits
 
 
-def change_range(repo: Path, release_tag: str, head_ref: str) -> tuple[ReleaseRange, str | None]:
-    selected_range = release_range(repo, release_tag, head_ref)
-    promoted = promoted_prerelease_ref(repo, release_tag)
-    if promoted is None:
-        return selected_range, None
-
-    prerelease_tag, prerelease_commit = promoted
-    previous_tag = previous_stable_tag(repo, release_tag, head_ref)
-    if previous_tag is None:
-        return (
-            ReleaseRange(
-                base_ref=None,
-                base_label=None,
-                head_ref=f"refs/tags/{prerelease_tag}",
-                head_commit=prerelease_commit,
-            ),
-            prerelease_tag,
-        )
-
-    return (
-        ReleaseRange(
-            base_ref=f"refs/tags/{previous_tag}",
-            base_label=previous_tag,
-            head_ref=f"refs/tags/{prerelease_tag}",
-            head_commit=prerelease_commit,
-        ),
-        prerelease_tag,
-    )
-
-
 def render_release_notes(
     *,
     repo: Path,
@@ -237,9 +157,10 @@ def render_release_notes(
     asset_sha: str,
     head_ref: str,
 ) -> str:
-    selected_range, promoted_tag = change_range(repo, release_tag, head_ref)
+    selected_range = release_range(repo, release_tag, head_ref)
     commits = commits_for_range(repo, selected_range)
     head_short = selected_range.head_commit[:12]
+    stable_release = is_stable_release_tag(release_tag)
 
     lines = [
         "## Summary",
@@ -252,13 +173,7 @@ def render_release_notes(
         "",
     ]
 
-    if promoted_tag is not None and selected_range.base_label is None:
-        lines.append(f"- Promoted changes from `{promoted_tag}` through `{head_short}`:")
-    elif promoted_tag is not None:
-        lines.append(
-            f"- Promoted changes from `{promoted_tag}` since `{selected_range.base_label}` through `{head_short}`:"
-        )
-    elif selected_range.base_label is None:
+    if selected_range.base_label is None:
         lines.append(f"- Commits included through `{head_short}`:")
     else:
         lines.append(
@@ -275,19 +190,51 @@ def render_release_notes(
             "",
             "## Homebrew Formula",
             "",
-            "- The stable release updates `stephenlclarke/tap/container-compose` to the stable asset and semver formula version.",
-            "- The `develop/VERSION` pre-release updates `stephenlclarke/tap/container-compose-pre` to the latest prerelease asset.",
-            "- The formula depends on the matched `stephenlclarke/tap/container` runtime package.",
+        ]
+    )
+    if stable_release:
+        lines.extend(
+            [
+                "- The stable release updates `stephenlclarke/tap/container-compose` to the stable asset and semver formula version.",
+                "- The formula depends on the matched `stephenlclarke/tap/container` runtime package.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "- Main validation packages do not update the stable Homebrew formula.",
+                "- Installable packages come from stable semantic release tags.",
+            ]
+        )
+
+    lines.extend(
+        [
             "",
             "## Promotion",
             "",
-            "- A pre-release is not renamed into a stable release.",
-            "- Promotion means merging the validated development slice back to `main`, creating the bare semver source tag, and dispatching the stable package workflow for that tag.",
-            "- The stable package workflow then marks the semver release as GitHub `Latest` and updates the stable Homebrew formula.",
+        ]
+    )
+    if stable_release:
+        lines.extend(
+            [
+                "- Promotion means validating `main`, creating the bare semver source tag, and dispatching the stable package workflow for that tag.",
+                "- The stable package workflow marks the semver release as GitHub `Latest` and updates the stable Homebrew formula.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "- Main validation packages are CI artifacts for the current `main` branch.",
+                "- They do not move semantic source tags or Homebrew formulae.",
+            ]
+        )
+
+    lines.extend(
+        [
             "",
             "## Asset Retention",
             "",
-            "- Release automation keeps binary assets on one pre-release and one stable release.",
+            "- Release automation keeps binary assets on the latest main validation release and the latest stable release.",
             "- Older release objects and source tags are retained, but their binary assets may be deleted after their notes include a source-build Homebrew install block.",
             "",
             "## Validation",

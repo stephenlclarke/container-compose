@@ -25,7 +25,7 @@ from pathlib import Path
 
 
 class HomebrewFormulaUpdateTests(unittest.TestCase):
-    """Formula updates written by branch package workflows."""
+    """Formula updates written by release package workflows."""
 
     def test_update_replaces_url_checksum_version_class_and_asset_label(self) -> None:
         """Release updates must keep Homebrew fetchable with a real checksum."""
@@ -43,7 +43,7 @@ class ContainerCompose < Formula
 
   def caveats
     <<~EOS
-      This formula installs the old release prebuilt release asset:
+      This formula installs the old package prebuilt package asset:
         old.tar.gz
     EOS
   end
@@ -75,7 +75,7 @@ end
                     "--asset",
                     "new.tar.gz",
                     "--label",
-                    "release-v0.1.0 branch",
+                    "stable release",
                     "--sha256",
                     "abc123",
                 ],
@@ -94,7 +94,7 @@ class ContainerComposeReleaseV010 < Formula
 
   def caveats
     <<~EOS
-      This formula installs the release-v0.1.0 branch prebuilt package asset:
+      This formula installs the stable release prebuilt package asset:
         new.tar.gz
     EOS
   end

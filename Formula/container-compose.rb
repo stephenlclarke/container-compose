@@ -28,7 +28,7 @@ class ContainerCompose < Formula
         brew postinstall stephenlclarke/tap/container
         brew services restart stephenlclarke/tap/container
 
-      This formula installs the Latest prebuilt package asset:
+      This formula installs the stable release prebuilt package asset:
         container-compose-plugin-release-arm64.tar.gz
     EOS
   end

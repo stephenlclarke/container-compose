@@ -31,9 +31,6 @@ from typing import Any
 
 SOURCE_INSTALL_HEADING = "## Source Install From This Release"
 SHA256_PATTERN = re.compile(r"\b[0-9a-fA-F]{64}\b")
-PRE_RELEASE_TAG_PATTERN = re.compile(
-    r"^[0-9]+[.][0-9]+[.][0-9]+-pre(?:[.][0-9]+[.][0-9a-fA-F]{12,})?$"
-)
 MAIN_RELEASE_TAG_PATTERN = re.compile(r"^homebrew-main-[0-9]+-[0-9a-fA-F]{12,}$")
 
 
@@ -103,10 +100,7 @@ def current_tag_prerelease(
         return current_release.prerelease
     if expected is not None:
         return expected
-    return (
-        PRE_RELEASE_TAG_PATTERN.fullmatch(current_tag) is not None
-        or MAIN_RELEASE_TAG_PATTERN.fullmatch(current_tag) is not None
-    )
+    return MAIN_RELEASE_TAG_PATTERN.fullmatch(current_tag) is not None
 
 
 def retained_tags(

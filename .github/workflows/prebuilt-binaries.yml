@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "main, develop/VERSION branch, or MAJOR.MINOR.PATCH tag to package"
+        description: "main or MAJOR.MINOR.PATCH tag to package"
         required: true
         type: string
 
@@ -35,7 +35,7 @@ permissions:
 
 concurrency:
   group: prebuilt-binaries-${{ github.event.workflow_run.head_branch || inputs.ref || github.ref_name }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'develop/') }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main' }}
 
 jobs:
   resolve-publish-context:
@@ -112,25 +112,6 @@ jobs:
               return
             fi
 
-            if [[ "$ref" == develop/* ]]; then
-              local branch_sha
-              branch_sha="$(
-                git ls-remote --heads "$remote" "refs/heads/${ref}" \
-                  | awk '{print $1}' \
-                  | tail -n 1
-              )"
-              if [[ -z "$branch_sha" ]]; then
-                printf 'develop branch not found: %s\n' "$ref" >&2
-                exit 1
-              fi
-              ref_type="branch"
-              ref_name="$ref"
-              checkout_ref="$branch_sha"
-              sha="$branch_sha"
-              publish=true
-              return
-            fi
-
             printf 'unsupported package ref: %s\n' "$ref" >&2
             exit 1
           }
@@ -152,12 +133,6 @@ jobs:
                 checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
                 sha="${WORKFLOW_RUN_HEAD_SHA}"
                 publish=true
-              elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == develop/* ]]; then
-                ref_type="branch"
-                ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
-                checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
-                sha="${WORKFLOW_RUN_HEAD_SHA}"
-                publish=true
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
                 printf 'Skipping CI tag package event: %s. Stable packages are created only by workflow_dispatch.\n' "${WORKFLOW_RUN_HEAD_BRANCH}"
               else
@@ -166,7 +141,7 @@ jobs:
             fi
           elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             if [[ -z "${DISPATCH_REF}" ]]; then
-              printf 'Manual package dispatch requires ref=develop/VERSION or ref=MAJOR.MINOR.PATCH.\n' >&2
+              printf 'Manual package dispatch requires ref=main or ref=MAJOR.MINOR.PATCH.\n' >&2
               exit 1
             fi
             resolve_remote_ref "${DISPATCH_REF}"
@@ -213,7 +188,7 @@ jobs:
             branch:main)
               release_tag="homebrew-main-${GITHUB_RUN_NUMBER}-${short_sha}"
               release_title="${compose_version} main ${short_sha}"
-              release_label="Main lane"
+              release_label="Main validation"
               release_latest="false"
               release_prerelease="true"
               update_tap="false"
@@ -237,7 +212,7 @@ jobs:
               fi
               release_tag="${PUBLISH_REF_NAME}"
               release_title="${compose_version}"
-              release_label="Latest"
+              release_label="stable release"
               release_latest="true"
               release_prerelease="false"
               update_tap="true"
@@ -246,28 +221,6 @@ jobs:
               formula_class="ContainerCompose"
               formula_version="${compose_version}"
               package_lane="stable"
-              ;;
-            branch:develop/*)
-              branch_version="${PUBLISH_REF_NAME#develop/}"
-              if [[ ! "${branch_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-                printf 'Develop branch must be develop/MAJOR.MINOR.PATCH: %s\n' "${PUBLISH_REF_NAME}" >&2
-                exit 1
-              fi
-              if [[ "${compose_version}" != "${branch_version}" ]]; then
-                printf 'COMPOSE_VERSION %s does not match develop branch %s\n' "${compose_version}" "${PUBLISH_REF_NAME}" >&2
-                exit 1
-              fi
-              release_tag="${branch_version}-pre.${GITHUB_RUN_NUMBER}.${short_sha}"
-              release_title="${release_tag}"
-              release_label="Pre-release"
-              release_latest="false"
-              release_prerelease="true"
-              update_tap="true"
-              asset="container-compose-plugin-release-arm64.tar.gz"
-              formula="container-compose-pre.rb"
-              formula_class="ContainerComposePre"
-              formula_version="${release_tag}"
-              package_lane="development"
               ;;
             *)
               printf 'Unsupported release ref: %s %s\n' "${PUBLISH_REF_TYPE}" "${PUBLISH_REF_NAME}" >&2

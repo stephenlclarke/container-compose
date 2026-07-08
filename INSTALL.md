@@ -2,15 +2,14 @@
 
 This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the compatible fork-backed `container` runtime. Source build and package steps are covered in [BUILD.md](BUILD.md); branch, tag, and release policy is covered in [BRANCHES.md](BRANCHES.md).
 
-## Install Lane
+## Homebrew Formulae
 
-The aggregate Homebrew tap publishes the stable stack by default and an opt-in pre-release plugin formula for maintainers:
+The aggregate Homebrew tap publishes the stable stack:
 
 | Formula | Build type | Use when |
 | --- | --- | --- |
 | `container-compose` | stable release build | Install this. It depends on the matched fork-backed `container` runtime. |
-| `container-compose-pre` | pre-release build | Use only when testing the next `develop/VERSION` slice before it is promoted. |
-| `container` | runtime build | Installed automatically as the runtime dependency for either plugin formula. |
+| `container` | runtime build | Installed automatically as the runtime dependency for the plugin formula. |
 
 The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
 
@@ -48,24 +47,11 @@ brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 ```
 
-`container-compose` and `container-compose-pre` are alternate lanes. Homebrew can upgrade whichever lane is installed, but it will not automatically uninstall the other lane when switching because both formulae install the same `container-compose` command and Compose plugin.
+Upgrade the stable stack with Homebrew:
 
 ```sh
-# Stay on stable
-brew upgrade stephenlclarke/tap/container-compose
-
-# Stay on pre-release
-brew upgrade stephenlclarke/tap/container-compose-pre
-
-# Switch stable -> pre-release
-brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose
-brew install --formula stephenlclarke/tap/container-compose-pre
-brew postinstall stephenlclarke/tap/container
-brew services restart stephenlclarke/tap/container
-
-# Switch pre-release -> stable
-brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose-pre
-brew install --formula stephenlclarke/tap/container-compose
+brew update
+brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose
 brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 ```
@@ -82,7 +68,7 @@ The `container` formula owns the plugin registration link inside its Homebrew in
 
 Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
 
-If the machine has old source taps, retired `container-release` formulae, or a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
+If the machine has a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
 
 ## Install A Local Plugin Archive
 
@@ -186,8 +172,7 @@ if [ -x /usr/local/bin/uninstall-container.sh ]; then
 fi
 
 brew uninstall --ignore-dependencies stephenlclarke/container/container || true
-brew uninstall --ignore-dependencies \
-  container-compose container-compose-pre container-compose-release container container-release || true
+brew uninstall --ignore-dependencies container-compose container || true
 brew untap stephenlclarke/container || true
 brew untap stephenlclarke/container-compose || true
 

@@ -35,26 +35,47 @@ def load_module():
 
 
 class ReleaseAssetPruningTests(unittest.TestCase):
-    """Only one pre-release and one stable release should retain assets."""
+    """Only the latest main validation and stable release should retain assets."""
 
-    def test_prunes_older_prerelease_assets_when_current_is_prerelease(self) -> None:
+    def test_prunes_older_main_validation_assets_when_current_is_main_validation(self) -> None:
         module = load_module()
         releases = [
-            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-07-01T10:00:00Z"),
-            self.release(module, "0.5.1-pre", prerelease=True, published_at="2026-06-30T10:00:00Z"),
+            self.release(
+                module,
+                "homebrew-main-124-123456abcdef",
+                prerelease=True,
+                published_at="2026-07-01T10:00:00Z",
+            ),
+            self.release(
+                module,
+                "homebrew-main-123-abcdef123456",
+                prerelease=True,
+                published_at="2026-06-30T10:00:00Z",
+            ),
             self.release(module, "0.5.0", prerelease=False, published_at="2026-06-29T10:00:00Z"),
         ]
 
         self.assertEqual(
-            [release.tag_name for release in module.releases_to_prune(releases, "0.6.1-pre")],
-            ["0.5.1-pre"],
+            [
+                release.tag_name
+                for release in module.releases_to_prune(
+                    releases,
+                    "homebrew-main-124-123456abcdef",
+                )
+            ],
+            ["homebrew-main-123-abcdef123456"],
         )
 
     def test_prunes_older_stable_assets_when_current_is_stable(self) -> None:
         module = load_module()
         releases = [
             self.release(module, "0.6.0", prerelease=False, published_at="2026-07-01T10:00:00Z"),
-            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-06-30T10:00:00Z"),
+            self.release(
+                module,
+                "homebrew-main-123-abcdef123456",
+                prerelease=True,
+                published_at="2026-06-30T10:00:00Z",
+            ),
             self.release(module, "0.5.0", prerelease=False, published_at="2026-06-29T10:00:00Z"),
         ]
 
@@ -73,7 +94,12 @@ class ReleaseAssetPruningTests(unittest.TestCase):
                 published_at="2026-07-01T10:00:00Z",
                 assets=(),
             ),
-            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-06-30T10:00:00Z"),
+            self.release(
+                module,
+                "homebrew-main-123-abcdef123456",
+                prerelease=True,
+                published_at="2026-06-30T10:00:00Z",
+            ),
             self.release(module, "0.5.0", prerelease=False, published_at="2026-06-29T10:00:00Z"),
         ]
 
@@ -85,7 +111,12 @@ class ReleaseAssetPruningTests(unittest.TestCase):
     def test_prunes_older_stable_assets_when_current_stable_release_is_not_visible_yet(self) -> None:
         module = load_module()
         releases = [
-            self.release(module, "0.6.1-pre", prerelease=True, published_at="2026-07-01T10:00:00Z"),
+            self.release(
+                module,
+                "homebrew-main-123-abcdef123456",
+                prerelease=True,
+                published_at="2026-07-01T10:00:00Z",
+            ),
             self.release(module, "0.6.0", prerelease=False, published_at="2026-06-30T10:00:00Z"),
         ]
 
@@ -94,12 +125,12 @@ class ReleaseAssetPruningTests(unittest.TestCase):
             ["0.6.0"],
         )
 
-    def test_keeps_latest_stable_when_current_immutable_prerelease_is_not_visible_yet(self) -> None:
+    def test_keeps_latest_stable_when_current_main_validation_is_not_visible_yet(self) -> None:
         module = load_module()
         releases = [
             self.release(
                 module,
-                "0.6.1-pre.123.abcdef123456",
+                "homebrew-main-123-abcdef123456",
                 prerelease=True,
                 published_at="2026-07-01T10:00:00Z",
             ),
@@ -122,10 +153,10 @@ class ReleaseAssetPruningTests(unittest.TestCase):
                 release.tag_name
                 for release in module.releases_to_prune(
                     releases,
-                    "0.6.2-pre.124.123456abcdef",
+                    "homebrew-main-124-123456abcdef",
                 )
             ],
-            ["0.6.1-pre.123.abcdef123456", "0.5.0"],
+            ["homebrew-main-123-abcdef123456", "0.5.0"],
         )
 
     def test_homebrew_main_tag_is_prerelease_when_current_release_is_not_visible_yet(self) -> None:

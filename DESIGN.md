@@ -302,8 +302,8 @@ which source, lane, branch, commit, build type, `container` pin, and
 
 Local development builds fall back to the active git checkout and
 `Package.resolved` when packaged metadata is absent. This keeps source builds
-usable while still making Homebrew-installed packages traceable across
-development pre-releases, stable source tags, and the matched fork-backed
+usable while still making Homebrew-installed packages traceable across main
+validation packages, stable source tags, and the matched fork-backed
 `container` runtime package.
 Use `container system version` beside `container compose version` to compare the
 running `container` runtime and API service against the plugin's compiled
