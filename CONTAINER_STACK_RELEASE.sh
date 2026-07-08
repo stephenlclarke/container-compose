@@ -594,10 +594,9 @@ dispatch_compose_stable_package() {
   done
 }
 
-# Tag the current compose state as the stable/latest release point.
-tag_current_stable() {
-  local version
-  version="$(current_compose_version)"
+# Tag a compose state as the stable/latest release point.
+tag_stable_version() {
+  local version="$1"
   print_header "tag container-compose main as ${version} latest"
   tag_repo_main_if_needed "${COMPOSE_REPO}" "${version}"
   dispatch_compose_stable_package "${version}"
@@ -610,6 +609,11 @@ Stable release point:
   release generation: container-compose stable package workflow dispatch
   tap update: stable container-compose formula after package artifacts are ready
 EOF
+}
+
+# Tag the current compose state as the stable/latest release point.
+tag_current_stable() {
+  tag_stable_version "$(current_compose_version)"
 }
 
 release_current_stack() {
@@ -644,7 +648,7 @@ release_current_stack() {
   ensure_clean "${COMPOSE_REPO}"
   push_all_main
   wait_for_container_homebrew_package
-  tag_current_stable
+  tag_stable_version "${version}"
 }
 
 # Update compose version declarations and local smoke expectations.
