@@ -34,6 +34,7 @@ SHA256_PATTERN = re.compile(r"\b[0-9a-fA-F]{64}\b")
 PRE_RELEASE_TAG_PATTERN = re.compile(
     r"^[0-9]+[.][0-9]+[.][0-9]+-pre(?:[.][0-9]+[.][0-9a-fA-F]{12,})?$"
 )
+MAIN_RELEASE_TAG_PATTERN = re.compile(r"^homebrew-main-[0-9]+-[0-9a-fA-F]{12,}$")
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Actually edit release notes and delete assets. Without this, only print the plan.",
     )
+    parser.add_argument(
+        "--current-prerelease",
+        choices=("true", "false"),
+        help="Expected prerelease state for the current release when the GitHub API has not exposed it yet.",
+    )
+    parser.add_argument(
+        "--require-current-assets",
+        action="store_true",
+        help="Skip pruning unless the current release is visible and already has assets.",
+    )
     return parser.parse_args()
 
 
@@ -77,16 +88,39 @@ def release_from_json(value: dict[str, Any]) -> Release:
     )
 
 
-def current_tag_prerelease(releases: list[Release], current_tag: str) -> bool:
+def current_release(releases: list[Release], current_tag: str) -> Release | None:
+    return next((release for release in releases if release.tag_name == current_tag), None)
+
+
+def current_tag_prerelease(
+    releases: list[Release],
+    current_tag: str,
+    *,
+    expected: bool | None = None,
+) -> bool:
     current_release = next((release for release in releases if release.tag_name == current_tag), None)
     if current_release is not None:
         return current_release.prerelease
-    return PRE_RELEASE_TAG_PATTERN.fullmatch(current_tag) is not None
+    if expected is not None:
+        return expected
+    return (
+        PRE_RELEASE_TAG_PATTERN.fullmatch(current_tag) is not None
+        or MAIN_RELEASE_TAG_PATTERN.fullmatch(current_tag) is not None
+    )
 
 
-def retained_tags(releases: list[Release], current_tag: str) -> set[str]:
+def retained_tags(
+    releases: list[Release],
+    current_tag: str,
+    *,
+    expected_current_prerelease: bool | None = None,
+) -> set[str]:
     retained = {current_tag}
-    current_prerelease = current_tag_prerelease(releases, current_tag)
+    current_prerelease = current_tag_prerelease(
+        releases,
+        current_tag,
+        expected=expected_current_prerelease,
+    )
     for prerelease in (True, False):
         if current_prerelease == prerelease:
             continue
@@ -101,8 +135,24 @@ def retained_tags(releases: list[Release], current_tag: str) -> set[str]:
     return retained
 
 
-def releases_to_prune(releases: list[Release], current_tag: str) -> list[Release]:
-    retained = retained_tags(releases, current_tag)
+def releases_to_prune(
+    releases: list[Release],
+    current_tag: str,
+    *,
+    expected_current_prerelease: bool | None = None,
+    require_current_assets: bool = False,
+) -> list[Release]:
+    visible_current_release = current_release(releases, current_tag)
+    if require_current_assets and (
+        visible_current_release is None or not visible_current_release.has_assets
+    ):
+        return []
+
+    retained = retained_tags(
+        releases,
+        current_tag,
+        expected_current_prerelease=expected_current_prerelease,
+    )
     return [
         release
         for release in releases
@@ -300,7 +350,33 @@ def delete_release_assets(repo: str, release: Release) -> None:
 def main() -> None:
     args = parse_args()
     releases = load_releases(args.repo)
-    prune = releases_to_prune(releases, args.current_tag)
+    expected_current_prerelease = None
+    if args.current_prerelease is not None:
+        expected_current_prerelease = args.current_prerelease == "true"
+
+    visible_current_release = current_release(releases, args.current_tag)
+    if (
+        visible_current_release is not None
+        and expected_current_prerelease is not None
+        and visible_current_release.prerelease != expected_current_prerelease
+    ):
+        raise SystemExit(
+            f"{args.current_tag} prerelease state is {visible_current_release.prerelease}, "
+            f"expected {expected_current_prerelease}"
+        )
+
+    if args.require_current_assets and (
+        visible_current_release is None or not visible_current_release.has_assets
+    ):
+        print(f"Skipping pruning because {args.current_tag} is not visible with assets yet.")
+        return
+
+    prune = releases_to_prune(
+        releases,
+        args.current_tag,
+        expected_current_prerelease=expected_current_prerelease,
+        require_current_assets=args.require_current_assets,
+    )
     if not prune:
         print("No older release assets to prune.")
         return

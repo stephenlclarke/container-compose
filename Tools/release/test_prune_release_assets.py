@@ -128,6 +128,87 @@ class ReleaseAssetPruningTests(unittest.TestCase):
             ["0.6.1-pre.123.abcdef123456", "0.5.0"],
         )
 
+    def test_homebrew_main_tag_is_prerelease_when_current_release_is_not_visible_yet(self) -> None:
+        module = load_module()
+        releases = [
+            self.release(module, "0.6.4", prerelease=False, published_at="2026-07-08T16:58:00Z"),
+            self.release(
+                module,
+                "homebrew-main-228-7b8c1adc9f5b",
+                prerelease=True,
+                published_at="2026-07-08T16:13:00Z",
+            ),
+            self.release(module, "0.6.3", prerelease=False, published_at="2026-07-08T15:59:00Z"),
+        ]
+
+        self.assertEqual(
+            [
+                release.tag_name
+                for release in module.releases_to_prune(
+                    releases,
+                    "homebrew-main-232-83a98b59d82b",
+                )
+            ],
+            ["homebrew-main-228-7b8c1adc9f5b", "0.6.3"],
+        )
+
+    def test_expected_current_prerelease_protects_stable_assets_for_unseen_release(self) -> None:
+        module = load_module()
+        releases = [
+            self.release(module, "0.6.4", prerelease=False, published_at="2026-07-08T16:58:00Z"),
+            self.release(module, "0.6.3", prerelease=False, published_at="2026-07-08T15:59:00Z"),
+        ]
+
+        self.assertEqual(
+            [
+                release.tag_name
+                for release in module.releases_to_prune(
+                    releases,
+                    "temporary-main-package",
+                    expected_current_prerelease=True,
+                )
+            ],
+            ["0.6.3"],
+        )
+
+    def test_require_current_assets_skips_pruning_when_current_release_is_not_visible(self) -> None:
+        module = load_module()
+        releases = [
+            self.release(module, "0.6.4", prerelease=False, published_at="2026-07-08T16:58:00Z"),
+            self.release(module, "0.6.3", prerelease=False, published_at="2026-07-08T15:59:00Z"),
+        ]
+
+        self.assertEqual(
+            module.releases_to_prune(
+                releases,
+                "0.6.5",
+                require_current_assets=True,
+            ),
+            [],
+        )
+
+    def test_require_current_assets_skips_pruning_when_current_release_has_no_assets(self) -> None:
+        module = load_module()
+        releases = [
+            self.release(
+                module,
+                "0.6.5",
+                prerelease=False,
+                published_at="2026-07-09T10:00:00Z",
+                assets=(),
+            ),
+            self.release(module, "0.6.4", prerelease=False, published_at="2026-07-08T16:58:00Z"),
+        ]
+
+        self.assertEqual(
+            module.releases_to_prune(
+                releases,
+                "0.6.5",
+                require_current_assets=True,
+            ),
+            [],
+        )
+
     def test_pruned_notes_include_source_build_formula_once(self) -> None:
         module = load_module()
         release = self.release(module, "0.5.0", prerelease=False)

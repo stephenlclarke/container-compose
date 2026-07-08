@@ -35,7 +35,7 @@ permissions:
 
 concurrency:
   group: prebuilt-binaries-${{ github.event.workflow_run.head_branch || inputs.ref || github.ref_name }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_run' || startsWith(github.event.workflow_run.head_branch, 'develop/') }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'develop/') }}
 
 jobs:
   resolve-publish-context:
@@ -159,21 +159,7 @@ jobs:
                 sha="${WORKFLOW_RUN_HEAD_SHA}"
                 publish=true
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-                ref_type="tag"
-                ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
-                checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
-                sha="${WORKFLOW_RUN_HEAD_SHA}"
-
-                tag_sha="$(
-                  git ls-remote --tags "$remote" "refs/tags/${ref_name}" "refs/tags/${ref_name}^{}" \
-                    | awk '{print $1}' \
-                    | tail -n 1
-                )"
-                if [[ "${tag_sha}" != "${sha}" ]]; then
-                  printf 'tag %s points at %s, but CI validated %s\n' "${ref_name}" "${tag_sha:-missing}" "${sha}" >&2
-                  exit 1
-                fi
-                publish=true
+                printf 'Skipping CI tag package event: %s. Stable packages are created only by workflow_dispatch.\n' "${WORKFLOW_RUN_HEAD_BRANCH}"
               else
                 printf 'Skipping non-package CI ref: %s\n' "${WORKFLOW_RUN_HEAD_BRANCH}"
               fi
@@ -477,6 +463,7 @@ jobs:
             --clobber
 
       - name: Prune older release assets
+        if: steps.lane.outputs.package_lane != 'main'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}

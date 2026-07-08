@@ -6,6 +6,7 @@ usage() {
 Usage:
   CONTAINER_STACK_RELEASE.sh plan
   CONTAINER_STACK_RELEASE.sh release VERSION_SELECTOR [--execute]
+  CONTAINER_STACK_RELEASE.sh package VERSION [--execute]
   CONTAINER_STACK_RELEASE.sh tag-current [--execute]
   CONTAINER_STACK_RELEASE.sh start-dev VERSION_SELECTOR [--execute]
 
@@ -26,6 +27,11 @@ Modes:
       Stephen-owned main branches, creates the stable container-compose source
       tag, pushes that tag, dispatches the stable package workflow, and waits
       for that workflow to publish the release assets and Homebrew tap update.
+
+  package VERSION
+      Re-run the stable package workflow for an existing semantic source tag,
+      then verify the release archive, checksum asset, and Homebrew formula
+      URL/SHA without moving any tags.
 
   tag-current
       Tag the current validated container-compose main state as the latest
@@ -63,6 +69,7 @@ Rules enforced:
   - Worktrees must be clean before release or dev-slice changes.
   - Stable container-compose release tags point at current main before the next dev version bump.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
+  - Stable package assets and the Homebrew tap SHA are verified before success.
   - Existing tags are never moved.
   - Long-lived release branches are not used.
 USAGE
@@ -80,10 +87,14 @@ EXECUTE=0
 case "${MODE}" in
   plan|tag-current)
     ;;
-  release|start-dev)
+  release|package|start-dev)
     VERSION_SELECTOR="${1:-}"
     if [[ -z "${VERSION_SELECTOR}" ]]; then
-      printf '%s requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' "${MODE}" >&2
+      if [[ "${MODE}" == "package" ]]; then
+        printf '%s requires VERSION, for example 9.0.2\n' "${MODE}" >&2
+      else
+        printf '%s requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' "${MODE}" >&2
+      fi
       exit 2
     fi
     shift || true
@@ -354,6 +365,15 @@ resolve_release_version() {
   resolve_version_selector "$1" "${latest}"
 }
 
+# Require an exact semantic version.
+ensure_semver_version() {
+  local version="$1"
+  if [[ ! "${version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+    printf 'version must be MAJOR.MINOR.PATCH: %s\n' "${version}" >&2
+    exit 2
+  fi
+}
+
 # Ensure a target version is newer than the current compose version.
 ensure_next_version_increases() {
   local current="$1" next="$2"
@@ -554,6 +574,74 @@ wait_for_github_run_success() {
   done
 }
 
+# Verify the stable release assets and Homebrew formula agree.
+verify_compose_stable_package() {
+  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  asset="container-compose-plugin-release-arm64.tar.gz"
+  expected_url="https://github.com/${repo}/releases/download/${version}/${asset}"
+  print_header "verify container-compose ${version} package"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would verify GitHub release assets and stephenlclarke/tap/container-compose for %s\n' "${version}"
+    return 0
+  fi
+
+  tmp="$(mktemp -d)"
+  asset_names="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh release view "${version}" \
+      --repo "${repo}" \
+      --json assets \
+      --jq '.assets[].name'
+  )"
+  if ! grep -Fxq "${asset}" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s\n' "${version}" "${asset}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s.sha256\n' "${version}" "${asset}" >&2
+    exit 1
+  fi
+
+  env -u GITHUB_TOKEN -u GH_TOKEN gh release download "${version}" \
+    --repo "${repo}" \
+    --pattern "${asset}" \
+    --pattern "${asset}.sha256" \
+    --dir "${tmp}"
+  asset_sha="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
+  checksum_sha="$(awk '{print $1}' "${tmp}/${asset}.sha256")"
+  rm -rf "${tmp}"
+  if [[ "${asset_sha}" != "${checksum_sha}" ]]; then
+    printf 'release %s checksum mismatch: asset %s, checksum file %s\n' \
+      "${version}" "${asset_sha}" "${checksum_sha}" >&2
+    exit 1
+  fi
+
+  formula_text="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh api \
+      repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose.rb \
+      --jq '.content' | base64 --decode
+  )"
+  formula_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${formula_text}" | head -n 1)"
+  formula_version="$(sed -n 's/^  version "\(.*\)"/\1/p' <<<"${formula_text}" | head -n 1)"
+  formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${formula_text}" | head -n 1)"
+
+  if [[ "${formula_url}" != "${expected_url}" ]]; then
+    printf 'Homebrew formula URL mismatch: expected %s, got %s\n' "${expected_url}" "${formula_url}" >&2
+    exit 1
+  fi
+  if [[ "${formula_version}" != "${version}" ]]; then
+    printf 'Homebrew formula version mismatch: expected %s, got %s\n' "${version}" "${formula_version}" >&2
+    exit 1
+  fi
+  if [[ "${formula_sha}" != "${asset_sha}" ]]; then
+    printf 'Homebrew formula SHA mismatch: expected %s, got %s\n' "${asset_sha}" "${formula_sha}" >&2
+    exit 1
+  fi
+
+  printf 'container-compose %s package verified: %s\n' "${version}" "${asset_sha}"
+}
+
 # Dispatch and wait for the stable compose package workflow for a semantic tag.
 dispatch_compose_stable_package() {
   local version="$1" previous_run run_id deadline now
@@ -579,6 +667,7 @@ dispatch_compose_stable_package() {
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf 'container-compose package workflow started: %s\n' "${run_id}"
       wait_for_github_run_success "${run_id}"
+      verify_compose_stable_package "${version}"
       return 0
     fi
 
@@ -614,6 +703,21 @@ EOF
 # Tag the current compose state as the stable/latest release point.
 tag_current_stable() {
   tag_stable_version "$(current_compose_version)"
+}
+
+# Rebuild and verify an existing stable package without moving its source tag.
+package_existing_stable() {
+  local version="$1" remote
+  ensure_semver_version "${version}"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+
+  print_header "package existing container-compose ${version} tag"
+  if ! git -C "$(repo_path "${COMPOSE_REPO}")" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1; then
+    printf 'stable tag not found on %s: %s\n' "${remote}" "${version}" >&2
+    exit 1
+  fi
+
+  dispatch_compose_stable_package "${version}"
 }
 
 release_current_stack() {
@@ -762,8 +866,10 @@ Process:
   3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
      bumps container-compose on main when needed, pushes Stephen-owned main
      branches, tags container-compose, dispatches the stable package workflow,
-     and waits for the Homebrew tap update.
-  4. Use start-dev VERSION_SELECTOR only when opening a separate pre-release
+     and verifies the release assets plus Homebrew tap update.
+  4. Use package VERSION to rebuild and verify an existing stable tag without
+     moving tags.
+  5. Use start-dev VERSION_SELECTOR only when opening a separate pre-release
      develop/VERSION slice.
 EOF
 }
@@ -775,6 +881,10 @@ case "${MODE}" in
   release)
     prepare_all_main
     release_current_stack
+    ;;
+  package)
+    prepare_all_main
+    package_existing_stable "${VERSION_SELECTOR}"
     ;;
   tag-current)
     prepare_all_main
