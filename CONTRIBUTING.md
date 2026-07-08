@@ -44,7 +44,7 @@ discussion.
 
 For Stephen-owned stack work, keep `main` as the current integration branch in `container-builder-shim`, `containerization`, `container`, and `container-compose`. Start a short-lived branch only when it makes review or version slicing clearer. When a non-main branch has been squashed or merged back to `main`, delete it locally and remotely unless it is still needed for an open review.
 
-Most work does not need the release helper. Use `CONTAINER_STACK_RELEASE.sh` only at a version boundary: `plan` to inspect clean four-repo state, `start-dev VERSION_SELECTOR --execute` to open the next `develop/VERSION` slice, and `tag-current --execute` to mark the current `main` state as a stable source tag after the validated slice has been squashed back. GitHub Actions publishes `develop/VERSION` as immutable `VERSION-pre.RUN.SHA` releases for `container-compose-pre` and semantic tags as stable releases for `container-compose`.
+Most work does not need the release helper. Use `CONTAINER_STACK_RELEASE.sh` only at a version boundary: `plan` to inspect clean four-repo state, `release VERSION_SELECTOR --execute` to promote a stable release from `main`, `start-dev VERSION_SELECTOR --execute` to open a separate `develop/VERSION` pre-release slice, and `tag-current --execute` only when the Compose version is already correct and only the stable source tag is needed. GitHub Actions publishes `develop/VERSION` as immutable `VERSION-pre.RUN.SHA` releases for `container-compose-pre` and semantic tags as stable releases for `container-compose`.
 
 apple/container uses squash-and-merge for upstream pull requests, so make the
 pull request title and body clear enough to stand alone as the final change

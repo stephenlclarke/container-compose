@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE'
 Usage:
   CONTAINER_STACK_RELEASE.sh plan
+  CONTAINER_STACK_RELEASE.sh release VERSION_SELECTOR [--execute]
   CONTAINER_STACK_RELEASE.sh tag-current [--execute]
   CONTAINER_STACK_RELEASE.sh start-dev VERSION_SELECTOR [--execute]
 
@@ -16,6 +17,14 @@ Modes:
   plan
       Inspect the four local main branches and print the release/dev-slice
       plan. This mode never mutates repositories.
+
+  release VERSION_SELECTOR
+      Deterministically promote the current four-repo stack to the next stable
+      release. The version selector is resolved from the latest local semantic
+      container-compose tag, not from mutable working-tree state. The helper
+      bumps container-compose on main when needed, commits that bump, pushes all
+      Stephen-owned main branches, creates the stable container-compose source
+      tag, and pushes that tag.
 
   tag-current
       Tag the current validated container-compose main state as the latest
@@ -69,10 +78,10 @@ EXECUTE=0
 case "${MODE}" in
   plan|tag-current)
     ;;
-  start-dev)
+  release|start-dev)
     VERSION_SELECTOR="${1:-}"
     if [[ -z "${VERSION_SELECTOR}" ]]; then
-      printf 'start-dev requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' >&2
+      printf '%s requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' "${MODE}" >&2
       exit 2
     fi
     shift || true
@@ -100,6 +109,9 @@ done
 
 ROOT="${HOME}/github"
 COMPOSE_REPO="container-compose"
+CONTAINER_REPO="container"
+RELEASE_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_WAIT_SECONDS:-3600}"
+RELEASE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_POLL_SECONDS:-30}"
 REPOS=(
   "container-builder-shim"
   "containerization"
@@ -280,12 +292,11 @@ current_compose_version() {
   sed -n 's/^COMPOSE_VERSION ?= //p' "$(repo_path "${COMPOSE_REPO}")/Makefile" | head -n 1
 }
 
-# Resolve an explicit or symbolic next development version.
-resolve_next_version() {
-  local selector="$1" current major minor patch plus_count
-  current="$(current_compose_version)"
-  if [[ ! "${current}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-    printf 'current COMPOSE_VERSION is not semantic: %s\n' "${current}" >&2
+# Resolve an explicit or symbolic version relative to a semantic base version.
+resolve_version_selector() {
+  local selector="$1" base="$2" major minor patch plus_count
+  if [[ ! "${base}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+    printf 'base version is not semantic: %s\n' "${base}" >&2
     exit 1
   fi
 
@@ -300,7 +311,7 @@ resolve_next_version() {
       printf 'increment selector must contain exactly one +: %s\n' "${selector}" >&2
       exit 2
     fi
-    IFS=. read -r major minor patch <<<"${current}"
+    IFS=. read -r major minor patch <<<"${base}"
     case "${selector}" in
       +--)
         ((major += 1))
@@ -324,6 +335,21 @@ resolve_next_version() {
   exit 2
 }
 
+# Resolve an explicit or symbolic next development version.
+resolve_next_version() {
+  resolve_version_selector "$1" "$(current_compose_version)"
+}
+
+# Resolve the release version from the latest semantic tag, not mutable files.
+resolve_release_version() {
+  local latest
+  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  if [[ -z "${latest}" ]]; then
+    latest="$(current_compose_version)"
+  fi
+  resolve_version_selector "$1" "${latest}"
+}
+
 # Ensure a target version is newer than the current compose version.
 ensure_next_version_increases() {
   local current="$1" next="$2"
@@ -333,6 +359,26 @@ current = tuple(int(part) for part in sys.argv[1].split("."))
 next_version = tuple(int(part) for part in sys.argv[2].split("."))
 if next_version <= current:
     raise SystemExit(f"next development version {sys.argv[2]} must be greater than current stable {sys.argv[1]}")
+PY
+}
+
+ensure_release_version_is_valid() {
+  local latest="$1" current="$2" version="$3"
+  python3 - "$latest" "$current" "$version" <<'PY'
+import sys
+
+def parse(value):
+    return tuple(int(part) for part in value.split("."))
+
+latest, current, version = map(parse, sys.argv[1:])
+if version <= latest:
+    raise SystemExit(
+        f"release version {sys.argv[3]} must be newer than latest release tag {sys.argv[1]}"
+    )
+if current > version:
+    raise SystemExit(
+        f"COMPOSE_VERSION {sys.argv[2]} is newer than requested release {sys.argv[3]}"
+    )
 PY
 }
 
@@ -403,6 +449,53 @@ print_component_refs() {
   done
 }
 
+push_all_main() {
+  local repo path remote
+  print_header "push Stephen-owned main branches"
+  for repo in "${REPOS[@]}"; do
+    path="$(repo_path "${repo}")"
+    remote="$(push_remote "${repo}")"
+    run git -C "${path}" push "${remote}" "refs/heads/main"
+  done
+}
+
+container_homebrew_tag_for_sha() {
+  local sha="$1" path remote
+  path="$(repo_path "${CONTAINER_REPO}")"
+  remote="$(push_remote "${CONTAINER_REPO}")"
+  git -C "${path}" ls-remote --tags --refs "${remote}" "refs/tags/homebrew-main-*" \
+    | awk -v sha="${sha}" '$1 == sha { sub("^refs/tags/", "", $2); print $2; exit }'
+}
+
+wait_for_container_homebrew_package() {
+  local sha tag deadline now
+  sha="$(git -C "$(repo_path "${CONTAINER_REPO}")" rev-parse main)"
+  print_header "wait for container main package"
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would wait for stephenlclarke/container homebrew-main-* tag at %s\n' "${sha}"
+    return 0
+  fi
+
+  deadline=$((SECONDS + RELEASE_WAIT_SECONDS))
+  while true; do
+    tag="$(container_homebrew_tag_for_sha "${sha}")"
+    if [[ -n "${tag}" ]]; then
+      printf 'container package tag ready: %s -> %s\n' "${tag}" "${sha}"
+      return 0
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for stephenlclarke/container homebrew-main-* tag at %s\n' "${sha}" >&2
+      printf 'check the container Prebuilt Binaries workflow before tagging container-compose\n' >&2
+      exit 1
+    fi
+
+    printf 'waiting for container package tag at %s; next check in %ss\n' "${sha}" "${RELEASE_POLL_SECONDS}"
+    sleep "${RELEASE_POLL_SECONDS}"
+  done
+}
+
 # Tag the current compose state as the stable/latest release point.
 tag_current_stable() {
   local version
@@ -418,6 +511,41 @@ Stable release point:
   release generation: container-compose tag-triggered workflow
   tap update: stable container-compose formula after package artifacts are ready
 EOF
+}
+
+release_current_stack() {
+  local latest current version path
+  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  if [[ -z "${latest}" ]]; then
+    latest="$(current_compose_version)"
+  fi
+  current="$(current_compose_version)"
+  version="$(resolve_release_version "${VERSION_SELECTOR}")"
+  ensure_release_version_is_valid "${latest}" "${current}" "${version}"
+  path="$(repo_path "${COMPOSE_REPO}")"
+
+  print_header "prepare stable release ${version}"
+  printf 'latest semantic tag: %s\n' "${latest}"
+  printf 'current COMPOSE_VERSION: %s\n' "${current}"
+  printf 'release version: %s\n' "${version}"
+
+  if [[ "${current}" != "${version}" ]]; then
+    if [[ "${EXECUTE}" == "1" ]]; then
+      bump_compose_version_files "${current}" "${version}"
+    else
+      printf 'would update: %s\n' "${path}/Makefile"
+      printf 'would update: %s\n' "${path}/Sources/ComposePlugin/ComposePlugin.swift"
+    fi
+    run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift
+    run git -C "${path}" commit -m "chore(release): prepare ${version}"
+  else
+    printf 'container-compose version files already declare %s\n' "${version}"
+  fi
+
+  ensure_clean "${COMPOSE_REPO}"
+  push_all_main
+  wait_for_container_homebrew_package
+  tag_current_stable
 }
 
 # Update compose version declarations and local smoke expectations.
@@ -497,18 +625,23 @@ EOF
 
 # Print current stack release status.
 plan() {
-  local repo current next_patch next_minor next_major changed
+  local repo current latest next_patch next_minor next_major changed
   prepare_all_main
   current="$(current_compose_version)"
-  next_patch="$(resolve_next_version '--+')"
-  next_minor="$(resolve_next_version '-+-')"
-  next_major="$(resolve_next_version '+--')"
+  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  if [[ -z "${latest}" ]]; then
+    latest="${current}"
+  fi
+  next_patch="$(resolve_version_selector '--+' "${latest}")"
+  next_minor="$(resolve_version_selector '-+-' "${latest}")"
+  next_major="$(resolve_version_selector '+--' "${latest}")"
 
   print_header "simplified stack release plan"
-  printf 'stable version on current main: %s\n' "${current}"
-  printf 'next patch slice:              %s\n' "${next_patch}"
-  printf 'next minor slice:              %s\n' "${next_minor}"
-  printf 'next major slice:              %s\n\n' "${next_major}"
+  printf 'current COMPOSE_VERSION: %s\n' "${current}"
+  printf 'latest semantic tag:     %s\n' "${latest}"
+  printf 'next patch release:      %s\n' "${next_patch}"
+  printf 'next minor release:      %s\n' "${next_minor}"
+  printf 'next major release:      %s\n\n' "${next_major}"
   printf '%-26s %-40s %-18s\n' "component" "main-sha" "changed-since-tag"
   for repo in "${REPOS[@]}"; do
     changed="yes"
@@ -522,17 +655,22 @@ plan() {
 
 Process:
   1. Keep main as the releasable integration branch.
-  2. Start short-lived work with start-dev VERSION_SELECTOR.
-  3. The script tags the current container-compose main version as latest before the bump.
-  4. The develop/VERSION branch carries the next version and publishes as pre-release.
-  5. Squash the validated develop/VERSION branch to main.
-  6. The next start-dev run tags that container-compose main state as latest before opening the following slice.
+  2. For a stable release, run release VERSION_SELECTOR after validation.
+  3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
+     bumps container-compose on main when needed, pushes Stephen-owned main
+     branches, and tags container-compose.
+  4. Use start-dev VERSION_SELECTOR only when opening a separate pre-release
+     develop/VERSION slice.
 EOF
 }
 
 case "${MODE}" in
   plan)
     plan
+    ;;
+  release)
+    prepare_all_main
+    release_current_stack
     ;;
   tag-current)
     prepare_all_main
