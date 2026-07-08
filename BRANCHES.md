@@ -30,11 +30,11 @@ Do not create new long-lived `release`, `release-*`, `snapshot/*`, compatibility
 
 ## Version And Release Rhythm
 
-`main` is the current integration branch and the source of the next stable release. Normal work lands on `main`; installable binary packages are published from `develop/VERSION` pre-release tags and bare semantic stable tags.
+`main` is the current integration branch and the source of the next stable release. Normal work lands on `main`; installable binary packages are published from the main lane, from `develop/VERSION` pre-release tags, and from bare semantic stable tags.
 
 When a formal version boundary is needed, `main` contains the version that will become the next stable source tag. A development slice increments the version on `develop/VERSION`, publishes pre-release assets only, then lands back on `main` before the stable tag is created.
 
-Use bare semantic source tags such as `0.5.1`, matching Apple repository conventions. Do not create new `v0.5.1` tags. Development pre-release assets use `VERSION-pre`, for example `0.5.2-pre`, so the later stable `0.5.2` tag remains available and immutable.
+Use bare semantic source tags such as `0.5.1`, matching Apple repository conventions. Do not create new `v0.5.1` tags. Development pre-release assets use immutable `VERSION-pre.RUN.SHA` tags, for example `0.5.2-pre.123.abcdef123456`, so the later stable `0.5.2` tag remains available and immutable.
 
 ## Release Helper
 
@@ -75,7 +75,7 @@ Use it in this order:
 
 1. Finish and validate work on `main`.
 2. Run `start-dev VERSION_SELECTOR --execute` only when opening the next short-lived `develop/VERSION` slice.
-3. Let the `develop/VERSION` prebuilt workflow publish `VERSION-pre` and update `container-compose-pre`.
+3. Let the `develop/VERSION` prebuilt workflow publish `VERSION-pre.RUN.SHA` and update `container-compose-pre`.
 4. Squash the validated slice back to `main`.
 5. Run `tag-current --execute` only when the current `main` state should become an immutable stable source tag.
 6. Let the stable tag workflow publish `VERSION` and update `container-compose`.
@@ -84,7 +84,7 @@ Use it in this order:
 
 `container-compose` must stay on the Stephen fork surfaces while fork-backed runtime behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
 
-The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout for local development, then from the published `stephenlclarke/container` `homebrew-main` tag, and finally from `stephenlclarke/container:main` only when no published package tag exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce a hand-maintained pin file.
+The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout for local development, then from the latest published `stephenlclarke/container` `homebrew-main-RUN-SHA` tag, and finally from `stephenlclarke/container:main` only when no published package tag exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce a hand-maintained pin file.
 
 `container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. Publish and verify an immutable GHCR builder image before updating `container` to a new shim tag.
 
@@ -94,11 +94,11 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 
 | Formula | Installs |
 | --- | --- |
-| `container` | Current fork-backed runtime from the moving `homebrew-main` package lane. |
+| `container` | Current fork-backed runtime from the latest immutable `homebrew-main-RUN-SHA` package lane. |
 | `container-compose` | Current stable plugin package from the latest semantic release; depends on the matching `container` formula. |
 | `container-compose-pre` | Current development plugin package from the latest `develop/VERSION` pre-release; depends on the matching `container` formula. |
 
-The install formulae consume validated GitHub release assets. `container-compose-pre` follows the latest `VERSION-pre` release and is opt-in for testing the next slice. `container-compose` follows the latest stable semantic release and is what normal users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
+The install formulae consume validated GitHub release assets. `container-compose-pre` follows the latest immutable `VERSION-pre.RUN.SHA` release and is opt-in for testing the next slice. `container-compose` follows the latest stable semantic release and is what normal users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 

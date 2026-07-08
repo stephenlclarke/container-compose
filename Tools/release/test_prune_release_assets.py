@@ -94,6 +94,40 @@ class ReleaseAssetPruningTests(unittest.TestCase):
             ["0.6.0"],
         )
 
+    def test_keeps_latest_stable_when_current_immutable_prerelease_is_not_visible_yet(self) -> None:
+        module = load_module()
+        releases = [
+            self.release(
+                module,
+                "0.6.1-pre.123.abcdef123456",
+                prerelease=True,
+                published_at="2026-07-01T10:00:00Z",
+            ),
+            self.release(
+                module,
+                "0.6.0",
+                prerelease=False,
+                published_at="2026-06-30T10:00:00Z",
+            ),
+            self.release(
+                module,
+                "0.5.0",
+                prerelease=False,
+                published_at="2026-06-29T10:00:00Z",
+            ),
+        ]
+
+        self.assertEqual(
+            [
+                release.tag_name
+                for release in module.releases_to_prune(
+                    releases,
+                    "0.6.2-pre.124.123456abcdef",
+                )
+            ],
+            ["0.6.1-pre.123.abcdef123456", "0.5.0"],
+        )
+
     def test_pruned_notes_include_source_build_formula_once(self) -> None:
         module = load_module()
         release = self.release(module, "0.5.0", prerelease=False)

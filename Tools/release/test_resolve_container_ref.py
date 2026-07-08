@@ -65,8 +65,8 @@ class ContainerRefResolutionTests(unittest.TestCase):
                     str(remote),
                     "--branch",
                     "main",
-                    "--tag",
-                    "missing-tag",
+                    "--tag-prefix",
+                    "missing-prefix-",
                 ],
                 check=True,
                 capture_output=True,
@@ -75,15 +75,20 @@ class ContainerRefResolutionTests(unittest.TestCase):
 
             self.assertEqual(result.stdout.strip(), expected)
 
-    def test_prefers_remote_homebrew_tag_before_remote_branch(self) -> None:
+    def test_prefers_latest_remote_homebrew_tag_prefix_before_remote_branch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             remote = Path(directory) / "container"
             self.init_repo(remote)
-            expected = self.git(remote, "rev-parse", "HEAD")
-            self.git(remote, "tag", "--no-sign", "homebrew-main")
+            old_expected = self.git(remote, "rev-parse", "HEAD")
+            self.git(remote, "tag", "--no-sign", f"homebrew-main-41-{old_expected[:12]}")
             (remote / "README.md").write_text("# test\n\nupdated\n", encoding="utf-8")
             self.git(remote, "add", "README.md")
             self.git(remote, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "test update")
+            expected = self.git(remote, "rev-parse", "HEAD")
+            self.git(remote, "tag", "--no-sign", f"homebrew-main-42-{expected[:12]}")
+            (remote / "README.md").write_text("# test\n\nupdated again\n", encoding="utf-8")
+            self.git(remote, "add", "README.md")
+            self.git(remote, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "test branch ahead")
 
             result = subprocess.run(
                 [
@@ -101,6 +106,36 @@ class ContainerRefResolutionTests(unittest.TestCase):
                 text=True,
             )
 
+            self.assertEqual(result.stdout.strip(), expected)
+
+    def test_ignores_legacy_homebrew_main_tag_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            remote = Path(directory) / "container"
+            self.init_repo(remote)
+            legacy = self.git(remote, "rev-parse", "HEAD")
+            self.git(remote, "tag", "--no-sign", "homebrew-main")
+            (remote / "README.md").write_text("# test\n\nupdated\n", encoding="utf-8")
+            self.git(remote, "add", "README.md")
+            self.git(remote, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "test update")
+            expected = self.git(remote, "rev-parse", "HEAD")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("resolve-container-ref.py")),
+                    "--repo",
+                    str(Path(directory) / "missing-checkout"),
+                    "--remote",
+                    str(remote),
+                    "--branch",
+                    "main",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(result.stdout.strip(), legacy)
             self.assertEqual(result.stdout.strip(), expected)
 
     def init_repo(self, repo: Path) -> None:

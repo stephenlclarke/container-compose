@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,7 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default="../container")
     parser.add_argument("--remote", default="https://github.com/stephenlclarke/container.git")
-    parser.add_argument("--tag", default="homebrew-main")
+    parser.add_argument("--tag")
+    parser.add_argument("--tag-prefix", default="homebrew-main-")
     parser.add_argument("--branch", default="main")
     return parser.parse_args()
 
@@ -57,18 +59,44 @@ def remote_branch_ref(remote: str, branch: str) -> str | None:
 
 
 def remote_tag_ref(remote: str, tag: str) -> str | None:
-    output = git_output(["git", "ls-remote", remote, f"refs/tags/{tag}"])
+    output = git_output(["git", "ls-remote", "--tags", "--refs", remote, f"refs/tags/{tag}"])
     if output is None:
         return None
     fields = output.split()
     return fields[0] if fields else None
 
 
+def remote_tag_prefix_ref(remote: str, prefix: str) -> str | None:
+    output = git_output(
+        ["git", "ls-remote", "--tags", "--refs", remote, f"refs/tags/{prefix}*"]
+    )
+    if output is None:
+        return None
+
+    pattern = re.compile(rf"^{re.escape(prefix)}([0-9]+)-[0-9a-fA-F]{{12,}}$")
+    candidates: list[tuple[int, str, str]] = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            continue
+        tag = fields[1].removeprefix("refs/tags/")
+        match = pattern.fullmatch(tag)
+        if match is None:
+            continue
+        candidates.append((int(match.group(1)), tag, fields[0]))
+
+    if not candidates:
+        return None
+    _, _, ref = max(candidates)
+    return ref
+
+
 def main() -> int:
     args = parse_args()
     ref = (
         local_repo_ref(Path(args.repo))
-        or remote_tag_ref(args.remote, args.tag)
+        or (remote_tag_ref(args.remote, args.tag) if args.tag else None)
+        or remote_tag_prefix_ref(args.remote, args.tag_prefix)
         or remote_branch_ref(args.remote, args.branch)
     )
     if ref is None:

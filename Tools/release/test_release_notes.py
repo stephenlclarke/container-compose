@@ -51,7 +51,7 @@ class ReleaseNotesTests(unittest.TestCase):
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="0.6.1-pre",
+                release_tag="0.6.1-pre.123.abcdef123456",
                 release_label="Pre-release",
                 compose_version="0.6.1",
                 asset="container-compose-plugin-release-arm64.tar.gz",
@@ -128,7 +128,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.git(repo, "switch", "-c", "develop/0.6.1")
             self.commit(repo, "feat(release): simplify package lanes")
             self.commit(repo, "ci(release): prune older assets")
-            self.git(repo, "tag", "--no-sign", "0.6.1-pre")
+            self.git(repo, "tag", "--no-sign", "0.6.1-pre.123.abcdef123456")
             self.git(repo, "switch", "main")
             self.commit(repo, "ci(release): simplify package lanes")
             self.git(repo, "tag", "--no-sign", "0.6.1")
@@ -143,7 +143,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn("Promoted changes from `0.6.1-pre` since `0.6.0`", notes)
+            self.assertIn("Promoted changes from `0.6.1-pre.123.abcdef123456` since `0.6.0`", notes)
             self.assertIn("feat(release): simplify package lanes", notes)
             self.assertIn("ci(release): prune older assets", notes)
             self.assertNotIn("chore: initial import", notes)

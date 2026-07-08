@@ -26,8 +26,8 @@ Modes:
       First tag the current container-compose main state as the latest stable release, then
       create a short-lived develop/VERSION branch from main in container-compose,
       bump COMPOSE_VERSION to VERSION, update local version expectations, commit
-      the bump, and push the branch. CI for that branch should publish
-      VERSION-pre as a pre-release/dev slice.
+      the bump, and push the branch. CI for that branch should publish an
+      immutable VERSION-pre.RUN.SHA pre-release/dev slice.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 next development version
@@ -489,7 +489,7 @@ start_dev_slice() {
 Development slice:
   branch: ${branch}
   version: ${next}
-  release tag: ${next}-pre
+  release tag: ${next}-pre.RUN.SHA
   label: pre-release
   merge rule: squash ${branch} back to main after validation
 EOF

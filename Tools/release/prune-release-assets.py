@@ -31,6 +31,9 @@ from typing import Any
 
 SOURCE_INSTALL_HEADING = "## Source Install From This Release"
 SHA256_PATTERN = re.compile(r"\b[0-9a-fA-F]{64}\b")
+PRE_RELEASE_TAG_PATTERN = re.compile(
+    r"^[0-9]+[.][0-9]+[.][0-9]+-pre(?:[.][0-9]+[.][0-9a-fA-F]{12,})?$"
+)
 
 
 @dataclass(frozen=True)
@@ -78,7 +81,7 @@ def current_tag_prerelease(releases: list[Release], current_tag: str) -> bool:
     current_release = next((release for release in releases if release.tag_name == current_tag), None)
     if current_release is not None:
         return current_release.prerelease
-    return current_tag.endswith("-pre")
+    return PRE_RELEASE_TAG_PATTERN.fullmatch(current_tag) is not None
 
 
 def retained_tags(releases: list[Release], current_tag: str) -> set[str]:

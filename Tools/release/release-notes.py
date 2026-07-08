@@ -27,7 +27,9 @@ from pathlib import Path
 
 
 STABLE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+$")
-PRE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+-pre$")
+PRE_RELEASE_PATTERN = re.compile(
+    r"^[0-9]+[.][0-9]+[.][0-9]+-pre(?:[.][0-9]+[.][0-9a-fA-F]{12,})?$"
+)
 
 
 @dataclass(frozen=True)
@@ -106,11 +108,26 @@ def promoted_prerelease_ref(repo: Path, release_tag: str) -> tuple[str, str] | N
     if not is_stable_release_tag(release_tag):
         return None
 
-    prerelease_tag = f"{release_tag}-pre"
-    commit = commit_for_ref(repo, f"refs/tags/{prerelease_tag}")
-    if commit is None:
+    prerelease_pattern = re.compile(
+        rf"^{re.escape(release_tag)}-pre(?:[.][0-9]+[.][0-9a-fA-F]{{12,}})?$"
+    )
+    tags = git_output(
+        repo,
+        "for-each-ref",
+        "--sort=-creatordate",
+        "--format=%(refname:short)",
+        "refs/tags",
+    )
+    if tags is None:
         return None
-    return prerelease_tag, commit
+
+    for prerelease_tag in tags.splitlines():
+        if prerelease_pattern.fullmatch(prerelease_tag) is None:
+            continue
+        commit = commit_for_ref(repo, f"refs/tags/{prerelease_tag}")
+        if commit is not None:
+            return prerelease_tag, commit
+    return None
 
 
 def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:

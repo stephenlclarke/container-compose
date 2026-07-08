@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "develop/VERSION branch or MAJOR.MINOR.PATCH tag to package"
+        description: "main, develop/VERSION branch, or MAJOR.MINOR.PATCH tag to package"
         required: true
         type: string
 
@@ -74,6 +74,25 @@ jobs:
 
           resolve_remote_ref() {
             local ref="$1"
+            if [[ "$ref" == "main" ]]; then
+              local branch_sha
+              branch_sha="$(
+                git ls-remote --heads "$remote" "refs/heads/${ref}" \
+                  | awk '{print $1}' \
+                  | tail -n 1
+              )"
+              if [[ -z "$branch_sha" ]]; then
+                printf 'main branch not found: %s\n' "$ref" >&2
+                exit 1
+              fi
+              ref_type="branch"
+              ref_name="$ref"
+              checkout_ref="$branch_sha"
+              sha="$branch_sha"
+              publish=true
+              return
+            fi
+
             if [[ "$ref" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
               local tag_sha
               tag_sha="$(
@@ -127,6 +146,12 @@ jobs:
               )"
               if [[ "${validate_conclusion}" != "success" ]]; then
                 printf 'Skipping package publish because CI Validate concluded %s.\n' "${validate_conclusion:-missing}"
+              elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]; then
+                ref_type="branch"
+                ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
+                checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
+                sha="${WORKFLOW_RUN_HEAD_SHA}"
+                publish=true
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == develop/* ]]; then
                 ref_type="branch"
                 ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
@@ -193,10 +218,28 @@ jobs:
         env:
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
           PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
         run: |
           set -euo pipefail
           compose_version="$(sed -n 's/^COMPOSE_VERSION ?= //p' Makefile | head -n 1)"
+          short_sha="${PUBLISH_SHA:0:12}"
           case "${PUBLISH_REF_TYPE}:${PUBLISH_REF_NAME}" in
+            branch:main)
+              release_tag="homebrew-main-${GITHUB_RUN_NUMBER}-${short_sha}"
+              release_title="${compose_version} main ${short_sha}"
+              release_label="Main lane"
+              release_latest="false"
+              release_prerelease="true"
+              update_tap="true"
+              asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz"
+              formula="container-compose.rb"
+              formula_class="ContainerCompose"
+              formula_version="$(python3 Tools/release/homebrew-main-version.py \
+                --plugin-version "${compose_version}" \
+                --run-number "${GITHUB_RUN_NUMBER}" \
+                --sha "${PUBLISH_SHA}")"
+              package_lane="main"
+              ;;
             tag:*)
               if [[ ! "${PUBLISH_REF_NAME}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
                 printf 'Stable release tags must be bare semver: %s\n' "${PUBLISH_REF_NAME}" >&2
@@ -228,7 +271,7 @@ jobs:
                 printf 'COMPOSE_VERSION %s does not match develop branch %s\n' "${compose_version}" "${PUBLISH_REF_NAME}" >&2
                 exit 1
               fi
-              release_tag="${branch_version}-pre"
+              release_tag="${branch_version}-pre.${GITHUB_RUN_NUMBER}.${short_sha}"
               release_title="${release_tag}"
               release_label="Pre-release"
               release_latest="false"
@@ -373,18 +416,28 @@ jobs:
             --asset-sha "${sha256}" \
             --head "${PUBLISH_SHA}" > "${notes}"
 
-          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
-            git tag --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
-            git push --force origin "refs/tags/${RELEASE_TAG}"
+          tag_target="$(
+            git ls-remote --tags --refs origin "refs/tags/${RELEASE_TAG}" \
+              | awk '{print $1}' \
+              | tail -n 1
+          )"
+          if [[ -n "$tag_target" && "$tag_target" != "$PUBLISH_SHA" ]]; then
+            printf 'release tag %s already points at %s, refusing to retarget it to %s\n' \
+              "$RELEASE_TAG" "$tag_target" "$PUBLISH_SHA" >&2
+            exit 1
           fi
 
           if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             create_args=(
               gh release create "${RELEASE_TAG}"
-              --target "${PUBLISH_SHA}"
               --title "${RELEASE_TITLE}"
               --notes-file "${notes}"
             )
+            if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+              create_args+=(--verify-tag)
+            else
+              create_args+=(--target "${PUBLISH_SHA}")
+            fi
             if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
               create_args+=(--prerelease)
             fi
@@ -397,7 +450,6 @@ jobs:
           else
             edit_args=(
               gh release edit "${RELEASE_TAG}"
-              --target "${PUBLISH_SHA}"
               --title "${RELEASE_TITLE}"
               --notes-file "${notes}"
             )
