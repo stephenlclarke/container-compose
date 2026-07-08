@@ -51,9 +51,9 @@ make start-dev-release VERSION_SELECTOR=--+
 
 `make release-plan` is a dry run. `make release`, `make promote-release`, and `make start-dev-release` execute the checked operation after the helper validates clean worktrees and Stephen-owned push targets.
 
-Use `make release VERSION_SELECTOR=--+` for the normal stable release path. It resolves the selector from the latest semantic `container-compose` tag, bumps the Compose version files on `main` only when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates the stable `container-compose` source tag, and pushes that tag. Existing tags are never moved.
+Use `make release VERSION_SELECTOR=--+` for the normal stable release path. It resolves the selector from the latest semantic `container-compose` tag, bumps the Compose version files on `main` only when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that semver tag, and waits for the release assets and Homebrew tap update. Existing tags are never moved.
 
-The container package wait defaults to one hour with 30-second polls. Override it only for emergency maintenance with `CONTAINER_STACK_RELEASE_WAIT_SECONDS` or `CONTAINER_STACK_RELEASE_POLL_SECONDS`.
+The container package wait and Compose package wait both default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_RELEASE_WAIT_SECONDS`, `CONTAINER_STACK_RELEASE_POLL_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, or `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`.
 
 `make promote-release` creates the stable source tag in `container-compose` only. Companion repositories keep their own release tag histories; the compose package records their exact refs in build metadata instead of forcing every component to reuse the compose semver tag.
 
@@ -82,7 +82,7 @@ Before it changes anything, the helper checks that worktrees are clean, push rem
 Use it in this order:
 
 1. Finish and validate work on `main`.
-2. Run `release VERSION_SELECTOR --execute` for the stable release.
+2. Run `release VERSION_SELECTOR --execute` for the stable release, package publication, and Homebrew tap update.
 3. Let the stable tag workflow publish `VERSION` and update `container-compose`.
 4. Run `start-dev VERSION_SELECTOR --execute` only when opening a separate short-lived `develop/VERSION` pre-release slice.
 5. Let the `develop/VERSION` prebuilt workflow publish `VERSION-pre.RUN.SHA` and update `container-compose-pre`.

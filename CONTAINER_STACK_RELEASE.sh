@@ -24,12 +24,13 @@ Modes:
       container-compose tag, not from mutable working-tree state. The helper
       bumps container-compose on main when needed, commits that bump, pushes all
       Stephen-owned main branches, creates the stable container-compose source
-      tag, and pushes that tag.
+      tag, pushes that tag, dispatches the stable package workflow, and waits
+      for that workflow to publish the release assets and Homebrew tap update.
 
   tag-current
       Tag the current validated container-compose main state as the latest
-      stable release using the current COMPOSE_VERSION value. This is the
-      manual release point that triggers release generation and tap updates.
+      stable release using the current COMPOSE_VERSION value, then dispatch and
+      wait for the stable package workflow.
 
   start-dev VERSION_SELECTOR
       First tag the current container-compose main state as the latest stable release, then
@@ -61,6 +62,7 @@ Rules enforced:
   - Stephen-owned remotes are the only push targets.
   - Worktrees must be clean before release or dev-slice changes.
   - Stable container-compose release tags point at current main before the next dev version bump.
+  - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Existing tags are never moved.
   - Long-lived release branches are not used.
 USAGE
@@ -112,6 +114,8 @@ COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
 RELEASE_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_WAIT_SECONDS:-3600}"
 RELEASE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_POLL_SECONDS:-30}"
+COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
+COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
 REPOS=(
   "container-builder-shim"
   "containerization"
@@ -496,19 +500,114 @@ wait_for_container_homebrew_package() {
   done
 }
 
+# Require an executable command when an executed workflow depends on it.
+need_command() {
+  local command_name="$1"
+  if ! command -v "${command_name}" >/dev/null 2>&1; then
+    printf 'required command not found: %s\n' "${command_name}" >&2
+    exit 1
+  fi
+}
+
+# Return the newest workflow_dispatch run id for the compose package workflow.
+latest_compose_package_dispatch_run() {
+  env -u GITHUB_TOKEN -u GH_TOKEN gh run list \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --workflow "Prebuilt Binaries" \
+    --event workflow_dispatch \
+    --limit 1 \
+    --json databaseId \
+    --jq '.[0].databaseId // ""'
+}
+
+# Wait for a GitHub Actions run to complete successfully.
+wait_for_github_run_success() {
+  local run_id="$1" status conclusion url deadline now details
+  deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
+  while true; do
+    details="$(
+      env -u GITHUB_TOKEN -u GH_TOKEN gh run view "${run_id}" \
+        --repo "$(github_repo "${COMPOSE_REPO}")" \
+        --json status,conclusion,url \
+        --jq '[.status, (.conclusion // ""), .url] | @tsv'
+    )"
+    IFS=$'\t' read -r status conclusion url <<<"${details}"
+
+    if [[ "${status}" == "completed" ]]; then
+      if [[ "${conclusion}" == "success" ]]; then
+        printf 'container-compose package workflow passed: %s\n' "${url}"
+        return 0
+      fi
+      printf 'container-compose package workflow ended with %s: %s\n' "${conclusion}" "${url}" >&2
+      exit 1
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for container-compose package workflow %s: %s\n' "${run_id}" "${url}" >&2
+      exit 1
+    fi
+
+    printf 'waiting for container-compose package workflow %s (%s); next check in %ss\n' \
+      "${run_id}" "${status}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
+    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
+  done
+}
+
+# Dispatch and wait for the stable compose package workflow for a semantic tag.
+dispatch_compose_stable_package() {
+  local version="$1" previous_run run_id deadline now
+  print_header "dispatch container-compose ${version} package"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would run: gh workflow run prebuilt-binaries.yml --repo %s --ref main -f ref=%s\n' \
+      "$(github_repo "${COMPOSE_REPO}")" "${version}"
+    printf 'would wait for the container-compose stable package workflow to publish assets and update Homebrew\n'
+    return 0
+  fi
+
+  need_command gh
+  previous_run="$(latest_compose_package_dispatch_run || true)"
+  run env -u GITHUB_TOKEN -u GH_TOKEN gh workflow run prebuilt-binaries.yml \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --ref main \
+    -f "ref=${version}"
+
+  deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
+  while true; do
+    run_id="$(latest_compose_package_dispatch_run || true)"
+    if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
+      printf 'container-compose package workflow started: %s\n' "${run_id}"
+      wait_for_github_run_success "${run_id}"
+      return 0
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for container-compose package workflow dispatch for %s\n' "${version}" >&2
+      exit 1
+    fi
+
+    printf 'waiting for container-compose package workflow dispatch for %s; next check in %ss\n' \
+      "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
+    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
+  done
+}
+
 # Tag the current compose state as the stable/latest release point.
 tag_current_stable() {
   local version
   version="$(current_compose_version)"
   print_header "tag container-compose main as ${version} latest"
   tag_repo_main_if_needed "${COMPOSE_REPO}" "${version}"
+  dispatch_compose_stable_package "${version}"
   print_component_refs
   cat <<EOF
 
 Stable release point:
   version: ${version}
   label: latest
-  release generation: container-compose tag-triggered workflow
+  release generation: container-compose stable package workflow dispatch
   tap update: stable container-compose formula after package artifacts are ready
 EOF
 }
@@ -658,7 +757,8 @@ Process:
   2. For a stable release, run release VERSION_SELECTOR after validation.
   3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
      bumps container-compose on main when needed, pushes Stephen-owned main
-     branches, and tags container-compose.
+     branches, tags container-compose, dispatches the stable package workflow,
+     and waits for the Homebrew tap update.
   4. Use start-dev VERSION_SELECTOR only when opening a separate pre-release
      develop/VERSION slice.
 EOF
