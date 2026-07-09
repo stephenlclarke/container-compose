@@ -352,7 +352,7 @@ services:
 	if got := noEnvResolution.Services["api"].Environment; got != nil {
 		t.Fatalf("noEnvResolution environment = %#v, want nil", got)
 	}
-	if got := noEnvResolution.Services["api"].EnvFiles; len(got) != 1 || !strings.HasSuffix(got[0], "service.env") {
+	if got := noEnvResolution.Services["api"].EnvFiles; len(got) != 1 || !strings.HasSuffix(got[0].Path, "service.env") {
 		t.Fatalf("noEnvResolution envFiles = %#v, want service.env", got)
 	}
 
@@ -1671,7 +1671,9 @@ func TestLoadProjectAppliesProfilesEnvFilesAndBuildFields(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")
 	envFile := filepath.Join(dir, "app.env")
+	rawEnvFile := filepath.Join(dir, "raw.env")
 	writeFile(t, envFile, "FROM_ENV=enabled\n")
+	writeFile(t, rawEnvFile, "RAW_VALUE=\"$NOT_INTERPOLATED\"\n")
 	writeFile(t, composeFile, `
 services:
   api:
@@ -1718,7 +1720,11 @@ services:
     environment:
       FROM_ENV:
     env_file:
-      - app.env
+      - path: app.env
+      - path: missing.env
+        required: false
+      - path: raw.env
+        format: raw
     ports:
       - target: 53
         protocol: udp
@@ -1828,11 +1834,18 @@ services:
 	if fields := inline.Build.UnsupportedFields; len(fields) != 0 {
 		t.Fatalf("inline unsupported build fields = %#v, want empty", fields)
 	}
-	if got, want := api.EnvFiles, []string{envFile}; !reflect.DeepEqual(got, want) {
+	if got, want := api.EnvFiles, []normalizedEnvFile{
+		{Path: envFile, Required: true},
+		{Path: filepath.Join(dir, "missing.env"), Required: false},
+		{Path: rawEnvFile, Required: true, Format: "raw"},
+	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("env files = %#v, want %#v", got, want)
 	}
 	if value, ok := api.Environment["FROM_ENV"]; !ok || value == nil || *value != "enabled" {
 		t.Fatalf("FROM_ENV = %#v, want enabled from env file", value)
+	}
+	if value, ok := api.Environment["RAW_VALUE"]; !ok || value == nil || *value != "\"$NOT_INTERPOLATED\"" {
+		t.Fatalf("RAW_VALUE = %#v, want raw quoted value", value)
 	}
 	if got, want := api.Ports, []string{"53/udp"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("ports = %#v, want %#v", got, want)

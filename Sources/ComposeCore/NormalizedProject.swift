@@ -105,6 +105,57 @@ public struct ComposeVariable: Codable, Equatable, Sendable {
     }
 }
 
+public struct ComposeEnvFile: Codable, Equatable, Sendable, ExpressibleByStringLiteral {
+    public var path: String
+    public var required: Bool
+    public var format: String?
+
+    public init(path: String, required: Bool = true, format: String? = nil) {
+        self.path = path
+        self.required = required
+        self.format = format?.isEmpty == false ? format : nil
+    }
+
+    public init(stringLiteral value: String) {
+        self.init(path: value)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let singleValue = try decoder.singleValueContainer()
+        if let path = try? singleValue.decode(String.self) {
+            self.init(path: path)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let path = try container.decode(String.self, forKey: .path)
+        let required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? true
+        let format = try container.decodeIfPresent(String.self, forKey: .format)
+        self.init(path: path, required: required, format: format)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        if required, format == nil {
+            var container = encoder.singleValueContainer()
+            try container.encode(path)
+            return
+        }
+
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(path, forKey: .path)
+        if !required {
+            try container.encode(required, forKey: .required)
+        }
+        try container.encodeIfPresent(format, forKey: .format)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case required
+        case format
+    }
+}
+
 /// JSON value used to preserve Compose fields that Swift does not orchestrate
 /// yet but must round-trip through `config`.
 public enum ComposeValue: Codable, Equatable, Sendable {
@@ -237,7 +288,7 @@ public struct ComposeService: Codable, Equatable {
     public var deviceCgroupRules: [String]? = nil
     public var devices: [ComposeValue]? = nil
     public var environment: [String: String?]? = nil
-    public var envFiles: [String]? = nil
+    public var envFiles: [ComposeEnvFile]? = nil
     public var expose: [String]? = nil
     public var gpus: [ComposeValue]? = nil
     public var ports: [String]? = nil

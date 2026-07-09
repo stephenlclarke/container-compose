@@ -689,9 +689,6 @@ extension ComposeOrchestrator {
             service.environment = environment
         }
 
-        if !run.envFiles.isEmpty {
-            service.envFiles = (service.envFiles ?? []) + run.envFiles
-        }
     }
 
     /// Applies `compose run` Linux capability overrides to the copied service

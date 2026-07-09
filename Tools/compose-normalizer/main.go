@@ -29,9 +29,44 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/cli"
+	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
 )
+
+func init() {
+	dotenv.RegisterFormat("raw", parseRawEnvFile)
+}
+
+func parseRawEnvFile(r io.Reader, filename string, vars map[string]string, lookup func(key string) (string, bool)) error {
+	content, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", filename, err)
+	}
+	for _, rawLine := range strings.Split(string(content), "\n") {
+		line := strings.TrimSuffix(rawLine, "\r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return fmt.Errorf("failed to read %s: missing environment variable name", filename)
+		}
+		if ok {
+			vars[key] = value
+			continue
+		}
+		if lookup == nil {
+			continue
+		}
+		if resolved, found := lookup(key); found {
+			vars[key] = resolved
+		}
+	}
+	return nil
+}
 
 // stringList records repeatable flag values while preserving input order.
 type stringList []string
@@ -73,6 +108,12 @@ type normalizedVariable struct {
 	AlternateValue string `json:"alternateValue,omitempty"`
 }
 
+type normalizedEnvFile struct {
+	Path     string `json:"path"`
+	Required bool   `json:"required"`
+	Format   string `json:"format,omitempty"`
+}
+
 // normalizedService contains the Compose service fields Swift can either
 // orchestrate directly or preserve for config output and runtime gap checks.
 type normalizedService struct {
@@ -110,7 +151,7 @@ type normalizedService struct {
 	DeviceCgroupRules       []string                            `json:"deviceCgroupRules,omitempty"`
 	Devices                 []types.DeviceMapping               `json:"devices,omitempty"`
 	Environment             map[string]*string                  `json:"environment,omitempty"`
-	EnvFiles                []string                            `json:"envFiles,omitempty"`
+	EnvFiles                []normalizedEnvFile                 `json:"envFiles,omitempty"`
 	Expose                  []string                            `json:"expose,omitempty"`
 	Gpus                    []types.DeviceRequest               `json:"gpus,omitempty"`
 	Ports                   []string                            `json:"ports,omitempty"`
@@ -1101,14 +1142,18 @@ func mapEnvironment(environment types.MappingWithEquals) map[string]*string {
 	return result
 }
 
-// envFileValues extracts normalized env-file paths in compose-go order.
-func envFileValues(envFiles []types.EnvFile) []string {
+// envFileValues extracts normalized env-file metadata in compose-go order.
+func envFileValues(envFiles []types.EnvFile) []normalizedEnvFile {
 	if len(envFiles) == 0 {
 		return nil
 	}
-	result := make([]string, 0, len(envFiles))
+	result := make([]normalizedEnvFile, 0, len(envFiles))
 	for _, envFile := range envFiles {
-		result = append(result, envFile.Path)
+		result = append(result, normalizedEnvFile{
+			Path:     envFile.Path,
+			Required: bool(envFile.Required),
+			Format:   envFile.Format,
+		})
 	}
 	return result
 }

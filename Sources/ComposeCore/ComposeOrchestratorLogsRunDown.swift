@@ -467,6 +467,7 @@ public extension ComposeOrchestrator {
                 $0.publishedPorts = publishedPorts
                 $0.containerNameOverride = containerName
                 $0.labelOverrides = labelOverrides
+                $0.envFiles = run.envFiles
             },
             externalVolumeMounts: externalVolumeMounts,
             imageHealthCheckCache: imageHealthCheckCache,

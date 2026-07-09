@@ -307,6 +307,51 @@ struct ComposeNormalizerTests {
         ])
     }
 
+    @Test("normalizer resolves env file long syntax")
+    func normalizerResolvesEnvFileLongSyntax() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let envFile = directory.appendingPathComponent("service.env")
+        let rawEnvFile = directory.appendingPathComponent("raw.env")
+        try "FROM_FILE=resolved\n".write(to: envFile, atomically: true, encoding: .utf8)
+        try "RAW_VALUE=\"$NOT_INTERPOLATED\"\n".write(to: rawEnvFile, atomically: true, encoding: .utf8)
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine
+            env_file:
+              - path: service.env
+              - path: missing.env
+                required: false
+              - path: raw.env
+                format: raw
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "envfiles",
+            projectDirectory: directory.path
+        ))
+
+        let api = try #require(project.services["api"])
+        #expect(api.envFiles == [
+            ComposeEnvFile(path: envFile.path),
+            ComposeEnvFile(path: directory.appendingPathComponent("missing.env").path, required: false),
+            ComposeEnvFile(path: rawEnvFile.path, format: "raw"),
+        ])
+        let environment = try #require(api.environment)
+        #expect(environment["FROM_FILE"] ?? nil == "resolved")
+        #expect(environment["RAW_VALUE"] ?? nil == #""$NOT_INTERPOLATED""#)
+    }
+
     @Test("normalizes logging fixture without losing shell variables")
     func normalizesLoggingFixtureWithoutLosingShellVariables() async throws {
         let composeFile = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -1100,6 +1145,17 @@ struct ComposeNormalizerTests {
                       "name": "web",
                       "image": "nginx",
                       "cpuPercent": 12.5,
+                      "envFiles": [
+                        ".env",
+                        {
+                          "path": "optional.env",
+                          "required": false
+                        },
+                        {
+                          "path": "raw.env",
+                          "format": "raw"
+                        }
+                      ],
                       "dependsOn": {
                         "db": "service_started",
                         "job": {
@@ -1133,6 +1189,11 @@ struct ComposeNormalizerTests {
         #expect(project.services["web"]?.dependsOn == [
             "db": ComposeDependency(condition: "service_started"),
             "job": ComposeDependency(condition: "service_completed_successfully", restart: true, required: false),
+        ])
+        #expect(project.services["web"]?.envFiles == [
+            ComposeEnvFile(path: ".env"),
+            ComposeEnvFile(path: "optional.env", required: false),
+            ComposeEnvFile(path: "raw.env", format: "raw"),
         ])
         let command = try #require(runner.commands.first)
         #expect(command.arguments.containsSequence(["--file", "\(currentDirectory)/compose.yml"]))

@@ -711,6 +711,7 @@ struct RunArgumentOptions {
     var publishedPorts: [String]?
     var containerNameOverride: String?
     var labelOverrides: [ComposeLabelOverride] = []
+    var envFiles: [String] = []
 
     init() {
         command = "run"
@@ -722,6 +723,7 @@ struct RunArgumentOptions {
         publishedPorts = nil
         containerNameOverride = nil
         labelOverrides = []
+        envFiles = []
     }
 
     init(_ configure: (inout RunArgumentOptions) -> Void) {

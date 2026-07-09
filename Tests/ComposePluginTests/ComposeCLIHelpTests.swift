@@ -414,8 +414,14 @@ struct ComposeCLIHelpTests {
         let commandRows = commandSection
             .split(separator: "\n")
             .filter { $0.hasPrefix("| `") }
+        let documentedUnsupportedCommands = [
+            "alpha dry-run",
+            "alpha scale",
+            "alpha watch",
+            "convert",
+        ]
 
-        #expect(commandRows.count == ComposeCLIHelp.commandSupportSnapshots.count)
+        #expect(commandRows.count == ComposeCLIHelp.commandSupportSnapshots.count + documentedUnsupportedCommands.count)
         for snapshot in ComposeCLIHelp.commandSupportSnapshots {
             let command = format(commandPath: snapshot.commandPath)
             let expected = statusIndicator(for: snapshot.support)
@@ -423,6 +429,13 @@ struct ComposeCLIHelpTests {
             #expect(
                 commandSection.contains("| `\(command)` | \(expected) |"),
                 "STATUS.md does not list \(command) as \(expected)"
+            )
+        }
+
+        for command in documentedUnsupportedCommands {
+            #expect(
+                commandSection.contains("| `\(command)` | ❌ No |"),
+                "STATUS.md does not list Docker-documented unsupported command \(command)"
             )
         }
     }
@@ -433,10 +446,11 @@ struct ComposeCLIHelpTests {
         let supported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "supported" }.count
         let partial = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "partially supported" }.count
         let unsupported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "not supported" }.count
+        let dockerDocumentedUnsupported = 15
 
         #expect(
-            status.contains("\(supported) documented long options are ✅, \(partial) are ⚠️, and \(unsupported) are ❌"),
-            "STATUS.md CLI option totals do not match ComposeCLIHelp metadata"
+            status.contains("\(supported) documented long options are ✅, \(partial) are ⚠️, and \(unsupported + dockerDocumentedUnsupported) are ❌"),
+            "STATUS.md CLI option totals do not match ComposeCLIHelp metadata plus Docker-documented unsupported surfaces"
         )
     }
 
@@ -510,7 +524,7 @@ struct ComposeCLIHelpTests {
     func statusDockerfileAndBuildSurfaceListsBuildSpecificationRows() throws {
         let section = try statusSection("Dockerfile And Build Surface", in: try statusMarkdown())
         let requiredRows = [
-            "Dockerfile instruction execution",
+            "Dockerfile instruction set and parser directives",
             "`.dockerignore` context filtering",
             "Build context string syntax",
             "`build.context`",

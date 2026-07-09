@@ -19164,7 +19164,7 @@ struct ComposeOrchestratorTests {
         #expect(command.contains("--rm"))
         #expect(command.containsSequence(["--env", "A=B"]))
         #expect(command.containsSequence(["--env", "EMPTY"]))
-        #expect(command.containsSequence(["--env-file", ".env"]))
+        #expect(!command.containsSequence(["--env-file", ".env"]))
         #expect(!command.containsSequence(["--publish", "8080:80"]))
         #expect(FileManager.default.fileExists(atPath: hostSource))
         #expect(command.containsSequence(["--volume", "\(hostSource):/container:ro"]))
@@ -22021,7 +22021,7 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--env", "NEW=value"]))
         #expect(command.containsSequence(["--env", "PASSTHROUGH"]))
         #expect(!command.containsSequence(["--env", "LOG_LEVEL=info"]))
-        #expect(command.containsSequence(["--env-file", ".env"]))
+        #expect(!command.containsSequence(["--env-file", ".env"]))
         #expect(command.containsSequence(["--env-file", ".env.local"]))
         #expect(Array(command.suffix(2)) == ["alpine", "env"])
     }

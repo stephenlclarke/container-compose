@@ -29,26 +29,28 @@ Stable package workflows publish `container-compose-plugin-release-arm64.tar.gz`
 
 ## Parity Legend
 
-- ✅ Yes: Docker Compose v2 parity is implemented for the current Stephen fork-backed runtime lane.
-- ⚠️ Partial: a Docker Compose-compatible subset is implemented; details list the remaining gap.
-- ❌ No: the surface is intentionally rejected before side effects or has no implementation.
+- ✅ Yes: green tick; Docker Compose v2 parity is implemented for the current Stephen fork-backed runtime lane.
+- ⚠️ Partial: orange exclamation; a Docker Compose-compatible subset is implemented and the details list the remaining gap.
+- ❌ No: red cross; the surface is intentionally rejected before side effects or has no implementation.
 
 Runtime-backed commands preflight the installed stack before work begins. Apple stock or mismatched Homebrew installs fail with [INSTALL.md](INSTALL.md) guidance instead of a late unsupported-feature or runtime error.
+
+Surface names follow the current Docker Docs [Compose file reference](https://docs.docker.com/reference/compose-file/), [Services reference](https://docs.docker.com/reference/compose-file/services/), [Build Specification](https://docs.docker.com/reference/compose-file/build/), [Deploy Specification](https://docs.docker.com/reference/compose-file/deploy/), [Develop Specification](https://docs.docker.com/reference/compose-file/develop/), [Dockerfile reference](https://docs.docker.com/reference/dockerfile/), and [Compose CLI reference](https://docs.docker.com/reference/cli/docker/compose/). This file records current state only; it is not a release history.
 
 ## Compose Surface Matrix
 
 | Surface | Parity | Details |
 | --- | --- | --- |
-| Compose project loading and normalization | ⚠️ Partial | `compose-go` handles local/default files, multiple files, profiles, interpolation, env files, project name and directory selection, extension preservation, and `config` YAML/JSON output. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
-| CLI command surface | ⚠️ Partial | 31 commands are ✅, 2 are ⚠️, and 8 are ❌. See [CLI Command Surface](#cli-command-surface). |
-| CLI option surface | ⚠️ Partial | 211 documented long options are ✅, 4 are ⚠️, and 28 are ❌. See [CLI Option Surface](#cli-option-surface). |
-| Dockerfile and build inputs | ⚠️ Partial | Contexts, `dockerfile`, `dockerfile_inline`, `.dockerignore`, args, additional contexts, cache hints, labels, target, platforms, pull/no-cache, tags, `extra_hosts`, BuildKit network, isolation, privileged build, shm size, ulimits, SSH forwarding, provenance, SBOM, builder selection, `--print`, and `--check` are implemented. Build secrets are limited to file/env-backed BuildKit secret IDs; unsupported secret shapes are rejected. |
+| Compose project loading and normalization | ⚠️ Partial | `compose-go` handles local/default files, multiple files, profiles, interpolation, env files, service `env_file` short/long syntax, project name and directory selection, extension preservation, and `config` YAML/JSON output; the normalizer adds Docker Compose-compatible raw-format env-file parsing. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
+| CLI command surface | ⚠️ Partial | 31 commands are ✅, 2 are ⚠️, and 12 are ❌ across the current Docker Compose v2 command reference plus this plugin's explicit `help` command. See [CLI Command Surface](#cli-command-surface). |
+| CLI option surface | ⚠️ Partial | 211 documented long options are ✅, 4 are ⚠️, and 43 are ❌ across the current Docker Compose v2 option reference. See [CLI Option Surface](#cli-option-surface). |
+| Dockerfile and build inputs | ⚠️ Partial | Dockerfile instruction execution, contexts, `dockerfile`, `dockerfile_inline`, `.dockerignore`, args, additional contexts, cache hints, labels, target, platforms, pull/no-cache, tags, `extra_hosts`, BuildKit network, isolation, privileged build, shm size, ulimits, SSH forwarding, provenance, SBOM, builder selection, `--print`, and `--check` are implemented. Build secrets are limited to file/env-backed BuildKit secret IDs; unsupported secret shapes are rejected. |
 | Image pull, push, and local image metadata | ✅ Yes | `pull`, `push`, `images`, image digest config output, pull policy, quiet modes, failure-ignore modes, and dependency image traversal are implemented. |
-| Service lifecycle orchestration | ⚠️ Partial | `create`, `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `rm`, `down`, `scale`, `wait`, and most `up` behavior are implemented. Health-aware `up --wait`, health dependency state, and completion metadata remain runtime gaps. |
+| Service lifecycle orchestration | ⚠️ Partial | `create`, `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `rm`, `down`, `scale`, `wait`, service `post_start`, service `pre_stop`, and most `up` behavior are implemented. Health-aware `up --wait`, health dependency state, job completion metadata, and service `pre_start` remain runtime gaps. |
 | Process execution and attach | ⚠️ Partial | `run` and `exec` are implemented, including env, user, workdir, entrypoint, labels, caps, ports, volumes, service ports, aliases, and privileged mode. `attach --no-stdin` is implemented; interactive stdin/stdout/stderr reattach and detach-key handling remain runtime gaps. |
 | Logs, events, stats, top, and ps | ⚠️ Partial | `logs`, `events`, `stats`, `top`, `ps`, `ls`, and `port` are implemented. Logging drivers are limited to `json-file`, `local`, and `none`; log options are limited to `max-size` and `max-file`. |
 | Ports and service discovery | ✅ Yes | Short and long published ports, dynamic port allocation, host address/protocol matching, `expose`, `port`, `links`, `external_links`, and single-network aliases are implemented. |
-| Networks and IPAM | ⚠️ Partial | Project networks, `internal`, driver metadata, top-level `driver_opts`, one IPv4 subnet, one IPv6 subnet, host/no-network modes, service MTU driver option, and single-network MAC/alias attachment are implemented. IPAM driver/options/gateway/ranges/aux addresses, multiple subnets of one family, arbitrary endpoint driver options, and multi-network aliases remain runtime gaps. |
+| Networks and IPAM | ⚠️ Partial | Project networks, `internal`, driver metadata, top-level `driver_opts`, one IPv4 subnet, one IPv6 subnet, host/no-network modes, service MTU driver option, and single-network MAC/alias attachment are implemented. IPAM driver/options/gateway/ranges/aux addresses, multiple subnets of one family, endpoint `ipv4_address`/`ipv6_address`/`link_local_ips`/`interface_name`/`gw_priority`/`priority`, arbitrary endpoint driver options, and multi-network aliases remain runtime gaps. |
 | Volumes, mounts, configs, and secrets | ⚠️ Partial | Named, bind, anonymous, tmpfs, `volumes_from`, bind `create_host_path`, bind propagation, file/env-backed configs and secrets, and service mount labels are implemented. Mount `consistency`, SELinux, recursive bind, `volume.subpath`, image subpath, unsupported mount types, API socket handoff, and nested bind mount overlay behavior remain gaps. |
 | Runtime resources and security options | ⚠️ Partial | `cpus`, `mem_limit`, `pids_limit`, blkio controls, `sysctls`, `ulimits`, `shm_size`, `privileged`, `cap_add`, `cap_drop`, `read_only`, `init`, restart policy, stop signal/grace period, hostname/domainname, DNS options, and extra hosts are implemented. Advanced CPU scheduler fields, memory reservation/swap/swappiness/OOM controls, cgroup fields, IPC, isolation, user namespace, UTS, supplemental groups, and `security_opt` remain runtime gaps. |
 | Devices and GPU | ⚠️ Partial | `device_cgroup_rules` and Linux VM `devices` mappings are implemented through the fork-backed runtime. `gpus`, credential specs, arbitrary macOS hardware passthrough, and Deploy device reservations remain runtime gaps. |
@@ -61,13 +63,13 @@ Runtime-backed commands preflight the installed stack before work begins. Apple 
 
 ## Compose File Surface
 
-The Docker Compose v2 file reference is a rolling Compose Specification surface: top-level project elements, services, networks, volumes, configs, secrets, optional Build/Deploy/Develop specifications, provider/model extensions, fragments, merge behavior, and include behavior. The current parity state is:
+The Docker Compose v2 file reference is a rolling Compose Specification surface: top-level project elements, services, networks, volumes, configs, secrets, optional Build/Deploy/Develop specifications, provider/model extensions, fragments, merge behavior, interpolation, profiles, and include behavior. The current parity state is:
 
 | Compose File Surface | Parity | Details |
 | --- | --- | --- |
 | Project file discovery and sources | ⚠️ Partial | Default local file discovery, explicit local `--file`, repeated files, `COMPOSE_FILE`, `.env`, `--env-file`, project directory, project name, profiles, interpolation controls, path-resolution controls, and stdin-style local loader paths are handled by `compose-go`. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
 | Top-level `name` and legacy `version` | ✅ Yes | `name` participates in project naming precedence, and legacy `version` is accepted by the Compose Specification loader without driving behavior. |
-| Top-level `services` | ⚠️ Partial | Service definitions, dependencies, images, build, commands, environment, ports, networks, volumes, configs, secrets, resources, lifecycle hooks, healthchecks, labels, annotations, and local mode metadata are parsed. Runtime-backed service gaps are listed in the current-state and CLI tables. |
+| Top-level `services` | ⚠️ Partial | Service definitions are parsed and normalized across the current Docker Compose service attribute surface. Runtime-backed gaps are listed in [Service Attribute Surface](#service-attribute-surface), the current-state matrix, and the CLI tables. |
 | Top-level `networks` | ⚠️ Partial | Project networks, explicit names, external names, `internal`, driver metadata, top-level `driver_opts`, and one IPv4 plus one IPv6 IPAM subnet are implemented. IPAM driver/options/gateway/ranges/aux addresses and multiple subnets of the same address family remain runtime gaps. |
 | Top-level `volumes` | ✅ Yes | Named volumes, explicit names, external volumes, local driver metadata, driver options, labels, and project labels are implemented through the direct runtime API. |
 | Top-level `configs` | ⚠️ Partial | File-backed and environment-backed configs are materialized as read-only service mounts with Compose metadata. External configs and non-file/non-env config backends remain runtime gaps. |
@@ -78,11 +80,34 @@ The Docker Compose v2 file reference is a rolling Compose Specification surface:
 | Compose Develop Specification | ✅ Yes | `develop.watch` supports `rebuild`, `restart`, `sync`, `sync+restart`, and `sync+exec`, including include/ignore filters, initial sync, prune, `watch --no-up`, `up --watch`, and `up --menu --watch`. |
 | Provider services and models | ⚠️ Partial | Provider services run through the Compose provider protocol and inject provider variables into dependents. Compose model bindings are rejected until a model-runner backend and endpoint injection primitive exist. |
 
+## Service Attribute Surface
+
+Docker Compose service attributes are grouped here by runtime behavior so every current service surface has a yes/no/partial indicator without turning this handoff into generated API documentation.
+
+| Service Attribute Surface | Parity | Details |
+| --- | --- | --- |
+| Identity, image, process, and profile attributes | ✅ Yes | `image`, `platform`, `pull_policy`, `profiles`, `attach`, `container_name`, `hostname`, `domainname`, `command`, `entrypoint`, `working_dir`, `user`, `stdin_open`, `tty`, `init`, `runtime`, and `scale` are parsed and mapped into local orchestration. |
+| Labels, annotations, and extension metadata | ✅ Yes | `labels`, `label_file`, `annotations`, service `x-*` extensions, container names, project labels, and service metadata are preserved or projected where Docker Compose local mode expects them. |
+| Environment and env files | ✅ Yes | `environment` and `env_file` short/long syntax are implemented, including optional missing env files and `format: raw` values. Service env files are resolved during normalization like Docker Compose and are not forwarded as runtime `--env-file` arguments. |
+| Build-backed services | ⚠️ Partial | `build` string syntax and detailed Build Specification attributes are implemented through the supported Dockerfile/build surface. Build-secret metadata and unsupported secret source shapes remain the only known Build Specification gaps. |
+| Dependencies and links | ⚠️ Partial | `depends_on`, `links`, and `external_links` ordering/discovery are implemented, including dependency restart/required metadata where local mode can honor it. `condition: service_healthy` remains limited by missing runtime health state, and full job-completion dependency metadata remains a runtime gap. |
+| Ports and exposure | ✅ Yes | `ports` short/long syntax, dynamic host ports, ranges, host IPs, protocols, named/app-protocol metadata, `expose`, and `port` lookup are implemented for local mode. |
+| Network attachments and discovery | ⚠️ Partial | `networks`, `network_mode: none`, `network_mode: host`, single-network `aliases`, service MTU `driver_opts`, `mac_address`, DNS fields, and `extra_hosts` are implemented where the runtime exposes matching primitives. Endpoint `ipv4_address`, `ipv6_address`, `link_local_ips`, `interface_name`, `gw_priority`, `priority`, arbitrary endpoint `driver_opts`, multi-network aliases, `network_mode: service:NAME`, and `network_mode: container:NAME` remain runtime gaps. |
+| Volumes, mounts, configs, and secrets | ⚠️ Partial | `volumes`, `volumes_from`, `volume_driver`, `tmpfs`, `configs`, and `secrets` are implemented for named, bind, anonymous, tmpfs, file-backed, and env-backed local mode. Mount `consistency`, SELinux, recursive bind, `volume.subpath`, image subpath, `npipe`, `cluster`, API socket handoff, external config/secret backends, and non-file/non-env config/secret sources remain gaps. |
+| Runtime resources and security | ⚠️ Partial | `cpus`, `pids_limit`, `blkio_config`, `sysctls`, `ulimits`, `shm_size`, `privileged`, `cap_add`, `cap_drop`, `read_only`, `restart`, `stop_signal`, and `stop_grace_period` are implemented. `cpu_count`, `cpu_percent`, `cpu_shares`, `cpu_period`, `cpu_quota`, `cpu_rt_runtime`, `cpu_rt_period`, `cpuset`, `mem_reservation`, `memswap_limit`, `mem_swappiness`, `oom_kill_disable`, `oom_score_adj`, `cgroup`, `cgroup_parent`, `ipc`, `isolation`, `group_add`, `security_opt`, `storage_opt`, `userns_mode`, and `uts` are parsed but remain fully or partly limited by runtime primitives. |
+| Devices, GPU, and credentials | ⚠️ Partial | `devices` and `device_cgroup_rules` are implemented through the fork-backed runtime. `gpus`, `credential_spec`, and arbitrary macOS hardware passthrough remain runtime gaps. |
+| Logging | ⚠️ Partial | `logging.driver` supports `json-file`, `local`, and `none`; `logging.options` supports `max-size` and `max-file`. Other logging drivers/options are rejected before side effects. |
+| Healthchecks | ⚠️ Partial | `healthcheck` and Dockerfile `HEALTHCHECK` overrides are parsed and projected into runtime create arguments where available. Runtime health execution/state, `service_healthy`, full health-aware `up --wait`, and health status display remain blocked by missing runtime health state. |
+| Lifecycle hooks | ⚠️ Partial | `post_start` and `pre_stop` hooks run for detached and managed lifecycle paths with command/user/privileged/working-directory/environment metadata. Foreground attach paths still have explicit unsupported errors, and Docker Compose `pre_start` init containers are not implemented. |
+| Deploy Specification attributes | ⚠️ Partial | `deploy.mode`, `replicas`, `labels`, `endpoint_mode`, `resources.limits`, CPU/memory `resources.reservations`, and restart policy metadata are implemented for local behavior or preserved as scheduler metadata. `placement`, `update_config` start-first behavior, `rollback_config`, pids/device/generic reservations, pids/device/generic limits, and Swarm scheduler semantics remain gaps. |
+| Develop Specification attributes | ✅ Yes | `develop.watch` supports `rebuild`, `restart`, `sync`, `sync+restart`, and `sync+exec`, including `path`, `action`, `target`, `ignore`, `include`, `initial_sync`, and `exec` metadata. |
+| Provider and model attributes | ⚠️ Partial | `provider` services run through the Compose provider protocol and inject provider variables into dependents. Service `models` and top-level `models` are parsed and rendered by `config`, but runtime model-runner startup and endpoint injection are rejected until a backend exists. |
+
 ## Dockerfile And Build Surface
 
 | Dockerfile / Build Surface | Parity | Details |
 | --- | --- | --- |
-| Dockerfile instruction execution | ✅ Yes | Service builds run through the fork-backed `container build` BuildKit path, so Dockerfile instruction parsing and execution follow the supported BuildKit backend. |
+| Dockerfile instruction set and parser directives | ✅ Yes | Service builds run through the fork-backed `container build` BuildKit path, so Dockerfile parser directives and instruction parsing/execution follow the supported BuildKit backend. |
 | `.dockerignore` context filtering | ✅ Yes | Build contexts use the fork-backed builder-shim filter path, including negation patterns that re-include descendants below excluded parent directories. |
 | Build context string syntax | ✅ Yes | `build: ./dir` resolves to a context directory with the default `Dockerfile`, matching Docker Compose local mode. |
 | `build.context` | ✅ Yes | Local relative and absolute contexts are resolved, and remote BuildKit references are passed through to the builder. |
@@ -117,6 +142,9 @@ The Docker Compose v2 file reference is a rolling Compose Specification surface:
 
 | Command | Parity | Details |
 | --- | --- | --- |
+| `alpha dry-run` | ❌ No | Experimental `alpha dry-run -- COMMAND` wrapper is not implemented; use the supported root `--dry-run` flag on commands that mutate state. |
+| `alpha scale` | ❌ No | Experimental `alpha scale` alias is not implemented; use the supported stable `scale` command. |
+| `alpha watch` | ❌ No | Experimental `alpha watch` alias is not implemented; use the supported stable `watch` command. |
 | `attach` | ⚠️ Partial | `--no-stdin` output-follow attach is implemented; default interactive reattach and detach-key handling need runtime support. |
 | `bridge` | ❌ No | Compose Bridge transformation tooling is not implemented. |
 | `bridge convert` | ❌ No | Compose Bridge transformation tooling is not implemented. |
@@ -127,6 +155,7 @@ The Docker Compose v2 file reference is a rolling Compose Specification surface:
 | `build` | ✅ Yes | Dockerfile/build parity is implemented for the supported build surface above. |
 | `commit` | ❌ No | Container commit/image mutation is not implemented. |
 | `config` | ✅ Yes | Compose project rendering and config query options are implemented. |
+| `convert` | ❌ No | Docker Compose's `convert` alias for `config` is not implemented as a separate command; use the supported `config` command. |
 | `cp` | ✅ Yes | File copy in/out is implemented for non-streaming paths. |
 | `create` | ✅ Yes | Service creation, build/pull/recreate controls, scaling, and orphan handling are implemented. |
 | `down` | ✅ Yes | Container, network, image, volume, timeout, orphan, and service-scoped cleanup are implemented. |
@@ -166,6 +195,9 @@ The Docker Compose v2 file reference is a rolling Compose Specification surface:
 | Option Surface | Parity | Details |
 | --- | --- | --- |
 | Root options | ⚠️ Partial | ✅ `--ansi`, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`; ⚠️ `--parallel`: caps repeated `pull` and `push` image operations while dependency-sensitive orchestration stays ordered; ❌ `--all-resources`, ❌ `--compatibility`: unsupported root modes. |
+| `alpha dry-run` options | ❌ No | The experimental `alpha dry-run` command has no documented long options and is not implemented; use supported root `--dry-run`. |
+| `alpha scale` options | ❌ No | ❌ `--no-deps`: experimental `alpha scale` is not implemented; use supported stable `scale --no-deps`. |
+| `alpha watch` options | ❌ No | ❌ `--no-up`, ❌ `--quiet`: experimental `alpha watch` is not implemented; use supported stable `watch --no-up` and `watch --quiet`. |
 | `attach` options | ⚠️ Partial | ✅ `--dry-run`, ✅ `--index`, ✅ `--no-stdin`, ✅ `--sig-proxy`; ⚠️ `--detach-keys`: parsed and documented, but output-only attach ignores detach keys because interactive reattach is not exposed by the runtime. |
 | `bridge` options | ❌ No | ❌ `--dry-run`: Compose Bridge is not implemented. |
 | `bridge convert` options | ❌ No | ❌ `--dry-run`, ❌ `--output`, ❌ `--templates`, ❌ `--transformation`: Compose Bridge is not implemented. |
@@ -176,6 +208,7 @@ The Docker Compose v2 file reference is a rolling Compose Specification surface:
 | `build` options | ✅ Yes | ✅ `--build-arg`, ✅ `--builder`, ✅ `--check`, ✅ `--dry-run`, ✅ `--memory`, ✅ `--no-cache`, ✅ `--print`, ✅ `--provenance`, ✅ `--pull`, ✅ `--push`, ✅ `--quiet`, ✅ `--sbom`, ✅ `--ssh`, ✅ `--with-dependencies`. |
 | `commit` options | ❌ No | ❌ `--author`, ❌ `--change`, ❌ `--dry-run`, ❌ `--index`, ❌ `--message`, ❌ `--pause`: `commit` is not implemented. |
 | `config` options | ✅ Yes | ✅ `--dry-run`, ✅ `--environment`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--lock-image-digests`, ✅ `--models`, ✅ `--networks`, ✅ `--no-consistency`, ✅ `--no-env-resolution`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--no-path-resolution`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--variables`, ✅ `--volumes`. |
+| `convert` options | ❌ No | ❌ `--format`, ❌ `--hash`, ❌ `--images`, ❌ `--no-consistency`, ❌ `--no-interpolate`, ❌ `--no-normalize`, ❌ `--output`, ❌ `--profiles`, ❌ `--quiet`, ❌ `--resolve-image-digests`, ❌ `--services`, ❌ `--volumes`: `convert` is not implemented as a separate alias; use supported `config` options. |
 | `cp` options | ✅ Yes | ✅ `--all`, ✅ `--archive`, ✅ `--dry-run`, ✅ `--follow-link`, ✅ `--index`. |
 | `create` options | ✅ Yes | ✅ `--build`, ✅ `--dry-run`, ✅ `--force-recreate`, ✅ `--no-build`, ✅ `--no-recreate`, ✅ `--pull`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--scale`, ✅ `--yes`. |
 | `down` options | ✅ Yes | ✅ `--dry-run`, ✅ `--remove-orphans`, ✅ `--rmi`, ✅ `--timeout`, ✅ `--volumes`. |

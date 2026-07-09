@@ -117,7 +117,7 @@ extension ComposeOrchestrator {
                 args.append(contentsOf: ["--env", key])
             }
         }
-        for envFile in service.envFiles ?? [] {
+        for envFile in run.envFiles {
             args.append(contentsOf: ["--env-file", envFile])
         }
         let publishedPorts = try publishedPortArguments(
