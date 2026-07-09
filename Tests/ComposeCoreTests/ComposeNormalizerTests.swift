@@ -233,6 +233,37 @@ struct ComposeNormalizerTests {
         ))
     }
 
+    @Test("normalizer marks IPAM options unsupported")
+    func normalizerMarksIPAMOptionsUnsupported() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let composeFile = directory.appendingPathComponent("compose.yml")
+        try """
+        services:
+          api:
+            image: alpine:3.20
+            networks:
+              - backend
+        networks:
+          backend:
+            ipam:
+              options:
+                com.example.ipam: enabled
+        """.write(to: composeFile, atomically: true, encoding: .utf8)
+
+        let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
+            files: [composeFile.path],
+            projectName: "sample",
+            projectDirectory: directory.path
+        ))
+
+        #expect(project.networks["backend"]?.unsupportedFields == ["ipam.options"])
+    }
+
     @Test("normalizer preserves entrypoint command and environment forms")
     func normalizerPreservesEntrypointCommandAndEnvironmentForms() async throws {
         let fileManager = FileManager.default

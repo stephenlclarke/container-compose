@@ -1290,6 +1290,7 @@ func networkValues(networks map[string]*types.ServiceNetworkConfig) []string {
 func networkIPAMValues(ipam types.IPAMConfig) (string, string, []string) {
 	fields := []string{}
 	appendUnsupportedNetworkField(&fields, "ipam.driver", ipam.Driver != "")
+	appendUnsupportedNetworkField(&fields, "ipam.options", len(ipam.Options) > 0)
 	var ipv4Subnet string
 	var ipv6Subnet string
 	for _, pool := range ipam.Config {

@@ -64,7 +64,8 @@ Current detailed gap examples:
   plugin-specific `--option key=value` values. Service network attachment
   `driver_opts` support is currently limited to Docker-compatible MTU values
   because Apple attachment options expose MTU but not arbitrary endpoint driver
-  options.
+  options. Driver-specific `networks.<name>.ipam.options` are rejected before
+  side effects until Apple exposes an equivalent network IPAM option surface.
 - Supported device coverage includes service `device_cgroup_rules`, which maps
   to the fork-backed `container run/create --device-cgroup-rule` runtime path,
   and service `devices`, which maps Docker Compose device entries to

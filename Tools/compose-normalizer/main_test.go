@@ -2176,6 +2176,9 @@ func TestNetworkIPAMValues(t *testing.T) {
 
 	gotIPv4, gotIPv6, gotUnsupported = networkIPAMValues(types.IPAMConfig{
 		Driver: "custom",
+		Options: types.Options{
+			"com.example.ipam": "enabled",
+		},
 		Config: []*types.IPAMPool{
 			{
 				Subnet:             "10.77.0.0/24",
@@ -2188,6 +2191,7 @@ func TestNetworkIPAMValues(t *testing.T) {
 	})
 	wantUnsupported := []string{
 		"ipam.driver",
+		"ipam.options",
 		"ipam.config.gateway",
 		"ipam.config.ip_range",
 		"ipam.config.aux_addresses",

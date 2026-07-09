@@ -2,6 +2,8 @@
 
 `make docker-compose-cli-surface-parity` is a local-only integration check for Docker Compose V2 command/help surface drift. It builds the local `compose` binary, compares it with Docker Compose V2, and writes a Markdown report to `.build/parity/compose-cli-surface.md`.
 
+Run `make docker-compose-parity` to execute the full local Docker Compose parity suite sequentially. The aggregate target builds the sibling `../container` checkout when it exists. Runtime-backed parity targets use `CONTAINER_COMPOSE_CONTAINER` for the stack compatibility check; it defaults to `../container/bin/container` when that sibling source build exists and otherwise falls back to `container` from `PATH`.
+
 The check compares:
 
 - root command listings;

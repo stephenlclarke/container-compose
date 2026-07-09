@@ -77,7 +77,32 @@ SWIFT_COVERAGE_TEST_ATTEMPTS ?= 3
 SWIFT_TEST_RUN_FLAGS ?= --no-parallel
 SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
 COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
+CONTAINER_STACK_REPO ?= $(abspath ../container)
+LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
+CONTAINER_COMPOSE_CONTAINER ?= $(if $(wildcard $(LOCAL_CONTAINER_BINARY)),$(LOCAL_CONTAINER_BINARY),container)
+PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)"
 MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md STATUS.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
+DOCKER_COMPOSE_PARITY_TARGETS := \
+	docker-compose-cli-surface-parity \
+	docker-compose-build-builder-parity \
+	docker-compose-build-check-parity \
+	docker-compose-build-isolation-parity \
+	docker-compose-build-secret-metadata-parity \
+	docker-compose-bind-create-host-path-parity \
+	docker-compose-bind-propagation-parity \
+	docker-compose-volume-labels-parity \
+	docker-compose-deploy-endpoint-mode-parity \
+	docker-compose-deploy-resource-reservations-parity \
+	docker-compose-device-cgroup-rules-parity \
+	docker-compose-devices-parity \
+	docker-compose-network-driver-opts-parity \
+	docker-compose-network-ipam-options-parity \
+	docker-compose-up-menu-parity \
+	docker-compose-host-namespaces-parity \
+	docker-compose-create-options-parity \
+	docker-compose-events-parity \
+	docker-compose-rm-parity \
+	docker-compose-restart-policy-parity
 
 # Some local toolchains can build Swift Testing targets without adding the
 # framework and interop library to SwiftPM's generated test runner. Derive
@@ -92,7 +117,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-host-namespaces-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-host-namespaces-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -149,8 +174,9 @@ swift-test: swift-test-build
 swift-runtime-test-build:
 	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --build-tests $(SWIFT_TEST_FLAGS)
 
-swift-runtime-test: build swift-runtime-test-build
+swift-runtime-test: container-stack-build build swift-runtime-test-build
 	CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
+		CONTAINER_BIN="$(CONTAINER_COMPOSE_CONTAINER)" CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 		$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test-build
@@ -1021,65 +1047,79 @@ docker-log-fixtures:
 docker-log-fixtures-update:
 	./scripts/capture-docker-compose-log-fixtures.sh --update
 
+container-stack-build:
+	@if [[ -f "$(CONTAINER_STACK_REPO)/Makefile" ]]; then \
+		$(MAKE) -C "$(CONTAINER_STACK_REPO)" container; \
+	else \
+		printf 'warning: sibling container repo not found at %s; using CONTAINER_COMPOSE_CONTAINER=%s\n' \
+			"$(CONTAINER_STACK_REPO)" "$(CONTAINER_COMPOSE_CONTAINER)" >&2; \
+	fi
+
 docker-compose-e2e-fixtures:
 	./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
+docker-compose-parity: container-stack-build
+	$(MAKE) --no-print-directory -j1 $(DOCKER_COMPOSE_PARITY_TARGETS)
+
 docker-compose-cli-surface-parity: build
-	./Tools/parity/check-compose-cli-surface.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-cli-surface.sh --strict
 
 docker-compose-build-builder-parity: build
-	./Tools/parity/check-compose-build-builder.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-build-builder.sh --strict
 
 docker-compose-build-check-parity: build
-	./Tools/parity/check-compose-build-check.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-build-check.sh --strict
 
 docker-compose-build-isolation-parity: build
-	./Tools/parity/check-compose-build-isolation.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-build-isolation.sh --strict
 
 docker-compose-build-secret-metadata-parity: build
-	./Tools/parity/check-compose-build-secret-metadata.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-build-secret-metadata.sh --strict
 
 docker-compose-bind-create-host-path-parity: build
-	./Tools/parity/check-compose-bind-create-host-path.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-bind-create-host-path.sh --strict
 
 docker-compose-bind-propagation-parity: build
-	./Tools/parity/check-compose-bind-propagation.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-bind-propagation.sh --strict
 
 docker-compose-volume-labels-parity: build
-	./Tools/parity/check-compose-volume-labels.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-volume-labels.sh --strict
 
 docker-compose-deploy-endpoint-mode-parity: build
-	./Tools/parity/check-compose-deploy-endpoint-mode.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-endpoint-mode.sh --strict
 
 docker-compose-deploy-resource-reservations-parity: build
-	./Tools/parity/check-compose-deploy-resource-reservations.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-deploy-resource-reservations.sh --strict
 
 docker-compose-device-cgroup-rules-parity: build
-	./Tools/parity/check-compose-device-cgroup-rules.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-device-cgroup-rules.sh --strict
 
 docker-compose-devices-parity: build
-	./Tools/parity/check-compose-devices.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-devices.sh --strict
 
 docker-compose-network-driver-opts-parity: build
-	./Tools/parity/check-compose-network-driver-opts.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-network-driver-opts.sh --strict
+
+docker-compose-network-ipam-options-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-network-ipam-options.sh --strict
 
 docker-compose-up-menu-parity: build
-	./Tools/parity/check-compose-up-menu.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-up-menu.sh --strict
 
 docker-compose-host-namespaces-parity: build
-	./Tools/parity/check-compose-host-namespaces.sh --strict
+	$(PARITY_ENV) ./Tools/parity/check-compose-host-namespaces.sh --strict
 
-docker-compose-create-options-parity:
-	./Tools/parity/check-compose-create-options.sh --strict
+docker-compose-create-options-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-create-options.sh --strict
 
-docker-compose-events-parity:
-	./Tools/parity/check-compose-events.sh --strict
+docker-compose-events-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-events.sh --strict
 
-docker-compose-rm-parity:
-	./Tools/parity/check-compose-rm.sh --strict
+docker-compose-rm-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-rm.sh --strict
 
-docker-compose-restart-policy-parity:
-	./Tools/parity/check-compose-restart-policy.sh --strict
+docker-compose-restart-policy-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-restart-policy.sh --strict
 
 coverage: swift-coverage go-test
 

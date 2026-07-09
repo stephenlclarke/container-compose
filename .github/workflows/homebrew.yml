@@ -56,36 +56,8 @@ jobs:
           set -euo pipefail
           ruby -c Formula/container-compose.rb
 
-      - name: Tap local formula
+      - name: Validate formula update helper
         shell: bash
         run: |
           set -euo pipefail
-          brew tap stephenlclarke/tap
-          brew trust --tap stephenlclarke/tap
-          brew tap stephenlclarke/container-compose "${GITHUB_WORKSPACE}"
-          brew trust --tap stephenlclarke/container-compose
-
-      - name: Audit formula
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew audit --formula --strict --online stephenlclarke/container-compose/container-compose
-
-      - name: Fetch formula archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew fetch --formula --force stephenlclarke/container-compose/container-compose
-
-      - name: Install and test formula
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew install --formula stephenlclarke/container-compose/container-compose
-          brew test stephenlclarke/container-compose/container-compose
-
-      - name: Inspect formula
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew info --formula stephenlclarke/container-compose/container-compose
+          python3 -m unittest Tools/release/test_update_homebrew_formula.py

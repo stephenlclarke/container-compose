@@ -156,7 +156,7 @@ GitHub Actions keeps the expensive and security-oriented checks in separate work
 | `Quality / Swift ASan` | PRs and manual runs touching Swift package surfaces | Resolves the current `stephenlclarke/container:main` commit, checks out that exact dependency revision, then runs `swift test --disable-automatic-resolution --sanitize=address`. |
 | `Quality / Swift TSan Nightly` | Nightly schedule and manual runs | Resolves the current `stephenlclarke/container:main` commit, checks out that exact dependency revision, then runs `swift test --disable-automatic-resolution --sanitize=thread`. |
 | `Quality / SwiftLint/SwiftFormat` | Pushes, PRs, and manual runs touching Swift package surfaces | Runs strict SwiftLint and SwiftFormat checks on the Swift package files changed by a push or PR. Manual runs lint the full Swift package so maintainers can audit the remaining repository-wide formatting baseline deliberately without adding full-tree SwiftFormat time to every ordinary push. |
-| `Homebrew / Formula Syntax` | Pushes to `main`, semantic release tags, PRs to `main`, and manual runs | Validates the Homebrew formula Ruby syntax and inspects `container-compose` through `brew info`; install flow details live in [INSTALL.md](INSTALL.md). |
+| `Homebrew / Formula Syntax` | Pushes to `main`, PRs to `main`, and manual runs when `Formula/**` or the Homebrew workflow changes | Validates the checked-in Homebrew formula template with Ruby syntax checks and the formula update helper tests. Online fetch, install, and tap validation belong to the prebuilt package workflow after release assets exist; install flow details live in [INSTALL.md](INSTALL.md). |
 | `CodeQL / Analyze Go` | Pushes to `main`, PRs to `main`, weekly schedule, and manual runs | Runs CodeQL over the Go normalizer using the same release build path as packaged Homebrew artifacts. Non-Go changes report `Analyze Go (No Go changes)` instead of silently completing without an analysis job. Swift remains covered by `make ci`, ASan, SonarCloud, and focused tests; Swift CodeQL is not part of the push gate because CodeQL's Swift compiler trace rebuilds the fork-backed Apple dependency graph and times out on GitHub-hosted macOS runners before reaching `container-compose` sources. |
 
 SwiftPM on the current Apple Swift 6.3.2 toolchain exposes `address`, `thread`, `undefined`, `scudo`, and `fuzzer` sanitizer modes. It does not expose a separate `leak` mode, so there is no standalone Leak Sanitizer job yet; keep ASan as the PR sanitizer gate and add a dedicated LSan job only when the supported SwiftPM sanitizer list includes it.
@@ -209,6 +209,14 @@ make docker-log-fixtures
 ```
 
 This runs `examples/logging/compose.yml` through Docker Compose and compares the captured rotated log tail behavior with `Tests/ComposeCoreTests/Fixtures/logging/docker-compose-rotated-tail.expected`. The fixture currently records `logs --tail 5`, `logs --tail 0`, `logs --tail -1`, and `logs --tail all` for rotated `json-file` and `local` logging drivers.
+
+To run every Docker Compose V2 parity target in a deterministic sequence, use:
+
+```sh
+make docker-compose-parity
+```
+
+The aggregate target first builds the sibling `../container` checkout when it exists, then builds the local `compose` binary and runs the CLI surface, build, mount, Deploy metadata, device, network, lifecycle, event, host namespace, and create-options parity checks one at a time. Runtime-backed parity checks use `CONTAINER_COMPOSE_CONTAINER` to choose the `container` binary used by the compatibility gate; by default this points at `../container/bin/container` when that sibling source build exists, and falls back to `container` from `PATH` otherwise. Override `CONTAINER_STACK_REPO=/path/to/container` or `CONTAINER_COMPOSE_CONTAINER=/path/to/container` when validating a different matched stack.
 
 For the local-only command/help surface parity check, run:
 
