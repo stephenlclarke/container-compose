@@ -419,6 +419,8 @@ cli-smoke-built:
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--publish$${ansi_escape}[0m"* ]]; \
 	[[ "$$run_help_output" == *"$${ansi_escape}[32m--use-aliases$${ansi_escape}[0m"* ]]; \
 	up_help_output="$$(".build/debug/compose" up --help)"; \
+	up_wait_support="$${ansi_escape}[38;5;208m--wait$${ansi_escape}[0m"; \
+	up_wait_timeout_support="$${ansi_escape}[38;5;208m--wait-timeout$${ansi_escape}[0m"; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--abort-on-container-exit$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--abort-on-container-failure$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--attach$${ansi_escape}[0m"* ]]; \
@@ -431,8 +433,8 @@ cli-smoke-built:
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--no-color$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--renew-anon-volumes$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--timestamps$${ansi_escape}[0m"* ]]; \
-	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait$${ansi_escape}[0m"* ]]; \
-	[[ "$$up_help_output" == *"$${ansi_escape}[32m--wait-timeout$${ansi_escape}[0m"* ]]; \
+	[[ "$$up_help_output" == *"$${up_wait_support}"* ]]; \
+	[[ "$$up_help_output" == *"$${up_wait_timeout_support}"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--watch$${ansi_escape}[0m"* ]]; \
 	[[ "$$up_help_output" == *"$${ansi_escape}[32m--yes$${ansi_escape}[0m"* ]]; \
 	rm_help_output="$$(".build/debug/compose" rm --help)"; \

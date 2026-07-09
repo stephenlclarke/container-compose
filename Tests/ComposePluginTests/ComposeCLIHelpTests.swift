@@ -95,6 +95,24 @@ struct ComposeCLIHelpTests {
         }
     }
 
+    @Test("partially supported commands expose non-green option support")
+    func partiallySupportedCommandsExposeNonGreenOptionSupport() {
+        let partialCommands = ComposeCLIHelp.commandSupportSnapshots
+            .filter { $0.support == "partially supported" }
+            .map(\.commandPath)
+
+        for commandPath in partialCommands {
+            let commandOptions = ComposeCLIHelp.optionSupportSnapshots
+                .filter { $0.commandPath == commandPath }
+            let exposesPartialSurface = commandOptions.contains { $0.support != "supported" }
+
+            #expect(
+                exposesPartialSurface,
+                "\(format(commandPath: commandPath)) is partially supported but all rendered command options are marked supported"
+            )
+        }
+    }
+
     @Test("every documented command option is covered by a parse representative")
     func everyDocumentedCommandOptionIsCoveredByAParseRepresentative() {
         let documented = Set(ComposeCLIHelp.optionSupportSnapshots.map { OptionIdentity(commandPath: $0.commandPath, option: $0.option) })
@@ -265,6 +283,15 @@ struct ComposeCLIHelpTests {
 
         #expect(help.contains("\u{001B}[32m--menu\u{001B}[0m"))
         #expect(help.contains("Use --menu=false to explicitly disable the helper menu."))
+    }
+
+    @Test("up wait options show partial health support")
+    func upWaitOptionsShowPartialHealthSupport() throws {
+        let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
+
+        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--wait\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[38;5;208m--wait-timeout\u{001B}[0m"))
     }
 
     @Test("up raw attached output flags parse")
