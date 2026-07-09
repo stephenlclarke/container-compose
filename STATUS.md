@@ -24,14 +24,14 @@ Current reviewed package pins:
 
 ## Latest Local Validation
 
-The latest local validation for this compatibility refresh passed before the `0.6.12` stable release with `container-builder-shim` `go test ./pkg/fssync`, `go test ./...`, `make build`, `make vet`, `make coverage`, `make lint`, `make fmt`, `container` `make test`, and `container-compose` `make ci` plus `make docker-compose-parity` after refreshing the `containerization` package pin to `fbc08e7037736137eb0ba87784351bf44d29cefe`. Markdown lint for the updated status and upstream handoff docs plus `git diff --check` also passed.
+The latest local validation for this compatibility refresh passed across the `0.6.14` and `0.6.15` stable release slices with `container-compose` `swift test --filter ComposeCLIHelpTests`, rendered help smoke checks for `compose help up` and `compose up --help`, `make ci`, `make cli-smoke-built`, `make docker-compose-parity`, `actionlint .github/workflows/quality.yml`, a local Quality workflow style-path selector simulation, YAML parsing for `.github/workflows/quality.yml`, and `git diff --check`. The earlier stack validation for `container-builder-shim` `0.13.8`, `container` `e5773f48cbd3c29cd3ae67c6c25184878bacae30`, and `containerization` `fbc08e7037736137eb0ba87784351bf44d29cefe` remains the current runtime bundle proof.
 
 Current full coverage proof:
 
-- Swift: 846 Compose tests at 89.34% line coverage.
+- Swift: 848 Compose tests at 89.34% line coverage.
 - Go normalizer: 92.56% line coverage.
 
-The `0.6.12` stable package workflow published `container-compose-plugin-release-arm64.tar.gz` with `sha256:49e01ad6706e5fcdcff10b773ab42d22acd0b7a920bbacd017a81e3b48ed7110`, and the Homebrew tap was updated at `7702844`.
+The `0.6.15` stable package workflow published `container-compose-plugin-release-arm64.tar.gz` with `sha256:8fe372a5df692a8ce1df3bfb932d09b6b996d2b460e9187c9f6bb0db3e199460`, and the Homebrew tap was updated at `c4b368b`. The immediately preceding `0.6.14` help-status release was verified with `sha256:6ac153d473a707868c3a47dffa5565cc930436d66a30e939aeaa407cb443ec81`.
 
 ## Recent Functional State
 
