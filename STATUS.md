@@ -1,18 +1,14 @@
 # Status
 
-Last updated: 2026-07-09.
-
-This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
+This file is the current-state handoff for `container-compose`. Keep branch policy in [BRANCHES.md](BRANCHES.md), validation evidence in GitHub Actions and SonarQube, and Apple-facing handoff drafts under `docs/upstream/`.
 
 ## Current State
 
-`main` is the current releasable integration branch and source of stable semantic tags. Land validated slices on `main`, then use `make release VERSION_SELECTOR=--+` to produce the next stable release and Homebrew tap update. Keep branch policy, `CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
+`main` is the current releasable integration branch and source of stable semantic tags. Land validated slices on `main`, then use `make release VERSION_SELECTOR=--+` to produce the next stable release and Homebrew tap update. Keep branch policy, `scripts/CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
 
 ## Current Integration Assumption
 
 `container-compose` is supported as part of the fork-backed Stephen runtime bundle. Keep each package lane pinned to the matching `stephenlclarke/container`, `stephenlclarke/containerization`, and `container-builder-shim` surfaces until equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
-
-Full build support, including BuildKit checks, SSH forwarding, additional contexts, provenance/SBOM attestations, and Dockerfile frontend options, assumes that bundled Stephen runtime path.
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
@@ -20,58 +16,121 @@ Current reviewed package pins:
 
 - `stephenlclarke/container`: `bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb`
 - `stephenlclarke/containerization`: `fbc08e7037736137eb0ba87784351bf44d29cefe`
-- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.8`
+- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.8` for linux/arm64, `sha256:09f5d7927191013773f6cbe82a2a27a5be53c90862c0f81de03defb61dff040f`
 
-## Latest Local Validation
+## Current Validation
 
-The latest local validation for this compatibility refresh covered the current stable release line with `container-compose` `swift test --disable-automatic-resolution --filter ComposeCLIHelpTests`, rendered help checks for `compose help up` and `compose up --help`, and release asset/tap checksum verification. The matching `container` validation passed `make check`, `make test`, targeted lifecycle integration, and full `make integration` for `bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb` with `containerization` `fbc08e7037736137eb0ba87784351bf44d29cefe` and `container-builder-shim` `0.13.8`.
+Use this validation floor for release-facing slices:
 
-Current full coverage proof:
-
-- Swift: 848 Compose tests at 89.34% line coverage.
-- Go normalizer: 92.56% line coverage.
+- `container-compose`: `make check`, `make cli-smoke-built`, targeted Swift help tests when the CLI support matrix changes, markdownlint for touched docs, and release asset/tap checksum verification during release.
+- `container`: `make check`, `make test`, targeted lifecycle integration tests, and full `make integration` when runtime behavior changes.
 
 Stable package workflows publish `container-compose-plugin-release-arm64.tar.gz`, verify the release asset checksum, and update the Homebrew tap after artifacts are ready. The source formula records the current stable release URL, version, and checksum.
 
-## Recent Functional State
+## Parity Legend
 
-- Progress feedback: project loading, variable loading, image build, image pull, direct runtime create/start/run, foreground interactive `run`, and attached `exec` emit visible stderr progress before slow or terminal-taking operations can look hung.
-- Build and image behavior: Compose `dockerfile` paths resolve relative to build context, local build contexts are handed to `container build` as standardized absolute project paths to avoid the relative-context runtime gap tracked by [apple/container#1899](https://github.com/apple/container/issues/1899), list-form entrypoints map correctly to Apple `--entrypoint`, `compose build --print` renders deterministic Buildx bake JSON without build/push side effects, `compose build --check` runs BuildKit lint through the fork-backed build path, `build --print --check` renders `call: "lint"` without outputs, `build --builder default` and named `build --builder NAME` selections flow through to the fork-backed `container build` backend, provenance/SBOM attestations and `build.ssh` / `--ssh` flow through the same path, file/env-backed `build.secrets` map to BuildKit secret IDs while Docker Compose-compatible `uid`/`gid`/`mode` metadata is accepted and ignored for build execution, `.dockerignore` negation patterns that re-include descendants under excluded parents are filtered by the `container-builder-shim` 0.13.8 BuildKit `fsutil` path, `additional_contexts` supports paths, remote contexts, and service contexts with build-order expansion, `build.entitlements`, `extra_hosts`, `isolation`, `network`, `privileged`, `shm_size`, and `ulimits` map to the BuildKit-compatible build model, explicit false attestation forms remain no-op opt-outs, and explicit root `--parallel` values cap repeated `pull` and `push` image work.
-- Core command support: `compose run`, `run --no-deps`, `down [SERVICES]`, `create`, `config`, `ps [SERVICE...]`, `watch`, `up --watch`, `up --menu`, command-level `up --menu --watch`, `up --attach`, `up --attach-dependencies`, exit-control `up` flags, `exec --privileged`, and service, lifecycle, or watch `privileged: true` are covered by focused tests or runtime smoke.
-- Deploy metadata: Docker Compose-compatible `deploy.endpoint_mode` and CPU/memory Deploy reservations are accepted as local metadata, while Swarm-only deploy modes, start-first update ordering, pids/device/generic reservations, and unmapped Deploy resource limits remain blocked by Apple runtime semantics and fail before side effects.
-- Mount behavior: bind mounts preserve Docker Compose `bind.create_host_path` policy; missing sources are rejected before side effects when the policy is false, while default or true bind sources are created as host directories before Apple runtime create/run handoff. Bind `propagation` values are passed as runtime mount options. Service long-form `volume.labels` are preserved in config; anonymous volume labels are applied to deterministic runtime volumes before create/run handoff, and named service mount labels remain metadata because Docker Compose keeps named resource labels under top-level `volumes.<name>.labels`. Runtime-inherited `volumes_from` mounts from external containers pass through without host-path preparation.
-- Namespace modes: `network_mode: none` and `pid: host` are accepted for service containers and one-off `run`. `network_mode: host` maps to the Stephen fork-backed `container --network host` runtime path without attaching the Compose project network. Service/container namespace-sharing forms remain blocked pending a Docker-compatible runtime namespace-join primitive.
-- Network resources: top-level `networks.<name>.driver_opts` are preserved in normalized config and passed to Apple network creation through plugin-specific options. One IPv4 and one IPv6 IPAM subnet are mapped to Apple network creation. Driver-specific `networks.<name>.ipam.options` and other unmapped IPAM fields are rejected before side effects because Apple network creation does not expose a matching IPAM option surface. Service network attachment `driver_opts` support remains limited to Docker-compatible MTU keys because Apple attachment options expose MTU but not arbitrary endpoint driver options.
-- Process and device controls: service `pids_limit` is accepted for service containers and one-off `run`; positive values map to the Stephen fork-backed `container --pids-limit` runtime path, while non-positive values follow Docker Compose local behavior by leaving the runtime limit unset. Service `device_cgroup_rules` is accepted for service containers and one-off `run`, validated before side effects, and mapped to the Stephen fork-backed `container --device-cgroup-rule` runtime path. Service `devices` is accepted for supported Linux VM device paths and mapped to the Stephen fork-backed `container --device` runtime path. GPU requests and arbitrary macOS hardware passthrough remain blocked pending Docker-compatible passthrough primitives.
-- Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
-- Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew formula guidance and the GitHub install URL.
-- Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
-- Packaging and quality: CodeQL gates the release-built Go normalizer path and the current fork-backed Swift dependency graph, and all Go package outputs are release-built with `CGO_ENABLED=0`, `-trimpath`, and stripped linker flags.
-- Packaging: `container` still publishes the moving `homebrew-main` runtime package. `container-compose` follows the latest stable semantic release and records the published runtime commit in package metadata so `brew upgrade` keeps the installed stack aligned and runtime/plugin mismatches fail fast.
+- ✅ Yes: Docker Compose v2 parity is implemented for the current Stephen fork-backed runtime lane.
+- ⚠️ Partial: a Docker Compose-compatible subset is implemented; details list the remaining gap.
+- ❌ No: the surface is intentionally rejected before side effects or has no implementation.
 
-## Current Limits
+Runtime-backed commands preflight the installed stack before work begins. Apple stock or mismatched Homebrew installs fail with [INSTALL.md](INSTALL.md) guidance instead of a late unsupported-feature or runtime error.
 
-- Interactive attach with stdin reattach remains blocked until Apple exposes an interactive attach primitive.
-- `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, command-level `--watch` start, graceful stop, force stop shortcuts, and exit-control options. Docker Desktop-only shortcuts are intentionally absent.
-- Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
-- Root `--parallel` support currently applies to repeated `pull` and `push` image operations. Dry-run output, build planning, create/start ordering, dependency traversal, and runtime lifecycle reconciliation remain deterministic and ordered.
-- Service healthcheck execution and healthy/unhealthy state remain blocked until Apple exposes runtime healthcheck support; [apple/container#1918](https://github.com/apple/container/issues/1918) is the current upstream request covering healthcheck config, observation, API state, and CLI display. This is why `compose up` and its `--wait` / `--wait-timeout` help entries remain partially supported even though non-health waiting for running containers works.
-- Nested bind mounts that overlay a subdirectory within an earlier bind mount remain an Apple runtime gap tracked by [apple/container#1890](https://github.com/apple/container/issues/1890); the plugin can preserve and order the mount entries, but Docker-compatible mount-over-mount behavior depends on runtime support.
-- Namespace sharing via `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME` remains blocked until the runtime exposes Docker-compatible namespace-joining primitives.
-- Driver-specific `networks.<name>.ipam.options` remain blocked until the runtime exposes a Docker-compatible IPAM option surface.
-- Arbitrary service network attachment `driver_opts` remain blocked until the runtime exposes a Docker-compatible endpoint option surface; Docker-compatible MTU options are already mapped.
-- Service `devices` currently resolves only the runtime-supported Linux VM device table, including `/dev/null`, `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, `/dev/tty`, `/dev/console`, and `/dev/ptmx`. Source paths and explicit target paths must be absolute. Docker Compose can pass relative target strings through the Engine API in ambiguous short-form cases such as `/dev/null:rw`; the fork-backed CLI bridge rejects those forms so `rw` is not silently treated as Docker CLI permissions.
-- `gpus`, arbitrary macOS hardware passthrough, and Deploy device reservations remain blocked until the runtime exposes Docker-compatible GPU, host-device passthrough, and scheduler/device-resource primitives.
-- `tty: true` without `stdin_open: true` preserves Docker Compose's independent terminal flags, but Apple `container --tty` without `--interactive` has open signal/termination behavior tracked by [apple/container#1876](https://github.com/apple/container/issues/1876); keep watching the runtime fix before adding a plugin-side workaround that could change stdin semantics.
+## Compose Surface Matrix
+
+| Surface | Parity | Details |
+| --- | --- | --- |
+| Compose project loading and normalization | ✅ Yes | `compose-go` handles multiple files, profiles, interpolation, env files, project name and directory selection, extension preservation, and `config` YAML/JSON output. |
+| CLI command surface | ⚠️ Partial | 31 commands are ✅, 2 are ⚠️, and 8 are ❌. See [CLI Command Surface](#cli-command-surface). |
+| CLI option surface | ⚠️ Partial | 211 documented long options are ✅, 4 are ⚠️, and 28 are ❌. See [CLI Option Surface](#cli-option-surface). |
+| Dockerfile and build inputs | ⚠️ Partial | Contexts, `dockerfile`, `dockerfile_inline`, `.dockerignore`, args, additional contexts, cache hints, labels, target, platforms, pull/no-cache, tags, `extra_hosts`, BuildKit network, isolation, privileged build, shm size, ulimits, SSH forwarding, provenance, SBOM, builder selection, `--print`, and `--check` are implemented. Build secrets are limited to file/env-backed BuildKit secret IDs; unsupported secret shapes are rejected. |
+| Image pull, push, and local image metadata | ✅ Yes | `pull`, `push`, `images`, image digest config output, pull policy, quiet modes, failure-ignore modes, and dependency image traversal are implemented. |
+| Service lifecycle orchestration | ⚠️ Partial | `create`, `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `rm`, `down`, `scale`, `wait`, and most `up` behavior are implemented. Health-aware `up --wait`, health dependency state, and completion metadata remain runtime gaps. |
+| Process execution and attach | ⚠️ Partial | `run` and `exec` are implemented, including env, user, workdir, entrypoint, labels, caps, ports, volumes, service ports, aliases, and privileged mode. `attach --no-stdin` is implemented; interactive stdin/stdout/stderr reattach and detach-key handling remain runtime gaps. |
+| Logs, events, stats, top, and ps | ⚠️ Partial | `logs`, `events`, `stats`, `top`, `ps`, `ls`, and `port` are implemented. Logging drivers are limited to `json-file`, `local`, and `none`; log options are limited to `max-size` and `max-file`. |
+| Ports and service discovery | ✅ Yes | Short and long published ports, dynamic port allocation, host address/protocol matching, `expose`, `port`, `links`, `external_links`, and single-network aliases are implemented. |
+| Networks and IPAM | ⚠️ Partial | Project networks, `internal`, driver metadata, top-level `driver_opts`, one IPv4 subnet, one IPv6 subnet, host/no-network modes, service MTU driver option, and single-network MAC/alias attachment are implemented. IPAM driver/options/gateway/ranges/aux addresses, multiple subnets of one family, arbitrary endpoint driver options, and multi-network aliases remain runtime gaps. |
+| Volumes, mounts, configs, and secrets | ⚠️ Partial | Named, bind, anonymous, tmpfs, `volumes_from`, bind `create_host_path`, bind propagation, file/env-backed configs and secrets, and service mount labels are implemented. Mount `consistency`, SELinux, recursive bind, `volume.subpath`, image subpath, unsupported mount types, API socket handoff, and nested bind mount overlay behavior remain gaps. |
+| Runtime resources and security options | ⚠️ Partial | `cpus`, `mem_limit`, `pids_limit`, blkio controls, `sysctls`, `ulimits`, `shm_size`, `privileged`, `cap_add`, `cap_drop`, `read_only`, `init`, restart policy, stop signal/grace period, hostname/domainname, DNS options, and extra hosts are implemented. Advanced CPU scheduler fields, memory reservation/swap/swappiness/OOM controls, cgroup fields, IPC, isolation, user namespace, UTS, supplemental groups, and `security_opt` remain runtime gaps. |
+| Devices and GPU | ⚠️ Partial | `device_cgroup_rules` and Linux VM `devices` mappings are implemented through the fork-backed runtime. `gpus`, credential specs, arbitrary macOS hardware passthrough, and Deploy device reservations remain runtime gaps. |
+| Namespace modes | ⚠️ Partial | `network_mode: none`, `network_mode: host`, and `pid: host` are implemented. `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME` need Docker-compatible namespace-join primitives. |
+| Healthchecks and dependency conditions | ⚠️ Partial | Healthcheck config is parsed and image healthcheck overrides are validated. Runtime health execution/state is not available, so `service_healthy`, full health-aware `up --wait`, and health status display remain blocked by [apple/container#1918](https://github.com/apple/container/issues/1918). |
+| Deploy specification | ⚠️ Partial | Replicas, local job modes, stop-first update delay, restart policy metadata, deploy labels, CPU/memory local limits, CPU/memory reservation metadata, and `endpoint_mode` metadata are implemented. Start-first updates, scheduler placement behavior, pids/device/generic reservations, pids/device/generic limits, and remaining Swarm scheduler semantics remain gaps. |
+| Develop specification and watch | ✅ Yes | `develop.watch` supports `rebuild`, `restart`, `sync`, `sync+restart`, and `sync+exec`, including include/ignore filters, initial sync, prune, `watch --no-up`, `up --watch`, and `up --menu --watch`. |
+| Provider and model services | ⚠️ Partial | Provider services run through the Compose provider protocol and inject provider variables into dependent services. Compose model bindings are rejected until a model-runner backend and endpoint injection primitive exist. |
+| Labels, annotations, and metadata | ✅ Yes | Service labels, label files, annotations, container names, project/resource labels, deploy labels, top-level volumes/configs/secrets metadata, and Compose extension fields are preserved or mapped where Docker Compose local mode expects them. |
+
+## CLI Command Surface
+
+| Command | Parity | Details |
+| --- | --- | --- |
+| `attach` | ⚠️ Partial | `--no-stdin` output-follow attach is implemented; default interactive reattach and detach-key handling need runtime support. |
+| `bridge` | ❌ No | Compose Bridge transformation tooling is not implemented. |
+| `bridge convert` | ❌ No | Compose Bridge transformation tooling is not implemented. |
+| `bridge transformations` | ❌ No | Compose Bridge transformation tooling is not implemented. |
+| `bridge transformations create` | ❌ No | Compose Bridge transformation tooling is not implemented. |
+| `bridge transformations list` | ❌ No | Compose Bridge transformation tooling is not implemented. |
+| `bridge transformations ls` | ❌ No | Compose Bridge transformation tooling is not implemented. |
+| `build` | ✅ Yes | Dockerfile/build parity is implemented for the supported build surface above. |
+| `commit` | ❌ No | Container commit/image mutation is not implemented. |
+| `config` | ✅ Yes | Compose project rendering and config query options are implemented. |
+| `cp` | ✅ Yes | File copy in/out is implemented for non-streaming paths. |
+| `create` | ✅ Yes | Service creation, build/pull/recreate controls, scaling, and orphan handling are implemented. |
+| `down` | ✅ Yes | Container, network, image, volume, timeout, orphan, and service-scoped cleanup are implemented. |
+| `events` | ✅ Yes | Event output, JSON mode, and time filters are implemented. |
+| `exec` | ✅ Yes | Service exec options, indexes, env, user, workdir, tty, detach, and privileged mode are implemented. |
+| `export` | ✅ Yes | Container filesystem export to an archive path is implemented. |
+| `help` | ✅ Yes | Docker Compose-compatible help rendering and support colors are implemented. |
+| `images` | ✅ Yes | Image listing and formatting are implemented. |
+| `kill` | ✅ Yes | Signal and orphan handling are implemented. |
+| `logs` | ✅ Yes | Follow, timestamps, prefix/color controls, indexes, tail, and time filters are implemented. |
+| `ls` | ✅ Yes | Project listing, filters, formats, quiet, and all modes are implemented. |
+| `pause` | ✅ Yes | Service pause is implemented. |
+| `port` | ✅ Yes | Published-port lookup by service, index, and protocol is implemented. |
+| `ps` | ✅ Yes | Container listing, filters, statuses, service selection, formats, and quiet/services output are implemented. |
+| `publish` | ❌ No | Compose application publishing is not implemented. |
+| `pull` | ✅ Yes | Pull policy, dependency inclusion, quiet mode, and ignore-failure behavior are implemented. |
+| `push` | ✅ Yes | Dependency inclusion, quiet mode, and ignore-failure behavior are implemented. |
+| `restart` | ✅ Yes | Service restart, dependency control, and timeout are implemented. |
+| `rm` | ✅ Yes | Stopped-container removal, force, stop, and volume cleanup are implemented. |
+| `run` | ✅ Yes | One-off containers and Docker Compose run options are implemented. |
+| `scale` | ✅ Yes | Service scaling and dependency control are implemented. |
+| `start` | ✅ Yes | Start, wait, and wait-timeout are implemented for running-state waits. |
+| `stats` | ✅ Yes | Table/JSON formatting, stopped-container inclusion, no-stream, and no-trunc modes are implemented. |
+| `stop` | ✅ Yes | Stop and timeout are implemented. |
+| `top` | ✅ Yes | Process listing is implemented. |
+| `unpause` | ✅ Yes | Service unpause is implemented. |
+| `up` | ⚠️ Partial | Create/start/attach/watch/menu/build/pull/recreate/exit-control/log-output/scaling behavior is implemented; health-aware `--wait` and `--wait-timeout` remain partial until runtime health state exists. |
+| `version` | ✅ Yes | Pretty, short, and JSON version output are implemented. |
+| `volumes` | ✅ Yes | Volume listing, quiet, and formatting are implemented. |
+| `wait` | ✅ Yes | Container exit waiting and `--down-project` cleanup are implemented. |
+| `watch` | ✅ Yes | Develop watch actions and options are implemented. |
+
+## CLI Option Surface
+
+`container compose --help` and `container compose COMMAND --help` are the authoritative per-option views. The non-green option set is:
+
+| Option Surface | Parity | Details |
+| --- | --- | --- |
+| Root options | ⚠️ Partial | ✅ `--ansi`, `--dry-run`, `--env-file`, `--file`, `--profile`, `--progress`, `--project-directory`, `--project-name`, and `--verbose`; ⚠️ `--parallel`; ❌ `--all-resources` and `--compatibility`. `--parallel` currently caps repeated `pull` and `push` image operations; dependency-sensitive orchestration stays ordered. |
+| `attach --detach-keys` | ⚠️ Partial | Parsed and documented, but output-only attach ignores detach keys because interactive reattach is not exposed by the runtime. |
+| `up --wait` | ⚠️ Partial | Waits for services to be running; health-aware waiting remains blocked by missing runtime health state. |
+| `up --wait-timeout` | ⚠️ Partial | Applies to supported waits; health-aware timeout semantics remain blocked by missing runtime health state. |
+| `bridge` options | ❌ No | `--dry-run` is not supported because Compose Bridge is not implemented. |
+| `bridge convert` options | ❌ No | `--dry-run`, `--output`, `--templates`, and `--transformation` are not supported because Compose Bridge is not implemented. |
+| `bridge transformations` options | ❌ No | `--dry-run` is not supported because Compose Bridge is not implemented. |
+| `bridge transformations create` options | ❌ No | `--dry-run` and `--from` are not supported because Compose Bridge is not implemented. |
+| `bridge transformations list` options | ❌ No | `--dry-run`, `--format`, and `--quiet` are not supported because Compose Bridge is not implemented. |
+| `bridge transformations ls` options | ❌ No | `--dry-run`, `--format`, and `--quiet` are not supported because Compose Bridge is not implemented. |
+| `commit` options | ❌ No | `--author`, `--change`, `--dry-run`, `--index`, `--message`, and `--pause` are not supported because `commit` is not implemented. |
+| `publish` options | ❌ No | `--app`, `--dry-run`, `--oci-version`, `--resolve-image-digests`, `--with-env`, and `--yes` are not supported because `publish` is not implemented. |
+
+## Release Notes
+
+Release notes record the sibling runtime stack through [Tools/release/stack-refs.json](Tools/release/stack-refs.json) so stable releases can highlight user-facing changes from `container`, `containerization`, and `container-builder-shim`, not only commits in this plugin repository.
 
 ## Upstream Compatibility
 
 Released Apple `container` compatibility is not a supported-lane functionality gap. The Homebrew preview lane requires the Stephen fork-backed runtime stack and preflights for it before runtime-backed Compose commands run. Stock Apple compatibility remains an upstream/release-channel blocker until equivalent runtime primitives are accepted by Apple and this plugin is updated to consume those upstream APIs.
-
-## Open Blockers
-
-- The immutable `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.8` GHCR image has been published and manifest-verified for linux/arm64 as `sha256:09f5d7927191013773f6cbe82a2a27a5be53c90862c0f81de03defb61dff040f`.
-- SonarCloud quality gate is currently OK on `main` with 0 unresolved issues after `SONAR_QUALITYGATE_WAIT=true make sonar-scan` and a SonarCloud issues API check for branch `main`.
 
 ## Open Follow-ups
 

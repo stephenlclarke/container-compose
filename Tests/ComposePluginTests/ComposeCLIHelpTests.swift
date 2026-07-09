@@ -407,6 +407,39 @@ struct ComposeCLIHelpTests {
         #expect(!options.shouldColorProgress())
     }
 
+    @Test("STATUS command surface matches help support metadata")
+    func statusCommandSurfaceMatchesHelpSupportMetadata() throws {
+        let status = try statusMarkdown()
+        let commandSection = try statusSection("CLI Command Surface", in: status)
+        let commandRows = commandSection
+            .split(separator: "\n")
+            .filter { $0.hasPrefix("| `") }
+
+        #expect(commandRows.count == ComposeCLIHelp.commandSupportSnapshots.count)
+        for snapshot in ComposeCLIHelp.commandSupportSnapshots {
+            let command = format(commandPath: snapshot.commandPath)
+            let expected = statusIndicator(for: snapshot.support)
+
+            #expect(
+                commandSection.contains("| `\(command)` | \(expected) |"),
+                "STATUS.md does not list \(command) as \(expected)"
+            )
+        }
+    }
+
+    @Test("STATUS option totals match help support metadata")
+    func statusOptionTotalsMatchHelpSupportMetadata() throws {
+        let status = try statusMarkdown()
+        let supported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "supported" }.count
+        let partial = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "partially supported" }.count
+        let unsupported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "not supported" }.count
+
+        #expect(
+            status.contains("\(supported) documented long options are ✅, \(partial) are ⚠️, and \(unsupported) are ❌"),
+            "STATUS.md CLI option totals do not match ComposeCLIHelp metadata"
+        )
+    }
+
     private struct OptionIdentity: Comparable, CustomStringConvertible, Hashable {
         var commandPath: [String]
         var option: String
@@ -424,6 +457,42 @@ struct ComposeCLIHelpTests {
     }
 
     private typealias RepresentativeParse = (commandPath: [String], options: Set<String>, parse: () throws -> Void)
+
+    private func statusIndicator(for support: String) -> String {
+        switch support {
+        case "supported":
+            return "✅ Yes"
+        case "partially supported":
+            return "⚠️ Partial"
+        case "not supported":
+            return "❌ No"
+        default:
+            return "unknown"
+        }
+    }
+
+    private func statusMarkdown() throws -> String {
+        let fileURL = URL(fileURLWithPath: #filePath)
+        var directory = fileURL.deletingLastPathComponent()
+        for _ in 0..<8 {
+            let statusURL = directory.appendingPathComponent("STATUS.md")
+            if FileManager.default.fileExists(atPath: statusURL.path) {
+                return try String(contentsOf: statusURL, encoding: .utf8)
+            }
+            directory.deleteLastPathComponent()
+        }
+        throw ComposeError.invalidProject("STATUS.md was not found from \(fileURL.path)")
+    }
+
+    private func statusSection(_ heading: String, in markdown: String) throws -> String {
+        let marker = "## \(heading)"
+        guard let start = markdown.range(of: marker)?.upperBound else {
+            throw ComposeError.invalidProject("STATUS.md is missing \(marker)")
+        }
+        let remainder = markdown[start...]
+        let end = remainder.range(of: "\n## ")?.lowerBound ?? remainder.endIndex
+        return String(remainder[..<end])
+    }
 
     private func representativeParses() -> [RepresentativeParse] {
         [

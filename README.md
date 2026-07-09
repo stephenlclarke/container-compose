@@ -33,56 +33,7 @@ have backing `apple/container` functionality fail with an explicit
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
-Current detailed gap examples:
-
-- Supported `build` coverage includes Compose build args, additional contexts,
-  file/env build secrets with Docker-compatible ignored ownership metadata,
-  SSH forwarding, cache hints, labels, target stages, platforms, pull/no-cache,
-  builder selection, checks, provenance/SBOM attestations, extra hosts, build
-  network mode, Buildx-compatible isolation acceptance, privileged builds,
-  shared memory size, ulimits, `--print`, and service-context build ordering.
-- Supported `up` coverage includes attach selection, dependency attachment,
-  exit-control flags, raw output flags, timestamps, watch mode, and the
-  attached terminal `--menu` shortcut surface. The menu path supports detach,
-  watch toggle, command-level `--watch` start, graceful stop, force stop
-  shortcuts, and exit-control flags; Docker Desktop-only shortcuts are
-  intentionally absent.
-- Supported service mount coverage includes named volumes, bind mounts,
-  anonymous volumes, tmpfs mounts, long-form tmpfs options, `volumes_from`,
-  Docker-compatible bind `create_host_path` handling, and long-form
-  `volume.labels` preservation. Bind `propagation` values are preserved as
-  runtime mount options. Anonymous `volume.labels` are applied to the created
-  runtime volume; named service mount labels remain config metadata, matching
-  Docker Compose.
-- Supported namespace-mode coverage includes `network_mode: none` and
-  `pid: host`. `network_mode: host` maps to the Stephen fork-backed
-  `container --network host` runtime path while avoiding Compose project network
-  attachment. Service/container namespace-sharing forms remain explicit runtime
-  gaps.
-- Supported network-resource coverage includes top-level network `driver_opts`,
-  which are preserved in config output and passed to Apple network creation as
-  plugin-specific `--option key=value` values. Service network attachment
-  `driver_opts` support is currently limited to Docker-compatible MTU values
-  because Apple attachment options expose MTU but not arbitrary endpoint driver
-  options. Driver-specific `networks.<name>.ipam.options` are rejected before
-  side effects until Apple exposes an equivalent network IPAM option surface.
-- Supported device coverage includes service `device_cgroup_rules`, which maps
-  to the fork-backed `container run/create --device-cgroup-rule` runtime path,
-  and service `devices`, which maps Docker Compose device entries to
-  fork-backed `container run/create --device` arguments for supported Linux VM
-  device paths such as `/dev/null` and `/dev/zero`. Device source paths and
-  explicit target paths must be absolute. GPU requests and arbitrary macOS
-  hardware passthrough remain explicit runtime gaps.
-- Supported process-resource coverage includes service `pids_limit`. Positive
-  limits map to the fork-backed `container run/create --pids-limit` runtime
-  path, while non-positive values follow Docker Compose local behavior by
-  leaving the runtime limit unset.
-- Supported local Deploy metadata includes replicas, local job modes,
-  stop-first update delays, restart policy fields, CPU/memory reservation
-  hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local
-  metadata.
-- Partially supported commands: `attach` and `up`.
-- Unsupported commands: `commit` and `publish`.
+The current parity ledger lives in [STATUS.md](STATUS.md). It lists the Docker Compose v2 file, Dockerfile/build, runtime, and CLI surfaces with ✅ yes, ⚠️ partial, and ❌ no indicators plus details for every partial surface.
 
 Long-running project loading, image pull/build, and non-interactive runtime
 handoff steps emit Compose-owned progress on stderr so scriptable stdout output
@@ -120,7 +71,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BRANCHES.md](BRANCHES.md): understand `main`, semantic tags, `CONTAINER_STACK_RELEASE.sh`, release assets, and Homebrew formula policy.
+- [BRANCHES.md](BRANCHES.md): understand `main`, semantic tags, `scripts/CONTAINER_STACK_RELEASE.sh`, release assets, and Homebrew formula policy.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](STATUS.md): get the current dependency pins, blockers, active gaps, and validation handoff.
