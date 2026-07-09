@@ -30,7 +30,7 @@ The review must cover every potential PR independently:
 
 ## Current Inventory
 
-Refreshed on 2026-06-23.
+Refreshed on 2026-07-09.
 
 | Area | Paths | Notes |
 | --- | --- | --- |
@@ -39,6 +39,7 @@ Refreshed on 2026-06-23.
 | Process listing / `top` slice | `docs/upstream/process-list/` | Compose-facing PID-only `top` drafts with commit tracking. |
 | `apple/container` runtime drafts | `docs/upstream/apple-container/` | Apple-shaped typed runtime issue/PR drafts maintained in this repo even when the code lives in `/Users/sclarke/github/container`. Parser-only Docker CLI drafts were removed on 2026-06-23. |
 | `apple/containerization` runtime drafts | `docs/upstream/apple-containerization/` | Lower-runtime issue/PR drafts maintained in this repo even when the code lives in `/Users/sclarke/github/containerization`. |
+| `apple/container-builder-shim` build-context drafts | `docs/upstream/apple-container-builder-shim/` | Builder-shim issue/PR drafts maintained here while the code lives in `/Users/sclarke/github/container-builder-shim`. |
 | Event-stream slab | `docs/upstream/events/` | Current handoff drafts for the Apple runtime event primitive, event time filters, Compose-owned `events --json [SERVICE...]`, Compose-owned `events --json --since/--until [SERVICE...]`, and Compose-owned default text event formatting slices. |
 | Apple-to-Compose migration review | `docs/upstream/APPLE-TO-COMPOSE-MIGRATION-2026-06-23.md` | Reclassifies local Apple-fork work after JLogan's `apple/container#1769` direction comment, records the refreshed clean-worktree audit, and identifies which Docker/Compose compatibility behavior should move into this repository. |
 
