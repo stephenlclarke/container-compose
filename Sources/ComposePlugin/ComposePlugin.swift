@@ -280,6 +280,7 @@ struct ComposePlugin: AsyncParsableCommand {
         subcommands: [
             Bridge.self,
             Config.self,
+            Convert.self,
             Create.self,
             Up.self,
             Down.self,
@@ -679,6 +680,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
 
         let loadedProject = try await global.loadProject(options: composeOptions)
         let configOptions = ComposeConfigOptions {
+            $0.commandName = "config"
             $0.services = services
             $0.environment = environment
             $0.format = format
@@ -695,6 +697,74 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
         }
         let rendered: String
         if lockImageDigests || resolveImageDigests {
+            rendered = try await orchestrator().config(project: loadedProject, resolvingImageDigests: configOptions)
+        } else {
+            rendered = try orchestrator().config(project: loadedProject, options: configOptions)
+        }
+        if let output {
+            try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+            return
+        }
+        if !rendered.isEmpty {
+            print(rendered)
+        }
+    }
+}
+
+/// Implements `compose convert`.
+struct Convert: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert the Compose file to a normalized model.")
+
+    @OptionGroup var global: GlobalOptions
+    @Option(name: .customLong("format"), help: "Format the output. Values: yaml or json.")
+    var format: String?
+    @Option(name: .customLong("hash"), help: "Print the service config hash, one per line.")
+    var hash: String?
+    @Flag(name: .customLong("images"), help: "Print the image names, one per line.")
+    var images = false
+    @Flag(name: .customLong("no-consistency"), help: "Do not check model consistency.")
+    var noConsistency = false
+    @Flag(name: .customLong("no-interpolate"), help: "Do not interpolate environment variables.")
+    var noInterpolate = false
+    @Flag(name: .customLong("no-normalize"), help: "Do not normalize compose model.")
+    var noNormalize = false
+    @Option(name: [.customShort("o"), .customLong("output")], help: "Save to file.")
+    var output: String?
+    @Flag(name: .customLong("profiles"), help: "Print the profile names, one per line.")
+    var profiles = false
+    @Flag(name: .shortAndLong, help: "Only validate the configuration.")
+    var quiet = false
+    @Flag(name: .customLong("resolve-image-digests"), help: "Pin image tags to digests.")
+    var resolveImageDigests = false
+    @Flag(name: .customLong("services"), help: "Print the service names, one per line.")
+    var servicesOnly = false
+    @Flag(name: .customLong("volumes"), help: "Print the volume names, one per line.")
+    var volumes = false
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+
+    /// Prints the normalized Compose model using Docker Compose `convert` projections.
+    func run() async throws {
+        var composeOptions = global.composeOptions()
+        composeOptions.noConsistency = noConsistency
+        composeOptions.noInterpolate = noInterpolate
+        composeOptions.noNormalize = noNormalize
+
+        let loadedProject = try await global.loadProject(options: composeOptions)
+        let configOptions = ComposeConfigOptions {
+            $0.commandName = "convert"
+            $0.services = services
+            $0.format = format
+            $0.hash = hash
+            $0.images = images
+            $0.profiles = profiles
+            $0.quiet = quiet
+            $0.resolveImageDigests = resolveImageDigests
+            $0.servicesOnly = servicesOnly
+            $0.volumes = volumes
+        }
+        let rendered: String
+        if resolveImageDigests {
             rendered = try await orchestrator().config(project: loadedProject, resolvingImageDigests: configOptions)
         } else {
             rendered = try orchestrator().config(project: loadedProject, options: configOptions)
@@ -1228,7 +1298,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var detach = false
     @Flag(name: .shortAndLong, help: "Keep stdin open.")
     var interactive = false
-    @Flag(name: [.customShort("T"), .customLong("no-TTY"), .customLong("no-tty")], help: "Disable pseudo-TTY allocation.")
+    @Flag(name: [.customShort("T"), .customLong("no-tty"), .customLong("no-TTY")], help: "Disable pseudo-TTY allocation.")
     var noTty = false
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
     var noDeps = false

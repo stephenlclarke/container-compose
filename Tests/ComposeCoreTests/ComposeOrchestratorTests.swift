@@ -10397,6 +10397,24 @@ struct ComposeOrchestratorTests {
         }
     }
 
+    @Test("config unsupported format error uses command label")
+    func configUnsupportedFormatErrorUsesCommandLabel() throws {
+        let project = ComposeProject(name: "demo", services: ["web": ComposeService(name: "web", image: "nginx")])
+
+        do {
+            _ = try ComposeOrchestrator().config(
+                project: project,
+                options: ComposeConfigOptions {
+                    $0.commandName = "convert"
+                    $0.format = "toml"
+                }
+            )
+            Issue.record("expected unsupported convert format")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("convert --format 'toml'; supported formats are yaml and json"))
+        }
+    }
+
     @Test("config preserves normalized compose extension fields")
     func configPreservesNormalizedComposeExtensionFields() throws {
         let project = composeProject(

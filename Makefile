@@ -557,9 +557,20 @@ cli-smoke-built:
 	config_filtered_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config api)"; \
 	[[ "$$config_filtered_output" == *'"api"'* ]]; \
 	[[ "$$config_filtered_output" != *'"db"'* ]]; \
+	convert_json_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" convert --format json api)"; \
+	[[ "$$convert_json_output" == *'"api"'* ]]; \
+	[[ "$$convert_json_output" != *'"db"'* ]]; \
+	convert_services_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" convert --services)"; \
+	[[ "$$convert_services_output" == *"api"* ]]; \
+	[[ "$$convert_services_output" == *"db"* ]]; \
+	convert_hash_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" convert --hash api)"; \
+	[[ "$$convert_hash_output" == api" "* ]]; \
 	config_output_path="$$tmpdir/config-output.yaml"; \
 	".build/debug/compose" -f "$$tmpdir/compose.yml" config --output "$$config_output_path"; \
 	[[ -s "$$config_output_path" ]]; \
+	convert_output_path="$$tmpdir/convert-output.yaml"; \
+	".build/debug/compose" -f "$$tmpdir/compose.yml" convert --output "$$convert_output_path"; \
+	[[ -s "$$convert_output_path" ]]; \
 	config_environment_output="$$(COMPOSE_CONFIG_ENV_SMOKE=ok ".build/debug/compose" -f "$$tmpdir/compose.yml" config --environment)"; \
 	[[ "$$config_environment_output" == *"COMPOSE_CONFIG_ENV_SMOKE=ok"* ]]; \
 	compact_global_output="$$(".build/debug/compose" --dry-run -pcompact -f"$$tmpdir/compose.yml" up api)"; \

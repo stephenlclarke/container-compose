@@ -27,7 +27,7 @@ import Foundation
 
 extension ComposeOrchestrator {
     /// Renders the full canonical config in a supported output format.
-    func config(project: ComposeProject, format: String?) throws -> String {
+    func config(project: ComposeProject, format: String?, commandName: String = "config") throws -> String {
         let normalizedFormat = (format ?? "yaml").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch normalizedFormat {
         case "", "json":
@@ -35,7 +35,7 @@ extension ComposeOrchestrator {
         case "yaml":
             return try configYAML(project: project)
         default:
-            throw ComposeError.unsupported("config --format '\(format ?? "")'; supported formats are yaml and json")
+            throw ComposeError.unsupported("\(commandName) --format '\(format ?? "")'; supported formats are yaml and json")
         }
     }
 

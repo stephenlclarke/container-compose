@@ -124,6 +124,7 @@ public struct ComposeRestartOptions {
 
 /// Options for `compose config`.
 public struct ComposeConfigOptions {
+    public var commandName = "config"
     public var services: [String] = []
     public var environment = false
     public var format: String?
@@ -140,6 +141,7 @@ public struct ComposeConfigOptions {
     public var volumes = false
 
     public init() {
+        commandName = "config"
         services = []
         environment = false
         format = nil

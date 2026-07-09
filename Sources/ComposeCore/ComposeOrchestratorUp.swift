@@ -114,7 +114,7 @@ extension ComposeOrchestrator {
         }
 
         let scopedProject = try project.filtered(to: options.services)
-        return try config(project: scopedProject, format: options.format)
+        return try config(project: scopedProject, format: options.format, commandName: options.commandName)
     }
 
     /// Returns Docker Compose compatible config output that may resolve image digests.

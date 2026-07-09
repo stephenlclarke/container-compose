@@ -42,8 +42,8 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Surface | Parity | Details |
 | --- | --- | --- |
 | Compose project loading and normalization | ⚠️ Partial | `compose-go` handles local/default files, multiple files, profiles, interpolation, env files, service `env_file` short/long syntax, project name and directory selection, extension preservation, and `config` YAML/JSON output; the normalizer adds Docker Compose-compatible raw-format env-file parsing. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
-| CLI command surface | ⚠️ Partial | 31 commands are ✅, 2 are ⚠️, and 12 are ❌ across the current Docker Compose v2 command reference plus this plugin's explicit `help` command. See [CLI Command Surface](#cli-command-surface). |
-| CLI option surface | ⚠️ Partial | 211 documented long options are ✅, 4 are ⚠️, and 43 are ❌ across the current Docker Compose v2 option reference. See [CLI Option Surface](#cli-option-surface). |
+| CLI command surface | ⚠️ Partial | 32 commands are ✅, 2 are ⚠️, and 11 are ❌ across the current Docker Compose v2 command reference plus this plugin's explicit `help` command. See [CLI Command Surface](#cli-command-surface). |
+| CLI option surface | ⚠️ Partial | 224 documented long options are ✅, 4 are ⚠️, and 31 are ❌ across the current Docker Compose v2 option reference. See [CLI Option Surface](#cli-option-surface). |
 | Dockerfile and build inputs | ⚠️ Partial | Dockerfile instruction execution, contexts, `dockerfile`, `dockerfile_inline`, `.dockerignore`, args, additional contexts, cache hints, labels, target, platforms, pull/no-cache, tags, `extra_hosts`, BuildKit network, isolation, privileged build, shm size, ulimits, SSH forwarding, provenance, SBOM, builder selection, `--print`, and `--check` are implemented. Build secrets are limited to file/env-backed BuildKit secret IDs; unsupported secret shapes are rejected. |
 | Image pull, push, and local image metadata | ✅ Yes | `pull`, `push`, `images`, image digest config output, pull policy, quiet modes, failure-ignore modes, and dependency image traversal are implemented. |
 | Service lifecycle orchestration | ⚠️ Partial | `create`, `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `rm`, `down`, `scale`, `wait`, service `post_start`, service `pre_stop`, and most `up` behavior are implemented. Health-aware `up --wait`, health dependency state, job completion metadata, and service `pre_start` remain runtime gaps. |
@@ -155,7 +155,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `build` | ✅ Yes | Dockerfile/build parity is implemented for the supported build surface above. |
 | `commit` | ❌ No | Container commit/image mutation is not implemented. |
 | `config` | ✅ Yes | Compose project rendering and config query options are implemented. |
-| `convert` | ❌ No | Docker Compose's `convert` alias for `config` is not implemented as a separate command; use the supported `config` command. |
+| `convert` | ✅ Yes | Docker Compose's config-compatible model conversion projections are implemented for the documented local output modes. |
 | `cp` | ✅ Yes | File copy in/out is implemented for non-streaming paths. |
 | `create` | ✅ Yes | Service creation, build/pull/recreate controls, scaling, and orphan handling are implemented. |
 | `down` | ✅ Yes | Container, network, image, volume, timeout, orphan, and service-scoped cleanup are implemented. |
@@ -208,7 +208,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `build` options | ✅ Yes | ✅ `--build-arg`, ✅ `--builder`, ✅ `--check`, ✅ `--dry-run`, ✅ `--memory`, ✅ `--no-cache`, ✅ `--print`, ✅ `--provenance`, ✅ `--pull`, ✅ `--push`, ✅ `--quiet`, ✅ `--sbom`, ✅ `--ssh`, ✅ `--with-dependencies`. |
 | `commit` options | ❌ No | ❌ `--author`, ❌ `--change`, ❌ `--dry-run`, ❌ `--index`, ❌ `--message`, ❌ `--pause`: `commit` is not implemented. |
 | `config` options | ✅ Yes | ✅ `--dry-run`, ✅ `--environment`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--lock-image-digests`, ✅ `--models`, ✅ `--networks`, ✅ `--no-consistency`, ✅ `--no-env-resolution`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--no-path-resolution`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--variables`, ✅ `--volumes`. |
-| `convert` options | ❌ No | ❌ `--format`, ❌ `--hash`, ❌ `--images`, ❌ `--no-consistency`, ❌ `--no-interpolate`, ❌ `--no-normalize`, ❌ `--output`, ❌ `--profiles`, ❌ `--quiet`, ❌ `--resolve-image-digests`, ❌ `--services`, ❌ `--volumes`: `convert` is not implemented as a separate alias; use supported `config` options. |
+| `convert` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--no-consistency`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--volumes`. |
 | `cp` options | ✅ Yes | ✅ `--all`, ✅ `--archive`, ✅ `--dry-run`, ✅ `--follow-link`, ✅ `--index`. |
 | `create` options | ✅ Yes | ✅ `--build`, ✅ `--dry-run`, ✅ `--force-recreate`, ✅ `--no-build`, ✅ `--no-recreate`, ✅ `--pull`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--scale`, ✅ `--yes`. |
 | `down` options | ✅ Yes | ✅ `--dry-run`, ✅ `--remove-orphans`, ✅ `--rmi`, ✅ `--timeout`, ✅ `--volumes`. |
@@ -227,7 +227,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `push` options | ✅ Yes | ✅ `--dry-run`, ✅ `--ignore-push-failures`, ✅ `--include-deps`, ✅ `--quiet`. |
 | `restart` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`, ✅ `--timeout`. |
 | `rm` options | ✅ Yes | ✅ `--dry-run`, ✅ `--force`, ✅ `--stop`, ✅ `--volumes`. |
-| `run` options | ✅ Yes | ✅ `--build`, ✅ `--cap-add`, ✅ `--cap-drop`, ✅ `--detach`, ✅ `--dry-run`, ✅ `--entrypoint`, ✅ `--env`, ✅ `--env-from-file`, ✅ `--interactive`, ✅ `--label`, ✅ `--name`, ✅ `--no-TTY`, ✅ `--no-deps`, ✅ `--publish`, ✅ `--pull`, ✅ `--quiet`, ✅ `--quiet-build`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--rm`, ✅ `--service-ports`, ✅ `--use-aliases`, ✅ `--user`, ✅ `--volume`, ✅ `--workdir`. |
+| `run` options | ✅ Yes | ✅ `--build`, ✅ `--cap-add`, ✅ `--cap-drop`, ✅ `--detach`, ✅ `--dry-run`, ✅ `--entrypoint`, ✅ `--env`, ✅ `--env-from-file`, ✅ `--interactive`, ✅ `--label`, ✅ `--name`, ✅ `--no-tty`, ✅ `--no-deps`, ✅ `--publish`, ✅ `--pull`, ✅ `--quiet`, ✅ `--quiet-build`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--rm`, ✅ `--service-ports`, ✅ `--use-aliases`, ✅ `--user`, ✅ `--volume`, ✅ `--workdir`. |
 | `scale` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`. |
 | `start` options | ✅ Yes | ✅ `--dry-run`, ✅ `--wait`, ✅ `--wait-timeout`. |
 | `stats` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--format`, ✅ `--no-stream`, ✅ `--no-trunc`. |

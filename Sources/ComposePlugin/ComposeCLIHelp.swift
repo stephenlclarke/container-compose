@@ -275,6 +275,7 @@ enum ComposeCLIHelp {
         "build": .supported,
         "commit": .notSupported,
         "config": .supported,
+        "convert": .supported,
         "cp": .supported,
         "create": .supported,
         "down": .supported,
@@ -400,6 +401,21 @@ enum ComposeCLIHelp {
             "--resolve-image-digests": .supported,
             "--services": .supported,
             "--variables": .supported,
+            "--volumes": .supported,
+        ],
+        "convert": [
+            "--dry-run": .supported,
+            "--format": .supported,
+            "--hash": .supported,
+            "--images": .supported,
+            "--no-consistency": .supported,
+            "--no-interpolate": .supported,
+            "--no-normalize": .supported,
+            "--output": .supported,
+            "--profiles": .supported,
+            "--quiet": .supported,
+            "--resolve-image-digests": .supported,
+            "--services": .supported,
             "--volumes": .supported,
         ],
         "cp": [
@@ -541,7 +557,7 @@ enum ComposeCLIHelp {
             "--interactive": .supported,
             "--label": .supported,
             "--name": .supported,
-            "--no-TTY": .supported,
+            "--no-tty": .supported,
             "--no-deps": .supported,
             "--publish": .supported,
             "--pull": .supported,
@@ -943,6 +959,7 @@ enum ComposeCLIHelp {
         "build",
         "commit",
         "config",
+        "convert",
         "cp",
         "create",
         "down",
@@ -1002,6 +1019,7 @@ enum ComposeCLIHelp {
       build                   Build or rebuild services
       commit                  Create a new image from a service container's changes
       config                  Parse, resolve and render compose file in canonical format
+      convert                 Convert compose files to a normalized Compose model
       cp                      Copy files/folders between a service container and the local filesystem
       create                  Creates containers for a service
       down                    Stop and remove containers, networks
@@ -1196,6 +1214,26 @@ enum ComposeCLIHelp {
               --resolve-image-digests   Pin image tags to digests
               --services                Print the service names, one per line.
               --variables               Print model variables and default values.
+              --volumes                 Print the volume names, one per line.
+        """,
+        "convert": """
+        Usage:  container compose convert [OPTIONS] [SERVICE...]
+
+        Convert compose files to a normalized Compose model
+
+        Options:
+              --dry-run                 Execute command in dry run mode
+              --format string           Format the output. Values: [yaml | json]
+              --hash string             Print the service config hash, one per line.
+              --images                  Print the image names, one per line.
+              --no-consistency          Don't check model consistency
+              --no-interpolate          Don't interpolate environment variables
+              --no-normalize            Don't normalize compose model
+          -o, --output string           Save to file
+              --profiles                Print the profile names, one per line.
+          -q, --quiet                   Only validate the configuration
+              --resolve-image-digests   Pin image tags to digests
+              --services                Print the service names, one per line.
               --volumes                 Print the volume names, one per line.
         """,
         "cp": """
@@ -1434,7 +1472,7 @@ enum ComposeCLIHelp {
           -i, --interactive                 Keep STDIN open even if not attached (default true)
           -l, --label stringArray           Add or override a label
               --name string                 Assign a name to the container
-          -T, --no-TTY                      Disable pseudo-TTY allocation (default true)
+          -T, --no-tty                      Disable pseudo-TTY allocation (default true)
               --no-deps                     Don't start linked services
           -p, --publish stringArray         Publish a container's port(s) to the host
               --pull string                 Pull image before running ("always"|"missing"|"never") (default "policy")

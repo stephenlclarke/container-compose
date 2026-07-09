@@ -341,6 +341,39 @@ struct ComposeCLIHelpTests {
         #expect(command.services == ["api"])
     }
 
+    @Test("convert command and projections parse")
+    func convertCommandAndProjectionsParse() throws {
+        let command = try Convert.parse([
+            "--format", "json",
+            "--hash", "api",
+            "--images",
+            "--no-consistency",
+            "--no-interpolate",
+            "--no-normalize",
+            "--output", "model.yml",
+            "--profiles",
+            "--quiet",
+            "--resolve-image-digests",
+            "--services",
+            "--volumes",
+            "api",
+        ])
+
+        #expect(command.format == "json")
+        #expect(command.hash == "api")
+        #expect(command.images)
+        #expect(command.noConsistency)
+        #expect(command.noInterpolate)
+        #expect(command.noNormalize)
+        #expect(command.output == "model.yml")
+        #expect(command.profiles)
+        #expect(command.quiet)
+        #expect(command.resolveImageDigests)
+        #expect(command.servicesOnly)
+        #expect(command.volumes)
+        #expect(command.services == ["api"])
+    }
+
     @Test("build print flag parses")
     func buildPrintFlagParses() throws {
         let command = try Build.parse([
@@ -418,7 +451,6 @@ struct ComposeCLIHelpTests {
             "alpha dry-run",
             "alpha scale",
             "alpha watch",
-            "convert",
         ]
 
         #expect(commandRows.count == ComposeCLIHelp.commandSupportSnapshots.count + documentedUnsupportedCommands.count)
@@ -446,7 +478,7 @@ struct ComposeCLIHelpTests {
         let supported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "supported" }.count
         let partial = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "partially supported" }.count
         let unsupported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "not supported" }.count
-        let dockerDocumentedUnsupported = 15
+        let dockerDocumentedUnsupported = 3
 
         #expect(
             status.contains("\(supported) documented long options are ✅, \(partial) are ⚠️, and \(unsupported + dockerDocumentedUnsupported) are ❌"),
@@ -856,6 +888,42 @@ struct ComposeCLIHelpTests {
                 #expect(command.volumes)
                 #expect(command.services == ["api"])
             }),
+            (["convert"], [
+                "--dry-run", "--format", "--hash", "--images", "--no-consistency", "--no-interpolate", "--no-normalize", "--output",
+                "--profiles", "--quiet", "--resolve-image-digests", "--services", "--volumes",
+            ], {
+                let command = try Convert.parse([
+                    "--dry-run",
+                    "--format", "json",
+                    "--hash", "api",
+                    "--images",
+                    "--no-consistency",
+                    "--no-interpolate",
+                    "--no-normalize",
+                    "--output", "model.yml",
+                    "--profiles",
+                    "--quiet",
+                    "--resolve-image-digests",
+                    "--services",
+                    "--volumes",
+                    "api",
+                ])
+
+                #expect(command.global.dryRun)
+                #expect(command.format == "json")
+                #expect(command.hash == "api")
+                #expect(command.images)
+                #expect(command.noConsistency)
+                #expect(command.noInterpolate)
+                #expect(command.noNormalize)
+                #expect(command.output == "model.yml")
+                #expect(command.profiles)
+                #expect(command.quiet)
+                #expect(command.resolveImageDigests)
+                #expect(command.servicesOnly)
+                #expect(command.volumes)
+                #expect(command.services == ["api"])
+            }),
             (["cp"], ["--all", "--archive", "--dry-run", "--follow-link", "--index"], {
                 let command = try Cp.parse(["--dry-run", "--all", "--archive", "--follow-link", "--index", "2", "api:/src", "dest"])
 
@@ -1085,7 +1153,7 @@ struct ComposeCLIHelpTests {
             }),
             (["run"], [
                 "--build", "--cap-add", "--cap-drop", "--detach", "--dry-run", "--entrypoint", "--env", "--env-from-file", "--interactive",
-                "--label", "--name", "--no-TTY", "--no-deps", "--publish", "--pull", "--quiet", "--quiet-build", "--quiet-pull",
+                "--label", "--name", "--no-tty", "--no-deps", "--publish", "--pull", "--quiet", "--quiet-build", "--quiet-pull",
                 "--remove-orphans", "--rm", "--service-ports", "--use-aliases", "--user", "--volume", "--workdir",
             ], {
                 let command = try Run.parse([
@@ -1100,7 +1168,7 @@ struct ComposeCLIHelpTests {
                     "--interactive",
                     "--label", "x=y",
                     "--name", "oneoff",
-                    "--no-TTY",
+                    "--no-tty",
                     "--no-deps",
                     "--publish", "127.0.0.1:8080:80",
                     "--pull", "always",

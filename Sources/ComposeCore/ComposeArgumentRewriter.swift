@@ -31,6 +31,7 @@ public enum ComposeArgumentRewriter {
         "commit",
         "cp",
         "create",
+        "convert",
         "down",
         "events",
         "exec",

@@ -168,6 +168,7 @@ command_paths = [
     ["build"],
     ["commit"],
     ["config"],
+    ["convert"],
     ["cp"],
     ["create"],
     ["down"],
@@ -221,6 +222,13 @@ def strip_ansi(text):
 
 def help_output(base, path):
     return strip_ansi(run_output(base + path + ["--help"]))
+
+
+def try_help_output(base, path):
+    try:
+        return help_output(base, path), None
+    except subprocess.CalledProcessError as error:
+        return None, strip_ansi(error.output or "").strip()
 
 
 def version_output(base):
@@ -301,13 +309,20 @@ container_help = {}
 docker_help = {}
 all_differences = []
 unexpected = []
+skipped_help_surfaces = []
+compared_option_surfaces = 0
 
 for path in command_paths:
     label = path_label(path)
     container_text = help_output(container_base, path)
-    docker_text = help_output(docker_base, path)
     container_help[label] = container_text
+    docker_text, docker_error = try_help_output(docker_base, path)
+    if docker_text is None:
+        reason = docker_error.splitlines()[0] if docker_error else "reference help command failed"
+        skipped_help_surfaces.append((label, reason))
+        continue
     docker_help[label] = docker_text
+    compared_option_surfaces += 1
     all_differences.extend(
         diff_entries(
             "option",
@@ -342,7 +357,8 @@ lines = [
     "",
     f"- container-compose: `{container_version}` (`{container_compose}`)",
     f"- Docker Compose V2: `{docker_version}` (`{' '.join(docker_compose)}`)",
-    f"- Compared help surfaces: `{len(command_paths)}` option surfaces, `{len(command_listing_paths)}` command-list surfaces",
+    f"- Compared help surfaces: `{compared_option_surfaces}` option surfaces, `{len(command_listing_paths)}` command-list surfaces",
+    f"- Skipped Docker help surfaces: `{len(skipped_help_surfaces)}`",
     f"- Allowlist: `{allowlist_path.relative_to(pathlib.Path.cwd()) if allowlist_path.is_relative_to(pathlib.Path.cwd()) else allowlist_path}`",
     "",
     "This local-only report compares command names and long option names. It intentionally ignores prose wrapping, support-colour annotations, and description text.",
@@ -365,6 +381,14 @@ if known:
     lines.append("")
 else:
     lines.extend(["## Documented Differences", "", "None.", ""])
+
+if skipped_help_surfaces:
+    lines.extend(["## Skipped Docker Help Surfaces", ""])
+    for label, reason in skipped_help_surfaces:
+        lines.append(f"- `{label}`: {reason}")
+    lines.append("")
+else:
+    lines.extend(["## Skipped Docker Help Surfaces", "", "None.", ""])
 
 if not all_differences:
     lines.extend(["## Raw Differences", "", "None.", ""])
