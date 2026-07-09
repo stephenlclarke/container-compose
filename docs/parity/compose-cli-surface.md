@@ -38,6 +38,7 @@ For host namespace behavior specifically, run `make docker-compose-host-namespac
 
 ## Documented Differences
 
+- Root `help` is listed by `container-compose` because Swift ArgumentParser exposes it as an explicit command. Docker Compose 5.2.0 standalone supports help flags but does not list `help` as a root command. This is tracked in `Tools/parity/compose-cli-surface.allowlist`.
 - Root `--verbose` is listed by `container-compose` and accepted by the parser for existing bug-report and version workflows. Docker Compose 5.2.0 standalone accepts `docker-compose --verbose version`, but does not list `--verbose` in root help. This is tracked in `Tools/parity/compose-cli-surface.allowlist`.
 - `build --builder default` selects the ordinary fork-backed `container build` builder, while `build --builder NAME` forwards the name to `container build` so the matching fork-backed runtime can use a separate `buildkit-NAME` builder container. Docker Compose and `container-compose` both omit builder selection from `build --print` bake JSON.
 - `build.isolation` is accepted and preserved in normalized config. Docker Compose V2 on this macOS/Linux-backed local builder omits the field from `build --print` Buildx bake JSON and still accepts a real build; `container-compose` mirrors that behavior by accepting the field without forwarding an isolation flag to `container build`.

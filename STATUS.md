@@ -24,12 +24,14 @@ Current reviewed package pins:
 
 ## Latest Local Validation
 
-The latest local validation for this compatibility refresh passed with `container-builder-shim` `go test ./pkg/fssync`, `go test ./...`, `make build`, `make vet`, `make coverage`, `make lint`, `make fmt`, `container` `make test`, and `container-compose` `make ci` plus `make docker-compose-parity` after refreshing the `containerization` package pin to `fbc08e7037736137eb0ba87784351bf44d29cefe`. Markdown lint for the updated status and upstream handoff docs plus `git diff --check` also passed.
+The latest local validation for this compatibility refresh passed before the `0.6.12` stable release with `container-builder-shim` `go test ./pkg/fssync`, `go test ./...`, `make build`, `make vet`, `make coverage`, `make lint`, `make fmt`, `container` `make test`, and `container-compose` `make ci` plus `make docker-compose-parity` after refreshing the `containerization` package pin to `fbc08e7037736137eb0ba87784351bf44d29cefe`. Markdown lint for the updated status and upstream handoff docs plus `git diff --check` also passed.
 
 Current full coverage proof:
 
-- Swift: 846 Compose tests at 89.33% line coverage.
+- Swift: 846 Compose tests at 89.34% line coverage.
 - Go normalizer: 92.56% line coverage.
+
+The `0.6.12` stable package workflow published `container-compose-plugin-release-arm64.tar.gz` with `sha256:49e01ad6706e5fcdcff10b773ab42d22acd0b7a920bbacd017a81e3b48ed7110`, and the Homebrew tap was updated at `7702844`.
 
 ## Recent Functional State
 
