@@ -77,6 +77,21 @@ fix(ps): filter containers by compose project label
 docs(install): clarify plugin archive layout
 ```
 
+GitHub release notes promote user-facing highlights from commit trailers.
+When a commit adds or fixes a Docker Compose feature, CLI option, or visible
+workflow behavior, add a single-line `Release-Note:` trailer written for users:
+
+```text
+feat(build): support build SSH forwarding
+
+Release-Note: Supports Docker Compose build SSH forwarding from `--ssh` and `build.ssh`.
+```
+
+Use `Release-Note: none` for a feature-shaped internal change that should stay
+out of release highlights. The raw commit list is still included for audit
+detail, so keep the Conventional Commit subject accurate even when a trailer is
+present.
+
 ## Quality Bar
 
 Every code change should be covered by tests at the right level. Prefer small

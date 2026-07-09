@@ -21,6 +21,7 @@ import importlib.util
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -64,6 +65,8 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("## Asset Retention", notes)
             self.assertIn("Main validation packages do not update the stable Homebrew formula.", notes)
             self.assertIn("They do not move semantic source tags or Homebrew formulae.", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("Support bind propagation.", notes)
             self.assertIn("feat(mounts): support bind propagation", notes)
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
@@ -91,6 +94,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("Commits since `0.6.0`", notes)
             self.assertIn("ci(release): simplify package publishing", notes)
             self.assertIn("fix(release): commit new tap formula files", notes)
+            self.assertNotIn("## Highlights", notes)
             self.assertNotIn("chore: initial import", notes)
 
     def test_semver_tag_lists_commits_since_previous_semver_release(self) -> None:
@@ -117,7 +121,62 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("The stable release updates `stephenlclarke/tap/container-compose`", notes)
             self.assertIn("fix(cli): report help topic", notes)
             self.assertIn("feat(examples): add monitoring stack", notes)
+            self.assertIn("Report help topic.", notes)
+            self.assertIn("Add monitoring stack.", notes)
             self.assertNotIn("chore: initial import", notes)
+
+    def test_release_note_trailers_render_user_facing_highlights(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "feat(build): support compose build ssh forwarding",
+                body="""
+                Preserve BuildKit SSH requests from `docker compose build --ssh`
+                and service `build.ssh` entries.
+
+                Release-Note: Supports Docker Compose build SSH forwarding from `--ssh` and `build.ssh`, including named SSH agent IDs.
+                """,
+            )
+            self.commit(
+                repo,
+                "fix(help): show partial up wait support",
+                body="""
+                Keep the CLI support matrix honest while healthchecks remain
+                runtime-gated.
+
+                Release-Highlight: Marks `container compose up --wait` and `--wait-timeout` as partially supported instead of making every `up` option look green.
+                """,
+            )
+            self.commit(repo, "fix(release): keep package workflow deterministic")
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn("## Highlights", notes)
+            self.assertIn(
+                "- Supports Docker Compose build SSH forwarding from `--ssh` and "
+                "`build.ssh`, including named SSH agent IDs.",
+                notes,
+            )
+            self.assertIn(
+                "- Marks `container compose up --wait` and `--wait-timeout` as "
+                "partially supported instead of making every `up` option look green.",
+                notes,
+            )
+            self.assertNotIn("Keep package workflow deterministic.", notes)
+            self.assertIn("fix(release): keep package workflow deterministic", notes)
 
     def test_semver_tag_lists_validated_main_changes(self) -> None:
         module = load_module()
@@ -162,17 +221,17 @@ class ReleaseNotesTests(unittest.TestCase):
 
             self.assertIn("Commits included through", notes)
             self.assertIn("chore: initial import", notes)
+            self.assertNotIn("## Highlights", notes)
 
     def init_repo(self, repo: Path) -> None:
         self.git(repo, "init", "-b", "main")
         self.commit(repo, "chore: initial import")
 
-    def commit(self, repo: Path, message: str) -> None:
+    def commit(self, repo: Path, message: str, body: str | None = None) -> None:
         index = len(list(repo.glob("*.txt")))
         (repo / f"{index}.txt").write_text(f"{message}\n", encoding="utf-8")
         self.git(repo, "add", ".")
-        self.git(
-            repo,
+        command = [
             "-c",
             "user.name=Test",
             "-c",
@@ -180,7 +239,10 @@ class ReleaseNotesTests(unittest.TestCase):
             "commit",
             "-m",
             message,
-        )
+        ]
+        if body is not None:
+            command.extend(["-m", textwrap.dedent(body).strip()])
+        self.git(repo, *command)
 
     def git(self, repo: Path, *arguments: str) -> str:
         result = subprocess.run(

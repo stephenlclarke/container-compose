@@ -54,6 +54,8 @@ make repackage-release VERSION=0.6.5
 
 `make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
 
+Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Use single-line trailers that describe the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`.
+
 `VERSION_SELECTOR` accepts:
 
 - `--+`: patch bump from the latest semantic tag.

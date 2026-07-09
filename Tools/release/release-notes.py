@@ -33,6 +33,7 @@ STABLE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+$")
 class CommitSummary:
     short_hash: str
     subject: str
+    highlights: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -135,16 +136,119 @@ def commits_for_range(repo: Path, selected_range: ReleaseRange) -> list[CommitSu
         if selected_range.base_ref is not None
         else selected_range.head_ref
     )
-    output = git_output(repo, "log", "--pretty=format:%h%x09%s", revision)
+    output = git_output(
+        repo,
+        "log",
+        (
+            "--pretty=format:"
+            "%h%x09%s%x09"
+            "%(trailers:key=Release-Note,valueonly,separator=%x1f)%x09"
+            "%(trailers:key=Release-Highlight,valueonly,separator=%x1f)%x1e"
+        ),
+        revision,
+    )
     if output is None:
         return []
 
     commits: list[CommitSummary] = []
-    for line in output.splitlines():
-        short_hash, separator, subject = line.partition("\t")
-        if separator:
-            commits.append(CommitSummary(short_hash=short_hash, subject=subject))
+    for record in output.rstrip("\x1e").split("\x1e"):
+        line = record.strip("\n")
+        if not line:
+            continue
+        parts = line.split("\t", maxsplit=3)
+        if len(parts) < 2:
+            continue
+        short_hash = parts[0]
+        subject = parts[1]
+        release_note_values = parts[2] if len(parts) >= 3 else ""
+        release_highlight_values = parts[3] if len(parts) >= 4 else ""
+        commits.append(
+            CommitSummary(
+                short_hash=short_hash,
+                subject=subject,
+                highlights=tuple(
+                    explicit_release_highlights(
+                        release_note_values,
+                        release_highlight_values,
+                    )
+                ),
+            )
+        )
     return commits
+
+
+def explicit_release_highlights(*values: str) -> list[str]:
+    highlights: list[str] = []
+    for value in values:
+        for item in value.split("\x1f"):
+            normalized = item.strip()
+            if not normalized:
+                continue
+            if normalized.lower() in {"none", "n/a", "na", "skip"}:
+                continue
+            highlights.append(ensure_sentence(normalized))
+    return highlights
+
+
+CONVENTIONAL_SUBJECT_PATTERN = re.compile(
+    r"^(?P<type>[a-z]+)(?:[(](?P<scope>[^)]+)[)])?(?P<breaking>!)?: (?P<summary>.+)$"
+)
+HIGHLIGHT_TYPES = {"feat", "fix", "perf"}
+INTERNAL_HIGHLIGHT_SCOPES = {
+    "ci",
+    "deps",
+    "docs",
+    "quality",
+    "release",
+    "status",
+    "test",
+    "tests",
+}
+
+
+def conventional_highlight(subject: str) -> str | None:
+    match = CONVENTIONAL_SUBJECT_PATTERN.fullmatch(subject)
+    if match is None:
+        return None
+    if match.group("type") not in HIGHLIGHT_TYPES:
+        return None
+    scope = (match.group("scope") or "").lower()
+    if scope in INTERNAL_HIGHLIGHT_SCOPES:
+        return None
+
+    summary = match.group("summary").strip()
+    if not summary:
+        return None
+    return ensure_sentence(summary[:1].upper() + summary[1:])
+
+
+def release_highlights(commits: list[CommitSummary]) -> list[str]:
+    highlights: list[str] = []
+    seen: set[str] = set()
+
+    for commit in reversed(commits):
+        commit_highlights = list(commit.highlights)
+        if not commit_highlights:
+            fallback = conventional_highlight(commit.subject)
+            if fallback is not None:
+                commit_highlights = [fallback]
+
+        for highlight in commit_highlights:
+            if highlight in seen:
+                continue
+            seen.add(highlight)
+            highlights.append(highlight)
+
+    return highlights
+
+
+def ensure_sentence(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return value
+    if value[-1] in ".!?":
+        return value
+    return f"{value}."
 
 
 def render_release_notes(
@@ -159,6 +263,7 @@ def render_release_notes(
 ) -> str:
     selected_range = release_range(repo, release_tag, head_ref)
     commits = commits_for_range(repo, selected_range)
+    highlights = release_highlights(commits)
     head_short = selected_range.head_commit[:12]
     stable_release = is_stable_release_tag(release_tag)
 
@@ -169,9 +274,19 @@ def render_release_notes(
         "- Keeps the fork-backed container, containerization, and builder-shim compatibility metadata intact.",
         "- Publishes the release-quality Swift plugin and non-debug Go normalizer package.",
         "",
-        "## Changes",
-        "",
     ]
+
+    if highlights:
+        lines.extend(
+            [
+                "## Highlights",
+                "",
+                *[f"- {highlight}" for highlight in highlights],
+                "",
+            ]
+        )
+
+    lines.extend(["## Changes", ""])
 
     if selected_range.base_label is None:
         lines.append(f"- Commits included through `{head_short}`:")
