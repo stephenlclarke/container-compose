@@ -440,6 +440,98 @@ struct ComposeCLIHelpTests {
         )
     }
 
+    @Test("STATUS compose file surface lists required parity rows")
+    func statusComposeFileSurfaceListsRequiredParityRows() throws {
+        let section = try statusSection("Compose File Surface", in: try statusMarkdown())
+        let requiredRows = [
+            "Project file discovery and sources",
+            "Top-level `name` and legacy `version`",
+            "Top-level `services`",
+            "Top-level `networks`",
+            "Top-level `volumes`",
+            "Top-level `configs`",
+            "Top-level `secrets`",
+            "Extensions, fragments, merge, and include",
+            "Compose Build Specification",
+            "Compose Deploy Specification",
+            "Compose Develop Specification",
+            "Provider services and models",
+        ]
+
+        for row in requiredRows {
+            #expect(
+                section.contains("| \(row) |"),
+                "STATUS.md Compose File Surface does not list \(row)"
+            )
+        }
+    }
+
+    @Test("STATUS Dockerfile and build surface lists build specification rows")
+    func statusDockerfileAndBuildSurfaceListsBuildSpecificationRows() throws {
+        let section = try statusSection("Dockerfile And Build Surface", in: try statusMarkdown())
+        let requiredRows = [
+            "Dockerfile instruction execution",
+            "`.dockerignore` context filtering",
+            "Build context string syntax",
+            "`build.context`",
+            "`build.dockerfile`",
+            "`build.dockerfile_inline`",
+            "`build.additional_contexts`",
+            "`build.args` and `build --build-arg`",
+            "`build.cache_from` and `build.cache_to`",
+            "`build.entitlements`",
+            "`build.extra_hosts`",
+            "`build.isolation`",
+            "`build.labels`",
+            "`build.network`",
+            "`build.no_cache` and `--no-cache`",
+            "`build.platforms`",
+            "`build.privileged`",
+            "`build.provenance`",
+            "`build.pull` and `--pull`",
+            "`build.sbom`",
+            "`build.secrets`",
+            "`build.ssh` and `build --ssh`",
+            "`build.shm_size`",
+            "`build.tags`",
+            "`build.target`",
+            "`build.ulimits`",
+            "`build --builder`",
+            "`build --check`",
+            "`build --print`",
+            "Dockerfile `HEALTHCHECK` inheritance",
+        ]
+
+        for row in requiredRows {
+            #expect(
+                section.contains("| \(row) |"),
+                "STATUS.md Dockerfile And Build Surface does not list \(row)"
+            )
+        }
+    }
+
+    @Test("STATUS partial parity rows include gap details")
+    func statusPartialParityRowsIncludeGapDetails() throws {
+        let status = try statusMarkdown()
+        for sectionName in [
+            "Compose Surface Matrix",
+            "Compose File Surface",
+            "Dockerfile And Build Surface",
+            "CLI Command Surface",
+            "CLI Option Surface",
+        ] {
+            let section = try statusSection(sectionName, in: status)
+            for row in statusTableRows(in: section) where row.contains("| ⚠️ Partial |") {
+                let columns = row.split(separator: "|", omittingEmptySubsequences: false).map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                let detail = columns.count > 3 ? columns[3] : ""
+
+                #expect(!detail.isEmpty, "STATUS.md \(sectionName) partial row has no gap details: \(row)")
+            }
+        }
+    }
+
     private struct OptionIdentity: Comparable, CustomStringConvertible, Hashable {
         var commandPath: [String]
         var option: String
@@ -482,6 +574,15 @@ struct ComposeCLIHelpTests {
             directory.deleteLastPathComponent()
         }
         throw ComposeError.invalidProject("STATUS.md was not found from \(fileURL.path)")
+    }
+
+    private func statusTableRows(in markdown: String) -> [String] {
+        markdown
+            .split(separator: "\n")
+            .map(String.init)
+            .filter { row in
+                row.hasPrefix("| ") && !row.hasPrefix("| ---")
+            }
     }
 
     private func statusSection(_ heading: String, in markdown: String) throws -> String {

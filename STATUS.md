@@ -39,7 +39,7 @@ Runtime-backed commands preflight the installed stack before work begins. Apple 
 
 | Surface | Parity | Details |
 | --- | --- | --- |
-| Compose project loading and normalization | ✅ Yes | `compose-go` handles multiple files, profiles, interpolation, env files, project name and directory selection, extension preservation, and `config` YAML/JSON output. |
+| Compose project loading and normalization | ⚠️ Partial | `compose-go` handles local/default files, multiple files, profiles, interpolation, env files, project name and directory selection, extension preservation, and `config` YAML/JSON output. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
 | CLI command surface | ⚠️ Partial | 31 commands are ✅, 2 are ⚠️, and 8 are ❌. See [CLI Command Surface](#cli-command-surface). |
 | CLI option surface | ⚠️ Partial | 211 documented long options are ✅, 4 are ⚠️, and 28 are ❌. See [CLI Option Surface](#cli-option-surface). |
 | Dockerfile and build inputs | ⚠️ Partial | Contexts, `dockerfile`, `dockerfile_inline`, `.dockerignore`, args, additional contexts, cache hints, labels, target, platforms, pull/no-cache, tags, `extra_hosts`, BuildKit network, isolation, privileged build, shm size, ulimits, SSH forwarding, provenance, SBOM, builder selection, `--print`, and `--check` are implemented. Build secrets are limited to file/env-backed BuildKit secret IDs; unsupported secret shapes are rejected. |
@@ -58,6 +58,60 @@ Runtime-backed commands preflight the installed stack before work begins. Apple 
 | Develop specification and watch | ✅ Yes | `develop.watch` supports `rebuild`, `restart`, `sync`, `sync+restart`, and `sync+exec`, including include/ignore filters, initial sync, prune, `watch --no-up`, `up --watch`, and `up --menu --watch`. |
 | Provider and model services | ⚠️ Partial | Provider services run through the Compose provider protocol and inject provider variables into dependent services. Compose model bindings are rejected until a model-runner backend and endpoint injection primitive exist. |
 | Labels, annotations, and metadata | ✅ Yes | Service labels, label files, annotations, container names, project/resource labels, deploy labels, top-level volumes/configs/secrets metadata, and Compose extension fields are preserved or mapped where Docker Compose local mode expects them. |
+
+## Compose File Surface
+
+The Docker Compose v2 file reference is a rolling Compose Specification surface: top-level project elements, services, networks, volumes, configs, secrets, optional Build/Deploy/Develop specifications, provider/model extensions, fragments, merge behavior, and include behavior. The current parity state is:
+
+| Compose File Surface | Parity | Details |
+| --- | --- | --- |
+| Project file discovery and sources | ⚠️ Partial | Default local file discovery, explicit local `--file`, repeated files, `COMPOSE_FILE`, `.env`, `--env-file`, project directory, project name, profiles, interpolation controls, path-resolution controls, and stdin-style local loader paths are handled by `compose-go`. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
+| Top-level `name` and legacy `version` | ✅ Yes | `name` participates in project naming precedence, and legacy `version` is accepted by the Compose Specification loader without driving behavior. |
+| Top-level `services` | ⚠️ Partial | Service definitions, dependencies, images, build, commands, environment, ports, networks, volumes, configs, secrets, resources, lifecycle hooks, healthchecks, labels, annotations, and local mode metadata are parsed. Runtime-backed service gaps are listed in the current-state and CLI tables. |
+| Top-level `networks` | ⚠️ Partial | Project networks, explicit names, external names, `internal`, driver metadata, top-level `driver_opts`, and one IPv4 plus one IPv6 IPAM subnet are implemented. IPAM driver/options/gateway/ranges/aux addresses and multiple subnets of the same address family remain runtime gaps. |
+| Top-level `volumes` | ✅ Yes | Named volumes, explicit names, external volumes, local driver metadata, driver options, labels, and project labels are implemented through the direct runtime API. |
+| Top-level `configs` | ⚠️ Partial | File-backed and environment-backed configs are materialized as read-only service mounts with Compose metadata. External configs and non-file/non-env config backends remain runtime gaps. |
+| Top-level `secrets` | ⚠️ Partial | File-backed and environment-backed secrets are materialized as read-only service mounts and build secrets. External secrets and non-file/non-env secret backends remain runtime gaps. |
+| Extensions, fragments, merge, and include | ✅ Yes | YAML anchors/fragments, `x-*` extension fields, multi-file merge behavior, and Compose include handling are delegated to `compose-go`; extension data is preserved in normalized config output. |
+| Compose Build Specification | ⚠️ Partial | See [Dockerfile And Build Surface](#dockerfile-and-build-surface) for every build attribute and Dockerfile-adjacent behavior. |
+| Compose Deploy Specification | ⚠️ Partial | Replicas, local job modes, stop-first update delay, restart policy metadata, labels, CPU/memory local limits, CPU/memory reservation metadata, and `endpoint_mode` metadata are implemented. Start-first updates, scheduler placement behavior, pids/device/generic reservations, pids/device/generic limits, and Swarm scheduler behavior remain gaps. |
+| Compose Develop Specification | ✅ Yes | `develop.watch` supports `rebuild`, `restart`, `sync`, `sync+restart`, and `sync+exec`, including include/ignore filters, initial sync, prune, `watch --no-up`, `up --watch`, and `up --menu --watch`. |
+| Provider services and models | ⚠️ Partial | Provider services run through the Compose provider protocol and inject provider variables into dependents. Compose model bindings are rejected until a model-runner backend and endpoint injection primitive exist. |
+
+## Dockerfile And Build Surface
+
+| Dockerfile / Build Surface | Parity | Details |
+| --- | --- | --- |
+| Dockerfile instruction execution | ✅ Yes | Service builds run through the fork-backed `container build` BuildKit path, so Dockerfile instruction parsing and execution follow the supported BuildKit backend. |
+| `.dockerignore` context filtering | ✅ Yes | Build contexts use the fork-backed builder-shim filter path, including negation patterns that re-include descendants below excluded parent directories. |
+| Build context string syntax | ✅ Yes | `build: ./dir` resolves to a context directory with the default `Dockerfile`, matching Docker Compose local mode. |
+| `build.context` | ✅ Yes | Local relative and absolute contexts are resolved, and remote BuildKit references are passed through to the builder. |
+| `build.dockerfile` | ✅ Yes | Alternate Dockerfile paths are resolved relative to the effective build context, including remote-context pass-through. |
+| `build.dockerfile_inline` | ✅ Yes | Inline Dockerfiles are materialized for live builds and rendered as `dockerfile-inline` in `build --print` bake output. |
+| `build.additional_contexts` | ✅ Yes | Local, image, Git/URL-style, and `service:NAME` contexts are mapped to BuildKit `--build-context` or bake contexts; service contexts are built in dependency order. |
+| `build.args` and `build --build-arg` | ✅ Yes | Compose-file and CLI build arguments merge with Docker Compose-compatible environment lookup for key-only CLI args. |
+| `build.cache_from` and `build.cache_to` | ✅ Yes | Cache hints are forwarded to live builds and bake output. |
+| `build.entitlements` | ✅ Yes | Entitlements are forwarded as BuildKit `--allow` values. |
+| `build.extra_hosts` | ✅ Yes | Build-time host entries are forwarded to the builder. |
+| `build.isolation` | ✅ Yes | The field is accepted and preserved in normalized config; local Docker Compose omits it from Buildx bake output on this platform, and this plugin mirrors that behavior. |
+| `build.labels` | ✅ Yes | Build labels are forwarded to live builds and bake output. |
+| `build.network` | ✅ Yes | BuildKit network mode is forwarded to live builds and bake output. |
+| `build.no_cache` and `--no-cache` | ✅ Yes | File and CLI no-cache controls are applied to live builds and bake output. |
+| `build.platforms` | ✅ Yes | Target platforms are forwarded to live builds and bake output. |
+| `build.privileged` | ✅ Yes | Privileged build mode is forwarded to the fork-backed builder. |
+| `build.provenance` | ✅ Yes | Compose-file and CLI provenance attestations are forwarded, including Docker Compose-compatible false/disabled handling. |
+| `build.pull` and `--pull` | ✅ Yes | File and CLI pull controls are applied to live builds and bake output. |
+| `build.sbom` | ✅ Yes | Compose-file and CLI SBOM attestations are forwarded, including Docker Compose-compatible false/disabled handling. |
+| `build.secrets` | ⚠️ Partial | File-backed and environment-backed BuildKit secret IDs are supported. Secret metadata such as uid/gid/mode is accepted by Compose local mode as metadata but is not projected into BuildKit secret entries; unsupported secret shapes are rejected before side effects. |
+| `build.ssh` and `build --ssh` | ✅ Yes | Compose-file and CLI SSH forwarding entries are merged with Docker Compose-compatible CLI override behavior by SSH ID. |
+| `build.shm_size` | ✅ Yes | Build shared-memory size is forwarded to the builder. |
+| `build.tags` | ✅ Yes | Additional image tags are forwarded and de-duplicated with the service image tag. |
+| `build.target` | ✅ Yes | Target stages are forwarded to live builds and bake output. |
+| `build.ulimits` | ✅ Yes | Build ulimits are forwarded to the builder. |
+| `build --builder` | ✅ Yes | Named fork-backed builders are selected for live builds; `build --print` omits builder selection from bake JSON like Docker Compose. |
+| `build --check` | ✅ Yes | BuildKit lint/check mode runs without exporting an image; `build --print --check` emits bake `call: "lint"`. |
+| `build --print` | ✅ Yes | Buildx bake JSON is rendered without build side effects and includes supported contexts, args, cache, labels, tags, target, platforms, pull/no-cache, secrets, SSH, attestations, outputs, and lint calls. |
+| Dockerfile `HEALTHCHECK` inheritance | ⚠️ Partial | Dockerfile healthcheck metadata is inherited through the fork-backed image metadata API when available, and explicit Compose timing overrides merge with image defaults. Runtime health execution/state, `service_healthy`, full health-aware `up --wait`, and health status display remain blocked by missing runtime health state. |
 
 ## CLI Command Surface
 
