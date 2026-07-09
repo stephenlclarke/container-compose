@@ -74,7 +74,6 @@ public struct ComposeExecutionOptions {
         maxParallelism: Int? = nil,
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
         watchPollInterval: Duration = .seconds(1),
-        materializedConfigSecretDirectory: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
         progress: ComposeProgressReporter = .disabled,
         runtimeHooks: RuntimeHooks = RuntimeHooks(),
     ) {
@@ -86,7 +85,7 @@ public struct ComposeExecutionOptions {
         currentDate = runtimeHooks.currentDate
         hostPortAllocator = runtimeHooks.hostPortAllocator
         self.watchPollInterval = watchPollInterval
-        self.materializedConfigSecretDirectory = materializedConfigSecretDirectory
+        materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
         sleep = runtimeHooks.sleep
         confirm = runtimeHooks.confirm
         emit = runtimeHooks.emit
@@ -148,6 +147,23 @@ public struct ComposeExecutionOptions {
             containerBinary: containerBinary,
             runtimeHooks: RuntimeHooks(emit: emit, emitData: { emit(String(decoding: $0, as: UTF8.self)) }),
         )
+    }
+
+    public init(
+        materializedConfigSecretDirectory: URL,
+        runtimeHooks: RuntimeHooks = RuntimeHooks(),
+    ) {
+        self.init(runtimeHooks: runtimeHooks)
+        self.materializedConfigSecretDirectory = materializedConfigSecretDirectory
+    }
+
+    public init(
+        dryRun: Bool,
+        materializedConfigSecretDirectory: URL,
+        runtimeHooks: RuntimeHooks = RuntimeHooks(),
+    ) {
+        self.init(dryRun: dryRun, runtimeHooks: runtimeHooks)
+        self.materializedConfigSecretDirectory = materializedConfigSecretDirectory
     }
 
     public init(
