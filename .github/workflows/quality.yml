@@ -361,7 +361,7 @@ jobs:
               Sources/ComposePlugin/ComposePlugin.swift)
                 continue
                 ;;
-              Sources/ComposeCore/ComposeOrchestratorBuildAndImages.swift|Tests/ComposeCoreTests/ComposeOrchestratorTests.swift)
+              Sources/ComposeCore/ComposeExecutionOptions.swift|Sources/ComposeCore/ComposeOrchestratorBuildAndImages.swift|Tests/ComposeCoreTests/ComposeOrchestratorTests.swift)
                 continue
                 ;;
             esac
