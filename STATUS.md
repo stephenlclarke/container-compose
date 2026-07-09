@@ -24,14 +24,14 @@ Current reviewed package pins:
 
 ## Latest Local Validation
 
-The latest local validation for this compatibility refresh passed across the `0.6.18` stable release slice with `container-compose` `swift test --disable-automatic-resolution --filter ComposeCLIHelpTests`, rendered help checks for `compose help up` and `compose up --help`, and release asset/tap checksum verification. The matching `container` validation passed `make check`, `make test`, targeted lifecycle integration, and full `make integration` for `bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb` with `containerization` `fbc08e7037736137eb0ba87784351bf44d29cefe` and `container-builder-shim` `0.13.8`.
+The latest local validation for this compatibility refresh covered the current stable release line with `container-compose` `swift test --disable-automatic-resolution --filter ComposeCLIHelpTests`, rendered help checks for `compose help up` and `compose up --help`, and release asset/tap checksum verification. The matching `container` validation passed `make check`, `make test`, targeted lifecycle integration, and full `make integration` for `bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb` with `containerization` `fbc08e7037736137eb0ba87784351bf44d29cefe` and `container-builder-shim` `0.13.8`.
 
 Current full coverage proof:
 
 - Swift: 848 Compose tests at 89.34% line coverage.
 - Go normalizer: 92.56% line coverage.
 
-The `0.6.18` stable package workflow published `container-compose-plugin-release-arm64.tar.gz` with `sha256:ed66ab96a270cb87abf79708b93e829c459bcaac0890971f406f1482f2b22a1f`, and the Homebrew tap was updated at `dd544af`.
+Stable package workflows publish `container-compose-plugin-release-arm64.tar.gz`, verify the release asset checksum, and update the Homebrew tap after artifacts are ready. The source formula records the current stable release URL, version, and checksum.
 
 ## Recent Functional State
 
