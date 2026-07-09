@@ -34,7 +34,7 @@ MARKDOWNLINT ?= markdownlint
 COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
-COMPOSE_VERSION ?= 0.6.6
+COMPOSE_VERSION ?= 0.6.7
 CONTAINER_COMPOSE_SOURCE ?= $(shell $(PYTHON) -c 'import subprocess; result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True); url = result.stdout.strip() if result.returncode == 0 else ""; url = url[len("git@github.com:"):] if url.startswith("git@github.com:") else url; url = url[len("https://github.com/"):] if url.startswith("https://github.com/") else url; url = url[:-4] if url.endswith(".git") else url; print(url)')
 CONTAINER_COMPOSE_BRANCH ?= $(shell git branch --show-current 2>/dev/null || git rev-parse --short HEAD)
 CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BRANCH)"; print("main" if branch == "main" else "release" if branch == "release" or branch.startswith("release-") else "detached" if branch in ("", "HEAD") else "development")')
@@ -277,28 +277,28 @@ cli-smoke-built:
 	.build/debug/compose --ansi never version >/dev/null
 	.build/debug/compose version --dry-run >/dev/null
 	version_short_output="$$(".build/debug/compose" version --short)"; \
-	[[ "$$version_short_output" == "0.6.6" ]]; \
+	[[ "$$version_short_output" == "0.6.7" ]]; \
 	version_pretty_output="$$(".build/debug/compose" version)"; \
-	[[ "$$version_pretty_output" == *"container-compose 0.6.6"* ]]; \
+	[[ "$$version_pretty_output" == *"container-compose 0.6.7"* ]]; \
 	[[ "$$version_pretty_output" == *"container:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"containerization:"*" (custom)"* ]]; \
 	[[ "$$version_pretty_output" == *"compose-go: $(COMPOSE_GO_VERSION)"* ]]; \
 	version_json_output="$$(".build/debug/compose" version --format json)"; \
-	[[ "$$version_json_output" == *'"version":"0.6.6"'* ]]; \
+	[[ "$$version_json_output" == *'"version":"0.6.7"'* ]]; \
 	[[ "$$version_json_output" == *'"containerSource":"stephenlclarke/container"'* ]]; \
 	[[ "$$version_json_output" == *'"containerDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationSource":'* ]]; \
 	[[ "$$version_json_output" == *'"containerizationDistribution":"custom"'* ]]; \
 	[[ "$$version_json_output" == *'"composeGoVersion":"$(COMPOSE_GO_VERSION)"'* ]]; \
 	version_short_format_output="$$(".build/debug/compose" version -f json)"; \
-	[[ "$$version_short_format_output" == *'"version":"0.6.6"'* ]]; \
+	[[ "$$version_short_format_output" == *'"version":"0.6.7"'* ]]; \
 	version_compact_format_output="$$(".build/debug/compose" version -fjson)"; \
-	[[ "$$version_compact_format_output" == *'"version":"0.6.6"'* ]]; \
+	[[ "$$version_compact_format_output" == *'"version":"0.6.7"'* ]]; \
 	package_tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$package_tmp"' EXIT; \
 	mkdir -p "$$package_tmp/compose/bin" "$$package_tmp/compose/resources" "$$package_tmp/bin"; \
 	cp .build/debug/compose "$$package_tmp/compose/bin/compose"; \
-	printf '%s\n' '{"version":"0.6.6","source":"stephenlclarke/container-compose","branch":"symlink-smoke","lane":"stable","commit":"packaged-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"container-smoke","containerizationSource":"stephenlclarke/containerization","containerizationRef":"containerization-smoke","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$package_tmp/compose/resources/build-info.json"; \
+	printf '%s\n' '{"version":"0.6.7","source":"stephenlclarke/container-compose","branch":"symlink-smoke","lane":"stable","commit":"packaged-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"container-smoke","containerizationSource":"stephenlclarke/containerization","containerizationRef":"containerization-smoke","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$package_tmp/compose/resources/build-info.json"; \
 	ln -s ../compose/bin/compose "$$package_tmp/bin/container-compose"; \
 	packaged_version_output="$$(cd /tmp && "$$package_tmp/bin/container-compose" version --format json)"; \
 	[[ "$$packaged_version_output" == *'"branch":"symlink-smoke"'* ]]; \
@@ -505,7 +505,7 @@ cli-smoke-built:
 	printf 'services:\n  api:\n    image: alpine\n    build:\n      context: ./api\n    volumes:\n      - ./src:/src\n' > "$$tmpdir/relative-paths.yml"; \
 	printf 'services:\n  api:\n    image: alpine\n    depends_on:\n      - missing\n' > "$$tmpdir/missing-dependency.yml"; \
 	version_compact_global_output="$$(".build/debug/compose" -pcompact -f"$$tmpdir/compose.yml" version --short)"; \
-	[[ "$$version_compact_global_output" == "0.6.6" ]]; \
+	[[ "$$version_compact_global_output" == "0.6.7" ]]; \
 	config_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" config)"; \
 	[[ "$$config_output" == *"name: \"demo\""* ]]; \
 	[[ "$$config_output" == *"services:"* ]]; \
