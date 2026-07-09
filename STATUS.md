@@ -18,9 +18,9 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `89f75a510b9a96b7a9e613ec1541e7ae26af2463`
+- `stephenlclarke/container`: `e5773f48cbd3c29cd3ae67c6c25184878bacae30`
 - `stephenlclarke/containerization`: `fbc08e7037736137eb0ba87784351bf44d29cefe`
-- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
+- `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.8`
 
 ## Latest Local Validation
 
@@ -70,7 +70,7 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 
 ## Open Blockers
 
-- The immutable `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.6` GHCR image has been published and manifest-verified for linux/arm64.
+- The immutable `ghcr.io/stephenlclarke/container-builder-shim/builder:0.13.8` GHCR image has been published and manifest-verified for linux/arm64.
 - SonarCloud quality gate is currently OK on `main` with 0 unresolved issues after `SONAR_QUALITYGATE_WAIT=true make sonar-scan` and a SonarCloud issues API check for branch `main`.
 
 ## Open Follow-ups
