@@ -200,6 +200,17 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("\u{001B}[32m--quiet\u{001B}[0m"))
     }
 
+    @Test("alpha namespace and aliases are shown as supported")
+    func alphaNamespaceAndAliasesAreShownAsSupported() throws {
+        let help = try #require(ComposeCLIHelp.helpText(commandPath: ["alpha"]))
+
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("  \u{001B}[32mdry-run\u{001B}[0m"))
+        #expect(help.contains("  \u{001B}[32mscale\u{001B}[0m"))
+        #expect(help.contains("  \u{001B}[32mwatch\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--dry-run\u{001B}[0m"))
+    }
+
     @Test("run command and options are shown as supported")
     func runCommandAndOptionsAreShownAsSupported() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "run"))
@@ -447,11 +458,7 @@ struct ComposeCLIHelpTests {
         let commandRows = commandSection
             .split(separator: "\n")
             .filter { $0.hasPrefix("| `") }
-        let documentedUnsupportedCommands = [
-            "alpha dry-run",
-            "alpha scale",
-            "alpha watch",
-        ]
+        let documentedUnsupportedCommands: [String] = []
 
         #expect(commandRows.count == ComposeCLIHelp.commandSupportSnapshots.count + documentedUnsupportedCommands.count)
         for snapshot in ComposeCLIHelp.commandSupportSnapshots {
@@ -478,7 +485,7 @@ struct ComposeCLIHelpTests {
         let supported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "supported" }.count
         let partial = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "partially supported" }.count
         let unsupported = ComposeCLIHelp.optionSupportSnapshots.filter { $0.support == "not supported" }.count
-        let dockerDocumentedUnsupported = 3
+        let dockerDocumentedUnsupported = 0
 
         #expect(
             status.contains("\(supported) documented long options are ✅, \(partial) are ⚠️, and \(unsupported + dockerDocumentedUnsupported) are ❌"),
@@ -737,6 +744,32 @@ struct ComposeCLIHelpTests {
                 #expect(command.projectDirectory == ".")
                 #expect(command.projectName == "demo")
                 #expect(command.verbose)
+            }),
+            (["alpha"], ["--dry-run"], {
+                let command = try Alpha.parse(["--dry-run"])
+
+                #expect(command.global.dryRun)
+            }),
+            (["alpha", "dry-run"], ["--dry-run"], {
+                let command = try AlphaDryRun.parse(["--dry-run", "--", "up", "api"])
+
+                #expect(command.global.dryRun)
+                #expect(command.command == ["--", "up", "api"])
+            }),
+            (["alpha", "scale"], ["--dry-run", "--no-deps"], {
+                let command = try AlphaScale.parse(["--dry-run", "--no-deps", "api=2"])
+
+                #expect(command.global.dryRun)
+                #expect(command.noDeps)
+                #expect(command.scales == ["api=2"])
+            }),
+            (["alpha", "watch"], ["--dry-run", "--no-up", "--quiet"], {
+                let command = try AlphaWatch.parse(["--dry-run", "--no-up", "--quiet", "api"])
+
+                #expect(command.global.dryRun)
+                #expect(command.noUp)
+                #expect(command.quiet)
+                #expect(command.services == ["api"])
             }),
             (["attach"], ["--detach-keys", "--dry-run", "--index", "--no-stdin", "--sig-proxy"], {
                 let command = try Attach.parse(["--dry-run", "--no-stdin", "--detach-keys", "ctrl-x", "--index", "2", "--sig-proxy=false", "api"])

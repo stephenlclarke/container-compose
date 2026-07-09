@@ -1,4 +1,5 @@
 # scope|path|direction|name|reason
 command|root|local-only|help|container-compose exposes an explicit help command through Swift ArgumentParser; Docker Compose 5.2.0 standalone supports help flags but does not list help as a root command.
 command|root|local-only|convert|Current Docker Compose documentation includes `docker compose convert`, but the local standalone Docker Compose reference binary does not expose that command yet.
+command|root|local-only|alpha|Current Docker Compose documentation includes `docker compose alpha` aliases; the local standalone Docker Compose reference binary accepts alpha help but does not list the namespace in root help.
 option|root|local-only|--verbose|Accepted by container-compose for existing bug-report and version workflows; Docker Compose 5.2.0 standalone accepts `docker-compose --verbose version` but does not list the flag in root help.

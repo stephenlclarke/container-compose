@@ -27,10 +27,13 @@ struct ContainerPackageCompatibilityTests {
     #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["run", "api"]))
     #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["build", "api"]))
     #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["ps"]))
+    #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "scale", "api=2"]))
+    #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "watch", "api"]))
 
     #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["version"]))
     #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["config"]))
     #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["up", "--dry-run"]))
+    #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "dry-run", "--", "up", "api"]))
     #expect(
       !ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["build", "--print", "api"]))
   }

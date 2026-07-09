@@ -324,6 +324,7 @@ cli-smoke-built:
 	[[ "$$compat_output" == *"https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md"* ]]; \
 	ansi_escape="$$(printf '\033')"; \
 	root_help_output="$$(".build/debug/compose" --help)"; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[32malpha$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mup$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
@@ -333,6 +334,18 @@ cli-smoke-built:
 	plain_help_output="$$(".build/debug/compose" --ansi never --help)"; \
 	[[ "$$plain_help_output" == *"Support: supported | partially supported | not supported"* ]]; \
 	[[ "$$plain_help_output" != *"$${ansi_escape}["* ]]; \
+	alpha_output="$$(".build/debug/compose" alpha)"; \
+	[[ "$$alpha_output" == *"Usage:  container compose alpha [OPTIONS] COMMAND"* ]]; \
+	alpha_help_output="$$(".build/debug/compose" alpha --help)"; \
+	[[ "$$alpha_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$alpha_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
+	alpha_scale_help_output="$$(".build/debug/compose" alpha scale --help)"; \
+	[[ "$$alpha_scale_help_output" == *"Usage:  container compose alpha scale [OPTIONS] SERVICE=REPLICAS..."* ]]; \
+	[[ "$$alpha_scale_help_output" == *"$${ansi_escape}[32m--no-deps$${ansi_escape}[0m"* ]]; \
+	alpha_watch_help_output="$$(".build/debug/compose" alpha watch --help)"; \
+	[[ "$$alpha_watch_help_output" == *"Usage:  container compose alpha watch [OPTIONS] [SERVICE...]"* ]]; \
+	[[ "$$alpha_watch_help_output" == *"$${ansi_escape}[32m--no-up$${ansi_escape}[0m"* ]]; \
+	[[ "$$alpha_watch_help_output" == *"$${ansi_escape}[32m--quiet$${ansi_escape}[0m"* ]]; \
 	version_help_output="$$(".build/debug/compose" version --help)"; \
 	[[ "$$version_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$version_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
@@ -843,6 +856,10 @@ cli-smoke-built:
 	[[ "$$scale_no_deps_output" != *"demo-db-1"* ]]; \
 	[[ "$$scale_no_deps_output" == *"--name demo-api-1 --detach"* ]]; \
 	[[ "$$scale_no_deps_output" == *"--name demo-api-2 --detach"* ]]; \
+	alpha_scale_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-deps.yml" alpha scale --no-deps api=2)"; \
+	[[ "$$alpha_scale_output" != *"demo-db-1"* ]]; \
+	[[ "$$alpha_scale_output" == *"--name demo-api-1 --detach"* ]]; \
+	[[ "$$alpha_scale_output" == *"--name demo-api-2 --detach"* ]]; \
 	scale_missing_output="$$(".build/debug/compose" --dry-run scale 2>&1 || true)"; \
 	[[ "$$scale_missing_output" == *"invalid compose project: scale requires at least one SERVICE=REPLICAS argument"* ]]; \
 	scale_ports_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" scale api=2 2>&1 || true)"; \
@@ -1051,6 +1068,14 @@ cli-smoke-built:
 	[[ "$$watch_output" == *"compose: watch prune disabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch quiet enabled"* ]]; \
 	[[ "$$watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
+	alpha_watch_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/watch.yml" alpha watch --no-up --quiet api)"; \
+	[[ "$$alpha_watch_output" == *"compose: watch project demo services api"* ]]; \
+	[[ "$$alpha_watch_output" == *"compose: watch initial-up disabled"* ]]; \
+	[[ "$$alpha_watch_output" == *"compose: watch quiet enabled"* ]]; \
+	[[ "$$alpha_watch_output" == *"compose: watch api rebuild path="*"/src"* ]]; \
+	alpha_dry_run_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" alpha dry-run -- up api)"; \
+	[[ "$$alpha_dry_run_output" == *"container create"* ]]; \
+	[[ "$$alpha_dry_run_output" == *"container run --name demo-api-1"* ]]; \
 	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot 2>&1 || true)"; \
 	[[ "$$commit_output" == *"unsupported compose feature: commit: apple/container does not expose committing service containers to images"* ]]; \
 	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \

@@ -42,8 +42,8 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Surface | Parity | Details |
 | --- | --- | --- |
 | Compose project loading and normalization | ⚠️ Partial | `compose-go` handles local/default files, multiple files, profiles, interpolation, env files, service `env_file` short/long syntax, project name and directory selection, extension preservation, and `config` YAML/JSON output; the normalizer adds Docker Compose-compatible raw-format env-file parsing. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
-| CLI command surface | ⚠️ Partial | 32 commands are ✅, 2 are ⚠️, and 11 are ❌ across the current Docker Compose v2 command reference plus this plugin's explicit `help` command. See [CLI Command Surface](#cli-command-surface). |
-| CLI option surface | ⚠️ Partial | 224 documented long options are ✅, 4 are ⚠️, and 31 are ❌ across the current Docker Compose v2 option reference. See [CLI Option Surface](#cli-option-surface). |
+| CLI command surface | ⚠️ Partial | 36 commands are ✅, 2 are ⚠️, and 8 are ❌ across the current Docker Compose v2 command reference plus this plugin's explicit `help` command. See [CLI Command Surface](#cli-command-surface). |
+| CLI option surface | ⚠️ Partial | 231 documented long options are ✅, 4 are ⚠️, and 28 are ❌ across the current Docker Compose v2 option reference. See [CLI Option Surface](#cli-option-surface). |
 | Dockerfile and build inputs | ⚠️ Partial | Dockerfile instruction execution, contexts, `dockerfile`, `dockerfile_inline`, `.dockerignore`, args, additional contexts, cache hints, labels, target, platforms, pull/no-cache, tags, `extra_hosts`, BuildKit network, isolation, privileged build, shm size, ulimits, SSH forwarding, provenance, SBOM, builder selection, `--print`, and `--check` are implemented. Build secrets are limited to file/env-backed BuildKit secret IDs; unsupported secret shapes are rejected. |
 | Image pull, push, and local image metadata | ✅ Yes | `pull`, `push`, `images`, image digest config output, pull policy, quiet modes, failure-ignore modes, and dependency image traversal are implemented. |
 | Service lifecycle orchestration | ⚠️ Partial | `create`, `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `rm`, `down`, `scale`, `wait`, service `post_start`, service `pre_stop`, and most `up` behavior are implemented. Health-aware `up --wait`, health dependency state, job completion metadata, and service `pre_start` remain runtime gaps. |
@@ -142,9 +142,10 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 
 | Command | Parity | Details |
 | --- | --- | --- |
-| `alpha dry-run` | ❌ No | Experimental `alpha dry-run -- COMMAND` wrapper is not implemented; use the supported root `--dry-run` flag on commands that mutate state. |
-| `alpha scale` | ❌ No | Experimental `alpha scale` alias is not implemented; use the supported stable `scale` command. |
-| `alpha watch` | ❌ No | Experimental `alpha watch` alias is not implemented; use the supported stable `watch` command. |
+| `alpha` | ✅ Yes | Experimental namespace help and the Docker-documented dry-run, scale, and watch aliases are implemented. |
+| `alpha dry-run` | ✅ Yes | Experimental `alpha dry-run -- COMMAND` wraps the requested Compose command with root `--dry-run` while preserving project/global options. |
+| `alpha scale` | ✅ Yes | Experimental `alpha scale` is implemented as an alias for the stable `scale` command. |
+| `alpha watch` | ✅ Yes | Experimental `alpha watch` is implemented as an alias for the stable `watch` command. |
 | `attach` | ⚠️ Partial | `--no-stdin` output-follow attach is implemented; default interactive reattach and detach-key handling need runtime support. |
 | `bridge` | ❌ No | Compose Bridge transformation tooling is not implemented. |
 | `bridge convert` | ❌ No | Compose Bridge transformation tooling is not implemented. |
@@ -195,9 +196,10 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | Option Surface | Parity | Details |
 | --- | --- | --- |
 | Root options | ⚠️ Partial | ✅ `--ansi`, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`; ⚠️ `--parallel`: caps repeated `pull` and `push` image operations while dependency-sensitive orchestration stays ordered; ❌ `--all-resources`, ❌ `--compatibility`: unsupported root modes. |
-| `alpha dry-run` options | ❌ No | The experimental `alpha dry-run` command has no documented long options and is not implemented; use supported root `--dry-run`. |
-| `alpha scale` options | ❌ No | ❌ `--no-deps`: experimental `alpha scale` is not implemented; use supported stable `scale --no-deps`. |
-| `alpha watch` options | ❌ No | ❌ `--no-up`, ❌ `--quiet`: experimental `alpha watch` is not implemented; use supported stable `watch --no-up` and `watch --quiet`. |
+| `alpha` options | ✅ Yes | ✅ `--dry-run`. |
+| `alpha dry-run` options | ✅ Yes | ✅ `--dry-run`: accepted and implied for the wrapped command. |
+| `alpha scale` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`. |
+| `alpha watch` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-up`, ✅ `--quiet`. |
 | `attach` options | ⚠️ Partial | ✅ `--dry-run`, ✅ `--index`, ✅ `--no-stdin`, ✅ `--sig-proxy`; ⚠️ `--detach-keys`: parsed and documented, but output-only attach ignores detach keys because interactive reattach is not exposed by the runtime. |
 | `bridge` options | ❌ No | ❌ `--dry-run`: Compose Bridge is not implemented. |
 | `bridge convert` options | ❌ No | ❌ `--dry-run`, ❌ `--output`, ❌ `--templates`, ❌ `--transformation`: Compose Bridge is not implemented. |

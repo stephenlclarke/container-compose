@@ -82,6 +82,9 @@ enum ContainerPackageCompatibility {
 
   /// Returns whether this invocation needs the installed runtime stack check.
   static func requiresRuntimeCheck(arguments: [String]) -> Bool {
+    if isAlphaDryRun(arguments: arguments) {
+      return false
+    }
     guard let command = commandName(in: arguments), runtimeCommands.contains(command) else {
       return false
     }
@@ -92,6 +95,14 @@ enum ContainerPackageCompatibility {
       return false
     }
     return true
+  }
+
+  private static func isAlphaDryRun(arguments: [String]) -> Bool {
+    guard let alphaIndex = arguments.firstIndex(of: "alpha") else {
+      return false
+    }
+    let nestedIndex = arguments.index(after: alphaIndex)
+    return arguments.indices.contains(nestedIndex) && arguments[nestedIndex] == "dry-run"
   }
 
   /// Checks the installed container stack and returns a user-facing failure when it is incompatible.

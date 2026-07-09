@@ -102,7 +102,12 @@ enum ComposeCLIHelp {
     }
 
     static var documentedHelpCommandPaths: [[String]] {
-        ([[]] + commandHelp.keys.map { [$0] } + bridgeCommandHelp.keys.map(commandPath(from:)))
+        (
+            [[]]
+                + commandHelp.keys.map { [$0] }
+                + bridgeCommandHelp.keys.map(commandPath(from:))
+                + alphaCommandHelp.keys.map(commandPath(from:))
+        )
             .sorted { $0.lexicographicallyPrecedes($1) }
     }
 
@@ -114,7 +119,8 @@ enum ComposeCLIHelp {
         if commandPath == ["bridge"] {
             return renderedHelp(bridgeHelp, commandPath: commandPath, useANSI: useANSI)
         }
-        if let help = bridgeCommandHelp[commandPath.joined(separator: " ")] {
+        if let help = bridgeCommandHelp[commandPath.joined(separator: " ")]
+            ?? alphaCommandHelp[commandPath.joined(separator: " ")] {
             return renderedHelp(help, commandPath: commandPath, useANSI: useANSI)
         }
         if commandPath.count == 1, let help = commandHelp[commandPath[0]] {
@@ -136,6 +142,9 @@ enum ComposeCLIHelp {
             if commandNames.contains(argument) {
                 if argument == "bridge" {
                     return bridgePathContainsHelp(in: arguments, startingAt: index + 1)
+                }
+                if argument == "alpha" {
+                    return nestedPathContainsHelp(in: arguments, startingAt: index + 1)
                 }
                 return commandPathContainsHelp(in: arguments, startingAt: index + 1)
             }
@@ -177,6 +186,18 @@ enum ComposeCLIHelp {
     }
 
     private static func bridgePathContainsHelp(in arguments: [String], startingAt startIndex: Int) -> Bool {
+        nestedPathContainsHelp(
+            in: arguments,
+            startingAt: startIndex,
+            consumesNestedValue: { consumesBridgeValue($0) }
+        )
+    }
+
+    private static func nestedPathContainsHelp(
+        in arguments: [String],
+        startingAt startIndex: Int,
+        consumesNestedValue: (String) -> Bool = { _ in false }
+    ) -> Bool {
         var index = startIndex
         while index < arguments.count {
             let argument = arguments[index]
@@ -195,9 +216,9 @@ enum ComposeCLIHelp {
                 index += 1
                 continue
             }
-            if consumesBridgeValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+            if consumesNestedValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
                 index += 2
-            } else if consumesBridgeValue(argument) {
+            } else if consumesNestedValue(argument) {
                 index += 1
             } else {
                 index += 1
@@ -265,6 +286,10 @@ enum ComposeCLIHelp {
     private static let resetColor = "\u{001B}[0m"
 
     private static let supportByCommand: [String: SupportLevel] = [
+        "alpha": .supported,
+        "alpha dry-run": .supported,
+        "alpha scale": .supported,
+        "alpha watch": .supported,
         "attach": .partiallySupported,
         "bridge": .notSupported,
         "bridge convert": .notSupported,
@@ -323,6 +348,21 @@ enum ComposeCLIHelp {
             "--project-directory": .supported,
             "--project-name": .supported,
             "--verbose": .supported,
+        ],
+        "alpha": [
+            "--dry-run": .supported,
+        ],
+        "alpha dry-run": [
+            "--dry-run": .supported,
+        ],
+        "alpha scale": [
+            "--dry-run": .supported,
+            "--no-deps": .supported,
+        ],
+        "alpha watch": [
+            "--dry-run": .supported,
+            "--no-up": .supported,
+            "--quiet": .supported,
         ],
         "attach": [
             "--detach-keys": .partiallySupported,
@@ -718,6 +758,9 @@ enum ComposeCLIHelp {
         if commandPath == ["bridge", "transformations"] {
             return ["bridge", "transformations", commandName]
         }
+        if commandPath == ["alpha"] {
+            return ["alpha", commandName]
+        }
         return [commandName]
     }
 
@@ -853,7 +896,14 @@ enum ComposeCLIHelp {
             if commandNames.contains(argument) {
                 path.append(argument)
                 if argument == "bridge", arguments.indices.contains(index + 1) {
-                    path.append(contentsOf: bridgeCommandPath(in: arguments, startingAt: index + 1))
+                    path.append(contentsOf: nestedCommandPath(
+                        in: arguments,
+                        startingAt: index + 1,
+                        consumesNestedValue: { consumesBridgeValue($0) }
+                    ))
+                }
+                if argument == "alpha", arguments.indices.contains(index + 1) {
+                    path.append(contentsOf: nestedCommandPath(in: arguments, startingAt: index + 1))
                 }
                 break
             }
@@ -866,7 +916,11 @@ enum ComposeCLIHelp {
         return path
     }
 
-    private static func bridgeCommandPath(in arguments: [String], startingAt startIndex: Int) -> [String] {
+    private static func nestedCommandPath(
+        in arguments: [String],
+        startingAt startIndex: Int,
+        consumesNestedValue: (String) -> Bool = { _ in false }
+    ) -> [String] {
         var path: [String] = []
         var index = startIndex
         while index < arguments.count {
@@ -886,11 +940,11 @@ enum ComposeCLIHelp {
                 index += 1
                 continue
             }
-            if consumesBridgeValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
+            if consumesNestedValue(argument), !argument.contains("="), arguments.indices.contains(index + 1) {
                 index += 2
                 continue
             }
-            if consumesBridgeValue(argument) {
+            if consumesNestedValue(argument) {
                 index += 1
                 continue
             }
@@ -945,7 +999,7 @@ enum ComposeCLIHelp {
         var candidate = path
         while !candidate.isEmpty {
             let key = candidate.joined(separator: " ")
-            if let help = bridgeCommandHelp[key] {
+            if let help = bridgeCommandHelp[key] ?? alphaCommandHelp[key] {
                 return help
             }
             candidate.removeLast()
@@ -954,6 +1008,7 @@ enum ComposeCLIHelp {
     }
 
     private static let commandNames: Set<String> = [
+        "alpha",
         "attach",
         "bridge",
         "build",
@@ -1012,6 +1067,7 @@ enum ComposeCLIHelp {
           --verbose                    Show more output
 
     Management Commands:
+      alpha                   Experimental commands
       bridge                  Convert compose files into another model
 
     Commands:
@@ -1142,7 +1198,52 @@ enum ComposeCLIHelp {
         """,
     ]
 
+    private static let alphaCommandHelp: [String: String] = [
+        "alpha dry-run": """
+        Usage:  container compose alpha dry-run [OPTIONS] -- COMMAND [ARGS...]
+
+        Execute a command in dry run mode
+
+        Options:
+              --dry-run   Execute command in dry run mode
+        """,
+        "alpha scale": """
+        Usage:  container compose alpha scale [OPTIONS] SERVICE=REPLICAS...
+
+        Scale services
+
+        Options:
+              --dry-run   Execute command in dry run mode
+              --no-deps   Don't start linked services
+        """,
+        "alpha watch": """
+        Usage:  container compose alpha watch [OPTIONS] [SERVICE...]
+
+        Watch build context and service files
+
+        Options:
+              --dry-run   Execute command in dry run mode
+              --no-up     Do not build and start services before watching
+              --quiet     Hide build output
+        """,
+    ]
+
     private static let commandHelp: [String: String] = [
+        "alpha": """
+        Usage:  container compose alpha [OPTIONS] COMMAND
+
+        Experimental commands
+
+        Options:
+              --dry-run   Execute command in dry run mode
+
+        Commands:
+          dry-run     Execute a command in dry run mode
+          scale       Scale services
+          watch       Watch build context and service files
+
+        Run 'container compose alpha COMMAND --help' for more information on a command.
+        """,
         "attach": """
         Usage:  container compose attach [OPTIONS] SERVICE
 

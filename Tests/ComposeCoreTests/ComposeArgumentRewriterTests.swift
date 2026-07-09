@@ -1054,6 +1054,7 @@ struct ComposeArgumentRewriterTests {
     @Test("recognizes explicit compose command surfaces")
     func recognizesExplicitComposeCommandSurfaces() {
         let commands = [
+            "alpha",
             "attach",
             "bridge",
             "commit",
@@ -1077,6 +1078,49 @@ struct ComposeArgumentRewriterTests {
                 "never",
             ])
         }
+    }
+
+    @Test("moves root compose options after alpha nested commands")
+    func movesRootComposeOptionsAfterAlphaNestedCommands() {
+        let scale = ComposeArgumentRewriter.rewrite([
+            "-f",
+            "compose.yml",
+            "--project-name",
+            "demo",
+            "alpha",
+            "scale",
+            "--no-deps",
+            "api=2",
+        ])
+        let dryRun = ComposeArgumentRewriter.rewrite([
+            "--ansi",
+            "never",
+            "alpha",
+            "dry-run",
+            "--",
+            "up",
+            "api",
+        ])
+
+        #expect(scale == [
+            "alpha",
+            "scale",
+            "-f",
+            "compose.yml",
+            "--project-name",
+            "demo",
+            "--no-deps",
+            "api=2",
+        ])
+        #expect(dryRun == [
+            "alpha",
+            "dry-run",
+            "--ansi",
+            "never",
+            "--",
+            "up",
+            "api",
+        ])
     }
 
     @Test("returns arguments unchanged when no subcommand is present")

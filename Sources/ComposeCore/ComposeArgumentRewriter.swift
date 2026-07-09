@@ -24,6 +24,7 @@ public enum ComposeArgumentRewriter {
     }
 
     private static let subcommands: Set<String> = [
+        "alpha",
         "build",
         "config",
         "attach",
@@ -130,8 +131,60 @@ public enum ComposeArgumentRewriter {
         if command == "version" {
             return normalizeCompactGlobalOptions(prefix) + [command] + suffix
         }
+        if command == "alpha" {
+            return rewriteNestedGlobalOptions(command: command, prefix: prefix, suffix: suffix)
+        }
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
+    }
+
+    /// Moves root options onto an experimental nested command.
+    private static func rewriteNestedGlobalOptions(command: String, prefix: [String], suffix: [String]) -> [String] {
+        guard let nestedIndex = nestedCommandIndex(in: suffix) else {
+            let split = splitGlobalOptions(prefix)
+            return split.retained + [command] + split.moved + suffix
+        }
+
+        let prefixSplit = splitGlobalOptions(prefix)
+        let nestedPrefix = Array(suffix[..<nestedIndex])
+        let nestedCommand = suffix[nestedIndex]
+        let nestedSuffix = Array(suffix[suffix.index(after: nestedIndex)...])
+        let nestedPrefixSplit = splitGlobalOptions(nestedPrefix)
+        return prefixSplit.retained
+            + [command]
+            + nestedPrefixSplit.retained
+            + [nestedCommand]
+            + prefixSplit.moved
+            + nestedPrefixSplit.moved
+            + nestedSuffix
+    }
+
+    /// Locates the alpha subcommand while skipping global options.
+    private static func nestedCommandIndex(in arguments: [String]) -> Array<String>.Index? {
+        let nestedCommands: Set<String> = ["dry-run", "scale", "watch"]
+        var index = arguments.startIndex
+        while index < arguments.endIndex {
+            let argument = arguments[index]
+            if argument == "--" {
+                return nil
+            }
+            if nestedCommands.contains(argument) {
+                return index
+            }
+            if splitCompactGlobalValueOption(argument) != nil {
+                index = arguments.index(after: index)
+                continue
+            }
+            guard let kind = globalOptionKind(argument) else {
+                index = arguments.index(after: index)
+                continue
+            }
+            index = arguments.index(after: index)
+            if kind == .value, !argument.contains("="), index < arguments.endIndex {
+                index = arguments.index(after: index)
+            }
+        }
+        return nil
     }
 
     /// Locates the first subcommand while skipping values for root options.

@@ -278,6 +278,7 @@ struct ComposePlugin: AsyncParsableCommand {
         abstract: "Manage multi-container applications with Docker Compose syntax",
         version: composePluginVersionString,
         subcommands: [
+            Alpha.self,
             Bridge.self,
             Config.self,
             Convert.self,
@@ -393,6 +394,48 @@ struct GlobalOptions: ParsableArguments {
             envFiles: envFile,
             projectDirectory: projectDirectory
         )
+    }
+
+    /// Converts parser state back into root-compatible CLI arguments.
+    func rootArguments(forceDryRun: Bool = false) -> [String] {
+        var arguments: [String] = []
+        for value in file {
+            arguments.append(contentsOf: ["--file", value])
+        }
+        if let projectName {
+            arguments.append(contentsOf: ["--project-name", projectName])
+        }
+        for value in profile {
+            arguments.append(contentsOf: ["--profile", value])
+        }
+        for value in envFile {
+            arguments.append(contentsOf: ["--env-file", value])
+        }
+        if let projectDirectory {
+            arguments.append(contentsOf: ["--project-directory", projectDirectory])
+        }
+        if let ansi {
+            arguments.append(contentsOf: ["--ansi", ansi])
+        }
+        if let progress {
+            arguments.append(contentsOf: ["--progress", progress])
+        }
+        if allResources {
+            arguments.append("--all-resources")
+        }
+        if compatibility {
+            arguments.append("--compatibility")
+        }
+        if let parallel {
+            arguments.append(contentsOf: ["--parallel", String(parallel)])
+        }
+        if dryRun || forceDryRun {
+            arguments.append("--dry-run")
+        }
+        if verbose {
+            arguments.append("--verbose")
+        }
+        return arguments
     }
 
     /// Loads the Compose project through the compose-go normalizer.
@@ -596,6 +639,101 @@ extension ComposeProjectCommand {
     func printCanonicalProject() async throws {
         let loadedProject = try await project()
         print(try orchestrator().config(project: loadedProject))
+    }
+}
+
+/// Implements Docker Compose experimental alpha command aliases.
+struct Alpha: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "alpha",
+        abstract: "Experimental commands",
+        subcommands: [
+            AlphaDryRun.self,
+            AlphaScale.self,
+            AlphaWatch.self,
+        ]
+    )
+    @OptionGroup var global: GlobalOptions
+
+    /// Shows the alpha namespace help when no nested command is supplied.
+    func run() async throws {
+        print(ComposeCLIHelp.helpText(commandPath: ["alpha"], arguments: global.rootArguments()) ?? "")
+    }
+}
+
+/// Implements `compose alpha dry-run` as a wrapper around root `--dry-run`.
+struct AlphaDryRun: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "dry-run",
+        abstract: "Execute a command in dry run mode."
+    )
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .allUnrecognized, help: "Compose command to execute in dry-run mode.")
+    var command: [String] = []
+
+    /// Re-enters the command tree with the dry-run global option forced.
+    func run() async throws {
+        let nestedCommand = command.first == "--" ? Array(command.dropFirst()) : command
+        guard !nestedCommand.isEmpty else {
+            throw ComposeError.invalidProject("alpha dry-run requires a compose command after --")
+        }
+
+        let arguments = ComposeArgumentRewriter.rewrite(global.rootArguments(forceDryRun: true) + nestedCommand)
+        await ComposePlugin.main(arguments)
+    }
+}
+
+/// Implements `compose alpha scale` as an alias for stable `compose scale`.
+struct AlphaScale: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "scale", abstract: "Scale services.")
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
+    var noDeps = false
+    @Argument(help: "Service scale assignments as SERVICE=REPLICAS.")
+    var scales: [String] = []
+
+    /// Scales selected services using the stable scale implementation.
+    func run() async throws {
+        guard !scales.isEmpty else {
+            throw ComposeError.invalidProject("scale requires at least one SERVICE=REPLICAS argument")
+        }
+        let loadedProject = try await project()
+        try await orchestrator().scale(
+            project: loadedProject,
+            options: ComposeScaleOptions {
+                $0.scales = scales
+                $0.noDeps = noDeps
+            }
+        )
+    }
+}
+
+/// Implements `compose alpha watch` as an alias for stable `compose watch`.
+struct AlphaWatch: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "watch",
+        abstract: "Watch build context and service files."
+    )
+    @OptionGroup var global: GlobalOptions
+    @Flag(name: .customLong("no-up"), help: "Do not build and start services before watching.")
+    var noUp = false
+    @Flag(name: .customLong("quiet"), help: "Hide build output.")
+    var quiet = false
+    @Argument(help: "Optional service names.")
+    var services: [String] = []
+
+    /// Runs the stable watch implementation for the experimental alias.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().watch(
+            project: loadedProject,
+            options: ComposeWatchOptions(
+                services: services,
+                noUp: noUp,
+                prune: true,
+                quiet: quiet
+            )
+        )
     }
 }
 
