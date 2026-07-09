@@ -393,14 +393,27 @@ print(versions[-1] if versions else "")
 
 # Decide whether a repository changed since its latest local semver tag.
 repo_changed_since_latest_tag() {
-  local repo="$1" latest main_commit tag_commit
+  local repo="$1" latest main_commit tag_commit path changed_paths non_formula_changes
   latest="$(latest_local_semver_tag "${repo}")"
   if [[ -z "${latest}" ]]; then
     return 0
   fi
-  main_commit="$(git -C "$(repo_path "${repo}")" rev-parse main)"
-  tag_commit="$(git -C "$(repo_path "${repo}")" rev-list -n 1 "${latest}")"
-  [[ "${main_commit}" != "${tag_commit}" ]]
+  path="$(repo_path "${repo}")"
+  main_commit="$(git -C "${path}" rev-parse main)"
+  tag_commit="$(git -C "${path}" rev-list -n 1 "${latest}")"
+  if [[ "${main_commit}" == "${tag_commit}" ]]; then
+    return 1
+  fi
+
+  if [[ "${repo}" == "${COMPOSE_REPO}" ]]; then
+    changed_paths="$(git -C "${path}" diff --name-only "${latest}..main")"
+    non_formula_changes="$(grep -Fxv 'Formula/container-compose.rb' <<<"${changed_paths}" || true)"
+    if [[ -z "${non_formula_changes}" ]]; then
+      return 1
+    fi
+  fi
+
+  return 0
 }
 
 # Create a stable tag for a repo when needed, never moving existing tags.

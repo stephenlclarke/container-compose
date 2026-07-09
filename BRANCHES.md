@@ -86,6 +86,8 @@ The install formulae consume validated GitHub release assets. `container-compose
 
 `Formula/container-compose.rb` in this repository is the source formula template used by the package workflow when updating `stephenlclarke/homebrew-tap`. Release helpers sync that template only after the stable package asset, checksum asset, and live tap formula have been verified, so the checked-in template reflects the last verified stable release rather than an unverified local build.
 
+Because the source formula sync is post-release bookkeeping, `make release-plan` does not count a `container-compose` diff that only touches `Formula/container-compose.rb` as unreleased application work.
+
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 
 Install, upgrade, verification, and uninstall commands live in [INSTALL.md](INSTALL.md). Source build and package commands live in [BUILD.md](BUILD.md).
