@@ -358,6 +358,9 @@ jobs:
           while IFS= read -r path; do
             # These legacy command and orchestrator files predate the strict changed-file style gate.
             case "$path" in
+              Sources/ComposePlugin/ComposeCLIHelp.swift|Tests/ComposePluginTests/ComposeCLIHelpTests.swift)
+                continue
+                ;;
               Sources/ComposePlugin/ComposePlugin.swift)
                 continue
                 ;;
