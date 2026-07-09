@@ -18,20 +18,20 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `e5773f48cbd3c29cd3ae67c6c25184878bacae30`
+- `stephenlclarke/container`: `bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb`
 - `stephenlclarke/containerization`: `fbc08e7037736137eb0ba87784351bf44d29cefe`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.8`
 
 ## Latest Local Validation
 
-The latest local validation for this compatibility refresh passed across the `0.6.14` and `0.6.15` stable release slices with `container-compose` `swift test --filter ComposeCLIHelpTests`, rendered help smoke checks for `compose help up` and `compose up --help`, `make ci`, `make cli-smoke-built`, `make docker-compose-parity`, `actionlint .github/workflows/quality.yml`, a local Quality workflow style-path selector simulation, YAML parsing for `.github/workflows/quality.yml`, and `git diff --check`. The earlier stack validation for `container-builder-shim` `0.13.8`, `container` `e5773f48cbd3c29cd3ae67c6c25184878bacae30`, and `containerization` `fbc08e7037736137eb0ba87784351bf44d29cefe` remains the current runtime bundle proof.
+The latest local validation for this compatibility refresh passed across the `0.6.18` stable release slice with `container-compose` `swift test --disable-automatic-resolution --filter ComposeCLIHelpTests`, rendered help checks for `compose help up` and `compose up --help`, and release asset/tap checksum verification. The matching `container` validation passed `make check`, `make test`, targeted lifecycle integration, and full `make integration` for `bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb` with `containerization` `fbc08e7037736137eb0ba87784351bf44d29cefe` and `container-builder-shim` `0.13.8`.
 
 Current full coverage proof:
 
 - Swift: 848 Compose tests at 89.34% line coverage.
 - Go normalizer: 92.56% line coverage.
 
-The `0.6.15` stable package workflow published `container-compose-plugin-release-arm64.tar.gz` with `sha256:8fe372a5df692a8ce1df3bfb932d09b6b996d2b460e9187c9f6bb0db3e199460`, and the Homebrew tap was updated at `c4b368b`. The immediately preceding `0.6.14` help-status release was verified with `sha256:6ac153d473a707868c3a47dffa5565cc930436d66a30e939aeaa407cb443ec81`.
+The `0.6.18` stable package workflow published `container-compose-plugin-release-arm64.tar.gz` with `sha256:ed66ab96a270cb87abf79708b93e829c459bcaac0890971f406f1482f2b22a1f`, and the Homebrew tap was updated at `dd544af`.
 
 ## Recent Functional State
 
@@ -55,8 +55,7 @@ The `0.6.15` stable package workflow published `container-compose-plugin-release
 - `up --menu` is supported for attached terminal log-follow sessions, including detach, watch toggle, command-level `--watch` start, graceful stop, force stop shortcuts, and exit-control options. Docker Desktop-only shortcuts are intentionally absent.
 - Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 - Root `--parallel` support currently applies to repeated `pull` and `push` image operations. Dry-run output, build planning, create/start ordering, dependency traversal, and runtime lifecycle reconciliation remain deterministic and ordered.
-- Service healthcheck execution and healthy/unhealthy state remain blocked until Apple exposes runtime healthcheck support; [apple/container#1918](https://github.com/apple/container/issues/1918) is the current upstream request covering healthcheck config, observation, API state, and CLI display.
-- Implicit or relative build contexts from symlinked temporary directories, such as `/var` resolving through `/private/var`, remain a runtime build-context gap tracked by [apple/container#1899](https://github.com/apple/container/issues/1899) and fix candidate [apple/container#1922](https://github.com/apple/container/pull/1922); the plugin already resolves Compose service build contexts to project-absolute paths where it owns the handoff, but runtime-default `container build` behavior still depends on the upstream canonicalization fix.
+- Service healthcheck execution and healthy/unhealthy state remain blocked until Apple exposes runtime healthcheck support; [apple/container#1918](https://github.com/apple/container/issues/1918) is the current upstream request covering healthcheck config, observation, API state, and CLI display. This is why `compose up` and its `--wait` / `--wait-timeout` help entries remain partially supported even though non-health waiting for running containers works.
 - Nested bind mounts that overlay a subdirectory within an earlier bind mount remain an Apple runtime gap tracked by [apple/container#1890](https://github.com/apple/container/issues/1890); the plugin can preserve and order the mount entries, but Docker-compatible mount-over-mount behavior depends on runtime support.
 - Namespace sharing via `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME` remains blocked until the runtime exposes Docker-compatible namespace-joining primitives.
 - Driver-specific `networks.<name>.ipam.options` remain blocked until the runtime exposes a Docker-compatible IPAM option surface.

@@ -47,16 +47,7 @@ brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 ```
 
-Upgrade the stable stack with Homebrew:
-
-```sh
-brew update
-brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose
-brew postinstall stephenlclarke/tap/container
-brew services restart stephenlclarke/tap/container
-```
-
-Then verify the installed stack:
+For upgrades, use [Upgrade An Existing Installation](#upgrade-an-existing-installation). Then verify the installed stack:
 
 ```sh
 container compose version
