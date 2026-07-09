@@ -25,6 +25,8 @@ Modes:
       Stephen-owned main branches, creates the stable container-compose source
       tag, pushes that tag, dispatches the stable package workflow, and waits
       for that workflow to publish the release assets and Homebrew tap update.
+      After the tap is verified, the helper syncs the checked-in source formula
+      template to the verified release URL, version, and SHA.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 stable release version
@@ -35,7 +37,8 @@ Modes:
   package VERSION
       Re-run the stable package workflow for an existing semantic source tag,
       then verify the release archive, checksum asset, and Homebrew formula
-      URL/SHA without moving any tags.
+      URL/SHA without moving any tags. After verification, sync the checked-in
+      source formula template to the verified release URL, version, and SHA.
 
   Source tags are bare MAJOR.MINOR.PATCH for Apple compatibility.
 
@@ -56,6 +59,7 @@ Rules enforced:
   - Stable container-compose release tags point at the validated main commit.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
+  - The source Homebrew formula template is synced only after package verification.
   - Existing tags are never moved.
   - Long-lived release branches are not used.
 USAGE
@@ -828,9 +832,10 @@ Process:
   3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
      bumps container-compose on main when needed, pushes Stephen-owned main
      branches, tags container-compose, dispatches the stable package workflow,
-     and verifies the release assets plus Homebrew tap update.
+     verifies the release assets plus Homebrew tap update, and syncs the source
+     Homebrew formula template to the verified package.
   4. Use package VERSION to rebuild and verify an existing stable tag without
-     moving tags.
+     moving tags, then sync the source Homebrew formula template.
 EOF
 }
 

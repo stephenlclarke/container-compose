@@ -50,9 +50,9 @@ make release VERSION_SELECTOR=--+
 make repackage-release VERSION=0.6.5
 ```
 
-`make release-plan` is a dry run. `make release` validates clean worktrees and Stephen-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, and waits for the release assets and Homebrew tap update.
+`make release-plan` is a dry run. `make release` validates clean worktrees and Stephen-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for the release assets and Homebrew tap update, verifies the live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
 
-`make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again and verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA.
+`make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
 
 `VERSION_SELECTOR` accepts:
 
@@ -83,6 +83,8 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 | `container-compose` | Current stable plugin package from the latest semantic release; depends on the matching `container` formula. |
 
 The install formulae consume validated GitHub release assets. `container-compose` follows the latest stable semantic release and is what users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
+
+`Formula/container-compose.rb` in this repository is the source formula template used by the package workflow when updating `stephenlclarke/homebrew-tap`. Release helpers sync that template only after the stable package asset, checksum asset, and live tap formula have been verified, so the checked-in template reflects the last verified stable release rather than an unverified local build.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 
