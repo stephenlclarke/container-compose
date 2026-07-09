@@ -327,7 +327,7 @@ cli-smoke-built:
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mpause$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32m--file$${ansi_escape}[0m"* ]]; \
-	[[ "$$root_help_output" == *"$${ansi_escape}[31m--parallel$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208m--parallel$${ansi_escape}[0m"* ]]; \
 	plain_help_output="$$(".build/debug/compose" --ansi never --help)"; \
 	[[ "$$plain_help_output" == *"Support: supported | partially supported | not supported"* ]]; \
 	[[ "$$plain_help_output" != *"$${ansi_escape}["* ]]; \

@@ -274,19 +274,27 @@ public extension ComposeOrchestrator {
         let services = try pull.includeDependencies
             ? orderedServices(project: project, selected: pull.services)
             : selectedServices(project: project, selected: pull.services)
-        for service in services {
+        let images = services.compactMap { service -> String? in
             if pull.ignoreBuildable, service.build != nil {
-                continue
+                return nil
             }
-            guard let image = service.image else { continue }
+            return service.image
+        }
+        let pullMissingOnly = pull.policy == "missing"
+        let ignorePullFailures = pull.ignorePullFailures
+        try await runImageOperations(
+            images,
+            progressMessage: pullMissingOnly ? "Preparing \(images.count) images" : "Pulling \(images.count) images",
+            quiet: pull.quiet,
+        ) { [self] image, quiet in
             do {
-                if pull.policy == "missing" {
-                    try await pullMissingImage(image, quiet: pull.quiet)
+                if pullMissingOnly {
+                    try await pullMissingImage(image, quiet: quiet)
                 } else {
-                    try await pullImage(image, quiet: pull.quiet)
+                    try await pullImage(image, quiet: quiet)
                 }
             } catch {
-                guard pull.ignorePullFailures else {
+                guard ignorePullFailures else {
                     throw error
                 }
             }
@@ -315,8 +323,13 @@ public extension ComposeOrchestrator {
         } else {
             options.emit
         }
-        for service in services {
-            guard let image = service.image else { continue }
+        let images = services.compactMap(\.image)
+        let ignorePushFailures = push.ignorePushFailures
+        try await runImageOperations(
+            images,
+            progressMessage: "Pushing \(images.count) images",
+            quiet: push.quiet,
+        ) { [self] image, _ in
             let args = ["image", "push", image]
             if options.dryRun {
                 try await runContainer(args)
@@ -324,7 +337,7 @@ public extension ComposeOrchestrator {
                 do {
                     try await imageManager.pushImage(image, emit: emit)
                 } catch {
-                    guard push.ignorePushFailures else {
+                    guard ignorePushFailures else {
                         throw error
                     }
                 }

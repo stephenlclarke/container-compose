@@ -88,6 +88,12 @@ for log-friendly rows, or `--progress tty` for the animated terminal spinner.
 `--progress auto` uses the animated spinner when stderr is a terminal and plain
 rows otherwise.
 
+The root `--parallel N` option is partially supported for repeated image
+operations. Explicit positive values cap concurrent `pull` and `push` image
+work, and `--parallel -1` runs those image operations without a local cap.
+Dry-run output, builds, creates, starts, and dependency-sensitive orchestration
+remain ordered.
+
 Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and pinned `container-builder-shim` image. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and the `container` / `containerization` pins that package was built against.
 
 ## Project Repositories

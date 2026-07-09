@@ -316,7 +316,7 @@ enum ComposeCLIHelp {
             "--dry-run": .supported,
             "--env-file": .supported,
             "--file": .supported,
-            "--parallel": .notSupported,
+            "--parallel": .partiallySupported,
             "--profile": .supported,
             "--progress": .supported,
             "--project-directory": .supported,
@@ -987,7 +987,7 @@ enum ComposeCLIHelp {
           --dry-run                    Execute command in dry run mode
           --env-file stringArray       Specify an alternate environment file
       -f, --file stringArray           Compose configuration files
-          --parallel int               Control max parallelism, -1 for unlimited (default -1)
+          --parallel int               Control max parallelism for image operations; -1 for unlimited
           --profile stringArray        Specify a profile to enable
           --progress string            Set type of progress output (auto, tty, plain, json, quiet)
           --project-directory string   Specify an alternate working directory

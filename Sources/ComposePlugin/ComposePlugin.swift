@@ -374,7 +374,7 @@ struct GlobalOptions: ParsableArguments {
     @Flag(name: .customLong("compatibility"), help: "Run compose in backward compatibility mode.")
     var compatibility: Bool = false
 
-    @Option(name: .customLong("parallel"), help: "Control max parallelism.")
+    @Option(name: .customLong("parallel"), help: "Control max parallel image operations.")
     var parallel: Int?
 
     @Flag(name: .customLong("dry-run"), help: "Print container commands instead of running them.")
@@ -441,7 +441,7 @@ struct GlobalOptions: ParsableArguments {
 
     /// Creates an orchestrator configured from global runtime flags.
     func orchestrator() -> ComposeOrchestrator {
-        ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: dryRun, progress: progressReporter()))
+        ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: dryRun, maxParallelism: parallel, progress: progressReporter()))
     }
 
     /// Returns whether log prefix color should be enabled for this invocation.

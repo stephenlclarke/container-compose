@@ -10884,6 +10884,63 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("pull honors configured parallel image operation limit")
+    func pullHonorsConfiguredParallelImageOperationLimit() async throws {
+        let concurrency = OperationConcurrencyRecorder(delay: .milliseconds(50))
+        let imageManager = RecordingContainerImageManager(onPullImage: { _ in
+            await concurrency.recordOperation()
+        })
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+                "db": composeService(name: "db", image: "example/db:latest"),
+                "cache": composeService(name: "cache", image: "example/cache:latest"),
+                "worker": composeService(name: "worker", image: "example/worker:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(maxParallelism: 2),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).pull(project: project, options: ComposePullOptions())
+
+        let requests = await imageManager.requests
+        #expect(requests.count == 4)
+        #expect(requests.contains(.pull("example/api:latest")))
+        #expect(requests.contains(.pull("example/db:latest")))
+        #expect(requests.contains(.pull("example/cache:latest")))
+        #expect(requests.contains(.pull("example/worker:latest")))
+        #expect(await concurrency.maximumActiveOperations == 2)
+    }
+
+    @Test("pull rejects invalid parallelism before side effects")
+    func pullRejectsInvalidParallelismBeforeSideEffects() async throws {
+        let imageManager = RecordingContainerImageManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                options: ComposeExecutionOptions(maxParallelism: 0),
+                dependencies: orchestratorDependencies {
+                    $0.imageManager = imageManager
+                }
+            ).pull(project: project, options: ComposePullOptions())
+            Issue.record("Expected invalid --parallel failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("--parallel must be -1 or a positive integer"))
+        }
+
+        #expect(await imageManager.requests.isEmpty)
+    }
+
     @Test("pull rejects unsupported policy before side effects")
     func pullRejectsUnsupportedPolicyBeforeSideEffects() async throws {
         let imageManager = RecordingContainerImageManager()
@@ -11004,6 +11061,39 @@ struct ComposeOrchestratorTests {
             .push("example/api:latest"),
             .push("example/worker:latest"),
         ])
+    }
+
+    @Test("push honors unlimited parallel image operations")
+    func pushHonorsUnlimitedParallelImageOperations() async throws {
+        let concurrency = OperationConcurrencyRecorder(delay: .milliseconds(50))
+        let imageManager = RecordingContainerImageManager(onPushImage: { _ in
+            await concurrency.recordOperation()
+        })
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest"),
+                "cache": composeService(name: "cache", image: "example/cache:latest"),
+                "worker": composeService(name: "worker", image: "example/worker:latest"),
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(
+                maxParallelism: -1,
+                runtimeHooks: ComposeExecutionOptions.RuntimeHooks(emit: { _ in })
+            ),
+            dependencies: orchestratorDependencies {
+                $0.imageManager = imageManager
+            }
+        ).push(project: project, options: ComposePushOptions())
+
+        let requests = await imageManager.requests
+        #expect(requests.count == 3)
+        #expect(requests.contains(.push("example/api:latest")))
+        #expect(requests.contains(.push("example/cache:latest")))
+        #expect(requests.contains(.push("example/worker:latest")))
+        #expect(await concurrency.maximumActiveOperations == 3)
     }
 
     @Test("build options add pull quiet and push service image")
@@ -24620,6 +24710,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
     private let pullFailures: Set<String>
     private let pullMissingFailures: Set<String>
     private let onPullImage: @Sendable (String) async -> Void
+    private let onPushImage: @Sendable (String) async -> Void
     private var pushOutputs: [String: String]
     private let pushFailures: Set<String>
     private var deleteOutputs: [String: String?]
@@ -24633,6 +24724,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         pullFailures: Set<String> = [],
         pullMissingFailures: Set<String> = [],
         onPullImage: @escaping @Sendable (String) async -> Void = { _ in },
+        onPushImage: @escaping @Sendable (String) async -> Void = { _ in },
         pushOutputs: [String: String] = [:],
         pushFailures: Set<String> = [],
         deleteOutputs: [String: String?] = [:],
@@ -24648,6 +24740,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         self.pullFailures = pullFailures
         self.pullMissingFailures = pullMissingFailures
         self.onPullImage = onPullImage
+        self.onPushImage = onPushImage
         self.pushOutputs = pushOutputs
         self.pushFailures = pushFailures
         self.deleteOutputs = deleteOutputs
@@ -24712,6 +24805,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         if let failure {
             throw failure
         }
+        await onPushImage(reference)
         storage.append(.push(reference))
         if pushFailures.contains(reference) {
             throw ComposeError.invalidProject("push failed: \(reference)")
@@ -25124,6 +25218,27 @@ private final class MessageRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         storage.append(message)
+    }
+}
+
+private actor OperationConcurrencyRecorder {
+    private var activeOperations = 0
+    private var maximum = 0
+    private let delay: Duration
+
+    init(delay: Duration) {
+        self.delay = delay
+    }
+
+    var maximumActiveOperations: Int {
+        maximum
+    }
+
+    func recordOperation() async {
+        activeOperations += 1
+        maximum = max(maximum, activeOperations)
+        try? await Task.sleep(for: delay)
+        activeOperations -= 1
     }
 }
 
