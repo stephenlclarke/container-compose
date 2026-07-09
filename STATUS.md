@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-07-08.
+Last updated: 2026-07-09.
 
 This file is the current-state handoff for `container-compose`. Keep it short. Do not store branch policy or historical evidence here; use [BRANCHES.md](BRANCHES.md), git history, GitHub Actions runs, SonarQube, and the handoff drafts under `docs/upstream/` when old details are needed.
 
@@ -18,8 +18,8 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `b9207d9131f34901bc2ca6ca4b847f7da29d5a0b`
-- `stephenlclarke/containerization`: `a51832f51b57cd0209b4926f098987d5e8980051`
+- `stephenlclarke/container`: `89f75a510b9a96b7a9e613ec1541e7ae26af2463`
+- `stephenlclarke/containerization`: `fbc08e7037736137eb0ba87784351bf44d29cefe`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
 ## Latest Local Validation
@@ -28,7 +28,7 @@ The latest local validation for this compatibility refresh passed with `make ci`
 
 Current full coverage proof:
 
-- Swift: 846 Compose tests at 89.31% line coverage.
+- Swift: 846 Compose tests at 89.17% line coverage.
 - Go normalizer: 92.56% line coverage.
 
 ## Recent Functional State
@@ -54,7 +54,8 @@ Current full coverage proof:
 - Build support assumes the matching `stephenlclarke/container` build backend and the current builder image. Build secrets that cannot be materialized as file/env-backed secret IDs remain unsupported.
 - Root `--parallel` support currently applies to repeated `pull` and `push` image operations. Dry-run output, build planning, create/start ordering, dependency traversal, and runtime lifecycle reconciliation remain deterministic and ordered.
 - `.dockerignore` negation patterns that re-include descendants under an excluded parent remain a builder-shim build-context gap tracked by [apple/container#1800](https://github.com/apple/container/issues/1800) and [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87); the plugin preserves Compose build inputs and delegates context transfer to the fork-backed build backend, so Docker-compatible filtering depends on the builder-shim fix.
-- Implicit or relative build contexts from symlinked temporary directories, such as `/var` resolving through `/private/var`, remain a runtime build-context gap tracked by [apple/container#1899](https://github.com/apple/container/issues/1899); the plugin already resolves Compose service build contexts to project-absolute paths where it owns the handoff, but runtime-default `container build` behavior still depends on the upstream canonicalization fix.
+- Service healthcheck execution and healthy/unhealthy state remain blocked until Apple exposes runtime healthcheck support; [apple/container#1918](https://github.com/apple/container/issues/1918) is the current upstream request covering healthcheck config, observation, API state, and CLI display.
+- Implicit or relative build contexts from symlinked temporary directories, such as `/var` resolving through `/private/var`, remain a runtime build-context gap tracked by [apple/container#1899](https://github.com/apple/container/issues/1899) and fix candidate [apple/container#1922](https://github.com/apple/container/pull/1922); the plugin already resolves Compose service build contexts to project-absolute paths where it owns the handoff, but runtime-default `container build` behavior still depends on the upstream canonicalization fix.
 - Nested bind mounts that overlay a subdirectory within an earlier bind mount remain an Apple runtime gap tracked by [apple/container#1890](https://github.com/apple/container/issues/1890); the plugin can preserve and order the mount entries, but Docker-compatible mount-over-mount behavior depends on runtime support.
 - Namespace sharing via `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME` remains blocked until the runtime exposes Docker-compatible namespace-joining primitives.
 - Driver-specific `networks.<name>.ipam.options` remain blocked until the runtime exposes a Docker-compatible IPAM option surface.
