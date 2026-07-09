@@ -44,7 +44,7 @@ discussion.
 
 For Stephen-owned stack work, keep `main` as the current integration branch in `container-builder-shim`, `containerization`, `container`, and `container-compose`. Start a short-lived branch only when it makes review or recovery clearer. Land validated work on `main` before release, then delete the branch locally and remotely unless it is still needed for an open review.
 
-Most work does not need the release helper. Use `CONTAINER_STACK_RELEASE.sh` only at a version boundary: `plan` to inspect clean four-repo state, `release VERSION_SELECTOR --execute` to promote a stable release from `main`, and `package VERSION --execute` only to repair an existing stable tag without moving it. The helper explicitly dispatches and waits for the semantic-tag package workflow so GitHub Actions publishes stable releases for `container-compose` and updates the stable Homebrew formula.
+Most work does not need the release helper. Use `scripts/CONTAINER_STACK_RELEASE.sh` only at a version boundary: `plan` to inspect clean four-repo state, `release VERSION_SELECTOR --execute` to promote a stable release from `main`, and `package VERSION --execute` only to repair an existing stable tag without moving it. The helper explicitly dispatches and waits for the semantic-tag package workflow so GitHub Actions publishes stable releases for `container-compose` and updates the stable Homebrew formula.
 
 apple/container uses squash-and-merge for upstream pull requests, so make the
 pull request title and body clear enough to stand alone as the final change

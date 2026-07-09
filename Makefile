@@ -135,17 +135,17 @@ release:
 		printf 'VERSION_SELECTOR is required, for example: make release VERSION_SELECTOR=--+\n' >&2; \
 		exit 2; \
 	}
-	./CONTAINER_STACK_RELEASE.sh release "$(VERSION_SELECTOR)" --execute
+	./scripts/CONTAINER_STACK_RELEASE.sh release "$(VERSION_SELECTOR)" --execute
 
 release-plan:
-	./CONTAINER_STACK_RELEASE.sh plan
+	./scripts/CONTAINER_STACK_RELEASE.sh plan
 
 repackage-release:
 	@test -n "$(VERSION)" || { \
 		printf 'VERSION is required, for example: make repackage-release VERSION=0.6.4\n' >&2; \
 		exit 2; \
 	}
-	./CONTAINER_STACK_RELEASE.sh package "$(VERSION)" --execute
+	./scripts/CONTAINER_STACK_RELEASE.sh package "$(VERSION)" --execute
 
 resolve:
 	$(SWIFT) package resolve

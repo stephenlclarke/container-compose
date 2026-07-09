@@ -243,6 +243,35 @@ jobs:
             printf 'package_lane=%s\n' "${package_lane}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Resolve stack refs
+        id: stack-refs
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          manifest = Path("Tools/release/stack-refs.json")
+          if not manifest.exists():
+              print("container_builder_shim_ref=")
+              print("containerization_ref=")
+              print("container_ref=")
+              raise SystemExit(0)
+
+          data = json.loads(manifest.read_text(encoding="utf-8"))
+          components = data.get("components", {})
+
+          def ref(name):
+              value = components.get(name, {})
+              return value.get("ref", "")
+
+          print(f"container_builder_shim_ref={ref('container-builder-shim')}")
+          print(f"containerization_ref={ref('containerization')}")
+          print(f"container_ref={ref('container')}")
+          PY
+
       - name: Resolve container ref
         id: container-ref
         shell: bash
@@ -254,6 +283,22 @@ jobs:
             exit 1
           fi
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout container-builder-shim dependency
+        if: steps.stack-refs.outputs.container_builder_shim_ref != ''
+        uses: actions/checkout@v7
+        with:
+          repository: stephenlclarke/container-builder-shim
+          path: container-builder-shim
+          ref: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+
+      - name: Checkout containerization dependency
+        if: steps.stack-refs.outputs.containerization_ref != ''
+        uses: actions/checkout@v7
+        with:
+          repository: stephenlclarke/containerization
+          path: containerization
+          ref: ${{ steps.stack-refs.outputs.containerization_ref }}
 
       - name: Checkout container dependency
         uses: actions/checkout@v7
@@ -353,7 +398,10 @@ jobs:
             --compose-version "${COMPOSE_VERSION}" \
             --asset "${ASSET}" \
             --asset-sha "${sha256}" \
-            --head "${PUBLISH_SHA}" > "${notes}"
+            --head "${PUBLISH_SHA}" \
+            --component-repo container-builder-shim=../container-builder-shim \
+            --component-repo containerization=../containerization \
+            --component-repo container=../container > "${notes}"
 
           tag_target="$(
             git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" \

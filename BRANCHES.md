@@ -24,7 +24,7 @@ Keep this guide in `container-compose` only. Do not copy it into Apple upstream 
 
 Use short-lived topic branches only when they make review or recovery clearer. Land validated work back on `main` before release, then delete the branch locally and remotely unless it is still needed for an open review.
 
-Do not create additional long-lived integration or packaging lanes. Historical non-main branches are references only.
+Do not create additional long-lived integration or packaging lanes. Non-main branches are topic or review references only.
 
 ## Version And Release Rhythm
 
@@ -40,14 +40,14 @@ Main-lane package artifacts are validation artifacts only. They prove that the c
 
 ## Release Helper
 
-`CONTAINER_STACK_RELEASE.sh` is the maintainer helper for stack release boundaries. It is not required for ordinary edits on `main`.
+`scripts/CONTAINER_STACK_RELEASE.sh` is the maintainer helper for stack release boundaries. It is not required for ordinary edits on `main`.
 
 Run it from the `container-compose` checkout through Makefile targets:
 
 ```sh
 make release-plan
 make release VERSION_SELECTOR=--+
-make repackage-release VERSION=0.6.5
+make repackage-release VERSION=MAJOR.MINOR.PATCH
 ```
 
 `make release-plan` is a dry run. `make release` validates clean worktrees and Stephen-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for the release assets and Homebrew tap update, verifies the live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.

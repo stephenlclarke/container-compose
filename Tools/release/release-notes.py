@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from pathlib import Path
 
 
 STABLE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+$")
+STACK_REFS_PATH = "Tools/release/stack-refs.json"
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,15 @@ class ReleaseRange:
     head_commit: str
 
 
+@dataclass(frozen=True)
+class ComponentChange:
+    name: str
+    repository: str
+    previous_ref: str
+    current_ref: str
+    commits: tuple[CommitSummary, ...]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default=".")
@@ -53,6 +64,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--asset", required=True)
     parser.add_argument("--asset-sha", required=True)
     parser.add_argument("--head", default="HEAD")
+    parser.add_argument(
+        "--component-repo",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="Component repository checkout used to summarize stack changes.",
+    )
     return parser.parse_args()
 
 
@@ -130,12 +148,7 @@ def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
     )
 
 
-def commits_for_range(repo: Path, selected_range: ReleaseRange) -> list[CommitSummary]:
-    revision = (
-        f"{selected_range.base_ref}..{selected_range.head_ref}"
-        if selected_range.base_ref is not None
-        else selected_range.head_ref
-    )
+def commits_for_revision(repo: Path, revision: str) -> list[CommitSummary]:
     output = git_output(
         repo,
         "log",
@@ -175,6 +188,15 @@ def commits_for_range(repo: Path, selected_range: ReleaseRange) -> list[CommitSu
             )
         )
     return commits
+
+
+def commits_for_range(repo: Path, selected_range: ReleaseRange) -> list[CommitSummary]:
+    revision = (
+        f"{selected_range.base_ref}..{selected_range.head_ref}"
+        if selected_range.base_ref is not None
+        else selected_range.head_ref
+    )
+    return commits_for_revision(repo, revision)
 
 
 def explicit_release_highlights(*values: str) -> list[str]:
@@ -242,6 +264,26 @@ def release_highlights(commits: list[CommitSummary]) -> list[str]:
     return highlights
 
 
+def combined_release_highlights(
+    commits: list[CommitSummary],
+    component_changes: list[ComponentChange],
+) -> list[str]:
+    highlights: list[str] = []
+    seen: set[str] = set()
+
+    def append_unique(values: list[str]) -> None:
+        for value in values:
+            if value in seen:
+                continue
+            seen.add(value)
+            highlights.append(value)
+
+    append_unique(release_highlights(commits))
+    for change in component_changes:
+        append_unique(release_highlights(list(change.commits)))
+    return highlights
+
+
 def ensure_sentence(value: str) -> str:
     value = value.strip()
     if not value:
@@ -249,6 +291,93 @@ def ensure_sentence(value: str) -> str:
     if value[-1] in ".!?":
         return value
     return f"{value}."
+
+
+def short_ref(ref: str) -> str:
+    return ref[:12]
+
+
+def parse_component_repos(values: list[str]) -> dict[str, Path]:
+    repos: dict[str, Path] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError(f"component repo must be NAME=PATH: {value}")
+        name, path = value.split("=", maxsplit=1)
+        name = name.strip()
+        path = path.strip()
+        if not name or not path:
+            raise ValueError(f"component repo must be NAME=PATH: {value}")
+        repos[name] = Path(path)
+    return repos
+
+
+def stack_refs_for_ref(repo: Path, ref: str | None) -> dict[str, dict[str, str]]:
+    if ref is None:
+        return {}
+    output = git_output(repo, "show", f"{ref}:{STACK_REFS_PATH}")
+    if output is None:
+        return {}
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return {}
+    components = data.get("components")
+    if not isinstance(components, dict):
+        return {}
+
+    refs: dict[str, dict[str, str]] = {}
+    for name, value in components.items():
+        if not isinstance(name, str) or not isinstance(value, dict):
+            continue
+        repository = value.get("repository")
+        ref_value = value.get("ref")
+        if isinstance(repository, str) and isinstance(ref_value, str):
+            refs[name] = {"repository": repository, "ref": ref_value}
+    return refs
+
+
+def has_commit(repo: Path, ref: str) -> bool:
+    return commit_for_ref(repo, ref) is not None
+
+
+def component_changes(
+    *,
+    repo: Path,
+    selected_range: ReleaseRange,
+    component_repos: dict[str, Path],
+) -> list[ComponentChange]:
+    current_refs = stack_refs_for_ref(repo, selected_range.head_ref)
+    previous_refs = stack_refs_for_ref(repo, selected_range.base_ref)
+    changes: list[ComponentChange] = []
+
+    for name, current in current_refs.items():
+        current_ref = current["ref"]
+        previous_ref = previous_refs.get(name, {}).get("ref")
+        if previous_ref is None or previous_ref == current_ref:
+            continue
+
+        commits: tuple[CommitSummary, ...] = ()
+        component_repo = component_repos.get(name)
+        if (
+            component_repo is not None
+            and has_commit(component_repo, previous_ref)
+            and has_commit(component_repo, current_ref)
+        ):
+            commits = tuple(
+                commits_for_revision(component_repo, f"{previous_ref}..{current_ref}")
+            )
+
+        changes.append(
+            ComponentChange(
+                name=name,
+                repository=current["repository"],
+                previous_ref=previous_ref,
+                current_ref=current_ref,
+                commits=commits,
+            )
+        )
+
+    return changes
 
 
 def render_release_notes(
@@ -260,10 +389,16 @@ def render_release_notes(
     asset: str,
     asset_sha: str,
     head_ref: str,
+    component_repos: dict[str, Path] | None = None,
 ) -> str:
     selected_range = release_range(repo, release_tag, head_ref)
     commits = commits_for_range(repo, selected_range)
-    highlights = release_highlights(commits)
+    component_deltas = component_changes(
+        repo=repo,
+        selected_range=selected_range,
+        component_repos=component_repos or {},
+    )
+    highlights = combined_release_highlights(commits, component_deltas)
     head_short = selected_range.head_commit[:12]
     stable_release = is_stable_release_tag(release_tag)
 
@@ -299,6 +434,20 @@ def render_release_notes(
         lines.extend(f"- `{commit.short_hash}` {commit.subject}" for commit in commits)
     else:
         lines.append("- No source commits changed since the previous package for this lane.")
+
+    if component_deltas:
+        lines.extend(["", "## Component Changes", ""])
+        for change in component_deltas:
+            lines.append(
+                f"- `{change.name}` `{short_ref(change.previous_ref)}` -> `{short_ref(change.current_ref)}`"
+            )
+            if change.commits:
+                lines.extend(
+                    f"  - `{commit.short_hash}` {commit.subject}"
+                    for commit in change.commits
+                )
+            else:
+                lines.append("  - Commit details unavailable in this workflow checkout.")
 
     lines.extend(
         [
@@ -381,6 +530,7 @@ def main() -> None:
                 asset=args.asset,
                 asset_sha=args.asset_sha,
                 head_ref=args.head,
+                component_repos=parse_component_repos(args.component_repo),
             ),
             end="",
         )

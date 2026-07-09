@@ -18,6 +18,7 @@
 """Unit tests for prebuilt release note rendering."""
 
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -203,6 +204,82 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("ci(release): prune older assets", notes)
             self.assertNotIn("chore: initial import", notes)
 
+    def test_stack_component_changes_render_highlights(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            component = root / "container"
+            compose = root / "compose"
+
+            self.init_repo(component)
+            previous_component_ref = self.git(component, "rev-parse", "HEAD")
+            self.commit(
+                component,
+                "fix(build): align context symlink handling with upstream",
+                body="""
+                Preserve literal symlink targets and canonical path aliases in
+                build contexts.
+
+                Release-Note: Supports Compose builds from symlinked `/var` workspaces by preserving literal symlink targets and `/private/var` aliases.
+                """,
+            )
+            current_component_ref = self.git(component, "rev-parse", "HEAD")
+
+            self.init_repo(compose)
+            self.write_stack_refs(compose, previous_component_ref)
+            self.git(compose, "add", "Tools/release/stack-refs.json")
+            self.git(
+                compose,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "chore(release): record stack refs",
+            )
+            self.git(compose, "tag", "--no-sign", "0.6.0")
+            self.write_stack_refs(compose, current_component_ref)
+            self.git(compose, "add", "Tools/release/stack-refs.json")
+            self.git(
+                compose,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "chore(release): prepare 0.6.1",
+            )
+            self.git(compose, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=compose,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+                component_repos={"container": component},
+            )
+
+            self.assertIn("## Highlights", notes)
+            self.assertIn(
+                "- Supports Compose builds from symlinked `/var` workspaces by "
+                "preserving literal symlink targets and `/private/var` aliases.",
+                notes,
+            )
+            self.assertIn("## Component Changes", notes)
+            self.assertIn(
+                f"- `container` `{previous_component_ref[:12]}` -> `{current_component_ref[:12]}`",
+                notes,
+            )
+            self.assertIn(
+                "fix(build): align context symlink handling with upstream",
+                notes,
+            )
+
     def test_first_release_lists_current_commit(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
@@ -224,8 +301,30 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertNotIn("## Highlights", notes)
 
     def init_repo(self, repo: Path) -> None:
+        repo.mkdir(parents=True, exist_ok=True)
         self.git(repo, "init", "-b", "main")
         self.commit(repo, "chore: initial import")
+
+    def write_stack_refs(self, repo: Path, container_ref: str) -> None:
+        path = repo / "Tools" / "release"
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "stack-refs.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "components": {
+                        "container": {
+                            "repository": "stephenlclarke/container",
+                            "ref": container_ref,
+                        }
+                    },
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     def commit(self, repo: Path, message: str, body: str | None = None) -> None:
         index = len(list(repo.glob("*.txt")))

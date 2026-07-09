@@ -1,12 +1,32 @@
 #!/usr/bin/env bash
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
 set -Eeuo pipefail
 
+readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
+readonly SCRIPT_NAME="$(basename "${SELF_PATH}")"
+readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
+
 usage() {
-  cat <<'USAGE'
+  cat <<USAGE
 Usage:
-  CONTAINER_STACK_RELEASE.sh plan
-  CONTAINER_STACK_RELEASE.sh release VERSION_SELECTOR [--execute]
-  CONTAINER_STACK_RELEASE.sh package VERSION [--execute]
+  ${SCRIPT_USAGE} plan
+  ${SCRIPT_USAGE} release VERSION_SELECTOR [--execute]
+  ${SCRIPT_USAGE} package VERSION [--execute]
 
 Purpose:
   Coordinate the simplified Stephen-owned container stack release flow without
@@ -460,6 +480,50 @@ print_component_refs() {
   done
 }
 
+write_release_stack_manifest() {
+  local path manifest builder_ref containerization_ref container_ref
+  path="$(repo_path "${COMPOSE_REPO}")"
+  manifest="${path}/Tools/release/stack-refs.json"
+  builder_ref="$(git -C "$(repo_path "container-builder-shim")" rev-parse main)"
+  containerization_ref="$(git -C "$(repo_path "containerization")" rev-parse main)"
+  container_ref="$(git -C "$(repo_path "container")" rev-parse main)"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would update: %s\n' "${manifest}"
+    printf '  container-builder-shim: %s\n' "${builder_ref}"
+    printf '  containerization:       %s\n' "${containerization_ref}"
+    printf '  container:              %s\n' "${container_ref}"
+    return 0
+  fi
+
+  python3 - "${manifest}" "${builder_ref}" "${containerization_ref}" "${container_ref}" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+manifest = Path(sys.argv[1])
+manifest.parent.mkdir(parents=True, exist_ok=True)
+data = {
+    "schemaVersion": 1,
+    "components": {
+        "container-builder-shim": {
+            "repository": "stephenlclarke/container-builder-shim",
+            "ref": sys.argv[2],
+        },
+        "containerization": {
+            "repository": "stephenlclarke/containerization",
+            "ref": sys.argv[3],
+        },
+        "container": {
+            "repository": "stephenlclarke/container",
+            "ref": sys.argv[4],
+        },
+    },
+}
+manifest.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
 push_all_main() {
   local repo path remote
   print_header "push Stephen-owned main branches"
@@ -767,10 +831,21 @@ release_current_stack() {
       printf 'would update: %s\n' "${path}/Makefile"
       printf 'would update: %s\n' "${path}/Sources/ComposePlugin/ComposePlugin.swift"
     fi
-    run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift
-    run git -C "${path}" commit -m "chore(release): prepare ${version}"
   else
     printf 'container-compose version files already declare %s\n' "${version}"
+  fi
+  write_release_stack_manifest
+
+  if [[ "${EXECUTE}" == "1" ]]; then
+    git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
+    if ! git -C "${path}" diff --cached --quiet -- Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json; then
+      run git -C "${path}" commit -m "chore(release): prepare ${version}"
+    else
+      printf 'release prep files already match %s\n' "${version}"
+    fi
+  else
+    run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
+    run git -C "${path}" commit -m "chore(release): prepare ${version}"
   fi
 
   ensure_clean "${COMPOSE_REPO}"
