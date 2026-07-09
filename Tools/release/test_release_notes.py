@@ -215,12 +215,12 @@ class ReleaseNotesTests(unittest.TestCase):
             previous_component_ref = self.git(component, "rev-parse", "HEAD")
             self.commit(
                 component,
-                "fix(build): align context symlink handling with upstream",
+                "fix(runtime): clean up attached exec on disconnect",
                 body="""
-                Preserve literal symlink targets and canonical path aliases in
-                build contexts.
+                Clean up attached exec sessions when the client disappears
+                while preserving detached exec process lifetime.
 
-                Release-Note: Supports Compose builds from symlinked `/var` workspaces by preserving literal symlink targets and `/private/var` aliases.
+                Release-Highlight: Improves container compose exec reliability by killing attached exec processes when the client disconnects, preventing orphaned sessions from blocking later exec or stop operations while preserving detached exec; ports the useful cleanup from apple/container#1926 for apple/container#1916.
                 """,
             )
             current_component_ref = self.git(component, "rev-parse", "HEAD")
@@ -266,8 +266,11 @@ class ReleaseNotesTests(unittest.TestCase):
 
             self.assertIn("## Highlights", notes)
             self.assertIn(
-                "- Supports Compose builds from symlinked `/var` workspaces by "
-                "preserving literal symlink targets and `/private/var` aliases.",
+                "- Improves container compose exec reliability by killing attached "
+                "exec processes when the client disconnects, preventing orphaned "
+                "sessions from blocking later exec or stop operations while "
+                "preserving detached exec; ports the useful cleanup from "
+                "apple/container#1926 for apple/container#1916.",
                 notes,
             )
             self.assertIn("## Component Changes", notes)
@@ -276,7 +279,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 notes,
             )
             self.assertIn(
-                "fix(build): align context symlink handling with upstream",
+                "fix(runtime): clean up attached exec on disconnect",
                 notes,
             )
 
