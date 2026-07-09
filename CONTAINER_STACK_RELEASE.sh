@@ -113,6 +113,7 @@ RELEASE_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_WAIT_SECONDS:-3600}"
 RELEASE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_POLL_SECONDS:-30}"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
 COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
+COMPOSE_STABLE_PACKAGE_SHA=""
 REPOS=(
   "container-builder-shim"
   "containerization"
@@ -608,7 +609,48 @@ verify_compose_stable_package() {
     exit 1
   fi
 
+  COMPOSE_STABLE_PACKAGE_SHA="${asset_sha}"
   printf 'container-compose %s package verified: %s\n' "${version}" "${asset_sha}"
+}
+
+sync_source_homebrew_formula() {
+  local version="$1" asset_sha="$2" path asset url status remote
+  path="$(repo_path "${COMPOSE_REPO}")"
+  asset="container-compose-plugin-release-arm64.tar.gz"
+  url="https://github.com/$(github_repo "${COMPOSE_REPO}")/releases/download/${version}/${asset}"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+
+  print_header "sync source Homebrew formula template"
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would update: %s\n' "${path}/Formula/container-compose.rb"
+    printf 'would commit and push source formula sync for %s\n' "${version}"
+    return 0
+  fi
+
+  if [[ -z "${asset_sha}" ]]; then
+    printf 'cannot sync source formula: verified package SHA is empty\n' >&2
+    exit 1
+  fi
+
+  python3 "${path}/Tools/release/update-homebrew-formula.py" \
+    --formula "${path}/Formula/container-compose.rb" \
+    --url "${url}" \
+    --version "${version}" \
+    --plugin-version "${version}" \
+    --asset "${asset}" \
+    --label "stable release" \
+    --sha256 "${asset_sha}"
+  ruby -c "${path}/Formula/container-compose.rb"
+
+  status="$(git -C "${path}" status --short -- Formula/container-compose.rb)"
+  if [[ -z "${status}" ]]; then
+    printf 'source Homebrew formula template already points at %s\n' "${version}"
+    return 0
+  fi
+
+  run git -C "${path}" add Formula/container-compose.rb
+  run git -C "${path}" commit -m "chore(release): sync source formula ${version}"
+  run git -C "${path}" push "${remote}" "refs/heads/main"
 }
 
 # Dispatch and wait for the stable compose package workflow for a semantic tag.
@@ -682,6 +724,7 @@ package_existing_stable() {
   fi
 
   dispatch_compose_stable_package "${version}"
+  sync_source_homebrew_formula "${version}" "${COMPOSE_STABLE_PACKAGE_SHA}"
 }
 
 release_current_stack() {
@@ -717,6 +760,7 @@ release_current_stack() {
   push_all_main
   wait_for_container_homebrew_package
   tag_stable_version "${version}"
+  sync_source_homebrew_formula "${version}" "${COMPOSE_STABLE_PACKAGE_SHA}"
 }
 
 # Update compose version declarations and local smoke expectations.
