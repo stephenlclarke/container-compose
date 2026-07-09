@@ -1,5 +1,9 @@
 {
   "components": {
+    "container": {
+      "ref": "bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb",
+      "repository": "stephenlclarke/container"
+    },
     "container-builder-shim": {
       "ref": "54c8b93547a7b4672dd9aa91a92a311115c80a93",
       "repository": "stephenlclarke/container-builder-shim"
@@ -7,10 +11,6 @@
     "containerization": {
       "ref": "fbc08e7037736137eb0ba87784351bf44d29cefe",
       "repository": "stephenlclarke/containerization"
-    },
-    "container": {
-      "ref": "bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb",
-      "repository": "stephenlclarke/container"
     }
   },
   "schemaVersion": 1
