@@ -153,7 +153,7 @@ extension ComposeContainerSummary {
 
 extension ComposeProject {
     /// Returns a copy scoped to explicitly selected services for `compose config`.
-    func filtered(to selected: [String]) throws -> ComposeProject {
+    func filtered(to selected: [String], allResources: Bool = false) throws -> ComposeProject {
         guard !selected.isEmpty else {
             return self
         }
@@ -165,6 +165,9 @@ extension ComposeProject {
             return (name, service)
         }
         copy.services = Dictionary(uniqueKeysWithValues: selectedServices)
+        if allResources {
+            return copy
+        }
 
         let networkNames = Set(selectedServices.flatMap { _, service in service.networks ?? [] })
         copy.networks = copy.networks.filter { networkNames.contains($0.key) }
@@ -181,8 +184,36 @@ extension ComposeProject {
             }
         })
         copy.volumes = copy.volumes.filter { volumeNames.contains($0.key) }
+        let configNames = Set(selectedServices.flatMap { _, service in referencedComposeResources(service.configs) })
+        copy.configs = filteredComposeResourceMap(copy.configs, referencedBy: configNames)
+        let secretNames = Set(selectedServices.flatMap { _, service in referencedComposeResources(service.secrets) })
+        copy.secrets = filteredComposeResourceMap(copy.secrets, referencedBy: secretNames)
 
         return copy
+    }
+
+    private func referencedComposeResources(_ resources: [ComposeValue]?) -> [String] {
+        resources?.compactMap { resource in
+            switch resource {
+            case .string(let name):
+                return name
+            case .object(let fields):
+                if case .string(let source)? = fields["source"] {
+                    return source
+                }
+                return nil
+            default:
+                return nil
+            }
+        } ?? []
+    }
+
+    private func filteredComposeResourceMap<T>(_ resources: [String: T]?, referencedBy names: Set<String>) -> [String: T]? {
+        guard let resources else {
+            return nil
+        }
+        let filtered = resources.filter { names.contains($0.key) }
+        return filtered.isEmpty ? nil : filtered
     }
 }
 

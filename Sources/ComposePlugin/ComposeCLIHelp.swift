@@ -336,7 +336,7 @@ enum ComposeCLIHelp {
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
         "": [
-            "--all-resources": .notSupported,
+            "--all-resources": .supported,
             "--ansi": .supported,
             "--compatibility": .notSupported,
             "--dry-run": .supported,

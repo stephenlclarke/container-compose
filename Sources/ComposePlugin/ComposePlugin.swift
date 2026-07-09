@@ -820,6 +820,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
         let configOptions = ComposeConfigOptions {
             $0.commandName = "config"
             $0.services = services
+            $0.allResources = global.allResources
             $0.environment = environment
             $0.format = format
             $0.hash = hash
@@ -892,6 +893,7 @@ struct Convert: AsyncParsableCommand, ComposeProjectCommand {
         let configOptions = ComposeConfigOptions {
             $0.commandName = "convert"
             $0.services = services
+            $0.allResources = global.allResources
             $0.format = format
             $0.hash = hash
             $0.images = images

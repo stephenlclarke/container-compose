@@ -12,6 +12,8 @@ The check compares:
 
 The check intentionally ignores help prose wrapping, support-colour annotations, and option descriptions. Runtime behavior parity remains covered by the existing local-only Docker-backed parity targets for build builder selection, build checks, create-time options, events, and restart policies.
 
+For root `--all-resources` behavior specifically, run `make docker-compose-config-all-resources-parity`. That target compares Docker Compose V2 and `container-compose` selected-service `config` output, verifies `--all-resources` keeps unreferenced top-level networks, volumes, configs, and secrets while filtering services, and confirms `config --services` ignores service arguments the same way Docker Compose does.
+
 For `build --builder` behavior specifically, run `make docker-compose-build-builder-parity`. That target compares Docker Compose V2 `build --builder default --print` and `build --builder NAME --print` with the same `container compose` commands using a daemon-free local fixture, then verifies the selected builder does not leak into Buildx bake JSON in print mode.
 
 For `build.isolation` behavior specifically, run `make docker-compose-build-isolation-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with `build.isolation: hyperv`, verifies both preserve the value in config output, confirms both omit the field from Buildx bake JSON on this platform, and proves the local Docker Compose build path accepts the field.

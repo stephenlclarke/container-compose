@@ -126,6 +126,7 @@ public struct ComposeRestartOptions {
 public struct ComposeConfigOptions {
     public var commandName = "config"
     public var services: [String] = []
+    public var allResources = false
     public var environment = false
     public var format: String?
     public var hash: String?
@@ -143,6 +144,7 @@ public struct ComposeConfigOptions {
     public init() {
         commandName = "config"
         services = []
+        allResources = false
         environment = false
         format = nil
         hash = nil

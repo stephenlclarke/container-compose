@@ -34,6 +34,8 @@ have backing `apple/container` functionality fail with an explicit
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
+The root `--all-resources` option is supported for normalized `config` and `convert` output: selected-service renderings keep the selected services while preserving unreferenced top-level networks, volumes, configs, and secrets.
+
 The current parity ledger lives in [STATUS.md](STATUS.md). It lists the Docker Compose v2 file, Dockerfile/build, runtime, and CLI surfaces with ✅ yes, ⚠️ partial, and ❌ no indicators plus details for every partial surface.
 
 Long-running project loading, image pull/build, and non-interactive runtime

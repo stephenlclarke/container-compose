@@ -10475,6 +10475,10 @@ struct ComposeOrchestratorTests {
         #expect(try orchestrator.config(project: project).contains("ALPHA") == false)
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.environment = true }) == "ALPHA=one\nBETA=two")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.servicesOnly = true }) == "api\nworker")
+        #expect(try orchestrator.config(project: project, options: ComposeConfigOptions {
+            $0.servicesOnly = true
+            $0.services = ["missing"]
+        }) == "api\nworker")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.images = true }) == "demo_worker:latest\nexample/api")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.networks = true }) == "back\nfront")
         #expect(try orchestrator.config(project: project, options: ComposeConfigOptions { $0.profiles = true }) == "debug\ndev")
@@ -10503,14 +10507,26 @@ struct ComposeOrchestratorTests {
                 "api": composeService(name: "api", image: "example/api") {
                     $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
                     $0.networks = ["front"]
+                    $0.configs = [.object(["source": .string("app_config")])]
+                    $0.secrets = [.object(["source": .string("app_secret")])]
                 },
                 "worker": composeService(name: "worker", image: "example/worker") {
                     $0.networks = ["back"]
+                    $0.configs = [.object(["source": .string("worker_config")])]
+                    $0.secrets = [.object(["source": .string("worker_secret")])]
                 },
             ]
         ) {
             $0.networks = ["front": ComposeNetwork(name: "front"), "back": ComposeNetwork(name: "back")]
             $0.volumes = ["cache": ComposeVolume(name: "cache"), "unused": ComposeVolume(name: "unused")]
+            $0.configs = [
+                "app_config": .object(["external": .bool(true)]),
+                "worker_config": .object(["external": .bool(true)]),
+            ]
+            $0.secrets = [
+                "app_secret": .object(["external": .bool(true)]),
+                "worker_secret": .object(["external": .bool(true)]),
+            ]
         }
 
         let json = try ComposeOrchestrator().config(
@@ -10525,6 +10541,56 @@ struct ComposeOrchestratorTests {
         #expect(decoded.services.keys.sorted() == ["api"])
         #expect(decoded.networks.keys.sorted() == ["front"])
         #expect(decoded.volumes.keys.sorted() == ["cache"])
+        #expect(decoded.configs?.keys.sorted() == ["app_config"])
+        #expect(decoded.secrets?.keys.sorted() == ["app_secret"])
+    }
+
+    @Test("config all resources keeps unselected top level resources")
+    func configAllResourcesKeepsUnselectedTopLevelResources() throws {
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.networks = ["front"]
+                    $0.configs = [.object(["source": .string("app_config")])]
+                    $0.secrets = [.object(["source": .string("app_secret")])]
+                },
+                "worker": composeService(name: "worker", image: "example/worker") {
+                    $0.networks = ["back"]
+                    $0.volumes = [ComposeMount(type: "volume", source: "unused", target: "/unused")]
+                    $0.configs = [.object(["source": .string("worker_config")])]
+                    $0.secrets = [.object(["source": .string("worker_secret")])]
+                },
+            ]
+        ) {
+            $0.networks = ["front": ComposeNetwork(name: "front"), "back": ComposeNetwork(name: "back")]
+            $0.volumes = ["cache": ComposeVolume(name: "cache"), "unused": ComposeVolume(name: "unused")]
+            $0.configs = [
+                "app_config": .object(["external": .bool(true)]),
+                "worker_config": .object(["external": .bool(true)]),
+            ]
+            $0.secrets = [
+                "app_secret": .object(["external": .bool(true)]),
+                "worker_secret": .object(["external": .bool(true)]),
+            ]
+        }
+
+        let json = try ComposeOrchestrator().config(
+            project: project,
+            options: ComposeConfigOptions {
+                $0.services = ["api"]
+                $0.allResources = true
+                $0.format = "json"
+            }
+        )
+        let decoded = try JSONDecoder().decode(ComposeProject.self, from: Data(json.utf8))
+
+        #expect(decoded.services.keys.sorted() == ["api"])
+        #expect(decoded.networks.keys.sorted() == ["back", "front"])
+        #expect(decoded.volumes.keys.sorted() == ["cache", "unused"])
+        #expect(decoded.configs?.keys.sorted() == ["app_config", "worker_config"])
+        #expect(decoded.secrets?.keys.sorted() == ["app_secret", "worker_secret"])
     }
 
     @Test("config renders service hashes")
@@ -13675,6 +13741,32 @@ struct ComposeOrchestratorTests {
             .wait(id: "demo-api-1"),
             .delete(id: "demo-api-1", force: false),
         ])
+    }
+
+    @Test("lifecycle API client recovers stopped snapshot exit code after sentinel wait")
+    func lifecycleAPIClientRecoversStoppedSnapshotExitCodeAfterSentinelWait() async throws {
+        let snapshot = try containerSnapshot(
+            id: "demo-api-1",
+            status: .stopped,
+            imageReference: "example/api:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64",
+            exitCode: 7
+        )
+        let client = ContainerLifecycleAPIClient(
+            wait: { id in
+                #expect(id == "demo-api-1")
+                return 255
+            },
+            get: { id in
+                #expect(id == "demo-api-1")
+                return snapshot
+            }
+        )
+
+        let exitCode = try await client.waitContainer(id: "demo-api-1")
+
+        #expect(exitCode == 7)
     }
 
     @Test("discovery manager maps container snapshots to compose summaries")
@@ -23688,6 +23780,7 @@ private enum ContainerLifecycleRequest: Equatable {
     case pause(id: String)
     case unpause(id: String)
     case wait(id: String)
+    case get(id: String)
     case delete(id: String, force: Bool)
 }
 
@@ -25072,10 +25165,12 @@ private actor FileDeletionSleeper {
 
 private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     private let waitExitCodes: [String: Int32]
+    private let snapshots: [String: ContainerSnapshot]
     private var storage: [ContainerLifecycleRequest] = []
 
-    init(waitExitCodes: [String: Int32] = [:]) {
+    init(waitExitCodes: [String: Int32] = [:], snapshots: [String: ContainerSnapshot] = [:]) {
         self.waitExitCodes = waitExitCodes
+        self.snapshots = snapshots
     }
 
     var requests: [ContainerLifecycleRequest] {
@@ -25109,6 +25204,14 @@ private actor RecordingContainerLifecycleAPIClient: ContainerLifecycleAPIClienti
     func waitContainer(id: String) async throws -> Int32 {
         storage.append(.wait(id: id))
         return waitExitCodes[id] ?? 0
+    }
+
+    func getContainer(id: String) async throws -> ContainerSnapshot {
+        storage.append(.get(id: id))
+        guard let snapshot = snapshots[id] else {
+            throw ComposeError.invalidProject("missing container fixture '\(id)'")
+        }
+        return snapshot
     }
 
     func deleteContainer(id: String, force: Bool) async throws {

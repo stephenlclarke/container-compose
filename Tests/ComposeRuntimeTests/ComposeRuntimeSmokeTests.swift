@@ -294,7 +294,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(result.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(result.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
         #expect(result.stdout.contains("+ compose-runtime logs --follow --timestamps \(project)-api-1"))
     }
 
@@ -347,8 +347,8 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(selected.stdout.contains("+ container run --name \(project)-db-1 --detach"))
-        #expect(selected.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(selected.stdout.contains(containerDryRun("run --name \(project)-db-1 --detach")))
+        #expect(selected.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
         #expect(selected.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
         #expect(!selected.stdout.contains("+ compose-runtime logs --follow \(project)-db-1"))
         #expect(withDependencies.stdout.contains("+ compose-runtime logs --follow \(project)-db-1"))
@@ -389,7 +389,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(result.stdout.contains("+ container create --name \(project)-api-1"))
+        #expect(result.stdout.contains(containerDryRun("create --name \(project)-api-1")))
 
         let enabled = try runProcess(
             composeBinary,
@@ -402,7 +402,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(enabled.stdout.contains("+ container create --name \(project)-api-1"))
+        #expect(enabled.stdout.contains(containerDryRun("create --name \(project)-api-1")))
 
         let disabledEnvironment = try runProcess(
             composeBinary,
@@ -416,7 +416,7 @@ struct ComposeRuntimeSmokeTests {
             environment: ["COMPOSE_MENU": "true"]
         )
 
-        #expect(disabledEnvironment.stdout.contains("+ container create --name \(project)-api-1"))
+        #expect(disabledEnvironment.stdout.contains(containerDryRun("create --name \(project)-api-1")))
     }
 
     @Test("runtime dry run up accepts menu exit-control and menu watch")
@@ -458,9 +458,9 @@ struct ComposeRuntimeSmokeTests {
             ],
             timeout: 30
         )
-        #expect(exitControl.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(exitControl.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
         #expect(exitControl.stdout.contains("+ compose-runtime wait \(project)-api-1"))
-        #expect(exitControl.stdout.contains("+ container delete \(project)-api-1"))
+        #expect(exitControl.stdout.contains(containerDryRun("delete \(project)-api-1")))
 
         let watch = try runProcess(
             composeBinary,
@@ -472,7 +472,7 @@ struct ComposeRuntimeSmokeTests {
             ],
             timeout: 30
         )
-        #expect(watch.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(watch.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
         #expect(watch.stdout.contains("+ compose-runtime logs --follow \(project)-api-1"))
         #expect(!watch.stderr.contains("unsupported compose feature"))
 
@@ -487,9 +487,9 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30,
             environment: ["COMPOSE_MENU": "true"]
         )
-        #expect(environmentMenu.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(environmentMenu.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
         #expect(environmentMenu.stdout.contains("+ compose-runtime wait \(project)-api-1"))
-        #expect(environmentMenu.stdout.contains("+ container delete \(project)-api-1"))
+        #expect(environmentMenu.stdout.contains(containerDryRun("delete \(project)-api-1")))
     }
 
     @Test("runtime dry run up renders service privileged command")
@@ -527,7 +527,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(result.stdout.contains("+ container run --name \(project)-api-1 "))
+        #expect(result.stdout.contains(containerDryRun("run --name \(project)-api-1 ")))
         #expect(result.stdout.contains("--privileged"))
     }
 
@@ -634,10 +634,10 @@ struct ComposeRuntimeSmokeTests {
             ],
             timeout: 30
         )
-        #expect(dryRun.stdout.contains("+ container run --name \(project)-db-1 --detach"))
-        #expect(dryRun.stdout.contains("+ container run --name \(project)-api-1 --detach"))
+        #expect(dryRun.stdout.contains(containerDryRun("run --name \(project)-db-1 --detach")))
+        #expect(dryRun.stdout.contains(containerDryRun("run --name \(project)-api-1 --detach")))
         #expect(dryRun.stdout.contains("+ compose-runtime wait \(project)-api-1"))
-        #expect(dryRun.stdout.contains("+ container delete \(project)-api-1"))
+        #expect(dryRun.stdout.contains(containerDryRun("delete \(project)-api-1")))
 
         let result = try runProcess(
             composeBinary,
@@ -744,7 +744,7 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
 
-        #expect(result.stdout.contains("+ container exec --privileged --interactive \(project)-api-1 id"))
+        #expect(result.stdout.contains(containerDryRun("exec --privileged --interactive \(project)-api-1 id")))
     }
 
     @Test("runtime build print renders bake file from compose file")
@@ -1064,6 +1064,11 @@ struct ComposeRuntimeSmokeTests {
 
 private var runtimeTestsEnabled: Bool {
     ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_RUN_RUNTIME_TESTS"] == "1"
+}
+
+private func containerDryRun(_ arguments: String) -> String {
+    let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+    return "+ \(containerBinary) \(arguments)"
 }
 
 private func runtimeProjectName() -> String {

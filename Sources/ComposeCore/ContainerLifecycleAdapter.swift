@@ -38,6 +38,9 @@ public protocol ContainerLifecycleAPIClienting: Sendable {
     /// Waits for container `id`'s init process and returns its exit code.
     func waitContainer(id: String) async throws -> Int32
 
+    /// Returns the current container snapshot for `id`.
+    func getContainer(id: String) async throws -> ContainerSnapshot
+
     /// Deletes container `id`, forcing removal when requested.
     func deleteContainer(id: String, force: Bool) async throws
 }
@@ -75,6 +78,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     public typealias Pause = @Sendable (String) async throws -> Void
     public typealias Unpause = @Sendable (String) async throws -> Void
     public typealias Wait = @Sendable (String) async throws -> Int32
+    public typealias Get = @Sendable (String) async throws -> ContainerSnapshot
     public typealias Delete = @Sendable (String, Bool) async throws -> Void
 
     private let startOperation: Start
@@ -83,6 +87,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     private let pauseOperation: Pause
     private let unpauseOperation: Unpause
     private let waitOperation: Wait
+    private let getOperation: Get
     private let deleteOperation: Delete
 
     public init(
@@ -92,6 +97,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
         pause: @escaping Pause = { try await ContainerClient().pause(id: $0) },
         unpause: @escaping Unpause = { try await ContainerClient().unpause(id: $0) },
         wait: @escaping Wait = ContainerLifecycleLiveAdapter.wait,
+        get: @escaping Get = { try await ContainerClient().get(id: $0) },
         delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) }
     ) {
         self.startOperation = start
@@ -100,6 +106,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
         self.pauseOperation = pause
         self.unpauseOperation = unpause
         self.waitOperation = wait
+        self.getOperation = get
         self.deleteOperation = delete
     }
 
@@ -130,12 +137,36 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
 
     /// Waits for a container init process through `ContainerClient`.
     public func waitContainer(id: String) async throws -> Int32 {
-        try await waitOperation(id)
+        let exitCode = try await waitOperation(id)
+        if exitCode == 255 {
+            do {
+                if let snapshotExitCode = try await stoppedSnapshotExitCode(id: id) {
+                    return snapshotExitCode
+                }
+            } catch {
+                return exitCode
+            }
+        }
+        return exitCode
+    }
+
+    /// Returns the container snapshot through `ContainerClient`.
+    public func getContainer(id: String) async throws -> ContainerSnapshot {
+        try await getOperation(id)
     }
 
     /// Deletes a container through `ContainerClient`.
     public func deleteContainer(id: String, force: Bool) async throws {
         try await deleteOperation(id, force)
+    }
+
+    /// Recovers exit status for short-lived containers whose wait was registered late.
+    private func stoppedSnapshotExitCode(id: String) async throws -> Int32? {
+        let snapshot = try await getOperation(id)
+        guard snapshot.status == .stopped else {
+            return nil
+        }
+        return snapshot.exitCode
     }
 }
 

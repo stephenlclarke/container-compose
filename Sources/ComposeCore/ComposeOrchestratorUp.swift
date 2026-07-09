@@ -104,7 +104,7 @@ extension ComposeOrchestrator {
             return lineProjection(Array(Set(project.profiles)).sorted())
         }
         if options.servicesOnly {
-            return try lineProjection(selectedServices(project: project, selected: options.services).map(\.name).sorted())
+            return lineProjection(project.services.keys.sorted())
         }
         if let variables = options.variables {
             return configVariables(variables)
@@ -113,7 +113,7 @@ extension ComposeOrchestrator {
             return lineProjection(project.volumes.keys.sorted())
         }
 
-        let scopedProject = try project.filtered(to: options.services)
+        let scopedProject = try project.filtered(to: options.services, allResources: options.allResources)
         return try config(project: scopedProject, format: options.format, commandName: options.commandName)
     }
 
