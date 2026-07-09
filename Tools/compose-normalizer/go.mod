@@ -2,7 +2,7 @@ module github.com/stephenlclarke/container-compose/Tools/compose-normalizer
 
 go 1.24
 
-require github.com/compose-spec/compose-go/v2 v2.12.1
+require github.com/compose-spec/compose-go/v2 v2.13.0
 
 require (
 	github.com/distribution/reference v0.5.0 // indirect
