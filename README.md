@@ -73,6 +73,10 @@ Current detailed gap examples:
   device paths such as `/dev/null` and `/dev/zero`. Device source paths and
   explicit target paths must be absolute. GPU requests and arbitrary macOS
   hardware passthrough remain explicit runtime gaps.
+- Supported process-resource coverage includes service `pids_limit`. Positive
+  limits map to the fork-backed `container run/create --pids-limit` runtime
+  path, while non-positive values follow Docker Compose local behavior by
+  leaving the runtime limit unset.
 - Supported local Deploy metadata includes replicas, local job modes,
   stop-first update delays, restart policy fields, CPU/memory reservation
   hints, and Swarm `endpoint_mode` acceptance as Docker-compatible local

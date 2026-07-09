@@ -6367,6 +6367,48 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--blkio", "device=8:0,read-bps=1048576"]))
     }
 
+    @Test("up maps pids_limit to runtime arguments")
+    func upMapsPidsLimitToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pidsLimit = 128
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--pids-limit", "128"]))
+    }
+
+    @Test("up omits unlimited pids_limit from runtime arguments")
+    func upOmitsUnlimitedPidsLimitFromRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.pidsLimit = -1
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--pids-limit"))
+    }
+
     @Test("up maps device cgroup rules to runtime arguments")
     func upMapsDeviceCgroupRulesToRuntimeArguments() async throws {
         let runner = RecordingRunner()
@@ -20490,6 +20532,42 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--blkio", "device=8:0,write-iops=2000"]))
     }
 
+    @Test("run maps pids_limit to runtime arguments")
+    func runMapsPidsLimitToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pidsLimit = 256
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--pids-limit", "256"]))
+    }
+
+    @Test("run omits non-positive pids_limit from runtime arguments")
+    func runOmitsNonPositivePidsLimitFromRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.pidsLimit = -2
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(!command.contains("--pids-limit"))
+    }
+
     @Test("run maps device cgroup rules to runtime arguments")
     func runMapsDeviceCgroupRulesToRuntimeArguments() async throws {
         let runner = RecordingRunner()
@@ -23058,11 +23136,6 @@ private func unsupportedMemoryAndProcessResourceFieldCases() -> [UnsupportedMemo
             composeName: "oom_score_adj",
             value: "-500",
             configure: { $0.oomScoreAdj = -500 }
-        ),
-        UnsupportedMemoryAndProcessResourceFieldCase(
-            composeName: "pids_limit",
-            value: "128",
-            configure: { $0.pidsLimit = 128 }
         ),
     ]
 }

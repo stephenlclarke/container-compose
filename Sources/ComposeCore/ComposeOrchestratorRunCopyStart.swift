@@ -222,6 +222,9 @@ extension ComposeOrchestrator {
         for device in try runtimeDeviceArguments(service: service) {
             args.append(contentsOf: ["--device", device])
         }
+        if let pidsLimit = runtimePidsLimitArgument(service: service) {
+            args.append(contentsOf: ["--pids-limit", pidsLimit])
+        }
         if let memLimit = service.memLimit, !memLimit.isEmpty {
             args.append(contentsOf: ["--memory", memLimit])
         }

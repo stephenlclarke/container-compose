@@ -18,17 +18,17 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `97a05cb46aa8aa15acb69fe558a18c88156533a7`
-- `stephenlclarke/containerization`: `45e2131718b90a44a2d64e773f42b90d61059394`
+- `stephenlclarke/container`: `b9207d9131f34901bc2ca6ca4b847f7da29d5a0b`
+- `stephenlclarke/containerization`: `a51832f51b57cd0209b4926f098987d5e8980051`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.6`
 
 ## Latest Local Validation
 
-The latest local validation for this compatibility refresh passed with `make ci`, `make docker-compose-parity`, `npx --yes markdownlint-cli README.md STATUS.md docs/parity/compose-cli-surface.md docs/upstream/container-compose/ISSUE-compose-parallel-image-operations.md docs/upstream/container-compose/PR-compose-parallel-image-operations.md`, and `git diff --check`.
+The latest local validation for this compatibility refresh passed with `make ci`, `make docker-compose-parity`, markdown lint for the updated README, status, parity, and pids-limit upstream handoff docs, and `git diff --check`.
 
 Current full coverage proof:
 
-- Swift: 842 Compose tests at 89.32% line coverage.
+- Swift: 846 Compose tests at 89.31% line coverage.
 - Go normalizer: 92.56% line coverage.
 
 ## Recent Functional State
@@ -40,7 +40,7 @@ Current full coverage proof:
 - Mount behavior: bind mounts preserve Docker Compose `bind.create_host_path` policy; missing sources are rejected before side effects when the policy is false, while default or true bind sources are created as host directories before Apple runtime create/run handoff. Bind `propagation` values are passed as runtime mount options. Service long-form `volume.labels` are preserved in config; anonymous volume labels are applied to deterministic runtime volumes before create/run handoff, and named service mount labels remain metadata because Docker Compose keeps named resource labels under top-level `volumes.<name>.labels`. Runtime-inherited `volumes_from` mounts from external containers pass through without host-path preparation.
 - Namespace modes: `network_mode: none` and `pid: host` are accepted for service containers and one-off `run`. `network_mode: host` maps to the Stephen fork-backed `container --network host` runtime path without attaching the Compose project network. Service/container namespace-sharing forms remain blocked pending a Docker-compatible runtime namespace-join primitive.
 - Network resources: top-level `networks.<name>.driver_opts` are preserved in normalized config and passed to Apple network creation through plugin-specific options. One IPv4 and one IPv6 IPAM subnet are mapped to Apple network creation. Driver-specific `networks.<name>.ipam.options` and other unmapped IPAM fields are rejected before side effects because Apple network creation does not expose a matching IPAM option surface. Service network attachment `driver_opts` support remains limited to Docker-compatible MTU keys because Apple attachment options expose MTU but not arbitrary endpoint driver options.
-- Device controls: service `device_cgroup_rules` is accepted for service containers and one-off `run`, validated before side effects, and mapped to the Stephen fork-backed `container --device-cgroup-rule` runtime path. Service `devices` is accepted for supported Linux VM device paths and mapped to the Stephen fork-backed `container --device` runtime path. GPU requests and arbitrary macOS hardware passthrough remain blocked pending Docker-compatible passthrough primitives.
+- Process and device controls: service `pids_limit` is accepted for service containers and one-off `run`; positive values map to the Stephen fork-backed `container --pids-limit` runtime path, while non-positive values follow Docker Compose local behavior by leaving the runtime limit unset. Service `device_cgroup_rules` is accepted for service containers and one-off `run`, validated before side effects, and mapped to the Stephen fork-backed `container --device-cgroup-rule` runtime path. Service `devices` is accepted for supported Linux VM device paths and mapped to the Stephen fork-backed `container --device` runtime path. GPU requests and arbitrary macOS hardware passthrough remain blocked pending Docker-compatible passthrough primitives.
 - Cleanup behavior: `down` and `rm` treat already-missing containers as absent, resource deletion treats missing networks and volumes as absent, and `rm` now follows Docker Compose stopped-container semantics: running containers are skipped unless `--stop` is requested and empty cleanup reports `No stopped containers`.
 - Runtime dependency preflight: runtime-backed Compose commands check that the active `container` install reports `stephenlclarke/container` plus `stephenlclarke/containerization` provenance before doing work; Apple stock or missing components fail with Homebrew formula guidance and the GitHub install URL.
 - Attach and foreground output: `attach --no-stdin` follows selected service logs and supports default signal proxying; `up --no-color`, `up --no-log-prefix`, and `up --timestamps` are supported through the raw foreground or structured log paths.
