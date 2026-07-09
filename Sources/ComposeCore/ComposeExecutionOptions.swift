@@ -73,7 +73,6 @@ public struct ComposeExecutionOptions {
         dryRun: Bool = false,
         maxParallelism: Int? = nil,
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
-        environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
         watchPollInterval: Duration = .seconds(1),
         materializedConfigSecretDirectory: URL = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory(),
         progress: ComposeProgressReporter = .disabled,
@@ -82,7 +81,7 @@ public struct ComposeExecutionOptions {
         self.dryRun = dryRun
         self.maxParallelism = maxParallelism
         self.containerBinary = containerBinary
-        self.environmentLauncher = environmentLauncher
+        environmentLauncher = ComposeExecutionOptions.defaultEnvironmentLauncher
         oneOffIdentifier = runtimeHooks.oneOffIdentifier
         currentDate = runtimeHooks.currentDate
         hostPortAllocator = runtimeHooks.hostPortAllocator
@@ -108,7 +107,17 @@ public struct ComposeExecutionOptions {
     }
 
     public init(environmentLauncher: String) {
-        self.init(environmentLauncher: environmentLauncher, runtimeHooks: RuntimeHooks())
+        self.init()
+        self.environmentLauncher = environmentLauncher
+    }
+
+    public init(
+        containerBinary: String,
+        environmentLauncher: String,
+        runtimeHooks: RuntimeHooks = RuntimeHooks(),
+    ) {
+        self.init(containerBinary: containerBinary, runtimeHooks: runtimeHooks)
+        self.environmentLauncher = environmentLauncher
     }
 
     public init(oneOffIdentifier: @escaping @Sendable () -> String) {
