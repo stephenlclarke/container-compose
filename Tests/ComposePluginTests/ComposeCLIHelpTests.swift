@@ -440,6 +440,46 @@ struct ComposeCLIHelpTests {
         )
     }
 
+    @Test("STATUS option surface lists every help option")
+    func statusOptionSurfaceListsEveryHelpOption() throws {
+        let section = try statusSection("CLI Option Surface", in: try statusMarkdown())
+        let optionRows: [(String, String)] = statusTableRows(in: section).compactMap { row -> (String, String)? in
+            let columns = row.split(separator: "|", omittingEmptySubsequences: false).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard columns.count > 3, columns[1] != "Option Surface" else {
+                return nil
+            }
+            return (columns[1], row)
+        }
+        let rowsBySurface = Dictionary(uniqueKeysWithValues: optionRows)
+
+        let snapshotsByPath = Dictionary(grouping: ComposeCLIHelp.optionSupportSnapshots, by: \.commandPath)
+        for (commandPath, snapshots) in snapshotsByPath {
+            let surface = commandPath.isEmpty ? "Root options" : "`\(format(commandPath: commandPath))` options"
+            let row = rowsBySurface[surface]
+
+            #expect(row != nil, "STATUS.md CLI Option Surface does not list \(surface)")
+            guard let row else {
+                continue
+            }
+
+            let expected = optionGroupIndicator(for: snapshots.map(\.support))
+            #expect(
+                row.contains("| \(surface) | \(expected) |"),
+                "STATUS.md lists \(surface) with the wrong option parity"
+            )
+
+            for snapshot in snapshots {
+                let symbol = statusSymbol(for: snapshot.support)
+                #expect(
+                    row.contains("\(symbol) `\(snapshot.option)`"),
+                    "STATUS.md \(surface) does not list \(snapshot.option) as \(symbol)"
+                )
+            }
+        }
+    }
+
     @Test("STATUS compose file surface lists required parity rows")
     func statusComposeFileSurfaceListsRequiredParityRows() throws {
         let section = try statusSection("Compose File Surface", in: try statusMarkdown())
@@ -549,6 +589,29 @@ struct ComposeCLIHelpTests {
     }
 
     private typealias RepresentativeParse = (commandPath: [String], options: Set<String>, parse: () throws -> Void)
+
+    private func optionGroupIndicator(for supportLabels: [String]) -> String {
+        if supportLabels.allSatisfy({ $0 == "supported" }) {
+            return "✅ Yes"
+        }
+        if supportLabels.allSatisfy({ $0 == "not supported" }) {
+            return "❌ No"
+        }
+        return "⚠️ Partial"
+    }
+
+    private func statusSymbol(for support: String) -> String {
+        switch support {
+        case "supported":
+            return "✅"
+        case "partially supported":
+            return "⚠️"
+        case "not supported":
+            return "❌"
+        default:
+            return "unknown"
+        }
+    }
 
     private func statusIndicator(for support: String) -> String {
         switch support {

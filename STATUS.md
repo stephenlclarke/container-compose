@@ -161,22 +161,51 @@ The Docker Compose v2 file reference is a rolling Compose Specification surface:
 
 ## CLI Option Surface
 
-`container compose --help` and `container compose COMMAND --help` are the authoritative per-option views. The non-green option set is:
+`container compose --help` and `container compose COMMAND --help` are the authoritative usage views. Every documented long option surface is listed here with per-option parity markers.
 
 | Option Surface | Parity | Details |
 | --- | --- | --- |
-| Root options | ⚠️ Partial | ✅ `--ansi`, `--dry-run`, `--env-file`, `--file`, `--profile`, `--progress`, `--project-directory`, `--project-name`, and `--verbose`; ⚠️ `--parallel`; ❌ `--all-resources` and `--compatibility`. `--parallel` currently caps repeated `pull` and `push` image operations; dependency-sensitive orchestration stays ordered. |
-| `attach --detach-keys` | ⚠️ Partial | Parsed and documented, but output-only attach ignores detach keys because interactive reattach is not exposed by the runtime. |
-| `up --wait` | ⚠️ Partial | Waits for services to be running; health-aware waiting remains blocked by missing runtime health state. |
-| `up --wait-timeout` | ⚠️ Partial | Applies to supported waits; health-aware timeout semantics remain blocked by missing runtime health state. |
-| `bridge` options | ❌ No | `--dry-run` is not supported because Compose Bridge is not implemented. |
-| `bridge convert` options | ❌ No | `--dry-run`, `--output`, `--templates`, and `--transformation` are not supported because Compose Bridge is not implemented. |
-| `bridge transformations` options | ❌ No | `--dry-run` is not supported because Compose Bridge is not implemented. |
-| `bridge transformations create` options | ❌ No | `--dry-run` and `--from` are not supported because Compose Bridge is not implemented. |
-| `bridge transformations list` options | ❌ No | `--dry-run`, `--format`, and `--quiet` are not supported because Compose Bridge is not implemented. |
-| `bridge transformations ls` options | ❌ No | `--dry-run`, `--format`, and `--quiet` are not supported because Compose Bridge is not implemented. |
-| `commit` options | ❌ No | `--author`, `--change`, `--dry-run`, `--index`, `--message`, and `--pause` are not supported because `commit` is not implemented. |
-| `publish` options | ❌ No | `--app`, `--dry-run`, `--oci-version`, `--resolve-image-digests`, `--with-env`, and `--yes` are not supported because `publish` is not implemented. |
+| Root options | ⚠️ Partial | ✅ `--ansi`, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`; ⚠️ `--parallel`: caps repeated `pull` and `push` image operations while dependency-sensitive orchestration stays ordered; ❌ `--all-resources`, ❌ `--compatibility`: unsupported root modes. |
+| `attach` options | ⚠️ Partial | ✅ `--dry-run`, ✅ `--index`, ✅ `--no-stdin`, ✅ `--sig-proxy`; ⚠️ `--detach-keys`: parsed and documented, but output-only attach ignores detach keys because interactive reattach is not exposed by the runtime. |
+| `bridge` options | ❌ No | ❌ `--dry-run`: Compose Bridge is not implemented. |
+| `bridge convert` options | ❌ No | ❌ `--dry-run`, ❌ `--output`, ❌ `--templates`, ❌ `--transformation`: Compose Bridge is not implemented. |
+| `bridge transformations` options | ❌ No | ❌ `--dry-run`: Compose Bridge is not implemented. |
+| `bridge transformations create` options | ❌ No | ❌ `--dry-run`, ❌ `--from`: Compose Bridge is not implemented. |
+| `bridge transformations list` options | ❌ No | ❌ `--dry-run`, ❌ `--format`, ❌ `--quiet`: Compose Bridge is not implemented. |
+| `bridge transformations ls` options | ❌ No | ❌ `--dry-run`, ❌ `--format`, ❌ `--quiet`: Compose Bridge is not implemented. |
+| `build` options | ✅ Yes | ✅ `--build-arg`, ✅ `--builder`, ✅ `--check`, ✅ `--dry-run`, ✅ `--memory`, ✅ `--no-cache`, ✅ `--print`, ✅ `--provenance`, ✅ `--pull`, ✅ `--push`, ✅ `--quiet`, ✅ `--sbom`, ✅ `--ssh`, ✅ `--with-dependencies`. |
+| `commit` options | ❌ No | ❌ `--author`, ❌ `--change`, ❌ `--dry-run`, ❌ `--index`, ❌ `--message`, ❌ `--pause`: `commit` is not implemented. |
+| `config` options | ✅ Yes | ✅ `--dry-run`, ✅ `--environment`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--lock-image-digests`, ✅ `--models`, ✅ `--networks`, ✅ `--no-consistency`, ✅ `--no-env-resolution`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--no-path-resolution`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--variables`, ✅ `--volumes`. |
+| `cp` options | ✅ Yes | ✅ `--all`, ✅ `--archive`, ✅ `--dry-run`, ✅ `--follow-link`, ✅ `--index`. |
+| `create` options | ✅ Yes | ✅ `--build`, ✅ `--dry-run`, ✅ `--force-recreate`, ✅ `--no-build`, ✅ `--no-recreate`, ✅ `--pull`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--scale`, ✅ `--yes`. |
+| `down` options | ✅ Yes | ✅ `--dry-run`, ✅ `--remove-orphans`, ✅ `--rmi`, ✅ `--timeout`, ✅ `--volumes`. |
+| `events` options | ✅ Yes | ✅ `--dry-run`, ✅ `--json`, ✅ `--since`, ✅ `--until`. |
+| `exec` options | ✅ Yes | ✅ `--detach`, ✅ `--dry-run`, ✅ `--env`, ✅ `--index`, ✅ `--no-tty`, ✅ `--privileged`, ✅ `--user`, ✅ `--workdir`. |
+| `export` options | ✅ Yes | ✅ `--dry-run`, ✅ `--index`, ✅ `--output`. |
+| `images` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
+| `kill` options | ✅ Yes | ✅ `--dry-run`, ✅ `--remove-orphans`, ✅ `--signal`. |
+| `logs` options | ✅ Yes | ✅ `--dry-run`, ✅ `--follow`, ✅ `--index`, ✅ `--no-color`, ✅ `--no-log-prefix`, ✅ `--since`, ✅ `--tail`, ✅ `--timestamps`, ✅ `--until`. |
+| `ls` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--filter`, ✅ `--format`, ✅ `--quiet`. |
+| `pause` options | ✅ Yes | ✅ `--dry-run`. |
+| `port` options | ✅ Yes | ✅ `--dry-run`, ✅ `--index`, ✅ `--protocol`. |
+| `ps` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--filter`, ✅ `--format`, ✅ `--no-trunc`, ✅ `--orphans`, ✅ `--quiet`, ✅ `--services`, ✅ `--status`. |
+| `publish` options | ❌ No | ❌ `--app`, ❌ `--dry-run`, ❌ `--oci-version`, ❌ `--resolve-image-digests`, ❌ `--with-env`, ❌ `--yes`: `publish` is not implemented. |
+| `pull` options | ✅ Yes | ✅ `--dry-run`, ✅ `--ignore-buildable`, ✅ `--ignore-pull-failures`, ✅ `--include-deps`, ✅ `--policy`, ✅ `--quiet`. |
+| `push` options | ✅ Yes | ✅ `--dry-run`, ✅ `--ignore-push-failures`, ✅ `--include-deps`, ✅ `--quiet`. |
+| `restart` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`, ✅ `--timeout`. |
+| `rm` options | ✅ Yes | ✅ `--dry-run`, ✅ `--force`, ✅ `--stop`, ✅ `--volumes`. |
+| `run` options | ✅ Yes | ✅ `--build`, ✅ `--cap-add`, ✅ `--cap-drop`, ✅ `--detach`, ✅ `--dry-run`, ✅ `--entrypoint`, ✅ `--env`, ✅ `--env-from-file`, ✅ `--interactive`, ✅ `--label`, ✅ `--name`, ✅ `--no-TTY`, ✅ `--no-deps`, ✅ `--publish`, ✅ `--pull`, ✅ `--quiet`, ✅ `--quiet-build`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--rm`, ✅ `--service-ports`, ✅ `--use-aliases`, ✅ `--user`, ✅ `--volume`, ✅ `--workdir`. |
+| `scale` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`. |
+| `start` options | ✅ Yes | ✅ `--dry-run`, ✅ `--wait`, ✅ `--wait-timeout`. |
+| `stats` options | ✅ Yes | ✅ `--all`, ✅ `--dry-run`, ✅ `--format`, ✅ `--no-stream`, ✅ `--no-trunc`. |
+| `stop` options | ✅ Yes | ✅ `--dry-run`, ✅ `--timeout`. |
+| `top` options | ✅ Yes | ✅ `--dry-run`. |
+| `unpause` options | ✅ Yes | ✅ `--dry-run`. |
+| `up` options | ⚠️ Partial | ✅ `--abort-on-container-exit`, ✅ `--abort-on-container-failure`, ✅ `--always-recreate-deps`, ✅ `--attach`, ✅ `--attach-dependencies`, ✅ `--build`, ✅ `--detach`, ✅ `--dry-run`, ✅ `--exit-code-from`, ✅ `--force-recreate`, ✅ `--menu`, ✅ `--no-attach`, ✅ `--no-build`, ✅ `--no-color`, ✅ `--no-deps`, ✅ `--no-log-prefix`, ✅ `--no-recreate`, ✅ `--no-start`, ✅ `--pull`, ✅ `--quiet-build`, ✅ `--quiet-pull`, ✅ `--remove-orphans`, ✅ `--renew-anon-volumes`, ✅ `--scale`, ✅ `--timeout`, ✅ `--timestamps`, ✅ `--watch`, ✅ `--yes`; ⚠️ `--wait`, ⚠️ `--wait-timeout`: running-state waits work, but health-aware wait semantics need runtime health state. |
+| `version` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--short`. |
+| `volumes` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
+| `wait` options | ✅ Yes | ✅ `--down-project`, ✅ `--dry-run`. |
+| `watch` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-up`, ✅ `--prune`, ✅ `--quiet`. |
 
 ## Release Notes
 
