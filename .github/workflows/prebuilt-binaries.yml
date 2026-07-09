@@ -514,7 +514,31 @@ jobs:
           set -euo pipefail
           url="https://github.com/stephenlclarke/container-compose/releases/download/${RELEASE_TAG}/${ASSET}"
           tmp="$(mktemp -d)"
-          curl -fsSL "${url}" -o "${tmp}/${ASSET}"
+          trap 'rm -rf "${tmp}"' EXIT
+
+          download_release_asset() {
+            local attempt max_attempts status
+            max_attempts=6
+            for attempt in $(seq 1 "${max_attempts}"); do
+              printf 'Downloading %s (attempt %s/%s)\n' "${url}" "${attempt}" "${max_attempts}"
+              if curl -fsSL --connect-timeout 20 --max-time 180 "${url}" -o "${tmp}/${ASSET}"; then
+                if [[ -s "${tmp}/${ASSET}" ]]; then
+                  return 0
+                fi
+                status=1
+                printf 'Downloaded asset is empty: %s\n' "${tmp}/${ASSET}" >&2
+              else
+                status="$?"
+              fi
+
+              if (( attempt == max_attempts )); then
+                return "${status}"
+              fi
+              sleep "$((attempt * 10))"
+            done
+          }
+
+          download_release_asset
           sha256="$(shasum -a 256 "${tmp}/${ASSET}" | awk '{print $1}')"
           python3 container-compose/Tools/release/update-homebrew-formula.py \
             --formula "homebrew-tap/Formula/${FORMULA}" \
