@@ -1,9 +1,9 @@
 class ContainerCompose < Formula
   desc "Docker Compose style plugin for Apple's container CLI"
   homepage "https://github.com/stephenlclarke/container-compose"
-  url "https://github.com/stephenlclarke/container-compose/releases/download/0.6.16/container-compose-plugin-release-arm64.tar.gz"
-  version "0.6.16"
-  sha256 "8a46d2f94f6a489420d945076c4cabd0cdc671e720542db80834a0e630440623"
+  url "https://github.com/stephenlclarke/container-compose/releases/download/0.6.17/container-compose-plugin-release-arm64.tar.gz"
+  version "0.6.17"
+  sha256 "37eae70cbce805842540e8c06809362ce5f214d28071ce130152c74e87597cc6"
   license "Apache-2.0"
 
   depends_on arch: :arm64
@@ -34,7 +34,7 @@ class ContainerCompose < Formula
   end
 
   test do
-    assert_match "0.6.16", shell_output("#{bin}/container-compose version --short")
+    assert_match "0.6.17", shell_output("#{bin}/container-compose version --short")
     assert_path_exists libexec/"container-plugins/compose/config.toml"
     assert_predicate libexec/"container-plugins/compose/resources/compose-normalizer", :executable?
   end
