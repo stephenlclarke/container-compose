@@ -42,8 +42,8 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Surface | Parity | Details |
 | --- | --- | --- |
 | Compose project loading and normalization | ⚠️ Partial | `compose-go` handles local/default files, multiple files, profiles, interpolation, env files, service `env_file` short/long syntax, project name and directory selection, extension preservation, and `config` YAML/JSON output; the normalizer adds Docker Compose-compatible raw-format env-file parsing. Docker Compose remote `-f` sources such as `oci://` artifacts and Git repository URLs are not implemented. |
-| CLI command surface | ⚠️ Partial | 36 commands are ✅, 2 are ⚠️, and 8 are ❌ across the current Docker Compose v2 command reference plus this plugin's explicit `help` command. See [CLI Command Surface](#cli-command-surface). |
-| CLI option surface | ⚠️ Partial | 232 documented long options are ✅, 4 are ⚠️, and 27 are ❌ across the current Docker Compose v2 option reference. See [CLI Option Surface](#cli-option-surface). |
+| CLI command surface | ⚠️ Partial | 42 commands are ✅, 2 are ⚠️, and 2 are ❌ across the current Docker Compose v2 command reference plus this plugin's explicit `help` command. See [CLI Command Surface](#cli-command-surface). |
+| CLI option surface | ⚠️ Partial | 247 documented long options are ✅, 4 are ⚠️, and 12 are ❌ across the current Docker Compose v2 option reference. See [CLI Option Surface](#cli-option-surface). |
 | Dockerfile and build inputs | ⚠️ Partial | Dockerfile instruction execution, contexts, `dockerfile`, `dockerfile_inline`, `.dockerignore`, args, additional contexts, cache hints, labels, target, platforms, pull/no-cache, tags, `extra_hosts`, BuildKit network, isolation, privileged build, shm size, ulimits, SSH forwarding, provenance, SBOM, builder selection, `--print`, and `--check` are implemented. Build secrets are limited to file/env-backed BuildKit secret IDs; unsupported secret shapes are rejected. |
 | Image pull, push, and local image metadata | ✅ Yes | `pull`, `push`, `images`, image digest config output, pull policy, quiet modes, failure-ignore modes, and dependency image traversal are implemented. |
 | Service lifecycle orchestration | ⚠️ Partial | `create`, `start`, `stop`, `restart`, `kill`, `pause`, `unpause`, `rm`, `down`, `scale`, `wait`, service `post_start`, service `pre_stop`, and most `up` behavior are implemented. Health-aware `up --wait`, health dependency state, job completion metadata, and service `pre_start` remain runtime gaps. |
@@ -147,12 +147,12 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `alpha scale` | ✅ Yes | Experimental `alpha scale` is implemented as an alias for the stable `scale` command. |
 | `alpha watch` | ✅ Yes | Experimental `alpha watch` is implemented as an alias for the stable `watch` command. |
 | `attach` | ⚠️ Partial | `--no-stdin` output-follow attach is implemented; default interactive reattach and detach-key handling need runtime support. |
-| `bridge` | ❌ No | Compose Bridge transformation tooling is not implemented. |
-| `bridge convert` | ❌ No | Compose Bridge transformation tooling is not implemented. |
-| `bridge transformations` | ❌ No | Compose Bridge transformation tooling is not implemented. |
-| `bridge transformations create` | ❌ No | Compose Bridge transformation tooling is not implemented. |
-| `bridge transformations list` | ❌ No | Compose Bridge transformation tooling is not implemented. |
-| `bridge transformations ls` | ❌ No | Compose Bridge transformation tooling is not implemented. |
+| `bridge` | ✅ Yes | Compose Bridge transformation tooling is implemented for the fork-backed runtime lane. |
+| `bridge convert` | ✅ Yes | Compose models are enriched with local image metadata, rendered to Bridge input YAML, and transformed through local transformer images. |
+| `bridge transformations` | ✅ Yes | Bridge transformation image management is implemented. |
+| `bridge transformations create` | ✅ Yes | Transformer template directories can be copied from local transformer images and paired with a Dockerfile for rebuilds. |
+| `bridge transformations list` | ✅ Yes | Local transformer images labelled `com.docker.compose.bridge=transformation` are listed in table, JSON, and quiet modes. |
+| `bridge transformations ls` | ✅ Yes | Alias for `bridge transformations list`. |
 | `build` | ✅ Yes | Dockerfile/build parity is implemented for the supported build surface above. |
 | `commit` | ❌ No | Container commit/image mutation is not implemented. |
 | `config` | ✅ Yes | Compose project rendering and config query options are implemented. |
@@ -195,18 +195,18 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 
 | Option Surface | Parity | Details |
 | --- | --- | --- |
-| Root options | ⚠️ Partial | ✅ `--all-resources`: selected-service `config` and `convert` output keeps unreferenced top-level networks, volumes, configs, and secrets, ✅ `--ansi`, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`; ⚠️ `--parallel`: caps repeated `pull` and `push` image operations while dependency-sensitive orchestration stays ordered; ❌ `--compatibility`: unsupported root mode. |
+| Root options | ⚠️ Partial | ✅ `--all-resources`: selected-service `config` and `convert` output keeps unreferenced top-level networks, volumes, configs, and secrets, ✅ `--ansi`, ✅ `--compatibility`: uses Docker Compose legacy underscore separators for generated service and one-off container names, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`; ⚠️ `--parallel`: caps repeated `pull` and `push` image operations while dependency-sensitive orchestration stays ordered. |
 | `alpha` options | ✅ Yes | ✅ `--dry-run`. |
 | `alpha dry-run` options | ✅ Yes | ✅ `--dry-run`: accepted and implied for the wrapped command. |
 | `alpha scale` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-deps`. |
 | `alpha watch` options | ✅ Yes | ✅ `--dry-run`, ✅ `--no-up`, ✅ `--quiet`. |
 | `attach` options | ⚠️ Partial | ✅ `--dry-run`, ✅ `--index`, ✅ `--no-stdin`, ✅ `--sig-proxy`; ⚠️ `--detach-keys`: parsed and documented, but output-only attach ignores detach keys because interactive reattach is not exposed by the runtime. |
-| `bridge` options | ❌ No | ❌ `--dry-run`: Compose Bridge is not implemented. |
-| `bridge convert` options | ❌ No | ❌ `--dry-run`, ❌ `--output`, ❌ `--templates`, ❌ `--transformation`: Compose Bridge is not implemented. |
-| `bridge transformations` options | ❌ No | ❌ `--dry-run`: Compose Bridge is not implemented. |
-| `bridge transformations create` options | ❌ No | ❌ `--dry-run`, ❌ `--from`: Compose Bridge is not implemented. |
-| `bridge transformations list` options | ❌ No | ❌ `--dry-run`, ❌ `--format`, ❌ `--quiet`: Compose Bridge is not implemented. |
-| `bridge transformations ls` options | ❌ No | ❌ `--dry-run`, ❌ `--format`, ❌ `--quiet`: Compose Bridge is not implemented. |
+| `bridge` options | ✅ Yes | ✅ `--dry-run`. |
+| `bridge convert` options | ✅ Yes | ✅ `--dry-run`, ✅ `--output`, ✅ `--templates`, ✅ `--transformation`. |
+| `bridge transformations` options | ✅ Yes | ✅ `--dry-run`. |
+| `bridge transformations create` options | ✅ Yes | ✅ `--dry-run`, ✅ `--from`. |
+| `bridge transformations list` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
+| `bridge transformations ls` options | ✅ Yes | ✅ `--dry-run`, ✅ `--format`, ✅ `--quiet`. |
 | `build` options | ✅ Yes | ✅ `--build-arg`, ✅ `--builder`, ✅ `--check`, ✅ `--dry-run`, ✅ `--memory`, ✅ `--no-cache`, ✅ `--print`, ✅ `--provenance`, ✅ `--pull`, ✅ `--push`, ✅ `--quiet`, ✅ `--sbom`, ✅ `--ssh`, ✅ `--with-dependencies`. |
 | `commit` options | ❌ No | ❌ `--author`, ❌ `--change`, ❌ `--dry-run`, ❌ `--index`, ❌ `--message`, ❌ `--pause`: `commit` is not implemented. |
 | `config` options | ✅ Yes | ✅ `--dry-run`, ✅ `--environment`, ✅ `--format`, ✅ `--hash`, ✅ `--images`, ✅ `--lock-image-digests`, ✅ `--models`, ✅ `--networks`, ✅ `--no-consistency`, ✅ `--no-env-resolution`, ✅ `--no-interpolate`, ✅ `--no-normalize`, ✅ `--no-path-resolution`, ✅ `--output`, ✅ `--profiles`, ✅ `--quiet`, ✅ `--resolve-image-digests`, ✅ `--services`, ✅ `--variables`, ✅ `--volumes`. |

@@ -266,6 +266,64 @@ private final class ProgressAssertingRunner: CommandRunning, @unchecked Sendable
     }
 }
 
+private struct BridgeRecordedCommand: Equatable {
+    var arguments: [String]
+    var io: CommandIO
+}
+
+private final class BridgeInputInspectingRunner: CommandRunning, @unchecked Sendable {
+    private(set) var commands: [BridgeRecordedCommand] = []
+    private(set) var inputComposeFiles: [String] = []
+    var responses: [CommandResult]
+
+    init(responses: [CommandResult] = []) {
+        self.responses = responses
+    }
+
+    func run(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?,
+        io: CommandIO
+    ) async throws -> CommandResult {
+        _ = executable
+        _ = workingDirectory
+        _ = environment
+        commands.append(BridgeRecordedCommand(arguments: arguments, io: io))
+        if let input = bridgeInputDirectory(in: arguments) {
+            let composeFile = URL(fileURLWithPath: input, isDirectory: true)
+                .appendingPathComponent("compose.yaml")
+            if FileManager.default.fileExists(atPath: composeFile.path),
+               let text = try? String(contentsOf: composeFile, encoding: .utf8) {
+                inputComposeFiles.append(text)
+            }
+        }
+        if !responses.isEmpty {
+            return responses.removeFirst()
+        }
+        return CommandResult(status: 0, stdout: "", stderr: "")
+    }
+
+    private func bridgeInputDirectory(in arguments: [String]) -> String? {
+        for index in arguments.indices where arguments[index] == "--mount" {
+            let valueIndex = arguments.index(after: index)
+            guard valueIndex < arguments.endIndex else {
+                continue
+            }
+            let mount = arguments[valueIndex]
+            guard mount.contains(",dst=/in") else {
+                continue
+            }
+            return mount
+                .split(separator: ",")
+                .first { $0.hasPrefix("src=") }
+                .map { String($0.dropFirst("src=".count)) }
+        }
+        return nil
+    }
+}
+
 private func orchestratorDependencies(
     configure: (inout ComposeOrchestratorDependencies) -> Void
 ) -> ComposeOrchestratorDependencies {
@@ -689,6 +747,44 @@ struct ComposeOrchestratorTests {
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
+    }
+
+    @Test("compatibility mode uses legacy underscore container names")
+    func compatibilityModeUsesLegacyUnderscoreContainerNames() async throws {
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(options: ComposeExecutionOptions(
+            dryRun: true,
+            serviceContainerNameSeparator: "_",
+            runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
+                oneOffIdentifier: { "abc123" },
+                emit: { emitted.append($0) }
+            )
+        ))
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.scale = 2
+                },
+                "job": composeService(name: "job", image: "alpine"),
+            ]
+        )
+
+        try await orchestrator.up(project: project, options: ComposeUpOptions {
+            $0.services = ["api"]
+            $0.noStart = true
+        })
+        try await orchestrator.run(project: project, serviceName: "job", options: ComposeRunOptions {
+            $0.command = ["true"]
+            $0.noDeps = true
+            $0.noTty = true
+        })
+
+        let output = emitted.messages.joined(separator: "\n")
+        #expect(output.contains("--name demo_api_1"))
+        #expect(output.contains("--name demo_api_2"))
+        #expect(output.contains("--name demo_job_run_abc123"))
+        #expect(!output.contains("--name demo-api-1"))
     }
 
     @Test("up creates resources and runs services with compose labels")
@@ -10380,6 +10476,130 @@ struct ComposeOrchestratorTests {
         #expect(yaml.contains("services:\n  api:"))
         #expect(yaml.contains("  worker:"))
         #expect(!yaml.contains(#""services" :"#))
+    }
+
+    @Test("bridge convert enriches the transformer input with image metadata")
+    func bridgeConvertEnrichesTransformerInputWithImageMetadata() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("out", isDirectory: true)
+        let templates = directory.appendingPathComponent("templates", isDirectory: true)
+        try FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
+        let runner = BridgeInputInspectingRunner()
+        let imageManager = RecordingContainerImageManager(imageMetadata: [
+            "example/api:1": ComposeImageMetadata(
+                reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                displayReference: "example/api:1",
+                exposedPorts: ["8080/tcp", "8443/udp", "not-a-port"]
+            ),
+        ])
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:1") {
+                    $0.expose = ["9000"]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+            project: project,
+            options: ComposeBridgeConvertOptions(
+                output: output.path,
+                templates: templates.path,
+                transformations: ["example/bridge-transformer:latest"]
+            )
+        )
+
+        #expect(await imageManager.requests == [
+            .pullMissing("example/api:1"),
+            .metadata("example/api:1"),
+            .pullMissing("example/bridge-transformer:latest"),
+        ])
+        let command = try #require(runner.commands.last?.arguments)
+        #expect(command.starts(with: ["container", "run", "--rm"]))
+        #expect(command.contains("LICENSE_AGREEMENT=true"))
+        #expect(command.contains("type=bind,src=\(output.path),dst=/out"))
+        #expect(command.contains("type=bind,src=\(templates.path),dst=/templates"))
+        #expect(command.last == "example/bridge-transformer:latest")
+        #expect(runner.commands.last?.io == .inherited)
+        let input = try #require(runner.inputComposeFiles.first)
+        #expect(input.contains(#"image: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#))
+        #expect(input.contains("expose:\n      - \"8080\"\n      - \"8443\"\n      - \"9000\""))
+    }
+
+    @Test("bridge transformations list renders table JSON and quiet modes")
+    func bridgeTransformationsListRendersSupportedFormats() async throws {
+        let emitted = MessageRecorder()
+        let imageManager = RecordingContainerImageManager(transformers: [
+            ComposeBridgeTransformer(
+                id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                reference: "docker/compose-bridge-kubernetes:latest",
+                sizeInBytes: 2048
+            ),
+        ])
+        let orchestrator = ComposeOrchestrator(
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            dependencies: orchestratorDependencies { $0.imageManager = imageManager }
+        )
+
+        try await orchestrator.bridgeTransformationsList(options: ComposeBridgeTransformationsListOptions())
+        try await orchestrator.bridgeTransformationsList(options: ComposeBridgeTransformationsListOptions(format: "json"))
+        try await orchestrator.bridgeTransformationsList(options: ComposeBridgeTransformationsListOptions(quiet: true))
+
+        #expect(await imageManager.requests == [.bridgeTransformers, .bridgeTransformers, .bridgeTransformers])
+        #expect(emitted.messages.count == 3)
+        #expect(emitted.messages[0].contains("IMAGE ID"))
+        #expect(emitted.messages[0].contains("compose-bridge-kubernetes"))
+        #expect(emitted.messages[1].contains(#""tag" : "latest""#))
+        #expect(emitted.messages[1].contains("compose-bridge-kubernetes"))
+        #expect(emitted.messages[2] == "docker/compose-bridge-kubernetes:latest")
+    }
+
+    @Test("bridge transformations create copies templates and writes Dockerfile")
+    func bridgeTransformationsCreateCopiesTemplatesAndWritesDockerfile() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("custom-transformer", isDirectory: true)
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: "created-transformer\n", stderr: ""),
+            .success,
+            .success,
+        ])
+        let imageManager = RecordingContainerImageManager()
+        let options = ComposeExecutionOptions(
+            runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
+                oneOffIdentifier: { "abc123" },
+                emit: { emitted.append($0) }
+            )
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: options,
+            imageManager: imageManager
+        ).bridgeTransformationsCreate(
+            options: ComposeBridgeTransformationsCreateOptions(
+                destination: destination.path,
+                from: "example/bridge-transformer:latest"
+            )
+        )
+
+        #expect(await imageManager.requests == [.pullMissing("example/bridge-transformer:latest")])
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "create", "--name", "compose-bridge-abc123", "example/bridge-transformer:latest"],
+            ["container", "cp", "compose-bridge-abc123:/templates", destination.path],
+            ["container", "rm", "--force", "created-transformer"],
+        ])
+        let dockerfile = try String(
+            contentsOf: destination.appendingPathComponent("Dockerfile"),
+            encoding: .utf8
+        )
+        #expect(dockerfile.contains("FROM docker/compose-bridge-transformer"))
+        #expect(dockerfile.contains("LABEL com.docker.compose.bridge=transformation"))
+        #expect(dockerfile.contains("COPY templates /templates"))
+        #expect(emitted.messages == ["Transformer created in \"\(destination.path)\""])
     }
 
     @Test("config rejects unsupported render formats")
@@ -23851,6 +24071,8 @@ private enum ContainerImageRequest: Equatable {
     case exists(String)
     case digest(String)
     case healthCheck(reference: String, platform: String?)
+    case metadata(String)
+    case bridgeTransformers
     case pull(String)
     case pullMissing(String)
     case push(String)
@@ -24891,6 +25113,8 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
     private var existingReferences: Set<String>
     private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
+    private var imageMetadata: [String: ComposeImageMetadata]
+    private var transformers: [ComposeBridgeTransformer]
     private let pullFailures: Set<String>
     private let pullMissingFailures: Set<String>
     private let onPullImage: @Sendable (String) async -> Void
@@ -24905,6 +25129,8 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         digests: [String: String] = [:],
         healthChecks: [String: ComposeImageHealthCheck] = [:],
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
+        imageMetadata: [String: ComposeImageMetadata] = [:],
+        transformers: [ComposeBridgeTransformer] = [],
         pullFailures: Set<String> = [],
         pullMissingFailures: Set<String> = [],
         onPullImage: @escaping @Sendable (String) async -> Void = { _ in },
@@ -24921,6 +25147,8 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
         }
         self.healthChecks = mappedHealthChecks
+        self.imageMetadata = imageMetadata
+        self.transformers = transformers
         self.pullFailures = pullFailures
         self.pullMissingFailures = pullMissingFailures
         self.onPullImage = onPullImage
@@ -24960,6 +25188,22 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         }
         storage.append(.healthCheck(reference: reference, platform: platform))
         return healthChecks[ImageHealthCheckRequestKey(reference: reference, platform: platform)]
+    }
+
+    func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {
+        if let failure {
+            throw failure
+        }
+        storage.append(.metadata(reference))
+        return imageMetadata[reference] ?? ComposeImageMetadata(reference: reference)
+    }
+
+    func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
+        if let failure {
+            throw failure
+        }
+        storage.append(.bridgeTransformers)
+        return transformers
     }
 
     func pullImage(_ reference: String) async throws {
@@ -25018,6 +25262,8 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var existingReferences: Set<String>
     private var digests: [String: String]
     private var healthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck]
+    private var imageMetadata: [String: ComposeImageMetadata]
+    private var transformers: [ComposeBridgeTransformer]
     private var pushOutputs: [String: String]
     private var deleteOutputs: [String: String?]
     private var storage: [ContainerImageRequest] = []
@@ -25027,6 +25273,8 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         digests: [String: String] = [:],
         healthChecks: [String: ComposeImageHealthCheck] = [:],
         platformHealthChecks: [ImageHealthCheckRequestKey: ComposeImageHealthCheck] = [:],
+        imageMetadata: [String: ComposeImageMetadata] = [:],
+        transformers: [ComposeBridgeTransformer] = [],
         pushOutputs: [String: String] = [:],
         deleteOutputs: [String: String?] = [:]
     ) {
@@ -25037,6 +25285,8 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
             mappedHealthChecks[ImageHealthCheckRequestKey(reference: reference, platform: nil)] = healthCheck
         }
         self.healthChecks = mappedHealthChecks
+        self.imageMetadata = imageMetadata
+        self.transformers = transformers
         self.pushOutputs = pushOutputs
         self.deleteOutputs = deleteOutputs
     }
@@ -25061,6 +25311,16 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
         storage.append(.healthCheck(reference: reference, platform: platform))
         return healthChecks[ImageHealthCheckRequestKey(reference: reference, platform: platform)]
+    }
+
+    func imageMetadata(reference: String) async throws -> ComposeImageMetadata {
+        storage.append(.metadata(reference))
+        return imageMetadata[reference] ?? ComposeImageMetadata(reference: reference)
+    }
+
+    func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
+        storage.append(.bridgeTransformers)
+        return transformers
     }
 
     func pullImage(reference: String) async throws {

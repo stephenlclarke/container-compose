@@ -782,40 +782,49 @@ struct ComposeCLIHelpTests {
                 #expect(command.service == "api")
             }),
             (["bridge"], ["--dry-run"], {
-                let command = try Bridge.parse(["--dry-run", "convert"])
+                let command = try Bridge.parse(["--dry-run"])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["convert"])
             }),
             (["bridge", "convert"], ["--dry-run", "--output", "--templates", "--transformation"], {
-                let command = try Bridge.parse(["--dry-run", "convert", "--output", "out", "--templates", "templates", "--transformation", "one"])
+                let command = try BridgeConvert.parse([
+                    "--dry-run",
+                    "--output", "out",
+                    "--templates", "templates",
+                    "--transformation", "one",
+                    "--transformation", "two",
+                ])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["convert", "--output", "out", "--templates", "templates", "--transformation", "one"])
+                #expect(command.output == "out")
+                #expect(command.templates == "templates")
+                #expect(command.transformations == ["one", "two"])
             }),
             (["bridge", "transformations"], ["--dry-run"], {
-                let command = try Bridge.parse(["--dry-run", "transformations"])
+                let command = try BridgeTransformations.parse(["--dry-run"])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["transformations"])
             }),
             (["bridge", "transformations", "create"], ["--dry-run", "--from"], {
-                let command = try Bridge.parse(["--dry-run", "transformations", "create", "--from", "base", "path"])
+                let command = try BridgeTransformationsCreate.parse(["--dry-run", "--from", "base", "path"])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["transformations", "create", "--from", "base", "path"])
+                #expect(command.from == "base")
+                #expect(command.path == "path")
             }),
             (["bridge", "transformations", "list"], ["--dry-run", "--format", "--quiet"], {
-                let command = try Bridge.parse(["--dry-run", "transformations", "list", "--format", "json", "--quiet"])
+                let command = try BridgeTransformationsList.parse(["--dry-run", "--format", "json", "--quiet"])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["transformations", "list", "--format", "json", "--quiet"])
+                #expect(command.format == "json")
+                #expect(command.quiet)
             }),
             (["bridge", "transformations", "ls"], ["--dry-run", "--format", "--quiet"], {
-                let command = try Bridge.parse(["--dry-run", "transformations", "ls", "--format", "json", "--quiet"])
+                let command = try BridgeTransformationsList.parse(["--dry-run", "--format", "json", "--quiet"])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["transformations", "ls", "--format", "json", "--quiet"])
+                #expect(command.format == "json")
+                #expect(command.quiet)
             }),
             (["build"], [
                 "--build-arg", "--builder", "--check", "--dry-run", "--memory", "--no-cache", "--print", "--provenance", "--pull",

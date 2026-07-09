@@ -1123,6 +1123,71 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("moves bridge globals to the nested bridge command")
+    func movesBridgeGlobalsToNestedBridgeCommand() {
+        let convert = ComposeArgumentRewriter.rewrite([
+            "-f",
+            "compose.yml",
+            "--project-name",
+            "demo",
+            "--dry-run",
+            "bridge",
+            "convert",
+            "--output",
+            "out",
+        ])
+        let create = ComposeArgumentRewriter.rewrite([
+            "-f",
+            "compose.yml",
+            "--dry-run",
+            "bridge",
+            "transformations",
+            "create",
+            "-f",
+            "example/transformer:latest",
+            "custom",
+        ])
+        let list = ComposeArgumentRewriter.rewrite([
+            "bridge",
+            "--dry-run",
+            "transformations",
+            "list",
+            "--format",
+            "json",
+        ])
+
+        #expect(convert == [
+            "bridge",
+            "convert",
+            "-f",
+            "compose.yml",
+            "--project-name",
+            "demo",
+            "--dry-run",
+            "--output",
+            "out",
+        ])
+        #expect(create == [
+            "-f",
+            "compose.yml",
+            "bridge",
+            "transformations",
+            "create",
+            "--dry-run",
+            "--from",
+            "example/transformer:latest",
+            "custom",
+        ])
+        #expect(list == [
+            "bridge",
+            "transformations",
+            "list",
+            "--dry-run",
+            "--format",
+            "json",
+        ])
+    }
+
     @Test("returns arguments unchanged when no subcommand is present")
     func returnsArgumentsUnchangedWhenNoSubcommandIsPresent() {
         let arguments = ["--help", "--verbose"]

@@ -61,6 +61,40 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         return variant?.healthCheck.map(ComposeImageHealthCheck.init)
     }
 
+    /// Resolves Docker image config metadata from the requested image.
+    public func imageMetadata(reference: String) async throws -> ComposeImageMetadata {
+        let config = try await ConfigurationLoader.load()
+        let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
+        let resource = try await image.toImageResource(containerSystemConfig: config)
+        let variant = Self.variant(in: resource, matching: try Self.requestedPlatform(nil), allowFallback: true)
+        return ComposeImageMetadata(
+            reference: image.reference,
+            displayReference: resource.displayReference,
+            exposedPorts: variant?.exposedPorts ?? []
+        )
+    }
+
+    /// Lists local images labelled as Compose Bridge transformers.
+    public func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
+        let config = try await ConfigurationLoader.load()
+        let images = try await ClientImage.list()
+        var transformers: [ComposeBridgeTransformer] = []
+        for image in images {
+            let resource = try await image.toImageResource(containerSystemConfig: config)
+            guard resource.variants.contains(where: { $0.imageConfigLabels["com.docker.compose.bridge"] == "transformation" }) else {
+                continue
+            }
+            transformers.append(
+                ComposeBridgeTransformer(
+                    id: resource.id,
+                    reference: resource.displayReference,
+                    sizeInBytes: resource.variants.reduce(0) { $0 + $1.size }
+                )
+            )
+        }
+        return transformers.sorted { $0.reference < $1.reference }
+    }
+
     /// Pulls and unpacks using the same default platform resolution as the apple/container CLI.
     public func pullImage(reference: String) async throws {
         let config = try await ConfigurationLoader.load()

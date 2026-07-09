@@ -46,6 +46,38 @@ public struct ComposeImageHealthCheck: Sendable, Equatable {
     }
 }
 
+/// Compact image metadata needed by Compose model projections.
+public struct ComposeImageMetadata: Sendable, Equatable {
+    /// Resolved local image reference.
+    public var reference: String
+    /// Human-facing display reference.
+    public var displayReference: String
+    /// Docker image config exposed ports, keyed as "port/protocol".
+    public var exposedPorts: [String]
+
+    public init(reference: String, displayReference: String? = nil, exposedPorts: [String] = []) {
+        self.reference = reference
+        self.displayReference = displayReference ?? reference
+        self.exposedPorts = exposedPorts
+    }
+}
+
+/// Local transformer image shown by `compose bridge transformations list`.
+public struct ComposeBridgeTransformer: Sendable, Equatable {
+    /// Image identifier or digest.
+    public var id: String
+    /// Human-facing image reference.
+    public var reference: String
+    /// Total image size in bytes when known.
+    public var sizeInBytes: Int64
+
+    public init(id: String, reference: String, sizeInBytes: Int64 = 0) {
+        self.id = id
+        self.reference = reference
+        self.sizeInBytes = sizeInBytes
+    }
+}
+
 /// Low-level apple/container image calls used by `ContainerClientImageManager`.
 public protocol ContainerImageAPIClienting: Sendable {
     /// Returns whether `reference` exists in the local image store.
@@ -56,6 +88,12 @@ public protocol ContainerImageAPIClienting: Sendable {
 
     /// Returns Docker image healthcheck metadata for `reference` and `platform`.
     func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck?
+
+    /// Returns image config metadata for `reference`.
+    func imageMetadata(reference: String) async throws -> ComposeImageMetadata
+
+    /// Lists local Compose Bridge transformer images.
+    func bridgeTransformers() async throws -> [ComposeBridgeTransformer]
 
     /// Pulls and unpacks `reference`.
     func pullImage(reference: String) async throws
@@ -78,6 +116,12 @@ public protocol ContainerImageManaging: Sendable {
     /// Returns Docker image healthcheck metadata for `reference` and `platform`.
     func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck?
 
+    /// Returns image config metadata for `reference`.
+    func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata
+
+    /// Lists local Compose Bridge transformer images.
+    func bridgeTransformers() async throws -> [ComposeBridgeTransformer]
+
     /// Pulls `reference`.
     func pullImage(_ reference: String) async throws
 
@@ -96,6 +140,8 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public typealias Exists = @Sendable (String) async throws -> Bool
     public typealias Digest = @Sendable (String) async throws -> String
     public typealias HealthCheck = @Sendable (String, String?) async throws -> ComposeImageHealthCheck?
+    public typealias Metadata = @Sendable (String) async throws -> ComposeImageMetadata
+    public typealias Transformers = @Sendable () async throws -> [ComposeBridgeTransformer]
     public typealias Pull = @Sendable (String) async throws -> Void
     public typealias Push = @Sendable (String) async throws -> String
     public typealias Delete = @Sendable (String, Bool) async throws -> String?
@@ -103,6 +149,8 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     private let existsOperation: Exists
     private let digestOperation: Digest
     private let healthCheckOperation: HealthCheck
+    private let metadataOperation: Metadata
+    private let transformersOperation: Transformers
     private let pullOperation: Pull
     private let pushOperation: Push
     private let deleteOperation: Delete
@@ -113,6 +161,8 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
             exists: { try await client.imageExists(reference: $0) },
             digest: { try await client.imageDigest(reference: $0) },
             healthCheck: { try await client.imageHealthCheck(reference: $0, platform: $1) },
+            metadata: { try await client.imageMetadata(reference: $0) },
+            transformers: { try await client.bridgeTransformers() },
             pull: { try await client.pullImage(reference: $0) },
             push: { try await client.pushImage(reference: $0) },
             delete: { try await client.deleteImage(reference: $0, force: $1) }
@@ -124,6 +174,8 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         exists: @escaping Exists,
         digest: @escaping Digest = { reference in throw ComposeError.unsupported("config image digest resolution for '\(reference)'") },
         healthCheck: @escaping HealthCheck = { _, _ in nil },
+        metadata: @escaping Metadata = { reference in ComposeImageMetadata(reference: reference) },
+        transformers: @escaping Transformers = { [] },
         pull: @escaping Pull,
         push: @escaping Push,
         delete: @escaping Delete
@@ -131,6 +183,8 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         self.existsOperation = exists
         self.digestOperation = digest
         self.healthCheckOperation = healthCheck
+        self.metadataOperation = metadata
+        self.transformersOperation = transformers
         self.pullOperation = pull
         self.pushOperation = push
         self.deleteOperation = delete
@@ -154,6 +208,16 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Reads Docker image healthcheck metadata through `ClientImage`.
     public func imageHealthCheck(reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
         try await healthCheckOperation(reference, platform)
+    }
+
+    /// Reads image config metadata through `ClientImage`.
+    public func imageMetadata(reference: String) async throws -> ComposeImageMetadata {
+        try await metadataOperation(reference)
+    }
+
+    /// Lists local Compose Bridge transformer images.
+    public func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
+        try await transformersOperation()
     }
 
     /// Pulls and unpacks an image through `ClientImage`.
@@ -193,6 +257,16 @@ public struct ContainerClientImageManager: ContainerImageManaging {
     /// Reads Docker image healthcheck metadata through the direct apple/container image API.
     public func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
         try await client.imageHealthCheck(reference: reference, platform: platform)
+    }
+
+    /// Reads image config metadata through the direct apple/container image API.
+    public func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {
+        try await client.imageMetadata(reference: reference)
+    }
+
+    /// Lists local Compose Bridge transformer images through the direct apple/container image API.
+    public func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
+        try await client.bridgeTransformers()
     }
 
     /// Pulls an image through the direct apple/container image API.

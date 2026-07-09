@@ -485,7 +485,12 @@ struct GlobalOptions: ParsableArguments {
 
     /// Creates an orchestrator configured from global runtime flags.
     func orchestrator() -> ComposeOrchestrator {
-        ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: dryRun, maxParallelism: parallel, progress: progressReporter()))
+        ComposeOrchestrator(options: ComposeExecutionOptions(
+            dryRun: dryRun,
+            maxParallelism: parallel,
+            serviceContainerNameSeparator: compatibility ? "_" : "-",
+            progress: progressReporter()
+        ))
     }
 
     /// Returns whether log prefix color should be enabled for this invocation.
@@ -642,6 +647,21 @@ extension ComposeProjectCommand {
     }
 }
 
+/// Runtime-only options for Bridge management commands that do not load a Compose project.
+struct BridgeRuntimeOptions: ParsableArguments {
+    @Flag(name: .customLong("dry-run"), help: "Print container commands instead of running them.")
+    var dryRun: Bool = false
+
+    /// Creates the runtime orchestrator for commands that execute containers.
+    func orchestrator() -> ComposeOrchestrator {
+        ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: effectiveDryRun))
+    }
+
+    private var effectiveDryRun: Bool {
+        dryRun || CommandLine.arguments.dropFirst().contains("--dry-run")
+    }
+}
+
 /// Implements Docker Compose experimental alpha command aliases.
 struct Alpha: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -737,14 +757,105 @@ struct AlphaWatch: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Reports unsupported Docker Compose bridge management commands.
-struct Bridge: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "bridge", abstract: "Convert compose files into another model.")
+/// Implements Docker Compose Bridge commands.
+struct Bridge: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "bridge",
+        abstract: "Convert compose files into another model.",
+        subcommands: [
+            BridgeConvert.self,
+            BridgeTransformations.self,
+        ]
+    )
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the transformation runtime gap.
-    func run() throws {
-        throw ComposeError.unsupported("bridge: Compose Bridge transformations are not available through apple/container")
+
+    /// Shows the bridge namespace help when no nested command is supplied.
+    func run() async throws {
+        print(ComposeCLIHelp.helpText(commandPath: ["bridge"], arguments: global.rootArguments()) ?? "")
+    }
+}
+
+/// Implements `compose bridge convert`.
+struct BridgeConvert: AsyncParsableCommand, ComposeProjectCommand {
+    static let configuration = CommandConfiguration(commandName: "convert", abstract: "Convert compose files to Kubernetes manifests, Helm charts, or another model.")
+
+    @OptionGroup var global: GlobalOptions
+    @Option(name: [.customShort("o"), .customLong("output")], help: "The output directory for the Kubernetes resources.")
+    var output = "out"
+    @Option(name: .customLong("templates"), help: "Directory containing transformation templates.")
+    var templates: String?
+    @Option(name: [.customShort("t"), .customLong("transformation")], parsing: .upToNextOption, help: "Transformation to apply to compose model.")
+    var transformations: [String] = []
+
+    /// Runs the selected Bridge transformer image or images.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().bridgeConvert(
+            project: loadedProject,
+            options: ComposeBridgeConvertOptions(
+                output: output,
+                templates: templates,
+                transformations: transformations
+            )
+        )
+    }
+}
+
+/// Implements `compose bridge transformations`.
+struct BridgeTransformations: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "transformations",
+        abstract: "Manage transformation images.",
+        subcommands: [
+            BridgeTransformationsCreate.self,
+            BridgeTransformationsList.self,
+        ]
+    )
+    @OptionGroup var global: GlobalOptions
+
+    /// Shows the transformations namespace help when no nested command is supplied.
+    func run() async throws {
+        print(ComposeCLIHelp.helpText(commandPath: ["bridge", "transformations"], arguments: global.rootArguments()) ?? "")
+    }
+}
+
+/// Implements `compose bridge transformations create`.
+struct BridgeTransformationsCreate: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "create", abstract: "Create a new transformation.")
+
+    @OptionGroup var global: BridgeRuntimeOptions
+    @Option(name: [.customShort("f"), .customLong("from")], help: "Existing transformation to copy.")
+    var from: String?
+    @Argument(help: "Destination path.")
+    var path: String
+
+    /// Creates a local transformer source directory from an image.
+    func run() async throws {
+        try await global.orchestrator().bridgeTransformationsCreate(
+            options: ComposeBridgeTransformationsCreateOptions(destination: path, from: from)
+        )
+    }
+}
+
+/// Implements `compose bridge transformations list`.
+struct BridgeTransformationsList: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "list",
+        abstract: "List available transformations.",
+        aliases: ["ls"]
+    )
+
+    @OptionGroup var global: BridgeRuntimeOptions
+    @Option(name: .customLong("format"), help: "Format the output. Values: table or json.")
+    var format = "table"
+    @Flag(name: .shortAndLong, help: "Only display transformer names.")
+    var quiet = false
+
+    /// Lists local transformer images.
+    func run() async throws {
+        try await global.orchestrator().bridgeTransformationsList(
+            options: ComposeBridgeTransformationsListOptions(format: format, quiet: quiet)
+        )
     }
 }
 

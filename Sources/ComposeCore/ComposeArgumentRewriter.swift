@@ -115,6 +115,10 @@ public enum ComposeArgumentRewriter {
         ("-f", "--format"),
     ]
 
+    private static let compactBridgeCreateValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-f", "--from"),
+    ]
+
     /// Returns arguments with known Compose global options moved immediately
     /// after the subcommand while preserving unknown pre-command arguments.
     public static func rewrite(_ arguments: [String]) -> [String] {
@@ -132,15 +136,28 @@ public enum ComposeArgumentRewriter {
             return normalizeCompactGlobalOptions(prefix) + [command] + suffix
         }
         if command == "alpha" {
-            return rewriteNestedGlobalOptions(command: command, prefix: prefix, suffix: suffix)
+            return rewriteNestedGlobalOptions(
+                command: command,
+                prefix: prefix,
+                suffix: suffix,
+                nestedCommands: ["dry-run", "scale", "watch"]
+            )
+        }
+        if command == "bridge" {
+            return rewriteBridgeGlobalOptions(prefix: prefix, suffix: suffix)
         }
         let split = splitGlobalOptions(prefix)
         return split.retained + [command] + split.moved + suffix
     }
 
     /// Moves root options onto an experimental nested command.
-    private static func rewriteNestedGlobalOptions(command: String, prefix: [String], suffix: [String]) -> [String] {
-        guard let nestedIndex = nestedCommandIndex(in: suffix) else {
+    private static func rewriteNestedGlobalOptions(
+        command: String,
+        prefix: [String],
+        suffix: [String],
+        nestedCommands: Set<String>
+    ) -> [String] {
+        guard let nestedIndex = nestedCommandIndex(in: suffix, commands: nestedCommands) else {
             let split = splitGlobalOptions(prefix)
             return split.retained + [command] + split.moved + suffix
         }
@@ -159,9 +176,64 @@ public enum ComposeArgumentRewriter {
             + nestedSuffix
     }
 
-    /// Locates the alpha subcommand while skipping global options.
-    private static func nestedCommandIndex(in arguments: [String]) -> Array<String>.Index? {
-        let nestedCommands: Set<String> = ["dry-run", "scale", "watch"]
+    /// Moves Bridge root options onto the concrete nested command that consumes them.
+    private static func rewriteBridgeGlobalOptions(prefix: [String], suffix: [String]) -> [String] {
+        guard let bridgeCommandIndex = nestedCommandIndex(in: suffix, commands: ["convert", "transformations"]) else {
+            let split = splitGlobalOptions(prefix)
+            return split.retained + ["bridge"] + split.moved + suffix
+        }
+
+        let bridgePrefix = Array(suffix[..<bridgeCommandIndex])
+        let bridgeCommand = suffix[bridgeCommandIndex]
+        let bridgeSuffix = Array(suffix[suffix.index(after: bridgeCommandIndex)...])
+        let prefixSplit = splitGlobalOptions(prefix)
+        let bridgePrefixSplit = splitGlobalOptions(bridgePrefix)
+
+        guard bridgeCommand == "transformations" else {
+            return prefixSplit.retained
+                + ["bridge"]
+                + bridgePrefixSplit.retained
+                + [bridgeCommand]
+                + prefixSplit.moved
+                + bridgePrefixSplit.moved
+                + bridgeSuffix
+        }
+
+        guard let transformationCommandIndex = nestedCommandIndex(in: bridgeSuffix, commands: ["create", "list", "ls"]) else {
+            let prefixDryRun = splitDryRunOption(prefix)
+            let bridgeDryRun = splitDryRunOption(bridgePrefix)
+            return prefixDryRun.retained
+                + ["bridge"]
+                + bridgeDryRun.retained
+                + ["transformations"]
+                + prefixDryRun.moved
+                + bridgeDryRun.moved
+                + bridgeSuffix
+        }
+
+        let transformationsPrefix = Array(bridgeSuffix[..<transformationCommandIndex])
+        let transformationsCommand = bridgeSuffix[transformationCommandIndex]
+        let transformationsSuffix = Array(bridgeSuffix[bridgeSuffix.index(after: transformationCommandIndex)...])
+        let rewrittenTransformationsSuffix = transformationsCommand == "create"
+            ? rewriteBridgeTransformationsCreateOptions(transformationsSuffix)
+            : transformationsSuffix
+        let prefixDryRun = splitDryRunOption(prefix)
+        let bridgeDryRun = splitDryRunOption(bridgePrefix)
+        let transformationsDryRun = splitDryRunOption(transformationsPrefix)
+        return prefixDryRun.retained
+            + ["bridge"]
+            + bridgeDryRun.retained
+            + ["transformations"]
+            + transformationsDryRun.retained
+            + [transformationsCommand]
+            + prefixDryRun.moved
+            + bridgeDryRun.moved
+            + transformationsDryRun.moved
+            + rewrittenTransformationsSuffix
+    }
+
+    /// Locates a nested subcommand while skipping global options.
+    private static func nestedCommandIndex(in arguments: [String], commands nestedCommands: Set<String>) -> Array<String>.Index? {
         var index = arguments.startIndex
         while index < arguments.endIndex {
             let argument = arguments[index]
@@ -251,6 +323,20 @@ public enum ComposeArgumentRewriter {
             }
         }
 
+        return (retained, moved)
+    }
+
+    /// Splits only root dry-run from options that Bridge management commands do not consume.
+    private static func splitDryRunOption(_ arguments: [String]) -> (retained: [String], moved: [String]) {
+        var retained: [String] = []
+        var moved: [String] = []
+        for argument in arguments {
+            if argument == "--dry-run" {
+                moved.append(argument)
+            } else {
+                retained.append(argument)
+            }
+        }
         return (retained, moved)
     }
 
@@ -433,6 +519,26 @@ public enum ComposeArgumentRewriter {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
             } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: options) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
+    }
+
+    /// Normalizes Bridge `transformations create -f` so it is not consumed as root `--file`.
+    private static func rewriteBridgeTransformationsCreateOptions(_ arguments: [String]) -> [String] {
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, argument == "-f" {
+                rewritten.append("--from")
+            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactBridgeCreateValueOptions) {
                 rewritten.append(split.option)
                 rewritten.append(split.value)
             } else {

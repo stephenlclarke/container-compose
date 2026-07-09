@@ -47,8 +47,8 @@ extension ComposeOrchestrator {
         if !oneOff, let containerName = service.containerName, !containerName.isEmpty {
             return slug(containerName)
         }
-        let suffix = oneOff ? "run-\(slug(options.oneOffIdentifier()))" : "1"
-        return "\(slug(project.name))-\(slug(service.name))-\(suffix)"
+        let suffix = oneOff ? ["run", options.oneOffIdentifier()] : ["1"]
+        return composeManagedContainerName(project: project, service: service, suffix: suffix)
     }
 
     /// Returns the one-off container name requested by the CLI or generated
@@ -85,7 +85,7 @@ extension ComposeOrchestrator {
         if let containerName = service.containerName, !containerName.isEmpty {
             throw ComposeError.invalidProject("service '\(service.name)' uses container_name; --index \(index) requires Compose-managed replica names")
         }
-        return "\(slug(project.name))-\(slug(service.name))-\(index)"
+        return composeManagedContainerName(project: project, service: service, suffix: [String(index)])
     }
 
     /// Returns desired deterministic container names for declared services.
@@ -208,7 +208,7 @@ extension ComposeOrchestrator {
         guard service.containerName?.isEmpty ?? true else {
             return nil
         }
-        let prefix = "\(slug(project.name))-\(slug(service.name))-"
+        let prefix = composeManagedContainerNamePrefix(project: project, service: service)
         guard containerID.hasPrefix(prefix) else {
             return nil
         }
@@ -217,6 +217,19 @@ extension ComposeOrchestrator {
             return nil
         }
         return index
+    }
+
+    /// Returns a Docker Compose-style generated container name.
+    private func composeManagedContainerName(project: ComposeProject, service: ComposeService, suffix: [String]) -> String {
+        ([
+            slug(project.name),
+            slug(service.name),
+        ] + suffix.map(slug)).joined(separator: options.serviceContainerNameSeparator)
+    }
+
+    /// Returns the generated service container name prefix used for index parsing.
+    private func composeManagedContainerNamePrefix(project: ComposeProject, service: ComposeService) -> String {
+        "\(composeManagedContainerName(project: project, service: service, suffix: []))\(options.serviceContainerNameSeparator)"
     }
 
     /// Validates project-level invariants before runtime orchestration starts.

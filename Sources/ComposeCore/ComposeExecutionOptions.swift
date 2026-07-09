@@ -56,6 +56,7 @@ public struct ComposeExecutionOptions {
 
     public var dryRun: Bool
     public var maxParallelism: Int?
+    public var serviceContainerNameSeparator: String
     public var containerBinary: String
     public var environmentLauncher: String
     public var oneOffIdentifier: @Sendable () -> String
@@ -72,6 +73,7 @@ public struct ComposeExecutionOptions {
     public init(
         dryRun: Bool = false,
         maxParallelism: Int? = nil,
+        serviceContainerNameSeparator: String = "-",
         containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
         watchPollInterval: Duration = .seconds(1),
         progress: ComposeProgressReporter = .disabled,
@@ -79,6 +81,7 @@ public struct ComposeExecutionOptions {
     ) {
         self.dryRun = dryRun
         self.maxParallelism = maxParallelism
+        self.serviceContainerNameSeparator = serviceContainerNameSeparator
         self.containerBinary = containerBinary
         environmentLauncher = ComposeExecutionOptions.defaultEnvironmentLauncher
         oneOffIdentifier = runtimeHooks.oneOffIdentifier
