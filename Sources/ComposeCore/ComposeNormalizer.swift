@@ -25,7 +25,7 @@ public struct ComposeNormalizer: Sendable {
 
     public init(
         runner: CommandRunning = ProcessRunner(),
-        fallbackLauncher: String = ComposeNormalizer.defaultFallbackLauncher
+        fallbackLauncher: String = ComposeNormalizer.defaultFallbackLauncher,
     ) {
         self.runner = runner
         self.fallbackLauncher = fallbackLauncher
@@ -39,7 +39,7 @@ public struct ComposeNormalizer: Sendable {
         let result = try await runner.run(
             invocation.executable,
             arguments,
-            workingDirectory: invocation.workingDirectory
+            workingDirectory: invocation.workingDirectory,
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -53,15 +53,45 @@ public struct ComposeNormalizer: Sendable {
         }
     }
 
-    /// Returns the interpolation variables declared by the Compose model.
-    public func variables(options: ComposeOptions) async throws -> [ComposeVariable] {
+    /// Loads the runtime projection and compose-go's public Bridge model in one pass.
+    public func bridgeProject(options: ComposeOptions) async throws -> ComposeBridgeProject {
         let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
-        let arguments = Self.normalizerArguments(invocation: invocation, options: options, modeArguments: ["--variables"])
+        let arguments = Self.normalizerArguments(
+            invocation: invocation,
+            options: options,
+            modeArguments: ["--bridge-model"],
+        )
 
         let result = try await runner.run(
             invocation.executable,
             arguments,
-            workingDirectory: invocation.workingDirectory
+            workingDirectory: invocation.workingDirectory,
+        )
+        guard result.succeeded else {
+            throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
+        }
+
+        let data = Data(result.stdout.utf8)
+        do {
+            return try JSONDecoder().decode(ComposeBridgeProject.self, from: data)
+        } catch {
+            throw ComposeError.invalidProject("failed to decode Compose Bridge model JSON: \(error)")
+        }
+    }
+
+    /// Returns the interpolation variables declared by the Compose model.
+    public func variables(options: ComposeOptions) async throws -> [ComposeVariable] {
+        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
+        let arguments = Self.normalizerArguments(
+            invocation: invocation,
+            options: options,
+            modeArguments: ["--variables"],
+        )
+
+        let result = try await runner.run(
+            invocation.executable,
+            arguments,
+            workingDirectory: invocation.workingDirectory,
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -87,7 +117,7 @@ private extension ComposeNormalizer {
     static func normalizerFailure(
         invocation: NormalizerInvocation,
         arguments: [String],
-        result: CommandResult
+        result: CommandResult,
     ) -> ComposeError {
         let stderrLines = result.stderr
             .split(whereSeparator: \.isNewline)
@@ -98,14 +128,14 @@ private extension ComposeNormalizer {
         return .commandFailed(
             command: ([invocation.executable] + arguments).joined(separator: " "),
             status: result.status,
-            stderr: result.stderr
+            stderr: result.stderr,
         )
     }
 
     static func normalizerArguments(
         invocation: NormalizerInvocation,
         options: ComposeOptions,
-        modeArguments: [String] = []
+        modeArguments: [String] = [],
     ) -> [String] {
         let projectDirectory = options.projectDirectory ?? Self.defaultProjectDirectory(files: options.files)
         var arguments = invocation.prefixArguments
@@ -159,11 +189,15 @@ private extension ComposeNormalizer {
         if FileManager.default.fileExists(atPath: sourceURL.appendingPathComponent("go.mod").path) {
             // Source checkouts run the helper through Go so developers do not
             // need a prebuilt normalizer binary while iterating locally.
-            return NormalizerInvocation(executable: fallbackLauncher, prefixArguments: ["go", "run", "."], workingDirectory: sourceURL)
+            return NormalizerInvocation(
+                executable: fallbackLauncher,
+                prefixArguments: ["go", "run", "."],
+                workingDirectory: sourceURL,
+            )
         }
 
         throw ComposeError.missingNormalizer(
-            "set CONTAINER_COMPOSE_NORMALIZER or install resources/compose-normalizer next to the plugin"
+            "set CONTAINER_COMPOSE_NORMALIZER or install resources/compose-normalizer next to the plugin",
         )
     }
 
@@ -195,11 +229,13 @@ private extension ComposeNormalizer {
         // When the user passes a compose file, infer that directory from the
         // first file path to match compose-go and Docker Compose behavior.
         let expandedPath = (firstFile as NSString).expandingTildeInPath
-        let fileURL: URL
-        if expandedPath.hasPrefix("/") {
-            fileURL = URL(fileURLWithPath: expandedPath)
+        let fileURL = if expandedPath.hasPrefix("/") {
+            URL(fileURLWithPath: expandedPath)
         } else {
-            fileURL = URL(fileURLWithPath: expandedPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+            URL(
+                fileURLWithPath: expandedPath,
+                relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            )
         }
         return fileURL.standardizedFileURL.deletingLastPathComponent().path
     }
@@ -215,7 +251,7 @@ private extension ComposeNormalizer {
         }
         return URL(
             fileURLWithPath: expandedPath,
-            relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
         ).standardizedFileURL.path
     }
 }

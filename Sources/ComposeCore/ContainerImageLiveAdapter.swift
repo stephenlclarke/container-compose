@@ -15,10 +15,10 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerAPIClient
-import ContainerPersistence
-import ContainerResource
 import ContainerizationExtras
 import ContainerizationOCI
+import ContainerPersistence
+import ContainerResource
 
 /// Live apple/container image API bridge used by production orchestration.
 public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
@@ -46,7 +46,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         }
         let client = try RegistryClient(
             reference: parsed.description,
-            tlsConfiguration: TLSUtils.makeEnvironmentAwareTLSConfiguration()
+            tlsConfiguration: TLSUtils.makeEnvironmentAwareTLSConfiguration(),
         )
         return try await client.resolve(name: parsed.path, tag: tag).digest
     }
@@ -66,30 +66,43 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let config = try await ConfigurationLoader.load()
         let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
         let resource = try await image.toImageResource(containerSystemConfig: config)
-        let variant = Self.variant(in: resource, matching: try Self.requestedPlatform(nil), allowFallback: true)
+        let variant = try Self.variant(in: resource, matching: Self.requestedPlatform(nil), allowFallback: true)
         return ComposeImageMetadata(
             reference: image.reference,
             displayReference: resource.displayReference,
-            exposedPorts: variant?.exposedPorts ?? []
+            exposedPorts: variant?.exposedPorts ?? [],
         )
     }
 
     /// Lists local images labelled as Compose Bridge transformers.
     public func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
         let config = try await ConfigurationLoader.load()
+        let platform = try Self.requestedPlatform(nil)
         let images = try await ClientImage.list()
         var transformers: [ComposeBridgeTransformer] = []
         for image in images {
             let resource = try await image.toImageResource(containerSystemConfig: config)
-            guard resource.variants.contains(where: { $0.imageConfigLabels["com.docker.compose.bridge"] == "transformation" }) else {
+            let labelledVariants = resource.variants.filter {
+                $0.imageConfigLabels["com.docker.compose.bridge"] == "transformation"
+            }
+            guard let variant = labelledVariants.first(where: { $0.platform == platform })
+                ?? labelledVariants.first
+            else {
                 continue
             }
+            let digest = resource.configuration.descriptor.digest
+            let reference = resource.displayReference
+            let repoTags = reference.contains("@") ? [] : [reference]
             transformers.append(
                 ComposeBridgeTransformer(
-                    id: resource.id,
-                    reference: resource.displayReference,
-                    sizeInBytes: resource.variants.reduce(0) { $0 + $1.size }
-                )
+                    id: digest,
+                    reference: reference,
+                    createdAtUnix: Int64(resource.creationDate.timeIntervalSince1970),
+                    labels: variant.imageConfigLabels,
+                    repoDigests: [Self.repositoryDigest(reference: reference, digest: digest)],
+                    repoTags: repoTags,
+                    sizeInBytes: variant.size,
+                ),
             )
         }
         return transformers.sorted { $0.reference < $1.reference }
@@ -104,7 +117,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
             platform: platform,
             scheme: .auto,
             containerSystemConfig: config,
-            progressUpdate: nil
+            progressUpdate: nil,
         )
         try await image.unpack(platform: platform)
     }
@@ -151,9 +164,22 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
     private static func variant(
         in resource: ImageResource,
         matching platform: ContainerizationOCI.Platform,
-        allowFallback: Bool
+        allowFallback: Bool,
     ) -> ImageResource.Variant? {
         resource.variants.first { $0.platform == platform } ?? (allowFallback ? resource.variants.first : nil)
+    }
+
+    /// Combines a familiar local image name with its OCI index digest.
+    private static func repositoryDigest(reference: String, digest: String) -> String {
+        let withoutDigest = reference.split(separator: "@", maxSplits: 1).first.map(String.init) ?? reference
+        let lastSlash = withoutDigest.lastIndex(of: "/")
+        let lastColon = withoutDigest.lastIndex(of: ":")
+        let repository: String = if let lastColon, lastSlash.map({ lastColon > $0 }) ?? true {
+            String(withoutDigest[..<lastColon])
+        } else {
+            withoutDigest
+        }
+        return "\(repository)@\(digest)"
     }
 }
 
@@ -166,7 +192,7 @@ private extension ComposeImageHealthCheck {
             timeoutInNanoseconds: healthCheck.timeoutInNanoseconds,
             startPeriodInNanoseconds: healthCheck.startPeriodInNanoseconds,
             startIntervalInNanoseconds: healthCheck.startIntervalInNanoseconds,
-            retries: healthCheck.retries
+            retries: healthCheck.retries,
         )
     }
 }

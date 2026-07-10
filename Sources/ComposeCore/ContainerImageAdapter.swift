@@ -35,7 +35,7 @@ public struct ComposeImageHealthCheck: Sendable, Equatable {
         timeoutInNanoseconds: Int64? = nil,
         startPeriodInNanoseconds: Int64? = nil,
         startIntervalInNanoseconds: Int64? = nil,
-        retries: Int? = nil
+        retries: Int? = nil,
     ) {
         self.test = test
         self.intervalInNanoseconds = intervalInNanoseconds
@@ -68,12 +68,44 @@ public struct ComposeBridgeTransformer: Sendable, Equatable {
     public var id: String
     /// Human-facing image reference.
     public var reference: String
+    /// Image creation time as Unix seconds.
+    public var createdAtUnix: Int64
+    /// Number of containers using the image, or `-1` when unavailable.
+    public var containers: Int64
+    /// Image config labels.
+    public var labels: [String: String]
+    /// Parent image identifier when known.
+    public var parentID: String
+    /// Locally known repository digests.
+    public var repoDigests: [String]
+    /// Locally known repository tags.
+    public var repoTags: [String]
+    /// Shared image size, or `-1` when unavailable.
+    public var sharedSizeInBytes: Int64
     /// Total image size in bytes when known.
     public var sizeInBytes: Int64
 
-    public init(id: String, reference: String, sizeInBytes: Int64 = 0) {
+    public init(
+        id: String,
+        reference: String,
+        createdAtUnix: Int64 = 0,
+        containers: Int64 = -1,
+        labels: [String: String] = [:],
+        parentID: String = "",
+        repoDigests: [String] = [],
+        repoTags: [String]? = nil,
+        sharedSizeInBytes: Int64 = -1,
+        sizeInBytes: Int64 = 0,
+    ) {
         self.id = id
         self.reference = reference
+        self.createdAtUnix = createdAtUnix
+        self.containers = containers
+        self.labels = labels
+        self.parentID = parentID
+        self.repoDigests = repoDigests
+        self.repoTags = repoTags ?? (reference.isEmpty ? [] : [reference])
+        self.sharedSizeInBytes = sharedSizeInBytes
         self.sizeInBytes = sizeInBytes
     }
 }
@@ -165,29 +197,31 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
             transformers: { try await client.bridgeTransformers() },
             pull: { try await client.pullImage(reference: $0) },
             push: { try await client.pushImage(reference: $0) },
-            delete: { try await client.deleteImage(reference: $0, force: $1) }
+            delete: { try await client.deleteImage(reference: $0, force: $1) },
         )
     }
 
     /// Creates a facade from explicit image operation closures.
     public init(
         exists: @escaping Exists,
-        digest: @escaping Digest = { reference in throw ComposeError.unsupported("config image digest resolution for '\(reference)'") },
+        digest: @escaping Digest = { reference in
+            throw ComposeError.unsupported("config image digest resolution for '\(reference)'")
+        },
         healthCheck: @escaping HealthCheck = { _, _ in nil },
         metadata: @escaping Metadata = { reference in ComposeImageMetadata(reference: reference) },
         transformers: @escaping Transformers = { [] },
         pull: @escaping Pull,
         push: @escaping Push,
-        delete: @escaping Delete
+        delete: @escaping Delete,
     ) {
-        self.existsOperation = exists
-        self.digestOperation = digest
-        self.healthCheckOperation = healthCheck
-        self.metadataOperation = metadata
-        self.transformersOperation = transformers
-        self.pullOperation = pull
-        self.pushOperation = push
-        self.deleteOperation = delete
+        existsOperation = exists
+        digestOperation = digest
+        healthCheckOperation = healthCheck
+        metadataOperation = metadata
+        transformersOperation = transformers
+        pullOperation = pull
+        pushOperation = push
+        deleteOperation = delete
     }
 
     /// Creates a facade around the live apple/container image API bridge.

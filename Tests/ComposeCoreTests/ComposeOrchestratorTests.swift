@@ -16,6 +16,7 @@
 
 import ComposeCore
 import ContainerResource
+import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOCI
@@ -42,6 +43,42 @@ private func localDate(_ value: String, format: String) -> Date {
     formatter.timeZone = TimeZone.current
     formatter.dateFormat = format
     return formatter.date(from: value)!
+}
+
+private func bridgeTransformerArchiveData() throws -> Data {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("compose-bridge-archive-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let archive = directory.appendingPathComponent("rootfs.tar")
+    let writer = try ArchiveWriter(format: .paxRestricted, filter: .none, file: archive)
+
+    func writeDirectory(_ path: String) throws {
+        let entry = WriteEntry()
+        entry.path = path
+        entry.fileType = .directory
+        entry.permissions = 0o755
+        entry.size = 0
+        try writer.writeEntry(entry: entry, data: nil)
+    }
+
+    func writeFile(_ path: String, contents: String) throws {
+        let data = Data(contents.utf8)
+        let entry = WriteEntry()
+        entry.path = path
+        entry.fileType = .regular
+        entry.permissions = 0o644
+        entry.size = Int64(data.count)
+        try writer.writeEntry(entry: entry, data: data)
+    }
+
+    try writeDirectory("templates/")
+    try writeFile("templates/service.tmpl", contents: "service template")
+    try writeDirectory("etc/")
+    try writeFile("etc/ignored", contents: "not a template")
+    try writer.finishEncoding()
+    return try Data(contentsOf: archive)
 }
 
 private func composeTextEventTimestamp(_ value: String) -> String {
@@ -274,6 +311,8 @@ private struct BridgeRecordedCommand: Equatable {
 private final class BridgeInputInspectingRunner: CommandRunning, @unchecked Sendable {
     private(set) var commands: [BridgeRecordedCommand] = []
     private(set) var inputComposeFiles: [String] = []
+    private(set) var inputDirectoryPermissions: [Int] = []
+    private(set) var inputFilePermissions: [Int] = []
     var responses: [CommandResult]
 
     init(responses: [CommandResult] = []) {
@@ -297,6 +336,10 @@ private final class BridgeInputInspectingRunner: CommandRunning, @unchecked Send
             if FileManager.default.fileExists(atPath: composeFile.path),
                let text = try? String(contentsOf: composeFile, encoding: .utf8) {
                 inputComposeFiles.append(text)
+                let directoryAttributes = try? FileManager.default.attributesOfItem(atPath: input)
+                let fileAttributes = try? FileManager.default.attributesOfItem(atPath: composeFile.path)
+                inputDirectoryPermissions.append((directoryAttributes?[.posixPermissions] as? NSNumber)?.intValue ?? -1)
+                inputFilePermissions.append((fileAttributes?[.posixPermissions] as? NSNumber)?.intValue ?? -1)
             }
         }
         if !responses.isEmpty {
@@ -306,19 +349,16 @@ private final class BridgeInputInspectingRunner: CommandRunning, @unchecked Send
     }
 
     private func bridgeInputDirectory(in arguments: [String]) -> String? {
-        for index in arguments.indices where arguments[index] == "--mount" {
+        for index in arguments.indices where arguments[index] == "--volume" {
             let valueIndex = arguments.index(after: index)
             guard valueIndex < arguments.endIndex else {
                 continue
             }
-            let mount = arguments[valueIndex]
-            guard mount.contains(",dst=/in") else {
+            let volume = arguments[valueIndex]
+            guard volume.hasSuffix(":/in") else {
                 continue
             }
-            return mount
-                .split(separator: ",")
-                .first { $0.hasPrefix("src=") }
-                .map { String($0.dropFirst("src=".count)) }
+            return String(volume.dropLast(":/in".count))
         }
         return nil
     }
@@ -10515,7 +10555,11 @@ struct ComposeOrchestratorTests {
             ]
         ) {
             $0.networks = ["front": ComposeNetwork(name: "front")]
-            $0.extensions = ["x-project": .object(["enabled": .bool(true)])]
+            $0.extensions = ["x-project": .object([
+                "enabled": .bool(true),
+                "one": .number(1),
+                "zero": .number(0),
+            ])]
         }
         project.workingDirectory = "/workspace/demo"
 
@@ -10535,7 +10579,7 @@ struct ComposeOrchestratorTests {
         #expect(yaml.contains(#"      ODD: "line\nquote\"tab\tend""#))
         #expect(yaml.contains("    networks:\n      - \"front\""))
         #expect(yaml.contains("networks:\n  front:\n    name: \"front\""))
-        #expect(yaml.contains("extensions:\n  x-project:\n    enabled: true"))
+        #expect(yaml.contains("extensions:\n  x-project:\n    enabled: true\n    one: 1\n    zero: 0"))
         #expect(!yaml.contains("worker"))
     }
 
@@ -10561,6 +10605,11 @@ struct ComposeOrchestratorTests {
     func bridgeConvertEnrichesTransformerInputWithImageMetadata() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        let config = directory.appendingPathComponent("app.conf")
+        try "feature=true\n".write(to: config, atomically: true, encoding: .utf8)
+        let secretEnvironment = "COMPOSE_BRIDGE_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
+        setenv(secretEnvironment, "bridge-secret", 1)
+        defer { unsetenv(secretEnvironment) }
         let output = directory.appendingPathComponent("out", isDirectory: true)
         let templates = directory.appendingPathComponent("templates", isDirectory: true)
         try FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
@@ -10569,7 +10618,7 @@ struct ComposeOrchestratorTests {
             "example/api:1": ComposeImageMetadata(
                 reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 displayReference: "example/api:1",
-                exposedPorts: ["8080/tcp", "8443/udp", "not-a-port"]
+                exposedPorts: ["0443/tcp", "8080/tcp", "8443/udp"]
             ),
         ])
         let project = composeProject(
@@ -10577,12 +10626,28 @@ struct ComposeOrchestratorTests {
             services: [
                 "api": composeService(name: "api", image: "example/api:1") {
                     $0.expose = ["9000"]
+                    $0.ports = ["127.0.0.1:80:8080", "8443-8444:9443-9444/udp"]
                 },
             ]
-        )
+        ) {
+            $0.workingDirectory = directory.path
+            $0.configs = ["app_config": .object(["file": .string("app.conf")])]
+            $0.secrets = ["app_secret": .object(["environment": .string(secretEnvironment)])]
+        }
 
         try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
             project: project,
+            model: .object([
+                "name": .string("demo"),
+                "services": .object([
+                    "api": .object(["image": .string("example/api:1")]),
+                ]),
+                "configs": .object(["app_config": .object([
+                    "file": .string("app.conf"),
+                    "x-transform": .string("keep"),
+                ])]),
+                "secrets": .object(["app_secret": .object(["environment": .string(secretEnvironment)])]),
+            ]),
             options: ComposeBridgeConvertOptions(
                 output: output.path,
                 templates: templates.path,
@@ -10598,13 +10663,234 @@ struct ComposeOrchestratorTests {
         let command = try #require(runner.commands.last?.arguments)
         #expect(command.starts(with: ["container", "run", "--rm"]))
         #expect(command.contains("LICENSE_AGREEMENT=true"))
-        #expect(command.contains("type=bind,src=\(output.path),dst=/out"))
-        #expect(command.contains("type=bind,src=\(templates.path),dst=/templates"))
+        #expect(command.contains("\(output.path):/out"))
+        #expect(command.contains("\(templates.path):/templates"))
         #expect(command.last == "example/bridge-transformer:latest")
         #expect(runner.commands.last?.io == .inherited)
         let input = try #require(runner.inputComposeFiles.first)
-        #expect(input.contains(#"image: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#))
-        #expect(input.contains("expose:\n      - \"8080\"\n      - \"8443\"\n      - \"9000\""))
+        #expect(input.contains(#"image: "example/api:1""#))
+        #expect(input.contains("expose:\n      - \"443\"\n      - \"8080\"\n      - \"8443\"\n      - \"9000\"\n      - \"9443\"\n      - \"9444\""))
+        #expect(input.contains(#"content: "feature=true\n""#))
+        #expect(input.contains(#"content: "bridge-secret""#))
+        #expect(input.contains(#"x-transform: "keep""#))
+        #expect(runner.inputDirectoryPermissions == [0o700])
+        #expect(runner.inputFilePermissions == [0o600])
+        let outputAttributes = try FileManager.default.attributesOfItem(atPath: output.path)
+        #expect((outputAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o744)
+    }
+
+    @Test("bridge convert preserves binary config content")
+    func bridgeConvertPreservesBinaryConfigContent() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = directory.appendingPathComponent("binary.conf")
+        try Data([0x80, 0x81, 0x82]).write(to: config)
+        let output = directory.appendingPathComponent("out", isDirectory: true)
+        let runner = BridgeInputInspectingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(name: "demo", services: [:])
+        var configuredProject = project
+        configuredProject.workingDirectory = directory.path
+        configuredProject.configs = ["binary": .object(["file": .string("binary.conf")])]
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+            project: configuredProject,
+            model: .object([
+                "name": .string("demo"),
+                "services": .object([:]),
+            ]),
+            options: ComposeBridgeConvertOptions(
+                output: output.path,
+                transformations: ["example/bridge-transformer:latest"]
+            )
+        )
+
+        let input = try #require(runner.inputComposeFiles.first)
+        #expect(input.contains("content: !!binary gIGC"))
+    }
+
+    @Test("bridge convert rejects invalid image exposed ports")
+    func bridgeConvertRejectsInvalidImageExposedPorts() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager(imageMetadata: [
+            "example/api:1": ComposeImageMetadata(
+                reference: "example/api:1",
+                exposedPorts: ["not-a-port"]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": composeService(name: "api", image: "example/api:1")]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+                project: project,
+                options: ComposeBridgeConvertOptions()
+            )
+            Issue.record("Expected an invalid image exposed port to be rejected")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("image 'example/api:1' exposes invalid port 'not-a-port'"))
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("bridge convert preserves commas in host bind paths")
+    func bridgeConvertPreservesCommasInHostBindPaths() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("output,two", isDirectory: true)
+        let templates = directory.appendingPathComponent("templates,three", isDirectory: true)
+        try FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
+        let runner = BridgeInputInspectingRunner()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            imageManager: RecordingContainerImageManager()
+        ).bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(
+                output: output.path,
+                templates: templates.path,
+                transformations: ["example/bridge-transformer:latest"]
+            )
+        )
+
+        let arguments = try #require(runner.commands.last?.arguments)
+        #expect(arguments.contains("\(output.path):/out"))
+        #expect(arguments.contains("\(templates.path):/templates"))
+        #expect(!arguments.contains("--mount"))
+    }
+
+    @Test("bridge convert selects amd64 for legacy official transformer versions")
+    func bridgeConvertSelectsAMD64ForLegacyOfficialTransformerVersions() async throws {
+        let versionedMessages = MessageRecorder()
+        let qualifiedMessages = MessageRecorder()
+        let latestMessages = MessageRecorder()
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { versionedMessages.append($0) })
+        ).bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(transformations: ["docker/compose-bridge-kubernetes:v0.0.3"])
+        )
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { qualifiedMessages.append($0) })
+        ).bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(
+                transformations: ["docker.io/docker/compose-bridge-helm:v0.0.3"]
+            )
+        )
+        try await ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(dryRun: true, emit: { latestMessages.append($0) })
+        ).bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(transformations: ["docker/compose-bridge-kubernetes:latest"])
+        )
+
+#if arch(arm64)
+        #expect(versionedMessages.messages.first?.contains("--arch amd64") == true)
+        #expect(qualifiedMessages.messages.first?.contains("--arch amd64") == true)
+        #expect(latestMessages.messages.first?.contains("--arch") == false)
+#else
+        #expect(versionedMessages.messages.first?.contains("--arch") == false)
+        #expect(qualifiedMessages.messages.first?.contains("--arch") == false)
+#endif
+    }
+
+    @Test("bridge convert preserves compose-go public model shapes")
+    func bridgeConvertPreservesComposeGoPublicModelShapes() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("out", isDirectory: true)
+        let runner = BridgeInputInspectingRunner()
+        let imageManager = RecordingContainerImageManager(imageMetadata: [
+            "example/api:1": ComposeImageMetadata(
+                reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                exposedPorts: ["8080/tcp"]
+            ),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: ["api": composeService(name: "api", image: "example/api:1")]
+        )
+        let model = ComposeValue.object([
+            "name": .string("demo"),
+            "services": .object([
+                "api": .object([
+                    "image": .string("example/api:1"),
+                    "ports": .array([
+                        .object([
+                            "mode": .string("ingress"),
+                            "target": .number(8080),
+                            "published": .string("80"),
+                            "protocol": .string("tcp"),
+                        ]),
+                    ]),
+                ]),
+            ]),
+        ])
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+            project: project,
+            model: model,
+            options: ComposeBridgeConvertOptions(
+                output: output.path,
+                transformations: ["example/bridge-transformer:latest"]
+            )
+        )
+
+        let input = try #require(runner.inputComposeFiles.first)
+        #expect(input.contains("published: \"80\""))
+        #expect(input.contains("target: 8080"))
+        #expect(input.contains("expose:\n      - \"8080\""))
+        #expect(!input.contains("workingDirectory:"))
+        #expect(!input.contains("name: \"api\""))
+    }
+
+    @Test("bridge convert uses Docker image names for build-only services")
+    func bridgeConvertUsesDockerImageNamesForBuildOnlyServices() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let runner = BridgeInputInspectingRunner()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api") {
+                    $0.build = ComposeBuild(context: ".")
+                },
+            ]
+        )
+        let model = ComposeValue.object([
+            "name": .string("demo"),
+            "services": .object(["api": .object(["build": .object(["context": .string(directory.path)])])]),
+        ])
+        let imageManager = RecordingContainerImageManager(imageMetadata: [
+            "demo_api:latest": ComposeImageMetadata(reference: "demo_api:latest", exposedPorts: ["8080/tcp"]),
+        ])
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+            project: project,
+            model: model,
+            options: ComposeBridgeConvertOptions(
+                output: directory.appendingPathComponent("out").path,
+                transformations: ["example/bridge-transformer:latest"]
+            )
+        )
+
+        #expect(await imageManager.requests == [
+            .pullMissing("demo_api:latest"),
+            .metadata("demo_api:latest"),
+            .pullMissing("example/bridge-transformer:latest"),
+        ])
+        let input = try #require(runner.inputComposeFiles.first)
+        #expect(input.contains("image: \"demo-api\""))
+        #expect(input.contains("expose:\n      - \"8080\""))
+        #expect(!input.contains("image: \"demo_api:latest\""))
     }
 
     @Test("bridge transformations list renders table JSON and quiet modes")
@@ -10614,6 +10900,18 @@ struct ComposeOrchestratorTests {
             ComposeBridgeTransformer(
                 id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 reference: "docker/compose-bridge-kubernetes:latest",
+                createdAtUnix: 1_700_000_000,
+                labels: ["com.docker.compose.bridge": "transformation"],
+                repoDigests: ["docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                sizeInBytes: 2048
+            ),
+            ComposeBridgeTransformer(
+                id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                reference: "docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                createdAtUnix: 1_700_000_000,
+                labels: ["com.docker.compose.bridge": "transformation"],
+                repoDigests: ["docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+                repoTags: [],
                 sizeInBytes: 2048
             ),
         ])
@@ -10629,10 +10927,62 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests == [.bridgeTransformers, .bridgeTransformers, .bridgeTransformers])
         #expect(emitted.messages.count == 3)
         #expect(emitted.messages[0].contains("IMAGE ID"))
+        #expect(emitted.messages[0].contains("TAGS"))
         #expect(emitted.messages[0].contains("compose-bridge-kubernetes"))
-        #expect(emitted.messages[1].contains(#""tag" : "latest""#))
-        #expect(emitted.messages[1].contains("compose-bridge-kubernetes"))
+        #expect(emitted.messages[1].contains(#""Created" : 1700000000"#))
+        #expect(emitted.messages[1].contains(#""Id" : "sha256:aaaaaaaa"#))
+        #expect(emitted.messages[1].contains(#""RepoTags" : ["#))
+        #expect(emitted.messages[1].contains(#""com.docker.compose.bridge" : "transformation""#))
         #expect(emitted.messages[2] == "docker/compose-bridge-kubernetes:latest")
+        let summaries = try #require(
+            JSONSerialization.jsonObject(with: Data(emitted.messages[1].utf8)) as? [[String: Any]]
+        )
+        #expect(summaries.count == 1)
+        #expect(summaries[0]["RepoTags"] as? [String] == ["docker/compose-bridge-kubernetes:latest"])
+    }
+
+    @Test("bridge transformations list preserves digest references")
+    func bridgeTransformationsListPreservesDigestReferences() async throws {
+        let emitted = MessageRecorder()
+        let imageManager = RecordingContainerImageManager(transformers: [
+            ComposeBridgeTransformer(
+                id: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                reference: "docker/compose-bridge-kubernetes@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                repoTags: [],
+                sizeInBytes: 2048
+            ),
+        ])
+
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(),
+            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+            imageManager: imageManager
+        )
+        try await orchestrator.bridgeTransformationsList(options: ComposeBridgeTransformationsListOptions())
+        try await orchestrator.bridgeTransformationsList(
+            options: ComposeBridgeTransformationsListOptions(format: "json")
+        )
+        try await orchestrator.bridgeTransformationsList(
+            options: ComposeBridgeTransformationsListOptions(quiet: true)
+        )
+
+        let row = try #require(emitted.messages.first?.split(whereSeparator: \.isNewline).last)
+        #expect(row.split(whereSeparator: \.isWhitespace).map(String.init) == [
+            "bbbbbbbbbbbb",
+            "docker/compose-bridge-kubernetes",
+            "<none>",
+            "2.05kB",
+        ])
+        let summaries = try #require(
+            JSONSerialization.jsonObject(with: Data(emitted.messages[1].utf8)) as? [[String: Any]]
+        )
+        #expect(summaries.first?["RepoTags"] as? [String] == [
+            "docker/compose-bridge-kubernetes@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ])
+        #expect(
+            emitted.messages[2]
+                == "docker/compose-bridge-kubernetes@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        )
     }
 
     @Test("bridge transformations create copies templates and writes Dockerfile")
@@ -10644,9 +10994,9 @@ struct ComposeOrchestratorTests {
         let runner = RecordingRunner(responses: [
             CommandResult(status: 0, stdout: "created-transformer\n", stderr: ""),
             .success,
-            .success,
         ])
         let imageManager = RecordingContainerImageManager()
+        let exporter = RecordingContainerExporter(archiveData: try bridgeTransformerArchiveData())
         let options = ComposeExecutionOptions(
             runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
                 oneOffIdentifier: { "abc123" },
@@ -10657,7 +11007,10 @@ struct ComposeOrchestratorTests {
         try await ComposeOrchestrator(
             runner: runner,
             options: options,
-            imageManager: imageManager
+            dependencies: orchestratorDependencies {
+                $0.exporter = exporter
+                $0.imageManager = imageManager
+            }
         ).bridgeTransformationsCreate(
             options: ComposeBridgeTransformationsCreateOptions(
                 destination: destination.path,
@@ -10668,17 +11021,181 @@ struct ComposeOrchestratorTests {
         #expect(await imageManager.requests == [.pullMissing("example/bridge-transformer:latest")])
         #expect(runner.commands.map(\.arguments) == [
             ["container", "create", "--name", "compose-bridge-abc123", "example/bridge-transformer:latest"],
-            ["container", "cp", "compose-bridge-abc123:/templates", destination.path],
             ["container", "rm", "--force", "created-transformer"],
         ])
+        #expect((await exporter.requests).map(\.id) == ["created-transformer"])
+        #expect(
+            try String(contentsOf: destination.appendingPathComponent("templates/service.tmpl"), encoding: .utf8)
+                == "service template"
+        )
+        #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("etc/ignored").path))
         let dockerfile = try String(
             contentsOf: destination.appendingPathComponent("Dockerfile"),
             encoding: .utf8
         )
-        #expect(dockerfile.contains("FROM docker/compose-bridge-transformer"))
-        #expect(dockerfile.contains("LABEL com.docker.compose.bridge=transformation"))
-        #expect(dockerfile.contains("COPY templates /templates"))
+        #expect(dockerfile == """
+        FROM docker/compose-bridge-transformer
+        LABEL com.docker.compose.bridge=transformation
+        COPY templates /templates
+        """ + "\n")
         #expect(emitted.messages == ["Transformer created in \"\(destination.path)\""])
+    }
+
+    @Test("bridge transformations create removes the stopped container after export failure")
+    func bridgeTransformationsCreateRemovesContainerAfterExportFailure() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("custom-transformer", isDirectory: true)
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: "created-transformer\n", stderr: ""),
+            .success,
+        ])
+        let exporter = RecordingContainerExporter(
+            failure: .commandFailed(command: "container export", status: 1, stderr: "export failed")
+        )
+        let options = ComposeExecutionOptions(runtimeHooks: .init(oneOffIdentifier: { "abc123" }))
+
+        await #expect(throws: ComposeError.self) {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: options,
+                dependencies: orchestratorDependencies { $0.exporter = exporter }
+            ).bridgeTransformationsCreate(
+                options: ComposeBridgeTransformationsCreateOptions(
+                    destination: destination.path,
+                    from: "example/bridge-transformer:latest"
+                )
+            )
+        }
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "create", "--name", "compose-bridge-abc123", "example/bridge-transformer:latest"],
+            ["container", "rm", "--force", "created-transformer"],
+        ])
+        #expect((await exporter.requests).map(\.id) == ["created-transformer"])
+    }
+
+    @Test("bridge transformations create does not remove a container after create failure")
+    func bridgeTransformationsCreateDoesNotRemoveContainerAfterCreateFailure() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("custom-transformer", isDirectory: true)
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 1, stdout: "", stderr: "name already exists"),
+        ])
+        let imageManager = RecordingContainerImageManager()
+        let options = ComposeExecutionOptions(runtimeHooks: .init(oneOffIdentifier: { "abc123" }))
+
+        await #expect(throws: ComposeError.self) {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: options,
+                dependencies: orchestratorDependencies { $0.imageManager = imageManager }
+            ).bridgeTransformationsCreate(
+                options: ComposeBridgeTransformationsCreateOptions(
+                    destination: destination.path,
+                    from: "example/bridge-transformer:latest"
+                )
+            )
+        }
+
+        #expect(runner.commands.map(\.arguments) == [
+            ["container", "create", "--name", "compose-bridge-abc123", "example/bridge-transformer:latest"],
+        ])
+    }
+
+    @Test("bridge transformations create dry-run describes export extraction")
+    func bridgeTransformationsCreateDryRunDescribesExportExtraction() async throws {
+        let emitted = MessageRecorder()
+        let runner = RecordingRunner()
+        let options = ComposeExecutionOptions(
+            dryRun: true,
+            runtimeHooks: ComposeExecutionOptions.RuntimeHooks(
+                oneOffIdentifier: { "abc123" },
+                emit: { emitted.append($0) }
+            )
+        )
+
+        try await ComposeOrchestrator(runner: runner, options: options).bridgeTransformationsCreate(
+            options: ComposeBridgeTransformationsCreateOptions(destination: "/tmp/custom-transformer")
+        )
+
+        #expect(runner.commands.isEmpty)
+        #expect(emitted.messages.contains("+ container create --name compose-bridge-abc123 docker/compose-bridge-kubernetes"))
+        #expect(emitted.messages.contains("+ compose-runtime export-rootfs compose-bridge-abc123 /tmp/compose-bridge-abc123.tar"))
+        #expect(emitted.messages.contains("+ compose-runtime extract-archive --include templates /tmp/compose-bridge-abc123.tar /tmp/custom-transformer"))
+        #expect(emitted.messages.contains("+ container rm --force compose-bridge-abc123"))
+    }
+
+    @Test("bridge convert accepts empty output without deleting the current directory")
+    func bridgeConvertAcceptsEmptyOutputWithoutDeletingCurrentDirectory() async throws {
+        let runner = BridgeInputInspectingRunner()
+        let imageManager = RecordingContainerImageManager()
+        let packageManifest = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Package.swift")
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(output: "", transformations: ["example/transformer"])
+        )
+
+        #expect(FileManager.default.fileExists(atPath: packageManifest.path))
+        #expect(runner.commands.last?.arguments.contains("\(FileManager.default.currentDirectoryPath):/out") == true)
+    }
+
+    @Test("bridge convert rejects destructive output paths")
+    func bridgeConvertRejectsDestructiveOutputPaths() async throws {
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+
+        await #expect(throws: ComposeError.self) {
+            try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposeBridgeConvertOptions(output: "/", transformations: ["example/transformer"])
+            )
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("bridge convert ignores an empty templates option")
+    func bridgeConvertIgnoresEmptyTemplatesOption() async throws {
+        let runner = BridgeInputInspectingRunner()
+        let imageManager = RecordingContainerImageManager()
+
+        try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(
+                templates: "",
+                transformations: ["example/transformer"]
+            )
+        )
+
+        let arguments = try #require(runner.commands.last?.arguments)
+        #expect(!arguments.contains(where: { $0.hasSuffix(":/templates") }))
+    }
+
+    @Test("bridge convert rejects output symlinks that resolve to the current directory")
+    func bridgeConvertRejectsOutputSymlinkToCurrentDirectory() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("current")
+        try FileManager.default.createSymbolicLink(
+            at: output,
+            withDestinationURL: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        )
+        let runner = RecordingRunner()
+        let imageManager = RecordingContainerImageManager()
+
+        await #expect(throws: ComposeError.self) {
+            try await ComposeOrchestrator(runner: runner, imageManager: imageManager).bridgeConvert(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposeBridgeConvertOptions(output: output.path, transformations: ["example/transformer"])
+            )
+        }
+
+        #expect(FileManager.default.fileExists(atPath: output.path))
+        #expect(runner.commands.isEmpty)
     }
 
     @Test("config rejects unsupported render formats")
@@ -25768,6 +26285,13 @@ private actor RecordingContainerResourceManager: ContainerResourceManaging {
 
 private actor RecordingContainerExporter: ContainerExporting {
     private var storage: [ContainerExportRequest] = []
+    private let archiveData: Data?
+    private let failure: ComposeError?
+
+    init(archiveData: Data? = nil, failure: ComposeError? = nil) {
+        self.archiveData = archiveData
+        self.failure = failure
+    }
 
     var requests: [ContainerExportRequest] {
         storage
@@ -25775,6 +26299,12 @@ private actor RecordingContainerExporter: ContainerExporting {
 
     func exportContainer(id: String, output: String?) async throws {
         storage.append(ContainerExportRequest(id: id, output: output))
+        if let failure {
+            throw failure
+        }
+        if let archiveData, let output {
+            try archiveData.write(to: URL(fileURLWithPath: output), options: .atomic)
+        }
     }
 }
 

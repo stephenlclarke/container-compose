@@ -216,7 +216,15 @@ To run every Docker Compose V2 parity target in a deterministic sequence, use:
 make docker-compose-parity
 ```
 
-The aggregate target first builds the sibling `../container` checkout when it exists, then builds the local `compose` binary and runs the CLI surface, build, mount, Deploy metadata, device, network, lifecycle, event, host namespace, and create-options parity checks one at a time. Runtime-backed parity checks use `CONTAINER_COMPOSE_CONTAINER` to choose the `container` binary used by the compatibility gate; by default this points at `../container/bin/container` when that sibling source build exists, and falls back to `container` from `PATH` otherwise. Override `CONTAINER_STACK_REPO=/path/to/container` or `CONTAINER_COMPOSE_CONTAINER=/path/to/container` when validating a different matched stack.
+The aggregate target first builds the sibling `../container` checkout when it exists, then builds the local `compose` binary and runs the CLI surface, Bridge, build, mount, Deploy metadata, device, network, lifecycle, event, host namespace, and create-options parity checks one at a time. Runtime-backed parity checks use `CONTAINER_COMPOSE_CONTAINER` to choose the `container` binary used by the compatibility gate; by default this points at `../container/bin/container` when that sibling source build exists, and falls back to `container` from `PATH` otherwise. Override `CONTAINER_STACK_REPO=/path/to/container` or `CONTAINER_COMPOSE_CONTAINER=/path/to/container` when validating a different matched stack.
+
+For the complete Compose Bridge runtime parity check, run:
+
+```sh
+make docker-compose-bridge-parity
+```
+
+This synchronizes Docker Compose's maintained Bridge fixture, compares Kubernetes and Helm output trees, validates table, JSON, quiet, `list`, and `ls` transformer discovery, and compares transformer source creation byte for byte. It requires Docker Compose and a running matched fork-backed `container` service. If a standalone Docker engine cannot bind-mount the macOS temporary directory, Docker's conversion command is reported as unavailable and its maintained expected fixture remains the strict conversion oracle; transformer listing and creation still run against both implementations.
 
 For the local-only command/help surface parity check, run:
 

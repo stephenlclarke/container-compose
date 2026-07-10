@@ -32,6 +32,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
+	"go.yaml.in/yaml/v4"
 )
 
 func init() {
@@ -99,6 +100,13 @@ type normalizedProject struct {
 	Secrets          map[string]any               `json:"secrets,omitempty"`
 	Models           map[string]any               `json:"models,omitempty"`
 	Extensions       map[string]any               `json:"extensions,omitempty"`
+}
+
+// bridgeProject carries the runtime projection and compose-go's public model
+// from one parse so Bridge templates retain Compose attribute names and shapes.
+type bridgeProject struct {
+	Project *normalizedProject `json:"project"`
+	Model   any                `json:"model"`
 }
 
 type normalizedVariable struct {
@@ -413,6 +421,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	var noNormalize bool
 	var noPathResolution bool
 	var variables bool
+	var bridgeModel bool
 
 	flags := flag.NewFlagSet("compose-normalizer", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -427,6 +436,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags.BoolVar(&noNormalize, "no-normalize", false, "Do not normalize the compose model.")
 	flags.BoolVar(&noPathResolution, "no-path-resolution", false, "Do not resolve relative file paths.")
 	flags.BoolVar(&variables, "variables", false, "Print model variables as JSON.")
+	flags.BoolVar(&bridgeModel, "bridge-model", false, "Print the runtime project and Compose Bridge model as JSON.")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -440,8 +450,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	var result any
 	var err error
+	if variables && bridgeModel {
+		fmt.Fprintln(stderr, "compose-normalizer: --variables and --bridge-model are mutually exclusive")
+		return 2
+	}
 	if variables {
 		result, err = loadVariables(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
+	} else if bridgeModel {
+		result, err = loadBridgeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	} else {
 		result, err = loadProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	}
@@ -471,11 +487,43 @@ type projectLoadOptions struct {
 // handling to compose-go.
 func loadProject(files, profiles, envFiles []string, projectName, projectDirectory string, optionalLoadOptions ...projectLoadOptions) (*normalizedProject, error) {
 	loadOptions := firstProjectLoadOptions(optionalLoadOptions)
+	project, resolvedProjectDirectory, err := loadComposeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
+	if err != nil {
+		return nil, err
+	}
+	return normalize(project, resolvedProjectDirectory), nil
+}
+
+// loadBridgeProject returns both orchestration data and compose-go's canonical
+// public model without parsing or normalizing the Compose inputs twice.
+func loadBridgeProject(files, profiles, envFiles []string, projectName, projectDirectory string, optionalLoadOptions ...projectLoadOptions) (*bridgeProject, error) {
+	loadOptions := firstProjectLoadOptions(optionalLoadOptions)
+	project, resolvedProjectDirectory, err := loadComposeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
+	if err != nil {
+		return nil, err
+	}
+	rawModel, err := project.MarshalYAML(types.WithSecretContent)
+	if err != nil {
+		return nil, fmt.Errorf("marshal bridge model: %w", err)
+	}
+	var model any
+	if err := yaml.Unmarshal(rawModel, &model); err != nil {
+		return nil, fmt.Errorf("decode bridge model: %w", err)
+	}
+	return &bridgeProject{
+		Project: normalize(project, resolvedProjectDirectory),
+		Model:   model,
+	}, nil
+}
+
+// loadComposeProject applies Compose input options and returns compose-go's
+// canonical project plus the resolved project directory.
+func loadComposeProject(files, profiles, envFiles []string, projectName, projectDirectory string, loadOptions projectLoadOptions) (*types.Project, string, error) {
 	if projectDirectory == "" {
 		var err error
 		projectDirectory, err = os.Getwd()
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 
@@ -503,18 +551,18 @@ func loadProject(files, profiles, envFiles []string, projectName, projectDirecto
 
 	projectOptions, err := newProjectOptions(files, projectDirectory, usesDefaultFiles, options...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(projectOptions.ConfigPaths) == 0 {
-		return nil, errors.New("no compose file found")
+		return nil, "", errors.New("no compose file found")
 	}
 
 	project, err := cli.ProjectFromOptions(context.Background(), projectOptions)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return normalize(project, projectDirectory), nil
+	return project, projectDirectory, nil
 }
 
 func loadVariables(files, profiles, envFiles []string, projectName, projectDirectory string, optionalLoadOptions ...projectLoadOptions) ([]normalizedVariable, error) {

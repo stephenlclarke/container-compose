@@ -14,13 +14,19 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#if canImport(Darwin)
-    import Darwin
-#elseif canImport(Glibc)
-    import Glibc
-#endif
 import ContainerizationOCI
 import Foundation
+
+/// Compose runtime projection paired with compose-go's public Bridge model.
+public struct ComposeBridgeProject: Codable, Equatable {
+    public var project: ComposeProject
+    public var model: ComposeValue
+
+    public init(project: ComposeProject, model: ComposeValue) {
+        self.project = project
+        self.model = model
+    }
+}
 
 /// Options for `compose bridge convert`.
 public struct ComposeBridgeConvertOptions: Sendable, Equatable {
@@ -34,7 +40,7 @@ public struct ComposeBridgeConvertOptions: Sendable, Equatable {
     public init(
         output: String = "out",
         templates: String? = nil,
-        transformations: [String] = []
+        transformations: [String] = [],
     ) {
         self.output = output
         self.templates = templates
@@ -55,6 +61,7 @@ public struct ComposeBridgeTransformationsListOptions: Sendable, Equatable {
     }
 }
 
+// swiftlint:disable type_name
 /// Options for `compose bridge transformations create`.
 public struct ComposeBridgeTransformationsCreateOptions: Sendable, Equatable {
     /// Destination directory for the copied transformer templates.
@@ -68,23 +75,37 @@ public struct ComposeBridgeTransformationsCreateOptions: Sendable, Equatable {
     }
 }
 
+// swiftlint:enable type_name
+
 extension ComposeOrchestrator {
     static let defaultBridgeTransformerImage = "docker/compose-bridge-kubernetes"
     static let bridgeTransformerBaseImage = "docker/compose-bridge-transformer"
     static let bridgeTransformerLabel = "com.docker.compose.bridge"
 
     /// Converts the Compose model by running Compose Bridge transformer images.
-    public func bridgeConvert(project: ComposeProject, options convert: ComposeBridgeConvertOptions) async throws {
+    public func bridgeConvert(
+        project: ComposeProject,
+        model: ComposeValue? = nil,
+        options convert: ComposeBridgeConvertOptions,
+    ) async throws {
         let transformations = convert.transformations.isEmpty
             ? [Self.defaultBridgeTransformerImage]
             : convert.transformations
         let output = absoluteBridgePath(convert.output)
-        let templates = convert.templates.map(absoluteBridgePath)
+        let templates = convert.templates.flatMap { $0.isEmpty ? nil : absoluteBridgePath($0) }
 
         let renderedProject = options.dryRun
             ? project
             : try await projectWithBridgeAdditionalResources(project)
-        let composeYAML = try configYAML(project: renderedProject)
+        let composeYAML = if let model {
+            try bridgeModelYAML(
+                options.dryRun
+                    ? BridgeModelValue(model)
+                    : bridgeModelWithAdditionalResources(model, project: renderedProject),
+            )
+        } else {
+            try configYAML(project: renderedProject)
+        }
 
         if options.dryRun {
             for transformation in transformations {
@@ -92,7 +113,7 @@ extension ComposeOrchestrator {
                     transformation: transformation,
                     input: "/tmp/container-compose-bridge-in",
                     output: output,
-                    templates: templates
+                    templates: templates,
                 ))
             }
             return
@@ -101,7 +122,9 @@ extension ComposeOrchestrator {
         let input = try createBridgeInputDirectory(composeYAML: composeYAML)
         defer { try? FileManager.default.removeItem(at: input) }
 
-        try recreateBridgeOutputDirectory(output)
+        if !convert.output.isEmpty {
+            try recreateBridgeOutputDirectory(output)
+        }
         for transformation in transformations {
             try await pullMissingImage(transformation, quiet: true)
             try await runContainer(
@@ -109,9 +132,9 @@ extension ComposeOrchestrator {
                     transformation: transformation,
                     input: input.path,
                     output: output,
-                    templates: templates
+                    templates: templates,
                 ),
-                inheritedIO: true
+                inheritedIO: true,
             )
         }
     }
@@ -123,7 +146,7 @@ extension ComposeOrchestrator {
         guard !output.isEmpty else {
             return
         }
-        self.options.emit(output)
+        options.emit(output)
     }
 
     /// Creates a local transformer source directory from an existing transformer image.
@@ -132,11 +155,13 @@ extension ComposeOrchestrator {
             ? create.from!
             : Self.defaultBridgeTransformerImage
         let destination = absoluteBridgePath(create.destination)
-        let containerID = "compose-bridge-\(self.options.oneOffIdentifier())"
+        let containerID = "compose-bridge-\(options.oneOffIdentifier())"
 
         if options.dryRun {
             try await runContainer(["create", "--name", containerID, source])
-            try await runContainer(["cp", "\(containerID):/templates", destination])
+            let archive = "/tmp/\(containerID).tar"
+            emitComposeRuntimeOperation(["export-rootfs", containerID, archive])
+            emitComposeRuntimeOperation(["extract-archive", "--include", "templates", archive, destination])
             try await runContainer(["rm", "--force", containerID])
             options.emit("+ write " + shellQuoted([bridgeDockerfilePath(destination)]))
             return
@@ -145,8 +170,12 @@ extension ComposeOrchestrator {
         try ensureBridgeDestinationIsNew(destination)
         try await pullMissingImage(source, quiet: true)
 
+        var createdContainer = false
         var createdID: String?
         func removeCreatedContainer() async {
+            guard createdContainer else {
+                return
+            }
             if let createdID, !createdID.isEmpty {
                 _ = try? await runContainer(["rm", "--force", createdID], emitOutput: false)
             } else {
@@ -156,8 +185,17 @@ extension ComposeOrchestrator {
 
         do {
             let result = try await runContainer(["create", "--name", containerID, source], emitOutput: false)
+            createdContainer = true
             createdID = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-            try await runContainer(["cp", "\(containerID):/templates", destination], emitOutput: false)
+            let exportDirectory = try createBridgeExportDirectory()
+            defer { try? FileManager.default.removeItem(at: exportDirectory) }
+            let archive = exportDirectory.appendingPathComponent("rootfs.tar")
+            let exportID = createdID.flatMap { $0.isEmpty ? nil : $0 } ?? containerID
+            try await exporter.exportContainer(
+                id: exportID,
+                output: archive.path,
+            )
+            try extractBridgeTemplates(archive: archive, destination: destination)
             try writeBridgeTransformerDockerfile(destination: destination)
         } catch {
             await removeCreatedContainer()
@@ -172,14 +210,20 @@ extension ComposeOrchestrator {
         var enriched = project
         for serviceName in project.services.keys.sorted() {
             guard var service = enriched.services[serviceName],
-                  let image = serviceImage(project: project, service: service)
+                  let runtimeImage = serviceImage(project: project, service: service)
             else {
                 continue
             }
-            try await pullMissingImage(image, quiet: true)
-            let metadata = try await imageManager.imageMetadata(image)
-            service.image = metadata.reference
-            let exposed = bridgeExposedPorts(metadata.exposedPorts)
+            try await pullMissingImage(runtimeImage, quiet: true)
+            let metadata = try await imageManager.imageMetadata(runtimeImage)
+            service.image = service.image ?? "\(project.name)-\(service.name)"
+            var exposed = try bridgeExposedPorts(metadata.exposedPorts, image: runtimeImage)
+            for port in service.ports ?? [] {
+                let mapping = try parsePublishedPortMapping(port, serviceName: service.name)
+                exposed.append(contentsOf: (0 ..< mapping.targetRange.count).map {
+                    String(mapping.targetRange.start + $0)
+                })
+            }
             if !exposed.isEmpty {
                 service.expose = Array(Set((service.expose ?? []) + exposed)).sorted()
             }
@@ -193,140 +237,173 @@ extension ComposeOrchestrator {
         transformation: String,
         input: String,
         output: String,
-        templates: String?
+        templates: String?,
     ) -> [String] {
         var arguments = [
             "run",
             "--rm",
             "--env", "LICENSE_AGREEMENT=true",
-            "--mount", "type=bind,src=\(input),dst=/in",
-            "--mount", "type=bind,src=\(output),dst=/out",
+            "--volume", "\(input):/in",
+            "--volume", "\(output):/out",
         ]
+        if bridgeOfficialTransformerNeedsAMD64(transformation) {
+            arguments.append(contentsOf: ["--arch", "amd64"])
+        }
         if let uid = bridgeCurrentUID() {
             arguments.append(contentsOf: ["--uid", uid])
         }
         if let templates {
-            arguments.append(contentsOf: ["--mount", "type=bind,src=\(templates),dst=/templates"])
+            arguments.append(contentsOf: ["--volume", "\(templates):/templates"])
         }
         arguments.append(transformation)
         return arguments
     }
 }
 
-private struct BridgeTransformerRow: Encodable {
+private struct BridgeTransformerRow {
     var id: String
     var repository: String
     var tag: String
     var size: String
 }
 
-private func bridgeExposedPorts(_ ports: [String]) -> [String] {
-    ports.compactMap { port in
-        let fields = port.split(separator: "/", maxSplits: 1).map(String.init)
-        guard let number = fields.first, Int(number) != nil else {
-            return nil
-        }
-        return number
+private struct BridgeTransformerSummary: Encodable {
+    var containers: Int64
+    var created: Int64
+    var id: String
+    var labels: [String: String]
+    var parentID: String
+    var repoDigests: [String]
+    var repoTags: [String]
+    var sharedSize: Int64
+    var size: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case containers = "Containers"
+        case created = "Created"
+        case id = "Id"
+        case labels = "Labels"
+        case parentID = "ParentId"
+        case repoDigests = "RepoDigests"
+        case repoTags = "RepoTags"
+        case sharedSize = "SharedSize"
+        case size = "Size"
     }
+}
+
+private func bridgeExposedPorts(_ ports: [String], image: String) throws -> [String] {
+    try ports.map { port in
+        let fields = port.split(separator: "/", maxSplits: 1).map(String.init)
+        guard let number = fields.first, let parsed = UInt16(number) else {
+            throw ComposeError.invalidProject("image '\(image)' exposes invalid port '\(port)'")
+        }
+        return String(parsed)
+    }
+}
+
+private func bridgeOfficialTransformerNeedsAMD64(_ reference: String) -> Bool {
+    #if arch(arm64)
+        guard let parsed = try? Reference.parse(reference),
+              [
+                  "docker/compose-bridge-kubernetes",
+                  "docker.io/docker/compose-bridge-kubernetes",
+                  "index.docker.io/docker/compose-bridge-kubernetes",
+                  "docker/compose-bridge-helm",
+                  "docker.io/docker/compose-bridge-helm",
+                  "index.docker.io/docker/compose-bridge-helm",
+              ].contains(parsed.name)
+        else {
+            return false
+        }
+        return parsed.digest != nil || (parsed.tag != nil && parsed.tag != "latest")
+    #else
+        false
+    #endif
 }
 
 private func renderBridgeTransformers(
     _ transformers: [ComposeBridgeTransformer],
-    options: ComposeBridgeTransformationsListOptions
+    options: ComposeBridgeTransformationsListOptions,
 ) throws -> String {
+    let transformers = coalescedBridgeTransformers(transformers)
     if options.quiet {
-        return transformers.map(\.reference).joined(separator: "\n")
+        return transformers.map {
+            bridgeTransformerDisplayReferences($0).first ?? $0.id
+        }.joined(separator: "\n")
     }
 
     let rows = transformers.map(bridgeTransformerRow)
     let normalized = options.format.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     switch normalized {
-    case "", "table":
-        return renderTable([["IMAGE ID", "REPO", "TAG", "SIZE"]] + rows.map { [$0.id, $0.repository, $0.tag, $0.size] })
+    case "", "pretty", "table":
+        return renderTable(
+            [["IMAGE ID", "REPO", "TAGS", "SIZE"]]
+                + rows.map { [$0.id, $0.repository, $0.tag, $0.size] },
+        )
     case "json":
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return String(decoding: try encoder.encode(rows), as: UTF8.self)
+        let summaries = transformers.map(bridgeTransformerSummary)
+        let data = try encoder.encode(summaries)
+        guard let output = String(data: data, encoding: .utf8) else {
+            throw ComposeError.invalidProject("failed to encode Bridge transformer summaries as UTF-8")
+        }
+        return output
     default:
-        throw ComposeError.unsupported("bridge transformations list --format '\(options.format)'; supported values are table and json")
+        throw ComposeError.unsupported(
+            "bridge transformations list --format '\(options.format)'; "
+                + "supported values are table and json",
+        )
     }
 }
 
 private func bridgeTransformerRow(_ transformer: ComposeBridgeTransformer) -> BridgeTransformerRow {
-    let parsed = try? Reference.parse(transformer.reference)
-    let id = transformer.id.count > 12 ? String(transformer.id.prefix(12)) : transformer.id
+    let reference = bridgeTransformerDisplayReferences(transformer).first ?? transformer.reference
+    let parsed = try? Reference.parse(reference)
+    let digest = transformer.id.split(separator: ":", maxSplits: 1).last.map(String.init) ?? transformer.id
+    let id = digest.count > 12 ? String(digest.prefix(12)) : digest
     return BridgeTransformerRow(
         id: id,
-        repository: parsed?.name ?? transformer.reference,
+        repository: parsed?.name ?? reference,
         tag: parsed?.tag ?? "<none>",
-        size: humanBridgeSize(transformer.sizeInBytes)
+        size: humanBridgeSize(transformer.sizeInBytes),
     )
+}
+
+private func bridgeTransformerSummary(_ transformer: ComposeBridgeTransformer) -> BridgeTransformerSummary {
+    BridgeTransformerSummary(
+        containers: transformer.containers,
+        created: transformer.createdAtUnix,
+        id: transformer.id,
+        labels: transformer.labels,
+        parentID: transformer.parentID,
+        repoDigests: transformer.repoDigests,
+        repoTags: bridgeTransformerDisplayReferences(transformer),
+        sharedSize: transformer.sharedSizeInBytes,
+        size: transformer.sizeInBytes,
+    )
+}
+
+private func bridgeTransformerDisplayReferences(_ transformer: ComposeBridgeTransformer) -> [String] {
+    if !transformer.repoTags.isEmpty {
+        return transformer.repoTags
+    }
+    if !transformer.repoDigests.isEmpty {
+        return transformer.repoDigests
+    }
+    return transformer.reference.isEmpty ? [] : [transformer.reference]
 }
 
 private func humanBridgeSize(_ size: Int64) -> String {
-    let formatter = ByteCountFormatter()
-    formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
-    formatter.countStyle = .file
-    return formatter.string(fromByteCount: size)
-}
-
-private func absoluteBridgePath(_ path: String) -> String {
-    let expanded = (path as NSString).expandingTildeInPath
-    let url: URL
-    if expanded.hasPrefix("/") {
-        url = URL(fileURLWithPath: expanded)
-    } else {
-        url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-            .appendingPathComponent(expanded)
+    guard size >= 1000 else {
+        return "\(size)B"
     }
-    return url.standardizedFileURL.path
-}
-
-private func createBridgeInputDirectory(composeYAML: String) throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("container-compose-bridge-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try composeYAML.write(to: directory.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
-    return directory
-}
-
-private func recreateBridgeOutputDirectory(_ output: String) throws {
-    let url = URL(fileURLWithPath: output, isDirectory: true)
-    if FileManager.default.fileExists(atPath: output) {
-        try FileManager.default.removeItem(at: url)
-    }
-    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-}
-
-private func ensureBridgeDestinationIsNew(_ destination: String) throws {
-    if FileManager.default.fileExists(atPath: destination) {
-        throw ComposeError.invalidProject("output folder \(destination) already exists")
-    }
-    try FileManager.default.createDirectory(
-        at: URL(fileURLWithPath: destination, isDirectory: true),
-        withIntermediateDirectories: true
-    )
-}
-
-private func writeBridgeTransformerDockerfile(destination: String) throws {
-    let dockerfile = """
-    FROM \(ComposeOrchestrator.bridgeTransformerBaseImage)
-    LABEL \(ComposeOrchestrator.bridgeTransformerLabel)=transformation
-    COPY templates /templates
-    """
-    try dockerfile.write(toFile: bridgeDockerfilePath(destination), atomically: true, encoding: .utf8)
-}
-
-private func bridgeDockerfilePath(_ destination: String) -> String {
-    URL(fileURLWithPath: destination, isDirectory: true)
-        .appendingPathComponent("Dockerfile")
-        .path
-}
-
-private func bridgeCurrentUID() -> String? {
-#if canImport(Darwin) || canImport(Glibc)
-    String(getuid())
-#else
-    nil
-#endif
+    let units = ["kB", "MB", "GB", "TB", "PB"]
+    var value = Double(size)
+    var unit = 0
+    repeat {
+        value /= 1000
+        unit += 1
+    } while value >= 1000 && unit < units.count
+    return String(format: "%.3g%@", locale: Locale(identifier: "en_US_POSIX"), value, units[unit - 1])
 }

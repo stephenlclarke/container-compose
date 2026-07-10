@@ -1252,6 +1252,37 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
+    @Test("normalizer decodes the Compose Bridge model envelope")
+    func normalizerDecodesComposeBridgeModelEnvelope() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"project":{"name":"demo","workingDirectory":"/tmp/demo","composeFiles":["compose.yml"],"services":{"web":{"name":"web","image":"nginx","ports":["80:8080"]}},"networks":{},"volumes":{}},"model":{"name":"demo","services":{"web":{"image":"nginx","ports":[{"mode":"ingress","target":8080,"published":"80","protocol":"tcp"}]}}}}"#,
+                stderr: ""
+            ),
+        ])
+
+        let bridge = try await ComposeNormalizer(runner: runner).bridgeProject(options: ComposeOptions(
+            files: ["compose.yml"],
+            projectDirectory: "/tmp/demo"
+        ))
+
+        #expect(bridge.project.services["web"]?.ports == ["80:8080"])
+        guard case .object(let root) = bridge.model,
+              case .object(let services) = root["services"],
+              case .object(let web) = services["web"],
+              case .array(let ports) = web["ports"],
+              case .object(let port) = ports.first
+        else {
+            Issue.record("Expected structured Compose Bridge port model")
+            return
+        }
+        #expect(port["published"] == .string("80"))
+        #expect(port["target"] == .number(8080))
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--bridge-model"))
+    }
+
     @Test("normalizer forwards inferred project directory")
     func normalizerForwardsInferredProjectDirectory() async throws {
         let runner = RecordingRunner(responses: [

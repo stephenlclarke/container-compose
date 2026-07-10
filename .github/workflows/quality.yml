@@ -367,6 +367,9 @@ jobs:
               Sources/ComposeCore/ComposeExecutionOptions.swift|Sources/ComposeCore/ComposeOrchestratorBuildAndImages.swift|Sources/ComposeCore/ComposeOrchestratorUp.swift|Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift|Sources/ComposeCore/ContainerDiscoveryAdapter.swift|Tests/ComposeCoreTests/ComposeOrchestratorTests.swift)
                 continue
                 ;;
+              Sources/ComposePlugin/ContainerPackageCompatibility.swift|Tests/ComposePluginTests/ContainerPackageCompatibilityTests.swift|Tests/ComposeCoreTests/ComposeNormalizerTests.swift)
+                continue
+                ;;
             esac
             case "$path" in
               Package.swift|Sources/*.swift|Tests/*.swift)

@@ -1301,7 +1301,7 @@ private func runProcess(
         throw ComposeError.commandFailed(
             command: command.joined(separator: " "),
             status: result.status,
-            stderr: result.stderr
+            stderr: mergeOutputForOrdering ? result.combined : result.stderr
         )
     }
     return result

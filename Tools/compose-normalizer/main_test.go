@@ -81,6 +81,47 @@ services:
 	}
 }
 
+func TestRunWritesBridgeRuntimeAndPublicModel(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+name: sample
+services:
+  api:
+    image: nginx:alpine
+    ports:
+      - "80:8080"
+`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--bridge-model", "--project-directory", dir}, &stdout, &stderr)
+	if status != 0 {
+		t.Fatalf("run status = %d, stderr = %s", status, stderr.String())
+	}
+
+	var bridge bridgeProject
+	if err := json.Unmarshal(stdout.Bytes(), &bridge); err != nil {
+		t.Fatalf("decode Bridge JSON: %v", err)
+	}
+	if got := bridge.Project.Services["api"].Ports; !reflect.DeepEqual(got, []string{"80:8080"}) {
+		t.Fatalf("runtime ports = %#v, want short runtime syntax", got)
+	}
+	model, ok := bridge.Model.(map[string]any)
+	if !ok {
+		t.Fatalf("Bridge model = %#v, want object", bridge.Model)
+	}
+	services := model["services"].(map[string]any)
+	api := services["api"].(map[string]any)
+	ports := api["ports"].([]any)
+	port := ports[0].(map[string]any)
+	if port["published"] != "80" || port["target"] != float64(8080) || port["protocol"] != "tcp" || port["mode"] != "ingress" {
+		t.Fatalf("Bridge port = %#v, want compose-go public port object", port)
+	}
+	if _, exists := api["name"]; exists {
+		t.Fatalf("Bridge service contains internal runtime name: %#v", api)
+	}
+}
+
 func TestRunPreservesBuildAttestations(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := filepath.Join(dir, "compose.yaml")
@@ -202,6 +243,15 @@ func TestRunReportsFlagAndLoadErrors(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "no compose file found") {
 		t.Fatalf("missing compose stderr = %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if status := run([]string{"--variables", "--bridge-model"}, &stdout, &stderr); status != 2 {
+		t.Fatalf("conflicting mode status = %d, want 2", status)
+	}
+	if !strings.Contains(stderr.String(), "mutually exclusive") {
+		t.Fatalf("conflicting mode stderr = %q", stderr.String())
 	}
 }
 

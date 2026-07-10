@@ -452,6 +452,13 @@ struct GlobalOptions: ParsableArguments {
         )
     }
 
+    /// Loads the runtime projection and compose-go's public Bridge model.
+    func loadBridgeProject() async throws -> ComposeBridgeProject {
+        try await progressReporter().activity("Loading Compose model") {
+            try await ComposeNormalizer().bridgeProject(options: composeOptions())
+        }
+    }
+
     /// Loads a Compose project through an injectable normalizer operation.
     func loadProject(
         options: ComposeOptions,
@@ -789,9 +796,10 @@ struct BridgeConvert: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Runs the selected Bridge transformer image or images.
     func run() async throws {
-        let loadedProject = try await project()
+        let loadedProject = try await global.loadBridgeProject()
         try await orchestrator().bridgeConvert(
-            project: loadedProject,
+            project: loadedProject.project,
+            model: loadedProject.model,
             options: ComposeBridgeConvertOptions(
                 output: output,
                 templates: templates,

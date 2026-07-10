@@ -147,11 +147,11 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `alpha scale` | ✅ Yes | Experimental `alpha scale` is implemented as an alias for the stable `scale` command. |
 | `alpha watch` | ✅ Yes | Experimental `alpha watch` is implemented as an alias for the stable `watch` command. |
 | `attach` | ⚠️ Partial | `--no-stdin` output-follow attach is implemented; default interactive reattach and detach-key handling need runtime support. |
-| `bridge` | ✅ Yes | Compose Bridge transformation tooling is implemented for the fork-backed runtime lane. |
-| `bridge convert` | ✅ Yes | Compose models are enriched with local image metadata, rendered to Bridge input YAML, and transformed through local transformer images. |
+| `bridge` | ✅ Yes | The complete Compose Bridge CLI runtime is implemented for the fork-backed runtime lane. |
+| `bridge convert` | ✅ Yes | Models include image ports, published target ports, and text or binary config and secret content; Kubernetes, Helm, custom templates, repeated transformations, and empty-output current-directory mode run through local transformer images. |
 | `bridge transformations` | ✅ Yes | Bridge transformation image management is implemented. |
-| `bridge transformations create` | ✅ Yes | Transformer template directories can be copied from local transformer images and paired with a Dockerfile for rebuilds. |
-| `bridge transformations list` | ✅ Yes | Local transformer images labelled `com.docker.compose.bridge=transformation` are listed in table, JSON, and quiet modes. |
+| `bridge transformations create` | ✅ Yes | A stopped transformer rootfs is exported, only `/templates` is securely extracted, and a standard rebuildable Dockerfile is written. |
+| `bridge transformations list` | ✅ Yes | Local transformer images labelled `com.docker.compose.bridge=transformation` are listed in Docker-shaped table, JSON, and quiet modes. |
 | `bridge transformations ls` | ✅ Yes | Alias for `bridge transformations list`. |
 | `build` | ✅ Yes | Dockerfile/build parity is implemented for the supported build surface above. |
 | `commit` | ❌ No | Container commit/image mutation is not implemented. |

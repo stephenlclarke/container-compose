@@ -42,7 +42,7 @@ let package = Package(
                 .product(name: "ContainerResource", package: "container"),
                 "ComposeCore",
             ],
-            path: "Sources/ComposePlugin"
+            path: "Sources/ComposePlugin",
         ),
         .target(
             name: "ComposeCore",
@@ -50,31 +50,33 @@ let package = Package(
                 .product(name: "ContainerAPIClient", package: "container"),
                 .product(name: "ContainerPersistence", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
+                .product(name: "ContainerizationArchive", package: "containerization"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
                 .product(name: "Logging", package: "swift-log"),
             ],
-            path: "Sources/ComposeCore"
+            path: "Sources/ComposeCore",
         ),
         .testTarget(
             name: "ComposeCoreTests",
             dependencies: [
                 "ComposeCore",
                 .product(name: "ContainerResource", package: "container"),
+                .product(name: "ContainerizationArchive", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
             ],
             path: "Tests/ComposeCoreTests",
             resources: [
                 .process("Fixtures"),
-            ]
+            ],
         ),
         .testTarget(
             name: "ComposePluginTests",
             dependencies: [
                 "ComposePlugin",
             ],
-            path: "Tests/ComposePluginTests"
+            path: "Tests/ComposePluginTests",
         ),
         .testTarget(
             name: "ComposeRuntimeTests",
@@ -84,7 +86,7 @@ let package = Package(
             path: "Tests/ComposeRuntimeTests",
             resources: [
                 .copy("Fixtures"),
-            ]
+            ],
         ),
-    ]
+    ],
 )
