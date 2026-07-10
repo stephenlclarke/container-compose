@@ -1,34 +1,36 @@
 <!-- markdownlint-disable MD013 -->
 
-# [Request]: Run configured container health probes and publish health status
-
-## Template
-
-This issue draft follows `.github/ISSUE_TEMPLATE/02-feature.yml`.
+# [Request]: Run configured health probes with stable status transitions
 
 ## Feature or enhancement request details
 
-`apple/container` needs a runtime-owned way to evaluate configured container health probes and publish their current result through `ContainerSnapshot.health`. External orchestrators can then wait for healthy dependencies through the direct API instead of guessing that `.running` means ready.
+`apple/container` needs runtime-owned evaluation of configured container health probes and a stable current result through `ContainerSnapshot.health`. External orchestrators can then wait for readiness through the direct API instead of treating `.running` as healthy.
 
-This is the execution follow-up to the health data-shape and configuration slices:
+This request consolidates the current runtime behavior tracked by:
 
 - [apple/container#1502](https://github.com/apple/container/issues/1502): health status request.
 - [apple/container#1504](https://github.com/apple/container/pull/1504): `HealthStatus` and `ContainerSnapshot.health`.
-- `ISSUE-healthcheck-configuration.md`: local fork handoff for `ContainerHealthCheck` and `ContainerConfiguration.healthCheck`.
+- [apple/container#1918](https://github.com/apple/container/issues/1918): healthcheck execution and reporting.
 
 Requested behavior:
 
-- When a container with `configuration.healthCheck` starts, set `ContainerSnapshot.health` to `.starting`.
-- Periodically run the configured `ProcessConfiguration` inside the running container.
-- Treat exit code `0` as healthy.
-- Count non-zero exits as failures only after `startPeriodInNanoseconds`.
-- Mark the container unhealthy after `retries` consecutive counted failures.
-- Keep a previously healthy container healthy until the retry threshold is crossed.
+- Set health to `.starting` when a configured container starts.
+- Delay the first probe by the active start or normal interval.
+- Use five seconds when `startIntervalInNanoseconds` is omitted or zero.
+- Use the start interval only while status remains `starting` and the start period is active.
+- Treat a successful probe as the end of start-period failure grace.
+- Use Docker-compatible defaults for zero interval, timeout, and retry values.
+- Treat exit code `0` as healthy and reset the failure streak.
+- Mark the container unhealthy after the configured number of consecutive failures.
 - Kill timed-out probes and count them as failures.
-- Stop the health monitor when the container stops, exits, or is deleted.
-- Keep Compose dependency ordering outside `apple/container`.
+- Emit `health_status: healthy` and `health_status: unhealthy` only on transitions.
+- Preserve current health through `ManagedContainer`, inspect JSON, list JSON, and the list table.
+- Stop the monitor when the container stops, exits, or is deleted.
+- Keep Compose dependency ordering and wait policy outside `apple/container`.
 
-Related Docker references:
+Probe output history and an on-demand healthcheck command are separate API and CLI surfaces. They are not needed for readiness consumers.
+
+Related references:
 
 - [Dockerfile `HEALTHCHECK`](https://docs.docker.com/reference/dockerfile/#healthcheck)
 - [Docker Compose `healthcheck`](https://docs.docker.com/reference/compose-file/services/#healthcheck)

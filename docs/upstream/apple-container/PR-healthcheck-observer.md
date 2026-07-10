@@ -1,87 +1,59 @@
 <!-- markdownlint-disable MD013 -->
 
-# feat(api): observe configured container health checks
-
-## Template
-
-This PR draft follows `.github/pull_request_template.md`.
+# fix(health): align probe scheduling and status reporting
 
 ## Type of Change
 
-- [ ] Bug fix
+- [x] Bug fix
 - [x] New feature
 - [ ] Breaking change
 - [x] Documentation update
 
 ## Motivation and Context
 
-This is the runtime execution slice for container health status. It builds on the reserved `HealthStatus` / `ContainerSnapshot.health` shape from [apple/container#1504](https://github.com/apple/container/pull/1504) and the local `ContainerHealthCheck` configuration slice.
+This is the complete generic runtime observer for [apple/container#1918](https://github.com/apple/container/issues/1918). It builds on the health status shape from [apple/container#1504](https://github.com/apple/container/pull/1504) and the typed `ContainerHealthCheck` configuration.
 
-Docker Compose `depends_on.condition: service_healthy` requires a direct API signal that a running dependency has actually become ready. Polling `.running` is not enough for common local-development services such as databases and brokers.
+Readiness consumers need more than a running state. The observer executes configured probes, applies stable scheduling and retry semantics, publishes transitions, and preserves current health through API and CLI projections. Compose policy remains outside `apple/container`.
 
 ## What Changed
 
-- Starts a background health monitor when a container with `configuration.healthCheck` starts.
-- Sets `ContainerSnapshot.health` to `.starting` while probes are pending.
-- Executes the configured `ProcessConfiguration` through the existing runtime process APIs.
-- Treats exit code `0` as `.healthy`.
-- Counts non-zero exits and probe timeouts after the start period.
-- Marks `.unhealthy` after the configured retry threshold.
-- Cancels monitors when containers stop, exit, or are deleted.
-- Adds pure state-machine tests for start-period and retry behavior.
+- Starts a monitor when a container with `configuration.healthCheck` starts.
+- Delays the first probe by the applicable interval.
+- Uses Docker-compatible normal, start, timeout, and retry defaults when values are omitted or zero.
+- Uses the start interval only while the container is still starting inside its start period.
+- Ends start-period failure grace after the first successful probe.
+- Resets consecutive failures on success and marks unhealthy at the retry threshold.
+- Cancels timed-out probes and monitors for stopped, exited, or deleted containers.
+- Emits `health_status` events only when status changes and includes health in event attributes.
+- Preserves health in `ManagedContainer`, inspect JSON, list JSON, and the list table.
 
 ## Commit Tracking
 
-- Container code commit: `fa97154` in `stephenlclarke/container` (`feat(api): observe container health checks`).
-- Container dependency commits:
-  - `d995767` (`feat(api): reserve container health status`).
-  - `f41c817` (`feat(api): model container health checks`).
-- Lower runtime code commit: not required.
-- Compose dependency mapping is not part of this Apple PR.
-
-## Non-Goals
-
-- This does not parse Dockerfile `HEALTHCHECK` metadata from image configs.
-- This does not add CLI flags for healthchecks.
-- This does not implement Compose `depends_on.condition: service_healthy`.
-- This does not store Docker-style health probe output/history.
-
-## Testing
-
-- [x] Tested locally
-- [x] Added/updated tests
-- [x] Added/updated docs
-
-Local verification:
-
-```bash
-swift test --filter ContainerHealthMonitorTests
-swift test --filter 'ContainerHealthMonitorTests|ContainerConfigurationHealthCheckTests|ContainerSnapshotTests'
-git diff --check
-```
-
-Result:
-
-- `ContainerHealthMonitorTests`: 5 passing tests.
-- Combined focused API/config/status run: 11 passing tests.
-- Whitespace checks passed locally.
-
-New or relevant coverage:
-
-- Failures during the start period do not count against retries.
-- Counted failures transition to `.unhealthy` after the retry threshold.
-- A previously healthy container remains healthy until the threshold is crossed.
-- Successful probes reset the failure streak.
-- Zero retries are clamped so the first counted failure becomes unhealthy.
+- Current observer correction: `9c83559` in `stephenlclarke/container` (`fix(health): align probe scheduling and status reporting`).
+- Observer foundation: `fa97154` (`feat(api): observe container health checks`).
+- Configuration model: `f41c817` (`feat(api): model container health checks`).
+- Status model: `d995767` (`feat(api): reserve container health status`).
+- Lower runtime code: not required.
+- Compose readiness behavior is documented in `docs/upstream/container-compose/PR-compose-health-aware-wait.md`.
 
 ## Compatibility Notes
 
-Containers without `configuration.healthCheck` keep `health == nil` and existing runtime behavior. Containers with a healthcheck publish status only while running; stopped snapshots clear health to avoid stale readiness signals.
+The wire shape remains additive. Containers without a healthcheck omit health, and older persisted `ManagedContainer` JSON without health decodes with `nil`.
 
-The observer uses the existing runtime process API, so no Compose-specific behavior enters `apple/container`. Dockerfile-inherited healthchecks remain a separate image-config parsing gap because the current `ContainerizationOCI.ImageConfig` type does not decode Docker's `Healthcheck` extension.
+Probe cadence changes intentionally: configurations that previously ran an immediate first probe now wait for the applicable interval, and zero retries use the default threshold instead of becoming unhealthy after one failure.
 
-## Remaining Risks
+## Testing
 
-- Maintainers may prefer health probe execution inside the runtime service rather than the API server owning the scheduling loop.
-- Docker stores health probe output/history; this slice only publishes current status.
-- Dockerfile `HEALTHCHECK` inheritance still needs a separate image config model change.
+```bash
+swift test --filter 'ContainerHealthMonitorTests|ManagedContainerTests|ManagedContainerDisplayTests' --no-parallel
+make check
+make test
+make integration
+```
+
+Validation completed with 18 focused health tests, 902 Swift Testing tests, 94 XCTest tests, 214 concurrent integration tests, and 142 serial integration tests passing.
+
+## Remaining Scope
+
+- Probe output history and failing-streak details are not exposed as a public snapshot object.
+- An on-demand healthcheck command remains separate work under `apple/container#1918`.
