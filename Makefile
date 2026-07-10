@@ -103,6 +103,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-network-ipam-options-parity \
 	docker-compose-up-menu-parity \
 	docker-compose-host-namespaces-parity \
+	docker-compose-health-wait-parity \
 	docker-compose-create-options-parity \
 	docker-compose-events-parity \
 	docker-compose-rm-parity \
@@ -121,7 +122,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -328,7 +329,7 @@ cli-smoke-built:
 	root_help_output="$$(".build/debug/compose" --help)"; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32malpha$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \
-	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mup$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[32mup$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mpause$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32m--file$${ansi_escape}[0m"* ]]; \
@@ -822,8 +823,8 @@ cli-smoke-built:
 	up_wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --wait --wait-timeout 3 api)"; \
 	[[ "$$up_wait_output" == *"--name demo-db-1 --detach"* ]]; \
 	[[ "$$up_wait_output" == *"--name demo-api-1 --detach"* ]]; \
-	[[ "$$up_wait_output" == *"compose-runtime wait-running --timeout 3 demo-db-1"* ]]; \
-	[[ "$$up_wait_output" == *"compose-runtime wait-running --timeout 3 demo-api-1"* ]]; \
+	[[ "$$up_wait_output" == *"compose-runtime wait-ready --timeout 3 demo-db-1"* ]]; \
+	[[ "$$up_wait_output" == *"compose-runtime wait-ready --timeout 3 demo-api-1"* ]]; \
 	up_wait_no_start_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" up --wait --no-start api 2>&1 || true)"; \
 	[[ "$$up_wait_no_start_output" == *"invalid compose project: --wait and --no-start are incompatible"* ]]; \
 	up_renew_anon_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/scale-volumes.yml" up --renew-anon-volumes --scale api=2 api)"; \
@@ -1062,7 +1063,7 @@ cli-smoke-built:
 	[[ "$$unpause_output" == *"compose-runtime unpause demo-api-1"* ]]; \
 	start_wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" start --wait --wait-timeout 3 api)"; \
 	[[ "$$start_wait_output" == *"container start demo-api-1"* ]]; \
-	[[ "$$start_wait_output" == *"compose-runtime wait-running --timeout 3 demo-api-1"* ]]; \
+	[[ "$$start_wait_output" == *"compose-runtime wait-ready --timeout 3 demo-api-1"* ]]; \
 	wait_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait api)"; \
 	[[ "$$wait_output" == *"container wait demo-api-1"* ]]; \
 	wait_down_project_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" wait --down-project api)"; \
@@ -1166,6 +1167,9 @@ docker-compose-up-menu-parity: build
 
 docker-compose-host-namespaces-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-host-namespaces.sh --strict
+
+docker-compose-health-wait-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-health-wait.sh --strict
 
 docker-compose-create-options-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-create-options.sh --strict

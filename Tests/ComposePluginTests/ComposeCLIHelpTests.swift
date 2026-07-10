@@ -296,13 +296,13 @@ struct ComposeCLIHelpTests {
         #expect(help.contains("Use --menu=false to explicitly disable the helper menu."))
     }
 
-    @Test("up wait options show partial health support")
-    func upWaitOptionsShowPartialHealthSupport() throws {
+    @Test("up wait options show full health support")
+    func upWaitOptionsShowFullHealthSupport() throws {
         let help = try #require(ComposeCLIHelp.commandHelpText(command: "up"))
 
-        #expect(help.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--wait\u{001B}[0m"))
-        #expect(help.contains("\u{001B}[38;5;208m--wait-timeout\u{001B}[0m"))
+        #expect(help.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--wait\u{001B}[0m"))
+        #expect(help.contains("\u{001B}[32m--wait-timeout\u{001B}[0m"))
     }
 
     @Test("up raw attached output flags parse")

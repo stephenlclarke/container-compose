@@ -183,8 +183,7 @@ public protocol ContainerDiscoveryManaging: Sendable {
     func getContainer(id: String) async throws -> ComposeContainerSummary?
 }
 
-/// Live Compose discovery that avoids direct list crashes while preserving
-/// direct single-container detail such as health status.
+/// Live Compose discovery through the stable container CLI JSON boundary.
 public struct ContainerLiveDiscoveryManager: ContainerDiscoveryManaging {
     private let listManager: ContainerDiscoveryManaging
     private let detailManager: ContainerDiscoveryManaging
@@ -192,15 +191,16 @@ public struct ContainerLiveDiscoveryManager: ContainerDiscoveryManaging {
     public init(
         runner: CommandRunning = ProcessRunner(),
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
-        containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
-        detailManager: ContainerDiscoveryManaging = ContainerClientDiscoveryManager()
+        containerBinary: String = ComposeExecutionOptions.defaultContainerBinary(),
+        detailManager: ContainerDiscoveryManaging? = nil
     ) {
-        self.listManager = ContainerCLIJSONDiscoveryManager(
+        let cliManager = ContainerCLIJSONDiscoveryManager(
             runner: runner,
             environmentLauncher: environmentLauncher,
             containerBinary: containerBinary
         )
-        self.detailManager = detailManager
+        self.listManager = cliManager
+        self.detailManager = detailManager ?? cliManager
     }
 
     /// Lists project candidates through the stable CLI JSON boundary.
@@ -208,7 +208,7 @@ public struct ContainerLiveDiscoveryManager: ContainerDiscoveryManaging {
         try await listManager.listContainers(all: all)
     }
 
-    /// Fetches one container through the direct client to keep richer detail.
+    /// Fetches one container through the same stable JSON boundary.
     public func getContainer(id: String) async throws -> ComposeContainerSummary? {
         try await detailManager.getContainer(id: id)
     }
@@ -224,7 +224,7 @@ public struct ContainerCLIJSONDiscoveryManager: ContainerDiscoveryManaging {
     public init(
         runner: CommandRunning = ProcessRunner(),
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher,
-        containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
+        containerBinary: String = ComposeExecutionOptions.defaultContainerBinary()
     ) {
         self.runner = runner
         self.environmentLauncher = environmentLauncher
@@ -371,7 +371,8 @@ private extension ComposeContainerSummary {
             ),
             state: ComposeContainerSummary.State(
                 exitCode: managedContainer.exitCode,
-                exitedDate: managedContainer.exitedDate
+                exitedDate: managedContainer.exitedDate,
+                health: managedContainer.health?.rawValue
             )
         )
     }

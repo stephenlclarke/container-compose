@@ -509,7 +509,7 @@ public extension ComposeOrchestrator {
             try await startContainer(service: target.service, containerName: target.name)
         }
         if start.wait {
-            try await waitForStartedServiceTargets(targets, timeout: start.waitTimeout, command: "start --wait")
+            try await waitForReadyServiceTargets(targets, timeout: start.waitTimeout, command: "start --wait")
         }
     }
 

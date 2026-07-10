@@ -2734,8 +2734,86 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
     }
 
-    @Test("up wait dry run emits wait-running operations")
-    func upWaitDryRunEmitsWaitRunningOperations() async throws {
+    @Test("up wait polls configured healthchecks until healthy")
+    func upWaitPollsConfiguredHealthchecksUntilHealthy() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-api-1", status: "running", health: "starting"),
+                    ComposeContainerSummary(id: "demo-api-1", status: "running", health: "healthy"),
+                ],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.healthcheck = .object([
+                        "test": .array([.string("CMD"), .string("/bin/true")])
+                    ])
+                }
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            discoveryManager: discoveryManager
+        ).up(
+            project: project,
+            options: ComposeUpOptions {
+                $0.wait = true
+                $0.waitTimeout = 5
+            }
+        )
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
+    }
+
+    @Test("up wait fails when a configured healthcheck becomes unhealthy")
+    func upWaitFailsWhenConfiguredHealthcheckBecomesUnhealthy() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            getResponses: [
+                "demo-api-1": [
+                    nil,
+                    ComposeContainerSummary(id: "demo-api-1", status: "running", health: "unhealthy"),
+                ],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.healthcheck = .object([
+                        "test": .array([.string("CMD"), .string("/bin/false")])
+                    ])
+                }
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions(sleep: { _ in }),
+                discoveryManager: discoveryManager
+            ).up(
+                project: project,
+                options: ComposeUpOptions {
+                    $0.wait = true
+                    $0.waitTimeout = 5
+                }
+            )
+            Issue.record("Expected up wait to reject an unhealthy container")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("service 'api' container 'demo-api-1' is unhealthy"))
+        }
+    }
+
+    @Test("up wait dry run emits wait-ready operations")
+    func upWaitDryRunEmitsWaitReadyOperations() async throws {
         let emitted = MessageRecorder()
         let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
 
@@ -2756,7 +2834,7 @@ struct ComposeOrchestratorTests {
                 && message.contains("com.apple.container.compose.service=api")
                 && message.hasSuffix("example/api")
         })
-        #expect(emitted.messages.contains("+ compose-runtime wait-running --timeout 3 demo-api-1"))
+        #expect(emitted.messages.contains("+ compose-runtime wait-ready --timeout 3 demo-api-1"))
     }
 
     @Test("up wait timeout reports up command")
@@ -10139,7 +10217,7 @@ struct ComposeOrchestratorTests {
                 composeProjectLabel: "demo",
                 composeServiceLabel: "api",
                 composeOneOffLabel: "false",
-            ]),
+            ], health: "healthy"),
             ComposeContainerSummary(id: "demo-old-1", status: "running", labels: [
                 composeProjectLabel: "demo",
                 composeServiceLabel: "old",
@@ -10164,6 +10242,7 @@ struct ComposeOrchestratorTests {
         let data = Data(try #require(emitted.messages.first).utf8)
         let containers = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
         #expect(containers.compactMap { $0["id"] as? String } == ["demo-api-1"])
+        #expect(containers.compactMap { $0["health"] as? String } == ["healthy"])
     }
 
     @Test("ps rejects unsupported template fields")
@@ -13315,8 +13394,56 @@ struct ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1"])
     }
 
-    @Test("start wait dry run emits wait-running operations")
-    func startWaitDryRunEmitsWaitRunningOperations() async throws {
+    @Test("start wait polls configured healthchecks until healthy")
+    func startWaitPollsConfiguredHealthchecksUntilHealthy() async throws {
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(
+            containers: [
+                ComposeContainerSummary(
+                    id: "demo-api-1",
+                    status: "created",
+                    labels: [
+                        composeProjectLabel: "demo",
+                        composeServiceLabel: "api",
+                        composeOneOffLabel: "false",
+                    ]
+                )
+            ],
+            getResponses: [
+                "demo-api-1": [
+                    ComposeContainerSummary(id: "demo-api-1", status: "running", health: "starting"),
+                    ComposeContainerSummary(id: "demo-api-1", status: "running", health: "healthy"),
+                ],
+            ]
+        )
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.healthcheck = .object([
+                        "test": .array([.string("CMD"), .string("/bin/true")])
+                    ])
+                }
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            options: ComposeExecutionOptions(sleep: { _ in }),
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.lifecycleManager = lifecycleManager
+            }
+        ).start(project: project, options: ComposeStartOptions {
+            $0.services = ["api"]
+            $0.wait = true
+            $0.waitTimeout = 5
+        })
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1"])
+    }
+
+    @Test("start wait dry run emits wait-ready operations")
+    func startWaitDryRunEmitsWaitReadyOperations() async throws {
         let emitted = MessageRecorder()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let project = ComposeProject(
@@ -13338,7 +13465,7 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == [
             "+ container start demo-api-1",
-            "+ compose-runtime wait-running --timeout 3 demo-api-1",
+            "+ compose-runtime wait-ready --timeout 3 demo-api-1",
         ])
         #expect(await lifecycleManager.requests.isEmpty)
     }
@@ -14135,7 +14262,8 @@ struct ComposeOrchestratorTests {
                     ipv6Address: nil,
                     macAddress: nil
                 ),
-            ]
+            ],
+            health: .healthy
         )
         let stoppedSnapshot = try containerSnapshot(
             id: "demo-worker-1",
@@ -14188,7 +14316,8 @@ struct ComposeOrchestratorTests {
                     networks: [
                         ComposeContainerNetworkAttachment(network: "demo_default", ipv4Address: "192.168.64.20"),
                     ]
-                )
+                ),
+                state: .init(health: "healthy")
             ),
         ])
         #expect(worker?.id == "demo-worker-1")
@@ -14248,8 +14377,8 @@ struct ComposeOrchestratorTests {
         }
     }
 
-    @Test("live discovery manager uses CLI list and direct detail")
-    func liveDiscoveryManagerUsesCLIListAndDirectDetail() async throws {
+    @Test("live discovery manager uses CLI list and configured detail")
+    func liveDiscoveryManagerUsesCLIListAndConfiguredDetail() async throws {
         let runner = RecordingRunner(responses: [
             CommandResult(status: 0, stdout: "[]", stderr: ""),
         ])
@@ -14273,6 +14402,34 @@ struct ComposeOrchestratorTests {
         #expect(command.arguments == ["custom-container", "list", "--format", "json"])
         #expect(await detailManager.listRequests.isEmpty)
         #expect(await detailManager.getRequests == ["demo-db-1"])
+    }
+
+    @Test("live discovery manager uses CLI JSON detail by default")
+    func liveDiscoveryManagerUsesCLIJSONDetailByDefault() async throws {
+        let snapshot = try containerSnapshot(
+            id: "demo-db-1",
+            status: .running,
+            labels: [composeProjectLabel: "demo", composeServiceLabel: "db"],
+            imageReference: "postgres:latest",
+            imageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            platform: "linux/arm64",
+            health: .healthy
+        )
+        let runner = RecordingRunner(responses: [
+            CommandResult(status: 0, stdout: try managedContainerJSON([snapshot]), stderr: ""),
+        ])
+        let manager = ContainerLiveDiscoveryManager(
+            runner: runner,
+            environmentLauncher: "custom-env",
+            containerBinary: "custom-container"
+        )
+
+        let detail = try await manager.getContainer(id: "demo-db-1")
+
+        #expect(detail?.health == "healthy")
+        #expect(runner.commands.map(\.arguments) == [
+            ["custom-container", "list", "--format", "json", "--all"],
+        ])
     }
 
     @Test("discovery API client forwards configured operations")

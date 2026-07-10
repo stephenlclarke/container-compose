@@ -198,14 +198,12 @@ extension ComposeOrchestrator {
             return
         }
         while true {
-            guard let container = try await discoveryManager.getContainer(id: target.name) else {
-                throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' does not exist")
-            }
-            switch container.health {
+            let health = try await dependencyHealthStatus(target, dependentService: dependentService)
+            switch health {
             case "healthy":
                 return
             case "starting":
-                try await options.sleep(.milliseconds(250))
+                break
             case "unhealthy":
                 throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' is unhealthy")
             case "none", nil:
@@ -213,17 +211,41 @@ extension ComposeOrchestrator {
             case let health?:
                 throw ComposeError.unsupported("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' has unsupported health status '\(health)'")
             }
+            if options.usesDefaultSleep {
+                try sleepForHealthPoll()
+            } else {
+                try await options.sleep(.milliseconds(250))
+            }
         }
     }
 
-    /// Waits for started service containers to reach a usable runtime state.
-    func waitForStartedServiceTargets(_ targets: [ServiceContainerTarget], timeout: Int?, command: String) async throws {
+    /// Keeps the large runtime summary out of the polling frame for swiftlang/swift#81771.
+    @inline(never)
+    func dependencyHealthStatus(
+        _ target: ServiceContainerTarget,
+        dependentService: ComposeService,
+    ) async throws -> String? {
+        guard let container = try await discoveryManager.getContainer(id: target.name) else {
+            throw ComposeError.invalidProject("service '\(dependentService.name)' dependency '\(target.service.name)' container '\(target.name)' does not exist")
+        }
+        return container.health
+    }
+
+    /// Avoids allocating another async frame after live discovery on affected Swift 6.3 toolchains.
+    @inline(never)
+    func sleepForHealthPoll() throws {
+        try Task.checkCancellation()
+        usleep(250_000)
+    }
+
+    /// Waits for service containers to be running, and healthy when configured.
+    func waitForReadyServiceTargets(_ targets: [ServiceContainerTarget], timeout: Int?, command: String) async throws {
         guard !targets.isEmpty else {
             return
         }
         if options.dryRun {
             for target in targets {
-                var args = ["wait-running"]
+                var args = ["wait-ready"]
                 if let timeout {
                     args.append(contentsOf: ["--timeout", String(timeout)])
                 }
@@ -256,7 +278,11 @@ extension ComposeOrchestrator {
                 let names = pending.keys.sorted().joined(separator: ", ")
                 throw ComposeError.invalidProject("\(command) timed out waiting for \(names)")
             }
-            try await options.sleep(.milliseconds(250))
+            if options.usesDefaultSleep {
+                try sleepForHealthPoll()
+            } else {
+                try await options.sleep(.milliseconds(250))
+            }
         }
     }
 

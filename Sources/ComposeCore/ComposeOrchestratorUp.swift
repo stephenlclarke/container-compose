@@ -323,7 +323,7 @@ extension ComposeOrchestrator {
             )
         }
         if up.wait {
-            try await waitForStartedServiceTargets(waitTargets, timeout: up.waitTimeout, command: "up --wait")
+            try await waitForReadyServiceTargets(waitTargets, timeout: up.waitTimeout, command: "up --wait")
         }
         if up.menu {
             let menuServices = try upMenuLogServices(

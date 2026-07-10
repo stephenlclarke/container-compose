@@ -31,6 +31,8 @@ public struct ComposeExecutionOptions {
         public var currentDate: @Sendable () -> Date
         public var hostPortAllocator: @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16
         public var sleep: @Sendable (Duration) async throws -> Void
+        /// Distinguishes the production clock from deterministic test hooks.
+        var usesDefaultSleep: Bool
         public var confirm: @Sendable (_ prompt: String) async throws -> Bool
         public var emit: @Sendable (String) -> Void
         public var emitData: (@Sendable (Data) -> Void)?
@@ -39,7 +41,7 @@ public struct ComposeExecutionOptions {
             oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
             currentDate: @escaping @Sendable () -> Date = Date.init,
             hostPortAllocator: @escaping @Sendable (_ hostAddress: String?, _ protocolName: String) throws -> UInt16 = ComposeExecutionOptions.defaultHostPortAllocator,
-            sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            sleep: (@Sendable (Duration) async throws -> Void)? = nil,
             confirm: @escaping @Sendable (_ prompt: String) async throws -> Bool = ComposeExecutionOptions.defaultConfirmation,
             emit: @escaping @Sendable (String) -> Void = { print($0) },
             emitData: (@Sendable (Data) -> Void)? = nil,
@@ -47,7 +49,8 @@ public struct ComposeExecutionOptions {
             self.oneOffIdentifier = oneOffIdentifier
             self.currentDate = currentDate
             self.hostPortAllocator = hostPortAllocator
-            self.sleep = sleep
+            self.sleep = sleep ?? { try await Task.sleep(for: $0) }
+            self.usesDefaultSleep = sleep == nil
             self.confirm = confirm
             self.emit = emit
             self.emitData = emitData
@@ -65,6 +68,8 @@ public struct ComposeExecutionOptions {
     public var watchPollInterval: Duration
     public var materializedConfigSecretDirectory: URL
     public var sleep: @Sendable (Duration) async throws -> Void
+    /// Distinguishes the production clock from deterministic test hooks.
+    var usesDefaultSleep: Bool
     public var confirm: @Sendable (_ prompt: String) async throws -> Bool
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
@@ -74,7 +79,7 @@ public struct ComposeExecutionOptions {
         dryRun: Bool = false,
         maxParallelism: Int? = nil,
         serviceContainerNameSeparator: String = "-",
-        containerBinary: String = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container",
+        containerBinary: String = ComposeExecutionOptions.defaultContainerBinary(),
         watchPollInterval: Duration = .seconds(1),
         progress: ComposeProgressReporter = .disabled,
         runtimeHooks: RuntimeHooks = RuntimeHooks(),
@@ -90,6 +95,7 @@ public struct ComposeExecutionOptions {
         self.watchPollInterval = watchPollInterval
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
         sleep = runtimeHooks.sleep
+        usesDefaultSleep = runtimeHooks.usesDefaultSleep
         confirm = runtimeHooks.confirm
         emit = runtimeHooks.emit
         emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
@@ -182,6 +188,12 @@ public struct ComposeExecutionOptions {
 
     public static func defaultOneOffIdentifier() -> String {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+    }
+
+    public static func defaultContainerBinary() -> String {
+        ProcessInfo.processInfo.environment["CONTAINER_BIN"]
+            ?? ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_CONTAINER"]
+            ?? "container"
     }
 
     public static func defaultConfirmation(_ prompt: String) async throws -> Bool {

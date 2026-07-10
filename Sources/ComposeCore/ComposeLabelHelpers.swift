@@ -339,7 +339,7 @@ func containerListJSON(_ containers: [ComposeContainerSummary]) throws -> String
 
 /// Builds the legacy `container list --format json` shape used by Compose projections.
 func containerListJSONObject(_ container: ComposeContainerSummary) -> [String: Any] {
-    [
+    var object: [String: Any] = [
         "id": container.id,
         "configuration": [
             "image": [
@@ -355,6 +355,10 @@ func containerListJSONObject(_ container: ComposeContainerSummary) -> [String: A
             "state": container.status,
         ],
     ]
+    if let health = container.health {
+        object["health"] = health
+    }
+    return object
 }
 
 /// Converts a platform string into the JSON object emitted by `container list`.

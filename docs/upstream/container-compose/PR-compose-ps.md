@@ -1,4 +1,4 @@
-# Mark `compose ps` Supported With Runtime Coverage
+# Keep `compose ps` on stable JSON discovery
 
 ## Summary
 
@@ -6,9 +6,8 @@ This change completes the first `ps` support slice:
 
 - Marks `ps` as supported in `container compose help`.
 - Adds focused help tests for the supported command/options.
-- Adds `ContainerLiveDiscoveryManager` as the default live discovery path:
-  project listings use `container list --format json`, while single-container
-  detail still uses the direct client.
+- Uses `ContainerLiveDiscoveryManager` for both project lists and single-container detail through `container list --format json`.
+- Preserves health, exit metadata, mounts, ports, networks, and labels through the CLI JSON projection.
 - Keeps `ContainerClientDiscoveryManager` available and unit-tested for direct
   API mapping.
 - Adds a runtime fixture that builds a simple service and verifies
@@ -16,12 +15,7 @@ This change completes the first `ps` support slice:
 
 ## Rationale
 
-The `ps` projection already depends on the same `ManagedContainer` JSON shape
-that the `container` CLI exposes. Using the CLI JSON boundary for list
-operations avoids a hard plugin-process crash observed when awaiting direct
-`ContainerClient.list` from the Compose binary. Single-container detail stays on
-the direct client so existing runtime state such as health remains available to
-wait/dependency paths.
+The `ps` projection uses the same `ManagedContainer` JSON shape that the `container` CLI exposes. The stable process boundary avoids the Swift task-stack crash tracked by [swiftlang/swift#81771](https://github.com/swiftlang/swift/issues/81771), while the fork-backed `ManagedContainer.health` field now gives detail reads everything required by wait and dependency paths.
 
 ## Verification
 
@@ -32,6 +26,7 @@ swift test --filter discovery
 swift test --filter cliJSON
 swift test --filter ComposeCLIHelpTests
 make swift-runtime-test
+make docker-compose-health-wait-parity
 ```
 
 Before release promotion, also run:
@@ -43,10 +38,6 @@ make coverage-check
 markdownlint README.md INSTALL.md BRANCHES.md docs/upstream/container-compose/ISSUE-compose-ps.md docs/upstream/container-compose/PR-compose-ps.md
 ```
 
-## Follow-Ups
+## Current Boundary
 
-- If the direct `ContainerClient.list(filters:)` crash remains reproducible,
-  create a separate Apple-shaped issue/PR with a minimal non-Compose reproducer.
-- Health-aware wait behavior still depends on direct single-container detail; do
-  not claim health projection from CLI JSON until the container CLI exposes that
-  field.
+`ContainerClientDiscoveryManager` remains available for focused direct API consumers and unit coverage. Live Compose discovery uses the CLI JSON manager by default until the Swift task-stack issue is fixed in the supported toolchain.
