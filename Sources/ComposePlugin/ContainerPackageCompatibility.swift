@@ -169,6 +169,7 @@ enum ContainerPackageCompatibility {
     if expectedContainerRef != nil || expectedContainerizationRef != nil {
       let detected = packageMismatchDetails(
         container: container,
+        apiserver: components.first(where: { $0.appName == "container-apiserver" }),
         expectedContainerRef: expectedContainerRef,
         expectedContainerizationRef: expectedContainerizationRef
       )
@@ -182,6 +183,7 @@ enum ContainerPackageCompatibility {
 
   private static func packageMismatchDetails(
     container: ContainerSystemVersionComponent,
+    apiserver: ContainerSystemVersionComponent?,
     expectedContainerRef: String?,
     expectedContainerizationRef: String?
   ) -> [String] {
@@ -192,6 +194,17 @@ enum ContainerPackageCompatibility {
       detected.append(
         "container: \(container.source ?? "unknown")@\(container.commit ?? "unknown") (expected \(expectedContainerRef))"
       )
+    }
+    if let expectedContainerRef {
+      if let apiserver {
+        if !refsMatch(apiserver.commit, expectedContainerRef) {
+          detected.append(
+            "container-apiserver: \(apiserver.commit ?? "unknown") (expected \(expectedContainerRef))"
+          )
+        }
+      } else {
+        detected.append("container-apiserver: missing from system version output")
+      }
     }
     if let expectedContainerizationRef,
       !refsMatch(container.containerizationRef, expectedContainerizationRef)

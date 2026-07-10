@@ -128,6 +128,41 @@ struct ContainerPackageCompatibilityTests {
       ))
   }
 
+  @Test("stale API server reports install guidance")
+  func staleAPIServerReportsInstallGuidance() throws {
+    let components = [
+      ContainerSystemVersionComponent(
+        appName: "container",
+        buildType: "release",
+        commit: "matched-container",
+        containerization: "stephenlclarke/containerization@matched-containerization",
+        distribution: "custom",
+        source: "stephenlclarke/container",
+        version: "homebrew-main"
+      ),
+      ContainerSystemVersionComponent(
+        appName: "container-apiserver",
+        buildType: "release",
+        commit: "stale-container",
+        containerization: nil,
+        distribution: nil,
+        source: nil,
+        version: "container-apiserver version stale-container"
+      ),
+    ]
+
+    let message = try #require(
+      ContainerPackageCompatibility.compatibilityFailure(
+        components: components,
+        lane: "main",
+        expectedContainerRef: "matched-container",
+        expectedContainerizationRef: "matched-containerization"
+      ))
+    #expect(
+      message.contains(
+        "container-apiserver: stale-container (expected matched-container)"))
+  }
+
   @Test("release lane guidance points at release formulae")
   func releaseLaneGuidancePointsAtReleaseFormulae() throws {
     let message = try #require(
