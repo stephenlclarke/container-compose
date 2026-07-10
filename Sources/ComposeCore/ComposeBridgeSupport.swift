@@ -23,7 +23,7 @@ import ContainerizationArchive
 import ContainerizationOCI
 import Foundation
 
-enum BridgeModelValue: Equatable, Sendable {
+enum BridgeModelValue: Equatable {
     case null
     case bool(Bool)
     case number(Decimal)
