@@ -553,7 +553,6 @@ ensure_container_homebrew_package_workflow() {
       --repo "${repo}" \
       --workflow "Prebuilt Binaries" \
       --branch main \
-      --event workflow_dispatch \
       --limit 20 \
       --json databaseId,headSha,status \
       --jq ".[] | select(.headSha == \"${sha}\" and .status != \"completed\") | .databaseId" \
