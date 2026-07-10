@@ -18,7 +18,8 @@
 set -Eeuo pipefail
 
 readonly SELF_PATH="${BASH_SOURCE[0]:-$0}"
-readonly SCRIPT_NAME="$(basename "${SELF_PATH}")"
+SCRIPT_NAME="$(basename "${SELF_PATH}")"
+readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
 
 usage() {
@@ -542,21 +543,55 @@ container_homebrew_tag_for_sha() {
     | awk -v sha="${sha}" '$1 == sha { sub("^refs/tags/", "", $2); print $2; exit }'
 }
 
+ensure_container_homebrew_package_workflow() {
+  local sha="$1" repo active_run
+  repo="$(github_repo "${CONTAINER_REPO}")"
+  need_command gh
+
+  active_run="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh run list \
+      --repo "${repo}" \
+      --workflow "Prebuilt Binaries" \
+      --branch main \
+      --event workflow_dispatch \
+      --limit 20 \
+      --json databaseId,headSha,status \
+      --jq ".[] | select(.headSha == \"${sha}\" and .status != \"completed\") | .databaseId" \
+      | head -n 1
+  )"
+  if [[ -n "${active_run}" ]]; then
+    printf 'container package workflow already active: %s at %s\n' "${active_run}" "${sha}"
+    return 0
+  fi
+
+  run env -u GITHUB_TOKEN -u GH_TOKEN gh workflow run prebuilt-binaries.yml \
+    --repo "${repo}" \
+    --ref main
+  printf 'container package workflow dispatched for %s\n' "${sha}"
+}
+
 wait_for_container_homebrew_package() {
-  local sha tag deadline now
+  local sha tag deadline now workflow_ensured
   sha="$(git -C "$(repo_path "${CONTAINER_REPO}")" rev-parse main)"
   print_header "wait for container main package"
   if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would ensure the stephenlclarke/container Prebuilt Binaries workflow runs for %s\n' "${sha}"
     printf 'would wait for stephenlclarke/container homebrew-main-* tag at %s\n' "${sha}"
     return 0
   fi
 
   deadline=$((SECONDS + RELEASE_WAIT_SECONDS))
+  workflow_ensured=0
   while true; do
     tag="$(container_homebrew_tag_for_sha "${sha}")"
     if [[ -n "${tag}" ]]; then
       printf 'container package tag ready: %s -> %s\n' "${tag}" "${sha}"
       return 0
+    fi
+
+    if [[ "${workflow_ensured}" == "0" ]]; then
+      ensure_container_homebrew_package_workflow "${sha}"
+      workflow_ensured=1
     fi
 
     now="${SECONDS}"

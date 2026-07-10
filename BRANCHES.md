@@ -50,7 +50,7 @@ make release VERSION_SELECTOR=--+
 make repackage-release VERSION=MAJOR.MINOR.PATCH
 ```
 
-`make release-plan` is a dry run. `make release` validates clean worktrees and Stephen-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the Stephen-owned `main` branches, waits for the matching immutable `container` `homebrew-main-RUN-SHA` package tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for the release assets and Homebrew tap update, verifies the live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
+`make release-plan` is a dry run. `make release` validates clean worktrees and Stephen-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the Stephen-owned `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for the release assets and Homebrew tap update, verifies the live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
 
 `make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
 
