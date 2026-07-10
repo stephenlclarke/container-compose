@@ -290,6 +290,7 @@ jobs:
         with:
           repository: stephenlclarke/container-builder-shim
           path: container-builder-shim
+          fetch-depth: 0
           ref: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
 
       - name: Checkout containerization dependency
@@ -298,6 +299,7 @@ jobs:
         with:
           repository: stephenlclarke/containerization
           path: containerization
+          fetch-depth: 0
           ref: ${{ steps.stack-refs.outputs.containerization_ref }}
 
       - name: Checkout container dependency
@@ -305,6 +307,7 @@ jobs:
         with:
           repository: stephenlclarke/container
           path: container
+          fetch-depth: 0
           ref: ${{ steps.container-ref.outputs.ref }}
 
       - name: Verify container dependency ref
