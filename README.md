@@ -56,7 +56,7 @@ Use `container system version` to see the running `container` runtime source, br
 
 ## Project Repositories
 
-The supported preview install is a matched Stephen fork-backed stack:
+The supported preview install is a matched stephenlclarke fork-backed stack:
 
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
 - [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed beside the plugin.
