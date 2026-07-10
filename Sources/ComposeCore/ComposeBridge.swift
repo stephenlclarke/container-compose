@@ -301,26 +301,6 @@ private func bridgeExposedPorts(_ ports: [String], image: String) throws -> [Str
     }
 }
 
-private func bridgeOfficialTransformerNeedsAMD64(_ reference: String) -> Bool {
-    #if arch(arm64)
-        guard let parsed = try? Reference.parse(reference),
-              [
-                  "docker/compose-bridge-kubernetes",
-                  "docker.io/docker/compose-bridge-kubernetes",
-                  "index.docker.io/docker/compose-bridge-kubernetes",
-                  "docker/compose-bridge-helm",
-                  "docker.io/docker/compose-bridge-helm",
-                  "index.docker.io/docker/compose-bridge-helm",
-              ].contains(parsed.name)
-        else {
-            return false
-        }
-        return parsed.digest != nil || (parsed.tag != nil && parsed.tag != "latest")
-    #else
-        false
-    #endif
-}
-
 private func renderBridgeTransformers(
     _ transformers: [ComposeBridgeTransformer],
     options: ComposeBridgeTransformationsListOptions,
@@ -382,16 +362,6 @@ private func bridgeTransformerSummary(_ transformer: ComposeBridgeTransformer) -
         sharedSize: transformer.sharedSizeInBytes,
         size: transformer.sizeInBytes,
     )
-}
-
-private func bridgeTransformerDisplayReferences(_ transformer: ComposeBridgeTransformer) -> [String] {
-    if !transformer.repoTags.isEmpty {
-        return transformer.repoTags
-    }
-    if !transformer.repoDigests.isEmpty {
-        return transformer.repoDigests
-    }
-    return transformer.reference.isEmpty ? [] : [transformer.reference]
 }
 
 private func humanBridgeSize(_ size: Int64) -> String {

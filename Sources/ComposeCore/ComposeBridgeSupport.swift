@@ -20,6 +20,7 @@
     import Glibc
 #endif
 import ContainerizationArchive
+import ContainerizationOCI
 import Foundation
 
 enum BridgeModelValue: Equatable, Sendable {
@@ -280,6 +281,36 @@ func coalescedBridgeTransformers(
     return byImage.values.sorted {
         ($0.repoTags.first ?? $0.reference, $0.id) < ($1.repoTags.first ?? $1.reference, $1.id)
     }
+}
+
+func bridgeTransformerDisplayReferences(_ transformer: ComposeBridgeTransformer) -> [String] {
+    if !transformer.repoTags.isEmpty {
+        return transformer.repoTags
+    }
+    if !transformer.repoDigests.isEmpty {
+        return transformer.repoDigests
+    }
+    return transformer.reference.isEmpty ? [] : [transformer.reference]
+}
+
+func bridgeOfficialTransformerNeedsAMD64(_ reference: String) -> Bool {
+    #if arch(arm64)
+        guard let parsed = try? Reference.parse(reference),
+              [
+                  "docker/compose-bridge-kubernetes",
+                  "docker.io/docker/compose-bridge-kubernetes",
+                  "index.docker.io/docker/compose-bridge-kubernetes",
+                  "docker/compose-bridge-helm",
+                  "docker.io/docker/compose-bridge-helm",
+                  "index.docker.io/docker/compose-bridge-helm",
+              ].contains(parsed.name)
+        else {
+            return false
+        }
+        return parsed.digest != nil || (parsed.tag != nil && parsed.tag != "latest")
+    #else
+        false
+    #endif
 }
 
 func writeBridgeTransformerDockerfile(destination: String) throws {
