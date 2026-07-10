@@ -179,6 +179,52 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertNotIn("Keep package workflow deterministic.", notes)
             self.assertIn("fix(release): keep package workflow deterministic", notes)
 
+    def test_spaced_release_highlights_all_render(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "feat(compose): support Bridge CLI runtime",
+                body="""
+                Add Bridge convert and transformer-management support.
+
+                Release-Highlight: Supports container compose bridge convert with transformer images and template mounts.
+
+                Release-Highlight: Supports container compose bridge transformations create, list, and ls.
+
+                Release-Highlight: Supports Docker Compose --compatibility generated service names.
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(
+                "- Supports container compose bridge convert with transformer "
+                "images and template mounts.",
+                notes,
+            )
+            self.assertIn(
+                "- Supports container compose bridge transformations create, "
+                "list, and ls.",
+                notes,
+            )
+            self.assertIn(
+                "- Supports Docker Compose --compatibility generated service names.",
+                notes,
+            )
+
     def test_semver_tag_lists_validated_main_changes(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:

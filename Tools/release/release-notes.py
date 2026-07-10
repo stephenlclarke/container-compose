@@ -29,6 +29,9 @@ from pathlib import Path
 
 STABLE_RELEASE_PATTERN = re.compile(r"^[0-9]+[.][0-9]+[.][0-9]+$")
 STACK_REFS_PATH = "Tools/release/stack-refs.json"
+EXPLICIT_RELEASE_LINE_PATTERN = re.compile(
+    r"^Release-(?:Note|Highlight):[ \t]*(?P<value>.*)$"
+)
 
 
 @dataclass(frozen=True)
@@ -152,12 +155,7 @@ def commits_for_revision(repo: Path, revision: str) -> list[CommitSummary]:
     output = git_output(
         repo,
         "log",
-        (
-            "--pretty=format:"
-            "%h%x09%s%x09"
-            "%(trailers:key=Release-Note,valueonly,separator=%x1f)%x09"
-            "%(trailers:key=Release-Highlight,valueonly,separator=%x1f)%x1e"
-        ),
+        "--pretty=format:%h%x1f%s%x1f%b%x1e",
         revision,
     )
     if output is None:
@@ -168,23 +166,17 @@ def commits_for_revision(repo: Path, revision: str) -> list[CommitSummary]:
         line = record.strip("\n")
         if not line:
             continue
-        parts = line.split("\t", maxsplit=3)
+        parts = line.split("\x1f", maxsplit=2)
         if len(parts) < 2:
             continue
         short_hash = parts[0]
         subject = parts[1]
-        release_note_values = parts[2] if len(parts) >= 3 else ""
-        release_highlight_values = parts[3] if len(parts) >= 4 else ""
+        body = parts[2] if len(parts) >= 3 else ""
         commits.append(
             CommitSummary(
                 short_hash=short_hash,
                 subject=subject,
-                highlights=tuple(
-                    explicit_release_highlights(
-                        release_note_values,
-                        release_highlight_values,
-                    )
-                ),
+                highlights=tuple(explicit_release_highlights_from_body(body)),
             )
         )
     return commits
@@ -210,6 +202,15 @@ def explicit_release_highlights(*values: str) -> list[str]:
                 continue
             highlights.append(ensure_sentence(normalized))
     return highlights
+
+
+def explicit_release_highlights_from_body(body: str) -> list[str]:
+    values: list[str] = []
+    for line in body.splitlines():
+        match = EXPLICIT_RELEASE_LINE_PATTERN.match(line.strip())
+        if match is not None:
+            values.append(match.group("value"))
+    return explicit_release_highlights(*values)
 
 
 CONVENTIONAL_SUBJECT_PATTERN = re.compile(
