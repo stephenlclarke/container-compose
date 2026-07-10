@@ -3,8 +3,8 @@ module github.com/stephenlclarke/container-compose/Tools/compose-normalizer
 go 1.24
 
 require (
-	github.com/compose-spec/compose-go/v2 v2.12.1
-	go.yaml.in/yaml/v4 v4.0.0-rc.4
+	github.com/compose-spec/compose-go/v2 v2.13.0
+	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
 
 require (
