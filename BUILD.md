@@ -122,10 +122,14 @@ separate `ComposeRuntimeTests` target and are opt-in:
 make swift-runtime-test
 ```
 
-That target builds `.build/debug/compose`, sets
+That target builds the sibling container stack and `.build/debug/compose`,
+stops stale container services, starts the matched source-built runtime, sets
 `CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1`, and runs only the runtime smoke test
-filter. Use it when proving real Apple container behavior locally; it is not
-part of `make ci`.
+filter. Runtime data is isolated under the marker-protected
+`.build/container-runtime` test root; each run clears that state while retaining
+the downloaded kernel cache. The target always stops the test runtime when the
+command exits. Use it when proving real Apple container behavior locally; it is
+not part of `make ci`.
 
 Use the Makefile targets for local Swift tests instead of invoking
 `swift test` directly. The Makefile derives the Swift Testing framework and
@@ -216,7 +220,7 @@ To run every Docker Compose V2 parity target in a deterministic sequence, use:
 make docker-compose-parity
 ```
 
-The aggregate target first builds the sibling `../container` checkout when it exists, then builds the local `compose` binary and runs the CLI surface, Bridge, build, mount, Deploy metadata, device, network, lifecycle, event, host namespace, and create-options parity checks one at a time. Runtime-backed parity checks use `CONTAINER_COMPOSE_CONTAINER` to choose the `container` binary used by the compatibility gate; by default this points at `../container/bin/container` when that sibling source build exists, and falls back to `container` from `PATH` otherwise. Override `CONTAINER_STACK_REPO=/path/to/container` or `CONTAINER_COMPOSE_CONTAINER=/path/to/container` when validating a different matched stack.
+The aggregate target first builds the sibling `../container` checkout when it exists, stops stale container services, starts that matched runtime with the same isolated `.build/container-runtime` state, then builds the local `compose` binary and runs the CLI surface, Bridge, build, mount, Deploy metadata, device, network, lifecycle, event, host namespace, and create-options parity checks one at a time. It stops the test runtime when the sequence exits. Runtime-backed parity checks use `CONTAINER_COMPOSE_CONTAINER` to choose the `container` binary used by the compatibility gate; by default this points at `../container/bin/container` when that sibling source build exists, and falls back to `container` from `PATH` otherwise. Override `CONTAINER_STACK_REPO=/path/to/container` or `CONTAINER_COMPOSE_CONTAINER=/path/to/container` when validating a different matched stack.
 
 For the complete Compose Bridge runtime parity check, run:
 

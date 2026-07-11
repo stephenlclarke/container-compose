@@ -80,6 +80,8 @@ COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
 LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
 CONTAINER_COMPOSE_CONTAINER ?= $(if $(wildcard $(LOCAL_CONTAINER_BINARY)),$(LOCAL_CONTAINER_BINARY),container)
+CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensure-container-stopped.sh)
+CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)"
 MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md STATUS.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
 DOCKER_COMPOSE_PARITY_TARGETS := \
@@ -181,7 +183,10 @@ swift-runtime-test-build:
 	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --build-tests $(SWIFT_TEST_FLAGS)
 
 swift-runtime-test: container-stack-build build swift-runtime-test-build
-	CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
+	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
+		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+		./scripts/run-with-container-runtime.sh "$(CONTAINER_COMPOSE_CONTAINER)" \
+		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
 		CONTAINER_BIN="$(CONTAINER_COMPOSE_CONTAINER)" CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 		$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 
@@ -1107,7 +1112,10 @@ docker-compose-e2e-fixtures:
 	./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
 docker-compose-parity: container-stack-build
-	$(MAKE) --no-print-directory -j1 $(DOCKER_COMPOSE_PARITY_TARGETS)
+	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
+		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+		./scripts/run-with-container-runtime.sh "$(CONTAINER_COMPOSE_CONTAINER)" \
+		$(MAKE) --no-print-directory -j1 $(DOCKER_COMPOSE_PARITY_TARGETS)
 
 docker-compose-cli-surface-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-cli-surface.sh --strict
