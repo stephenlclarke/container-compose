@@ -39,7 +39,9 @@ includes = [
     "sonar-project.properties",
 ]
 
-excludes = []
+excludes = [
+    "Tools/compose-normalizer/remote/*.go",
+]
 
 [git]
 attrs = "enable"
