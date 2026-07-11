@@ -1,8 +1,6 @@
 # Current Apple Upstream Review
 
-This is the current disposition of Apple work that affects the five-repository
-container stack. Re-check GitHub before changing an Apple-backed component
-because issue, review, and merge state can change independently.
+This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
 ## Scope
 
@@ -17,9 +15,8 @@ because issue, review, and merge state can change independently.
 | [apple/container#1933](https://github.com/apple/container/pull/1933) | Ready-for-review fix for [apple/container#1754](https://github.com/apple/container/issues/1754): implement SwiftLog event handlers and preserve existing output. |
 | [apple/container#1934](https://github.com/apple/container/pull/1934) | Ready-for-review fix that preserves the complete `unspecified` version placeholder. |
 | [apple/container#1935](https://github.com/apple/container/pull/1935) | Ready-for-review root-help responsiveness fix for [apple/container#1459](https://github.com/apple/container/issues/1459), stacked on [apple/container#1862](https://github.com/apple/container/pull/1862). |
-
-The closed PRs superseded by these proposals are references only. The three
-rows above are the active Apple review surfaces.
+| [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Ready-for-review manifest fix that excludes the `CloudHypervisor` README from SwiftPM target inputs and removes the warning introduced with [apple/containerization#782](https://github.com/apple/containerization/pull/782). |
+| [apple/containerization#799](https://github.com/apple/containerization/pull/799) | Ready-for-review fix for [apple/container#1927](https://github.com/apple/container/issues/1927): missing copy sources fail promptly, preserve the guest error, and no longer block later container lifecycle operations. |
 
 ## Overlapping Upstream Work
 
@@ -43,7 +40,6 @@ rows above are the active Apple review surfaces.
 
 | Upstream report | Current resolution |
 | --- | --- |
-| [apple/container#1927](https://github.com/apple/container/issues/1927) | Copy-out errors no longer leave the container state lock held; fixed in `stephenlclarke/containerization` `b065eaa`. |
 | [apple/containerization#518](https://github.com/apple/containerization/issues/518) | Exec debug logging no longer serializes environment-backed secrets; fixed in `f17ec69`. |
 | [apple/container#1917](https://github.com/apple/container/issues/1917) | Generated resolver files no longer pollute the macOS global search list; fixed in `stephenlclarke/container` `160035f`. |
 | [apple/container#1888](https://github.com/apple/container/issues/1888) | The focused stderr change from [apple/container#1889](https://github.com/apple/container/pull/1889) is ported as `0fe7833`. |
@@ -54,17 +50,10 @@ rows above are the active Apple review surfaces.
 
 ## Open Follow-up
 
-- Keep `apple/container#1933`, `#1934`, and `#1935` open until Apple merges,
-  replaces, or explicitly rejects their current changes.
-- Rebase `apple/container#1935` after `apple/container#1862` lands so the
-  preferred upstream XPC commit is not duplicated.
-- Do not restore the old stacked logs PRs unchanged. Open current, minimal
-  runtime proposals for generic retrieval primitives; Docker timestamp parsing
-  remains owned by `container-compose`.
+- Keep `apple/container#1933`, `#1934`, `#1935`, and `apple/containerization#798` and `#799` open until Apple merges, replaces, or explicitly rejects their current changes.
+- Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
+- Generic log-retrieval runtime primitives still need minimal Apple proposals; Docker timestamp parsing remains owned by `container-compose`.
 
 ## Submission Boundary
 
-Never push to an Apple remote. Upstream imports stay in standalone commits with
-their original PR and bug references. Locally authored Apple-shaped changes
-must have focused tests and matching issue/PR handoffs in this directory before
-their `stephenlclarke` fork branches are proposed to Apple.
+Never push to an Apple remote. Upstream imports stay in standalone commits with their original PR and bug references. Locally authored Apple-shaped changes must have focused tests and matching issue/PR handoffs in this directory before their `stephenlclarke` fork branches are proposed to Apple.
