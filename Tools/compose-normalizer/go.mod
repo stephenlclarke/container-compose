@@ -1,13 +1,13 @@
 module github.com/stephenlclarke/container-compose/Tools/compose-normalizer
 
-go 1.24.3
+go 1.25.0
 
 require (
 	github.com/compose-spec/compose-go/v2 v2.12.1
 	github.com/moby/buildkit v0.26.3
 	github.com/sirupsen/logrus v1.9.3
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
-	golang.org/x/sys v0.37.0
+	golang.org/x/sys v0.45.0
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
-	golang.org/x/crypto v0.42.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
