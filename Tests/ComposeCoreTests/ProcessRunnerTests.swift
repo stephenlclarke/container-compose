@@ -20,8 +20,8 @@ import Testing
 
 @Suite("Process runner")
 struct ProcessRunnerTests {
-    @Test("process runner captures stdout stderr status input env and cwd")
-    func processRunnerCapturesProcessDetails() async throws {
+    @Test
+    func `process runner captures stdout stderr status input env and cwd`() async throws {
         let directory = FileManager.default.temporaryDirectory
         let script = "printf \"%s:%s\" \"$PROCESS_RUNNER_VALUE\" \"$(pwd)\"; cat; printf err >&2"
         let result = try await ProcessRunner().run(
@@ -29,19 +29,19 @@ struct ProcessRunnerTests {
             ["-c", script],
             workingDirectory: directory,
             environment: ["PROCESS_RUNNER_VALUE": "ok"],
-            input: Data(" input".utf8)
+            input: Data(" input".utf8),
         )
 
         #expect(result.succeeded)
         #expect(
             result.stdout == "ok:\(directory.path) input"
-                || result.stdout == "ok:/private\(directory.path) input"
+                || result.stdout == "ok:/private\(directory.path) input",
         )
         #expect(result.stderr == "err")
     }
 
-    @Test("recording runner captures command environment")
-    func recordingRunnerCapturesCommandEnvironment() async throws {
+    @Test
+    func `recording runner captures command environment`() async throws {
         let runner = RecordingRunner()
 
         _ = try await runner.run("/usr/bin/env", ["true"], environment: ["SAMPLE": "value"])
@@ -50,8 +50,8 @@ struct ProcessRunnerTests {
         #expect(command.environment == ["SAMPLE": "value"])
     }
 
-    @Test("recording runner captures command input")
-    func recordingRunnerCapturesCommandInput() async throws {
+    @Test
+    func `recording runner captures command input`() async throws {
         let runner = RecordingRunner()
         let input = Data("payload".utf8)
 
@@ -61,14 +61,30 @@ struct ProcessRunnerTests {
         #expect(command.input == input)
     }
 
-    @Test("process runner reports status when inheriting terminal IO")
-    func processRunnerReportsStatusWhenInheritingTerminalIO() async throws {
+    @Test
+    func `recording runner exposes no input for inherited IO`() async throws {
+        let runner = RecordingRunner()
+
+        _ = try await runner.run(
+            "/usr/bin/env",
+            ["true"],
+            workingDirectory: nil,
+            environment: nil,
+            io: .inherited,
+        )
+
+        let command = try #require(runner.commands.first)
+        #expect(command.input == nil)
+    }
+
+    @Test
+    func `process runner reports status when inheriting terminal IO`() async throws {
         let result = try await ProcessRunner().run(
             "/bin/sh",
             ["-c", "exit 7"],
             workingDirectory: nil,
             environment: nil,
-            io: .inherited
+            io: .inherited,
         )
 
         #expect(result.status == 7)
@@ -76,8 +92,85 @@ struct ProcessRunnerTests {
         #expect(result.stderr.isEmpty)
     }
 
-    @Test("process runner drains large stdout and stderr while process runs")
-    func processRunnerDrainsLargeOutputWhileProcessRuns() async throws {
+    @Test
+    func `process runner applies working directory and environment to inherited IO`() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let result = try await ProcessRunner().run(
+            "/bin/sh",
+            ["-c", "test \"$PROCESS_RUNNER_VALUE\" = ok && touch inherited-io-marker"],
+            workingDirectory: directory,
+            environment: ["PROCESS_RUNNER_VALUE": "ok"],
+            io: .inherited,
+        )
+
+        #expect(result.succeeded)
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("inherited-io-marker").path))
+    }
+
+    @Test
+    func `process runner reports captured and inherited launch failures`() async {
+        let missingExecutable = "/container-compose-tests/missing-executable"
+        var failures = 0
+
+        for commandIO in [CommandIO.captured(input: nil), .inherited] {
+            do {
+                _ = try await ProcessRunner().run(
+                    missingExecutable,
+                    [],
+                    workingDirectory: nil,
+                    environment: nil,
+                    io: commandIO,
+                )
+                Issue.record("Expected process launch failure for \(commandIO)")
+            } catch {
+                failures += 1
+            }
+        }
+
+        #expect(failures == 2)
+    }
+
+    @Test
+    func `replacing process reports exec and working directory failures`() async {
+        let missingExecutable = "/container-compose-tests/missing-executable"
+        var failures = 0
+
+        do {
+            _ = try await ProcessRunner().run(
+                missingExecutable,
+                [],
+                workingDirectory: nil,
+                environment: nil,
+                io: .replacingProcess,
+            )
+            Issue.record("Expected exec failure")
+        } catch {
+            failures += 1
+        }
+
+        do {
+            _ = try await ProcessRunner().run(
+                missingExecutable,
+                [],
+                workingDirectory: URL(fileURLWithPath: "/container-compose-tests/missing-directory"),
+                environment: nil,
+                io: .replacingProcess,
+            )
+            Issue.record("Expected working directory failure")
+        } catch {
+            failures += 1
+        }
+
+        #expect(failures == 2)
+    }
+
+    @Test
+    func `process runner drains large stdout and stderr while process runs`() async throws {
         let result = try await ProcessRunner().run(
             "/bin/sh",
             [
@@ -91,7 +184,7 @@ struct ProcessRunnerTests {
                 sys.stderr.flush()
                 PY
                 """,
-            ]
+            ],
         )
 
         #expect(result.succeeded)
@@ -99,8 +192,8 @@ struct ProcessRunnerTests {
         #expect(result.stderr.count == 262_144)
     }
 
-    @Test("process runner reports nonzero status")
-    func processRunnerReportsNonzeroStatus() async throws {
+    @Test
+    func `process runner reports nonzero status`() async throws {
         let result = try await ProcessRunner().run("/bin/sh", ["-c", "printf nope >&2; exit 9"])
 
         #expect(!result.succeeded)

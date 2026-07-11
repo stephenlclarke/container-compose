@@ -32,6 +32,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
+	composeRemote "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/remote"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -537,6 +538,7 @@ func loadComposeProject(files, profiles, envFiles []string, projectName, project
 		options = append(options, cli.WithEnvFiles())
 	}
 	options = append(options, cli.WithDotEnv)
+	options = append(options, cli.WithResourceLoader(composeRemote.NewGitRemoteLoader(false)))
 	if usesDefaultFiles {
 		options = append(options, cli.WithConfigFileEnv)
 		options = append(options, cli.WithDefaultConfigPath)
@@ -562,6 +564,9 @@ func loadComposeProject(files, profiles, envFiles []string, projectName, project
 		return nil, "", err
 	}
 
+	if project.WorkingDir != "" {
+		projectDirectory = project.WorkingDir
+	}
 	return project, projectDirectory, nil
 }
 
@@ -583,6 +588,7 @@ func loadVariables(files, profiles, envFiles []string, projectName, projectDirec
 		options = append(options, cli.WithEnvFiles())
 	}
 	options = append(options, cli.WithDotEnv)
+	options = append(options, cli.WithResourceLoader(composeRemote.NewGitRemoteLoader(false)))
 	if usesDefaultFiles {
 		options = append(options, cli.WithConfigFileEnv, cli.WithDefaultConfigPath)
 	}

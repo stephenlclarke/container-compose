@@ -31,7 +31,8 @@ GO_RELEASE_BUILD_FLAGS ?= -trimpath
 GO_RELEASE_LDFLAGS ?= -s -w
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
-COVERAGE_MIN ?= 85
+SWIFT_COVERAGE_MIN ?= 90
+GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
 COMPOSE_VERSION ?= 0.6.35
@@ -90,6 +91,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-compatibility-names-parity \
 	docker-compose-config-all-resources-parity \
 	docker-compose-env-file-parity \
+	docker-compose-git-remote-parity \
 	docker-compose-build-builder-parity \
 	docker-compose-build-check-parity \
 	docker-compose-build-isolation-parity \
@@ -125,7 +127,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -231,7 +233,7 @@ swift-coverage: swift-test-build
 	$(PYTHON) Tools/coverage/lcov-to-sonarqube-generic.py coverage.lcov coverage.xml
 
 go-test:
-	cd Tools/compose-normalizer && $(GO) test ./... -coverprofile=coverage.out -covermode=atomic
+	cd Tools/compose-normalizer && $(GO) test ./... -coverpkg=./... -coverprofile=coverage.out -covermode=atomic
 
 go-build:
 	cd Tools/compose-normalizer && $(GO_RELEASE_ENV) $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-normalizer .
@@ -1132,6 +1134,9 @@ docker-compose-config-all-resources-parity: build
 docker-compose-env-file-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-env-file.sh --strict
 
+docker-compose-git-remote-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-git-remote.sh --strict
+
 docker-compose-build-builder-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-build-builder.sh --strict
 
@@ -1199,7 +1204,8 @@ coverage: swift-coverage go-test
 
 coverage-check: coverage
 	$(PYTHON) Tools/coverage/check-coverage.py \
-		--minimum "$(COVERAGE_MIN)" \
+		--swift-minimum "$(SWIFT_COVERAGE_MIN)" \
+		--go-minimum "$(GO_COVERAGE_MIN)" \
 		--swift coverage.xml \
 		--go Tools/compose-normalizer/coverage.out
 

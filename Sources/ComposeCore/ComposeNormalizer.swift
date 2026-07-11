@@ -221,7 +221,10 @@ private extension ComposeNormalizer {
 
     /// Infers the Compose project directory from the first compose file path.
     static func defaultProjectDirectory(files: [String]) -> String {
-        guard let firstFile = files.first, firstFile != "-" else {
+        guard let firstFile = files.first,
+              firstFile != "-",
+              !isRemoteResourcePath(firstFile)
+        else {
             return FileManager.default.currentDirectoryPath
         }
 
@@ -241,7 +244,7 @@ private extension ComposeNormalizer {
     }
 
     static func absoluteInputPath(_ path: String) -> String {
-        guard path != "-" else {
+        guard path != "-", !isRemoteResourcePath(path) else {
             return path
         }
 
@@ -253,5 +256,23 @@ private extension ComposeNormalizer {
             fileURLWithPath: expandedPath,
             relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
         ).standardizedFileURL.path
+    }
+
+    static func isRemoteResourcePath(_ path: String) -> Bool {
+        let lowercased = path.lowercased()
+        if ["git://", "http://", "https://", "ssh://", "oci://"].contains(where: lowercased.hasPrefix) {
+            return true
+        }
+        if lowercased.hasPrefix("github.com/") {
+            return true
+        }
+
+        guard let atSign = path.firstIndex(of: "@"),
+              !path[..<atSign].contains("/"),
+              path[path.index(after: atSign)...].contains(":")
+        else {
+            return false
+        }
+        return true
     }
 }

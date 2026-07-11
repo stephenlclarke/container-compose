@@ -1300,6 +1300,35 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
     }
 
+    @Test("normalizer preserves remote Git Compose references")
+    func normalizerPreservesRemoteGitComposeReferences() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/cache/project","composeFiles":["/tmp/cache/project/compose.yml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+        let references = [
+            "https://example.test/team/project.git#main:stack",
+            "git://example.test/project.git#main:stack",
+            "ssh://git@example.test/team/project.git#main:stack",
+            "git@example.test:team/project.git#main:stack",
+            "github.com/team/project#main:stack",
+        ]
+
+        _ = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(files: references))
+
+        let command = try #require(runner.commands.first)
+        for reference in references {
+            #expect(command.arguments.containsSequence(["--file", reference]))
+        }
+        #expect(command.arguments.containsSequence([
+            "--project-directory",
+            FileManager.default.currentDirectoryPath,
+        ]))
+    }
+
     @Test("normalizer forwards config load switches")
     func normalizerForwardsConfigLoadSwitches() async throws {
         let runner = RecordingRunner(responses: [

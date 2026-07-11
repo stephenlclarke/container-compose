@@ -37,8 +37,7 @@ def generic_line_coverage(path: Path) -> float:
 
 def go_statement_coverage(path: Path) -> float:
     """Return statement coverage from a Go coverage profile."""
-    covered = 0
-    total = 0
+    blocks: dict[tuple[str, int], int] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         if raw_line.startswith("mode:"):
             continue
@@ -47,9 +46,12 @@ def go_statement_coverage(path: Path) -> float:
             continue
         statements = int(fields[1])
         count = int(fields[2])
-        total += statements
-        if count > 0:
-            covered += statements
+        key = (fields[0], statements)
+        blocks[key] = max(blocks.get(key, 0), count)
+    total = sum(statements for _, statements in blocks)
+    covered = sum(
+        statements for (_, statements), count in blocks.items() if count > 0
+    )
     return percentage(covered, total)
 
 
@@ -72,14 +74,15 @@ def check(name: str, actual: float, minimum: float) -> bool:
 def main() -> int:
     """Parse arguments and check all configured coverage reports."""
     parser = argparse.ArgumentParser(description="Check generated coverage reports.")
-    parser.add_argument("--minimum", type=float, default=85.0)
+    parser.add_argument("--swift-minimum", type=float, default=90.0)
+    parser.add_argument("--go-minimum", type=float, default=85.0)
     parser.add_argument("--swift", type=Path, required=True)
     parser.add_argument("--go", type=Path, required=True)
     args = parser.parse_args()
 
     ok = True
-    ok = check("Swift", generic_line_coverage(args.swift), args.minimum) and ok
-    ok = check("Go", go_statement_coverage(args.go), args.minimum) and ok
+    ok = check("Swift", generic_line_coverage(args.swift), args.swift_minimum) and ok
+    ok = check("Go", go_statement_coverage(args.go), args.go_minimum) and ok
     return 0 if ok else 1
 
 

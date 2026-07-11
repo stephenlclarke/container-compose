@@ -181,16 +181,16 @@ make fmt
 
 This installs the pinned Hawkeye binary into `.local/bin` when needed, updates license headers, and runs Go formatting. In non-interactive CI, set `HAWKEYE_AUTO_INSTALL=1` so the local installer can run without a prompt.
 
-The default minimum coverage is 85 percent for both Swift and Go:
+The coverage gate requires at least 90 percent Swift line coverage and 85 percent Go statement coverage:
 
 ```sh
 make coverage-check
 ```
 
-Use a different local threshold with:
+Override either local threshold independently with:
 
 ```sh
-COVERAGE_MIN=90 make coverage-check
+SWIFT_COVERAGE_MIN=91 GO_COVERAGE_MIN=88 make coverage-check
 ```
 
 `swift-coverage` retries SwiftPM helper signal failures with `SWIFT_COVERAGE_TEST_ATTEMPTS` but does not accept the signal-13 fallback as a successful coverage run; incomplete profile data would make the report unusable.
@@ -220,7 +220,7 @@ To run every Docker Compose V2 parity target in a deterministic sequence, use:
 make docker-compose-parity
 ```
 
-The aggregate target first builds the sibling `../container` checkout when it exists, stops stale container services, starts that matched runtime with the same isolated `.build/container-runtime` state, then builds the local `compose` binary and runs the CLI surface, Bridge, build, mount, Deploy metadata, device, network, lifecycle, event, host namespace, and create-options parity checks one at a time. It stops the test runtime when the sequence exits. Runtime-backed parity checks use `CONTAINER_COMPOSE_CONTAINER` to choose the `container` binary used by the compatibility gate; by default this points at `../container/bin/container` when that sibling source build exists, and falls back to `container` from `PATH` otherwise. Override `CONTAINER_STACK_REPO=/path/to/container` or `CONTAINER_COMPOSE_CONTAINER=/path/to/container` when validating a different matched stack.
+The aggregate target first builds the sibling `../container` checkout when it exists, stops stale container services, starts that matched runtime with the same isolated `.build/container-runtime` state, then builds the local `compose` binary and runs the CLI surface, project-source, Bridge, build, mount, Deploy metadata, device, network, lifecycle, event, host namespace, and create-options parity checks one at a time. It stops the test runtime when the sequence exits. Runtime-backed parity checks use `CONTAINER_COMPOSE_CONTAINER` to choose the `container` binary used by the compatibility gate; by default this points at `../container/bin/container` when that sibling source build exists, and falls back to `container` from `PATH` otherwise. Override `CONTAINER_STACK_REPO=/path/to/container` or `CONTAINER_COMPOSE_CONTAINER=/path/to/container` when validating a different matched stack.
 
 For the complete Compose Bridge runtime parity check, run:
 
@@ -237,6 +237,14 @@ make docker-compose-cli-surface-parity
 ```
 
 This builds the local `compose` binary, compares root command listings, `bridge` management command listings, and every documented long option against Docker Compose V2, then writes `.build/parity/compose-cli-surface.md`. Known intentional differences are documented in `docs/parity/compose-cli-surface.md` and encoded in `Tools/parity/compose-cli-surface.allowlist`. The target is not used by `make ci` because Apple-facing CI must not require Docker Compose.
+
+For the local-only Git remote project-source parity check, run:
+
+```sh
+make docker-compose-git-remote-parity
+```
+
+This serves a generated repository through a loopback Git daemon and compares Docker Compose V2 with `container-compose` for `-f URL#ref:subdir`, canonical Compose-file discovery, relative env/build paths, explicit loader disablement, missing refs, and traversal rejection. Docker and container runtimes are not required. The target uses separate temporary caches and is included in the aggregate `make docker-compose-parity` sequence.
 
 For the local-only `build --builder` parity check, run:
 

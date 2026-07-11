@@ -85,6 +85,23 @@ class CoverageCheckTests(unittest.TestCase):
             self.assertEqual(check_coverage.generic_line_coverage(swift_coverage), 50.0)
             self.assertEqual(check_coverage.go_statement_coverage(go_coverage), 50.0)
 
+    def test_duplicate_go_blocks_are_coalesced_across_test_binaries(self) -> None:
+        """Cross-package profiles count each instrumented source region once."""
+        with tempfile.TemporaryDirectory() as directory:
+            coverage_path = Path(directory) / "coverage.out"
+            coverage_path.write_text(
+                """
+                mode: atomic
+                main.go:1.1,2.1 2 0
+                main.go:3.1,4.1 2 0
+                main.go:1.1,2.1 2 3
+                main.go:3.1,4.1 2 0
+                """,
+                encoding="utf-8",
+            )
+
+            self.assertEqual(check_coverage.go_statement_coverage(coverage_path), 50.0)
+
 
 if __name__ == "__main__":
     unittest.main()

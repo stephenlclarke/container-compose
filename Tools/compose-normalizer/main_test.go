@@ -19,7 +19,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -492,6 +495,76 @@ services:
 	}
 	if image := project.Services["api"].Image; image != "alpine:3.20" {
 		t.Fatalf("api image = %q, want alpine:3.20", image)
+	}
+}
+
+func TestLoadProjectFromGitRemote(t *testing.T) {
+	remote := newGitComposeRemote(t)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "cache"))
+
+	project, err := loadProject([]string{remote}, nil, nil, "remote-sample", t.TempDir())
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	if project.Name != "remote-sample" {
+		t.Fatalf("project.Name = %q, want remote-sample", project.Name)
+	}
+	if len(project.ComposeFiles) != 1 || filepath.Base(project.ComposeFiles[0]) != "compose.yaml" {
+		t.Fatalf("project.ComposeFiles = %#v, want checked-out compose.yaml", project.ComposeFiles)
+	}
+	if project.WorkingDirectory != filepath.Dir(project.ComposeFiles[0]) {
+		t.Fatalf("project.WorkingDirectory = %q, want %q", project.WorkingDirectory, filepath.Dir(project.ComposeFiles[0]))
+	}
+	if got := filepath.ToSlash(project.WorkingDirectory); !strings.HasSuffix(got, "/stacks/demo") {
+		t.Fatalf("project.WorkingDirectory = %q, want Git subdirectory", project.WorkingDirectory)
+	}
+
+	api := project.Services["api"]
+	if value := api.Environment["FROM_REMOTE"]; value == nil || *value != "resolved" {
+		t.Fatalf("api FROM_REMOTE = %#v, want resolved", value)
+	}
+	if api.Build == nil || api.Build.Context != filepath.Join(project.WorkingDirectory, "context") {
+		t.Fatalf("api.Build = %#v, want context relative to Git checkout", api.Build)
+	}
+
+	variables, err := loadVariables([]string{remote}, nil, nil, "remote-sample", t.TempDir())
+	if err != nil {
+		t.Fatalf("loadVariables returned error: %v", err)
+	}
+	if got, want := variables, []normalizedVariable{{Name: "REMOTE_IMAGE", DefaultValue: "alpine:3.20"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("variables = %#v, want %#v", got, want)
+	}
+}
+
+func TestLoadProjectUsesGitRemoteIncludeAndExtendsDirectories(t *testing.T) {
+	remote := newGitComposeRemote(t)
+	baseURL, _, _ := strings.Cut(remote, "#")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "cache"))
+	projectDirectory := t.TempDir()
+	composeFile := filepath.Join(projectDirectory, "compose.yaml")
+	writeFile(t, composeFile, fmt.Sprintf(`
+include:
+  - path: "%s#HEAD:stacks/included"
+services:
+  api:
+    extends:
+      file: "%s#HEAD:stacks/extended/base.yaml"
+      service: base
+`, baseURL, baseURL))
+
+	project, err := loadProject([]string{composeFile}, nil, nil, "remote-resources", projectDirectory)
+	if err != nil {
+		t.Fatalf("loadProject returned error: %v", err)
+	}
+
+	included := project.Services["included"]
+	if included.Build == nil || !strings.HasSuffix(filepath.ToSlash(included.Build.Context), "/stacks/included/context") {
+		t.Fatalf("included.Build = %#v, want context relative to remote include", included.Build)
+	}
+	api := project.Services["api"]
+	if api.Build == nil || !strings.HasSuffix(filepath.ToSlash(api.Build.Context), "/stacks/extended/context") {
+		t.Fatalf("api.Build = %#v, want context relative to remote extends file", api.Build)
 	}
 }
 
@@ -2362,6 +2435,105 @@ func writeFile(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func newGitComposeRemote(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	stack := filepath.Join(source, "stacks", "demo")
+	if err := os.MkdirAll(filepath.Join(stack, "context"), 0o755); err != nil {
+		t.Fatalf("create Git fixture: %v", err)
+	}
+	writeFile(t, filepath.Join(stack, "service.env"), "FROM_REMOTE=resolved\n")
+	writeFile(t, filepath.Join(stack, "context", "Dockerfile"), "FROM scratch\n")
+	writeFile(t, filepath.Join(stack, "compose.yaml"), `
+services:
+  api:
+    image: ${REMOTE_IMAGE:-alpine:3.20}
+    env_file: service.env
+    build: context
+`)
+	included := filepath.Join(source, "stacks", "included")
+	if err := os.MkdirAll(filepath.Join(included, "context"), 0o755); err != nil {
+		t.Fatalf("create included Git fixture: %v", err)
+	}
+	writeFile(t, filepath.Join(included, "compose.yaml"), `
+services:
+  included:
+    image: alpine:3.20
+    build: context
+`)
+	extended := filepath.Join(source, "stacks", "extended")
+	if err := os.MkdirAll(filepath.Join(extended, "context"), 0o755); err != nil {
+		t.Fatalf("create extended Git fixture: %v", err)
+	}
+	writeFile(t, filepath.Join(extended, "base.yaml"), `
+services:
+  base:
+    image: alpine:3.20
+    build: context
+`)
+
+	runGit(t, "init", "-q", source)
+	runGit(t, "-C", source, "add", ".")
+	runGit(t, "-C", source, "-c", "user.name=Compose Test", "-c", "user.email=compose@example.test", "commit", "-qm", "initial")
+	bare := filepath.Join(root, "project.git")
+	runGit(t, "clone", "-q", "--bare", source, bare)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve Git daemon port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release Git daemon port: %v", err)
+	}
+
+	daemon := exec.Command(
+		"git", "daemon", "--reuseaddr", "--export-all",
+		"--base-path="+root, "--listen=127.0.0.1", fmt.Sprintf("--port=%d", port), root,
+	)
+	daemonLogPath := filepath.Join(root, "git-daemon.log")
+	daemonLog, err := os.Create(daemonLogPath)
+	if err != nil {
+		t.Fatalf("create Git daemon log: %v", err)
+	}
+	daemon.Stdout = daemonLog
+	daemon.Stderr = daemonLog
+	if err := daemon.Start(); err != nil {
+		_ = daemonLog.Close()
+		t.Fatalf("start Git daemon: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = daemon.Process.Kill()
+		_ = daemon.Wait()
+		_ = daemonLog.Close()
+	})
+
+	baseURL := fmt.Sprintf("git://127.0.0.1:%d/project.git", port)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		probe := exec.Command("git", "ls-remote", baseURL, "HEAD")
+		if err := probe.Run(); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = daemonLog.Sync()
+			output, _ := os.ReadFile(daemonLogPath)
+			t.Fatalf("Git daemon did not become ready: %s", output)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return baseURL + "#HEAD:stacks/demo"
+}
+
+func runGit(t *testing.T, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", arguments...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(arguments, " "), err, output)
 	}
 }
 
