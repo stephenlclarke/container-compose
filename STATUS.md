@@ -14,8 +14,8 @@ The main drift risks are logs, events, restart policy, health, exit/completion m
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `bb5bc7f2e7e1f9d522db54a07aec45f9516f8cdb`
-- `stephenlclarke/containerization`: `fbc08e7037736137eb0ba87784351bf44d29cefe`
+- `stephenlclarke/container`: `79fb351f637ac5bd7131d1356144f2a2abf79c9a`
+- `stephenlclarke/containerization`: `405aba3be95fc7f867105ca9d206b7af28e52d1b`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.8` for linux/arm64, `sha256:09f5d7927191013773f6cbe82a2a27a5be53c90862c0f81de03defb61dff040f`
 
 ## Current Validation
@@ -113,7 +113,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `build.context` | ✅ Yes | Local relative and absolute contexts are resolved, and remote BuildKit references are passed through to the builder. |
 | `build.dockerfile` | ✅ Yes | Alternate Dockerfile paths are resolved relative to the effective build context, including remote-context pass-through. |
 | `build.dockerfile_inline` | ✅ Yes | Inline Dockerfiles are materialized for live builds and rendered as `dockerfile-inline` in `build --print` bake output. |
-| `build.additional_contexts` | ✅ Yes | Local, image, Git/URL-style, and `service:NAME` contexts are mapped to BuildKit `--build-context` or bake contexts; service contexts are built in dependency order. |
+| `build.additional_contexts` | ✅ Yes | Local, image, Git/URL-style, and `service:NAME` contexts are mapped to BuildKit `--build-context` or bake contexts; service contexts are built in dependency order. Stock Apple tracking for the same `container build` primitive is [apple/container#1930](https://github.com/apple/container/issues/1930). |
 | `build.args` and `build --build-arg` | ✅ Yes | Compose-file and CLI build arguments merge with Docker Compose-compatible environment lookup for key-only CLI args. |
 | `build.cache_from` and `build.cache_to` | ✅ Yes | Cache hints are forwarded to live builds and bake output. |
 | `build.entitlements` | ✅ Yes | Entitlements are forwarded as BuildKit `--allow` values. |
