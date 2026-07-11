@@ -32,6 +32,13 @@ STACK_REFS_PATH = "Tools/release/stack-refs.json"
 EXPLICIT_RELEASE_LINE_PATTERN = re.compile(
     r"^Release-(?:Note|Highlight):[ \t]*(?P<value>.*)$"
 )
+REFERENCE_TRAILER_PATTERN = re.compile(
+    r"^(?:Upstream-Ref|Bug-Ref|Refs|Follow-up-To):[ \t]*(?P<value>.*)$",
+    re.IGNORECASE,
+)
+GITHUB_REFERENCE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?P<reference>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +46,7 @@ class CommitSummary:
     short_hash: str
     subject: str
     highlights: tuple[str, ...]
+    upstream_references: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -177,6 +185,7 @@ def commits_for_revision(repo: Path, revision: str) -> list[CommitSummary]:
                 short_hash=short_hash,
                 subject=subject,
                 highlights=tuple(explicit_release_highlights_from_body(body)),
+                upstream_references=tuple(upstream_references_from_body(body)),
             )
         )
     return commits
@@ -213,6 +222,23 @@ def explicit_release_highlights_from_body(body: str) -> list[str]:
     return explicit_release_highlights(*values)
 
 
+def upstream_references_from_body(body: str) -> list[str]:
+    references: list[str] = []
+    seen: set[str] = set()
+    for line in body.splitlines():
+        trailer = REFERENCE_TRAILER_PATTERN.match(line.strip())
+        if trailer is None:
+            continue
+        for match in GITHUB_REFERENCE_PATTERN.finditer(trailer.group("value")):
+            reference = match.group("reference")
+            key = reference.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            references.append(reference)
+    return references
+
+
 CONVENTIONAL_SUBJECT_PATTERN = re.compile(
     r"^(?P<type>[a-z]+)(?:[(](?P<scope>[^)]+)[)])?(?P<breaking>!)?: (?P<summary>.+)$"
 )
@@ -221,6 +247,7 @@ INTERNAL_HIGHLIGHT_SCOPES = {
     "ci",
     "deps",
     "docs",
+    "integration",
     "quality",
     "release",
     "status",
@@ -255,6 +282,25 @@ def release_highlights(commits: list[CommitSummary]) -> list[str]:
             fallback = conventional_highlight(commit.subject)
             if fallback is not None:
                 commit_highlights = [fallback]
+
+        missing_references = [
+            reference
+            for reference in commit.upstream_references
+            if not any(
+                reference.lower() in highlight.lower()
+                for highlight in commit_highlights
+            )
+        ]
+        if commit_highlights and missing_references:
+            label = (
+                "Upstream reference"
+                if len(missing_references) == 1
+                else "Upstream references"
+            )
+            commit_highlights[-1] = (
+                f"{ensure_sentence(commit_highlights[-1])} {label}: "
+                f"{', '.join(missing_references)}."
+            )
 
         for highlight in commit_highlights:
             if highlight in seen:

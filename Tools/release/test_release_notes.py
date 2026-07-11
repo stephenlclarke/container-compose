@@ -80,6 +80,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.git(repo, "tag", "--no-sign", "0.6.0")
             self.commit(repo, "ci(release): simplify package publishing")
             self.commit(repo, "fix(release): commit new tap formula files")
+            self.commit(repo, "fix(integration): preserve serial rootfs")
             self.git(repo, "tag", "--no-sign", "homebrew-main-123-abcdef123456")
 
             notes = module.render_release_notes(
@@ -95,6 +96,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("Commits since `0.6.0`", notes)
             self.assertIn("ci(release): simplify package publishing", notes)
             self.assertIn("fix(release): commit new tap formula files", notes)
+            self.assertIn("fix(integration): preserve serial rootfs", notes)
             self.assertNotIn("## Highlights", notes)
             self.assertNotIn("chore: initial import", notes)
 
@@ -266,7 +268,11 @@ class ReleaseNotesTests(unittest.TestCase):
                 Clean up attached exec sessions when the client disappears
                 while preserving detached exec process lifetime.
 
-                Release-Highlight: Improves container compose exec reliability by killing attached exec processes when the client disconnects, preventing orphaned sessions from blocking later exec or stop operations while preserving detached exec; ports the useful cleanup from apple/container#1926 for apple/container#1916.
+                Upstream-Ref: apple/container#1926
+
+                Bug-Ref: apple/container#1916
+
+                Release-Highlight: Improves container compose exec reliability by killing attached exec processes when the client disconnects, preventing orphaned sessions from blocking later exec or stop operations while preserving detached exec.
                 """,
             )
             current_component_ref = self.git(component, "rev-parse", "HEAD")
@@ -315,8 +321,8 @@ class ReleaseNotesTests(unittest.TestCase):
                 "- Improves container compose exec reliability by killing attached "
                 "exec processes when the client disconnects, preventing orphaned "
                 "sessions from blocking later exec or stop operations while "
-                "preserving detached exec; ports the useful cleanup from "
-                "apple/container#1926 for apple/container#1916.",
+                "preserving detached exec. Upstream references: "
+                "apple/container#1926, apple/container#1916.",
                 notes,
             )
             self.assertIn("## Component Changes", notes)
