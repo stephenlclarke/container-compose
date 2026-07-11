@@ -17,7 +17,7 @@
 import ComposeCore
 import Foundation
 
-/// Docker Compose CLI help text captured from Docker Compose 5.2.0.
+/// Docker Compose v2-compatible CLI help text.
 enum ComposeCLIHelp {
     /// Prints Docker Compose compatible help when the invocation asks for it.
     static func renderIfRequested(arguments: [String]) -> Bool {
@@ -69,6 +69,7 @@ enum ComposeCLIHelp {
         var commandPath: [String]
         var support: String
         var color: String
+        var detail: String?
     }
 
     struct OptionSupportSnapshot: Equatable {
@@ -81,7 +82,12 @@ enum ComposeCLIHelp {
     static var commandSupportSnapshots: [CommandSupportSnapshot] {
         supportByCommand
             .map { key, support in
-                CommandSupportSnapshot(commandPath: commandPath(from: key), support: support.label, color: support.color)
+                CommandSupportSnapshot(
+                    commandPath: commandPath(from: key),
+                    support: support.label,
+                    color: support.color,
+                    detail: supportDetailByCommand[key]
+                )
             }
             .sorted { $0.commandPath.lexicographicallyPrecedes($1.commandPath) }
     }
@@ -301,7 +307,7 @@ enum ComposeCLIHelp {
         "commit": .notSupported,
         "config": .supported,
         "convert": .supported,
-        "cp": .supported,
+        "cp": .partiallySupported,
         "create": .supported,
         "down": .supported,
         "events": .supported,
@@ -325,13 +331,19 @@ enum ComposeCLIHelp {
         "start": .supported,
         "stats": .supported,
         "stop": .supported,
-        "top": .supported,
+        "top": .partiallySupported,
         "unpause": .supported,
         "up": .supported,
         "version": .supported,
         "volumes": .supported,
         "wait": .supported,
         "watch": .supported,
+    ]
+
+    private static let supportDetailByCommand: [String: String] = [
+        "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
+        "cp": "Path copies are supported; stdin/stdout tar streaming with '-' requires an additional runtime copy-stream API.",
+        "top": "Service selection and PID output are supported; the runtime does not yet expose Docker's full process metadata table.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
@@ -713,7 +725,12 @@ enum ComposeCLIHelp {
         if commandPath.isEmpty || commandPath == ["bridge"] || commandPath == ["bridge", "transformations"] {
             rendered = insertSupportLegend(into: rendered, useANSI: useANSI)
         } else if let support = supportLevel(for: commandPath) {
-            rendered = insertSupportLine(into: rendered, support: support, useANSI: useANSI)
+            rendered = insertSupportLine(
+                into: rendered,
+                support: support,
+                detail: supportDetailByCommand[commandPath.joined(separator: " ")],
+                useANSI: useANSI
+            )
         }
         return rendered
     }
@@ -846,8 +863,16 @@ enum ComposeCLIHelp {
         return help + "\n\n" + legend
     }
 
-    private static func insertSupportLine(into help: String, support: SupportLevel, useANSI: Bool) -> String {
-        let line = "\n\nSupport: \(styled(support.label, support: support, useANSI: useANSI))"
+    private static func insertSupportLine(
+        into help: String,
+        support: SupportLevel,
+        detail: String?,
+        useANSI: Bool
+    ) -> String {
+        var line = "\n\nSupport: \(styled(support.label, support: support, useANSI: useANSI))"
+        if let detail {
+            line += "\nLimitations: \(detail)"
+        }
         if let range = help.range(of: "\n\nOptions:") {
             return String(help[..<range.lowerBound]) + line + String(help[range.lowerBound...])
         }
@@ -1342,7 +1367,6 @@ enum ComposeCLIHelp {
                 container compose cp [OPTIONS] SRC_PATH SERVICE:DEST_PATH
 
         Copy files/folders between a service container and the local filesystem
-        Streaming tar archives with '-' is not supported until apple/container exposes copy stream APIs.
 
         Options:
               --all           Include containers created by the run command

@@ -95,22 +95,29 @@ struct ComposeCLIHelpTests {
         }
     }
 
-    @Test("partially supported commands expose non-green option support")
-    func partiallySupportedCommandsExposeNonGreenOptionSupport() {
+    @Test("partially supported commands explain their remaining gap")
+    func partiallySupportedCommandsExplainTheirRemainingGap() throws {
         let partialCommands = ComposeCLIHelp.commandSupportSnapshots
             .filter { $0.support == "partially supported" }
-            .map(\.commandPath)
 
-        for commandPath in partialCommands {
-            let commandOptions = ComposeCLIHelp.optionSupportSnapshots
-                .filter { $0.commandPath == commandPath }
-            let exposesPartialSurface = commandOptions.contains { $0.support != "supported" }
+        for command in partialCommands {
+            let detail = try #require(command.detail)
+            let help = try #require(ComposeCLIHelp.helpText(commandPath: command.commandPath))
 
-            #expect(
-                exposesPartialSurface,
-                "\(format(commandPath: commandPath)) is partially supported but all rendered command options are marked supported"
-            )
+            #expect(!detail.isEmpty)
+            #expect(help.contains("Limitations: \(detail)"))
         }
+    }
+
+    @Test("copy and top expose command-level parity limitations")
+    func copyAndTopExposeCommandLevelParityLimitations() throws {
+        let copyHelp = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
+        let topHelp = try #require(ComposeCLIHelp.commandHelpText(command: "top"))
+
+        #expect(copyHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(copyHelp.contains("stdin/stdout tar streaming"))
+        #expect(topHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(topHelp.contains("full process metadata table"))
     }
 
     @Test("every documented command option is covered by a parse representative")
