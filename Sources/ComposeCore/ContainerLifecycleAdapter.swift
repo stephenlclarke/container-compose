@@ -103,7 +103,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
             kill: @escaping Kill = { try await ContainerClient().kill(id: $0, signal: $1) },
             stop: @escaping Stop = { try await ContainerClient().stop(id: $0, opts: $1) },
             pause: @escaping Pause = { try await ContainerClient().pause(id: $0) },
-            unpause: @escaping Unpause = { try await ContainerClient().unpause(id: $0) },
+            unpause: @escaping Unpause = { try await ContainerClient().unpause(id: $0) }
         ) {
             self.start = start
             self.kill = kill
@@ -122,7 +122,7 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
         public init(
             wait: @escaping Wait = ContainerLifecycleLiveAdapter.wait,
             get: @escaping Get = { try await ContainerClient().get(id: $0) },
-            delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) },
+            delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) }
         ) {
             self.wait = wait
             self.get = get
@@ -131,14 +131,14 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     }
 
     public init(control: ControlOperations = .init(), state: StateOperations = .init()) {
-        self.startOperation = control.start
-        self.killOperation = control.kill
-        self.stopOperation = control.stop
-        self.pauseOperation = control.pause
-        self.unpauseOperation = control.unpause
-        self.waitOperation = state.wait
-        self.getOperation = state.get
-        self.deleteOperation = state.delete
+        startOperation = control.start
+        killOperation = control.kill
+        stopOperation = control.stop
+        pauseOperation = control.pause
+        unpauseOperation = control.unpause
+        waitOperation = state.wait
+        getOperation = state.get
+        deleteOperation = state.delete
     }
 
     /// Starts a container through `ContainerClient`.

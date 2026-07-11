@@ -40,7 +40,7 @@ public struct ComposeBridgeConvertOptions: Sendable, Equatable {
     public init(
         output: String = "out",
         templates: String? = nil,
-        transformations: [String] = [],
+        transformations: [String] = []
     ) {
         self.output = output
         self.templates = templates
@@ -89,7 +89,7 @@ extension ComposeOrchestrator {
     public func bridgeConvert(
         project: ComposeProject,
         model: ComposeValue? = nil,
-        options convert: ComposeBridgeConvertOptions,
+        options convert: ComposeBridgeConvertOptions
     ) async throws {
         let transformations = convert.transformations.isEmpty
             ? [Self.defaultBridgeTransformerImage]
@@ -104,7 +104,7 @@ extension ComposeOrchestrator {
             try bridgeModelYAML(
                 options.dryRun
                     ? BridgeModelValue(model)
-                    : bridgeModelWithAdditionalResources(model, project: renderedProject),
+                    : bridgeModelWithAdditionalResources(model, project: renderedProject)
             )
         } else {
             try configYAML(project: renderedProject)
@@ -116,7 +116,7 @@ extension ComposeOrchestrator {
                     transformation: transformation,
                     input: Self.dryRunBridgeInputPath,
                     output: output,
-                    templates: templates,
+                    templates: templates
                 ))
             }
             return
@@ -135,9 +135,9 @@ extension ComposeOrchestrator {
                     transformation: transformation,
                     input: input.path,
                     output: output,
-                    templates: templates,
+                    templates: templates
                 ),
-                inheritedIO: true,
+                inheritedIO: true
             )
         }
     }
@@ -196,7 +196,7 @@ extension ComposeOrchestrator {
             let exportID = createdID.flatMap { $0.isEmpty ? nil : $0 } ?? containerID
             try await exporter.exportContainer(
                 id: exportID,
-                output: archive.path,
+                output: archive.path
             )
             try extractBridgeTemplates(archive: archive, destination: destination)
             try writeBridgeTransformerDockerfile(destination: destination)
@@ -240,7 +240,7 @@ extension ComposeOrchestrator {
         transformation: String,
         input: String,
         output: String,
-        templates: String?,
+        templates: String?
     ) -> [String] {
         var arguments = [
             "run",
@@ -306,7 +306,7 @@ private func bridgeExposedPorts(_ ports: [String], image: String) throws -> [Str
 
 private func renderBridgeTransformers(
     _ transformers: [ComposeBridgeTransformer],
-    options: ComposeBridgeTransformationsListOptions,
+    options: ComposeBridgeTransformationsListOptions
 ) throws -> String {
     let transformers = coalescedBridgeTransformers(transformers)
     if options.quiet {
@@ -321,7 +321,7 @@ private func renderBridgeTransformers(
     case "", "pretty", "table":
         return renderTable(
             [["IMAGE ID", "REPO", "TAGS", "SIZE"]]
-                + rows.map { [$0.id, $0.repository, $0.tag, $0.size] },
+                + rows.map { [$0.id, $0.repository, $0.tag, $0.size] }
         )
     case "json":
         let encoder = JSONEncoder()
@@ -335,7 +335,7 @@ private func renderBridgeTransformers(
     default:
         throw ComposeError.unsupported(
             "bridge transformations list --format '\(options.format)'; "
-                + "supported values are table and json",
+                + "supported values are table and json"
         )
     }
 }
@@ -349,7 +349,7 @@ private func bridgeTransformerRow(_ transformer: ComposeBridgeTransformer) -> Br
         id: id,
         repository: parsed?.name ?? reference,
         tag: parsed?.tag ?? "<none>",
-        size: humanBridgeSize(transformer.sizeInBytes),
+        size: humanBridgeSize(transformer.sizeInBytes)
     )
 }
 
@@ -363,7 +363,7 @@ private func bridgeTransformerSummary(_ transformer: ComposeBridgeTransformer) -
         repoDigests: transformer.repoDigests,
         repoTags: bridgeTransformerDisplayReferences(transformer),
         sharedSize: transformer.sharedSizeInBytes,
-        size: transformer.sizeInBytes,
+        size: transformer.sizeInBytes
     )
 }
 
