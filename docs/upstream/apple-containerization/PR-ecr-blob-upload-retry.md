@@ -9,8 +9,9 @@
 - Retry only transport errors, 5xx responses, and ECR
   `416/BLOB_UPLOAD_INVALID` responses.
 - Share the local HTTP stub between registry and Cloud Hypervisor tests.
-- Prove that retry uses a second upload UUID and nil policy performs one POST
-  and one PUT.
+- Prove that ECR 416 and registry 5xx retries use a second upload UUID, nil
+  policy performs one POST and one PUT, and unrelated 416 responses do not
+  restart an upload.
 
 ## Upstream Reference
 
@@ -25,6 +26,8 @@
 
 - Shared test support: `d388a15` in `stephenlclarke/containerization`.
 - Source fix and registry regressions: `c8043bb` in
+  `stephenlclarke/containerization`.
+- Additional retry-boundary regressions: `077cc0d` in
   `stephenlclarke/containerization`.
 - Keep the source fix as its own upstream-overlap commit.
 
