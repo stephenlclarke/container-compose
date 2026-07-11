@@ -2338,6 +2338,47 @@ func TestNetworkIPAMValues(t *testing.T) {
 	}
 }
 
+func TestProjectNetworkValuesReportsOnlyUnmappedNetworkOptions(t *testing.T) {
+	enabled := true
+	disabled := false
+	gotIPv4, gotIPv6, gotUnsupported := projectNetworkValues(types.NetworkConfig{
+		Driver:     "overlay",
+		Attachable: true,
+		EnableIPv4: &disabled,
+		EnableIPv6: &enabled,
+		Ipam: types.IPAMConfig{
+			Options: types.Options{"com.example.ipam": "enabled"},
+		},
+	})
+	wantUnsupported := []string{"driver", "attachable", "enable_ipv4", "enable_ipv6", "ipam.options"}
+	if gotIPv4 != "" || gotIPv6 != "" || !reflect.DeepEqual(gotUnsupported, wantUnsupported) {
+		t.Fatalf("projectNetworkValues unsupported = %q, %q, %#v; want %#v", gotIPv4, gotIPv6, gotUnsupported, wantUnsupported)
+	}
+
+	gotIPv4, gotIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
+		Driver:     "bridge",
+		EnableIPv4: &enabled,
+		EnableIPv6: &enabled,
+		Ipam: types.IPAMConfig{Config: []*types.IPAMPool{
+			{Subnet: "10.77.0.0/24"},
+			{Subnet: "fd77::/64"},
+		}},
+	})
+	if gotIPv4 != "10.77.0.0/24" || gotIPv6 != "fd77::/64" || gotUnsupported != nil {
+		t.Fatalf("projectNetworkValues supported = %q, %q, %#v", gotIPv4, gotIPv6, gotUnsupported)
+	}
+
+	gotIPv4, gotIPv6, gotUnsupported = projectNetworkValues(types.NetworkConfig{
+		EnableIPv6: &disabled,
+		Ipam: types.IPAMConfig{Config: []*types.IPAMPool{
+			{Subnet: "fd77::/64"},
+		}},
+	})
+	if gotIPv4 != "" || gotIPv6 != "fd77::/64" || !reflect.DeepEqual(gotUnsupported, []string{"enable_ipv6"}) {
+		t.Fatalf("projectNetworkValues disabled IPv6 = %q, %q, %#v", gotIPv4, gotIPv6, gotUnsupported)
+	}
+}
+
 func TestUnsupportedBuildFieldsReportsOnlyUnmappedBuildOptions(t *testing.T) {
 	got := unsupportedBuildFields(&types.BuildConfig{
 		AdditionalContexts: types.Mapping{"shared": "./shared"},

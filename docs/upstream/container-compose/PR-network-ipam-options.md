@@ -2,8 +2,11 @@
 
 ## Summary
 
-- Treat Compose `networks.<name>.ipam.options` as an explicit unsupported network field.
-- Add Go and Swift normalizer regression coverage so the unsupported marker survives the compose-go to Swift handoff.
+- Preserve unsupported project network `driver`, `attachable`, `enable_ipv4`,
+  `enable_ipv6`, and `ipam.options` markers across the compose-go to Swift
+  handoff.
+- Reject those semantics before runtime side effects while retaining mapped
+  bridge/default behavior and IPv6 subnets.
 - Document the remaining Apple runtime blocker.
 
 ## Type of Change
@@ -15,35 +18,53 @@
 
 ## Motivation and Context
 
-Compose-go v2.12.1 exposes `IPAMConfig.Options`, and the approved upstream compose-go PR #870 confirms this field belongs in the typed model. Docker Compose also tracks docker/compose#13785 for passing those options through to Docker Engine network creation. `container-compose` cannot map the field yet because Apple network creation does not expose a Docker-compatible IPAM option surface, but silently dropping it is worse than rejecting it.
+Compose-go v2.12.1 exposes the current project network fields, and the approved
+compose-go PR #870 confirms `IPAMConfig.Options` belongs in that typed model.
+Docker Compose preserves all five fields in `config` and tracks
+docker/compose#13785 for passing IPAM options through to Docker Engine network
+creation. Apple network creation cannot currently represent each requested
+semantic, so `container-compose` must reject the unsupported subset instead of
+silently dropping it.
 
 References:
 
 - Docker Compose issue: <https://github.com/docker/compose/issues/13785>
-- Compose-go approved model fix: <https://github.com/compose-spec/compose-go/pull/870>
+- Approved compose-go model PR: <https://github.com/compose-spec/compose-go/pull/870>
+- Compose network reference: <https://docs.docker.com/reference/compose-file/networks/>
 - Compose network IPAM reference: <https://docs.docker.com/reference/compose-file/networks/#ipam>
 
 ## Commit Tracking
 
-- Compose rejection code is the current `fix(normalizer): reject unsupported ipam options` slice in `stephenlclarke/container-compose`.
-- No Apple fork change is included in this slice. Mapping support needs a future Apple-shaped network IPAM option primitive.
+- Compose rejection code is the current `fix(networks): reject unsupported project network options` slice in `stephenlclarke/container-compose`.
+- No Apple fork change is included in this slice. Mapping support needs future
+  Apple-shaped network configuration primitives.
 
 ## Implementation Details
 
-- `networkIPAMValues` now appends `ipam.options` to the unsupported network field list when compose-go reports any IPAM option values.
-- Go normalizer tests cover the unsupported marker alongside the existing IPAM driver, gateway, range, aux-address, and duplicate-subnet checks.
-- Swift normalizer tests cover decoding the unsupported marker from a real Compose file.
-- `STATUS.md` and `README.md` now call out the runtime blocker explicitly.
+- `projectNetworkValues` separates mapped bridge/default and explicit-subnet
+  behavior from custom driver, attachment, IP-family, and IPAM gaps.
+- Go normalizer tests cover both mapped defaults and the complete unsupported
+  field list alongside existing IPAM checks.
+- Swift orchestration tests prove rejection happens before command or resource
+  side effects.
+- The Docker Compose parity fixture checks the same fields against Compose
+  5.3.1 config output.
+- `STATUS.md` names every current top-level network attribute and blocker.
 
 ## Docker Compose Compatibility Notes
 
 Supported:
 
-- The field is recognized and rejected before side effects instead of being silently ignored.
+- Default bridge behavior, ordinary IPv4, and one explicitly mapped IPv6 subnet
+  remain supported.
+- Unsupported project network semantics are recognized and rejected before
+  side effects instead of being silently ignored.
 
 Remaining gap:
 
-- Docker-compatible execution of IPAM driver options remains blocked until Apple exposes a matching network creation primitive.
+- Custom drivers, `attachable: true`, IPv4 disabling, automatic IPv6 allocation,
+  and IPAM driver options remain blocked until Apple exposes matching network
+  creation primitives.
 
 ## Testing
 
@@ -55,7 +76,8 @@ Focused validation:
 
 ```bash
 cd Tools/compose-normalizer && go test ./...
-swift test --disable-automatic-resolution --filter 'ComposeNormalizerTests/normalizerMarksIPAMOptionsUnsupported'
+swift test --disable-automatic-resolution --filter 'ComposeOrchestratorTests.upRejectsUnsupportedProjectNetworkOptionsBeforeSideEffects'
+make docker-compose-network-ipam-options-parity
 ```
 
 ## container-compose Checks

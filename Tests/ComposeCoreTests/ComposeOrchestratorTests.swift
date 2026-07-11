@@ -1329,8 +1329,8 @@ struct ComposeOrchestratorTests {
         })
     }
 
-    @Test("up rejects unsupported project network IPAM before side effects")
-    func upRejectsUnsupportedProjectNetworkIPAMBeforeSideEffects() async throws {
+    @Test("up rejects unsupported project network options before side effects")
+    func upRejectsUnsupportedProjectNetworkOptionsBeforeSideEffects() async throws {
         let runner = RecordingRunner()
         let resourceManager = RecordingContainerResourceManager()
         let project = composeProject(
@@ -1344,7 +1344,9 @@ struct ComposeOrchestratorTests {
             $0.networks = [
                 "backend": ComposeNetwork(
                     name: "backend",
-                    options: ComposeNetwork.Options(unsupportedFields: ["ipam.config.gateway"])
+                    options: ComposeNetwork.Options(
+                        unsupportedFields: ["driver", "attachable", "enable_ipv4", "enable_ipv6", "ipam.config.gateway"]
+                    )
                 ),
             ]
         }
@@ -1352,9 +1354,9 @@ struct ComposeOrchestratorTests {
         do {
             try await ComposeOrchestrator(runner: runner, resourceManager: resourceManager)
                 .up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected unsupported project network IPAM error")
+            Issue.record("Expected unsupported project network options error")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("network 'backend' uses unsupported fields ipam.config.gateway; only internal, driver_opts, and one IPv4/IPv6 IPAM subnet are mapped to apple/container networks"))
+            #expect(error == .unsupported("network 'backend' uses unsupported fields driver, attachable, enable_ipv4, enable_ipv6, ipam.config.gateway; supported project network fields are name, external, internal, labels, driver_opts, the default bridge driver, and one IPv4/IPv6 IPAM subnet"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

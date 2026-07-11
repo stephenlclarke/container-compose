@@ -696,7 +696,7 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 		result.Services[service.Name] = normalizeService(service, project.Secrets)
 	}
 	for name, network := range project.Networks {
-		ipv4Subnet, ipv6Subnet, unsupportedFields := networkIPAMValues(network.Ipam)
+		ipv4Subnet, ipv6Subnet, unsupportedFields := projectNetworkValues(network)
 		result.Networks[name] = normalizedNetwork{
 			Name:              firstNonEmpty(network.Name, name),
 			External:          bool(network.External),
@@ -732,6 +732,26 @@ func normalize(project *types.Project, projectDirectory string) *normalizedProje
 	}
 
 	return result
+}
+
+// projectNetworkValues returns mapped subnets and project network fields that
+// need runtime behavior beyond apple/container's current network API.
+func projectNetworkValues(network types.NetworkConfig) (string, string, []string) {
+	ipv4Subnet, ipv6Subnet, ipamFields := networkIPAMValues(network.Ipam)
+	fields := []string{}
+	driver := strings.TrimSpace(network.Driver)
+	appendUnsupportedNetworkField(&fields, "driver", driver != "" && driver != "bridge")
+	appendUnsupportedNetworkField(&fields, "attachable", network.Attachable)
+	appendUnsupportedNetworkField(&fields, "enable_ipv4", network.EnableIPv4 != nil && !*network.EnableIPv4)
+	if network.EnableIPv6 != nil {
+		enableIPv6DoesNotMatchSubnet := (*network.EnableIPv6 && ipv6Subnet == "") || (!*network.EnableIPv6 && ipv6Subnet != "")
+		appendUnsupportedNetworkField(&fields, "enable_ipv6", enableIPv6DoesNotMatchSubnet)
+	}
+	fields = append(fields, ipamFields...)
+	if len(fields) == 0 {
+		return ipv4Subnet, ipv6Subnet, nil
+	}
+	return ipv4Subnet, ipv6Subnet, fields
 }
 
 // normalizeService copies a compose-go service into the stable Swift model.
