@@ -19,6 +19,7 @@ package remote
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,8 +89,8 @@ func TestResolveGitSubDirRejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestResolveGitRefReportsMissingGitWithoutPanic(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
 	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	loader.command = unavailableGitCommand(filepath.Join(t.TempDir(), "missing-git"))
 	ref := &gitutil.GitRef{Remote: "https://example.test/project.git", Ref: "main"}
 
 	err := loader.resolveGitRef(context.Background(), ref.Remote+"#main", ref)
@@ -110,8 +111,8 @@ func TestOfflineCacheMissReturnsError(t *testing.T) {
 }
 
 func TestFailedCheckoutDoesNotPublishCache(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
 	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
+	loader.command = unavailableGitCommand(filepath.Join(t.TempDir(), "missing-git"))
 	cache := t.TempDir()
 	local := filepath.Join(cache, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	ref := &gitutil.GitRef{
@@ -131,6 +132,22 @@ func TestFailedCheckoutDoesNotPublishCache(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("cache entries = %v, want no failed temporary checkout", entries)
+	}
+}
+
+func TestSystemGitCommandUsesAbsoluteExecutable(t *testing.T) {
+	command := systemGitCommand(context.Background(), "--version")
+	if !filepath.IsAbs(command.Path) {
+		t.Fatalf("systemGitCommand path = %q, want absolute path", command.Path)
+	}
+}
+
+func unavailableGitCommand(path string) gitCommandFactory {
+	return func(_ context.Context, args ...string) *exec.Cmd {
+		return &exec.Cmd{
+			Path: path,
+			Args: append([]string{path}, args...),
+		}
 	}
 }
 

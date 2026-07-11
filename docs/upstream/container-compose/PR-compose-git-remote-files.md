@@ -4,7 +4,7 @@
 
 - Registers a Git `compose-go` resource loader for config, variables, Bridge, include, and extends loading.
 - Preserves remote Git references across the Swift-to-Go normalizer boundary.
-- Uses Docker Compose's `URL#ref:subdir` parser, canonical filename order, cache location, non-interactive Git environment, and disablement variable.
+- Uses Docker Compose's `URL#ref:subdir` parser, canonical filename order, cache location, non-interactive Git environment, trusted system Git executable, and disablement variable.
 - Reports the checked-out Compose directory as the runtime working directory so relative env files and build contexts remain usable.
 - Publishes checkouts atomically and rejects lexical, cross-platform, and symlink-assisted subdirectory escapes.
 - Redacts URL credentials from cache metadata and diagnostics.

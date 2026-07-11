@@ -57,14 +57,18 @@ func NewGitRemoteLoader(offline bool) loader.ResourceLoader {
 		offline:     offline,
 		known:       map[string]string{},
 		directories: map[string]string{},
+		command:     systemGitCommand,
 	}
 }
+
+type gitCommandFactory func(context.Context, ...string) *exec.Cmd
 
 type gitRemoteLoader struct {
 	offline     bool
 	mu          sync.RWMutex
 	known       map[string]string
 	directories map[string]string
+	command     gitCommandFactory
 }
 
 func (g *gitRemoteLoader) Accept(path string) bool {
@@ -223,7 +227,7 @@ func (g *gitRemoteLoader) resolveGitRef(ctx context.Context, path string, ref *g
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", ref.Remote, ref.Ref)
+	cmd := g.gitCommand(ctx, "ls-remote", "--exit-code", ref.Remote, ref.Ref)
 	cmd.Env = g.gitCommandEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -288,34 +292,42 @@ func (g *gitRemoteLoader) checkout(ctx context.Context, path string, ref *gituti
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return fmt.Errorf("create Git checkout: %w", err)
 	}
-	if err := exec.CommandContext(ctx, "git", "init", path).Run(); err != nil {
+	if err := g.gitCommand(ctx, "init", path).Run(); err != nil {
 		return fmt.Errorf("initialize Git checkout: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "remote", "add", "origin", ref.Remote)
+	cmd := g.gitCommand(ctx, "remote", "add", "origin", ref.Remote)
 	cmd.Dir = path
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("configure Git checkout remote: %w", err)
 	}
 
-	cmd = exec.CommandContext(ctx, "git", "fetch", "--depth=1", "origin", ref.Ref)
+	cmd = g.gitCommand(ctx, "fetch", "--depth=1", "origin", ref.Ref)
 	cmd.Env = g.gitCommandEnv()
 	cmd.Dir = path
 	if err := g.run(cmd, ref.Remote); err != nil {
 		return fmt.Errorf("fetch Git ref %s: %w", ref.Ref, err)
 	}
-	cmd = exec.CommandContext(ctx, "git", "remote", "set-url", "origin", displayGitRemote(ref.Remote))
+	cmd = g.gitCommand(ctx, "remote", "set-url", "origin", displayGitRemote(ref.Remote))
 	cmd.Dir = path
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("redact Git checkout remote: %w", err)
 	}
 
-	cmd = exec.CommandContext(ctx, "git", "checkout", ref.Ref)
+	cmd = g.gitCommand(ctx, "checkout", ref.Ref)
 	cmd.Dir = path
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("check out Git ref %s: %w", ref.Ref, err)
 	}
 	return nil
+}
+
+func (g *gitRemoteLoader) gitCommand(ctx context.Context, args ...string) *exec.Cmd {
+	command := g.command
+	if command == nil {
+		command = systemGitCommand
+	}
+	return command(ctx, args...)
 }
 
 func (g *gitRemoteLoader) run(cmd *exec.Cmd, sensitiveRemotes ...string) error {

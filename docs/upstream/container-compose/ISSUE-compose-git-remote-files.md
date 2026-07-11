@@ -16,6 +16,7 @@
 - Locate `compose.yaml`, `compose.yml`, `docker-compose.yml`, or `docker-compose.yaml` when the selected resource is a directory.
 - Resolve service env files, build contexts, includes, and extends relative to the selected checkout directory.
 - Cache immutable commit checkouts without publishing partial clones.
+- Invoke Git through an absolute, OS-owned executable path so untrusted `PATH` entries cannot replace it.
 - Disable interactive Git credential prompts while preserving configured non-interactive Git authentication.
 - Honor `COMPOSE_EXPERIMENTAL_GIT_REMOTE=false` with a clear failure.
 - Reject lexical, Windows-style, and symlink-assisted checkout escapes.
