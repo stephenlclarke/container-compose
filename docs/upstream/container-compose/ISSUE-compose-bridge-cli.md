@@ -40,4 +40,4 @@ References:
 - `STATUS.md`, CLI help color status, and Makefile smoke coverage report the Bridge surface as supported.
 - Live Kubernetes, Helm, list, alias, and transformer-creation behavior matches Docker Compose's maintained Bridge e2e fixture.
 - Runtime compatibility rejects a stale `container-apiserver` before Bridge calls a newer API contract.
-- Parity pins the immutable transformer indexes used by Docker's maintained fixture. On Apple silicon, versioned or digest-pinned official images select their amd64 variant because the historical indexes fixed by `docker/compose-bridge-transformer#22` advertised non-native binaries; current untagged and `latest` images stay native.
+- Parity pins the immutable transformer indexes used by Docker's maintained fixture. On Apple silicon, versioned or digest-pinned official images affected by `docker/compose-bridge-transformer#22` select their amd64 variant because those indexes advertise non-native binaries; current untagged and `latest` images stay native.

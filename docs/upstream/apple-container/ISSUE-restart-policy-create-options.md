@@ -6,7 +6,7 @@
 
 Docker exposes restart behavior at container creation time with `docker run --restart`. Docker Compose exposes the same local-development surface with service `restart`. The existing upstream feature request [apple/container#286](https://github.com/apple/container/issues/286) asks for `--restart` support, and [apple/container#1258](https://github.com/apple/container/pull/1258) prototypes a larger combined implementation. This smaller slice separates the public data shape from the restart scheduler so maintainers can review the API contract independently.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), `container-compose` should own Docker/Compose restart value parsing and precedence. The Apple-facing primitive is `ContainerCreateOptions.restartPolicy` plus runtime scheduling; any local `--restart` parser is a temporary validation bridge unless maintainers want it as an Apple-native resource-management convenience.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), `container-compose` should own Docker/Compose restart value parsing and precedence. The Apple-facing primitive is `ContainerCreateOptions.restartPolicy` plus runtime scheduling; any local `--restart` parser is a temporary validation bridge unless maintainers want it as an Apple-native resource-management convenience.
 
 Requested behavior:
 

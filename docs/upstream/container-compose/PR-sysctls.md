@@ -42,7 +42,7 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported by this plugin on the integration branch: service `sysctls` normalization and typed projection, with the current live execution path still using `--sysctl` command-vector output.
+- Supported by this plugin with the current fork-backed runtime: service `sysctls` normalization and typed projection, with the current live execution path still using `--sysctl` command-vector output.
 - Runtime support remains fork-backed until equivalent typed sysctl configuration is accepted upstream.
 - Non-goal: privileged containers, host devices, GPUs, supplemental groups, or security profile support.
 

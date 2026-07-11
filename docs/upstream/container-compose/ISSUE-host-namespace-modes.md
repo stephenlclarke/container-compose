@@ -30,7 +30,7 @@ Upstream checks before implementation:
 
 - `apple/container` issue [#55](https://github.com/apple/container/issues/55) records upstream host-network demand and the current stock-runtime limitation. No open implementation PR was found for Docker-compatible `--network host` or `--pid host`.
 - `apple/containerization` issues, PRs, and discussions for PID host namespace terms: no overlapping implementation found.
-- Docker Compose issues include historical host-network behavior reports such as `docker/compose#4548`, `docker/compose#6507`, and `docker/compose#10464`.
+- Relevant Docker Compose host-network reports include `docker/compose#4548`, `docker/compose#6507`, and `docker/compose#10464`.
 - Compose Spec issue `compose-spec/compose-spec#65` explicitly discusses service-mode namespace sharing through `network_mode`, `pid`, and `ipc`.
 - The cached Docker Compose e2e fixture checkout contains `pkg/e2e/fixtures/network-test/compose.yaml` and `pkg/e2e/fixtures/no-deps/network-mode.yaml` for `network_mode: service:db`, plus `pkg/e2e/fixtures/network-links/compose.yaml` for `network_mode: bridge`; no reusable `network_mode: host` / `pid: host` fixture was present, so this slice uses a minimal local parity fixture.
 

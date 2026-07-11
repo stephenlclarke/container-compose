@@ -7,7 +7,6 @@
 - Keeps pids, device, and generic-resource reservations rejected as separate scheduler/runtime gaps.
 - Adds focused Go and Swift normalizer/orchestration coverage.
 - Adds a local-only Docker Compose parity target for config and dry-run `up --no-start`.
-- Bumps the plugin patch version to `0.1.5`.
 - Updates README, status, parity docs, and contributor build docs.
 
 ## Type of Change
@@ -60,3 +59,8 @@ This change makes `container-compose` more permissive for Compose files that Doc
 
 - If a future Apple runtime exposes explicit reservation or scheduler primitives, `container-compose` may need to preserve and project this metadata instead of accepting it as local no-op metadata.
 - pids, device, and generic-resource reservations remain unsupported pending separate runtime or scheduler analysis.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `aa0f640dce9e76f40d362fa2db7607c405b346b8`.

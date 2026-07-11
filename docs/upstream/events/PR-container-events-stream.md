@@ -21,7 +21,7 @@ Related issue: [apple/container#484](https://github.com/apple/container/issues/4
 
 Higher-level callers need an event stream to observe lifecycle changes without polling. `container-compose` needs this runtime primitive before it can implement `container compose events --json [SERVICE...]` while keeping Compose filtering and formatting in the plugin.
 
-The existing upstream feature request is [apple/container#484](https://github.com/apple/container/issues/484). A live check on 2026-06-22 did not find an existing event-stream PR in `apple/container`; the first implementation slice stays in `apple/container` because all included lifecycle transitions are already visible at the API-service layer.
+The upstream feature request is [apple/container#484](https://github.com/apple/container/issues/484). The implementation belongs in `apple/container` because all included lifecycle transitions are visible at the API-service layer.
 
 Docker guidance checked for this slice:
 
@@ -86,7 +86,7 @@ markdownlint docs/upstream/events/ISSUE-container-events-stream.md docs/upstream
 
 ## Compatibility Notes
 
-Released `container-compose` branches must continue treating `events` as runtime-gated until an accepted `apple/container` event stream is available. The local fork-backed `container-compose` branch now has a separate plugin slice for project label filtering, selected service filtering, JSON output, and Docker Compose compatible rendering; do not fold that Compose policy into this Apple runtime PR.
+Stock-upstream `container-compose` builds must continue treating `events` as runtime-gated until an accepted `apple/container` event stream is available. The current fork-backed `container-compose` implementation has a separate plugin slice for project label filtering, selected service filtering, JSON output, and Docker Compose compatible rendering; do not fold that Compose policy into this Apple runtime PR.
 
 ## Remaining Risks
 

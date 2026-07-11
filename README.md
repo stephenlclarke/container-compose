@@ -15,53 +15,35 @@
 [![Release](https://img.shields.io/github/v/release/stephenlclarke/container-compose?label=release)](https://github.com/stephenlclarke/container-compose/releases/latest)
 ![Repo Visitors](https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.container-compose)
 
-`container-compose` is a standalone plugin that provides Docker Compose style
-workflows for Apple's [`container`](https://github.com/apple/container) CLI
-where the supported Compose surface maps to available runtime primitives.
+`container-compose` is a standalone plugin that provides Docker Compose v2
+workflows for Apple's [`container`](https://github.com/apple/container) CLI.
+Compose files are normalized with `compose-go`; Swift owns orchestration and
+maps supported Compose behavior to the matched runtime stack.
 
-The first implementation target is local-development Compose v2 compatibility
-where [`container`](https://github.com/apple/container) has matching runtime
-primitives. Compose file normalization uses `compose-go`, with Swift handling
-runtime orchestration.
-
-The CLI accepts the Docker Compose 5.2.0 command and option surface, including
-help output. Help color-codes command, subcommand, and option support status:
-green for supported, orange for partially supported, and red for not supported;
-use `--ansi never` for plain output. Commands or option modes that do not yet
-have backing `apple/container` functionality fail with an explicit
-`unsupported compose feature` message.
+Help color-codes command, subcommand, and option support: green for supported,
+orange for partially supported, and red for unsupported. Partially supported
+commands include a `Limitations` line for gaps that are not tied to an option.
+Use `--ansi never` for plain output. Unsupported runtime behavior fails before
+side effects with an explicit `unsupported compose feature` message.
 
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
-The root `--all-resources` option is supported for normalized `config` and `convert` output: selected-service renderings keep the selected services while preserving unreferenced top-level networks, volumes, configs, and secrets.
-
-The current parity ledger lives in [STATUS.md](STATUS.md). It lists the Docker Compose v2 file, Dockerfile/build, runtime, and CLI surfaces with ✅ yes, ⚠️ partial, and ❌ no indicators plus details for every partial surface.
-
-Long-running project loading, image pull/build, and non-interactive runtime
-handoff steps emit Compose-owned progress on stderr so scriptable stdout output
-stays clean. Use `--progress quiet` to suppress these rows, `--progress plain`
-for log-friendly rows, or `--progress tty` for the animated terminal spinner.
-`--progress json` emits newline-delimited JSON events for Compose-owned phases.
-`--progress auto` uses the animated spinner when stderr is a terminal and plain
-rows otherwise.
-
-The root `--parallel N` option is partially supported for repeated image
-operations. Explicit positive values cap concurrent `pull` and `push` image
-work, and `--parallel -1` runs those image operations without a local cap.
-Dry-run output, builds, creates, starts, and dependency-sensitive orchestration
-remain ordered.
+The authoritative parity ledger is [STATUS.md](STATUS.md). It lists every
+tracked Compose file, service, Dockerfile/build, command, and long-option
+surface with ✅ yes, ⚠️ partial, or ❌ no, and explains every partial surface.
 
 Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and pinned `container-builder-shim` image. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and the `container` / `containerization` pins that package was built against.
 
 ## Project Repositories
 
-The supported preview install is a matched stephenlclarke fork-backed stack:
+The supported install is the matched five-repository stephenlclarke stack:
 
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
-- [`container`](https://github.com/stephenlclarke/container): the fork-backed runtime and CLI installed beside the plugin.
+- [`container`](https://github.com/stephenlclarke/container): the matched `stephenlclarke` runtime and CLI installed beside the plugin.
 - [`containerization`](https://github.com/stephenlclarke/containerization): the Swift runtime package pinned by the stack.
 - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the BuildKit bridge image pinned by `container`.
+- [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap): the stable prebuilt `container` and `container-compose` formulae.
 
 Install and upgrade commands live in [INSTALL.md](INSTALL.md). Branch, tag, release-helper, and Homebrew formula policy lives in [BRANCHES.md](BRANCHES.md).
 

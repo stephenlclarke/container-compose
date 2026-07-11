@@ -24,6 +24,7 @@ This is the current disposition of Apple work that affects the five-repository c
 | --- | --- |
 | [apple/container#1862](https://github.com/apple/container/pull/1862) | Preferred XPC cancellation implementation. Imported unchanged as the first standalone commit in `apple/container#1935`, with deterministic tests in the next commit. Drop the import when this PR lands. |
 | [apple/container#1926](https://github.com/apple/container/pull/1926) | Its attached-exec disconnect cleanup is represented in `stephenlclarke/container`; its separate stop-timeout path still needs single-owner cleanup review. |
+| [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87) | Its `.dockerignore` re-included-parent fix is represented by standalone commit `2778407`; the fork retains its staged-Dockerfile safeguard until the upstream shape lands. |
 
 ## Approved Open Pull Requests
 
@@ -32,7 +33,7 @@ This is the current disposition of Apple work that affects the five-repository c
 | [apple/container#1818](https://github.com/apple/container/pull/1818) | Ported as `6e525cc`; this exact ordered-journaling source change remains a standalone upstream commit. |
 | [apple/container#1708](https://github.com/apple/container/pull/1708) | Already represented by the machine-configuration documentation in `3bb6864`. |
 | [apple/container#1660](https://github.com/apple/container/pull/1660) | Already represented by the application-root backup exclusion in `3bb6864`. |
-| [apple/container#1508](https://github.com/apple/container/pull/1508) | Not copied because the local SSH forwarding implementation supports default, explicit, and multiple named sockets. Reconcile with upstream if this PR changes or lands. |
+| [apple/container#1508](https://github.com/apple/container/pull/1508) | Approved but currently conflicting. It is not copied because the local SSH forwarding implementation supports default, explicit, and multiple named sockets. Reconcile with upstream if this PR changes or lands. |
 | [apple/container#730](https://github.com/apple/container/pull/730) | Already represented in `3bb6864`, plus the parse-entry correction required by the fork's `@main` wrapper. |
 | [apple/containerization#753](https://github.com/apple/containerization/pull/753) | Already represented by `8de8a10`, including default client ID, caller override, and request-header tests. |
 
@@ -50,7 +51,7 @@ This is the current disposition of Apple work that affects the five-repository c
 
 ## Open Follow-up
 
-- Keep `apple/container#1933`, `#1934`, `#1935`, and `apple/containerization#798` and `#799` open until Apple merges, replaces, or explicitly rejects their current changes.
+- Keep `apple/container#1933`, `#1934`, `#1935`, `apple/containerization#798` and `#799`, and `apple/container-builder-shim#87` open until Apple merges, replaces, or explicitly rejects their current changes.
 - Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
 - Generic log-retrieval runtime primitives still need minimal Apple proposals; Docker timestamp parsing remains owned by `container-compose`.
 

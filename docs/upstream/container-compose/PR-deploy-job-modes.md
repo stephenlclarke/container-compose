@@ -3,7 +3,7 @@
 ## Summary
 
 - Preserve compose-go normalized `deploy.mode` values in the Swift project model.
-- Support Docker Compose local `replicated-job` and `global-job` behavior on the fork-backed branch by starting job replicas detached and waiting each replica to exit successfully.
+- Support Docker Compose local `replicated-job` and `global-job` behavior with the current fork-backed runtime by starting job replicas detached and waiting each replica to exit successfully.
 - Reject restart-capable job policies until the runtime can report final job results after restart attempts.
 
 ## Type of Change
@@ -43,10 +43,10 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: `deploy.mode: replicated-job`.
-- Supported now on the fork-backed integration branch: `deploy.mode: global-job` as the local single-host equivalent.
-- Supported now: deploy `replicas` / service `scale` fan-out for job services.
-- Supported now: non-zero job exits fail `up` before later services start.
+- Supported with the current fork-backed runtime: `deploy.mode: replicated-job`.
+- Supported with the current fork-backed runtime: `deploy.mode: global-job` as the local single-host equivalent.
+- Supported: deploy `replicas` / service `scale` fan-out for job services.
+- Supported: non-zero job exits fail `up` before later services start.
 - Remaining Compose/runtime gap: restart-capable job policies need a restart-aware `apple/container` wait primitive before they can be enabled.
 - Remaining upstream gap: released apple/container still needs accepted stopped-container exit metadata before this can work without the fork.
 - Remaining Compose gap: external config/secret stores are still blocked separately.

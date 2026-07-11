@@ -66,13 +66,13 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: `links` for services
+- Supported with the current fork-backed runtime: `links` for services
   that share exactly one explicit Compose network, currently through the
   command-vector bridge.
-- Supported now: `SERVICE:ALIAS` link aliases.
-- Supported now: `SERVICE` entries mapped to the target service name as an
+- Supported: `SERVICE:ALIAS` link aliases.
+- Supported: `SERVICE` entries mapped to the target service name as an
   alias.
-- Supported now: implicit dependency ordering from links.
+- Supported: implicit dependency ordering from links.
 - Remaining gap: implicit default-network service discovery and aliases when no
   explicit Compose network appears in the normalized model.
 - Remaining gap: Docker-compatible shared aliases and source-scoped DNS.

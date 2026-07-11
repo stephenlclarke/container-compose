@@ -69,3 +69,8 @@ git diff --check
 - [x] This pull request is focused on one issue or one coherent change.
 - [x] I used Conventional Commits in commit messages and the pull request title.
 - [x] I removed credentials, tokens, private keys, personal data, and private registry details from code, tests, logs, and screenshots.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `1e1674b910a06a8c4ee5956a2107801304730455`.

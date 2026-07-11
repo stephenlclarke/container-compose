@@ -40,9 +40,9 @@ The previous materialization slice gave `container-compose` control over generat
 
 ## Docker Compose Compatibility Notes
 
-- Supported now: generated `configs.content`, `configs.environment`, and `secrets.environment` grant modes.
-- Supported now: Compose writable-bit ignoring and executable-bit preservation.
-- Supported now: file-backed grant metadata remains source-file controlled and is not mutated by `container-compose`.
+- Supported: generated `configs.content`, `configs.environment`, and `secrets.environment` grant modes.
+- Supported: Compose writable-bit ignoring and executable-bit preservation.
+- Supported: file-backed grant metadata remains source-file controlled and is not mutated by `container-compose`.
 - Remaining gap: `uid`/`gid` ownership remapping for generated grants needs an `apple/container` runtime primitive.
 - Remaining gap: external configs/secrets still need an `apple/container` lookup or store primitive.
 
@@ -58,8 +58,6 @@ Focused validation:
 cd Tools/compose-normalizer && go test ./...
 swift test --filter 'ComposeOrchestratorTests/upMaterializesInlineConfigsAndEnvironmentBackedSecrets|ComposeOrchestratorTests/upRejectsGeneratedConfigOwnershipRemappingBeforeCreatingResources|ComposeOrchestratorTests/upRejectsInvalidGeneratedSecretModeBeforeCreatingResources|ComposeOrchestratorTests/runMaterializesEnvironmentBackedSecrets'
 ```
-
-Results: passed locally on 2026-06-22. The focused Swift run executed 4 tests. The Go normalizer run passed for `Tools/compose-normalizer`.
 
 ## container-compose Checks
 

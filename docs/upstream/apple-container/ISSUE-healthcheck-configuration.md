@@ -18,7 +18,7 @@ The requested slice is intentionally only the configuration model:
 - Represent Docker-compatible timing values as nanoseconds so callers do not lose sub-second Compose/Dockerfile values.
 - Keep runtime execution as a separate follow-up PR.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose `healthcheck` parsing and Docker-shaped `--health-*` flags should stay in `container-compose`. The Apple-facing ask is the typed `ContainerHealthCheck` configuration model.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose `healthcheck` parsing and Docker-shaped `--health-*` flags should stay in `container-compose`. The Apple-facing ask is the typed `ContainerHealthCheck` configuration model.
 
 Keeping this shape separate lets maintainers review the public API and wire format before discussing the background healthcheck observer.
 

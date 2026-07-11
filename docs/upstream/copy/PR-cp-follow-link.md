@@ -17,7 +17,7 @@
 
 ## Motivation and Context
 
-Docker Compose supports `docker compose cp -L, --follow-link`, which follows symbolic links in `SRC_PATH`. The plugin previously rejected this option because released upstream `apple/container` did not expose a copy follow-link option. The local integration branches now carry a defaulted `followSymlink` option through `containerization` and `apple/container`, so Compose can support the flag without shelling out or adding Compose-specific behavior to the runtime.
+Docker Compose supports `docker compose cp -L, --follow-link`, which follows symbolic links in `SRC_PATH`. The current fork-backed runtime carries a defaulted `followSymlink` option through `containerization` and `container`, so Compose supports the flag without shelling out or adding Compose-specific behavior to the runtime.
 
 References:
 
@@ -33,7 +33,6 @@ Existing upstream context:
 - `apple/container#1579` and `apple/container#1580` added copy coverage and FilePath cleanup.
 - `apple/container#1738`, `apple/container#1741`, `apple/container#1743`, and `apple/container#1749` cover nearby host path resolution behavior.
 - `apple/container#963` and `apple/container#895` cover volume copy, which is adjacent but not a replacement for source symlink dereference.
-- No open upstream issue or PR found for `container cp --follow-link` or `container compose cp --follow-link` as of 2026-06-22.
 
 ## Commit Tracking
 
@@ -52,8 +51,8 @@ Existing upstream context:
 
 ## Docker Compose Compatibility Notes
 
-- Supported on fork-backed integration branches pinned to `stephenlclarke/container` and `stephenlclarke/containerization`.
-- Branches pinned to released upstream `apple/container` must keep treating this as runtime-gated until the copy follow-link API is accepted upstream.
+- Supported with the current fork-backed runtime pinned to `stephenlclarke/container` and `stephenlclarke/containerization`.
+- Stock `apple/container` builds must keep treating this as runtime-gated until the copy follow-link API is accepted upstream.
 - `cp --archive` is handled by the separate archive ownership change.
 
 ## Testing

@@ -20,7 +20,7 @@ Requested behavior:
 - Seed writer size counters from existing active files when a writer is reopened so rotation still applies correctly after runtime restart or writer reconstruction.
 - Keep rotation in the runtime writer; Compose service fan-out, prefixes, colors, command formatting, and service-level validation remain outside `apple/container`.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should be reviewed as runtime retention mechanics, not Docker log-driver parser compatibility.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should be reviewed as runtime retention mechanics, not Docker log-driver parser compatibility.
 
 Related upstream context:
 
@@ -32,7 +32,7 @@ Related upstream context:
 - [Docker `local` logging driver](https://docs.docker.com/engine/logging/drivers/local/): documents local `max-size` and `max-file` retained logging behavior.
 - [Compose service `logging`](https://docs.docker.com/reference/compose-file/services/#logging): documents service `logging.driver` and driver-specific `logging.options`.
 
-The local integration branch already contains the writer behavior in commit `06862b7 feat(logs): rotate local log files`. The handoff should stay stacked after the typed local policy model and disabled-capture slices; Compose owns parsing driver names and retention option strings into the typed model.
+The current fork contains the writer behavior in commit `06862b7 feat(logs): rotate local log files`. The handoff stays stacked after the typed local policy model and disabled-capture slices; Compose owns parsing driver names and retention option strings into the typed model.
 
 ## Code of Conduct
 

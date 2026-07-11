@@ -38,3 +38,8 @@ make coverage-check
 - Keep `compose attach` partial until interactive attach and signal proxy behavior is backed by the runtime surface.
 - Keep `compose exec` partial until privileged process execution has a supported runtime mapping.
 - Attached `compose up` log-presentation flags are covered by later raw-output and timestamp slices; this run slice does not change `up --attach`, `--attach-dependencies`, or exit-control behavior.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `4b3659cb08d3c12c4a49373f1eaa3aea3f7f7ca9`.

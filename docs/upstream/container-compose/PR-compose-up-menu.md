@@ -39,4 +39,10 @@ git diff --check
 ## Compatibility Notes
 
 - Docker Desktop-only `v`, `o`, and `l` shortcuts are intentionally absent because they target Docker Desktop UI surfaces.
-- Command-level `up --menu --watch` is covered by the later menu-watch parity slice and is no longer a documented boundary.
+- `up --menu --watch` is supported through the focused
+  [menu-watch handoff](PR-compose-up-menu-watch.md).
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `2cd40b13ec1e23e85f01b6a6abc48d2377ac2e2e`.

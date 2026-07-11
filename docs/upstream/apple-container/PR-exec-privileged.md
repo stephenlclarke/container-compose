@@ -9,7 +9,7 @@
 
 ## Motivation and Context
 
-This change adds a narrow privileged-process exec primitive to the local `container` integration branch.
+This change adds a narrow privileged-process exec primitive to `container`.
 
 Higher-level orchestration sometimes needs to start an additional process with elevated Linux capabilities inside an already-running container. Today the local Compose plugin must reject `exec --privileged`, lifecycle hook `privileged: true`, and `develop.watch sync+exec` `privileged: true` because the process configuration sent to `apple/container` has no field for that intent.
 

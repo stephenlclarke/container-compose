@@ -37,3 +37,8 @@ make cli-smoke-built
 - `--detach-keys` is accepted only when `--no-stdin` selects output-only attach.
 - Interactive attach remains unsupported until apple/container exposes reattach and detach-key primitives.
 - The command remains partially supported.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `7e0cb061308069f11e52dbd7f91abe170f7aa3e0`.

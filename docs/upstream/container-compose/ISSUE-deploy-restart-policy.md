@@ -53,7 +53,7 @@ services:
         max_attempts: 3
 ```
 
-Expected runtime invocation on the fork-backed integration branch:
+Expected runtime invocation with the current fork-backed runtime:
 
 ```text
 container run --restart on-failure:3 ...
@@ -74,7 +74,7 @@ services:
         window: 30s
 ```
 
-Expected result on the fork-backed integration branch: `container-compose`
+Expected result with the current fork-backed runtime: `container-compose`
 passes `delay` and `window` through to the fork's restart-policy timing
 primitive for service containers. Released upstream support is pending an
 equivalent `apple/container` timing API.
@@ -87,10 +87,10 @@ Docker Compose can combine job modes with restart policies, but `container-compo
 
 - apple/container issue: [apple/container#286](https://github.com/apple/container/issues/286)
 - Existing restart-policy PR reference: [apple/container#1258](https://github.com/apple/container/pull/1258)
-- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` and `docs/upstream/apple-container/PR-restart-policy-create-options.md` in `stephenlclarke/container-compose`, backed by `stephenlclarke/container` branch `restart-policy-create-options` commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1`.
-- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` and `docs/upstream/apple-container/PR-restart-policy-runtime.md` in `stephenlclarke/container-compose`, backed by `stephenlclarke/container` branch `restart-policy-runtime` commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0`.
-- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-timing.md` and `docs/upstream/apple-container/PR-restart-policy-timing.md` in `stephenlclarke/container-compose`, backed by `stephenlclarke/container` branch `restart-policy-timing` commit `8b1eff72481fa497328414e0483a08c768826f1a`.
-- Previous plugin handoff: `docs/upstream/container-compose/ISSUE-service-restart-policy.md` and `docs/upstream/container-compose/PR-service-restart-policy.md`
+- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` and `docs/upstream/apple-container/PR-restart-policy-create-options.md`, backed by `stephenlclarke/container` commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1`.
+- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` and `docs/upstream/apple-container/PR-restart-policy-runtime.md`, backed by `stephenlclarke/container` commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0`.
+- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-timing.md` and `docs/upstream/apple-container/PR-restart-policy-timing.md`, backed by `stephenlclarke/container` commit `8b1eff72481fa497328414e0483a08c768826f1a`.
+- Related service-level policy handoff: `docs/upstream/container-compose/ISSUE-service-restart-policy.md` and `docs/upstream/container-compose/PR-service-restart-policy.md`
 
 ## Code Of Conduct And Documentation
 

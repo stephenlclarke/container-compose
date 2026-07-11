@@ -7,7 +7,6 @@
 - Keeps `build --print` Docker-compatible by omitting isolation from generated Buildx bake JSON on this platform.
 - Adds focused Go and Swift tests for the normalized/accepted behavior.
 - Adds a local-only Docker Compose parity target for the CLI/config/build-print surface.
-- Bumps the plugin patch version to `0.1.2` and teaches the prebuilt formula updater to keep Homebrew formula version assertions aligned with the packaged binary.
 - Updates README, status, parity docs, and contributor build docs.
 
 ## Type of Change
@@ -61,3 +60,8 @@ This change makes `container-compose` more permissive for Docker Compose files t
 
 - If a future Apple or BuildKit backend grows a real platform-specific isolation control, `container-compose` may need to decide whether to forward `build.isolation` for that backend.
 - Docker Compose behavior may differ on native Windows builders where classic builder isolation has an observable effect.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `01b6b3425a1c3e522918cda43e9fac263de07e4a`.

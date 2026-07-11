@@ -40,7 +40,7 @@ It stacks on the already documented event slices:
 - `docs/upstream/events/ISSUE-compose-event-time-filters.md`
 - `docs/upstream/events/PR-compose-event-time-filters.md`
 
-[apple/container#484](https://github.com/apple/container/issues/484) remains the runtime anchor for the event stream. A live Apple issue/PR check on 2026-06-22 found no separate upstream Apple item for Compose text formatting, and none is needed because the Apple runtime should keep emitting generic events rather than Docker Compose presentation policy.
+[apple/container#484](https://github.com/apple/container/issues/484) remains the runtime anchor for the event stream. Compose text formatting needs no Apple runtime item because the runtime should emit generic events rather than Docker Compose presentation policy.
 
 Adjacent lifecycle issues and PRs for restart, attach, signal forwarding, and graceful-stop diagnostics remain separate from this text-output slice.
 

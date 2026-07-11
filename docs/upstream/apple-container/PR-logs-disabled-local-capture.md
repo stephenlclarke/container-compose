@@ -25,7 +25,7 @@ Related:
 - Builds on the typed local logging policy model described in `docs/upstream/apple-container/ISSUE-logs-local-policy-model.md` / `docs/upstream/apple-container/PR-logs-local-policy-model.md`.
 - Complements the log retrieval direction in [apple/container#1592](https://github.com/apple/container/pull/1592).
 - Unblocks `container-compose` mapping of Compose `logging.driver: none` to the runtime policy.
-- Follows JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328) by leaving Docker-shaped parser compatibility in `container-compose`.
+- Follows JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328) by leaving Docker-shaped parser compatibility in `container-compose`.
 
 ## What Changed
 

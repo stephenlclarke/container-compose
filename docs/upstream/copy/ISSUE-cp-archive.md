@@ -25,7 +25,6 @@ Existing upstream context:
 - `apple/container#1391` covers archiver behavior for build context entries and symlinks, but does not expose `container cp --archive`.
 - `apple/container#165` and `apple/container#787` discuss adjacent UID/GID and ownership behavior for bind mounts and volumes, but not copy archive mode.
 - `apple/containerization#571`, `apple/containerization#614`, `apple/containerization#636`, and `apple/containerization#727` are relevant lower-level copy/stat/UID-GID context.
-- No open upstream issue or PR found for `container cp --archive` or `container compose cp --archive` as of 2026-06-22.
 
 ## Proposed behavior
 

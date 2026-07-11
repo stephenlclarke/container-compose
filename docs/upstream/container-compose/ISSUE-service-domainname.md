@@ -47,11 +47,11 @@ services:
     command: ["sh", "-c", "dnsdomainname || true"]
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` currently emits `--domainname example.test` through the command-vector bridge.
 - The runtime makes `example.test` visible as the container's NIS domain name.
-- Released upstream `apple/container` branches still need accepted domain-name support before this can work without the fork.
+- Stock `apple/container` builds still need accepted domain-name support before this can work without the fork.
 
 ## Code of Conduct and documentation
 

@@ -21,16 +21,16 @@
 
 The local `stephenlclarke/container` fork now carries restart create/runtime slices that reference [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258):
 
-- Branch `restart-policy-create-options`, commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1` (`feat(api): add restart policy create options`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` / `docs/upstream/apple-container/PR-restart-policy-create-options.md`.
-- Branch `restart-policy-runtime`, commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0` (`feat(runtime): restart containers from policy`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` / `docs/upstream/apple-container/PR-restart-policy-runtime.md`.
+- Commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1` (`feat(api): add restart policy create options`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` / `docs/upstream/apple-container/PR-restart-policy-create-options.md`.
+- Commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0` (`feat(runtime): restart containers from policy`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` / `docs/upstream/apple-container/PR-restart-policy-runtime.md`.
 
 With those fork primitives available, this plugin can map the subset of deploy restart policy that is expressible by the current runtime without adding Compose-specific code to `apple/container`. The current live execution path still renders `--restart` through the command-vector bridge while typed service creation is being wired. Job-mode services are intentionally excluded for now because the current wait primitive observes one container exit and cannot yet wait through runtime restart attempts to the final job result.
 
-The local `stephenlclarke/container` fork also now carries branch `restart-policy-timing`, commit `8b1eff72481fa497328414e0483a08c768826f1a` (`feat(runtime): add restart policy timing`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-timing.md` / `docs/upstream/apple-container/PR-restart-policy-timing.md`, so the plugin can pass deploy restart `delay` and `window` to the fork-backed runtime.
+The local `stephenlclarke/container` fork also carries commit `8b1eff72481fa497328414e0483a08c768826f1a` (`feat(runtime): add restart policy timing`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-timing.md` / `docs/upstream/apple-container/PR-restart-policy-timing.md`, so the plugin can pass deploy restart `delay` and `window` to the fork-backed runtime.
 
 ## Commit Tracking
 
-- Compose code commit: `06cc3220c03b8ce0ab2eaf83ed81c08aca7f74b4` on branch `stephenlclarke/container-compose` `compose-restart-policy-mapping`
+- Compose code commit: `06cc3220c03b8ce0ab2eaf83ed81c08aca7f74b4` in `stephenlclarke/container-compose`.
 - Container code commits: `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1` (`feat(api): add restart policy create options`), `b41bb830db708bc839c94e01c8a75c7fecbe3db0` (`feat(runtime): restart containers from policy`), and `8b1eff72481fa497328414e0483a08c768826f1a` (`feat(runtime): add restart policy timing`) in `stephenlclarke/container`
 - Lower runtime code commit: not required
 
@@ -53,7 +53,7 @@ The local `stephenlclarke/container` fork also now carries branch `restart-polic
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed branch for non-job services: deploy restart `condition` values `none`, `any`, and `on-failure`, `max_attempts` with `on-failure`, and `delay` / `window` timing, currently through the command-vector bridge.
+- Supported with the current fork-backed runtime for non-job services: deploy restart `condition` values `none`, `any`, and `on-failure`, `max_attempts` with `on-failure`, and `delay` / `window` timing, currently through the command-vector bridge.
 - Restart-capable deploy job policies remain rejected until `apple/container` can expose a wait result that accounts for runtime restart attempts instead of only the first observed exit.
 - Remaining released-upstream gap: equivalent `apple/container` restart create/runtime/timing primitives must be accepted upstream.
 - Released-upstream caveat: this remains fork-backed until equivalent restart-policy create/runtime primitives are accepted in `apple/container`.
@@ -72,8 +72,6 @@ go test ./...
 swift test --filter 'ComposeNormalizerTests/normalizesDeployRestartPolicyThroughComposeGo|ComposeOrchestratorTests/upMapsDeployRestartPolicyToContainerCreateFlags|ComposeOrchestratorTests/upMapsDeployRestartTimingToContainerCreateFlags|ComposeOrchestratorTests/upMapsDeployRestartMaxAttemptsZeroToUnlimitedOnFailure|ComposeOrchestratorTests/upRejectsDeployRestartMaxAttemptsWithoutOnFailure|ComposeOrchestratorTests/upRejectsDeployJobRestartPolicy|ComposeOrchestratorTests/upAllowsDeployRestartPolicyNoneForDeployJobs|ComposeOrchestratorTests/runDoesNotInheritDeployRestartPolicyForOneOffContainers'
 ```
 
-Results: passed locally on 2026-06-22. The latest focused timing run executed 4 selected orchestrator tests after the earlier normalizer/model run.
-
 Repository checks:
 
 ```sh
@@ -82,8 +80,6 @@ make check
 markdownlint docs/upstream/container-compose/ISSUE-deploy-restart-policy.md docs/upstream/container-compose/PR-deploy-restart-policy.md
 git diff --check
 ```
-
-Results: all passed locally on 2026-06-22. `make swift-test` ran 532 Swift tests.
 
 Optional Docker Compose parity target, kept out of CI:
 

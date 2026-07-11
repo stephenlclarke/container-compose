@@ -8,7 +8,7 @@
 
 Docker Compose V2 accepts `build.isolation` in Compose files, preserves the value in `docker-compose config --format json`, and on the local macOS/Linux-backed Buildx path omits the field from `docker-compose build --print` bake JSON while still accepting a real build.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - `compose-spec/compose-spec#78` reintroduced Compose v2 attributes including `build.isolation`.
 - `docker/compose#10056` tracked `build.isolation` being ignored when Compose used Buildx build options. The linked Docker Compose fix (`docker/compose@6c1f06e42032fe2eda9ece164d8caad37fa88526`) fixed classic-builder handling without adding an isolation field to the Buildx bake JSON emitted on this platform.

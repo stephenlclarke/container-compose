@@ -20,14 +20,14 @@ Service-level `restart` is part of common local-development Compose workflows. `
 
 The local `stephenlclarke/container` fork now carries two small, upstream-shaped runtime slices that reference [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258):
 
-- Branch `restart-policy-create-options`, commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1` (`feat(api): add restart policy create options`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` / `docs/upstream/apple-container/PR-restart-policy-create-options.md`.
-- Branch `restart-policy-runtime`, commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0` (`feat(runtime): restart containers from policy`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` / `docs/upstream/apple-container/PR-restart-policy-runtime.md`.
+- Commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1` (`feat(api): add restart policy create options`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` / `docs/upstream/apple-container/PR-restart-policy-create-options.md`.
+- Commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0` (`feat(runtime): restart containers from policy`), documented by `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` / `docs/upstream/apple-container/PR-restart-policy-runtime.md`.
 
 With those fork primitives available, this plugin can map the Compose service-level policy without putting Compose-specific behavior into `apple/container`. The current live execution path still renders `--restart` through the command-vector bridge while typed service creation is being wired.
 
 ## Commit Tracking
 
-- Compose code commit: `06cc3220c03b8ce0ab2eaf83ed81c08aca7f74b4` on branch `stephenlclarke/container-compose` `compose-restart-policy-mapping`
+- Compose code commit: `06cc3220c03b8ce0ab2eaf83ed81c08aca7f74b4` in `stephenlclarke/container-compose`.
 - Container code commits: `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1` (`feat(api): add restart policy create options`) and `b41bb830db708bc839c94e01c8a75c7fecbe3db0` (`feat(runtime): restart containers from policy`) in `stephenlclarke/container`
 - Lower runtime code commit: not required
 
@@ -43,7 +43,7 @@ With those fork primitives available, this plugin can map the Compose service-le
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed branch for non-job services: `restart: no`, `restart: always`, `restart: unless-stopped`, `restart: on-failure`, and `restart: on-failure:<max-retries>`, currently through the command-vector bridge.
+- Supported with the current fork-backed runtime for non-job services: `restart: no`, `restart: always`, `restart: unless-stopped`, `restart: on-failure`, and `restart: on-failure:<max-retries>`, currently through the command-vector bridge.
 - Restart-capable deploy job policies remain rejected pending a restart-aware `apple/container` wait primitive.
 - Follow-up coverage: `deploy.restart_policy` is handled by `docs/upstream/container-compose/ISSUE-deploy-restart-policy.md` / `docs/upstream/container-compose/PR-deploy-restart-policy.md`.
 - Released-upstream caveat: this remains fork-backed until equivalent restart-policy create/runtime primitives are accepted in `apple/container`.
@@ -60,8 +60,6 @@ Focused validation:
 swift test --filter 'upMapsServiceRestartPoliciesToContainerCreateFlags|upRejectsServiceRestartPoliciesForDeployJobs|upRejectsOnFailureServiceRestartPoliciesForDeployJobs|upAllowsServiceRestartNoneForDeployJobs|upRejectsInvalidRestartPoliciesBeforeCreatingResources|runDoesNotInheritServiceRestartPoliciesForOneOffContainers|runRejectsUnsupportedDeployFieldsBeforeCreatingResources'
 ```
 
-Result: passed locally on 2026-06-22.
-
 Repository checks:
 
 ```sh
@@ -70,8 +68,6 @@ make check
 markdownlint docs/upstream/container-compose/ISSUE-service-restart-policy.md docs/upstream/container-compose/PR-service-restart-policy.md
 git diff --check
 ```
-
-Results: all passed locally on 2026-06-22. `make swift-test` ran 528 Swift tests.
 
 Optional Docker Compose parity target, kept out of CI:
 

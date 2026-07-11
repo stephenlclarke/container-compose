@@ -42,7 +42,7 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: service `hostname` for service containers and one-off `run` containers, currently through the command-vector bridge.
+- Supported with the current fork-backed runtime: service `hostname` for service containers and one-off `run` containers, currently through the command-vector bridge.
 - Remaining gap: service `domainname` needs a lower runtime and `apple/container` API surface.
 - Remaining gap: Docker `host-gateway` and legacy `links` / `external_links` are separate networking identity surfaces.
 

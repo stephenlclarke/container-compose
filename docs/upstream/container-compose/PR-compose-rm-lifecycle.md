@@ -29,3 +29,8 @@ make docker-compose-rm-parity
 - `rm --stop --force SERVICE` removes running service containers after a stop.
 - Stopped, exited, created, and dead service containers are removable without an extra stop call.
 - The Docker-backed parity target is local-only and remains outside `make ci`.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `ef28557badf761111368d46829fd077a3e9e3325`.

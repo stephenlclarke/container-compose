@@ -24,7 +24,7 @@ The design deliberately references and narrows existing upstream work:
 
 This fork slice combines those two directions so `container-compose` can map Compose `extra_hosts` without adding Compose-specific policy to the runtime. If upstream accepts one of those PRs first, this change should be reshaped to the accepted API rather than submitted as a duplicate.
 
-Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the durable upstream ask is the `ContainerConfiguration` model and runtime `/etc/hosts` behavior. The local `--add-host` parser bridge exists only because the current plugin create path still uses command vectors.
+Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the durable upstream ask is the `ContainerConfiguration` model and runtime `/etc/hosts` behavior. The local `--add-host` parser bridge exists only because the current plugin create path still uses command vectors.
 
 ## What Changed
 

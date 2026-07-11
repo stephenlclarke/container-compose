@@ -11,7 +11,7 @@
 
 This change implements Docker Compose v2 `pause` and `unpause` service lifecycle commands for the local fork-backed integration stack.
 
-Previously, `container compose pause` and `container compose unpause` existed only as placeholders that reported missing `apple/container` runtime primitives. The matching local `containerization` and `container` branches now expose the required pause/resume lifecycle APIs, so `container-compose` can route service selection through the existing direct API lifecycle adapter.
+The matching `containerization` and `container` commits expose the required pause/resume lifecycle APIs, so `container-compose` routes service selection through the existing direct API lifecycle adapter.
 
 References:
 
@@ -34,7 +34,7 @@ References:
 - Changed the plugin `Pause` and `Unpause` commands from unsupported placeholders to async project commands.
 - Preserved dry-run behavior with Compose-owned direct runtime markers, `compose-runtime pause <id>` and `compose-runtime unpause <id>`, instead of depending on Apple CLI command shapes.
 - Updated compatibility documentation, status, and branch policy tracking to describe fork-backed support and upstream gating.
-- Updated `Package.resolved` to pin `containerization` to the same fork revision used by the matching `container` branch.
+- Updated `Package.resolved` to pin `containerization` to the same fork revision used by the matching `container` runtime.
 
 ## Testing
 
@@ -59,12 +59,12 @@ git diff --check
 
 This support depends on fork-backed runtime functionality until matching upstream changes are accepted:
 
-- `stephenlclarke/containerization@integration/blkio-runtime` commit `e172174`
+- `stephenlclarke/containerization` commit `e172174`
 - `stephenlclarke/container` fork commit `61a11f4`
 
-Branches pinned to released upstream `apple/container` should continue to classify `pause` and `unpause` as runtime-gated.
+Stock `apple/container` builds should continue to classify `pause` and `unpause` as runtime-gated.
 
 ## Remaining Risks
 
-- End-to-end validation requires a local `container` installation built from the matching fork branches.
+- End-to-end validation requires a local `container` installation built from the matching fork revisions.
 - Upstream API names or pause semantics may change during `apple/container` review; the lifecycle adapter should absorb those changes without spreading churn across the orchestrator.

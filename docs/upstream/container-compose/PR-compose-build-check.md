@@ -30,3 +30,8 @@ CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1 make docker-compose-build-check-parity
 ## Related Work
 
 - Named builder selection is covered by the later fork-backed `build --builder NAME` slice.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `f4caf443f10b95b205a35ccddd8d55c491b9a4c8`.

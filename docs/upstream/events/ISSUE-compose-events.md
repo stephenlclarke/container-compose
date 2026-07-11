@@ -35,7 +35,7 @@ References:
 
 ## Existing Source And Stacking Decision
 
-The generic runtime dependency is the existing upstream feature request [apple/container#484](https://github.com/apple/container/issues/484). A live check on 2026-06-22 found no open `apple/container` PR that implements an event stream, and no `apple/containerization` issue or PR needed for the first lifecycle-event source.
+The generic runtime dependency is the upstream feature request [apple/container#484](https://github.com/apple/container/issues/484). The lifecycle event source belongs in `apple/container`; no `apple/containerization` change is required for that primitive.
 
 This Compose slice stacks on the local `apple/container` PR-shaped runtime primitive documented in:
 
@@ -75,7 +75,7 @@ With this slice on the local fork-backed integration stack:
 
 `container-compose` owns project/service filtering, selected-service arguments, one-off suppression, Compose-private attribute stripping, and Docker Compose compatible output.
 
-`apple/container` owns the generic event stream primitive. Released upstream branches must keep treating `events` as runtime-gated until an accepted equivalent of the local `ContainerClient.events()` primitive exists.
+`apple/container` owns the generic event stream primitive. Stock-upstream builds must keep treating `events` as runtime-gated until an accepted equivalent of the local `ContainerClient.events()` primitive exists.
 
 `apple/containerization` is not required for this slice because the first event source is API-service lifecycle transitions already observed in `apple/container`.
 

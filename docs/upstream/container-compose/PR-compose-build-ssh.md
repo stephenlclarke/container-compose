@@ -51,3 +51,8 @@ make coverage-check
 - Default SSH agent forwarding, explicit `id=/path/to/socket` host Unix sockets, and multiple distinct host socket paths are live-tested.
 - `--builder` is covered by the later named-builder slice. Provenance and SBOM output are covered by the later compose build attestations slice, and `--check` is covered by the later compose build-check slice.
 - Runtime support requires a container build backend that accepts `container build --ssh`.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `963b6ad8d622b87d65b1e10305e06b3b64c4cf1e`.

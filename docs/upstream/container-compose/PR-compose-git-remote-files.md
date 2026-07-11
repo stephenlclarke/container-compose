@@ -36,3 +36,8 @@ make check
 ## Release Highlight
 
 `-f URL#ref:subdir`, Git-backed `include`, and Git-backed `extends.file` now load Compose projects with checkout-relative env/build paths and hardened caching. Upstream references: [docker/compose#10811](https://github.com/docker/compose/pull/10811), [docker/compose#13331](https://github.com/docker/compose/pull/13331).
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `24f297e66512c53c89774bdf002f8738daa39d97`.

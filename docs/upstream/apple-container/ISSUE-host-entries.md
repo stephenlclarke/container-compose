@@ -12,7 +12,7 @@ This issue draft follows `.github/ISSUE_TEMPLATE/02-feature.yml`.
 
 That blocks higher-level callers such as `container-compose` from representing Compose service `extra_hosts`. A Compose plugin can parse and normalize those fields, but it cannot safely patch `/etc/hosts` after startup because application processes may resolve names before the patch happens, and distroless images may not have shell tools for post-start mutation.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should stay focused on the typed host-entry model and pre-start `/etc/hosts` generation. Docker/Compose `--add-host` syntax, `extra_hosts` normalization, and error wording belong in `container-compose`.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should stay focused on the typed host-entry model and pre-start `/etc/hosts` generation. Docker/Compose `--add-host` syntax, `extra_hosts` normalization, and error wording belong in `container-compose`.
 
 Requested behavior:
 

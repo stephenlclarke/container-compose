@@ -41,3 +41,8 @@ git diff --check
 ## Compatibility Notes
 
 Default generated names keep the modern Docker Compose V2 hyphen separator. The underscore separator is only used when root `--compatibility` is enabled.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `cd78edc37aa7a9887712b6082cd7516a5f8156a0`.

@@ -40,7 +40,7 @@ even when the restart mode and retry count are otherwise supported.
 - Keep Compose-specific field names, service selection, and deploy precedence
   in `container-compose`.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose duration strings for deploy restart policy belong in `container-compose`. The Apple-facing ask is typed retry delay and successful-run window fields plus runtime behavior.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose duration strings for deploy restart policy belong in `container-compose`. The Apple-facing ask is typed retry delay and successful-run window fields plus runtime behavior.
 
 ## Out Of Scope
 

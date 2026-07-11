@@ -4,7 +4,7 @@
 
 - Preserve compose-go normalized `blkio_config` fields in the Swift project model.
 - Project Compose block I/O weights and throttles into typed OCI block I/O data, with the current command-vector bridge rendering repeatable `container run/create --blkio` arguments matching [apple/container#1595](https://github.com/apple/container/pull/1595).
-- Pin the integration branch to `stephenlclarke/containerization@integration/blkio-runtime` through the local `container` stack so the feature can be tested while upstream review continues.
+- Pin the local stack to the `stephenlclarke/containerization` revision that represents [apple/containerization#739](https://github.com/apple/containerization/pull/739) while upstream review continues.
 
 ## Type of Change
 
@@ -44,9 +44,9 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported by this plugin on the integration branch: normalized `blkio_config.weight`.
-- Supported by this plugin on the integration branch: `weight_device`.
-- Supported by this plugin on the integration branch: read/write bps and iops throttle entries.
+- Supported by this plugin with the current fork-backed runtime: normalized `blkio_config.weight`.
+- Supported by this plugin with the current fork-backed runtime: `weight_device`.
+- Supported by this plugin with the current fork-backed runtime: read/write bps and iops throttle entries.
 - Runtime support remains dependent on [apple/container#1595](https://github.com/apple/container/pull/1595) and the `containerization` blockIO runtime API.
 - Non-goal: opening a duplicate apple/container blkio PR while Chris George's PR is active.
 - Non-goal: GPU/device passthrough, API-socket exposure, or unrelated resource-control fields.

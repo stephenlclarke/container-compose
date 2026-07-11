@@ -25,7 +25,7 @@ networks:
 
 `apple/container` already allocates a hostname for each network attachment and resolves that hostname through the network service. It does not currently expose additional typed attachment aliases, so a Compose plugin cannot represent common service-discovery names without rewriting Compose files.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should stay focused on network attachment alias storage and lookup. Compose owns `networks.<name>.aliases`, legacy `links`, selected network restrictions, and Docker-compatible validation messaging.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should stay focused on network attachment alias storage and lookup. Compose owns `networks.<name>.aliases`, legacy `links`, selected network restrictions, and Docker-compatible validation messaging.
 
 Relevant references:
 

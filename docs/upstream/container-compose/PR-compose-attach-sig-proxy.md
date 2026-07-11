@@ -42,3 +42,8 @@ make coverage-check
 - The supported signal set is the common process-control set available through macOS dispatch signal sources: `SIGHUP`, `SIGINT`, `SIGQUIT`, and `SIGTERM`.
 - `--detach-keys` remains unsupported because there is no interactive attach session to detach from.
 - Plain `attach SERVICE` remains unsupported because stdin/stdout/stderr reattach for already-running service containers still needs an apple/container runtime primitive.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `2314d8336177f92a2d6eef8c8942ca564e643677`.

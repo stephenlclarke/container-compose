@@ -8,11 +8,11 @@
 
 Docker Compose V2 accepts `deploy.endpoint_mode` in local mode. It preserves the Swarm metadata in `docker-compose config --format json`, and local dry-run `docker-compose up --no-start SERVICE` proceeds through the ordinary pull, network, and container create plan.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - No Docker Compose, Compose Spec, or compose-go issue/PR directly argued for rejecting `deploy.endpoint_mode` in local Compose mode.
 - Moby search results for `endpoint_mode` are Swarm DNS/VIP behavior reports, not local Docker Compose blockers.
-- Local Docker Compose 5.2.0 preserved `endpoint_mode: dnsrr` in config output and accepted the service in dry-run local orchestration.
+- The Docker Compose v2 reference preserves `endpoint_mode: dnsrr` in config output and accepts the service in dry-run local orchestration.
 
 ## Current container-compose behavior
 

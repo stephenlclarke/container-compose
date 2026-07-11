@@ -1,6 +1,6 @@
 # Installing container-compose
 
-This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the compatible fork-backed `container` runtime. Source build and package steps are covered in [BUILD.md](BUILD.md); branch, tag, and release policy is covered in [BRANCHES.md](BRANCHES.md).
+This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the matched `stephenlclarke/container` runtime. Source build and package steps are covered in [BUILD.md](BUILD.md); branch, tag, and release policy is covered in [BRANCHES.md](BRANCHES.md).
 
 ## Homebrew Formulae
 
@@ -8,7 +8,7 @@ The aggregate Homebrew tap publishes the stable stack:
 
 | Formula | Build type | Use when |
 | --- | --- | --- |
-| `container-compose` | stable release build | Install this. It depends on the matched fork-backed `container` runtime. |
+| `container-compose` | stable release build | Install this. It depends on the matched `stephenlclarke/container` runtime. |
 | `container` | runtime build | Installed automatically as the runtime dependency for the plugin formula. |
 
 The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
@@ -18,7 +18,7 @@ The formulae install prebuilt GitHub release assets. They do not build Swift or 
 - Apple silicon Mac.
 - macOS 26 or newer.
 - Homebrew.
-- If Apple's signed `container` package is already installed, replace it with the Homebrew stack below. The Compose plugin requires the matched fork-backed `container` runtime for runtime-backed commands.
+- If Apple's signed `container` package is already installed, replace it with the Homebrew stack below. The Compose plugin requires the matched `stephenlclarke/container` runtime for runtime-backed commands.
 
 ## Install The Matched Stack
 
@@ -57,7 +57,7 @@ container system status
 
 The `container` formula owns the plugin registration link inside its Homebrew install root. The `brew postinstall` command refreshes that link after installing or upgrading `container-compose`.
 
-Installing only `container-compose` against a stock Apple `container` install is not the supported preview path when the plugin depends on fork-backed runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
+Installing only `container-compose` against a stock Apple `container` install is not the supported release path while the plugin depends on `stephenlclarke` runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
 
 If the machine has a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
 
@@ -68,7 +68,7 @@ Build a local plugin archive with `make package` as described in [BUILD.md](BUIL
 ```sh
 sudo rm -rf /usr/local/libexec/container-plugins/compose
 sudo mkdir -p /usr/local/libexec/container-plugins
-sudo tar -xzf container-compose-plugin.tar.gz -C /usr/local/libexec/container-plugins
+sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins
 ```
 
 The resulting plugin layout is:
@@ -109,7 +109,7 @@ container compose config
 
 ## Upgrade An Existing Installation
 
-Yes. After the matched stack is installed, ordinary Homebrew upgrades keep `container` and `container-compose` up to date:
+Ordinary Homebrew upgrades keep `container` and `container-compose` up to date:
 
 ```sh
 brew update
@@ -136,11 +136,11 @@ If Homebrew says a formula is already current but the install still looks mixed,
 
 ## Uninstall
 
-Remove the plugin and fork-backed `container` package:
+Remove the plugin and matched `stephenlclarke/container` package:
 
 ```sh
-brew services stop container || true
-brew uninstall container-compose container || true
+brew services stop stephenlclarke/tap/container || true
+brew uninstall stephenlclarke/tap/container-compose stephenlclarke/tap/container || true
 brew untap stephenlclarke/tap || true
 ```
 
@@ -155,17 +155,15 @@ sudo rm -rf /usr/local/libexec/container-plugins/compose
 If `container compose` is missing, hangs, or reports the wrong runtime, reset the Homebrew stack:
 
 ```sh
-brew services stop stephenlclarke/tap/container || brew services stop container || true
+brew services stop stephenlclarke/tap/container || true
 container system stop || true
 
 if [ -x /usr/local/bin/uninstall-container.sh ]; then
   sudo /usr/local/bin/uninstall-container.sh -k
 fi
 
-brew uninstall --ignore-dependencies stephenlclarke/container/container || true
-brew uninstall --ignore-dependencies container-compose container || true
-brew untap stephenlclarke/container || true
-brew untap stephenlclarke/container-compose || true
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose || true
+brew uninstall --ignore-dependencies stephenlclarke/tap/container || true
 
 brew tap stephenlclarke/tap
 brew trust --tap stephenlclarke/tap
@@ -180,10 +178,10 @@ Then verify the shell, service, plugin link, and normalizer:
 ```sh
 command -v container
 realpath "$(command -v container)"
-brew list --versions container container-compose
+brew list --versions stephenlclarke/tap/container stephenlclarke/tap/container-compose
 brew services list | grep container
-ls -l "$(brew --prefix container)/libexec/container-plugins/compose"
-ls -l "$(brew --prefix container-compose)/libexec/container-plugins/compose/resources/compose-normalizer"
+ls -l "$(brew --prefix stephenlclarke/tap/container)/libexec/container-plugins/compose"
+ls -l "$(brew --prefix stephenlclarke/tap/container-compose)/libexec/container-plugins/compose/resources/compose-normalizer"
 container system version
 container compose version
 ```

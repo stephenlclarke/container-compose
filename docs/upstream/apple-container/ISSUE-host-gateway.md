@@ -20,7 +20,7 @@ services:
 
 `apple/container` already has static host-entry support in the local fork and network attachments already carry `ipv4Gateway`. Without a typed runtime-resolved host-entry marker, `container-compose` must reject a common local-development Compose pattern even though the runtime has the gateway information at container start time.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Compose should own `extra_hosts` parsing and the Docker-shaped `host-gateway` string. The Apple-facing primitive is resolving an explicit host-entry marker to the container's network gateway while generating `/etc/hosts`.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Compose should own `extra_hosts` parsing and the Docker-shaped `host-gateway` string. The Apple-facing primitive is resolving an explicit host-entry marker to the container's network gateway while generating `/etc/hosts`.
 
 Relevant references:
 

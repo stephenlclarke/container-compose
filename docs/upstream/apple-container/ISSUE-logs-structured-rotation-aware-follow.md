@@ -23,7 +23,7 @@ Requested behavior:
 - Avoid plugin-side polling of full retained snapshots for long-running timestamped follow sessions.
 - Keep Compose-specific presentation out of `apple/container`; service prefixes, colors, project fan-out, and replica ordering remain in the external plugin.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should be reviewed as a structured runtime follow primitive. Docker-shaped timestamp parsing and Compose output remain in `container-compose`.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should be reviewed as a structured runtime follow primitive. Docker-shaped timestamp parsing and Compose output remain in `container-compose`.
 
 Related upstream context:
 

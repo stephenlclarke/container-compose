@@ -54,7 +54,7 @@ services:
     image: redis:7
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - compose-go normalizes both services onto `default`.
 - `container-compose` creates `default-links-demo_default`.

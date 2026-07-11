@@ -44,8 +44,8 @@ External configs/secrets and strict `uid`/`gid` ownership semantics remain separ
 
 ## Docker Compose Compatibility Notes
 
-- Supported now: runtime service grants for file-backed configs/secrets, `configs.content`, `configs.environment`, and `secrets.environment`.
-- Supported now: Docker Compose default mount targets, including `/<config-name>` for configs and `/run/secrets/<secret-name>` for secrets.
+- Supported: runtime service grants for file-backed configs/secrets, `configs.content`, `configs.environment`, and `secrets.environment`.
+- Supported: Docker Compose default mount targets, including `/<config-name>` for configs and `/run/secrets/<secret-name>` for secrets.
 - Remaining gap: `external: true` configs/secrets still need an `apple/container` store or lookup primitive.
 - Remaining gap: strict service-level `uid` and `gid` materialization needs runtime ownership support beyond bind-mounting a host file.
 
@@ -65,8 +65,6 @@ make swift-test
 make coverage-check
 make cli-smoke-built
 ```
-
-Results: passed locally on 2026-06-22. The focused Swift run executed 5 tests. The full Swift suite passed with 541 tests. `make coverage-check` reported Swift coverage at 89.71% and Go coverage at 93.37%. The Go normalizer run passed for `Tools/compose-normalizer`, and the built CLI smoke test passed.
 
 ## container-compose Checks
 

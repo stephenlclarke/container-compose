@@ -486,6 +486,19 @@ struct ComposeCLIHelpTests {
         }
     }
 
+    @Test("STATUS command totals match help support metadata")
+    func statusCommandTotalsMatchHelpSupportMetadata() throws {
+        let status = try statusMarkdown()
+        let supported = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "supported" }.count
+        let partial = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "partially supported" }.count
+        let unsupported = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "not supported" }.count
+
+        #expect(
+            status.contains("\(supported) commands are ✅, \(partial) are ⚠️, and \(unsupported) are ❌"),
+            "STATUS.md CLI command totals do not match ComposeCLIHelp metadata"
+        )
+    }
+
     @Test("STATUS option totals match help support metadata")
     func statusOptionTotalsMatchHelpSupportMetadata() throws {
         let status = try statusMarkdown()
@@ -564,6 +577,45 @@ struct ComposeCLIHelpTests {
                 "STATUS.md Compose File Surface does not list \(row)"
             )
         }
+    }
+
+    @Test("STATUS names every current Compose specification surface")
+    func statusNamesEveryCurrentComposeSpecificationSurface() throws {
+        let status = try statusMarkdown()
+        let composeFileSection = try statusSection("Compose File Surface", in: status)
+        let serviceSection = try statusSection("Service Attribute Surface", in: status)
+        let buildSection = try statusSection("Dockerfile And Build Surface", in: status)
+
+        expectCodeSpans([
+            "attachable", "driver", "driver_opts", "enable_ipv4", "enable_ipv6",
+            "external", "ipam", "internal", "labels", "name",
+        ], in: try statusTableRow(named: "Top-level `networks`", in: composeFileSection))
+        expectCodeSpans([
+            "driver", "driver_opts", "external", "labels", "name",
+        ], in: try statusTableRow(named: "Top-level `volumes`", in: composeFileSection))
+        expectCodeSpans([
+            "file", "environment", "content", "external", "name",
+        ], in: try statusTableRow(named: "Top-level `configs`", in: composeFileSection))
+        expectCodeSpans([
+            "file", "environment", "external", "name",
+        ], in: try statusTableRow(named: "Top-level `secrets`", in: composeFileSection))
+        expectCodeSpans([
+            "path", "project_directory", "env_file",
+        ], in: try statusTableRow(named: "Extensions, fragments, merge, and include", in: composeFileSection))
+        expectCodeSpans([
+            "type", "options", "model", "context_size", "runtime_flags", "endpoint_var", "model_var",
+        ], in: try statusTableRow(named: "Provider services and models", in: composeFileSection))
+        expectCodeSpans([
+            "endpoint_mode", "labels", "mode", "placement", "replicas", "resources", "restart_policy",
+            "rollback_config", "update_config",
+        ], in: try statusTableRow(named: "Compose Deploy Specification", in: composeFileSection))
+        expectCodeSpans([
+            "watch", "path", "action", "target", "ignore", "include", "initial_sync", "exec",
+        ], in: try statusTableRow(named: "Compose Develop Specification", in: composeFileSection))
+
+        expectCodeSpans(Self.currentServiceAttributes, in: serviceSection)
+        expectCodeSpans(Self.currentBuildAttributes.map { "build.\($0)" }, in: buildSection)
+        expectCodeSpans(Self.currentDockerfileInstructions, in: buildSection)
     }
 
     @Test("STATUS Dockerfile and build surface lists build specification rows")
@@ -708,6 +760,19 @@ struct ComposeCLIHelpTests {
             }
     }
 
+    private func statusTableRow(named name: String, in markdown: String) throws -> String {
+        guard let row = statusTableRows(in: markdown).first(where: { $0.hasPrefix("| \(name) |") }) else {
+            throw ComposeError.invalidProject("STATUS.md is missing the \(name) row")
+        }
+        return row
+    }
+
+    private func expectCodeSpans(_ names: [String], in markdown: String) {
+        for name in names {
+            #expect(markdown.contains("`\(name)`"), "STATUS.md does not name current Compose surface \(name)")
+        }
+    }
+
     private func statusSection(_ heading: String, in markdown: String) throws -> String {
         let marker = "## \(heading)"
         guard let start = markdown.range(of: marker)?.upperBound else {
@@ -717,6 +782,30 @@ struct ComposeCLIHelpTests {
         let end = remainder.range(of: "\n## ")?.lowerBound ?? remainder.endIndex
         return String(remainder[..<end])
     }
+
+    private static let currentServiceAttributes = """
+    annotations attach build blkio_config cpu_count cpu_percent cpu_shares cpu_period cpu_quota
+    cpu_rt_runtime cpu_rt_period cpus cpuset cap_add cap_drop cgroup cgroup_parent command configs
+    container_name credential_spec depends_on deploy develop device_cgroup_rules devices dns dns_opt
+    dns_search domainname driver_opts entrypoint env_file environment expose extends external_links
+    extra_hosts gpus group_add healthcheck hostname image init ipc isolation labels label_file links
+    logging mac_address mem_limit mem_reservation mem_swappiness memswap_limit models network_mode
+    networks oom_kill_disable oom_score_adj pid pids_limit platform ports post_start pre_start pre_stop
+    privileged profiles provider pull_policy read_only restart runtime scale secrets security_opt
+    shm_size stdin_open stop_grace_period stop_signal storage_opt sysctls tmpfs tty ulimits
+    use_api_socket user userns_mode uts volumes volumes_from working_dir
+    """.split(whereSeparator: \.isWhitespace).map(String.init)
+
+    private static let currentBuildAttributes = """
+    additional_contexts args cache_from cache_to context dockerfile dockerfile_inline entitlements
+    extra_hosts isolation labels network no_cache platforms privileged provenance pull sbom secrets
+    ssh shm_size tags target ulimits
+    """.split(whereSeparator: \.isWhitespace).map(String.init)
+
+    private static let currentDockerfileInstructions = """
+    ADD ARG CMD COPY ENTRYPOINT ENV EXPOSE FROM HEALTHCHECK LABEL MAINTAINER ONBUILD RUN SHELL
+    STOPSIGNAL USER VOLUME WORKDIR
+    """.split(whereSeparator: \.isWhitespace).map(String.init)
 
     private func representativeParses() -> [RepresentativeParse] {
         [

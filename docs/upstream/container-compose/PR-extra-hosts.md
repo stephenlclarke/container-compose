@@ -42,8 +42,8 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: static `extra_hosts` entries with IPv4, IPv6, and bracketed IPv6 source forms, currently through the command-vector bridge.
-- Supported now: service `up`, `create`, and one-off `run` host entries.
+- Supported with the current fork-backed runtime: static `extra_hosts` entries with IPv4, IPv6, and bracketed IPv6 source forms, currently through the command-vector bridge.
+- Supported: service `up`, `create`, and one-off `run` host entries.
 - Separate slice: Docker `host-gateway` is handled by `docs/upstream/apple-container/ISSUE-host-gateway.md` / `docs/upstream/apple-container/PR-host-gateway.md`.
 - Remaining gap: custom `domainname` and legacy `links` / `external_links` are still separate runtime or compatibility surfaces.
 - Separate slice: service `hostname` is handled by `docs/upstream/container-compose/ISSUE-service-hostname.md` / `docs/upstream/container-compose/PR-service-hostname.md`.

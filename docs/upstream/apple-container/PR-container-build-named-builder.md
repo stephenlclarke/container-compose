@@ -20,3 +20,9 @@ The default builder path is unchanged. Non-default names create separate builder
 swift test --disable-automatic-resolution --filter 'BuilderNameTests|BuildCommandTests'
 make integration INTEGRATION_TEST_SUITES=CLIBuilderLifecycleTest.testNamedBuilderStartBuildStopDelete
 ```
+
+## Commit Tracking
+
+- Apple-facing `stephenlclarke/container` implementation:
+  `449d8d0626c2e640163ecf678e6ee22a85ace91c` (`feat(build): support
+  named builders`).

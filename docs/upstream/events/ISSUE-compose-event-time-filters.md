@@ -35,7 +35,7 @@ It also depends on the first event-stream slice:
 - `docs/upstream/events/ISSUE-container-events-stream.md`
 - `docs/upstream/events/PR-container-events-stream.md`
 
-A live GitHub check on 2026-06-22 found no open Apple issue or PR specifically covering event replay, `--since`, or `--until`. [apple/container#484](https://github.com/apple/container/issues/484) remains the correct upstream event-stream anchor. Adjacent restart, attach, and graceful-stop issues/PRs were checked but are not bases for this slice.
+[apple/container#484](https://github.com/apple/container/issues/484) is the upstream event-stream anchor. Event replay and `--since` / `--until` remain separate from adjacent restart, attach, and graceful-stop work.
 
 This repository does not use Docker Compose source code as a base because the implementation is tied to Docker engine event APIs and Go types. The Compose plugin uses Docker Compose as the behavioral reference, parses compatible timestamp values locally, and sends typed dates to the Apple runtime API.
 

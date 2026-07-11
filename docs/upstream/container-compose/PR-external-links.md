@@ -50,10 +50,10 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: `external_links` where the source service has exactly one Compose network and the external apple/container container has exactly one attachment on the matching runtime network.
-- Supported now: `CONTAINER:ALIAS` external link aliases.
-- Supported now: `CONTAINER` entries mapped to the external container name as the alias.
-- Supported now: generated host entries participate in config-hash recreate behavior.
+- Supported with the current fork-backed runtime: `external_links` where the source service has exactly one Compose network and the external apple/container container has exactly one attachment on the matching runtime network.
+- Supported: `CONTAINER:ALIAS` external link aliases.
+- Supported: `CONTAINER` entries mapped to the external container name as the alias.
+- Supported: generated host entries participate in config-hash recreate behavior.
 - Remaining gap: Docker-compatible source-scoped link lookup.
 - Remaining gap: multi-network external links.
 - Remaining gap: shared aliases and richer external-service discovery.

@@ -46,7 +46,7 @@ services:
     restart: on-failure:3
 ```
 
-Expected runtime invocation on the fork-backed integration branch:
+Expected runtime invocation with the current fork-backed runtime:
 
 ```text
 container run --restart on-failure:3 ...
@@ -58,8 +58,8 @@ This is the current command-vector bridge output; typed execution should pass `C
 
 - apple/container issue: [apple/container#286](https://github.com/apple/container/issues/286)
 - Existing restart-policy PR reference: [apple/container#1258](https://github.com/apple/container/pull/1258)
-- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` and `docs/upstream/apple-container/PR-restart-policy-create-options.md` in `stephenlclarke/container-compose`, backed by `stephenlclarke/container` branch `restart-policy-create-options` commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1`.
-- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` and `docs/upstream/apple-container/PR-restart-policy-runtime.md` in `stephenlclarke/container-compose`, backed by `stephenlclarke/container` branch `restart-policy-runtime` commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0`.
+- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` and `docs/upstream/apple-container/PR-restart-policy-create-options.md`, backed by `stephenlclarke/container` commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1`.
+- Fork handoff: `docs/upstream/apple-container/ISSUE-restart-policy-runtime.md` and `docs/upstream/apple-container/PR-restart-policy-runtime.md`, backed by `stephenlclarke/container` commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0`.
 - Follow-up gap: restart-capable job policies need an `apple/container` wait primitive that reports the final job result after runtime restart attempts.
 
 ## Code Of Conduct And Documentation

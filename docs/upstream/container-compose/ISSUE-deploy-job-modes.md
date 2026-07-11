@@ -28,7 +28,7 @@ References:
 
 Before this change, `container-compose` preserved deploy replica counts as local `scale`, but marked `replicated-job` and `global-job` as unsupported deploy fields. That blocked Compose files that use local completion jobs for database migrations, seed data, or setup steps even though the fork-backed lifecycle adapter can wait for running containers and replay stored exit metadata for stopped containers.
 
-With this change, `container-compose` supports the local Docker Compose job subset on the fork-backed integration branch:
+With this change, `container-compose` supports the local Docker Compose job subset with the current fork-backed runtime:
 
 - compose-go normalized deploy mode is preserved as `deployMode`.
 - `replicated-job` and `global-job` are no longer reported as unsupported deploy fields.
@@ -63,7 +63,7 @@ services:
         condition: service_completed_successfully
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` creates and starts `job-demo-migrate-1` and `job-demo-migrate-2` detached.
 - `container-compose` waits both job containers.

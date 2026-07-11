@@ -14,7 +14,7 @@ Docker Compose passes event filters through to the Docker engine event API as `S
 
 Use [apple/container#484](https://github.com/apple/container/issues/484) as the upstream issue anchor rather than opening a duplicate top-level event-stream request. This slice should stack on the local event-stream primitive documented in `docs/upstream/events/ISSUE-container-events-stream.md` / `docs/upstream/events/PR-container-events-stream.md`.
 
-A live GitHub check on 2026-06-22 found no open `apple/container` or `apple/containerization` issue or PR specifically for event replay, `container events --since`, `container events --until`, or historical event filtering. Broader lifecycle checks found adjacent but separate work:
+The current adjacent upstream work is separate from event replay and time filtering:
 
 - [apple/container#286](https://github.com/apple/container/issues/286) and [apple/container#1258](https://github.com/apple/container/pull/1258) cover restart policy behavior, not event replay.
 - [apple/container#378](https://github.com/apple/container/issues/378) and [apple/containerization#735](https://github.com/apple/containerization/issues/735) cover attach / PTY re-attach, not event replay.

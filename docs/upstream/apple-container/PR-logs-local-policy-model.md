@@ -17,7 +17,7 @@ This is the first small runtime slice needed before `apple/container` can suppor
 
 This PR intentionally adds only the data model and backward-compatible container configuration plumbing. It does not add CLI flags or change runtime write behavior.
 
-Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker driver aliases such as `json-file`, `local`, and `none` should be translated in `container-compose`; the Apple model should remain a typed local capture/retention primitive.
+Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker driver aliases such as `json-file`, `local`, and `none` should be translated in `container-compose`; the Apple model should remain a typed local capture/retention primitive.
 
 Related:
 

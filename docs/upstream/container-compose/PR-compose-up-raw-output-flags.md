@@ -36,3 +36,8 @@ make coverage-check
 ## Follow-Ups
 
 - This slice deliberately left `up --attach`, `--attach-dependencies`, exit-control flags, and `--menu` to later process-control slices.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `1233b45dd58a622b8bb23b057b7a980dbd560928`.

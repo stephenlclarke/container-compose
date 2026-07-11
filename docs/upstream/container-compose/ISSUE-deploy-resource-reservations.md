@@ -10,10 +10,10 @@
 
 Docker Compose V2 accepts CPU and memory reservations in local mode. It preserves the reservation metadata in `docker-compose config --format json`, and local dry-run `docker-compose up --no-start SERVICE` proceeds through the ordinary pull, network, and container create plan.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - No Docker Compose, Compose Spec, compose-go, Moby, or BuildKit issue/PR/discussion directly argued for rejecting CPU or memory Deploy reservations in local Compose mode.
-- Local Docker Compose 5.2.0 preserved `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory` in config output and accepted the service in dry-run local orchestration.
+- The Docker Compose v2 reference preserves `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory` in config output and accepts the service in dry-run local orchestration.
 
 ## Current container-compose behavior
 

@@ -73,67 +73,37 @@ Include the versions and runtime details that affect the report.
 sw_vers
 ```
 
-Example:
-
-```text
-ProductName:            macOS
-ProductVersion:         26.0
-BuildVersion:           25A354
-```
-
 ### Xcode Version
 
 ```bash
 xcodebuild -version
 ```
 
-Example:
-
-```text
-Xcode 26.0
-Build version 17A324
-```
-
-### apple/container Version
+### Runtime Version
 
 ```bash
-container --version
-```
-
-Example:
-
-```text
-container CLI version 0.1.0
+container system version --format json
 ```
 
 ### container-compose Version
 
 ```bash
-container compose version
+container compose version --format json
 ```
 
-Example:
-
-```text
-container-compose 0.2.0
-  source: stephenlclarke/container-compose
-  lane: main
-  branch: main
-  commit: d34f29c4a6a3c3fa562fafa01cf06959cbb057f7
-  build: release
-  container: stephenlclarke/container@d13a7688e8c7bb5f96a545955011053587b3fbf5 (custom)
-  containerization: stephenlclarke/containerization@cada6d31310761c7e7bf9be87a29fe4820ff628d (custom)
-  compose-go: v2.12.1
-```
+Attach both commands' unedited current output after redacting private paths or
+registry details. These reports identify the exact runtime, package lane,
+source commits, builder image, and `compose-go` version without relying on a
+sample that can become stale.
 
 ### Plugin Installation Source
 
 Mention how `container-compose` was installed:
 
-- Release archive.
-- Local `make install`.
-- SwiftPM checkout.
-- Manually copied plugin files.
+- `stephenlclarke/tap/container-compose` Homebrew formula.
+- GitHub release archive.
+- Locally built `make package` archive.
+- Source checkout or manually installed plugin files.
 
 ## Compose Context
 

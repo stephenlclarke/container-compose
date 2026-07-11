@@ -278,10 +278,10 @@ enum ContainerPackageCompatibility {
   private static func installGuidance(lane: String, detected: [String]) -> String {
     let formulae = homebrewFormulae(lane: lane)
     return """
-      container-compose requires the matching Stephen Clarke container stack.
+      container-compose requires the matching stephenlclarke container stack.
 
       The installed container components do not match the Compose functionality in this plugin.
-      Upgrade the corresponding components from Stephen Clarke's Homebrew tap, then run this command again.
+      Upgrade the corresponding components from stephenlclarke/tap, then run this command again.
 
         brew tap stephenlclarke/tap
         brew update

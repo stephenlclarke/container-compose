@@ -36,3 +36,8 @@ make coverage-check
 
 - Attached `compose up` log-presentation flags are handled by the raw-output and timestamp slices; this watch slice does not change `up --attach`, `--attach-dependencies`, or exit-control behavior.
 - If native filesystem events replace the current polling loop, track that as a separate implementation improvement rather than a support-status blocker.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `295c3a2cdecff35ee88c7c899157d88d659fb351`.

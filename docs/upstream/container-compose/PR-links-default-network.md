@@ -40,9 +40,9 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: `links` where linked services share exactly one normalized Compose network, including the implicit `default` network, currently through the command-vector bridge.
+- Supported with the current fork-backed runtime: `links` where linked services share exactly one normalized Compose network, including the implicit `default` network, currently through the command-vector bridge.
 - Remaining gap: multi-network links, shared aliases, and `external_links` still need richer apple/container DNS and external-service lookup primitives.
-- Remaining gap: released upstream still needs accepted network alias support before branches pinned to upstream can enable the alias projection.
+- Remaining gap: released upstream still needs accepted network alias support before stock upstream builds can enable the alias projection.
 
 ## Testing
 

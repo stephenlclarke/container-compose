@@ -48,7 +48,7 @@ services:
     command: ["cat", "/etc/hosts"]
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` currently emits `--add-host host.docker.internal:host-gateway` through the command-vector bridge.
 - The runtime writes a concrete IPv4 gateway address for `host.docker.internal`.

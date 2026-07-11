@@ -40,3 +40,8 @@ Projects without healthchecks continue to wait for running state. Existing `Mana
 - [x] Updated current-state documentation and CLI support colors.
 - [x] Kept the runtime change generic and linked to the original Apple issue.
 - [x] Avoided pushes to Apple remotes.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `a357e261e471cf7bc453eedc308a3d39e201ba4d`.

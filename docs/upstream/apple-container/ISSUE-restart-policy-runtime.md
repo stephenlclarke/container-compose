@@ -6,7 +6,7 @@ After `ContainerCreateOptions` can store a typed restart policy, `apple/containe
 
 Restart policies are runtime behavior, not Compose behavior. `container-compose` can normalize service `restart` values to typed `ContainerCreateOptions.restartPolicy`, but the decision to restart a stopped container must live in `apple/container` so direct API and CLI users get the same result.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose restart value parsing belongs in `container-compose`. The Apple-facing slice is the stored policy plus scheduler behavior.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose restart value parsing belongs in `container-compose`. The Apple-facing slice is the stored policy plus scheduler behavior.
 
 Requested behavior:
 

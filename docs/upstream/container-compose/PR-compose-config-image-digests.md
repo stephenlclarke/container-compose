@@ -40,3 +40,8 @@ make cli-smoke-built
 - The digest resolver performs registry HEAD requests and therefore can fail for unavailable images or registries that require unavailable credentials.
 - `config --lock-image-digests` always emits the lock override shape rather than the full canonical project.
 - `build`, interactive `attach`, and exit-control `up` options remain separate partial-support items.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `2a34c9d5f711a203471a36c3380096da03965b0c`.

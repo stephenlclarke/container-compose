@@ -23,7 +23,7 @@ The first useful implementation should be intentionally narrow:
 - Reject stopping or starting a paused container with a clear message to unpause first.
 - Keep Compose-specific service selection out of `apple/container`; `container-compose` can map service names onto these primitives.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice fits the core resource-management boundary: pause and unpause are native lifecycle operations. Compose owns service selection and Docker Compose command semantics.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice fits the core resource-management boundary: pause and unpause are native lifecycle operations. Compose owns service selection and Docker Compose command semantics.
 
 This is needed by `stephenlclarke/container-compose` so Compose `pause` and `unpause` can stop being treated as an `apple/container` runtime gap.
 

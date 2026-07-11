@@ -36,3 +36,8 @@ git diff --check
 ## Remaining Risks
 
 - Exact ref checks cannot prove every runtime primitive behaves correctly. They prevent mixed Apple/fork installs and stale plugin/runtime package drift; capability behavior remains covered by focused tests and runtime smoke.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `821c0e100dfaee86ccfbb8ccd9afadff9c48c55c`.

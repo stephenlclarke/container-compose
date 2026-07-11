@@ -37,7 +37,7 @@ swift test --disable-automatic-resolution --filter 'ContainerExecCommandTests|Ma
 swift format lint --strict --configuration .swift-format-nolint Sources/ContainerCommands/Container/ContainerExec.swift Sources/ContainerCommands/Machine/MachineRun.swift Tests/ContainerCommandsTests/ContainerExecCommandTests.swift Tests/ContainerCommandsTests/MachineRunCommandTests.swift Tests/ContainerPersistenceTests/ConfigurationLoaderTests.swift Tests/CLITests/Utilities/CLITest.swift Tests/CLITests/Subcommands/Containers/TestCLIExec.swift Tests/CLITests/Subcommands/Machine/TestCLIMachine.swift
 swift build -c release --disable-automatic-resolution --product container
 swift build --build-tests --disable-automatic-resolution
-make coverage-build coverage-unit
+make coverage-unit
 CLITEST_LOG_ROOT="$LOG_ROOT" CONTAINER_CLI_PATH="$PWD/.build/release/container" swift test -c release --disable-automatic-resolution --filter 'TestCLIExecCommand.testExecCommandUlimitNofile|TestCLIMachineRuntime.testRunCommandUlimitNofile'
 git diff --check
 ```

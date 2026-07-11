@@ -15,11 +15,13 @@ This PR draft follows `.github/pull_request_template.md`.
 
 ## Motivation and Context
 
-This is the runtime-writer slice for typed local log retention. Earlier local slices introduce a typed `ContainerLogConfiguration` and disabled persisted capture. This change makes the local `maxSizeInBytes` and `maxFileCount` settings affect files written by the runtime.
+This is the runtime-writer slice for typed local log retention. It builds on
+`ContainerLogConfiguration` and disabled persisted capture, making
+`maxSizeInBytes` and `maxFileCount` affect files written by the runtime.
 
 Docker's `json-file` and `local` logging drivers both document local file rotation through `max-size` and `max-file`. Docker Compose exposes the same intent through service `logging.driver` and `logging.options`. `container-compose` can normalize Compose service configuration and pass a typed runtime logging policy, but the runtime must own file rotation so raw and structured persisted logs stay aligned and future replay APIs can reason about retained files consistently.
 
-Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this PR should be framed as runtime retention mechanics. Docker driver aliases and option strings stay in `container-compose`.
+Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this PR should be framed as runtime retention mechanics. Docker driver aliases and option strings stay in `container-compose`.
 
 Related:
 

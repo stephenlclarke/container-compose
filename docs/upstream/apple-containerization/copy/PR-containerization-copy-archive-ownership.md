@@ -25,7 +25,6 @@ Existing upstream context:
 - `apple/containerization#614` added stat metadata support.
 - `apple/containerization#636` fixed UID/GID truncation to 16 bits.
 - `apple/containerization#727` added path resolution for copy-in using stat.
-- No open upstream issue or PR found for copy archive ownership preservation as of 2026-06-22.
 
 ## Commit Tracking
 

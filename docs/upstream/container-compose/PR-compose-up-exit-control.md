@@ -42,3 +42,8 @@ make coverage-check
 - Exit-control options are incompatible with `--detach`, `--wait`, and `--no-start` because those modes either release process control or do not start containers.
 - `up --watch` remains a separate watch-engine mode and rejects exit-control combinations.
 - `up --menu` can now be combined with exit-control options; the menu follows logs while the existing exit-control waiter decides teardown and process status.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `8939458ce580943f07f4542f6e3eb42596fdf88c`.

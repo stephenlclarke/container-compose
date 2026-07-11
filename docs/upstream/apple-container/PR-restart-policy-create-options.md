@@ -1,8 +1,7 @@
 # feat(api): add restart policy create options
 
-## Fork Branch And Commit
+## Commit Tracking
 
-- Fork branch: `stephenlclarke/container` `restart-policy-create-options`
 - Commit: `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1`
 
 ## Type of Change
@@ -16,7 +15,7 @@
 
 This is the first small restart-policy slice for [apple/container#286](https://github.com/apple/container/issues/286). It also uses [apple/container#1258](https://github.com/apple/container/pull/1258) as design input, but narrows the diff to the create-time API surface so the public contract can be reviewed before restart scheduling is added.
 
-Docker-compatible Compose support needs a runtime-owned policy shape for service `restart` values. Keeping this model in `ContainerCreateOptions` lets generic API callers and `container-compose` normalize to the same runtime option without adding Compose-specific code to `apple/container`. Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Compose owns Docker/Compose restart value parsing and precedence; the Apple-facing ask is the typed policy plus runtime scheduler.
+Docker-compatible Compose support needs a runtime-owned policy shape for service `restart` values. Keeping this model in `ContainerCreateOptions` lets generic API callers and `container-compose` normalize to the same runtime option without adding Compose-specific code to `apple/container`. Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Compose owns Docker/Compose restart value parsing and precedence; the Apple-facing ask is the typed policy plus runtime scheduler.
 
 ## Implementation Details
 

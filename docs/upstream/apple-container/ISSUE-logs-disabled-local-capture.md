@@ -20,7 +20,7 @@ Requested behavior:
 - Preserve caller-attached stdio handles so interactive or attached clients still receive process output.
 - Keep Compose-specific service fan-out, prefixes, colors, and `logging.driver` validation outside `apple/container`.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should not depend on Apple accepting a Docker-shaped `--log-driver none` parser. The runtime behavior is useful through typed configuration alone.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), this Apple-facing slice should not depend on Apple accepting a Docker-shaped `--log-driver none` parser. The runtime behavior is useful through typed configuration alone.
 
 Related upstream context:
 
@@ -30,7 +30,7 @@ Related upstream context:
 - [Docker Compose service logging](https://docs.docker.com/reference/compose-file/services/#logging): documents service-level `logging.driver` and `logging.options`.
 - [Docker logging driver configuration](https://docs.docker.com/engine/logging/configure/): documents per-container `--log-driver` usage and lists `none` as a supported driver.
 
-The local integration branch already contains this disabled-capture behavior in commit `6cbf778 feat(logs): support disabled log storage`.
+The current fork contains this disabled-capture behavior in commit `6cbf778 feat(logs): support disabled log storage`.
 
 ## Code of Conduct
 

@@ -19,7 +19,7 @@ services:
 
 `apple/container` already has an explicit hostname path on this fork, but it does not currently expose a matching typed domain-name configuration field. This gap blocks Compose `domainname` support in `container-compose` even though the OCI runtime spec includes `domainname`, Linux UTS namespaces isolate both hostname and NIS domain name, and `vminitd` already applies OCI sysctls before starting the workload.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the Apple-facing request should be the typed domain-name primitive and runtime application path. Docker/Compose `domainname` parsing belongs in `container-compose`; any local `--domainname` bridge is only temporary validation plumbing.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the Apple-facing request should be the typed domain-name primitive and runtime application path. Docker/Compose `domainname` parsing belongs in `container-compose`; any local `--domainname` bridge is only temporary validation plumbing.
 
 Relevant references:
 

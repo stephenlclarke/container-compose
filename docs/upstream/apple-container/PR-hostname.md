@@ -11,7 +11,7 @@
 
 Docker exposes `docker container run --hostname` for setting the hostname visible inside the container UTS namespace, and Docker Compose exposes the same concept with the service `hostname` key. `apple/container` already derives a default hostname from the first network attachment, but it does not currently let typed API callers set one explicitly.
 
-This change adds that missing runtime primitive without adding Compose-specific behavior to `apple/container`. It is intentionally limited to `hostname` because `containerization` currently exposes `LinuxContainer.Configuration.hostname`; `domainname` should be handled as a separate runtime API discussion if maintainers want OCI `domainname` bridged too. Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), any Docker-shaped CLI bridge in the local fork should be treated as validation plumbing rather than the durable upstream ask.
+This change adds that missing runtime primitive without adding Compose-specific behavior to `apple/container`. It is intentionally limited to `hostname` because `containerization` currently exposes `LinuxContainer.Configuration.hostname`; `domainname` should be handled as a separate runtime API discussion if maintainers want OCI `domainname` bridged too. Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), any Docker-shaped CLI bridge in the local fork should be treated as validation plumbing rather than the durable upstream ask.
 
 References:
 

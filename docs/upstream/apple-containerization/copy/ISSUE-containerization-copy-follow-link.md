@@ -19,7 +19,6 @@ Existing upstream context:
 - `apple/containerization#571` added LinuxContainer directory copy support.
 - `apple/containerization#614` added the stat RPC used by later copy path-resolution work.
 - `apple/containerization#727` added path resolution for copy-in using stat.
-- No open upstream issue or PR found for copy source symlink dereference as of 2026-06-22.
 
 ## Proposed behavior
 

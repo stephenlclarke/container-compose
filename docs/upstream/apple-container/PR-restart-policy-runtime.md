@@ -1,10 +1,9 @@
 # feat(runtime): restart containers from stored policy
 
-## Fork Branch And Commit
+## Commit Tracking
 
-- Fork branch: `stephenlclarke/container` `restart-policy-runtime`
 - Commit: `b41bb830db708bc839c94e01c8a75c7fecbe3db0`
-- Stacks on: `stephenlclarke/container` `restart-policy-create-options` commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1`
+- Stacks on commit `c5668c19d139b1aeb7e2529cb1dedd01fb4532c1` in `stephenlclarke/container`.
 
 ## Type of Change
 
@@ -17,7 +16,7 @@
 
 This is the second small restart-policy slice for [apple/container#286](https://github.com/apple/container/issues/286). It builds on the typed create-options surface from `docs/upstream/apple-container/ISSUE-restart-policy-create-options.md` / `docs/upstream/apple-container/PR-restart-policy-create-options.md` and uses [apple/container#1258](https://github.com/apple/container/pull/1258) as the implementation reference.
 
-The goal is to keep restart behavior generic to `apple/container`: direct API callers, any native Apple command surface, and `container-compose` should all rely on the same runtime lifecycle behavior instead of carrying separate restart loops in clients. Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose restart parsing stays in `container-compose`; this Apple PR should be framed as scheduler behavior for stored typed policies.
+The goal is to keep restart behavior generic to `apple/container`: direct API callers, any native Apple command surface, and `container-compose` should all rely on the same runtime lifecycle behavior instead of carrying separate restart loops in clients. Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose restart parsing stays in `container-compose`; this Apple PR should be framed as scheduler behavior for stored typed policies.
 
 ## Implementation Details
 

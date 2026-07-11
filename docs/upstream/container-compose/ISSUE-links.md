@@ -86,7 +86,7 @@ networks:
   backend: {}
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` creates or reuses `redis` before `api`.
 - The `redis` service container currently receives `--network links-demo_backend,alias=cache` through the command-vector bridge.

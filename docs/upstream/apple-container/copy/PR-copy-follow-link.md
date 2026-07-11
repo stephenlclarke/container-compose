@@ -26,7 +26,6 @@ Existing upstream context:
 - `apple/container#1579` and `apple/container#1580` added copy coverage and FilePath cleanup.
 - `apple/container#1738`, `apple/container#1741`, `apple/container#1743`, and `apple/container#1749` cover nearby host path resolution behavior.
 - `apple/container#963` and `apple/container#895` cover volume copy, which is adjacent but not a replacement for source symlink dereference.
-- No open upstream issue or PR found for `container cp --follow-link` as of 2026-06-22.
 
 ## Commit Tracking
 

@@ -1,4 +1,4 @@
-# Pull request: support fork-backed `container compose top`
+# Pull request: support `container compose top`
 
 <!-- markdownlint-disable MD013 -->
 
@@ -17,24 +17,28 @@
 
 ## Motivation and Context
 
-Docker Compose supports `docker compose top [SERVICES...]`. The plugin previously rejected the command because `apple/container` lacked process-listing support. The local fork stack now exposes a PID-only runtime primitive, so `container-compose` can implement the Compose selection and output layer without adding Compose-specific code to `apple/container`.
+Docker Compose supports `docker compose top [SERVICES...]`. The `stephenlclarke` stack exposes a PID-only runtime primitive, so `container-compose` can implement the Compose selection and output layer without adding Compose-specific code to `apple/container`.
 
 References:
 
 - Docker Compose `top`: <https://docs.docker.com/reference/cli/docker/compose/top/>
 - Docker `container top`: <https://docs.docker.com/reference/cli/docker/container/top/>
-- Container handoff: `docs/upstream/process-list/ISSUE-container-process-identifiers.md` and `docs/upstream/process-list/PR-container-process-identifiers.md` in the `container` fork
-- Lower runtime handoff: `docs/upstream/process-list/ISSUE-containerization-process-identifiers.md` and `docs/upstream/process-list/PR-containerization-process-identifiers.md` in the `containerization` fork
-
-Existing upstream context:
-
-- No open `apple/container` or `apple/containerization` issue or pull request was found for process listing or `top` support on 2026-06-22.
+- Container handoffs: [ISSUE-process-identifiers.md](../apple-container/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-container/PR-process-identifiers.md)
+- Lower-runtime handoffs: [ISSUE-process-identifiers.md](../apple-containerization/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-containerization/PR-process-identifiers.md)
 
 ## Commit Tracking
 
-- Compose code commit: `b44ba55` (`feat(top): support fork-backed process listing`)
-- Container code commit: `14a3067` in `stephenlclarke/container` (`feat(runtime): expose container process identifiers`)
-- Lower runtime code commits: `d69f7e5` and `aaa143b` in `stephenlclarke/containerization`
+- Compose code commit:
+  `b44ba55496f747b37a915c1cf252dfd4a0c564c0` (`feat(top): support
+  fork-backed process listing`).
+- Container code commit:
+  `02a04fb372a6629ba02a14d34c8f9ac5b5a755df` on
+  `stephenlclarke/container:handoff/process-identifiers`
+  (`feat(runtime): expose container process identifiers`).
+- Lower runtime code commits:
+  `d69f7e51c5ae9ecec6ad7fc4a6358b824cc515e7` and
+  `aaa143b15f426912342cb4f29dc6a55065ba0651` in
+  `stephenlclarke/containerization`.
 
 ## Implementation Details
 
@@ -49,9 +53,9 @@ Existing upstream context:
 ## Docker Compose Compatibility Notes
 
 - The CLI shape matches Docker Compose `top [SERVICES...]`.
-- The fork-backed output is intentionally PID-only because the current runtime exposes process identifiers, not full process metadata.
+- The `stephenlclarke` runtime output is intentionally PID-only because the current runtime exposes process identifiers, not full process metadata.
 - Full Docker `top` columns remain blocked by an `apple/container` / `containerization` follow-up for richer process metadata.
-- Branches pinned to released upstream `apple/container` must continue treating `top` as runtime-gated until equivalent process-listing APIs are accepted upstream.
+- Stock `apple/container` builds must continue treating `top` as runtime-gated until equivalent process-listing APIs are accepted upstream.
 
 ## Testing
 

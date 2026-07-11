@@ -41,3 +41,9 @@ markdownlint README.md INSTALL.md BRANCHES.md docs/upstream/container-compose/IS
 ## Current Boundary
 
 `ContainerClientDiscoveryManager` remains available for focused direct API consumers and unit coverage. Live Compose discovery uses the CLI JSON manager by default until the Swift task-stack issue is fixed in the supported toolchain.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `8b07f6082dd4847efb65ce866cb5881407ca54ae` (`feat(ps): support compose
+  ps live discovery`).

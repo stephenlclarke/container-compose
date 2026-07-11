@@ -14,7 +14,7 @@ Before this slice, `container-compose` accepted only `--builder default` and rej
 
 - Docker Compose's CLI reference documents `docker compose build --builder`.
 - Docker Buildx documents named builder selection through `--builder` / builder instances.
-- `docker/compose#10664` is the historical Compose issue for adding builder selection to `compose build`.
+- `docker/compose#10664` is the original Compose issue for adding builder selection to `compose build`.
 - `apple/container-builder-shim#74` discusses exposing BuildKit so Buildx can register a remote builder. That is useful upstream context, but this slice can stay smaller by adding the builder selection primitive to the stephenlclarke fork-backed `container` CLI and forwarding from `container-compose`.
 
 ## Expected Behavior

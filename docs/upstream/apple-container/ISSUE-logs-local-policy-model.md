@@ -23,7 +23,7 @@ This model gives later, smaller PRs a place to attach:
 - writer-level local rotation;
 - static rotated replay.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker logging driver aliases and `logging.options` parsing should stay in `container-compose`. The Apple-facing ask is the typed local capture and retention policy model plus runtime writer behavior.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker logging driver aliases and `logging.options` parsing should stay in `container-compose`. The Apple-facing ask is the typed local capture and retention policy model plus runtime writer behavior.
 
 Related upstream context:
 
@@ -34,7 +34,7 @@ Related upstream context:
 - [Docker `json-file` logging driver](https://docs.docker.com/engine/logging/drivers/json-file/): documents local retained log options such as `max-size` and `max-file`.
 - [Docker `local` logging driver](https://docs.docker.com/engine/logging/drivers/local/): documents local logging behavior.
 
-The local integration branch already contains this model in commit `e41e630 feat(logs): add container logging policy model`.
+The current fork contains this model in commit `e41e630 feat(logs): add container logging policy model`.
 
 ## Code of Conduct
 

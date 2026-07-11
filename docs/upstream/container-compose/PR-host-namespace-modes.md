@@ -31,7 +31,7 @@ Docker Compose accepts both host and sharing namespace modes. The stephenlclarke
 
 ## Docker Compose Parity
 
-Local Docker Compose 5.2.0 probe results:
+Current Docker Compose v2 parity behavior:
 
 - `network_mode: host` normalizes to `network_mode: "host"` and Docker inspect reports `HostConfig.NetworkMode="host"` with empty `PidMode`; container-compose dry-run verifies `--network host` is emitted and the Compose project network is not attached.
 - `pid: host` normalizes to `pid: "host"` while retaining the default service network; Docker inspect reports `HostConfig.PidMode="host"` and `HostConfig.NetworkMode="<project>_default"`.
@@ -97,3 +97,8 @@ npx --yes markdownlint-cli2 README.md BUILD.md STATUS.md docs/parity/compose-cli
 
 - Implement or document the remaining `network_mode` / `pid` service/container namespace-sharing values.
 - Complete the requested `devices` slice before returning to network `driver_opts`.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `a0a996cef49e67332eb7b32a4e354314c4367a2f`.

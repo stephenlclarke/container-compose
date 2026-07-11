@@ -15,7 +15,7 @@ Network deletion had a related cleanup race: a network removed between existence
 ## Docker Compose Reference
 
 - Docker Compose `rm` reference: <https://docs.docker.com/reference/cli/docker/compose/rm/>
-- Docker Compose issue [#6968](https://github.com/docker/compose/issues/6968) records historical `No stopped containers` behavior around stopped-container discovery.
+- Docker Compose issue [#6968](https://github.com/docker/compose/issues/6968) documents `No stopped containers` behavior around stopped-container discovery.
 
 Local parity on this MacBook Pro:
 

@@ -18,7 +18,7 @@
 
 Docker Compose inherits image-level Dockerfile `HEALTHCHECK` metadata when a service does not declare a replacement probe. It also allows services to tune image probes by setting timing fields such as `interval`, `timeout`, `start_period`, `start_interval`, or `retries` without repeating the probe command.
 
-The local `stephenlclarke/container` fork integration history carries `feat(api): expose image healthcheck metadata` (`831a013`), documented by `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` / `docs/upstream/apple-container/PR-image-healthcheck-metadata.md`. That runtime slice references [apple/container#440](https://github.com/apple/container/issues/440), [apple/container#1502](https://github.com/apple/container/issues/1502), and [apple/container#1504](https://github.com/apple/container/pull/1504), and exposes Docker image config `Healthcheck` metadata through `ImageResource.Variant.healthCheck`.
+The current `stephenlclarke/container` fork exposes image healthcheck metadata through `ImageResource.Variant.healthCheck` in `feat(api): expose image healthcheck metadata` (`831a013`). The matching handoffs are `docs/upstream/apple-container/ISSUE-image-healthcheck-metadata.md` and `docs/upstream/apple-container/PR-image-healthcheck-metadata.md`, with upstream context in [apple/container#440](https://github.com/apple/container/issues/440), [apple/container#1502](https://github.com/apple/container/issues/1502), and [apple/container#1504](https://github.com/apple/container/pull/1504).
 
 With that fork primitive available, this plugin can implement Compose inheritance and override semantics without adding Compose-specific code to `apple/container`.
 
@@ -47,7 +47,7 @@ With that fork primitive available, this plugin can implement Compose inheritanc
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed branch: Dockerfile `HEALTHCHECK` command inheritance, `interval`, `timeout`, `start_period`, `start_interval`, and `retries` defaults, plus Compose timing overrides.
+- Supported with the current fork-backed runtime: Dockerfile `HEALTHCHECK` command inheritance, `interval`, `timeout`, `start_period`, `start_interval`, and `retries` defaults, plus Compose timing overrides.
 - Remaining released-upstream gap: equivalent image config parsing and `ImageResource` healthcheck metadata must be accepted in `apple/container`.
 - Compose-specific merge semantics, disable behavior, and early validation remain in this plugin.
 
@@ -67,8 +67,6 @@ make swift-test
 make coverage-check
 make cli-smoke-built
 ```
-
-Results: passed locally on 2026-06-22. The focused run executed 7 tests. The broader orchestrator run executed 459 tests. The full Makefile Swift suite executed 537 tests. Final coverage was Swift 89.73% and Go 93.37%.
 
 ## container-compose Checks
 

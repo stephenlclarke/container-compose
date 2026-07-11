@@ -40,3 +40,8 @@ make cli-smoke-built
 - `compose up --timestamps` now follows logs instead of inheriting foreground process I/O, so stdin is not attached in this mode.
 - The regular attached `compose up` path is unchanged when `--timestamps` is absent.
 - This slice did not implement `up --attach`, `--attach-dependencies`, exit-control flags, or `--menu`; later follow-up slices cover those surfaces with their own compatibility notes.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `a2d2fe5e06c3293edacc10871d81d6cfb272ee15`.

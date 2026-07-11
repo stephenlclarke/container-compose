@@ -23,7 +23,7 @@
 
 ## container-compose Checks
 
-- [ ] I updated `STATUS.md`, `PLAN.md`, `BRANCHES.md`, or `docs/upstream/` for support, branch, or runtime primitive changes, or no update is needed.
+- [ ] I updated `STATUS.md`, `BRANCHES.md`, or `docs/upstream/` for support, release, or runtime primitive changes, or no update is needed.
 - [ ] This pull request is focused on one issue or one coherent change.
 - [ ] I used Conventional Commits in commit messages and the pull request title.
 - [ ] I signed my commits with a GitHub-supported signature method.

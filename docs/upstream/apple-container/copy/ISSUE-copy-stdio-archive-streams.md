@@ -18,7 +18,6 @@ References:
 
 Existing upstream context:
 
-- No open `apple/container` or `apple/containerization` issue or pull request was found for `container cp` stdin/stdout tar archive streaming on 2026-06-27.
 - `container-compose` now rejects `compose cp` operands equal to `-` with a precise unsupported-feature message instead of treating `-` as a literal local filename.
 
 ## Proposed behavior

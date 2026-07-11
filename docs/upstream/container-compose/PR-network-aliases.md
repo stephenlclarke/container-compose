@@ -46,8 +46,8 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: aliases on exactly one service network, currently through the command-vector bridge.
-- Supported now: alias rendering alongside single-network MAC and MTU options.
+- Supported with the current fork-backed runtime: aliases on exactly one service network, currently through the command-vector bridge.
+- Supported: alias rendering alongside single-network MAC and MTU options.
 - Remaining gap: Docker permits the same network-wide alias to be shared by multiple containers, with unspecified resolution. The local runtime currently keeps alias names unique because the existing lookup path is hostname-like and not source-network-scoped.
 - Remaining gap: aliases on services with multiple networks need `apple/container` multi-network attach/connect and source-network-aware DNS behavior.
 - Remaining gap: service-name DNS for scaled replicas, DNSRR/VIP endpoint behavior, fixed IPs, and Docker network namespace modes remain separate networking gaps.

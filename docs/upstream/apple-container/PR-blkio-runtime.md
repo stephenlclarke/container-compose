@@ -17,7 +17,7 @@ The feature closes the runtime half of the Docker Compose `blkio_config` path:
 - `container` carries the parsed Linux-specific payload through opaque `RuntimeConfiguration.runtimeData`.
 - `containerization` applies it through `LinuxContainer.Configuration.blockIO`.
 
-Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the durable upstream ask is the typed runtime bridge. The local `--blkio` parser exists only because the current plugin create path still uses command vectors and Chris George's #1595 branch exposes that validation surface.
+Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the durable upstream ask is the typed runtime bridge. The local `--blkio` parser exists only because the current plugin create path still uses command vectors and [apple/container#1595](https://github.com/apple/container/pull/1595) exposes that validation surface.
 
 References:
 
@@ -31,7 +31,7 @@ References:
 - Container code commits:
   - `cce5438` in `stephenlclarke/container` (`feat(runtime): add blkio runtime data`).
   - `a41dd78` in `stephenlclarke/container` (`chore(deps): pin containerization fork`).
-- Lower runtime code dependency: `apple/containerization#739`, locally carried by `stephenlclarke/containerization@integration/blkio-runtime`.
+- Lower runtime code dependency: [apple/containerization#739](https://github.com/apple/containerization/pull/739), represented in the current `stephenlclarke/containerization` fork.
 - Compose mapping code commit: `ffa2570` in `stephenlclarke/container-compose` (`feat(runtime): map compose blkio config`), not part of this Apple PR.
 
 ## Implementation Details
@@ -41,7 +41,7 @@ References:
 - Accepted `device=` as either an absolute host path or a `<major>:<minor>` literal.
 - Encoded parsed block I/O data into `LinuxRuntimeData`.
 - Decoded runtime data in `RuntimeService.configureContainer` and converted the OCI wire model to `Containerization.LinuxBlockIO`.
-- Pinned this integration branch to `stephenlclarke/containerization@integration/blkio-runtime`, which contains Chris George's `apple/containerization#739` branch.
+- Pinned the fork-backed runtime to the `stephenlclarke/containerization` revision that represents [apple/containerization#739](https://github.com/apple/containerization/pull/739).
 - The local fork also carried repeatable `--blkio <option>` parsing for the existing command-vector create path; an upstream PR should drop or soften that bridge if maintainers prefer typed-only configuration.
 
 ## Testing
@@ -65,4 +65,4 @@ git diff --check
 
 ## Dependency Notes
 
-This branch intentionally depends on the local containerization fork while [apple/containerization#739](https://github.com/apple/containerization/pull/739) is open. If #739 lands upstream, the package pin should move back to `apple/containerization` at the accepted release or revision before an upstream `apple/container` PR is opened.
+The Apple review delta depends on [apple/containerization#739](https://github.com/apple/containerization/pull/739). If that work lands upstream, prepare this slice on the accepted `apple/containerization` revision rather than carrying the fork representation.

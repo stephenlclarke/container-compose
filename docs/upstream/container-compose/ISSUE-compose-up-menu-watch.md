@@ -8,10 +8,10 @@
 
 Docker Compose V2 accepts `up --menu --watch` in local dry-run mode. It renders the ordinary `up` create/start preview and ends with the dry-run interactive-run note instead of rejecting the option combination or printing a standalone watch plan.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - No Docker Compose, Compose Spec, compose-go, or Moby issue/PR/discussion directly argued for rejecting `up --menu --watch`.
-- Local Docker Compose 5.2.0 accepted `up --menu --watch SERVICE`, `up --menu=true --watch SERVICE`, and `up --menu=false --watch SERVICE` in dry-run mode.
+- The Docker Compose v2 reference accepts `up --menu --watch SERVICE`, `up --menu=true --watch SERVICE`, and `up --menu=false --watch SERVICE` in dry-run mode.
 
 ## Current container-compose behavior
 
@@ -49,4 +49,5 @@ container compose up --menu --watch api
 - Missing or malformed `develop.watch` metadata fails before runtime side effects in live menu-watch mode.
 - Non-interactive environments that cannot host the menu continue to use the normal `up --watch` path when `--watch` is requested.
 - `make docker-compose-up-menu-parity` requires Docker Compose and `container-compose` to accept `up --menu --watch`.
-- README, status, parity docs, and upstream handoff notes no longer list `up --menu --watch` as a compatibility boundary.
+- README, status, parity docs, and upstream handoff notes list
+  `up --menu --watch` as supported.

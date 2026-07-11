@@ -84,7 +84,7 @@ CONTAINER_COMPOSE_CONTAINER ?= $(if $(wildcard $(LOCAL_CONTAINER_BINARY)),$(LOCA
 CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensure-container-stopped.sh)
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
 PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)"
-MARKDOWN_FILES := README.md BUILD.md CODE_OF_CONDUCT.md CONTRIBUTING.md DESIGN.md INSTALL.md PLAN.md SECURITY.md STATUS.md SUPPORT.md docs/bug-report-how-to.md .github/pull_request_template.md
+MARKDOWN_FILES := $(shell git ls-files '*.md')
 DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-cli-surface-parity \
 	docker-compose-bridge-parity \

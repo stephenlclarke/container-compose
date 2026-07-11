@@ -8,7 +8,6 @@
 - Keeps non-interactive `--watch` commands on the existing standalone watch path when the menu cannot be enabled.
 - Validates missing or malformed `develop.watch` metadata before live runtime side effects.
 - Updates the local Docker Compose parity script so `--menu --watch` is required parity.
-- Bumps the plugin minor version to `0.2.0`.
 - Updates README, status, parity docs, and upstream handoff notes.
 
 ## Type of Change
@@ -71,3 +70,8 @@ This change makes `container-compose` more permissive for an option combination 
 ## Remaining Risks
 
 - Interactive menu-watch behavior still depends on a real terminal for the menu controller. Non-interactive scripts keep the normal watch path or dry-run preview path instead of forcing terminal ownership.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `53bfd5555266d0d22130a31ca34783f0f777e25e`.

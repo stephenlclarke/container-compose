@@ -30,24 +30,26 @@ Usage:
   ${SCRIPT_USAGE} package VERSION [--execute]
 
 Purpose:
-  Coordinate the simplified Stephen-owned container stack release flow without
-  touching Apple upstream repositories.
+  Coordinate releases for the four local stephenlclarke source repositories
+  and the Homebrew tap without touching Apple upstream repositories.
 
 Modes:
   plan
-      Inspect the four local main branches and print the next release plan.
+      Inspect the four local source main branches and print the next release
+      plan, including the Homebrew tap workflow boundary.
       This mode never mutates repositories.
 
   release VERSION_SELECTOR
-      Deterministically promote the current four-repo stack to the next stable
-      release. The version selector is resolved from the latest local semantic
-      container-compose tag, not from mutable working-tree state. The helper
-      bumps container-compose on main when needed, commits that bump, pushes all
-      Stephen-owned main branches, creates the stable container-compose source
-      tag, pushes that tag, dispatches the stable package workflow, and waits
-      for that workflow to publish the release assets and Homebrew tap update.
-      After the tap is verified, the helper syncs the checked-in source formula
-      template to the verified release URL, version, and SHA.
+      Deterministically promote the four source repositories and Homebrew tap
+      to the next stable release. The version selector is resolved from the
+      latest local semantic container-compose tag, not from mutable
+      working-tree state. The helper bumps container-compose on main when
+      needed, commits that bump, pushes all stephenlclarke source main branches,
+      creates and pushes the stable container-compose source tag, dispatches the
+      stable package workflow, and waits for that workflow to publish the
+      release assets and Homebrew tap update. After the tap is verified, the
+      helper syncs the checked-in source formula template to the verified
+      release URL, version, and SHA.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 stable release version
@@ -67,7 +69,7 @@ Options:
   --execute
       Run mutating git commands. Without this flag the script is a dry run.
 
-Repository layout expected:
+Local source checkout layout expected:
   ~/github/container-builder-shim
   ~/github/containerization
   ~/github/container
@@ -75,7 +77,7 @@ Repository layout expected:
 
 Rules enforced:
   - Apple remotes are read-only and must not be push targets.
-  - Stephen-owned remotes are the only push targets.
+  - stephenlclarke-owned remotes are the only push targets.
   - Worktrees must be clean before release changes.
   - Stable container-compose release tags point at the validated main commit.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
@@ -146,7 +148,7 @@ REPOS=(
   "container-compose"
 )
 
-# Map local checkout names to their Stephen-owned GitHub repositories.
+# Map local checkout names to their stephenlclarke-owned GitHub repositories.
 github_repo() {
   case "$1" in
     container-builder-shim) printf 'stephenlclarke/container-builder-shim' ;;
@@ -156,7 +158,7 @@ github_repo() {
   esac
 }
 
-# Return the writable Stephen-owned remote for each checkout.
+# Return the writable stephenlclarke-owned remote for each checkout.
 push_remote() {
   case "$1" in
     container|container-builder-shim) printf 'fork' ;;
@@ -250,7 +252,7 @@ ensure_clean() {
   fi
 }
 
-# Verify that Apple remotes cannot be pushed and Stephen remotes are the target.
+# Verify that Apple remotes cannot be pushed and stephenlclarke remotes are the target.
 ensure_push_boundary() {
   local repo="$1" path remote url remote_name push_url
   path="$(repo_path "${repo}")"
@@ -260,7 +262,7 @@ ensure_push_boundary() {
     *github.com/stephenlclarke/*|git@github.com:stephenlclarke/*)
       ;;
     *)
-      printf 'push remote for %s is not Stephen-owned: %s %s\n' "${repo}" "${remote}" "${url}" >&2
+      printf 'push remote for %s is not stephenlclarke-owned: %s %s\n' "${repo}" "${remote}" "${url}" >&2
       exit 1
       ;;
   esac
@@ -527,7 +529,7 @@ PY
 
 push_all_main() {
   local repo path remote
-  print_header "push Stephen-owned main branches"
+  print_header "push stephenlclarke-owned source main branches"
   for repo in "${REPOS[@]}"; do
     path="$(repo_path "${repo}")"
     remote="$(push_remote "${repo}")"
@@ -952,10 +954,10 @@ Process:
   1. Keep main as the releasable integration branch.
   2. For a stable release, run release VERSION_SELECTOR after validation.
   3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
-     bumps container-compose on main when needed, pushes Stephen-owned main
-     branches, tags container-compose, dispatches the stable package workflow,
-     verifies the release assets plus Homebrew tap update, and syncs the source
-     Homebrew formula template to the verified package.
+     bumps container-compose on main when needed, pushes stephenlclarke-owned
+     source main branches, tags container-compose, dispatches the stable package
+     workflow, verifies the release assets plus Homebrew tap update, and syncs
+     the source Homebrew formula template to the verified package.
   4. Use package VERSION to rebuild and verify an existing stable tag without
      moving tags, then sync the source Homebrew formula template.
 EOF

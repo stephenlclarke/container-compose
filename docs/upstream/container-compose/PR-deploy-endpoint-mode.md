@@ -7,7 +7,6 @@
 - Removes the stale Swift runtime-gap special-case for `deploy.endpoint_mode`.
 - Adds focused Go and Swift normalizer coverage.
 - Adds a local-only Docker Compose parity target for config and dry-run `up --no-start`.
-- Bumps the plugin patch version to `0.1.4`.
 - Updates README, status, parity docs, and contributor build docs.
 
 ## Type of Change
@@ -58,3 +57,8 @@ This change makes `container-compose` more permissive for Compose files that Doc
 ## Remaining Risks
 
 - If a future Apple runtime exposes explicit service endpoint-mode or source-aware DNS behavior, `container-compose` may need to preserve and project this metadata instead of accepting it as local no-op metadata.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `3caba0bbcd9aebc169b32e3f7228ffe18a6fb08b`.

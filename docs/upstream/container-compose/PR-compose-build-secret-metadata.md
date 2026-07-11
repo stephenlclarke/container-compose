@@ -6,7 +6,6 @@
 - Keeps the effective BuildKit secret projection unchanged: `id` plus file/env source only.
 - Adds focused Go and Swift normalizer coverage for metadata-bearing build secrets.
 - Adds a local-only Docker Compose parity target for config/build-print/build behavior.
-- Bumps the plugin patch version to `0.1.3`.
 - Updates README, status, parity docs, and contributor build docs.
 
 ## Type of Change
@@ -59,3 +58,8 @@ This change makes `container-compose` more permissive for Docker Compose files t
 
 - If BuildKit later adds secret ownership or permission fields, `container-compose` may need to forward the metadata through a newer build backend.
 - `container-compose config` reports normalized effective build secrets rather than Docker Compose's raw long-syntax secret grant objects.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `082d5f1f956eff0dac0c13361d4ddfdea7abd923`.

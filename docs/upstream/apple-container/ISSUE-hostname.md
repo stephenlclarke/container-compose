@@ -21,7 +21,7 @@ services:
 
 This gap blocks Compose `hostname` support in `container-compose` even though the lower `containerization` runtime already has `LinuxContainer.Configuration.hostname`, and the OCI spec model includes `hostname`.
 
-Direction note: after JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the useful Apple-facing slice is the typed runtime configuration primitive. Docker/Compose field parsing and any Docker-shaped `--hostname` bridge should stay in `container-compose` or be treated as local validation plumbing, not as the required upstream API shape.
+Per JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the useful Apple-facing slice is the typed runtime configuration primitive. Docker/Compose field parsing and any Docker-shaped `--hostname` bridge should stay in `container-compose` or be treated as local validation plumbing, not as the required upstream API shape.
 
 Relevant references:
 

@@ -44,3 +44,12 @@ CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1 make docker-compose-build-check-parity
 
 - Docker Compose issue: [docker/compose#12749](https://github.com/docker/compose/issues/12749)
 - Docker Compose implementation: [docker/compose#12765](https://github.com/docker/compose/pull/12765)
+
+## Commit Tracking
+
+- Apple-facing `stephenlclarke/container` implementation:
+  `0c9445db4e4b9320199120345258e15e927aeebe` (`feat(build): add check
+  flag`).
+- The required lower builder implementation is a separate Apple repository
+  slice documented in
+  [PR-build-check.md](../apple-container-builder-shim/PR-build-check.md).

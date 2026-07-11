@@ -17,7 +17,7 @@ This PR draft follows `.github/pull_request_template.md`.
 
 This is the second small health slice after [apple/container#1504](https://github.com/apple/container/pull/1504). It reserves the container healthcheck configuration shape that a later observer will execute and use to populate `ContainerSnapshot.health`.
 
-The shape is intentionally generic and not Compose-specific. Compose parsing or image metadata can normalize their source fields into the same `ContainerHealthCheck` model before the container is created. Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker-shaped `--health-*` parser compatibility stays in `container-compose` unless Apple maintainers explicitly want a native command convenience.
+The shape is intentionally generic and not Compose-specific. Compose parsing or image metadata can normalize their source fields into the same `ContainerHealthCheck` model before the container is created. Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker-shaped `--health-*` parser compatibility stays in `container-compose` unless Apple maintainers explicitly want a native command convenience.
 
 ## What Changed
 

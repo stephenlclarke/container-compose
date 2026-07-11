@@ -41,8 +41,8 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: service `domainname` for service containers and one-off `run` containers, currently through the command-vector bridge.
-- Remaining upstream gap: released `apple/container` needs accepted domain-name support before branches pinned to upstream can enable this.
+- Supported with the current fork-backed runtime: service `domainname` for service containers and one-off `run` containers, currently through the command-vector bridge.
+- Remaining upstream gap: released `apple/container` needs accepted domain-name support before stock upstream builds can enable this.
 - Remaining networking gaps: `external_links`, implicit default-network links, multi-network link projection, and Docker-compatible shared aliases are still separate runtime/DNS surfaces.
 
 ## Testing

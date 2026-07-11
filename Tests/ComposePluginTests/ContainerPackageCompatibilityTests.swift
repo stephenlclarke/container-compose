@@ -38,8 +38,8 @@ struct ContainerPackageCompatibilityTests {
       !ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["build", "--print", "api"]))
   }
 
-  @Test("custom Stephen stack passes compatibility check")
-  func customStephenStackPassesCompatibilityCheck() {
+  @Test("custom stephenlclarke stack passes compatibility check")
+  func customStephenlclarkeStackPassesCompatibilityCheck() {
     let components = [
       ContainerSystemVersionComponent(
         appName: "container",
@@ -74,7 +74,7 @@ struct ContainerPackageCompatibilityTests {
     let message = try #require(
       ContainerPackageCompatibility.compatibilityFailure(components: components, lane: "main"))
     #expect(
-      message.contains("container-compose requires the matching Stephen Clarke container stack."))
+      message.contains("container-compose requires the matching stephenlclarke container stack."))
     #expect(
       message.contains(
         "The installed container components do not match the Compose functionality in this plugin."
@@ -114,7 +114,7 @@ struct ContainerPackageCompatibilityTests {
         expectedContainerizationRef: "old-containerization"
       ))
     #expect(
-      message.contains("container-compose requires the matching Stephen Clarke container stack."))
+      message.contains("container-compose requires the matching stephenlclarke container stack."))
     #expect(
       message.contains(
         "- container: stephenlclarke/container@new-container (expected old-container)"))
@@ -188,7 +188,7 @@ struct ContainerPackageCompatibilityTests {
     )
 
     #expect(
-      message.contains("container-compose requires the matching Stephen Clarke container stack."))
+      message.contains("container-compose requires the matching stephenlclarke container stack."))
     #expect(message.contains("container: unavailable (container: command not found)"))
     #expect(message.contains(ContainerPackageCompatibility.installGuideURL))
   }

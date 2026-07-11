@@ -23,4 +23,9 @@ CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution 
 
 ## Compatibility
 
-Stock Apple `container` remains outside the supported Homebrew preview lane for this feature. Runtime-backed Compose commands already preflight for the stephenlclarke fork-backed runtime stack and point users at the project install instructions when the installed Apple components do not support the requested functionality.
+Stock Apple `container` remains outside the supported Homebrew release lane for this feature. Runtime-backed Compose commands preflight for the stephenlclarke fork-backed runtime stack and point users at the project install instructions when the installed Apple components do not support the requested functionality.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `562e353a6b4b1b39fdd7b94668064977c2720e83`.

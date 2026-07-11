@@ -8,7 +8,6 @@
 - Keeps named service mount labels as config metadata, matching Docker Compose runtime behavior.
 - Adds focused Go normalizer and Swift orchestration coverage.
 - Adds a local-only Docker Compose parity target for service volume labels.
-- Bumps the plugin release line to `0.4.2` (`0.4.0` feature work plus the Sonar-clean patch and the AddressSanitizer-proven menu watch-state race fix).
 - Updates README, status, parity/build docs, and release metadata.
 
 ## Type of Change
@@ -65,6 +64,11 @@ This change makes `container-compose` more Docker Compose compatible for service
 
 ## Remaining Risks
 
-- Docker Compose may eventually define additional runtime effects for named service mount labels. The current implementation follows Docker Compose 5.2.0 behavior observed locally.
+- Docker Compose may define additional runtime effects for named service mount labels. The current implementation follows behavior enforced by the Docker Compose v2 parity target.
 - The plugin uses deterministic anonymous volume names rather than Docker's random anonymous volume names, matching the existing `container-compose` cleanup model.
 - `volume.subpath` remains blocked until Apple/container exposes compatible subpath mount behavior.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `e26f8f8f8ee714fd44aba95bd95b3c36a24d94f5`.

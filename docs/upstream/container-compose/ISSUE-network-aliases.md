@@ -59,7 +59,7 @@ networks:
   backend: {}
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` currently emits `--network alias-demo_backend,alias=api.internal` through the command-vector bridge.
 - Peers on the same `apple/container` network can resolve `api.internal` to the service container's attachment address.

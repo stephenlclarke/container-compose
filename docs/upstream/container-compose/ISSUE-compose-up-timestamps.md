@@ -9,7 +9,8 @@ The normal attached `up` path gives one foreground service inherited terminal I/
 ## Acceptance Criteria
 
 - `container compose help up` shows `--timestamps` as supported.
-- `container compose up --timestamps SERVICE` no longer raises `unsupported compose feature: up --timestamps`.
+- `container compose up --timestamps SERVICE` runs without an unsupported
+  feature error.
 - Timestamped attached `up` starts the selected service detached, then follows `compose-runtime logs --follow --timestamps SERVICE_CONTAINER`.
 - `--no-log-prefix` is still honored for timestamped attached `up` log rendering.
 - Focused unit tests and a temp Dockerfile/compose dry-run smoke cover the behavior.

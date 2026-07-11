@@ -1,10 +1,9 @@
 # feat(runtime): add restart policy timing controls
 
-## Fork Branch And Commit
+## Commit Tracking
 
-- Fork branch: `stephenlclarke/container` `restart-policy-timing`
 - Commit: `8b1eff72481fa497328414e0483a08c768826f1a`
-- Stacks on: `stephenlclarke/container` `restart-policy-runtime` commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0`
+- Stacks on commit `b41bb830db708bc839c94e01c8a75c7fecbe3db0` in `stephenlclarke/container`.
 
 ## Summary
 
@@ -28,7 +27,7 @@ policy mode/retry subset, but Docker Compose `deploy.restart_policy.delay` and
 The timing model belongs in the runtime restart policy rather than in
 `container-compose`, because the restart decision happens after the container's
 init process exits and the Compose process may no longer be running.
-Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose duration parsing remains in `container-compose`; this Apple PR should be framed as typed timing fields and scheduler behavior.
+Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose duration parsing remains in `container-compose`; this Apple PR should be framed as typed timing fields and scheduler behavior.
 
 ## Implementation Details
 
@@ -61,8 +60,6 @@ Focused validation:
 ```sh
 swift test --filter 'ContainerRestartTrackerTests|ParserTest|ContainerCreateOptionsTests'
 ```
-
-Result: passed locally on 2026-06-22. The focused run executed 134 tests.
 
 ## Checklist
 

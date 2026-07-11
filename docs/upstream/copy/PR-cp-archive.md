@@ -17,7 +17,7 @@
 
 ## Motivation and Context
 
-Docker Compose supports `docker compose cp -a, --archive`, which preserves source UID/GID information where possible. The plugin previously rejected this option because released upstream `apple/container` did not expose copy archive controls. The local integration branches now carry a defaulted `preserveOwnership` option through `containerization` and `apple/container`, so Compose can support the flag without shelling out or adding Compose-specific behavior to the runtime.
+Docker Compose supports `docker compose cp -a, --archive`, which preserves source UID/GID information where possible. The current fork-backed runtime carries a defaulted `preserveOwnership` option through `containerization` and `container`, so Compose supports the flag without shelling out or adding Compose-specific behavior to the runtime.
 
 References:
 
@@ -36,7 +36,6 @@ Existing upstream context:
 - `apple/container#1391` covers archiver behavior for build context entries and symlinks, but does not expose `container cp --archive`.
 - `apple/container#165` and `apple/container#787` discuss adjacent UID/GID and ownership behavior for bind mounts and volumes, but not copy archive mode.
 - `apple/containerization#571`, `apple/containerization#614`, `apple/containerization#636`, and `apple/containerization#727` are relevant lower-level copy/stat/UID-GID context.
-- No open upstream issue or PR found for `container cp --archive` or `container compose cp --archive` as of 2026-06-22.
 
 ## Commit Tracking
 
@@ -55,8 +54,8 @@ Existing upstream context:
 
 ## Docker Compose Compatibility Notes
 
-- Supported on fork-backed integration branches pinned to `stephenlclarke/container` and `stephenlclarke/containerization`.
-- Branches pinned to released upstream `apple/container` must keep treating this as runtime-gated until the copy archive API is accepted upstream.
+- Supported with the current fork-backed runtime pinned to `stephenlclarke/container` and `stephenlclarke/containerization`.
+- Stock `apple/container` builds must keep treating this as runtime-gated until the copy archive API is accepted upstream.
 - Service-to-service copy is a `container-compose` extension implemented through host staging; archive mode requests preservation on both staging legs, but host permissions can limit UID/GID preservation when writing the staged file.
 
 ## Testing

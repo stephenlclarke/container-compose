@@ -46,7 +46,7 @@ services:
     command: ["hostname"]
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` currently emits `--hostname api-01` through the command-vector bridge.
 - The runtime makes `api-01` visible inside the container.

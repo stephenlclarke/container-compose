@@ -28,11 +28,11 @@ References:
 - Existing apple/container issue: [apple/container#1512](https://github.com/apple/container/issues/1512)
 - Existing apple/container PR by Chris George: [apple/container#1595](https://github.com/apple/container/pull/1595)
 - Required lower-level runtime support: [apple/containerization#739](https://github.com/apple/containerization/pull/739)
-- Local integration fork: [stephenlclarke/containerization](https://github.com/stephenlclarke/containerization/tree/integration/blkio-runtime)
+- Current fork representation: [stephenlclarke/containerization](https://github.com/stephenlclarke/containerization/tree/main)
 
 ## Current container-compose behavior
 
-Before this change, the normalizer collapsed `blkio_config` to a boolean and the orchestrator rejected any service that declared the field. That was correct for released `apple/container`, but it meant `container-compose` could not validate its side of the mapping against Chris George's active block I/O runtime contract in [apple/container#1595](https://github.com/apple/container/pull/1595).
+The normalizer preserves `blkio_config`, and the orchestrator maps the supported fields against the block I/O runtime contract represented by [apple/container#1595](https://github.com/apple/container/pull/1595).
 
 With this change, `container-compose` supports the plugin-owned half of the surface:
 
@@ -45,7 +45,7 @@ With this change, `container-compose` supports the plugin-owned half of the surf
 
 `container-compose` owns the Compose model normalization, validation, and typed block I/O projection.
 
-`apple/container` owns device path resolution, major/minor translation, cgroup application, and the dependency on the underlying `containerization` blockIO API. This repository should track and depend on [apple/container#1595](https://github.com/apple/container/pull/1595), not open a duplicate runtime PR. The local integration branch pins to `stephenlclarke/containerization@integration/blkio-runtime` so the Compose mapping can be tested while [apple/containerization#739](https://github.com/apple/containerization/pull/739) is still open.
+`apple/container` owns device path resolution, major/minor translation, cgroup application, and the dependency on the underlying `containerization` blockIO API. This repository should track and depend on [apple/container#1595](https://github.com/apple/container/pull/1595), not open a duplicate runtime PR. The local stack pins the `stephenlclarke/containerization` revision representing [apple/containerization#739](https://github.com/apple/containerization/pull/739) so the Compose mapping can be tested while upstream review continues.
 
 ## Minimal example
 
@@ -65,7 +65,7 @@ services:
           rate: 1048576
 ```
 
-Expected integration-branch behavior when the runtime includes [apple/container#1595](https://github.com/apple/container/pull/1595):
+Expected fork-backed runtime behavior when the runtime includes [apple/container#1595](https://github.com/apple/container/pull/1595):
 
 - `container-compose` currently renders `--blkio weight=500` through the command-vector bridge.
 - `container-compose` currently renders `--blkio device=8:0,weight=700` through the command-vector bridge.

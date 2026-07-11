@@ -14,7 +14,7 @@ Runtime behavior is intentionally narrower than config preservation:
 - Anonymous service mount labels are applied to the anonymous Docker volume created for that container.
 - Top-level `volumes.<name>.labels` remain the label source for named volume resources.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - Searches across `docker/compose`, `compose-spec/compose-spec`, and `compose-spec/compose-go` did not find direct open issues or PRs for service `volume.labels`.
 - Searches across `apple/container` did not find direct open label issues. Relevant merged runtime support is `apple/container#768` for anonymous volumes and `apple/container#769` for implicit named volume creation.

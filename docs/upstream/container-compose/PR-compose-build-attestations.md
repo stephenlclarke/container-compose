@@ -44,3 +44,8 @@ make coverage-check
 - `--provenance=false`, `--provenance=0`, `--provenance=no`, `--sbom=false`, `--sbom=0`, and `--sbom=no` remain no-op opt-outs.
 - Non-false attestation values require the customized `container` and `container-builder-shim` build path that forwards BuildKit `attest:*` frontend attributes.
 - `--builder` is covered by the later named-builder slice. `--check` is covered by the later compose build-check slice.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `fb6548396e913229573706c5cbfebeb570648a6b`.

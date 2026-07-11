@@ -1,58 +1,65 @@
 # Docker Compose CLI Surface Parity
 
-`make docker-compose-cli-surface-parity` is a local-only integration check for Docker Compose V2 command/help surface drift. It builds the local `compose` binary, compares it with Docker Compose V2, and writes a Markdown report to `.build/parity/compose-cli-surface.md`.
+This check compares the command paths and documented long options exposed by
+the local `container-compose` binary with an installed Docker Compose v2
+reference binary. It measures CLI discoverability, not runtime behavior.
+Runtime support remains authoritative in [STATUS.md](../../STATUS.md).
 
-Run `make docker-compose-parity` to execute the full local Docker Compose parity suite sequentially. The aggregate target builds the sibling `../container` checkout when it exists. Runtime-backed parity targets use `CONTAINER_COMPOSE_CONTAINER` for the stack compatibility check; it defaults to `../container/bin/container` when that sibling source build exists and otherwise falls back to `container` from `PATH`.
+## Run The Check
 
-The check compares:
+Run only the CLI surface comparison:
 
-- root command listings;
-- `bridge` and `bridge transformations` command listings;
-- long options rendered by every documented command help page.
+```sh
+make docker-compose-cli-surface-parity
+```
 
-The check intentionally ignores help prose wrapping, support-colour annotations, and option descriptions. Runtime behavior parity remains covered by the existing local-only Docker-backed parity targets for build builder selection, build checks, create-time options, events, and restart policies.
+Run every maintained behavioral and CLI parity target:
 
-For root `--all-resources` behavior specifically, run `make docker-compose-config-all-resources-parity`. That target compares Docker Compose V2 and `container-compose` selected-service `config` output, verifies `--all-resources` keeps unreferenced top-level networks, volumes, configs, and secrets while filtering services, and confirms `config --services` ignores service arguments the same way Docker Compose does.
+```sh
+make docker-compose-parity
+```
 
-For root `--compatibility` generated-name behavior specifically, run `make docker-compose-compatibility-names-parity`. That target compares Docker Compose V2 and `container-compose` dry-run output for default service replica names, compatibility-mode service replica names, and compatibility-mode one-off `run` names.
+The CLI target writes the exact compared versions, command paths, option paths,
+documented differences, and unexpected differences to:
 
-For `build --builder` behavior specifically, run `make docker-compose-build-builder-parity`. That target compares Docker Compose V2 `build --builder default --print` and `build --builder NAME --print` with the same `container compose` commands using a daemon-free local fixture, then verifies the selected builder does not leak into Buildx bake JSON in print mode.
+```text
+.build/parity/compose-cli-surface.md
+```
 
-For `build.isolation` behavior specifically, run `make docker-compose-build-isolation-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with `build.isolation: hyperv`, verifies both preserve the value in config output, confirms both omit the field from Buildx bake JSON on this platform, and proves the local Docker Compose build path accepts the field.
+Strict mode fails when either binary is unavailable, a help path cannot be
+read, or any difference is not present in the allowlist.
 
-For build-secret metadata behavior specifically, run `make docker-compose-build-secret-metadata-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with build-secret `uid`, `gid`, and `mode` metadata, verifies Docker Compose preserves those fields in config output, confirms both tools omit the fields from Buildx bake secret entries, and proves the local Docker Compose build path accepts the field.
+## Comparison Rules
 
-For Deploy endpoint-mode behavior specifically, run `make docker-compose-deploy-endpoint-mode-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with `deploy.endpoint_mode: dnsrr`, verifies Docker Compose preserves the Swarm metadata in config output, and confirms both tools accept local dry-run `up --no-start`.
-
-For Deploy CPU/memory reservation behavior specifically, run `make docker-compose-deploy-resource-reservations-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory`, verifies Docker Compose preserves those scheduler hints in config output, and confirms both tools accept local dry-run `up --no-start`.
-
-For service `pids_limit` behavior specifically, run `make docker-compose-pids-limit-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with `pids_limit: 128`, verifies Docker Compose preserves the limit in config output and Docker Engine HostConfig, and confirms `container-compose` maps `up`, `create`, and one-off `run` to the fork-backed `container --pids-limit` runtime path. It also verifies that `pids_limit: -1` leaves the local runtime flag unset, matching Docker Compose's local Engine behavior.
-
-For device cgroup rule behavior specifically, run `make docker-compose-device-cgroup-rules-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with service `device_cgroup_rules`, verifies Docker Compose preserves the rules in config output and Docker Engine HostConfig, and confirms `container-compose` maps `up`, `create`, and one-off `run` to the fork-backed `container --device-cgroup-rule` runtime path.
-
-For service device behavior specifically, run `make docker-compose-devices-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with service `devices`, verifies Docker Compose preserves the mappings in config output and Docker Engine HostConfig, and confirms `container-compose` maps `up`, `create`, and one-off `run` to the fork-backed `container --device` runtime path.
-
-For top-level network `driver_opts` behavior specifically, run `make docker-compose-network-driver-opts-parity`. That target compares Docker Compose V2 and `container-compose` using a Compose file with `networks.<name>.driver_opts`, verifies Docker Compose preserves the options in config output and Docker Engine network options, and confirms `container-compose` maps them to Apple network creation options in config and dry-run output.
-
-For `build --check` behavior specifically, run `make docker-compose-build-check-parity`. That target reuses Docker Compose's upstream `pkg/e2e/fixtures/build-test/minimal` fixture, compares Docker Compose V2 BuildKit lint behavior with `container compose build --print --check`, and can run the live fork-backed `container compose build --check` path when `CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1` is set.
-
-For `up --menu` behavior specifically, run `make docker-compose-up-menu-parity`. That local-only target compares Docker Compose V2 and `container-compose` against a generated compose.yml fixture for `--menu=false`, `--menu=true`, `COMPOSE_MENU=true` with explicit `--menu=false`, `--menu` with exit-control options, and `--menu --watch`.
-
-For host namespace behavior specifically, run `make docker-compose-host-namespaces-parity`. That local-only target compares Docker Compose V2 and `container-compose` using a Compose file with `network_mode: host` and `pid: host`, then verifies service/container namespace-sharing forms remain explicit documented gaps.
+The harness recursively reads root, command, Bridge, and Bridge transformation
+help. It compares command paths and long-option names while ignoring prose,
+spacing, aliases, and terminal color. A green local option can still have a
+narrower runtime mode; [STATUS.md](../../STATUS.md) records those partial
+semantics separately.
 
 ## Documented Differences
 
-- Root `help` is listed by `container-compose` because Swift ArgumentParser exposes it as an explicit command. Docker Compose 5.2.0 standalone supports help flags but does not list `help` as a root command. This is tracked in `Tools/parity/compose-cli-surface.allowlist`.
-- Root `--verbose` is listed by `container-compose` and accepted by the parser for existing bug-report and version workflows. Docker Compose 5.2.0 standalone accepts `docker-compose --verbose version`, but does not list `--verbose` in root help. This is tracked in `Tools/parity/compose-cli-surface.allowlist`.
-- `build --builder default` selects the ordinary fork-backed `container build` builder, while `build --builder NAME` forwards the name to `container build` so the matching fork-backed runtime can use a separate `buildkit-NAME` builder container. Docker Compose and `container-compose` both omit builder selection from `build --print` bake JSON.
-- `build.isolation` is accepted and preserved in normalized config. Docker Compose V2 on this macOS/Linux-backed local builder omits the field from `build --print` Buildx bake JSON and still accepts a real build; `container-compose` mirrors that behavior by accepting the field without forwarding an isolation flag to `container build`.
-- Build-secret `uid`, `gid`, and `mode` metadata is accepted for build file/env secrets. Docker Compose V2 preserves that metadata in config output, but BuildKit does not implement it and Docker Compose omits it from bake secret entries; `container-compose` mirrors the build behavior and its normalized config reports the effective BuildKit secret ID plus file/env source.
-- Root `--compatibility` switches generated service and one-off `run` container names to the legacy underscore separator. Default mode keeps the modern hyphen separator.
-- Root `--parallel` is partially supported for repeated image operations. Explicit positive values cap concurrent `pull` and `push` image work, and `--parallel -1` removes that local image-operation cap. Dry-run, build planning, create/start ordering, and dependency-sensitive orchestration remain ordered.
-- `deploy.endpoint_mode` is accepted as Swarm metadata in local mode. Docker Compose V2 preserves the raw Deploy value in config output and accepts local dry-run `up --no-start`; `container-compose` mirrors the local execution behavior and does not report the field as unsupported.
-- `deploy.resources.reservations.cpus` and `deploy.resources.reservations.memory` are accepted as scheduler metadata in local mode. Docker Compose V2 preserves the raw Deploy reservation values in config output and accepts local dry-run `up --no-start`; `container-compose` mirrors the local execution behavior and does not report those fields as unsupported.
-- Service `pids_limit` is supported through the fork-backed `container --pids-limit` runtime path for positive limits. Docker Compose local mode preserves non-positive values in config output but does not project them to Docker Engine HostConfig; `container-compose` mirrors that behavior by omitting `--pids-limit` for non-positive values.
-- Top-level `networks.<name>.driver_opts` are supported through Apple network plugin options. Service attachment `driver_opts` currently supports Docker-compatible MTU values through `container --network name,mtu=...`; arbitrary service endpoint driver options remain blocked until Apple exposes a Docker-compatible attachment option surface.
-- Service `device_cgroup_rules` is supported through the fork-backed `container --device-cgroup-rule` runtime path. Service `devices` is supported for the runtime-supported Linux VM device table through the fork-backed `container --device` path. Device targets must be absolute when a target is provided; Docker Compose can pass relative target strings through Docker Engine in ambiguous short-form cases such as `/dev/null:rw`, but the fork-backed CLI bridge rejects them so they are not misread as Docker CLI permission shorthand. Docker Compose also supports GPU requests through `gpus`; those remain blocked until the runtime exposes Docker-compatible GPU passthrough primitives.
-- Host namespace mode support is currently the host-only subset: `pid: host` maps to the fork-backed runtime PID primitive, and `network_mode: host` maps to the stephenlclarke fork-backed `container --network host` path without attaching the Compose project network. Docker Compose also provides `network_mode: service:NAME`, `network_mode: container:NAME`, `pid: service:NAME`, and `pid: container:NAME`; those forms remain blocked until the runtime exposes Docker-compatible namespace-joining primitives.
-No unexpected command or long-option surface differences were observed on this MacBook Pro against Docker Compose 5.2.0 when the CLI-surface parity harness was last refreshed.
+The machine-readable source of truth is
+[`Tools/parity/compose-cli-surface.allowlist`](../../Tools/parity/compose-cli-surface.allowlist).
+A successful strict run permits only these differences:
+
+| Scope | Local-only surface | Reason |
+| --- | --- | --- |
+| Root command | `help` | Swift ArgumentParser exposes help as an explicit command; Docker Compose exposes help flags without listing a root `help` command. |
+| Root command | `convert` | The current Docker documentation includes `convert`, while the installed standalone reference binary used by the harness does not list it. |
+| Root command | `alpha` | The current Docker documentation includes the alpha aliases, while the installed standalone reference binary accepts alpha help without listing the namespace. |
+| Root option | `--verbose` | `container-compose` keeps this for diagnostics; the reference binary accepts it for version output without listing it in root help. |
+
+Do not add an allowlist entry merely to make the check pass. Confirm the current
+Docker documentation and binary behavior, then document why the difference is
+intentional. Use the generated report for exact evidence rather than copying a
+versioned snapshot into this file.
+
+## Related Documentation
+
+- [STATUS.md](../../STATUS.md): every tracked Compose file, service,
+  Dockerfile/build, command, and long-option support indicator.
+- [BUILD.md](../../BUILD.md): contributor validation and aggregate parity
+  commands.
+- [`check-compose-cli-surface.sh`](../../Tools/parity/check-compose-cli-surface.sh):
+  comparison implementation and environment overrides.

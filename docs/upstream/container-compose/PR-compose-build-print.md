@@ -43,3 +43,8 @@ make coverage-check
 - `--builder` is covered by the later named-builder slice. `--check` is rendered with `call: "lint"` and no output by the later compose build-check slice.
 - `--provenance` and `--sbom` are rendered in bake output by the later compose build attestations slice.
 - `--ssh` is supported through the normal build path; default agent forwarding, non-default `id=/path` host sockets, and multiple distinct host sockets are covered by the dedicated build SSH slice.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `db75b0af6aecb7f87ad653070f3be10eb2a79a6b`.

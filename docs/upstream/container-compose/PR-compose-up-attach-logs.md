@@ -40,3 +40,8 @@ make coverage-check
 - `up --attach` only follows services that are part of the selected start graph. Selecting an unrelated service is rejected before side effects.
 - `up --attach-dependencies` does not override `--no-deps`; dependencies that are not started are not followed.
 - Exit-control options such as `--exit-code-from`, `--abort-on-container-exit`, and `--abort-on-container-failure` remain separate partial-support items.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `b837f1bba4f909ae31e8b9d47c460c98cf717abb`.

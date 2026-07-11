@@ -12,10 +12,10 @@
 
 Docker Compose V2 accepts `up --menu` with exit-control options in local dry-run mode. It proceeds through the ordinary service create plan instead of rejecting the option combination.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - No Docker Compose, Compose Spec, compose-go, or Moby issue/PR/discussion directly argued for rejecting `up --menu` with exit-control options.
-- Local Docker Compose 5.2.0 accepted `up --menu --abort-on-container-exit SERVICE` in dry-run mode.
+- The Docker Compose v2 reference accepts `up --menu --abort-on-container-exit SERVICE` in dry-run mode.
 
 ## Current container-compose behavior
 

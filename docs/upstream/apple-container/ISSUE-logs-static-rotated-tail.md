@@ -8,7 +8,7 @@ This issue draft follows `.github/ISSUE_TEMPLATE/02-feature.yml`.
 
 `container logs -n <count>` and external API clients should be able to replay the last N logical log lines from locally retained log files without reading the full retained history into memory. Docker Compose documents `logs --tail` as the number of lines to show from the end of the logs for each container, and Compose projects commonly combine `--tail` with service-level local log rotation such as `logging.options.max-size` and `logging.options.max-file`.
 
-The current Compose-enabling integration branch already has the lower-level retrieval work from Chris George's log options direction and the follow-up `tail` / `until` / timestamp parser work. The next runtime primitive needed by `container-compose` is static replay across the active `stdio.log` file plus rotated `stdio.log.<n>` files, with line-correct `tail` behavior applied after the retained files are considered as one chronological stream.
+The current fork has the lower-level retrieval work from Chris George's log options direction and the follow-up `tail` / `until` / timestamp parser work. The next runtime primitive needed by `container-compose` is static replay across the active `stdio.log` file plus rotated `stdio.log.<n>` files, with line-correct `tail` behavior applied after the retained files are considered as one chronological stream.
 
 The requested behavior is:
 

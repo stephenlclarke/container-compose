@@ -7,7 +7,6 @@
 - Preserves menu detach behavior: a user detach cancels attached log ownership without forcing exit-control teardown.
 - Preserves existing exit-control behavior: an exit-control result tears the project down and returns the selected or failing status.
 - Updates the local Docker Compose parity script so menu plus exit-control is required parity.
-- Bumps the plugin patch version to `0.1.6`.
 - Updates README, status, parity docs, and upstream handoff notes.
 
 ## Type of Change
@@ -58,4 +57,10 @@ This change makes `container-compose` more permissive for an option combination 
 
 ## Remaining Risks
 
-- Command-level `up --menu --watch` is covered by the later menu-watch parity slice and is no longer a documented boundary.
+- `up --menu --watch` is supported through the focused
+  [menu-watch handoff](PR-compose-up-menu-watch.md).
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `3a70b29b7cfa88c94b9d04141ec29f6ad898f808`.

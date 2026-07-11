@@ -13,7 +13,7 @@ Docker supports a special `host-gateway` value in `--add-host` entries. Docker C
 
 The local fork already has static host-entry support, and runtime network attachments already include an IPv4 gateway. This change resolves a typed host-gateway marker at the runtime boundary where that gateway is known, without adding Compose-specific behavior to `apple/container`.
 
-Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose string handling stays in `container-compose`. The useful Apple primitive is the runtime-resolved host-entry marker and pre-start `/etc/hosts` generation.
+Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), Docker/Compose string handling stays in `container-compose`. The useful Apple primitive is the runtime-resolved host-entry marker and pre-start `/etc/hosts` generation.
 
 References:
 

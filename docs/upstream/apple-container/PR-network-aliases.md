@@ -11,9 +11,9 @@
 
 Docker exposes network-scoped aliases as a container network attachment primitive. Compose service `networks.<name>.aliases` depends on that primitive, and Docker documents that aliases are resolved only on the network where the container is connected.
 
-This change adds the generic runtime surface to `apple/container` without adding Compose-specific behavior. The local `container-compose` integration branch maps its single-network Compose alias subset onto this primitive; multi-network attach/connect and service DNS policy remain separate networking gaps.
+This change adds the generic runtime surface to `apple/container` without adding Compose-specific behavior. The current `container-compose` implementation maps its single-network Compose alias subset onto this primitive; multi-network attach/connect and service DNS policy remain separate networking gaps.
 
-Following JLogan's 2026-06-23 guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the durable upstream ask is the typed attachment alias primitive. Docker/Compose network syntax stays in `container-compose`; any local `--network ...,alias=...` parser is only a bridge for the current command-vector create path.
+Following JLogan's guidance in [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), the durable upstream ask is the typed attachment alias primitive. Docker/Compose network syntax stays in `container-compose`; any local `--network ...,alias=...` parser is only a bridge for the current command-vector create path.
 
 References:
 

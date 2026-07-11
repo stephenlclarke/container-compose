@@ -12,12 +12,8 @@ References:
 
 - Docker Compose `top`: <https://docs.docker.com/reference/cli/docker/compose/top/>
 - Docker `container top`: <https://docs.docker.com/reference/cli/docker/container/top/>
-- Container handoff: `docs/upstream/process-list/ISSUE-container-process-identifiers.md` and `docs/upstream/process-list/PR-container-process-identifiers.md` in the `container` fork
-- Lower runtime handoff: `docs/upstream/process-list/ISSUE-containerization-process-identifiers.md` and `docs/upstream/process-list/PR-containerization-process-identifiers.md` in the `containerization` fork
-
-Existing upstream context:
-
-- No open `apple/container` or `apple/containerization` issue or pull request was found for process listing or `top` support on 2026-06-22.
+- Container handoffs: [ISSUE-process-identifiers.md](../apple-container/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-container/PR-process-identifiers.md)
+- Lower-runtime handoffs: [ISSUE-process-identifiers.md](../apple-containerization/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-containerization/PR-process-identifiers.md)
 
 ## Proposed behavior
 
@@ -35,8 +31,8 @@ container compose top api worker
 
 Expected behavior:
 
-- The plugin lists process identifiers for each selected service container on fork-backed branches.
-- Branches pinned to released upstream `apple/container` continue to treat `top` as runtime-gated until an equivalent API lands upstream.
+- The plugin lists process identifiers for each selected service container with the current fork-backed runtime.
+- Stock `apple/container` builds continue to treat `top` as runtime-gated until an equivalent API lands upstream.
 
 ## Code of Conduct
 

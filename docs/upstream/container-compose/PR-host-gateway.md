@@ -41,8 +41,8 @@ References:
 
 ## Docker Compose Compatibility Notes
 
-- Supported now on the fork-backed integration branch: service `extra_hosts` entries using `host-gateway`.
-- Remaining gap: released upstream `apple/container` still needs accepted static host entries plus host-gateway resolution before non-fork branches can use this.
+- Supported with the current fork-backed runtime: service `extra_hosts` entries using `host-gateway`.
+- Remaining gap: released upstream `apple/container` still needs accepted static host entries plus host-gateway resolution before stock upstream builds can use this.
 - Remaining gap: service `domainname` and legacy `links` / `external_links` are separate host identity surfaces.
 
 ## Testing

@@ -52,7 +52,7 @@ services:
       net.core.somaxconn: "1024"
 ```
 
-Expected integration-branch behavior:
+Expected fork-backed runtime behavior:
 
 - `container-compose` renders `--sysctl net.core.somaxconn=1024`.
 - `apple/container` stores the value in `ContainerConfiguration.sysctls`.

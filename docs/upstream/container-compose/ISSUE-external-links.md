@@ -78,7 +78,7 @@ networks:
   backend: {}
 ```
 
-Expected runtime behavior on the fork-backed integration branch:
+Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` inspects `legacy-db`.
 - `container-compose` verifies that `legacy-db` is attached to `external-links-demo_backend`.

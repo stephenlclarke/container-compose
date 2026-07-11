@@ -6,6 +6,7 @@ This is the branch, release, and Homebrew policy for stephenlclarke's container 
 - `stephenlclarke/container`
 - `stephenlclarke/containerization`
 - `stephenlclarke/container-builder-shim`
+- `stephenlclarke/homebrew-tap`
 
 Keep this guide in `container-compose` only. Do not copy it into Apple upstream repositories or maintain separate branch policy files in the companion forks.
 
@@ -14,13 +15,14 @@ Keep this guide in `container-compose` only. Do not copy it into Apple upstream 
 | Repository | Role |
 | --- | --- |
 | `container-compose` | Compose plugin, package metadata, and stack release coordination. |
-| `container` | Fork-backed runtime and CLI installed by Homebrew. |
+| `container` | Matched `stephenlclarke` runtime and CLI installed by Homebrew. |
 | `containerization` | Swift runtime package consumed by `container` and `container-compose`. |
 | `container-builder-shim` | BuildKit bridge source; `container` pins a published GHCR image tag instead of installing this from Homebrew. |
+| `homebrew-tap` | Verified stable formulae and source-maintenance submodules for the stack. |
 
 ## Branch Policy
 
-`main` is the current, most up-to-date, releasable branch for all four repositories. Keep it green and ready for a stable release at the end of every completed slice.
+`main` is the current, most up-to-date, releasable branch for all five repositories. Keep it green and ready for a stable release at the end of every completed slice.
 
 Use short-lived topic branches only when they make review or recovery clearer. Land validated work back on `main` before release, then delete the branch locally and remotely unless it is still needed for an open review.
 
@@ -34,7 +36,7 @@ Normal work lands on `main`. After each completed and validated slice, create th
 make release VERSION_SELECTOR=--+
 ```
 
-The release helper resolves symbolic selectors from the latest local semantic `container-compose` tag, not from mutable working-tree state. Bare semantic source tags such as `0.6.5` match Apple repository conventions; do not create `v0.6.5` tags. Existing tags are never moved.
+The release helper resolves symbolic selectors from the latest local semantic `container-compose` tag, not from mutable working-tree state. Bare `MAJOR.MINOR.PATCH` source tags match Apple repository conventions; do not add a `v` prefix. Existing tags are never moved.
 
 Main-lane package artifacts are validation artifacts only. They prove that the current `main` branch can produce an installable archive, but they do not update the stable Homebrew formula. Only bare semantic release tags update `stephenlclarke/tap/container-compose`.
 
@@ -50,7 +52,7 @@ make release VERSION_SELECTOR=--+
 make repackage-release VERSION=MAJOR.MINOR.PATCH
 ```
 
-`make release-plan` is a dry run. `make release` validates clean worktrees and stephenlclarke-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the stephenlclarke-owned `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for the release assets and Homebrew tap update, verifies the live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
+`make release-plan` is a dry run over the four local source repositories. `make release` validates their clean worktrees and `stephenlclarke` push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the four source `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for that workflow to update the fifth repository (`homebrew-tap`), verifies the release assets and live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
 
 `make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
 
@@ -69,7 +71,7 @@ The helper refuses Apple push targets. stephenlclarke-owned remotes are the only
 
 ## Dependency Pins
 
-`container-compose` must stay on the stephenlclarke fork surfaces while fork-backed runtime behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
+`container-compose` must stay on the `stephenlclarke` runtime surfaces while those APIs differ from released Apple packages. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
 
 The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout for local development, then from the latest published `stephenlclarke/container` `homebrew-main-RUN-SHA` tag, and finally from `stephenlclarke/container:main` only when no published package tag exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce a hand-maintained pin file.
 
@@ -81,7 +83,7 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 
 | Formula | Installs |
 | --- | --- |
-| `container` | Current fork-backed runtime from the latest immutable `homebrew-main-RUN-SHA` package lane. |
+| `container` | Current `stephenlclarke` runtime from the latest immutable `homebrew-main-RUN-SHA` package lane. |
 | `container-compose` | Current stable plugin package from the latest semantic release; depends on the matching `container` formula. |
 
 The install formulae consume validated GitHub release assets. `container-compose` follows the latest stable semantic release and is what users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
@@ -96,13 +98,14 @@ Install, upgrade, verification, and uninstall commands live in [INSTALL.md](INST
 
 ## Local Checkout Rules
 
-For normal integration work, keep all four repositories on `main`:
+For normal integration work, keep all five repositories on `main`:
 
 ```sh
 git -C ~/github/container-builder-shim switch main
 git -C ~/github/containerization switch main
 git -C ~/github/container switch main
 git -C ~/github/container-compose switch main
+git -C ~/github/homebrew-tap switch main
 ```
 
 After a non-main branch has been landed on `main`, delete that branch locally and remotely unless it is still needed for an open review.

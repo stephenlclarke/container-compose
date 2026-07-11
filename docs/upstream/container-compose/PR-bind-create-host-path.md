@@ -7,7 +7,6 @@
 - Creates missing bind source directories before runtime handoff when the policy is true or defaulted.
 - Adds focused Go normalizer and Swift orchestration coverage.
 - Adds a local-only Docker Compose parity target for bind `create_host_path`.
-- Bumps the plugin minor version to `0.3.0`.
 - Updates README, status, parity/build docs, and release metadata.
 
 ## Type of Change
@@ -58,3 +57,8 @@ This change makes `container-compose` more Docker Compose compatible for bind mo
 
 - Docker Compose may refine the exact error text for `create_host_path: false` as `docker/compose#13889` evolves; the plugin intentionally matches the behavior rather than the wording.
 - If Apple/container later adds its own Docker-compatible bind source creation policy, the plugin can remove the local directory creation and pass the policy through instead.
+
+## Commit Tracking
+
+- Primary implementation commit in `stephenlclarke/container-compose`:
+  `12c6ed0b8a1e168824da78bd32aa31f8fe64c1a3`.

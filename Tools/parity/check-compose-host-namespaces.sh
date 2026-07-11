@@ -33,7 +33,7 @@
 # This script is intentionally local-only and is not part of CI. It validates
 # Docker Compose V2 host namespace behavior for service `network_mode: host`
 # and `pid: host`, then checks the same Compose file through container-compose
-# dry-run output. The Stephen fork runtime path maps `network_mode: host` to
+# dry-run output. The stephenlclarke runtime path maps `network_mode: host` to
 # `container --network host`. Service/container namespace sharing remains a
 # later parity slice and is checked here as an explicit documented difference.
 

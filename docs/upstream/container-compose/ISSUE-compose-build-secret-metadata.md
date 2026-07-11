@@ -8,7 +8,7 @@
 
 Docker Compose V2 accepts build-secret long syntax with `uid`, `gid`, and `mode`. It preserves those fields in `docker-compose config --format json`, but BuildKit does not implement build-secret ownership or permission metadata, so Docker Compose omits those fields from `docker-compose build --print` bake secret entries and accepts the build with only the effective secret ID plus file/env source.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - `docker/compose#10704` reports that build-secret long-syntax `uid`, `gid`, and `mode` have no effect.
 - `docker/compose#10709` merged the Docker Compose response: warn that build-secret `uid`, `gid`, and `mode` are not implemented and will be ignored.

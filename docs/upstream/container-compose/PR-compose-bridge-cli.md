@@ -57,7 +57,7 @@ The Docker-shaped behavior stays in `container-compose`. Apple-backed changes re
 - Creates a transformer container without starting it, exports its image snapshot through `ContainerClient.export`, extracts only `templates`, removes the container and temporary archive, and writes the standard transformer Dockerfile.
 - Emits Docker-compatible image summary keys for `--format json` and the `TAGS` table header.
 - Verifies the running `container-apiserver` revision as well as the CLI revision before runtime work.
-- Pins live parity to the immutable indexes used by Docker's fixture and selects amd64 for historical official images whose mislabeled platform binaries were fixed by `docker/compose-bridge-transformer#22`; current untagged and `latest` images stay native.
+- Pins live parity to the immutable indexes used by Docker's fixture and selects amd64 for affected official images whose mislabeled platform binaries are tracked by `docker/compose-bridge-transformer#22`; current untagged and `latest` images stay native.
 
 ## Validation
 

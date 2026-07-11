@@ -8,7 +8,7 @@
 
 Docker Compose V2 treats bind mounts as Docker bind mounts with an effective host-path creation policy. Short syntax and long syntax without an explicit `bind.create_host_path` default to host-path creation. Explicit `bind.create_host_path: false` preserves a stricter policy: a missing source path is rejected instead of being created.
 
-Upstream context checked before this slice:
+Upstream references:
 
 - `compose-go` v2.12.1 defaults missing bind `create_host_path` to true in `transform/volume.go`.
 - `docker/compose#13602` tracks a bug report around `bind.create_host_path: false` being ignored in at least one path.
