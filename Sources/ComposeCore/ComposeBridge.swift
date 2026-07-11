@@ -81,6 +81,9 @@ extension ComposeOrchestrator {
     static let defaultBridgeTransformerImage = "docker/compose-bridge-kubernetes"
     static let bridgeTransformerBaseImage = "docker/compose-bridge-transformer"
     static let bridgeTransformerLabel = "com.docker.compose.bridge"
+    static var dryRunBridgeInputPath: String {
+        FileManager.default.temporaryDirectory.appendingPathComponent("container-compose-bridge-in").path
+    }
 
     /// Converts the Compose model by running Compose Bridge transformer images.
     public func bridgeConvert(
@@ -111,7 +114,7 @@ extension ComposeOrchestrator {
             for transformation in transformations {
                 try await runContainer(bridgeConvertRunArguments(
                     transformation: transformation,
-                    input: "/tmp/container-compose-bridge-in",
+                    input: Self.dryRunBridgeInputPath,
                     output: output,
                     templates: templates,
                 ))

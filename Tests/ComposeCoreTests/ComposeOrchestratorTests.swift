@@ -10900,19 +10900,27 @@ struct ComposeOrchestratorTests {
             ComposeBridgeTransformer(
                 id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 reference: "docker/compose-bridge-kubernetes:latest",
-                createdAtUnix: 1_700_000_000,
-                labels: ["com.docker.compose.bridge": "transformation"],
-                repoDigests: ["docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-                sizeInBytes: 2048
+                details: ComposeBridgeTransformerDetails(
+                    createdAtUnix: 1_700_000_000,
+                    labels: ["com.docker.compose.bridge": "transformation"],
+                    repoDigests: [
+                        "docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    ],
+                    size: ComposeBridgeTransformerSize(sizeInBytes: 2048),
+                ),
             ),
             ComposeBridgeTransformer(
                 id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 reference: "docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                createdAtUnix: 1_700_000_000,
-                labels: ["com.docker.compose.bridge": "transformation"],
-                repoDigests: ["docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-                repoTags: [],
-                sizeInBytes: 2048
+                details: ComposeBridgeTransformerDetails(
+                    createdAtUnix: 1_700_000_000,
+                    labels: ["com.docker.compose.bridge": "transformation"],
+                    repoDigests: [
+                        "docker/compose-bridge-kubernetes@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    ],
+                    repoTags: [],
+                    size: ComposeBridgeTransformerSize(sizeInBytes: 2048),
+                ),
             ),
         ])
         let orchestrator = ComposeOrchestrator(
@@ -10948,8 +10956,10 @@ struct ComposeOrchestratorTests {
             ComposeBridgeTransformer(
                 id: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 reference: "docker/compose-bridge-kubernetes@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                repoTags: [],
-                sizeInBytes: 2048
+                details: ComposeBridgeTransformerDetails(
+                    repoTags: [],
+                    size: ComposeBridgeTransformerSize(sizeInBytes: 2048),
+                ),
             ),
         ])
 
@@ -14564,27 +14574,31 @@ struct ComposeOrchestratorTests {
     func lifecycleAPIClientForwardsConfiguredOperations() async throws {
         let recorder = RecordingContainerLifecycleAPIClient()
         let client = ContainerLifecycleAPIClient(
-            start: { id in
-                try await recorder.startContainer(id: id)
-            },
-            kill: { id, signal in
-                try await recorder.killContainer(id: id, signal: signal)
-            },
-            stop: { id, options in
-                try await recorder.stopContainer(id: id, options: options)
-            },
-            pause: { id in
-                try await recorder.pauseContainer(id: id)
-            },
-            unpause: { id in
-                try await recorder.unpauseContainer(id: id)
-            },
-            wait: { id in
-                try await recorder.waitContainer(id: id)
-            },
-            delete: { id, force in
-                try await recorder.deleteContainer(id: id, force: force)
-            }
+            control: ContainerLifecycleAPIClient.ControlOperations(
+                start: { id in
+                    try await recorder.startContainer(id: id)
+                },
+                kill: { id, signal in
+                    try await recorder.killContainer(id: id, signal: signal)
+                },
+                stop: { id, options in
+                    try await recorder.stopContainer(id: id, options: options)
+                },
+                pause: { id in
+                    try await recorder.pauseContainer(id: id)
+                },
+                unpause: { id in
+                    try await recorder.unpauseContainer(id: id)
+                },
+            ),
+            state: ContainerLifecycleAPIClient.StateOperations(
+                wait: { id in
+                    try await recorder.waitContainer(id: id)
+                },
+                delete: { id, force in
+                    try await recorder.deleteContainer(id: id, force: force)
+                },
+            ),
         )
         let stopOptions = ContainerStopOptions(timeoutInSeconds: 15, signal: "SIGQUIT")
 
@@ -14618,14 +14632,16 @@ struct ComposeOrchestratorTests {
             exitCode: 7
         )
         let client = ContainerLifecycleAPIClient(
-            wait: { id in
-                #expect(id == "demo-api-1")
-                return 255
-            },
-            get: { id in
-                #expect(id == "demo-api-1")
-                return snapshot
-            }
+            state: ContainerLifecycleAPIClient.StateOperations(
+                wait: { id in
+                    #expect(id == "demo-api-1")
+                    return 255
+                },
+                get: { id in
+                    #expect(id == "demo-api-1")
+                    return snapshot
+                },
+            )
         )
 
         let exitCode = try await client.waitContainer(id: "demo-api-1")
@@ -16552,11 +16568,15 @@ struct ComposeOrchestratorTests {
             deleteOutputs: ["example/api:latest": "example/api:latest"]
         )
         let client = ContainerImageAPIClient(
-            exists: { try await recorder.imageExists(reference: $0) },
-            healthCheck: { try await recorder.imageHealthCheck(reference: $0, platform: $1) },
-            pull: { try await recorder.pullImage(reference: $0) },
-            push: { try await recorder.pushImage(reference: $0) },
-            delete: { try await recorder.deleteImage(reference: $0, force: $1) }
+            queries: ContainerImageAPIClient.QueryOperations(
+                exists: { try await recorder.imageExists(reference: $0) },
+                healthCheck: { try await recorder.imageHealthCheck(reference: $0, platform: $1) },
+            ),
+            mutations: ContainerImageAPIClient.MutationOperations(
+                pull: { try await recorder.pullImage(reference: $0) },
+                push: { try await recorder.pushImage(reference: $0) },
+                delete: { try await recorder.deleteImage(reference: $0, force: $1) },
+            ),
         )
 
         let exists = try await client.imageExists(reference: "example/api:latest")

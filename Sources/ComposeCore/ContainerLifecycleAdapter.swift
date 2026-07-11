@@ -90,24 +90,55 @@ public struct ContainerLifecycleAPIClient: ContainerLifecycleAPIClienting {
     private let getOperation: Get
     private let deleteOperation: Delete
 
-    public init(
-        start: @escaping Start = ContainerLifecycleLiveAdapter.start,
-        kill: @escaping Kill = { try await ContainerClient().kill(id: $0, signal: $1) },
-        stop: @escaping Stop = { try await ContainerClient().stop(id: $0, opts: $1) },
-        pause: @escaping Pause = { try await ContainerClient().pause(id: $0) },
-        unpause: @escaping Unpause = { try await ContainerClient().unpause(id: $0) },
-        wait: @escaping Wait = ContainerLifecycleLiveAdapter.wait,
-        get: @escaping Get = { try await ContainerClient().get(id: $0) },
-        delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) }
-    ) {
-        self.startOperation = start
-        self.killOperation = kill
-        self.stopOperation = stop
-        self.pauseOperation = pause
-        self.unpauseOperation = unpause
-        self.waitOperation = wait
-        self.getOperation = get
-        self.deleteOperation = delete
+    /// Lifecycle operations that mutate container execution state.
+    public struct ControlOperations: Sendable {
+        public var start: Start
+        public var kill: Kill
+        public var stop: Stop
+        public var pause: Pause
+        public var unpause: Unpause
+
+        public init(
+            start: @escaping Start = ContainerLifecycleLiveAdapter.start,
+            kill: @escaping Kill = { try await ContainerClient().kill(id: $0, signal: $1) },
+            stop: @escaping Stop = { try await ContainerClient().stop(id: $0, opts: $1) },
+            pause: @escaping Pause = { try await ContainerClient().pause(id: $0) },
+            unpause: @escaping Unpause = { try await ContainerClient().unpause(id: $0) },
+        ) {
+            self.start = start
+            self.kill = kill
+            self.stop = stop
+            self.pause = pause
+            self.unpause = unpause
+        }
+    }
+
+    /// Lifecycle operations that read or remove container state.
+    public struct StateOperations: Sendable {
+        public var wait: Wait
+        public var get: Get
+        public var delete: Delete
+
+        public init(
+            wait: @escaping Wait = ContainerLifecycleLiveAdapter.wait,
+            get: @escaping Get = { try await ContainerClient().get(id: $0) },
+            delete: @escaping Delete = { try await ContainerClient().delete(id: $0, force: $1) },
+        ) {
+            self.wait = wait
+            self.get = get
+            self.delete = delete
+        }
+    }
+
+    public init(control: ControlOperations = .init(), state: StateOperations = .init()) {
+        self.startOperation = control.start
+        self.killOperation = control.kill
+        self.stopOperation = control.stop
+        self.pauseOperation = control.pause
+        self.unpauseOperation = control.unpause
+        self.waitOperation = state.wait
+        self.getOperation = state.get
+        self.deleteOperation = state.delete
     }
 
     /// Starts a container through `ContainerClient`.

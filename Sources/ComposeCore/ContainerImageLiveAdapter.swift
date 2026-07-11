@@ -97,11 +97,13 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
                 ComposeBridgeTransformer(
                     id: digest,
                     reference: reference,
-                    createdAtUnix: Int64(resource.creationDate.timeIntervalSince1970),
-                    labels: variant.imageConfigLabels,
-                    repoDigests: [Self.repositoryDigest(reference: reference, digest: digest)],
-                    repoTags: repoTags,
-                    sizeInBytes: variant.size,
+                    details: ComposeBridgeTransformerDetails(
+                        createdAtUnix: Int64(resource.creationDate.timeIntervalSince1970),
+                        labels: variant.imageConfigLabels,
+                        repoDigests: [Self.repositoryDigest(reference: reference, digest: digest)],
+                        repoTags: repoTags,
+                        size: ComposeBridgeTransformerSize(sizeInBytes: variant.size),
+                    ),
                 ),
             )
         }
