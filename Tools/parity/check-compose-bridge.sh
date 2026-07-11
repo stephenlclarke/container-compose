@@ -176,27 +176,46 @@ if quiet != expected_quiet:
 PY
 }
 
-# Compare transformer identities and references while allowing runtime-specific size accounting.
+# Compare the current pinned transformers while ignoring unrelated cached images.
 compare_transformer_lists() {
     local docker_json="$1"
     local container_json="$2"
 
-    DOCKER_BRIDGE_LIST_JSON="$docker_json" CONTAINER_BRIDGE_LIST_JSON="$container_json" python3 - <<'PY'
+    DOCKER_BRIDGE_LIST_JSON="$docker_json" \
+        CONTAINER_BRIDGE_LIST_JSON="$container_json" \
+        BRIDGE_KUBERNETES_TRANSFORMER="$KUBERNETES_TRANSFORMER" \
+        BRIDGE_HELM_TRANSFORMER="$HELM_TRANSFORMER" \
+        python3 - <<'PY'
 import json
 import os
 
-def identities(name):
-    payload = json.loads(os.environ[name])
-    return sorted(
-        (record["Id"], tuple(sorted(record["RepoTags"])), tuple(sorted(record["RepoDigests"])))
-        for record in payload
-    )
+expected = [
+    os.environ["BRIDGE_KUBERNETES_TRANSFORMER"],
+    os.environ["BRIDGE_HELM_TRANSFORMER"],
+]
 
-docker = identities("DOCKER_BRIDGE_LIST_JSON")
-container = identities("CONTAINER_BRIDGE_LIST_JSON")
+def current_identities(name):
+    payload = json.loads(os.environ[name])
+    identities = []
+    for reference in expected:
+        matches = [
+            record
+            for record in payload
+            if reference in (record.get("RepoTags") or [])
+            or reference in (record.get("RepoDigests") or [])
+        ]
+        if len(matches) != 1:
+            raise SystemExit(
+                f"{name} contains {len(matches)} records for current transformer {reference}"
+            )
+        identities.append((reference, matches[0]["Id"]))
+    return identities
+
+docker = current_identities("DOCKER_BRIDGE_LIST_JSON")
+container = current_identities("CONTAINER_BRIDGE_LIST_JSON")
 if container != docker:
     raise SystemExit(
-        "container-compose transformer identities differ from Docker Compose\n"
+        "container-compose current transformer identities differ from Docker Compose\n"
         f"Docker: {docker!r}\ncontainer-compose: {container!r}"
     )
 PY
