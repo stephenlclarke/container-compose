@@ -37,17 +37,15 @@ six approved open pull requests.
 | [apple/container#1888](https://github.com/apple/container/issues/1888) | `container system start` status text used stdout. The focused change from [apple/container#1889](https://github.com/apple/container/pull/1889) is ported as `0fe7833`. |
 | [apple/container#1672](https://github.com/apple/container/issues/1672) | `container system stop --prefix` accepted path-like values. [apple/container#1717](https://github.com/apple/container/pull/1717) is ported as `7329f12`. |
 | [apple/container#1767](https://github.com/apple/container/issues/1767) | Image snapshots omitted ordered EXT4 journaling. Approved [apple/container#1818](https://github.com/apple/container/pull/1818) is ported as `6e525cc`. |
+| [apple/container#1757](https://github.com/apple/container/issues/1757) | `system start` discarded launchd failures and could adopt a daemon using another app root. Fixed in `stephenlclarke/container` `6ac1253`. |
+| [apple/containerization#790](https://github.com/apple/containerization/issues/790) and [apple/container#1895](https://github.com/apple/container/issues/1895) | Retrying an interrupted ECR blob PUT reused a stale upload session. The useful fresh-session design from [apple/containerization#792](https://github.com/apple/containerization/pull/792) is implemented with narrower retry semantics and local registry tests in `d388a15` and `c8043bb`. |
 
 ## Open Follow-up
 
-- [apple/container#1895](https://github.com/apple/container/issues/1895) and
-  [apple/containerization#790](https://github.com/apple/containerization/issues/790)
-  affect registry push when ECR briefly returns `404` after upload completion.
-  Open `apple/containerization#792` retries a broader set of failures and has no
-  regression coverage, so it should be narrowed and tested before use.
-- [apple/container#1757](https://github.com/apple/container/issues/1757) affects
-  service registration because a nonzero `launchctl bootstrap` result is not
-  propagated. The local fork still needs a focused error-handling fix.
+No confirmed local impact from this review remains without either a fix or an
+existing stronger local implementation. Re-run the review before release or
+Apple submission because newly opened and newly approved work can change that
+result.
 
 ## Submission Boundary
 
