@@ -6,14 +6,14 @@ This directory is the durable handoff area for Apple-facing issue and pull reque
 
 - Each implementation slice must map to one future Apple pull request per Apple repository. If a capability needs both `apple/containerization` and `apple/container`, split it into two PR-shaped slices: one lower-runtime PR and one API/CLI PR.
 - Keep Compose-specific behavior in `container-compose`. Apple-facing PRs should expose generic runtime primitives, typed resource models, API routes, native lifecycle operations, and tests, not Compose service fan-out, prefixes, colors, selected-service filtering, Docker-shaped parsers, or Docker Compose output policy.
-- After JLogan's 2026-06-23 guidance on [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328), do not create or keep Apple-facing drafts whose only value is Docker CLI compatibility. If a local Apple fork commit currently contains a Docker-shaped flag parser, document it as a temporary validation bridge only when the typed primitive is still a useful Apple slice.
+- Follow the Apple maintainer guidance on [apple/container#1769](https://github.com/apple/container/pull/1769#issuecomment-4780439328): do not create or keep Apple-facing drafts whose only value is Docker CLI compatibility. If a local Apple fork commit currently contains a Docker-shaped flag parser, document it as a temporary validation bridge only when the typed primitive is still a useful Apple slice.
 - `container-compose` owns Docker and Docker Compose compatibility: Compose file parsing, Docker timestamp/duration strings, Docker flag aliases, dry-run command text, project/service filtering, output formatting, and compatibility diagnostics. Apple drafts can cite Docker behavior as background, but the requested Apple surface should be Apple-native and typed wherever possible.
 - Every `PR*.md` draft must include a commit-tracking section such as `Commit Tracking`, `Fork Branch And Commit`, or `Intended Review Delta`. Constructible PR drafts must list the exact commit IDs to squash. Planning-only drafts must say they are not constructible yet and name the missing repo/branch commit that must be cut before a PR can be raised.
 - Before selecting a slab or slice, inspect current open issues and pull requests for `apple/container` and `apple/containerization`. Reference matching upstream work in the issue and PR drafts rather than opening duplicates.
 - When Docker behavior is the target, check Docker's own documentation and the Docker Compose implementation before settling the slice boundary. Record the relevant docs/source links in the issue and PR drafts when they affect shape, output, filtering, or test fixtures.
 - Keep the draft files in this repository even when the code lives in sibling forks. That makes `container-compose` the single project handoff for runtime gaps, upstream links, and commit IDs.
 - Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE*.md` or `PR*.md` draft files in the sibling `container` or `containerization` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
-- Historical drafts may mention proving branches or named runtime slices. Treat those as provenance for the commits listed in the draft, not as active branch policy; current release rules live in [BRANCHES.md](../../BRANCHES.md).
+- Keep drafts current. Remove obsolete branch names, completed migration notes, dated snapshots, and superseded implementation procedures instead of preserving project history here. Current branch and release rules live in [BRANCHES.md](../../BRANCHES.md).
 
 ## Final Upstream Review Gate
 
@@ -30,18 +30,16 @@ The review must cover every potential PR independently:
 
 ## Current Inventory
 
-Refreshed on 2026-07-09.
-
 | Area | Paths | Notes |
 | --- | --- | --- |
+| Current Apple review | `docs/upstream/APPLE-UPSTREAM-REVIEW.md` | Live disposition of affected bugs, approved open pull requests, local ports, and unresolved follow-up work. |
 | Compose-owned compatibility slices | `docs/upstream/container-compose/` | Plugin-owned issue/PR drafts with commit tracking. These drafts may describe Docker/Compose compatibility and the temporary command-vector bridge while the typed service-create adapter is still being wired. |
 | Copy slices | `docs/upstream/copy/` | Compose-facing copy follow-link and archive drafts with commit tracking. Runtime copy primitives live under the Apple folders. |
 | Process listing / `top` slice | `docs/upstream/process-list/` | Compose-facing PID-only `top` drafts with commit tracking. |
-| `apple/container` runtime drafts | `docs/upstream/apple-container/` | Apple-shaped typed runtime issue/PR drafts maintained in this repo even when the code lives in `/Users/sclarke/github/container`. Parser-only Docker CLI drafts were removed on 2026-06-23. |
+| `apple/container` runtime drafts | `docs/upstream/apple-container/` | Apple-shaped typed runtime issue/PR drafts maintained in this repo even when the code lives in `/Users/sclarke/github/container`. |
 | `apple/containerization` runtime drafts | `docs/upstream/apple-containerization/` | Lower-runtime issue/PR drafts maintained in this repo even when the code lives in `/Users/sclarke/github/containerization`. |
 | `apple/container-builder-shim` build-context drafts | `docs/upstream/apple-container-builder-shim/` | Builder-shim issue/PR drafts maintained here while the code lives in `/Users/sclarke/github/container-builder-shim`. |
 | Event-stream slab | `docs/upstream/events/` | Current handoff drafts for the Apple runtime event primitive, event time filters, Compose-owned `events --json [SERVICE...]`, Compose-owned `events --json --since/--until [SERVICE...]`, and Compose-owned default text event formatting slices. |
-| Apple-to-Compose migration review | `docs/upstream/APPLE-TO-COMPOSE-MIGRATION-2026-06-23.md` | Reclassifies local Apple-fork work after JLogan's `apple/container#1769` direction comment, records the refreshed clean-worktree audit, and identifies which Docker/Compose compatibility behavior should move into this repository. |
 
 ## Fork Documentation Audit
 

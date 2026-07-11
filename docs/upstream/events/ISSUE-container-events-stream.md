@@ -35,13 +35,13 @@ Docker Compose currently presents project-scoped container events and leaves bro
 
 The Apple runtime event primitive is therefore resource-typed and label-aware, but the first `container-compose` mapping should stay container-focused until Docker Compose behavior changes or the project deliberately chooses to exceed it.
 
-## Existing Upstream Context Checked
-
-Snapshot: `/Users/sclarke/github/container-compose/docs/upstream/APPLE-OPEN-SNAPSHOT-2026-06-22.md`.
+## Existing Upstream Context
 
 - [apple/container#484](https://github.com/apple/container/issues/484): open feature request for a container events stream.
-- Live check on 2026-06-22 found no matching open `apple/container` event-stream PR.
-- Live check on 2026-06-22 found no matching open `apple/container` event-stream issue beyond #484.
+- The current Apple review is maintained in
+  [APPLE-UPSTREAM-REVIEW.md](../APPLE-UPSTREAM-REVIEW.md); re-check it before
+  submitting this slice so a newer overlapping event-stream PR is used as the
+  base instead of duplicated.
 
 ## Minimal Compose Example
 
