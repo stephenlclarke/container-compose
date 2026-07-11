@@ -32,7 +32,7 @@ services:
 
 container-compose design gap.
 
-The current Stephen fork-backed `container build` path is already BuildKit-oriented. Docker Compose V2's Buildx path accepts this Compose key without emitting a bake `isolation` field on macOS/Linux, so `container-compose` can match that behavior locally by preserving the field for config output and not rejecting or forwarding it.
+The current stephenlclarke fork-backed `container build` path is already BuildKit-oriented. Docker Compose V2's Buildx path accepts this Compose key without emitting a bake `isolation` field on macOS/Linux, so `container-compose` can match that behavior locally by preserving the field for config output and not rejecting or forwarding it.
 
 ## Expected behavior
 

@@ -16,7 +16,7 @@
 
 ## Motivation and Context
 
-Docker Compose exposes service-level device mappings through `devices`. On Docker Engine, those mappings create device nodes in the container and add matching cgroup permissions. The Stephen fork runtime stack can now represent the known Linux VM device subset by passing Docker-compatible `--device` values to the fork-backed `container` CLI, which resolves supported source devices to Linux major/minor metadata.
+Docker Compose exposes service-level device mappings through `devices`. On Docker Engine, those mappings create device nodes in the container and add matching cgroup permissions. The stephenlclarke fork runtime stack can now represent the known Linux VM device subset by passing Docker-compatible `--device` values to the fork-backed `container` CLI, which resolves supported source devices to Linux major/minor metadata.
 
 This is intentionally narrower than arbitrary macOS hardware passthrough. USB, SD-card, PCI, GPU, and other host hardware passthrough requests still depend on lower-runtime and Virtualization.framework capabilities.
 

@@ -22,7 +22,7 @@ The server already creates one `XPCServerSession` per client connection and netw
 
 That leaves a path where an ad hoc exec process can outlive the dropped client. Later exec, stop, and Compose lifecycle operations can then appear hung or inconsistent because stale process state remains in the runtime.
 
-The Stephen fork-backed fix keeps the Apple-shaped boundary small:
+The stephenlclarke fork-backed fix keeps the Apple-shaped boundary small:
 
 - route `containerCreateProcess` to a session-aware harness method;
 - register a disconnect handler only after the runtime successfully creates an attached process;
@@ -35,7 +35,7 @@ The broader stop-timeout half of [apple/container#1926](https://github.com/apple
 ## Environment
 
 - OS: macOS 26 class hosts, matching the upstream issue report
-- Container: Stephen fork-backed `container` main after `1658fbe`
+- Container: stephenlclarke fork-backed `container` main after `1658fbe`
 - Related runtime consumer: `container-compose` exec, lifecycle hook, stop, down, and attached `up` paths
 
 ## Code Of Conduct

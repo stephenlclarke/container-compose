@@ -1,6 +1,6 @@
 # Branch Guide
 
-This is the branch, release, and Homebrew policy for Stephen Clarke's container stack forks:
+This is the branch, release, and Homebrew policy for stephenlclarke's container stack forks:
 
 - `stephenlclarke/container-compose`
 - `stephenlclarke/container`
@@ -50,7 +50,7 @@ make release VERSION_SELECTOR=--+
 make repackage-release VERSION=MAJOR.MINOR.PATCH
 ```
 
-`make release-plan` is a dry run. `make release` validates clean worktrees and Stephen-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the Stephen-owned `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for the release assets and Homebrew tap update, verifies the live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
+`make release-plan` is a dry run. `make release` validates clean worktrees and stephenlclarke-owned push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the stephenlclarke-owned `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for the release assets and Homebrew tap update, verifies the live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
 
 `make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
 
@@ -65,11 +65,11 @@ Release notes are rendered by [Tools/release/release-notes.py](Tools/release/rel
 
 The container package wait and Compose package wait both default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_RELEASE_WAIT_SECONDS`, `CONTAINER_STACK_RELEASE_POLL_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, or `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`.
 
-The helper refuses Apple push targets. Stephen-owned remotes are the only release push targets.
+The helper refuses Apple push targets. stephenlclarke-owned remotes are the only release push targets.
 
 ## Dependency Pins
 
-`container-compose` must stay on the Stephen fork surfaces while fork-backed runtime behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
+`container-compose` must stay on the stephenlclarke fork surfaces while fork-backed runtime behavior is required. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
 
 The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout for local development, then from the latest published `stephenlclarke/container` `homebrew-main-RUN-SHA` tag, and finally from `stephenlclarke/container:main` only when no published package tag exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce a hand-maintained pin file.
 

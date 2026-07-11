@@ -307,7 +307,7 @@ validation packages, stable source tags, and the matched fork-backed
 `container` runtime package.
 Use `container system version` beside `container compose version` to compare the
 running `container` runtime and API service against the plugin's compiled
-expectations, especially when testing Stephen fork builds against Apple upstream
+expectations, especially when testing stephenlclarke fork builds against Apple upstream
 packages.
 
 ## Orchestration Model

@@ -22,7 +22,7 @@
 
 Docker Compose accepts service long-form `volume.labels` and preserves those labels in `config --format json`. Runtime parity is subtle: Docker applies those labels to anonymous volumes, but named service mount labels do not change the named volume resource; named volume resource labels still come from top-level `volumes.<name>.labels`.
 
-Before this change, `container-compose` rejected every service mount using `volume.labels`. The Stephen runtime lane already supports labeled volume creation through the fork-backed Apple/container volume APIs, so this can be fixed inside the plugin without changing Apple/container.
+Before this change, `container-compose` rejected every service mount using `volume.labels`. The stephenlclarke runtime lane already supports labeled volume creation through the fork-backed Apple/container volume APIs, so this can be fixed inside the plugin without changing Apple/container.
 
 Upstream review found no direct Docker/Compose issues or PRs for service `volume.labels`. Apple/container has already merged the relevant volume primitives in `apple/container#768` and `apple/container#769`; the older Compose plugin proposal in `apple/container#398` confirms this belongs in the Compose plugin layer.
 

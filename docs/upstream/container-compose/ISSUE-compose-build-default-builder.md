@@ -36,4 +36,4 @@ accepted the flag and rendered Buildx bake JSON without needing a Docker daemon.
 
 ## Superseded Gap
 
-Full `--builder NAME` parity is no longer blocked in the Stephen fork-backed lane; non-default names now map to separate named BuildKit builder containers through `container build --builder`.
+Full `--builder NAME` parity is no longer blocked in the stephenlclarke fork-backed lane; non-default names now map to separate named BuildKit builder containers through `container build --builder`.

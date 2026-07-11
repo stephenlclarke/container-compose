@@ -2,7 +2,7 @@
 
 ## Summary
 
-`container compose` runtime-backed commands should fail before project or runtime work begins when the installed `container` stack is Apple's stock package, missing Stephen Clarke's fork-backed `container` / `containerization` provenance, or out of sync with the exact runtime refs recorded in the plugin package metadata.
+`container compose` runtime-backed commands should fail before project or runtime work begins when the installed `container` stack is Apple's stock package, missing stephenlclarke's fork-backed `container` / `containerization` provenance, or out of sync with the exact runtime refs recorded in the plugin package metadata.
 
 The current Compose feature set assumes the customized stack from `stephenlclarke/tap`. A stock Apple `container` install does not expose the fork-backed runtime and build primitives used by this plugin, so delayed low-level runtime errors are misleading.
 

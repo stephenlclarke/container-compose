@@ -22,7 +22,7 @@ Upstream context checked before this slice:
 
 ## Current container-compose behavior
 
-Before this slice, the Go normalizer marked `volume.labels` as an unsupported mount field. That rejected Compose files that Docker Compose accepts, even though the current Stephen runtime path can create labeled volumes through `container volume create --label`.
+Before this slice, the Go normalizer marked `volume.labels` as an unsupported mount field. That rejected Compose files that Docker Compose accepts, even though the current stephenlclarke runtime path can create labeled volumes through `container volume create --label`.
 
 Minimal affected example:
 

@@ -11,7 +11,7 @@
 
 ## Runtime Support
 
-The paired Stephen fork-backed `container` change adds `--builder` to `container build` and the `container builder start/status/stop/delete` lifecycle commands. `default` maps to the existing `buildkit` builder container; non-default names map to separate `buildkit-NAME` builder containers.
+The paired stephenlclarke fork-backed `container` change adds `--builder` to `container build` and the `container builder start/status/stop/delete` lifecycle commands. `default` maps to the existing `buildkit` builder container; non-default names map to separate `buildkit-NAME` builder containers.
 
 ## Validation
 
@@ -23,4 +23,4 @@ CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 swift test --disable-automatic-resolution 
 
 ## Compatibility
 
-Stock Apple `container` remains outside the supported Homebrew preview lane for this feature. Runtime-backed Compose commands already preflight for the Stephen fork-backed runtime stack and point users at the project install instructions when the installed Apple components do not support the requested functionality.
+Stock Apple `container` remains outside the supported Homebrew preview lane for this feature. Runtime-backed Compose commands already preflight for the stephenlclarke fork-backed runtime stack and point users at the project install instructions when the installed Apple components do not support the requested functionality.

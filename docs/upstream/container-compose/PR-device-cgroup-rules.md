@@ -36,7 +36,7 @@ References:
 - Added `runtimeDeviceCgroupRuleArguments(service:)` to validate Compose rule strings through `ContainerAPIClient.Parser.deviceCgroupRules`.
 - Added repeatable `--device-cgroup-rule` rendering in the service create/run command path.
 - Added pre-side-effect validation so invalid rule strings fail before runtime resources are prepared.
-- Verified the automatic container dependency resolver selected the matching Stephen fork commit for package metadata.
+- Verified the automatic container dependency resolver selected the matching stephenlclarke fork commit for package metadata.
 - Added `Tools/parity/check-compose-device-cgroup-rules.sh` and `make docker-compose-device-cgroup-rules-parity` as opt-in Docker Compose V2 parity validation.
 
 ## Docker Compose Compatibility Notes

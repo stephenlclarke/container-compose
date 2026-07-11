@@ -2,7 +2,7 @@
 
 `container run` and `container create` should expose a narrow `--network host` mode so higher-level Compose clients can map `network_mode: host` without creating a user network named `host` or attaching the service to the Compose project network.
 
-Docker and Docker Compose both treat `host` as a reserved network mode rather than a normal network resource. In the Apple container architecture, the runtime host is the Linux sandbox VM boundary rather than the macOS host namespace. The Stephen fork-backed implementation keeps that distinction explicit while giving downstream clients a Docker-compatible CLI/API surface:
+Docker and Docker Compose both treat `host` as a reserved network mode rather than a normal network resource. In the Apple container architecture, the runtime host is the Linux sandbox VM boundary rather than the macOS host namespace. The stephenlclarke fork-backed implementation keeps that distinction explicit while giving downstream clients a Docker-compatible CLI/API surface:
 
 - Reserve `host` beside the existing `none` network mode name.
 - Reject user-created networks named `host`.

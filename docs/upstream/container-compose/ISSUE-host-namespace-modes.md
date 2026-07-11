@@ -7,7 +7,7 @@
 - `network_mode: host`
 - `pid: host`
 
-Before this slice, `network_mode` accepted only `none`, and any non-empty `pid` value was rejected as a generic runtime gap. The Stephen fork-backed runtime stack now exposes the missing PID primitive through `container run/create --pid host` and the host-network path through `container run/create --network host`.
+Before this slice, `network_mode` accepted only `none`, and any non-empty `pid` value was rejected as a generic runtime gap. The stephenlclarke fork-backed runtime stack now exposes the missing PID primitive through `container run/create --pid host` and the host-network path through `container run/create --network host`.
 
 ## Acceptance Criteria
 

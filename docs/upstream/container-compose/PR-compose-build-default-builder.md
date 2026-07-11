@@ -14,7 +14,7 @@ Superseded note: a later named-builder slice forwards both `default` and non-def
 
 Docker Compose's `--builder` flag selects a Buildx builder. At the time of this slice, `container-compose` did not expose multiple builders, but `default` was the Docker spelling for the ordinary builder path and could be treated as compatible with the single local `apple/container` builder.
 
-Rejecting all `--builder` values made default-builder scripts fail unnecessarily. Accepting only `default` improved parity before the later named-builder slice added `--builder NAME` support for the Stephen fork-backed lane.
+Rejecting all `--builder` values made default-builder scripts fail unnecessarily. Accepting only `default` improved parity before the later named-builder slice added `--builder NAME` support for the stephenlclarke fork-backed lane.
 
 ## Validation
 
@@ -27,4 +27,4 @@ make docker-compose-build-builder-parity
 
 ## Superseded Gaps
 
-- `build --builder NAME` for non-default names is supported in the Stephen fork-backed lane by selecting a separate named BuildKit builder container.
+- `build --builder NAME` for non-default names is supported in the stephenlclarke fork-backed lane by selecting a separate named BuildKit builder container.

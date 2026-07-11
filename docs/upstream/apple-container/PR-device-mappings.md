@@ -58,7 +58,7 @@ git diff --check
 - Existing runtime-data payloads remain decodable because missing `devices` defaults to `[]`.
 - The default runtime behavior is unchanged when no device mapping is supplied.
 - `--device` source paths are resolved through the runtime-supported Linux VM device table. This is Docker-compatible for known VM devices such as `/dev/null` and `/dev/zero`, but it is not USB, SD-card, PCI, GPU, arbitrary macOS hardware passthrough, or arbitrary guest-side device discovery.
-- Upstream maintainers may prefer typed API-only configuration and may choose not to expose the Docker-shaped CLI parser directly. The parser exists in the Stephen fork because the current Compose plugin path still uses command vectors for service create/run.
+- Upstream maintainers may prefer typed API-only configuration and may choose not to expose the Docker-shaped CLI parser directly. The parser exists in the stephenlclarke fork because the current Compose plugin path still uses command vectors for service create/run.
 
 ## Remaining Risks
 

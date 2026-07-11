@@ -8,14 +8,14 @@ This file is the current-state handoff for `container-compose`. Keep branch poli
 
 ## Current Integration Assumption
 
-`container-compose` is supported as part of the fork-backed Stephen runtime bundle. Keep each package lane pinned to the matching `stephenlclarke/container`, `stephenlclarke/containerization`, and `container-builder-shim` surfaces until equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
+`container-compose` is supported as part of the fork-backed stephenlclarke runtime bundle. Keep each package lane pinned to the matching `stephenlclarke/container`, `stephenlclarke/containerization`, and `container-builder-shim` surfaces until equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
 Current reviewed package pins:
 
-- `stephenlclarke/container`: `79fb351f637ac5bd7131d1356144f2a2abf79c9a`
-- `stephenlclarke/containerization`: `405aba3be95fc7f867105ca9d206b7af28e52d1b`
+- `stephenlclarke/container`: `b1052b8daa48832c03809d61d684e8733191402a`
+- `stephenlclarke/containerization`: `077cc0d7ecb6900be87691ad38cd5a91d378d699`
 - `ghcr.io/stephenlclarke/container-builder-shim/builder`: `0.13.8` for linux/arm64, `sha256:09f5d7927191013773f6cbe82a2a27a5be53c90862c0f81de03defb61dff040f`
 
 ## Current Validation
@@ -29,7 +29,7 @@ Stable package workflows publish `container-compose-plugin-release-arm64.tar.gz`
 
 ## Parity Legend
 
-- ✅ Yes: green tick; Docker Compose v2 parity is implemented for the current Stephen fork-backed runtime lane.
+- ✅ Yes: green tick; Docker Compose v2 parity is implemented for the current stephenlclarke fork-backed runtime lane.
 - ⚠️ Partial: orange exclamation; a Docker Compose-compatible subset is implemented and the details list the remaining gap.
 - ❌ No: red cross; the surface is intentionally rejected before side effects or has no implementation.
 
@@ -248,7 +248,7 @@ Release notes record the sibling runtime stack through [Tools/release/stack-refs
 
 ## Upstream Compatibility
 
-Released Apple `container` compatibility is not a supported-lane functionality gap. The Homebrew preview lane requires the Stephen fork-backed runtime stack and preflights for it before runtime-backed Compose commands run. Stock Apple compatibility remains an upstream/release-channel blocker until equivalent runtime primitives are accepted by Apple and this plugin is updated to consume those upstream APIs.
+Released Apple `container` compatibility is not a supported-lane functionality gap. The Homebrew preview lane requires the stephenlclarke fork-backed runtime stack and preflights for it before runtime-backed Compose commands run. Stock Apple compatibility remains an upstream/release-channel blocker until equivalent runtime primitives are accepted by Apple and this plugin is updated to consume those upstream APIs.
 
 ## Open Follow-ups
 

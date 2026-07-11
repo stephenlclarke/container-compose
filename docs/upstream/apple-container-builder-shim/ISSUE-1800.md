@@ -25,7 +25,7 @@ BuildKit should see Docker-compatible `.dockerignore` behavior. When a negation 
 
 ## Local Resolution
 
-The Stephen fork moves exclude filtering from the raw host-tar walk into the `DiffCopy` path by wrapping the unpacked context cache with BuildKit's `fsutil.NewFilterFS`. That filter owns Docker-compatible include/exclude semantics and emits excluded ancestor directories before re-included descendants.
+The stephenlclarke fork moves exclude filtering from the raw host-tar walk into the `DiffCopy` path by wrapping the unpacked context cache with BuildKit's `fsutil.NewFilterFS`. That filter owns Docker-compatible include/exclude semantics and emits excluded ancestor directories before re-included descendants.
 
 The fork keeps its staged Dockerfile exception by adding negation patterns for requested synthetic Dockerfile paths before constructing the `fsutil` filter.
 

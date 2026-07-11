@@ -66,4 +66,4 @@ No `containerization` network namespace change was required for this slice. The 
 ## Remaining Risks
 
 - This does not implement Docker-compatible service/container network namespace joining.
-- Stock Apple `container` still needs an accepted upstream equivalent before `container-compose` can use this behavior without the Stephen fork runtime lane.
+- Stock Apple `container` still needs an accepted upstream equivalent before `container-compose` can use this behavior without the stephenlclarke fork runtime lane.

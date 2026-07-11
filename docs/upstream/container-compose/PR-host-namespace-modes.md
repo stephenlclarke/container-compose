@@ -11,7 +11,7 @@ It keeps service/container namespace-sharing values blocked as the next namespac
 
 ## Rationale
 
-Docker Compose accepts both host and sharing namespace modes. The Stephen fork-backed runtime stack now has the host PID primitive:
+Docker Compose accepts both host and sharing namespace modes. The stephenlclarke fork-backed runtime stack now has the host PID primitive:
 
 - `containerization` commit `93b6e729e95a3e81cf94f662b4e5716fa9d3068d` adds `LinuxContainer.Configuration.hostPIDNamespace`.
 - `container` commit `110f340456d2a25cb0256094bd671c6b91c949e4` adds `ContainerConfiguration.hostPIDNamespace`, `ContainerConfiguration.hostNetwork`, `container run/create --pid host`, and `container run/create --network host`.
@@ -27,7 +27,7 @@ Docker Compose accepts both host and sharing namespace modes. The Stephen fork-b
 - Added focused unit coverage for `up` and one-off `run` positive/negative paths.
 - Added `Tools/parity/check-compose-host-namespaces.sh` and `make docker-compose-host-namespaces-parity`.
 - Updated README, BUILD, STATUS, BRANCHES, parity docs, and upstream handoff drafts.
-- Refreshed `Package.resolved` and verified the automatic container dependency resolver selected the matching Stephen fork commits.
+- Refreshed `Package.resolved` and verified the automatic container dependency resolver selected the matching stephenlclarke fork commits.
 
 ## Docker Compose Parity
 

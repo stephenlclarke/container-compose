@@ -20,7 +20,7 @@
 
 Docker Compose V2 accepts build secret `uid`, `gid`, and `mode` metadata, but BuildKit does not implement those fields. Docker Compose preserves the metadata in config output, omits it from bake secret entries, and still accepts the build. `container-compose` previously rejected these Compose files before build orchestration.
 
-The upstream review signal is clear: Docker Compose issue `docker/compose#10704` and merged PR `docker/compose#10709` document that these fields are ignored rather than implemented. Because the Stephen fork-backed build path is BuildKit-oriented, this slice mirrors Docker Compose's build behavior without adding any Apple runtime surface.
+The upstream review signal is clear: Docker Compose issue `docker/compose#10704` and merged PR `docker/compose#10709` document that these fields are ignored rather than implemented. Because the stephenlclarke fork-backed build path is BuildKit-oriented, this slice mirrors Docker Compose's build behavior without adding any Apple runtime surface.
 
 ## Implementation Details
 

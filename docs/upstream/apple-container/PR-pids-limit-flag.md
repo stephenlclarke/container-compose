@@ -31,7 +31,7 @@ Docker exposes a process-count cgroup limit through `docker run --pids-limit`. C
 - Added `Parser.pidsLimit(_:)` validation for `-1` or positive values.
 - Extended `LinuxRuntimeData` with optional `pidsLimit` and backward-compatible decoding.
 - Applied decoded values in `RuntimeService.configureContainer`.
-- Updated `Package.resolved` to the matching Stephen `containerization` revision.
+- Updated `Package.resolved` to the matching stephenlclarke `containerization` revision.
 
 ## Testing
 

@@ -21,7 +21,7 @@
 
 Docker Compose V2 accepts Compose file `build.isolation` values even when the local Buildx path does not project the setting into bake JSON. `container-compose` already preserved the value but rejected non-default values as unsupported, which made otherwise Docker-compatible Compose files fail before build orchestration.
 
-The upstream review signal is that `build.isolation` is a Compose-spec field and Docker Compose fixed classic-builder handling separately from Buildx bake rendering. Because the Stephen fork-backed build path is BuildKit-oriented, this slice mirrors Docker Compose's Buildx behavior instead of adding an Apple runtime primitive.
+The upstream review signal is that `build.isolation` is a Compose-spec field and Docker Compose fixed classic-builder handling separately from Buildx bake rendering. Because the stephenlclarke fork-backed build path is BuildKit-oriented, this slice mirrors Docker Compose's Buildx behavior instead of adding an Apple runtime primitive.
 
 ## Implementation Details
 
