@@ -46,7 +46,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         }
         let client = try RegistryClient(
             reference: parsed.description,
-            tlsConfiguration: TLSUtils.makeEnvironmentAwareTLSConfiguration()
+            tlsConfiguration: TLSUtils.makeEnvironmentAwareTLSConfiguration(),
         )
         return try await client.resolve(name: parsed.path, tag: tag).digest
     }
@@ -70,7 +70,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         return ComposeImageMetadata(
             reference: image.reference,
             displayReference: resource.displayReference,
-            exposedPorts: variant?.exposedPorts ?? []
+            exposedPorts: variant?.exposedPorts ?? [],
         )
     }
 
@@ -102,9 +102,9 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
                         labels: variant.imageConfigLabels,
                         repoDigests: [Self.repositoryDigest(reference: reference, digest: digest)],
                         repoTags: repoTags,
-                        size: ComposeBridgeTransformerSize(sizeInBytes: variant.size)
-                    )
-                )
+                        size: ComposeBridgeTransformerSize(sizeInBytes: variant.size),
+                    ),
+                ),
             )
         }
         return transformers.sorted { $0.reference < $1.reference }
@@ -119,7 +119,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
             platform: platform,
             scheme: .auto,
             containerSystemConfig: config,
-            progressUpdate: nil
+            progressUpdate: nil,
         )
         try await image.unpack(platform: platform)
     }
@@ -166,7 +166,7 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
     private static func variant(
         in resource: ImageResource,
         matching platform: ContainerizationOCI.Platform,
-        allowFallback: Bool
+        allowFallback: Bool,
     ) -> ImageResource.Variant? {
         resource.variants.first { $0.platform == platform } ?? (allowFallback ? resource.variants.first : nil)
     }
@@ -194,7 +194,7 @@ private extension ComposeImageHealthCheck {
             timeoutInNanoseconds: healthCheck.timeoutInNanoseconds,
             startPeriodInNanoseconds: healthCheck.startPeriodInNanoseconds,
             startIntervalInNanoseconds: healthCheck.startIntervalInNanoseconds,
-            retries: healthCheck.retries
+            retries: healthCheck.retries,
         )
     }
 }

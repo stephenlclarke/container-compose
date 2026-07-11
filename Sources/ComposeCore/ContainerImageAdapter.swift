@@ -35,7 +35,7 @@ public struct ComposeImageHealthCheck: Sendable, Equatable {
         timeoutInNanoseconds: Int64? = nil,
         startPeriodInNanoseconds: Int64? = nil,
         startIntervalInNanoseconds: Int64? = nil,
-        retries: Int? = nil
+        retries: Int? = nil,
     ) {
         self.test = test
         self.intervalInNanoseconds = intervalInNanoseconds
@@ -154,7 +154,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
             },
             healthCheck: @escaping HealthCheck = { _, _ in nil },
             metadata: @escaping Metadata = { reference in ComposeImageMetadata(reference: reference) },
-            transformers: @escaping Transformers = { [] }
+            transformers: @escaping Transformers = { [] },
         ) {
             self.exists = exists
             self.digest = digest
@@ -173,7 +173,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         public init(
             pull: @escaping Pull,
             push: @escaping Push,
-            delete: @escaping Delete
+            delete: @escaping Delete,
         ) {
             self.pull = pull
             self.push = push
@@ -189,13 +189,13 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
                 digest: { try await client.imageDigest(reference: $0) },
                 healthCheck: { try await client.imageHealthCheck(reference: $0, platform: $1) },
                 metadata: { try await client.imageMetadata(reference: $0) },
-                transformers: { try await client.bridgeTransformers() }
+                transformers: { try await client.bridgeTransformers() },
             ),
             mutations: MutationOperations(
                 pull: { try await client.pullImage(reference: $0) },
                 push: { try await client.pushImage(reference: $0) },
-                delete: { try await client.deleteImage(reference: $0, force: $1) }
-            )
+                delete: { try await client.deleteImage(reference: $0, force: $1) },
+            ),
         )
     }
 

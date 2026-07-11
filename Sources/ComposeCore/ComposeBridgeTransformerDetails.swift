@@ -51,7 +51,7 @@ public struct ComposeBridgeTransformerDetails: Sendable, Equatable {
         parentID: String = "",
         repoDigests: [String] = [],
         repoTags: [String]? = nil,
-        size: ComposeBridgeTransformerSize = .init()
+        size: ComposeBridgeTransformerSize = .init(),
     ) {
         self.createdAtUnix = createdAtUnix
         self.containers = containers
@@ -89,7 +89,7 @@ public struct ComposeBridgeTransformer: Sendable, Equatable {
     public init(
         id: String,
         reference: String,
-        details: ComposeBridgeTransformerDetails = .init()
+        details: ComposeBridgeTransformerDetails = .init(),
     ) {
         self.id = id
         self.reference = reference
