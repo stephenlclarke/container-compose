@@ -21,9 +21,11 @@ import (
 	"path/filepath"
 )
 
+const cacheDirectoryName = "docker-compose"
+
 func cacheDir() (string, error) {
 	if cache, ok := os.LookupEnv("XDG_CACHE_HOME"); ok {
-		return filepath.Join(cache, "docker-compose"), nil
+		return filepath.Join(cache, cacheDirectoryName), nil
 	}
 
 	path, err := osDependentCacheDir()

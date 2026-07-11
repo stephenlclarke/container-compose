@@ -110,6 +110,32 @@ func TestOfflineCacheMissReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoadUsesRememberedCheckoutAndSubdirectory(t *testing.T) {
+	t.Setenv(GitRemoteEnabled, "true")
+	loader := NewGitRemoteLoader(true).(*gitRemoteLoader)
+	remote := "https://example.test/project.git#main:stacks/demo"
+	root := t.TempDir()
+	composeFile := filepath.Join(root, "stacks", "demo", "compose.yaml")
+	if err := os.MkdirAll(filepath.Dir(composeFile), 0o755); err != nil {
+		t.Fatalf("create Compose directory: %v", err)
+	}
+	if err := os.WriteFile(composeFile, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatalf("write Compose file: %v", err)
+	}
+	loader.rememberCheckout(remote, root)
+
+	local, err := loader.Load(context.Background(), remote)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if local != composeFile {
+		t.Fatalf("Load = %q, want %q", local, composeFile)
+	}
+	if directory := loader.Dir(remote); directory != filepath.Dir(composeFile) {
+		t.Fatalf("Dir = %q, want %q", directory, filepath.Dir(composeFile))
+	}
+}
+
 func TestFailedCheckoutDoesNotPublishCache(t *testing.T) {
 	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
 	loader.command = unavailableGitCommand(filepath.Join(t.TempDir(), "missing-git"))

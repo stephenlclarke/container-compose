@@ -28,17 +28,17 @@ func osDependentCacheDir() (string, error) {
 	for _, flag := range flags {
 		path, _ := windows.KnownFolderPath(windows.FOLDERID_LocalAppData, flag|windows.KF_FLAG_DONT_VERIFY)
 		if path != "" {
-			return filepath.Join(path, "cache", "docker-compose"), nil
+			return filepath.Join(path, "cache", cacheDirectoryName), nil
 		}
 	}
 
 	if appData, ok := os.LookupEnv("LOCALAPPDATA"); ok {
-		return filepath.Join(appData, "cache", "docker-compose"), nil
+		return filepath.Join(appData, "cache", cacheDirectoryName), nil
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "AppData", "Local", "cache", "docker-compose"), nil
+	return filepath.Join(home, "AppData", "Local", "cache", cacheDirectoryName), nil
 }

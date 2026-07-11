@@ -28,5 +28,5 @@ func osDependentCacheDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "docker-compose"), nil
+	return filepath.Join(home, ".cache", cacheDirectoryName), nil
 }

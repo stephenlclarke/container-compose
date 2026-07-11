@@ -92,30 +92,45 @@ func (g *gitRemoteLoader) Load(ctx context.Context, path string) (string, error)
 		return "", err
 	}
 
-	local, ok := g.knownPath(path)
-	if !ok {
-		if ref.Ref == "" {
-			ref.Ref = "HEAD"
-		}
-
-		if err := g.resolveGitRef(ctx, path, ref); err != nil {
-			return "", err
-		}
-
-		cache, err := cacheDir()
-		if err != nil {
-			return "", fmt.Errorf("initializing remote resource cache: %w", err)
-		}
-
-		local = filepath.Join(cache, ref.Ref)
-		if err := g.ensureCheckout(ctx, local, ref); err != nil {
-			return "", err
-		}
-		g.rememberCheckout(path, local)
+	repositoryRoot, err := g.checkoutPath(ctx, path, ref)
+	if err != nil {
+		return "", err
 	}
-	repositoryRoot := local
-	if ref.SubDir != "" {
-		local, err = resolveGitSubDir(repositoryRoot, ref.SubDir)
+	local, err := resolveGitResource(repositoryRoot, ref.SubDir)
+	if err != nil {
+		return "", err
+	}
+	g.rememberDirectory(path, local)
+	return local, nil
+}
+
+func (g *gitRemoteLoader) checkoutPath(ctx context.Context, path string, ref *gitutil.GitRef) (string, error) {
+	if local, ok := g.knownPath(path); ok {
+		return local, nil
+	}
+	if ref.Ref == "" {
+		ref.Ref = "HEAD"
+	}
+	if err := g.resolveGitRef(ctx, path, ref); err != nil {
+		return "", err
+	}
+	cache, err := cacheDir()
+	if err != nil {
+		return "", fmt.Errorf("initializing remote resource cache: %w", err)
+	}
+	local := filepath.Join(cache, ref.Ref)
+	if err := g.ensureCheckout(ctx, local, ref); err != nil {
+		return "", err
+	}
+	g.rememberCheckout(path, local)
+	return local, nil
+}
+
+func resolveGitResource(repositoryRoot, subDir string) (string, error) {
+	local := repositoryRoot
+	var err error
+	if subDir != "" {
+		local, err = resolveGitSubDir(repositoryRoot, subDir)
 		if err != nil {
 			return "", err
 		}
@@ -133,7 +148,6 @@ func (g *gitRemoteLoader) Load(ctx context.Context, path string) (string, error)
 	if err := validatePathInBase(repositoryRoot, local); err != nil {
 		return "", err
 	}
-	g.rememberDirectory(path, local)
 	return local, nil
 }
 
