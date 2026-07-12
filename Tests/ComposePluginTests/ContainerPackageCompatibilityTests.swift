@@ -27,13 +27,18 @@ struct ContainerPackageCompatibilityTests {
     #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["run", "api"]))
     #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["build", "api"]))
     #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["ps"]))
-    #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "scale", "api=2"]))
-    #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "watch", "api"]))
+    #expect(
+      ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "scale", "api=2"]))
+    #expect(
+      ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "watch", "api"]))
 
     #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["version"]))
     #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["config"]))
     #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["up", "--dry-run"]))
-    #expect(!ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["alpha", "dry-run", "--", "up", "api"]))
+    #expect(
+      !ContainerPackageCompatibility.requiresRuntimeCheck(arguments: [
+        "alpha", "dry-run", "--", "up", "api",
+      ]))
     #expect(
       !ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["build", "--print", "api"]))
   }
@@ -126,6 +131,30 @@ struct ContainerPackageCompatibilityTests {
       message.contains(
         "brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose || brew install --formula stephenlclarke/tap/container-compose"
       ))
+  }
+
+  @Test("single-row release system version can satisfy exact package pins")
+  func singleRowReleaseSystemVersionCanSatisfyExactPackagePins() {
+    let components = [
+      ContainerSystemVersionComponent(
+        appName: "container",
+        buildType: "release",
+        commit: "d03f81b4968d9f33914db1d77e00ce9f43178d00",
+        containerization:
+          "stephenlclarke/containerization@d8b9585a9855b1c0958d423a2d08b564eb6f8626",
+        distribution: "custom",
+        source: "stephenlclarke/container",
+        version: "homebrew-main-114-d82fc5c24d48-1-gd03f81b"
+      )
+    ]
+
+    #expect(
+      ContainerPackageCompatibility.compatibilityFailure(
+        components: components,
+        lane: "main",
+        expectedContainerRef: "d03f81b4968d9f33914db1d77e00ce9f43178d00",
+        expectedContainerizationRef: "d8b9585a9855b1c0958d423a2d08b564eb6f8626"
+      ) == nil)
   }
 
   @Test("stale API server reports install guidance")

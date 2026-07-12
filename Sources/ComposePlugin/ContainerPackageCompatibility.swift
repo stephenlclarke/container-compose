@@ -196,14 +196,10 @@ enum ContainerPackageCompatibility {
       )
     }
     if let expectedContainerRef {
-      if let apiserver {
-        if !refsMatch(apiserver.commit, expectedContainerRef) {
-          detected.append(
-            "container-apiserver: \(apiserver.commit ?? "unknown") (expected \(expectedContainerRef))"
-          )
-        }
-      } else {
-        detected.append("container-apiserver: missing from system version output")
+      if let apiserver, !refsMatch(apiserver.commit, expectedContainerRef) {
+        detected.append(
+          "container-apiserver: \(apiserver.commit ?? "unknown") (expected \(expectedContainerRef))"
+        )
       }
     }
     if let expectedContainerizationRef,

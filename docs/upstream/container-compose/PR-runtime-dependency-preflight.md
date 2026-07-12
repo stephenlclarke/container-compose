@@ -32,10 +32,11 @@ git diff --check
 - `container compose ps`, `up`, `run`, `exec`, `logs`, `build` execution, and other runtime-backed commands now fail early when the active `container` executable is Apple's stock package.
 - `container compose version`, help output, `config`, dry-run commands, and `build --print` remain available so users can inspect a broken or mixed install.
 - Runtime preflight guidance should suggest upgrading the stable `container` / `container-compose` formulae from `stephenlclarke/tap`, refreshing the `container` postinstall hook, and restarting the service; obsolete formula names should not appear in new install guidance.
+- Current one-row `container system version --format json` output is sufficient when the `container` row matches the package refs. If a `container-apiserver` row is present, its commit is checked for stale service detection.
 
 ## Remaining Risks
 
-- Exact ref checks cannot prove every runtime primitive behaves correctly. They prevent mixed Apple/fork installs and stale plugin/runtime package drift; capability behavior remains covered by focused tests and runtime smoke.
+- Exact ref checks cannot prove every runtime primitive behaves correctly. They prevent mixed Apple/fork installs and stale plugin/runtime package drift; capability behavior remains covered by focused tests and runtime smoke. Stale API-server detection depends on the runtime reporting an API-server component row.
 
 ## Commit Tracking
 
