@@ -343,7 +343,7 @@ enum ComposeCLIHelp {
     private static let supportDetailByCommand: [String: String] = [
         "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
         "cp": "Path copies are supported; stdin/stdout tar streaming with '-' requires an additional runtime copy-stream API.",
-        "publish": "Service image push and OCI project artifacts are supported for image-backed Compose projects; --app image indexes, --resolve-image-digests, and Docker's interactive sensitive-data publish prompts remain unsupported.",
+        "publish": "Service image push and OCI project artifacts are supported for image-backed Compose projects; --app image indexes and Docker's interactive sensitive-data publish prompts remain unsupported.",
         "top": "Service selection and PID output are supported; the runtime does not yet expose Docker's full process metadata table.",
     ]
 
@@ -569,7 +569,7 @@ enum ComposeCLIHelp {
             "--app": .notSupported,
             "--dry-run": .supported,
             "--oci-version": .supported,
-            "--resolve-image-digests": .notSupported,
+            "--resolve-image-digests": .supported,
             "--with-env": .supported,
             "--yes": .supported,
         ],

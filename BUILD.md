@@ -152,8 +152,9 @@ The CLI surface target writes the exact compared versions and differences to
 in [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md) and
 `Tools/parity/compose-cli-surface.allowlist`.
 
-`oci://` Compose project artifact loading, `compose publish --dry-run`, and the
-publish preflight/service-image-push/artifact-publish order are covered by Go
+`oci://` Compose project artifact loading, `compose publish --dry-run`, the
+image-digest override layer emitted by `compose publish`, and the publish
+preflight/service-image-push/artifact-publish order are covered by Go
 OCI/publish tests, Swift normalizer integration tests, and the CLI smoke target.
 Live registry publish/fetch validation belongs in an explicit environment that
 can provide deterministic credentials and cleanup.

@@ -114,11 +114,14 @@ struct ComposeCLIHelpTests {
         let copyHelp = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
         let publishHelp = try #require(ComposeCLIHelp.commandHelpText(command: "publish"))
         let topHelp = try #require(ComposeCLIHelp.commandHelpText(command: "top"))
+        let publishLimitations = try #require(
+            publishHelp.split(separator: "\n").first { $0.hasPrefix("Limitations:") })
 
         #expect(copyHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(copyHelp.contains("stdin/stdout tar streaming"))
         #expect(publishHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(publishHelp.contains("--app image indexes"))
+        #expect(!publishLimitations.contains("--resolve-image-digests"))
         #expect(topHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(topHelp.contains("full process metadata table"))
     }
@@ -177,9 +180,9 @@ struct ComposeCLIHelpTests {
         let snapshot = recorder.snapshot()
         #expect(snapshot.calls == ["normalizer:preflight", "push-images", "normalizer:publish"])
         #expect(snapshot.options.map(\.dryRun) == [true, false])
+        #expect(snapshot.options.map(\.resolveImageDigests) == [false, true])
         #expect(snapshot.options.allSatisfy { $0.repository == "registry.example.com/team/app:latest" })
         #expect(snapshot.options.allSatisfy { $0.app })
-        #expect(snapshot.options.allSatisfy { $0.resolveImageDigests })
         #expect(snapshot.options.allSatisfy { $0.withEnv })
         #expect(snapshot.options.allSatisfy { $0.assumeYes })
         #expect(result.descriptor?.digest == "sha256:abc")
@@ -223,6 +226,46 @@ struct ComposeCLIHelpTests {
         #expect(snapshot.options.map(\.dryRun) == [true])
         #expect(result.dryRun)
         #expect(result.layers.first?.digest == "sha256:def")
+    }
+
+    @Test("publish dry run resolves image digests after dry-run image push")
+    func publishDryRunResolvesImageDigestsAfterDryRunImagePush() async throws {
+        let command = try Publish.parse([
+            "--dry-run",
+            "--resolve-image-digests",
+            "registry.example.com/team/app:latest",
+        ])
+        let recorder = PublishWorkflowRecorder()
+
+        let result = try await command.executePublish(
+            normalizerPublish: { options in
+                recorder.record("normalizer:\(options.resolveImageDigests ? "resolve" : "preflight")", options: options)
+                return ComposePublishResult(
+                    repository: options.repository,
+                    ociVersion: "auto",
+                    dryRun: options.dryRun,
+                    layers: [
+                        ComposePublishLayer(
+                            kind: options.resolveImageDigests ? "image-digests" : "compose",
+                            path: options.resolveImageDigests ? "image-digests.yaml" : "compose.yaml",
+                            mediaType: "application/vnd.docker.compose.file+yaml",
+                            digest: options.resolveImageDigests ? "sha256:resolved" : "sha256:base",
+                            size: 7
+                        ),
+                    ]
+                )
+            },
+            pushImages: {
+                recorder.record("push-images")
+            }
+        )
+
+        let snapshot = recorder.snapshot()
+        #expect(snapshot.calls == ["normalizer:preflight", "push-images", "normalizer:resolve"])
+        #expect(snapshot.options.map(\.dryRun) == [true, true])
+        #expect(snapshot.options.map(\.resolveImageDigests) == [false, true])
+        #expect(result.layers.first?.path == "image-digests.yaml")
+        #expect(result.layers.first?.digest == "sha256:resolved")
     }
 
     @Test("publish activates every profile before pushing service images")

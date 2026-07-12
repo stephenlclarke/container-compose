@@ -34,6 +34,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/distribution/reference"
 	"github.com/docker/cli/cli/config"
+	digest "github.com/opencontainers/go-digest"
 	spec "github.com/opencontainers/image-spec/specs-go/v1"
 	composeOCI "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/oci"
 	composeTransform "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/transform"
@@ -48,6 +49,7 @@ type publishOptions struct {
 	withEnv             bool
 	assumeYes           bool
 	dryRun              bool
+	imageDigestResolver func(reference.Named) (digest.Digest, error)
 }
 
 type publishResult struct {
@@ -95,9 +97,6 @@ func publishComposeProject(
 	if options.app {
 		return nil, errors.New("unsupported publish option --app: application image indexes are not implemented")
 	}
-	if options.resolveImageDigests {
-		return nil, errors.New("unsupported publish option --resolve-image-digests: image digest pinning is not implemented")
-	}
 
 	project, _, err := loadComposeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	if err != nil {
@@ -117,6 +116,9 @@ func publishComposeProject(
 		return nil, err
 	}
 
+	if options.resolveImageDigests && options.imageDigestResolver == nil {
+		options.imageDigestResolver = publishImageDigestResolver(ctx, stderr)
+	}
 	layers, err := createPublishLayers(ctx, project, options)
 	if err != nil {
 		return nil, err
@@ -216,7 +218,42 @@ func createPublishLayers(ctx context.Context, project *types.Project, options pu
 	if options.withEnv {
 		layers = append(layers, publishEnvFileLayers(envFiles)...)
 	}
+	if options.resolveImageDigests {
+		digestOverride, err := generatePublishImageDigestsOverride(project, options.imageDigestResolver)
+		if err != nil {
+			return nil, err
+		}
+		layers = append(layers, composeOCI.DescriptorForComposeFile("image-digests.yaml", digestOverride))
+	}
 	return layers, nil
+}
+
+func publishImageDigestResolver(ctx context.Context, stderr io.Writer) func(reference.Named) (digest.Digest, error) {
+	resolver := composeOCI.NewResolver(config.LoadDefaultConfigFile(stderr), nil)
+	return func(named reference.Named) (digest.Digest, error) {
+		tagged := reference.TagNameOnly(named)
+		_, descriptor, err := resolver.Resolve(ctx, tagged.String())
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve digest for %s: %w", tagged.String(), err)
+		}
+		return descriptor.Digest, nil
+	}
+}
+
+func generatePublishImageDigestsOverride(project *types.Project, resolver func(reference.Named) (digest.Digest, error)) ([]byte, error) {
+	resolved, err := project.WithImagesResolved(resolver)
+	if err != nil {
+		return nil, err
+	}
+	override := types.Project{
+		Services: types.Services{},
+	}
+	for name, service := range resolved.Services {
+		override.Services[name] = types.ServiceConfig{
+			Image: service.Image,
+		}
+	}
+	return override.MarshalYAML()
 }
 
 func processPublishExtends(ctx context.Context, project *types.Project, files map[string]string) ([]spec.Descriptor, error) {

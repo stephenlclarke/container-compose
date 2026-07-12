@@ -17,12 +17,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/distribution/reference"
+	digest "github.com/opencontainers/go-digest"
 	spec "github.com/opencontainers/image-spec/specs-go/v1"
 	composeOCI "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/oci"
 )
@@ -140,6 +146,111 @@ services:
 	}
 	if !hasExtends {
 		t.Fatalf("layers = %#v, want an extends layer", result.Layers)
+	}
+}
+
+func TestPublishDryRunIncludesImageDigestOverrideLayer(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: registry.example.com/team/api
+  pinned:
+    image: registry.example.com/team/pinned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  worker:
+    image: registry.example.com/team/worker:2
+`)
+	var requests []string
+	digests := map[string]digest.Digest{
+		"registry.example.com/team/api:latest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"registry.example.com/team/worker:2":   "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	}
+
+	result, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-digests",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository:          "registry.example.com/team/app:latest",
+			resolveImageDigests: true,
+			dryRun:              true,
+			imageDigestResolver: func(named reference.Named) (digest.Digest, error) {
+				requests = append(requests, named.String())
+				return digests[named.String()], nil
+			},
+		},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("publishComposeProject returned error: %v", err)
+	}
+	slices.Sort(requests)
+	if len(requests) != 2 || requests[0] != "registry.example.com/team/api:latest" || requests[1] != "registry.example.com/team/worker:2" {
+		t.Fatalf("digest resolver requests = %#v", requests)
+	}
+	layer := result.Layers[len(result.Layers)-1]
+	if layer.Kind != "compose" || layer.Path != "image-digests.yaml" {
+		t.Fatalf("digest layer = %#v, want compose image-digests.yaml", layer)
+	}
+
+	layers, err := createPublishLayers(t.Context(), mustPublishProject(t, []string{composeFile}, dir), publishOptions{
+		resolveImageDigests: true,
+		imageDigestResolver: func(named reference.Named) (digest.Digest, error) {
+			return digests[named.String()], nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("createPublishLayers returned error: %v", err)
+	}
+	got := string(layers[len(layers)-1].Data)
+	for _, want := range []string{
+		`image: registry.example.com/team/api:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+		`image: registry.example.com/team/pinned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc`,
+		`image: registry.example.com/team/worker:2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("digest override YAML =\n%s\nmissing %q", got, want)
+		}
+	}
+}
+
+func TestPublishImageDigestResolverTagsAndWrapsResolveFailures(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	resolver := publishImageDigestResolver(ctx, io.Discard)
+	named, err := reference.ParseNamed("registry.example.com/team/api")
+	if err != nil {
+		t.Fatalf("ParseNamed returned error: %v", err)
+	}
+	_, err = resolver(named)
+	if err == nil {
+		t.Fatal("resolver returned nil error, want failure")
+	}
+	if !strings.Contains(err.Error(), "failed to resolve digest for registry.example.com/team/api:latest") {
+		t.Fatalf("resolver error = %v", err)
+	}
+}
+
+func TestGeneratePublishImageDigestsOverrideReturnsResolverError(t *testing.T) {
+	project := &types.Project{
+		Services: types.Services{
+			"api": {
+				Name:  "api",
+				Image: "registry.example.com/team/api:latest",
+			},
+		},
+	}
+	_, err := generatePublishImageDigestsOverride(project, func(reference.Named) (digest.Digest, error) {
+		return "", errors.New("resolver unavailable")
+	})
+	if err == nil {
+		t.Fatal("generatePublishImageDigestsOverride returned nil error, want failure")
+	}
+	if !strings.Contains(err.Error(), "resolver unavailable") {
+		t.Fatalf("digest override error = %v", err)
 	}
 }
 
@@ -313,15 +424,6 @@ services:
 			},
 			want: "--app",
 		},
-		{
-			name: "resolve image digests",
-			options: publishOptions{
-				repository:          "registry.example.com/team/app:latest",
-				resolveImageDigests: true,
-				dryRun:              true,
-			},
-			want: "--resolve-image-digests",
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -459,4 +561,17 @@ func writePublishFixture(t *testing.T, dir, name, content string) string {
 		t.Fatalf("write fixture: %v", err)
 	}
 	return path
+}
+
+func mustPublishProject(t *testing.T, files []string, projectDirectory string) *types.Project {
+	t.Helper()
+	project, _, err := loadComposeProject(files, nil, nil, "publish-digests", projectDirectory, projectLoadOptions{})
+	if err != nil {
+		t.Fatalf("loadComposeProject returned error: %v", err)
+	}
+	project, err = project.WithProfiles([]string{"*"})
+	if err != nil {
+		t.Fatalf("WithProfiles returned error: %v", err)
+	}
+	return project
 }

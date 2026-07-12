@@ -2042,15 +2042,18 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
         normalizerPublish: (ComposePublishOptions) async throws -> ComposePublishResult,
         pushImages: () async throws -> Void
     ) async throws -> ComposePublishResult {
-        let preflight = try await normalizerPublish(publishOptions(dryRun: true))
+        let preflight = try await normalizerPublish(publishOptions(dryRun: true, resolveImageDigests: false))
         try await pushImages()
         if global.dryRun {
+            if resolveImageDigests {
+                return try await normalizerPublish(publishOptions(dryRun: true, resolveImageDigests: true))
+            }
             return preflight
         }
-        return try await normalizerPublish(publishOptions(dryRun: false))
+        return try await normalizerPublish(publishOptions(dryRun: false, resolveImageDigests: resolveImageDigests))
     }
 
-    private func publishOptions(dryRun: Bool) -> ComposePublishOptions {
+    private func publishOptions(dryRun: Bool, resolveImageDigests: Bool) -> ComposePublishOptions {
         ComposePublishOptions(
             repository: repository,
             app: app,
