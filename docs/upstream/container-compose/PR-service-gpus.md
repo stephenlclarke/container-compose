@@ -42,6 +42,7 @@ Supported on the fork-backed integration stack:
 - `gpus: all`, `count: 1`, `device_ids: ["0"]`, and equivalent `driver: virtio` requests.
 - Deploy device reservations with the generic `gpu` capability.
 - Dry-run `up`, `create`, and one-off `run` rendering of `--gpus`.
+- Runtime projection of `/dev/dri` nodes when the matched guest kernel exposes them.
 
 Rejected before side effects:
 

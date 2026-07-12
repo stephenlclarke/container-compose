@@ -31,7 +31,9 @@ on:
 
 permissions:
   actions: read
+  attestations: write
   contents: write
+  id-token: write
 
 concurrency:
   group: prebuilt-binaries-${{ github.event.workflow_run.head_branch || inputs.ref || github.ref_name }}
@@ -165,7 +167,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -286,7 +288,7 @@ jobs:
 
       - name: Checkout container-builder-shim dependency
         if: steps.stack-refs.outputs.container_builder_shim_ref != ''
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/container-builder-shim
           path: container-builder-shim
@@ -295,7 +297,7 @@ jobs:
 
       - name: Checkout containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/containerization
           path: containerization
@@ -303,7 +305,7 @@ jobs:
           ref: ${{ steps.stack-refs.outputs.containerization_ref }}
 
       - name: Checkout container dependency
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -339,39 +341,26 @@ jobs:
         working-directory: container-compose
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
 
-      - name: Wait for CI result
-        id: ci-result
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 container-compose/Tools/ci/wait-for-workflow-success.py \
-            --repo "${GITHUB_REPOSITORY}" \
-            --workflow ci.yml \
-            --sha "${{ needs.resolve-publish-context.outputs.sha }}" \
-            --timeout-seconds 900 \
-            --poll-seconds 15
-
       - name: Install Markdown lint
-        if: github.event_name == 'workflow_dispatch' && steps.ci-result.outputs.passed != 'true'
+        if: github.event_name == 'workflow_dispatch'
         run: npm install --global markdownlint-cli@0.48.0
 
       - name: Cache local repo tools
-        if: github.event_name == 'workflow_dispatch' && steps.ci-result.outputs.passed != 'true'
-        uses: actions/cache@v6
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: container-compose/.local/bin
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
 
       - name: Run release validation
-        if: github.event_name == 'workflow_dispatch' && steps.ci-result.outputs.passed != 'true'
-        timeout-minutes: 45
-        run: make ci
+        if: github.event_name == 'workflow_dispatch'
+        timeout-minutes: 90
+        run: make release-gate
         working-directory: container-compose
         env:
           HAWKEYE_AUTO_INSTALL: "1"
@@ -384,8 +373,13 @@ jobs:
           CONTAINER_COMPOSE_COMMIT: ${{ needs.resolve-publish-context.outputs.sha }}
           CONTAINER_COMPOSE_LANE: ${{ steps.lane.outputs.package_lane }}
 
+      - name: Attest release package
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
+
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.lane.outputs.asset }}
           path: |
@@ -515,7 +509,7 @@ jobs:
 
       - name: Checkout Homebrew tap
         if: steps.lane.outputs.update_tap == 'true' && steps.tap-token.outputs.available == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/homebrew-tap
           path: homebrew-tap

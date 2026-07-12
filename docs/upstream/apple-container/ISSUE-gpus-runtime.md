@@ -13,8 +13,9 @@ Docker users expect `container run --gpus all` and Compose `gpus: all` / Deploy 
 - Add repeatable `--gpus <gpu-request>` parsing to `container run` and `container create`.
 - Parse Docker-compatible forms: `all`, `count=1`, `device=0`, and explicit `driver=virtio`.
 - Reject unsupported vendor drivers, driver options, extra capabilities, multiple GPUs, and non-zero device IDs before the VM is created.
-- Set the lower-runtime graphics flag when the request is supported.
-- Project `/dev/dri/card0` and `/dev/dri/renderD128` plus matching cgroup rules into the generated OCI config.
+- Set the lower-runtime graphics-device configuration when the request is supported.
+- Request the common virtio-gpu DRM nodes (`/dev/dri/card0` and `/dev/dri/renderD128`) as optional guest discoveries, then project matching OCI device nodes plus cgroup rules when the running guest exposes them.
+- Add runtime integration coverage that records the actual `/dev/dri` nodes exposed by the booted guest before claiming a specific render node or accelerated rendering capability.
 
 ## Upstream References
 
@@ -26,7 +27,7 @@ Docker users expect `container run --gpus all` and Compose `gpus: all` / Deploy 
 
 - `container run --gpus all IMAGE ...` and `container create --gpus device=0 IMAGE ...` parse successfully.
 - Supported requests enable the lower-runtime graphics device.
-- The Linux container receives `/dev/dri/card0` and `/dev/dri/renderD128` character devices and cgroup access.
+- The Linux container receives discovered virtio-gpu DRM character-device metadata and cgroup access when the guest kernel exposes `/dev/dri` nodes.
 - Unsupported GPU requests fail before VM/container creation.
 - Existing runtime data remains backward-compatible when `gpuRequests` is absent.
 
@@ -44,4 +45,4 @@ make check
 
 ## Notes
 
-The supported behavior is the single Apple virtio-gpu path. It is not direct Metal, CUDA, NVIDIA, vendor driver, multi-GPU, PCI, USB, or arbitrary macOS hardware passthrough.
+The supported behavior is the single Apple virtio-gpu path. It does not prove hardware-accelerated rendering and is not direct Metal, CUDA, NVIDIA, vendor driver, multi-GPU, PCI, USB, or arbitrary macOS hardware passthrough.

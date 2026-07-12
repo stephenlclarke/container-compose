@@ -239,7 +239,7 @@ class ReleaseNotesTests(unittest.TestCase):
                 body="""
                 Support Docker Compose service gpus and generic Deploy GPU reservations.
 
-                Release-Highlight: Supports Compose `gpus` and deploy GPU reservations through the matched virtio GPU runtime.
+                Release-Highlight: Maps Compose `gpus` and deploy GPU reservations to the matched Apple virtio-gpu runtime, projecting guest DRM nodes when the kernel exposes them.
 
                 Refs apple/container#1511, apple/containerization#480, apple/containerization#569.
                 """,
@@ -257,8 +257,9 @@ class ReleaseNotesTests(unittest.TestCase):
             )
 
             self.assertIn(
-                "- Supports Compose `gpus` and deploy GPU reservations through "
-                "the matched virtio GPU runtime. Upstream references: "
+                "- Maps Compose `gpus` and deploy GPU reservations to the "
+                "matched Apple virtio-gpu runtime, projecting guest DRM nodes "
+                "when the kernel exposes them. Upstream references: "
                 "apple/container#1511, apple/containerization#480, "
                 "apple/containerization#569.",
                 notes,

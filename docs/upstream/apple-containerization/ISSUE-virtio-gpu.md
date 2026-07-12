@@ -10,8 +10,9 @@ Virtualization.framework exposes `VZVirtioGraphicsDeviceConfiguration`, and `con
 
 ## Proposed Shape
 
-- Add a `graphicsDevice` Boolean to the Linux container VM configuration.
-- Translate `graphicsDevice == true` to a `VZVirtioGraphicsDeviceConfiguration`.
+- Add a typed Linux VM graphics configuration with disabled, device-only, and display scanout modes.
+- Translate enabled graphics configuration to a `VZVirtioGraphicsDeviceConfiguration`.
+- Add a generic guest-device discovery hook that resolves already-created guest device nodes with `stat` before OCI process start.
 - Keep display policy minimal and avoid Docker Compose-specific behavior in `containerization`.
 - Keep vendor/native GPU passthrough, Metal, CUDA, and arbitrary PCI device passthrough out of this primitive.
 
@@ -23,11 +24,13 @@ Virtualization.framework exposes `VZVirtioGraphicsDeviceConfiguration`, and `con
 
 ## Acceptance Criteria
 
-- A caller can set a typed graphics-device flag on Linux VM configuration.
-- The Virtualization.framework VM receives a virtio-gpu configuration only when that flag is true.
+- A caller can set a typed graphics-device configuration on Linux VM configuration.
+- The Virtualization.framework VM receives a virtio-gpu configuration only when graphics are enabled.
 - Existing Linux container configurations remain unchanged when the flag is false.
-- The guest kernel configuration enables the virtio DRM driver needed to expose `/dev/dri` nodes.
-- Unit coverage proves the typed flag is forwarded to VM construction.
+- The in-repo guest kernel configurations enable the virtio DRM driver needed to expose `/dev/dri` nodes when those kernels are used.
+- Guest device requests are resolved from the booted VM so device type, major/minor, mode, uid, and gid come from the running guest rather than a static table.
+- Unit coverage proves the typed graphics configuration is forwarded to VM construction.
+- Runtime integration coverage should boot the guest kernel and record whether the active kernel exposes DRM nodes before documenting a specific `/dev/dri` shape or claiming accelerated rendering.
 
 ## Ownership
 
@@ -42,4 +45,4 @@ make check
 
 ## Notes
 
-This is generic paravirtual graphics support. It does not provide direct host GPU passthrough, vendor driver access, Metal, CUDA, or multiple GPU selection.
+This is generic paravirtual graphics-device support. It does not prove hardware-accelerated rendering and does not provide direct host GPU passthrough, vendor driver access, Metal, CUDA, or multiple GPU selection.

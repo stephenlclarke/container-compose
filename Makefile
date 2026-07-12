@@ -134,7 +134,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast release-gate ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built stack-consistency coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -144,7 +144,9 @@ ci: check coverage-check go-build cli-smoke-built
 
 ci-fast: check test go-build cli-smoke-built
 
-ci-release: ci package-release
+release-gate: ci docker-compose-parity
+
+ci-release: release-gate package-release
 
 release:
 	@test -n "$(VERSION_SELECTOR)" || { \
@@ -1329,11 +1331,14 @@ package-built:
 	shasum -a 256 "$(PLUGIN_ARCHIVE)" > "$(PLUGIN_ARCHIVE).sha256"
 
 coverage-tools-test:
-	$(PYTHON) -m py_compile Tools/coverage/*.py Tools/release/*.py
+	$(PYTHON) -m py_compile Tools/coverage/*.py Tools/release/*.py Tools/ci/*.py
 	$(PYTHON) -m unittest discover Tools/coverage
 	$(PYTHON) -m unittest discover Tools/release
 
-check: lint check-licenses
+stack-consistency:
+	$(PYTHON) Tools/ci/check-stack-consistency.py
+
+check: lint stack-consistency check-licenses
 
 lint: coverage-tools-test
 	@while IFS= read -r -d '' script; do \

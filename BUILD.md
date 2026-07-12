@@ -96,7 +96,8 @@ Useful focused targets are:
 | --- | --- |
 | `make test` | Swift and Go unit/integration-style tests that do not require a live runtime. |
 | `make ci-fast` | Source checks, tests, helper build, and CLI smoke without coverage export. |
-| `make ci-release` | Full CI plus the release package build. |
+| `make release-gate` | Full CI plus the complete Docker Compose parity suite required before stable package dispatch. |
+| `make ci-release` | Full release gate plus the release package build. |
 | `make check` | Lint, documentation, formatting, and license checks. |
 | `make coverage-check` | Enforce at least 90% Swift line and 85% Go statement coverage. |
 | `make cli-smoke-built` | Exercise representative commands using the existing build. |
@@ -119,8 +120,8 @@ GitHub Actions separates source checks, macOS runtime validation, sanitizers,
 formatting, CodeQL, SonarCloud, package publication, and Homebrew formula syntax
 into focused workflows. `CI / Validate` is the aggregate required result;
 documentation/formula-only changes use the lightweight validation path. Stable
-semantic tags publish package assets and update the tap only after a successful
-matching CI result.
+semantic package dispatch runs `make release-gate` before publishing package
+assets or updating the tap.
 
 ## Docker Compose Parity
 

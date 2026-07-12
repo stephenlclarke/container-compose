@@ -48,7 +48,7 @@ jobs:
     steps:
       - name: Checkout for push diff
         if: github.event_name == 'push'
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -103,13 +103,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           path: container-compose
           fetch-depth: 0
 
+      - name: Resolve container ref
+        id: container-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$(python3 container-compose/Tools/release/resolve-container-ref.py)"
+          if [[ -z "$ref" ]]; then
+            printf 'container ref is empty\n' >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout container dependency
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container
+          path: container
+          ref: ${{ steps.container-ref.outputs.ref }}
+
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
@@ -118,7 +137,7 @@ jobs:
         run: npm install --global markdownlint-cli@0.48.0
 
       - name: Cache local repo tools
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: container-compose/.local/bin
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
@@ -138,7 +157,7 @@ jobs:
     timeout-minutes: 75
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           path: container-compose
           fetch-depth: 0
@@ -176,7 +195,7 @@ jobs:
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/container
           path: container
@@ -184,7 +203,7 @@ jobs:
 
       - name: Checkout containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: stephenlclarke/containerization
           path: containerization
@@ -231,7 +250,7 @@ jobs:
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM build artifacts
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             container-compose/.build
@@ -247,7 +266,7 @@ jobs:
         working-directory: container-compose
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
@@ -289,7 +308,7 @@ jobs:
 
       - name: Cache SonarQube packages
         if: github.ref == 'refs/heads/main'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
@@ -389,7 +408,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout container-compose
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Install Markdown lint
         run: npm install --global markdownlint-cli@0.48.0

@@ -41,7 +41,7 @@ References:
 - `gpus: all`, `gpus: [{count: 1}]`, `gpus: [{device_ids: ["0"]}]`, and equivalent `driver: virtio` requests map to `container run/create --gpus`.
 - Deploy reservations with the generic `gpu` capability map to the same runtime path.
 - Unsupported vendor drivers, extra capabilities, driver options, multiple GPUs, non-zero device IDs, and non-GPU Deploy device reservations fail before resource creation.
-- The runtime exposes Apple virtio-gpu as `/dev/dri/card0` and `/dev/dri/renderD128` in the Linux container.
+- The runtime requests the Apple virtio-gpu VM device and projects supported Linux DRM character-device metadata when the running guest kernel exposes `/dev/dri`.
 
 ## Likely owner
 

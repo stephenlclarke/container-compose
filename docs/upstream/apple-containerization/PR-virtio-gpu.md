@@ -2,10 +2,10 @@
 
 ## Summary
 
-- Add a typed Linux VM graphics-device flag.
+- Add a typed Linux VM graphics-device configuration.
 - Configure Virtualization.framework with `VZVirtioGraphicsDeviceConfiguration` when requested.
-- Enable the guest virtio DRM kernel option.
-- Add regression coverage that proves the flag reaches VM construction.
+- Enable the guest virtio DRM kernel option in the in-repo kernel configs.
+- Add guest-device discovery and regression coverage that proves the flag reaches VM construction.
 
 ## Type of Change
 
@@ -26,16 +26,18 @@ Related upstream references:
 
 ## Implementation Details
 
-- Adds `graphicsDevice` to the Linux container configuration model.
-- Threads the flag through VM manager and VM instance creation.
-- Creates `VZVirtioGraphicsDeviceConfiguration` only when the flag is true.
-- Enables `CONFIG_DRM_VIRTIO_GPU=y` in the guest kernel config.
+- Adds `GraphicsConfiguration` with disabled, device-only, and display scanout modes to the Linux container configuration model.
+- Threads the typed graphics configuration through VM manager and VM instance creation.
+- Creates `VZVirtioGraphicsDeviceConfiguration` only when graphics are enabled.
+- Validates display scanout dimensions before constructing the Virtualization.framework graphics device.
+- Adds `LinuxGuestDeviceRequest` so callers can request guest-created device nodes and resolve OCI device/cgroup metadata from `stat` against the booted VM.
+- Enables `CONFIG_DRM_VIRTIO_GPU=y` in the guest kernel configs so kernels built from this repo can expose `/dev/dri` nodes for the attached virtio-gpu device.
 - Keeps scanout/display policy intentionally minimal and avoids Docker Compose-specific naming or validation.
 
 ## Compatibility Notes
 
 - Existing configurations keep graphics disabled by default.
-- The primitive exposes paravirtual graphics only. Direct Metal/CUDA/vendor GPU passthrough, arbitrary PCI passthrough, and multiple GPU selection remain out of scope.
+- The primitive exposes a paravirtual graphics device only. Direct Metal/CUDA/vendor GPU passthrough, arbitrary PCI passthrough, multiple GPU selection, and claims of hardware-accelerated rendering remain out of scope. Runtime integration records whether the active guest kernel exposes DRM nodes before documenting a specific `/dev/dri` shape.
 
 ## Validation
 

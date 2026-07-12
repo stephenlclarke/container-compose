@@ -226,6 +226,30 @@ repo_path() {
   printf '%s/%s' "${ROOT}" "$1"
 }
 
+# Print the builder image repository, tag, and digest compiled by container.
+container_builder_image_metadata() {
+  local package
+  package="$(repo_path "${CONTAINER_REPO}")/Package.swift"
+  python3 - "${package}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+package = Path(sys.argv[1])
+text = package.read_text(encoding="utf-8")
+
+def read_default(name: str) -> str:
+    match = re.search(rf'let {name} = .*?\?\? "([^"]*)"', text)
+    if not match:
+        raise SystemExit(f"missing {name} default in {package}")
+    return match.group(1)
+
+print(read_default("builderShimRepository"))
+print(read_default("builderShimVersion"))
+print(read_default("builderShimDigest"))
+PY
+}
+
 # Emit a visible section header.
 print_header() {
   printf '\n== %s ==\n' "$1"
@@ -563,22 +587,27 @@ print_component_refs() {
 }
 
 write_release_stack_manifest() {
-  local path manifest builder_ref containerization_ref container_ref
+  local path manifest builder_ref containerization_ref container_ref builder_image_metadata builder_image_repository builder_image_tag builder_image_digest
   path="$(repo_path "${COMPOSE_REPO}")"
   manifest="${path}/Tools/release/stack-refs.json"
   builder_ref="$(git -C "$(repo_path "container-builder-shim")" rev-parse main)"
   containerization_ref="$(git -C "$(repo_path "containerization")" rev-parse main)"
   container_ref="$(git -C "$(repo_path "container")" rev-parse main)"
+  builder_image_metadata="$(container_builder_image_metadata)"
+  builder_image_repository="$(printf '%s\n' "${builder_image_metadata}" | sed -n '1p')"
+  builder_image_tag="$(printf '%s\n' "${builder_image_metadata}" | sed -n '2p')"
+  builder_image_digest="$(printf '%s\n' "${builder_image_metadata}" | sed -n '3p')"
 
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would update: %s\n' "${manifest}"
     printf '  container-builder-shim: %s\n' "${builder_ref}"
+    printf '  builder image:          %s:%s@%s\n' "${builder_image_repository}" "${builder_image_tag}" "${builder_image_digest}"
     printf '  containerization:       %s\n' "${containerization_ref}"
     printf '  container:              %s\n' "${container_ref}"
     return 0
   fi
 
-  python3 - "${manifest}" "${builder_ref}" "${containerization_ref}" "${container_ref}" <<'PY'
+  python3 - "${manifest}" "${builder_ref}" "${builder_image_repository}" "${builder_image_tag}" "${builder_image_digest}" "${containerization_ref}" "${container_ref}" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -591,14 +620,19 @@ data = {
         "container-builder-shim": {
             "repository": "stephenlclarke/container-builder-shim",
             "ref": sys.argv[2],
+            "image": {
+                "repository": sys.argv[3],
+                "tag": sys.argv[4],
+                "digest": sys.argv[5],
+            },
         },
         "containerization": {
             "repository": "stephenlclarke/containerization",
-            "ref": sys.argv[3],
+            "ref": sys.argv[6],
         },
         "container": {
             "repository": "stephenlclarke/container",
-            "ref": sys.argv[4],
+            "ref": sys.argv[7],
         },
     },
 }

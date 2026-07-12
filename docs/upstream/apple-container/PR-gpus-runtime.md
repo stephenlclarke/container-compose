@@ -5,7 +5,7 @@
 - Add repeatable `container run/create --gpus` parsing.
 - Carry Docker-compatible GPU requests through Linux runtime data.
 - Validate the supported Apple virtio-gpu subset before VM creation.
-- Enable the lower-runtime graphics device and project `/dev/dri/card0` plus `/dev/dri/renderD128` into the OCI config.
+- Enable the lower-runtime graphics device and project discovered virtio-gpu DRM character-device metadata into the OCI config.
 
 ## Type of Change
 
@@ -24,14 +24,14 @@ Docker-compatible Compose support needs a runtime bridge for generic GPU request
 - Adds `--gpus <gpu-request>` to run/create management flags.
 - Parses Docker-compatible request CSV, including quoted capabilities/options fields.
 - Accepts only the Apple virtio-gpu subset: one generic GPU, optional `driver=virtio`, device ID `0`, no options, and no extra capabilities.
-- Adds `/dev/dri/card0` and `/dev/dri/renderD128` OCI character devices plus cgroup rules when GPU support is enabled.
+- Requests the common virtio-gpu DRM nodes (`/dev/dri/card0` and `/dev/dri/renderD128`) as optional guest discoveries; the lower runtime resolves type, major/minor, mode, uid, and gid from the booted guest before OCI process start when the guest exposes them.
 - Sets the lower-runtime `graphicsDevice` flag for supported requests.
 
 ## Compatibility Notes
 
 - Existing runtime data without `gpuRequests` still decodes with no GPU request.
 - Unsupported request forms fail early with explicit diagnostics.
-- This does not implement direct Metal/CUDA/vendor GPU passthrough, multiple GPUs, arbitrary device IDs, driver options, PCI passthrough, or arbitrary host hardware passthrough.
+- This does not implement direct Metal/CUDA/vendor GPU passthrough, multiple GPUs, arbitrary device IDs, driver options, PCI passthrough, arbitrary host hardware passthrough, or verified hardware-accelerated rendering.
 
 ## Validation
 

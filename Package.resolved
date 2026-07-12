@@ -11,6 +11,15 @@
       }
     },
     {
+      "identity" : "containerization",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stephenlclarke/containerization.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "41252f26870bc875ea0b3e97e1bb656456f02288"
+      }
+    },
+    {
       "identity" : "grpc-swift-2",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/grpc/grpc-swift-2.git",
