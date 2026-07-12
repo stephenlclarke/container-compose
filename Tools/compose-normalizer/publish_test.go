@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
@@ -365,6 +366,159 @@ func TestCreatePublishApplicationIndexCopiesImagesInServiceOrder(t *testing.T) {
 	}
 }
 
+func TestPublishApplicationIndexPushesApplicationDescriptor(t *testing.T) {
+	project := &types.Project{
+		Services: types.Services{
+			"api": {
+				Name:  "api",
+				Image: "registry.example.com/team/api:1",
+			},
+		},
+	}
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("ParseDockerRef returned error: %v", err)
+	}
+	composeDescriptor := spec.Descriptor{
+		MediaType:    spec.MediaTypeImageManifest,
+		ArtifactType: composeOCI.ComposeProjectArtifactType,
+		Digest:       "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		Size:         42,
+	}
+	pusher := &publishRecordingPusher{}
+	var pusherRefs []string
+
+	application, err := publishApplicationIndex(
+		t.Context(),
+		publishFakeResolver{pusher: pusher, pusherRefs: &pusherRefs},
+		project,
+		target,
+		composeDescriptor,
+		func(_ context.Context, _ remotes.Resolver, image reference.Named, _ reference.Named) (spec.Descriptor, error) {
+			imageBytes := []byte(image.String())
+			return spec.Descriptor{
+				MediaType: spec.MediaTypeImageManifest,
+				Digest:    digest.FromBytes(imageBytes),
+				Size:      int64(len(imageBytes)),
+			}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("publishApplicationIndex returned error: %v", err)
+	}
+	if len(pusherRefs) != 1 || pusherRefs[0] != "registry.example.com/team/app" {
+		t.Fatalf("pusher refs = %#v, want target repository", pusherRefs)
+	}
+	if len(pusher.descriptors) != 1 || pusher.descriptors[0].Digest != application.Digest {
+		t.Fatalf("pushed descriptors = %#v, want application descriptor %s", pusher.descriptors, application.Digest)
+	}
+	if len(pusher.writers) != 1 || string(pusher.writers[0].data) != string(application.Data) {
+		t.Fatalf("pushed application data = %#v, want index bytes", pusher.writers)
+	}
+}
+
+func TestPublishApplicationIndexReturnsPushErrors(t *testing.T) {
+	project := &types.Project{
+		Services: types.Services{
+			"api": {
+				Name:  "api",
+				Image: "registry.example.com/team/api:1",
+			},
+		},
+	}
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("ParseDockerRef returned error: %v", err)
+	}
+
+	_, err = publishApplicationIndex(
+		t.Context(),
+		publishFakeResolver{pusherErr: errors.New("push unavailable")},
+		project,
+		target,
+		spec.Descriptor{},
+		func(_ context.Context, _ remotes.Resolver, image reference.Named, _ reference.Named) (spec.Descriptor, error) {
+			imageBytes := []byte(image.String())
+			return spec.Descriptor{
+				MediaType: spec.MediaTypeImageManifest,
+				Digest:    digest.FromBytes(imageBytes),
+				Size:      int64(len(imageBytes)),
+			}, nil
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "push unavailable") {
+		t.Fatalf("error = %v, want push failure", err)
+	}
+}
+
+func TestCreatePublishApplicationIndexRejectsMissingServiceImage(t *testing.T) {
+	project := &types.Project{
+		Services: types.Services{
+			"api": {
+				Name: "api",
+			},
+		},
+	}
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("ParseDockerRef returned error: %v", err)
+	}
+
+	_, err = createPublishApplicationIndex(t.Context(), nil, project, target, spec.Descriptor{}, nil)
+	if err == nil || !strings.Contains(err.Error(), `publish --app requires service "api" to define an image`) {
+		t.Fatalf("error = %v, want missing image rejection", err)
+	}
+}
+
+func TestCreatePublishApplicationIndexRejectsInvalidServiceImage(t *testing.T) {
+	project := &types.Project{
+		Services: types.Services{
+			"api": {
+				Name:  "api",
+				Image: "bad reference with spaces",
+			},
+		},
+	}
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("ParseDockerRef returned error: %v", err)
+	}
+
+	_, err = createPublishApplicationIndex(t.Context(), nil, project, target, spec.Descriptor{}, nil)
+	if err == nil || !strings.Contains(err.Error(), `invalid image for service "api"`) {
+		t.Fatalf("error = %v, want invalid image rejection", err)
+	}
+}
+
+func TestCreatePublishApplicationIndexWrapsCopyErrors(t *testing.T) {
+	project := &types.Project{
+		Services: types.Services{
+			"api": {
+				Name:  "api",
+				Image: "registry.example.com/team/api:1",
+			},
+		},
+	}
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("ParseDockerRef returned error: %v", err)
+	}
+
+	_, err = createPublishApplicationIndex(
+		t.Context(),
+		nil,
+		project,
+		target,
+		spec.Descriptor{},
+		func(context.Context, remotes.Resolver, reference.Named, reference.Named) (spec.Descriptor, error) {
+			return spec.Descriptor{}, errors.New("copy failed")
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), `failed to copy image for service "api": copy failed`) {
+		t.Fatalf("error = %v, want wrapped copy failure", err)
+	}
+}
+
 func TestPublishRejectsBuildOnlyServices(t *testing.T) {
 	dir := t.TempDir()
 	composeFile := writePublishFixture(t, dir, "compose.yaml", `
@@ -643,4 +797,70 @@ func mustPublishProject(t *testing.T, files []string, projectDirectory string) *
 		t.Fatalf("WithProfiles returned error: %v", err)
 	}
 	return project
+}
+
+type publishFakeResolver struct {
+	pusher     remotes.Pusher
+	pusherErr  error
+	pusherRefs *[]string
+}
+
+func (resolver publishFakeResolver) Resolve(context.Context, string) (string, spec.Descriptor, error) {
+	return "", spec.Descriptor{}, errors.New("resolve is not implemented in tests")
+}
+
+func (resolver publishFakeResolver) Fetcher(context.Context, string) (remotes.Fetcher, error) {
+	return nil, errors.New("fetch is not implemented in tests")
+}
+
+func (resolver publishFakeResolver) Pusher(_ context.Context, ref string) (remotes.Pusher, error) {
+	if resolver.pusherErr != nil {
+		return nil, resolver.pusherErr
+	}
+	if resolver.pusherRefs != nil {
+		*resolver.pusherRefs = append(*resolver.pusherRefs, ref)
+	}
+	return resolver.pusher, nil
+}
+
+type publishRecordingPusher struct {
+	descriptors []spec.Descriptor
+	writers     []*publishRecordingWriter
+}
+
+func (pusher *publishRecordingPusher) Push(_ context.Context, descriptor spec.Descriptor) (content.Writer, error) {
+	pusher.descriptors = append(pusher.descriptors, descriptor)
+	writer := &publishRecordingWriter{}
+	pusher.writers = append(pusher.writers, writer)
+	return writer, nil
+}
+
+type publishRecordingWriter struct {
+	data []byte
+}
+
+func (writer *publishRecordingWriter) Write(data []byte) (int, error) {
+	writer.data = append(writer.data, data...)
+	return len(data), nil
+}
+
+func (writer *publishRecordingWriter) Close() error {
+	return nil
+}
+
+func (writer *publishRecordingWriter) Digest() digest.Digest {
+	return digest.FromBytes(writer.data)
+}
+
+func (writer *publishRecordingWriter) Commit(context.Context, int64, digest.Digest, ...content.Opt) error {
+	return nil
+}
+
+func (writer *publishRecordingWriter) Status() (content.Status, error) {
+	return content.Status{Offset: int64(len(writer.data))}, nil
+}
+
+func (writer *publishRecordingWriter) Truncate(size int64) error {
+	writer.data = writer.data[:int(size)]
+	return nil
 }
