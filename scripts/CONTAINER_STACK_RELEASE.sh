@@ -243,13 +243,92 @@ ensure_repo_exists() {
 
 # Refuse to operate on dirty working trees.
 ensure_clean() {
-  local repo="$1" path status
+  local repo="$1" path status generated_package_resolved
   path="$(repo_path "${repo}")"
+  generated_package_resolved=0
+  if normalize_generated_package_resolved "${repo}"; then
+    generated_package_resolved=1
+  fi
   status="$(git -C "${path}" status --short)"
+  if [[ "${generated_package_resolved}" == "1" && "${EXECUTE}" != "1" ]]; then
+    status="$(printf '%s\n' "${status}" | sed '/^ M Package\.resolved$/d')"
+  fi
   if [[ -n "${status}" ]]; then
     printf 'dirty worktree blocks release for %s:\n%s\n' "${repo}" "${status}" >&2
     exit 1
   fi
+}
+
+# Clear SwiftPM's generated containerization branch pin when it is the only
+# Package.resolved difference. The release stack records the real component SHA
+# in Tools/release/stack-refs.json, so committing this floating branch pin would
+# make release metadata less deterministic.
+normalize_generated_package_resolved() {
+  local repo="$1" path status
+  if [[ "${repo}" != "${COMPOSE_REPO}" ]]; then
+    return 1
+  fi
+
+  path="$(repo_path "${repo}")"
+  status="$(git -C "${path}" status --short -- Package.resolved)"
+  if [[ -z "${status}" ]]; then
+    return 1
+  fi
+
+  if ! python3 - "${path}" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+try:
+    head = subprocess.check_output(
+        ["git", "-C", str(root), "show", "HEAD:Package.resolved"],
+        text=True,
+    )
+    worktree = (root / "Package.resolved").read_text(encoding="utf-8")
+    head_data = json.loads(head)
+    worktree_data = json.loads(worktree)
+except Exception:
+    raise SystemExit(1)
+
+
+def without_generated_containerization_pin(data):
+    copy = json.loads(json.dumps(data))
+    pins = copy.get("pins")
+    if not isinstance(pins, list):
+        return copy
+
+    filtered = []
+    for pin in pins:
+        state = pin.get("state", {})
+        generated = (
+            pin.get("identity") == "containerization"
+            and pin.get("kind") == "remoteSourceControl"
+            and pin.get("location") == "https://github.com/stephenlclarke/containerization.git"
+            and state.get("branch") == "main"
+            and "version" not in state
+        )
+        if not generated:
+            filtered.append(pin)
+    copy["pins"] = filtered
+    return copy
+
+
+raise SystemExit(0 if without_generated_containerization_pin(worktree_data) == head_data else 1)
+PY
+  then
+    return 1
+  fi
+
+  if [[ "${EXECUTE}" == "1" ]]; then
+    printf 'restoring generated SwiftPM containerization branch pin in Package.resolved\n'
+    git -C "${path}" restore -- Package.resolved
+  else
+    printf 'would restore generated SwiftPM containerization branch pin in Package.resolved\n'
+  fi
+  return 0
 }
 
 # Verify that Apple remotes cannot be pushed and stephenlclarke remotes are the target.
