@@ -33,9 +33,10 @@ read, or any difference is not present in the allowlist.
 
 The harness recursively reads root, command, Bridge, and Bridge transformation
 help. It compares command paths and long-option names while ignoring prose,
-spacing, aliases, and terminal color. A green local option can still have a
-narrower runtime mode; [STATUS.md](../../STATUS.md) records those partial
-semantics separately.
+spacing, aliases, and terminal color. Command support is not inferred from the
+option list: a command with all green options can still be partial when the
+remaining Docker Compose gap is tied to operands, output shape, or a runtime
+primitive. [STATUS.md](../../STATUS.md) records those partial semantics.
 
 ## Documented Differences
 

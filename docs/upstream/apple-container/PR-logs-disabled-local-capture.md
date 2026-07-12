@@ -59,7 +59,7 @@ The handoff files are:
 
 - [x] Tested locally
 - [x] Added/updated tests
-- [ ] Added/updated docs
+- [x] Added/updated handoff docs; no Apple user-guide change is needed for this runtime policy primitive.
 
 Local verification:
 

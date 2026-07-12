@@ -45,7 +45,7 @@ Compatibility notes:
 
 - [x] Tested locally
 - [x] Added/updated tests
-- [ ] Added/updated docs
+- [x] Added/updated handoff docs; no public containerization guide change is needed for this lower-runtime API.
 
 Local validation:
 

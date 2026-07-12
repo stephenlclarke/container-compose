@@ -170,6 +170,8 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 
 `container compose --help` and `container compose COMMAND --help` are the authoritative usage views. Every documented long option surface is listed here with per-option parity markers.
 
+A ✅ option means the flag itself is parsed and mapped for the current command behavior. Command parity is still a separate axis: `cp` lists only green options, for example, while the command remains ⚠️ partial because Docker Compose `-` tar streaming is an operand/runtime-stream behavior rather than a long option.
+
 | Option Surface | Parity | Details |
 | --- | --- | --- |
 | Root options | ⚠️ Partial | ✅ `--all-resources`: selected-service `config` and `convert` output keeps unreferenced top-level networks, volumes, configs, and secrets, ✅ `--ansi`, ✅ `--compatibility`: uses Docker Compose legacy underscore separators for generated service and one-off container names, ✅ `--dry-run`, ✅ `--env-file`, ✅ `--file`, ✅ `--profile`, ✅ `--progress`, ✅ `--project-directory`, ✅ `--project-name`, ✅ `--verbose`; ⚠️ `--parallel`: caps repeated `pull` and `push` image operations while dependency-sensitive orchestration stays ordered. |
