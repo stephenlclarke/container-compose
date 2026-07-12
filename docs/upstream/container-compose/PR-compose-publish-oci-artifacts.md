@@ -31,7 +31,7 @@ container compose -f oci://registry.example.com/team/app:latest config
 
 - `29e3eea5 feat(publish): support Compose OCI project artifacts`
 - `2344ba5c feat(publish): pin image digests in OCI artifacts`
-- `2c3659e2 feat(publish): support application image indexes`
+- `325ed189 feat(publish): support application image indexes`
 
 ## Validation
 
