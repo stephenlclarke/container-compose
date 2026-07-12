@@ -565,11 +565,12 @@ services:
 		publishOptions{
 			repository: "registry.example.com/team/app:latest",
 			dryRun:     true,
+			prompt:     &publishPromptRecorder{answers: []bool{false}},
 		},
 		io.Discard,
 	)
-	if err == nil || !strings.Contains(err.Error(), "pass --yes") {
-		t.Fatalf("error = %v, want bind mount confirmation rejection", err)
+	if err == nil || !strings.Contains(err.Error(), "publish canceled") {
+		t.Fatalf("error = %v, want publish cancellation", err)
 	}
 }
 
@@ -599,6 +600,237 @@ services:
 	)
 	if err != nil {
 		t.Fatalf("publishComposeProject returned error: %v", err)
+	}
+}
+
+func TestPublishPromptReadsSequentialAnswers(t *testing.T) {
+	output := &strings.Builder{}
+	prompt := newPublishPrompt(strings.NewReader("y\nn\n"), output, false)
+
+	first, err := prompt.Confirm("first?", false)
+	if err != nil {
+		t.Fatalf("first Confirm returned error: %v", err)
+	}
+	second, err := prompt.Confirm("second?", true)
+	if err != nil {
+		t.Fatalf("second Confirm returned error: %v", err)
+	}
+
+	if !first || second {
+		t.Fatalf("answers = (%v, %v), want (true, false)", first, second)
+	}
+	if got := output.String(); !strings.Contains(got, "first? [y/N]: ") || !strings.Contains(got, "second? [y/N]: ") {
+		t.Fatalf("prompt output = %q, want both prompts", got)
+	}
+}
+
+func TestPublishPromptDefaultsAndAssumeYes(t *testing.T) {
+	output := &strings.Builder{}
+	assumeYes := newPublishPrompt(strings.NewReader(""), output, true)
+	ok, err := assumeYes.Confirm("ignored?", false)
+	if err != nil {
+		t.Fatalf("assume-yes Confirm returned error: %v", err)
+	}
+	if !ok || output.Len() != 0 {
+		t.Fatalf("assume-yes = (%v, %q), want true without output", ok, output.String())
+	}
+
+	prompt := newPublishPrompt(strings.NewReader("\nmaybe\n"), output, false)
+	first, err := prompt.Confirm("default yes?", true)
+	if err != nil {
+		t.Fatalf("default yes Confirm returned error: %v", err)
+	}
+	second, err := prompt.Confirm("default no?", false)
+	if err != nil {
+		t.Fatalf("default no Confirm returned error: %v", err)
+	}
+	if !first || second {
+		t.Fatalf("answers = (%v, %v), want defaults (true, false)", first, second)
+	}
+}
+
+func TestPublishEnvAndConfigPreflightPrompts(t *testing.T) {
+	dir := t.TempDir()
+	_ = writePublishFixture(t, dir, ".env", "TOKEN=from-file\n")
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+    env_file:
+      - .env
+    environment:
+      LOG_LEVEL: info
+      MYSQL_ROOT_PASSWORD: toto
+      SYMBOLIC_SECRET: ${SECRET}
+configs:
+  app_config:
+    content: |
+      password=literal
+  symbolic_config:
+    content: ${CONFIG_CONTENT}
+`)
+	project := mustPublishProject(t, []string{composeFile}, dir)
+	prompt := &publishPromptRecorder{answers: []bool{true, true}}
+
+	err := checkPublishEnvironmentVariables(project, publishOptions{}, prompt)
+	if err != nil {
+		t.Fatalf("checkPublishEnvironmentVariables returned error: %v", err)
+	}
+	if len(prompt.messages) != 2 {
+		t.Fatalf("messages = %#v, want env and config prompts", prompt.messages)
+	}
+	if !strings.Contains(prompt.messages[0], `service "api": env_file declared`) {
+		t.Fatalf("env prompt = %q, want env_file finding", prompt.messages[0])
+	}
+	if !strings.Contains(prompt.messages[0], `"MYSQL_ROOT_PASSWORD"`) {
+		t.Fatalf("env prompt = %q, want sensitive-looking key", prompt.messages[0])
+	}
+	if strings.Contains(prompt.messages[0], "LOG_LEVEL") || strings.Contains(prompt.messages[0], "SYMBOLIC_SECRET") {
+		t.Fatalf("env prompt = %q, want benign and symbolic values excluded", prompt.messages[0])
+	}
+	if !strings.Contains(prompt.messages[1], `config "app_config"`) || strings.Contains(prompt.messages[1], "symbolic_config") {
+		t.Fatalf("config prompt = %q, want only literal config content", prompt.messages[1])
+	}
+}
+
+func TestPublishWithEnvSilencesEnvPromptButKeepsConfigContentPrompt(t *testing.T) {
+	dir := t.TempDir()
+	_ = writePublishFixture(t, dir, ".env", "TOKEN=from-file\n")
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+    env_file:
+      - .env
+configs:
+  app_config:
+    content: password=literal
+`)
+	project := mustPublishProject(t, []string{composeFile}, dir)
+	prompt := &publishPromptRecorder{answers: []bool{true}}
+
+	err := checkPublishEnvironmentVariables(project, publishOptions{withEnv: true}, prompt)
+	if err != nil {
+		t.Fatalf("checkPublishEnvironmentVariables returned error: %v", err)
+	}
+	if len(prompt.messages) != 1 || !strings.Contains(prompt.messages[0], `config "app_config"`) {
+		t.Fatalf("messages = %#v, want only config content prompt", prompt.messages)
+	}
+}
+
+func TestPublishEnvironmentPreflightSkipsEmptyProject(t *testing.T) {
+	prompt := &publishPromptRecorder{err: errors.New("prompt should not run")}
+
+	err := checkPublishEnvironmentVariables(&types.Project{}, publishOptions{}, prompt)
+	if err != nil {
+		t.Fatalf("checkPublishEnvironmentVariables returned error: %v", err)
+	}
+	if len(prompt.messages) != 0 {
+		t.Fatalf("messages = %#v, want no prompts", prompt.messages)
+	}
+}
+
+func TestPublishConfirmPropagatesPromptErrors(t *testing.T) {
+	want := errors.New("prompt unavailable")
+	err := confirmPublish(&publishPromptRecorder{err: want}, "continue?")
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
+
+func TestPublishComposeFileReaderReportsMissingFile(t *testing.T) {
+	_, err := publishComposeFileAsReader(filepath.Join(t.TempDir(), "missing.yaml"))
+	if err == nil || !strings.Contains(err.Error(), "failed to open compose file") {
+		t.Fatalf("error = %v, want compose file open failure", err)
+	}
+}
+
+func TestPublishSensitiveDataPreflightPromptsForDetectedFiles(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+`)
+	envFile := writePublishFixture(t, dir, ".env", "AWS_SECRET_ACCESS_KEY=abcdefghijklmnop\n")
+	configFile := writePublishFixture(t, dir, "config.env", "PASSWORD=super-secret-value\n")
+	secretFile := writePublishFixture(t, dir, "secret.env", "TOKEN=another-secret-value\n")
+	project := &types.Project{
+		ComposeFiles: []string{composeFile},
+		Services: types.Services{
+			"api": {
+				Name:     "api",
+				Image:    "alpine",
+				EnvFiles: []types.EnvFile{{Path: envFile, Required: true}},
+			},
+		},
+		Configs: types.Configs{
+			"app_config": types.ConfigObjConfig{File: configFile},
+		},
+		Secrets: types.Secrets{
+			"app_secret": types.SecretConfig{File: secretFile},
+		},
+	}
+	prompt := &publishPromptRecorder{answers: []bool{true}}
+
+	err := checkPublishSensitiveData(project, prompt)
+	if err != nil {
+		t.Fatalf("checkPublishSensitiveData returned error: %v", err)
+	}
+	if len(prompt.messages) != 1 || !strings.Contains(prompt.messages[0], "sensitive data") {
+		t.Fatalf("messages = %#v, want one sensitive-data prompt", prompt.messages)
+	}
+	for _, rawValue := range []string{"abcdefghijklmnop", "super-secret-value", "another-secret-value"} {
+		if strings.Contains(prompt.messages[0], rawValue) {
+			t.Fatalf("sensitive-data prompt leaked raw value %q in %q", rawValue, prompt.messages[0])
+		}
+	}
+	if !strings.Contains(prompt.messages[0], "redacted") {
+		t.Fatalf("message = %q, want redaction notice", prompt.messages[0])
+	}
+}
+
+func TestPublishSensitiveDataPreflightCancellation(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", "services: {}\n")
+	envFile := writePublishFixture(t, dir, ".env", "AWS_SECRET_ACCESS_KEY=abcdefghijklmnop\n")
+	project := &types.Project{
+		ComposeFiles: []string{composeFile},
+		Services: types.Services{
+			"api": {
+				Name:     "api",
+				Image:    "alpine",
+				EnvFiles: []types.EnvFile{{Path: envFile, Required: true}},
+			},
+		},
+	}
+	prompt := &publishPromptRecorder{answers: []bool{false}}
+
+	err := checkPublishSensitiveData(project, prompt)
+	if err == nil || !strings.Contains(err.Error(), "publish canceled") {
+		t.Fatalf("error = %v, want publish cancellation", err)
+	}
+}
+
+func TestPublishSensitiveDataPreflightSkipsOptionalMissingEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+    env_file:
+      - path: missing.env
+        required: false
+`)
+	project := mustPublishProject(t, []string{composeFile}, dir)
+	prompt := &publishPromptRecorder{answers: []bool{true}}
+
+	err := checkPublishSensitiveData(project, prompt)
+	if err != nil {
+		t.Fatalf("checkPublishSensitiveData returned error: %v", err)
+	}
+	if len(prompt.messages) != 0 {
+		t.Fatalf("messages = %#v, want no sensitive-data prompt", prompt.messages)
 	}
 }
 
@@ -858,6 +1090,25 @@ func (writer *publishRecordingWriter) Commit(context.Context, int64, digest.Dige
 
 func (writer *publishRecordingWriter) Status() (content.Status, error) {
 	return content.Status{Offset: int64(len(writer.data))}, nil
+}
+
+type publishPromptRecorder struct {
+	answers  []bool
+	messages []string
+	err      error
+}
+
+func (recorder *publishPromptRecorder) Confirm(message string, _ bool) (bool, error) {
+	recorder.messages = append(recorder.messages, message)
+	if recorder.err != nil {
+		return false, recorder.err
+	}
+	if len(recorder.answers) == 0 {
+		return false, nil
+	}
+	answer := recorder.answers[0]
+	recorder.answers = recorder.answers[1:]
+	return answer, nil
 }
 
 func (writer *publishRecordingWriter) Truncate(size int64) error {

@@ -20,6 +20,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -30,6 +32,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DefangLabs/secret-detector/pkg/detectors/keyword"
+	"github.com/DefangLabs/secret-detector/pkg/scanner"
+	"github.com/DefangLabs/secret-detector/pkg/secrets"
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/containerd/v2/core/remotes"
@@ -54,6 +59,7 @@ type publishOptions struct {
 	dryRun              bool
 	imageDigestResolver func(reference.Named) (digest.Digest, error)
 	imageCopier         publishImageCopier
+	prompt              publishPrompter
 }
 
 type publishResult struct {
@@ -111,10 +117,10 @@ func publishComposeProject(
 	if err := checkPublishBuildOnlyServices(project); err != nil {
 		return nil, err
 	}
-	if err := checkPublishBindMounts(project, options.assumeYes); err != nil {
+	if err := checkPublishLocalIncludes(project.ComposeFiles); err != nil {
 		return nil, err
 	}
-	if err := checkPublishLocalIncludes(project.ComposeFiles); err != nil {
+	if err := checkPublishPreflight(ctx, project, options, stderr); err != nil {
 		return nil, err
 	}
 
@@ -194,20 +200,469 @@ func checkPublishBuildOnlyServices(project *types.Project) error {
 	return errors.New(strings.TrimSuffix(message.String(), "\n"))
 }
 
-func checkPublishBindMounts(project *types.Project, assumeYes bool) error {
-	var findings []string
+func checkPublishPreflight(ctx context.Context, project *types.Project, options publishOptions, stderr io.Writer) error {
+	prompt := options.prompt
+	if prompt == nil {
+		prompt = newPublishPrompt(os.Stdin, stderr, options.assumeYes)
+	}
+
+	if err := checkPublishBindMounts(project, prompt); err != nil {
+		return err
+	}
+	if err := checkPublishSensitiveData(project, prompt); err != nil {
+		return err
+	}
+	return checkPublishEnvironmentVariables(project, options, prompt)
+}
+
+type publishPrompter interface {
+	Confirm(message string, defaultValue bool) (bool, error)
+}
+
+type publishPrompt struct {
+	input     *bufio.Reader
+	output    io.Writer
+	assumeYes bool
+}
+
+func newPublishPrompt(input io.Reader, output io.Writer, assumeYes bool) publishPrompter {
+	return &publishPrompt{
+		input:     bufio.NewReader(input),
+		output:    output,
+		assumeYes: assumeYes,
+	}
+}
+
+func (prompt *publishPrompt) Confirm(message string, defaultValue bool) (bool, error) {
+	if prompt.assumeYes {
+		return true, nil
+	}
+	if _, err := fmt.Fprintf(prompt.output, "%s [y/N]: ", message); err != nil {
+		return false, err
+	}
+	answer, err := prompt.input.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		return defaultValue, nil
+	}
+	switch strings.ToLower(answer) {
+	case "y", "yes", "true", "1":
+		return true, nil
+	case "n", "no", "false", "0":
+		return false, nil
+	default:
+		return defaultValue, nil
+	}
+}
+
+func checkPublishBindMounts(project *types.Project, prompt publishPrompter) error {
+	findings := map[string][]types.ServiceVolumeConfig{}
 	for _, service := range project.Services {
 		for _, volume := range service.Volumes {
 			if volume.Type == types.VolumeTypeBind {
-				findings = append(findings, fmt.Sprintf("%s:%s", service.Name, volume.String()))
+				findings[service.Name] = append(findings[service.Name], volume)
 			}
 		}
 	}
-	if len(findings) == 0 || assumeYes {
+	if len(findings) == 0 {
 		return nil
 	}
-	sort.Strings(findings)
-	return fmt.Errorf("publish would include bind mount declarations (%s); pass --yes to publish declarations without host content", strings.Join(findings, ", "))
+	var message strings.Builder
+	message.WriteString("you are about to publish bind mounts declaration within your OCI artifact.\n")
+	message.WriteString("only the bind mount declarations will be added to the OCI artifact (not content)\n")
+	message.WriteString("please double check that you are not mounting potential user's sensitive directories or data\n")
+	for _, serviceName := range sortedMapKeys(findings) {
+		message.WriteString(serviceName)
+		message.WriteRune('\n')
+		for _, volume := range findings[serviceName] {
+			message.WriteString(volume.String())
+			message.WriteRune('\n')
+		}
+	}
+	message.WriteString("Are you ok to publish these bind mount declarations?")
+	return confirmPublish(prompt, message.String())
+}
+
+func checkPublishSensitiveData(project *types.Project, prompt publishPrompter) error {
+	detected, err := collectPublishSensitiveData(project)
+	if err != nil {
+		return err
+	}
+	if len(detected) == 0 {
+		return nil
+	}
+	var message strings.Builder
+	message.WriteString("you are about to publish sensitive data within your OCI artifact.\n")
+	message.WriteString("please double check that you are not leaking sensitive data\n")
+	for _, finding := range detected {
+		message.WriteString(formatPublishSecretFinding(finding))
+		message.WriteRune('\n')
+	}
+	message.WriteString("Are you ok to publish these sensitive data?")
+	return confirmPublish(prompt, message.String())
+}
+
+func formatPublishSecretFinding(finding secrets.DetectedSecret) string {
+	if finding.Key == "" {
+		return fmt.Sprintf("%s: detected value redacted", finding.Type)
+	}
+	return fmt.Sprintf("%s %q: detected value redacted", finding.Type, finding.Key)
+}
+
+func collectPublishSensitiveData(project *types.Project) ([]secrets.DetectedSecret, error) {
+	scan := scanner.NewDefaultScanner()
+	var findings []secrets.DetectedSecret
+	for _, file := range project.ComposeFiles {
+		reader, err := publishComposeFileAsReader(file)
+		if err != nil {
+			return nil, err
+		}
+		fileFindings, err := scan.ScanReader(reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan compose file %s: %w", file, err)
+		}
+		findings = append(findings, fileFindings...)
+	}
+	for _, service := range project.Services {
+		for _, envFile := range service.EnvFiles {
+			if _, statErr := os.Stat(envFile.Path); statErr != nil {
+				if !os.IsNotExist(statErr) {
+					return nil, fmt.Errorf("failed to access env file %s: %w", envFile.Path, statErr)
+				}
+				if envFile.Required {
+					return nil, fmt.Errorf("env file %s not found", envFile.Path)
+				}
+				continue
+			}
+			fileFindings, err := scan.ScanFile(envFile.Path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to scan env file %s: %w", envFile.Path, err)
+			}
+			findings = append(findings, fileFindings...)
+		}
+	}
+	for _, config := range project.Configs {
+		if config.File == "" {
+			continue
+		}
+		fileFindings, err := scan.ScanFile(config.File)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan config file %s: %w", config.File, err)
+		}
+		findings = append(findings, fileFindings...)
+	}
+	for _, secret := range project.Secrets {
+		if secret.File == "" {
+			continue
+		}
+		fileFindings, err := scan.ScanFile(secret.File)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan secret file %s: %w", secret.File, err)
+		}
+		findings = append(findings, fileFindings...)
+	}
+	return findings, nil
+}
+
+type envCheckFindings struct {
+	services              map[string]*serviceEnvFindings
+	configsLiteralContent []string
+}
+
+type serviceEnvFindings struct {
+	hasEnvFile     bool
+	suspiciousKeys map[string]struct{}
+}
+
+func (findings *serviceEnvFindings) sortedSuspiciousKeys() []string {
+	return sortedMapKeys(findings.suspiciousKeys)
+}
+
+func (findings *envCheckFindings) hasEnvFinding() bool {
+	for _, service := range findings.services {
+		if service.hasEnvFile || len(service.suspiciousKeys) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func checkPublishEnvironmentVariables(project *types.Project, options publishOptions, prompt publishPrompter) error {
+	if len(project.ComposeFiles) == 0 {
+		return nil
+	}
+	findings, err := collectEnvCheckFindings(project)
+	if err != nil {
+		return err
+	}
+	if !options.withEnv && findings.hasEnvFinding() {
+		if err := confirmPublish(prompt, buildEnvPromptMessage(findings.services)); err != nil {
+			return err
+		}
+	}
+	if len(findings.configsLiteralContent) > 0 {
+		if err := confirmPublish(prompt, buildConfigContentPromptMessage(findings.configsLiteralContent)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func collectEnvCheckFindings(project *types.Project) (*envCheckFindings, error) {
+	findings := &envCheckFindings{services: map[string]*serviceEnvFindings{}}
+	literalConfigs := map[string]struct{}{}
+	detector := keyword.NewDetector("0")
+
+	seen := map[string]struct{}{}
+	queue := append([]string(nil), project.ComposeFiles...)
+	for len(queue) > 0 {
+		file := queue[0]
+		queue = queue[1:]
+		if _, ok := seen[file]; ok {
+			continue
+		}
+		seen[file] = struct{}{}
+
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open compose file %s: %w", file, err)
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			return nil, fmt.Errorf("failed to load compose file %s: %w", file, err)
+		}
+		root := documentRoot(&doc)
+		if root == nil {
+			continue
+		}
+
+		services := mappingValue(root, "services")
+		for _, serviceName := range sortedMappingKeys(services) {
+			service := mappingEntry(services, serviceName)
+			recordServiceEnvFindings(findings.services, detector, serviceName, service)
+			if parent := localExtendsParent(file, service); parent != "" {
+				queue = append(queue, parent)
+			}
+		}
+		configs := mappingValue(root, "configs")
+		for _, name := range sortedMappingKeys(configs) {
+			config := mappingEntry(configs, name)
+			content := mappingScalar(config, "content")
+			if content != "" && configContentLooksLiteral(content, detector) {
+				literalConfigs[name] = struct{}{}
+			}
+		}
+	}
+
+	if len(literalConfigs) > 0 {
+		findings.configsLiteralContent = sortedMapKeys(literalConfigs)
+	}
+	return findings, nil
+}
+
+func recordServiceEnvFindings(
+	services map[string]*serviceEnvFindings,
+	detector secrets.Detector,
+	serviceName string,
+	service *yaml.Node,
+) {
+	envValues := serviceEnvironmentValues(service)
+	hits, _ := detector.ScanMap(envValues)
+	hasEnvFile := serviceEnvFileDeclared(service)
+	if len(hits) == 0 && !hasEnvFile {
+		return
+	}
+
+	findings := services[serviceName]
+	if findings == nil {
+		findings = &serviceEnvFindings{suspiciousKeys: map[string]struct{}{}}
+		services[serviceName] = findings
+	}
+	if hasEnvFile {
+		findings.hasEnvFile = true
+	}
+	for _, hit := range hits {
+		findings.suspiciousKeys[hit.Key] = struct{}{}
+	}
+}
+
+func configContentLooksLiteral(content string, detector secrets.Detector) bool {
+	hits, _ := detector.ScanMap(map[string]string{"password": replaceDollarEscape(content)})
+	return len(hits) > 0
+}
+
+func replaceDollarEscape(value string) string {
+	return strings.ReplaceAll(value, "$$", "X")
+}
+
+func serviceEnvironmentValues(service *yaml.Node) map[string]string {
+	values := map[string]string{}
+	environment := mappingValue(service, "environment")
+	if environment == nil {
+		return values
+	}
+	switch environment.Kind {
+	case yaml.MappingNode:
+		for index := 0; index < len(environment.Content); index += 2 {
+			key := environment.Content[index]
+			value := environment.Content[index+1]
+			if key.Kind != yaml.ScalarNode || value.Kind != yaml.ScalarNode {
+				continue
+			}
+			values[key.Value] = replaceDollarEscape(value.Value)
+		}
+	case yaml.SequenceNode:
+		for _, item := range environment.Content {
+			if item.Kind != yaml.ScalarNode {
+				continue
+			}
+			key, value, ok := strings.Cut(item.Value, "=")
+			if !ok || key == "" {
+				continue
+			}
+			values[key] = replaceDollarEscape(value)
+		}
+	}
+	return values
+}
+
+func serviceEnvFileDeclared(service *yaml.Node) bool {
+	envFile := mappingValue(service, "env_file")
+	if envFile == nil {
+		return false
+	}
+	switch envFile.Kind {
+	case yaml.ScalarNode:
+		return envFile.Value != ""
+	case yaml.SequenceNode:
+		return len(envFile.Content) > 0
+	case yaml.MappingNode:
+		return len(envFile.Content) > 0
+	default:
+		return false
+	}
+}
+
+func localExtendsParent(currentFile string, service *yaml.Node) string {
+	extends := mappingValue(service, "extends")
+	if extends == nil {
+		return ""
+	}
+	var parent string
+	switch extends.Kind {
+	case yaml.ScalarNode:
+		parent = extends.Value
+	case yaml.MappingNode:
+		parent = mappingScalar(extends, "file")
+	}
+	if parent == "" || isRemotePublishResource(parent) {
+		return ""
+	}
+	if !filepath.IsAbs(parent) {
+		parent = filepath.Join(filepath.Dir(currentFile), parent)
+	}
+	if _, err := os.Stat(parent); err != nil {
+		return ""
+	}
+	return parent
+}
+
+func buildEnvPromptMessage(services map[string]*serviceEnvFindings) string {
+	var message strings.Builder
+	message.WriteString("you are about to publish env-related declarations within your OCI artifact.\n")
+	message.WriteString("env_file paths and literal values for sensitive-looking keys are embedded as-is in the published YAML;\n")
+	message.WriteString("interpolated values like \"${VAR}\" are kept symbolic and have already been excluded.\n")
+	for _, name := range sortedMapKeys(services) {
+		findings := services[name]
+		if findings.hasEnvFile {
+			fmt.Fprintf(&message, "  service %q: env_file declared\n", name)
+		}
+		if keys := findings.sortedSuspiciousKeys(); len(keys) > 0 {
+			quoted := make([]string, len(keys))
+			for index, key := range keys {
+				quoted[index] = fmt.Sprintf("%q", key)
+			}
+			fmt.Fprintf(&message, "  service %q: literal value for %s\n", name, strings.Join(quoted, ", "))
+		}
+	}
+	message.WriteString("Use --with-env to silence this prompt and always publish env declarations.\n")
+	message.WriteString("Are you ok to publish these env declarations?")
+	return message.String()
+}
+
+func buildConfigContentPromptMessage(configs []string) string {
+	var message strings.Builder
+	message.WriteString("you are about to publish literal inline config content within your OCI artifact.\n")
+	for _, name := range configs {
+		fmt.Fprintf(&message, "  config %q\n", name)
+	}
+	message.WriteString("Are you ok to publish these config contents?")
+	return message.String()
+}
+
+func confirmPublish(prompt publishPrompter, message string) error {
+	ok, err := prompt.Confirm(message, false)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("publish canceled")
+	}
+	return nil
+}
+
+func publishComposeFileAsReader(file string) (io.Reader, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open compose file %s: %w", file, err)
+	}
+	return bytes.NewBuffer(data), nil
+}
+
+func documentRoot(doc *yaml.Node) *yaml.Node {
+	if doc == nil || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	return doc.Content[0]
+}
+
+func sortedMappingKeys(root *yaml.Node) []string {
+	if root == nil || root.Kind != yaml.MappingNode {
+		return nil
+	}
+	keys := make([]string, 0, len(root.Content)/2)
+	for index := 0; index < len(root.Content); index += 2 {
+		key := root.Content[index]
+		if key.Kind == yaml.ScalarNode {
+			keys = append(keys, key.Value)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func mappingEntry(root *yaml.Node, key string) *yaml.Node {
+	if root == nil || root.Kind != yaml.MappingNode {
+		return nil
+	}
+	for index := 0; index < len(root.Content); index += 2 {
+		candidate := root.Content[index]
+		if candidate.Kind == yaml.ScalarNode && candidate.Value == key {
+			return root.Content[index+1]
+		}
+	}
+	return nil
+}
+
+func mappingScalar(root *yaml.Node, key string) string {
+	value := mappingValue(root, key)
+	if value == nil || value.Kind != yaml.ScalarNode {
+		return ""
+	}
+	return value.Value
 }
 
 func createPublishLayers(ctx context.Context, project *types.Project, options publishOptions) ([]spec.Descriptor, error) {
