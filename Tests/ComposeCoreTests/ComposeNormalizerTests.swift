@@ -1332,6 +1332,29 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.contains("--publish-dry-run"))
         #expect(command.arguments.containsSequence(["--file", "\(currentDirectory)/compose.yml"]))
         #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+        #expect(command.io == .captured(input: nil))
+    }
+
+    @Test("normalizer keeps publish prompts attached when --yes is absent")
+    func normalizerKeepsPublishPromptsAttachedWhenYesIsAbsent() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"repository":"registry.example.com/team/app:latest","ociVersion":"1.0","dryRun":false,"layers":[]}"#,
+                stderr: ""
+            ),
+        ])
+
+        _ = try await ComposeNormalizer(runner: runner).publish(
+            options: ComposeOptions(files: ["compose.yml"], projectDirectory: "/tmp/demo"),
+            publish: ComposePublishOptions(
+                repository: "registry.example.com/team/app:latest",
+                assumeYes: false
+            )
+        )
+
+        let command = try #require(runner.commands.first)
+        #expect(command.io == .capturedOutputInheritingInputAndError)
     }
 
     @Test("normalizer forwards inferred project directory")

@@ -154,7 +154,8 @@ in [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md) and
 
 `oci://` Compose project artifact loading, `compose publish --dry-run`, the
 image-digest override layer and application image index emitted by
-`compose publish`, and the publish preflight/service-image-push/artifact-publish order are covered by Go
+`compose publish`, Docker-compatible publish preflight prompts, and the
+preflight/service-image-push/artifact-publish order are covered by Go
 OCI/publish tests, Swift normalizer integration tests, and the CLI smoke target.
 Live registry publish/fetch validation belongs in an explicit environment that
 can provide deterministic credentials and cleanup.

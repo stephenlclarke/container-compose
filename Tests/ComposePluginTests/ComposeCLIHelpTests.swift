@@ -109,20 +109,16 @@ struct ComposeCLIHelpTests {
         }
     }
 
-    @Test("copy, publish, and top expose command-level parity limitations")
-    func copyPublishAndTopExposeCommandLevelParityLimitations() throws {
+    @Test("partial commands expose command-level parity limitations")
+    func partialCommandsExposeCommandLevelParityLimitations() throws {
         let copyHelp = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
         let publishHelp = try #require(ComposeCLIHelp.commandHelpText(command: "publish"))
         let topHelp = try #require(ComposeCLIHelp.commandHelpText(command: "top"))
-        let publishLimitations = try #require(
-            publishHelp.split(separator: "\n").first { $0.hasPrefix("Limitations:") })
 
         #expect(copyHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(copyHelp.contains("stdin/stdout tar streaming"))
-        #expect(publishHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(publishHelp.contains("interactive sensitive-data publish prompts"))
-        #expect(!publishLimitations.contains("--resolve-image-digests"))
-        #expect(!publishLimitations.contains("--app image indexes"))
+        #expect(publishHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(!publishHelp.contains("Limitations:"))
         #expect(topHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(topHelp.contains("full process metadata table"))
     }

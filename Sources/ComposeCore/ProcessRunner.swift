@@ -41,6 +41,7 @@ public struct CommandResult: Equatable, Sendable {
 /// Controls how a command connects to the parent process streams.
 public enum CommandIO: Equatable, Sendable {
     case captured(input: Data?)
+    case capturedOutputInheritingInputAndError
     case inherited
     case replacingProcess
 }
@@ -101,6 +102,13 @@ public struct ProcessRunner: CommandRunning {
                 environment: environment,
                 input: input
             )
+        case .capturedOutputInheritingInputAndError:
+            try await runCapturedOutputInheritingInputAndError(
+                executable,
+                arguments,
+                workingDirectory: workingDirectory,
+                environment: environment
+            )
         case .inherited:
             try await runInheritingIO(
                 executable,
@@ -115,6 +123,46 @@ public struct ProcessRunner: CommandRunning {
                 workingDirectory: workingDirectory,
                 environment: environment
             )
+        }
+    }
+
+    /// Runs a child process with stdin/stderr attached and stdout captured.
+    private func runCapturedOutputInheritingInputAndError(
+        _ executable: String,
+        _ arguments: [String],
+        workingDirectory: URL?,
+        environment: [String: String]?
+    ) async throws -> CommandResult {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            let stdout = Pipe()
+
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = arguments
+            process.standardInput = FileHandle.standardInput
+            process.standardOutput = stdout
+            process.standardError = FileHandle.standardError
+            if let workingDirectory {
+                process.currentDirectoryURL = workingDirectory
+            }
+            if let environment {
+                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+            }
+
+            let state = StdoutProcessRunState(continuation: continuation)
+            process.terminationHandler = { process in
+                state.completeProcess(status: process.terminationStatus)
+            }
+
+            do {
+                try process.run()
+                state.drain(stdout.fileHandleForReading)
+            } catch {
+                if process.isRunning {
+                    process.terminate()
+                }
+                state.fail(error)
+            }
         }
     }
 
@@ -257,6 +305,80 @@ private final class InheritedProcessRunState: @unchecked Sendable {
     func fail(_ error: Error) {
         let continuation = takeContinuation()
         continuation?.resume(throwing: error)
+    }
+
+    /// Removes and returns the continuation while holding the state lock.
+    private func takeContinuation() -> CheckedContinuation<CommandResult, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        let continuation = continuation
+        self.continuation = nil
+        return continuation
+    }
+}
+
+/// Coordinates process termination with stdout pipe drainage.
+private final class StdoutProcessRunState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<CommandResult, Error>?
+    private var stdout = Data()
+    private var stdoutFinished = false
+    private var status: Int32?
+
+    init(continuation: CheckedContinuation<CommandResult, Error>) {
+        self.continuation = continuation
+    }
+
+    /// Starts asynchronous stdout drainage.
+    func drain(_ handle: FileHandle) {
+        DispatchQueue.global(qos: .utility).async {
+            let data = handle.readDataToEndOfFile()
+            self.finish { state in
+                state.stdout = data
+                state.stdoutFinished = true
+            }
+        }
+    }
+
+    /// Records the child process exit status and completes if stdout finished.
+    func completeProcess(status: Int32) {
+        finish { state in
+            state.status = status
+        }
+    }
+
+    /// Fails the pending command immediately after a process launch error.
+    func fail(_ error: Error) {
+        let continuation = takeContinuation()
+        continuation?.resume(throwing: error)
+    }
+
+    /// Applies a state update under lock and resumes outside the lock if done.
+    private func finish(_ update: (StdoutProcessRunState) -> Void) {
+        let completion: (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)?
+        lock.lock()
+        update(self)
+        completion = completedResultLocked()
+        lock.unlock()
+        if let completion {
+            completion.continuation.resume(returning: completion.result)
+        }
+    }
+
+    /// Returns a command result only after process and stdout end.
+    private func completedResultLocked() -> (continuation: CheckedContinuation<CommandResult, Error>, result: CommandResult)? {
+        guard let status, stdoutFinished, let continuation else {
+            return nil
+        }
+        self.continuation = nil
+        return (
+            continuation,
+            CommandResult(
+                status: status,
+                stdout: String(decoding: stdout, as: UTF8.self),
+                stderr: ""
+            )
+        )
     }
 
     /// Removes and returns the continuation while holding the state lock.

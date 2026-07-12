@@ -13,6 +13,9 @@
 - [docker/compose#13849](https://github.com/docker/compose/pull/13849) fixes `publish` short-form port handling.
 - [docker/compose#13672](https://github.com/docker/compose/issues/13672) reports the short-form port regression fixed by `docker/compose#13849`.
 - [docker/compose#13722](https://github.com/docker/compose/issues/13722) tracks noninteractive `--yes` behavior around publish preflight prompts.
+- [docker/compose#13394](https://github.com/docker/compose/issues/13394) tracks publish safety checks for sensitive-looking environment variables.
+- [docker/compose@eb4b1cc](https://github.com/docker/compose/commit/eb4b1cc3f6ee5c0aee590ccb2c8d8b4a590f5780) adds the upstream sensitive-looking environment variable prompt.
+- [docker/compose@9cd8442](https://github.com/docker/compose/commit/9cd844243f34e0a0bc5837da5bb5cee72330da9f) keeps optional missing `env_file` entries from failing publish preflight.
 
 ## Required Behavior
 
@@ -25,15 +28,12 @@
 - Support `--resolve-image-digests` by adding a Compose override layer that pins service images to resolved digests.
 - Support `--app` by forcing image digest resolution, copying service image descriptor chains into the target repository, and pushing an OCI image index whose subject is the Compose project artifact.
 - Support `--with-env` by adding existing env-file layers.
-- Support `--yes` for deterministic bind-mount preflight acceptance.
+- Prompt before publishing bind mounts, sensitive-looking data, env-file or literal env declarations, and literal config content.
+- Support `--with-env` by suppressing env-related prompts while still prompting for literal config content.
+- Support `--yes` for deterministic preflight prompt acceptance.
 - Reject build-only services before registry mutation.
 - Reject local include files before registry mutation.
 - Accept short-form ports such as `${DASHBOARD_PORT:-3000}:3000`.
-
-## Current Gaps
-
-- Docker's interactive sensitive-data, env-declaration, and literal config-content prompts are not implemented.
-- Live registry parity needs explicit credentials and cleanup outside the default local test lane.
 
 ## Runtime Boundary
 

@@ -41,6 +41,21 @@ struct ProcessRunnerTests {
     }
 
     @Test
+    func `process runner captures stdout while inheriting prompt streams`() async throws {
+        let result = try await ProcessRunner().run(
+            "/bin/sh",
+            ["-c", "printf json"],
+            workingDirectory: nil,
+            environment: nil,
+            io: .capturedOutputInheritingInputAndError,
+        )
+
+        #expect(result.succeeded)
+        #expect(result.stdout == "json")
+        #expect(result.stderr.isEmpty)
+    }
+
+    @Test
     func `recording runner captures command environment`() async throws {
         let runner = RecordingRunner()
 
@@ -117,7 +132,7 @@ struct ProcessRunnerTests {
         let missingExecutable = "/container-compose-tests/missing-executable"
         var failures = 0
 
-        for commandIO in [CommandIO.captured(input: nil), .inherited] {
+        for commandIO in [CommandIO.captured(input: nil), .capturedOutputInheritingInputAndError, .inherited] {
             do {
                 _ = try await ProcessRunner().run(
                     missingExecutable,
@@ -132,7 +147,7 @@ struct ProcessRunnerTests {
             }
         }
 
-        #expect(failures == 2)
+        #expect(failures == 3)
     }
 
     @Test

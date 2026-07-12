@@ -35,7 +35,7 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Project discovery and source loading | ✅ Yes | Default local discovery, stdin, environment files, Git resources, and `oci://` project artifacts are implemented. Runtime-backed Compose file attributes are tracked separately below. |
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
-| CLI commands | ⚠️ Partial | 41 commands are ✅, 4 are ⚠️, and 1 is ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
+| CLI commands | ⚠️ Partial | 42 commands are ✅, 3 are ⚠️, and 1 is ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
 | CLI long options | ⚠️ Partial | 255 documented long options are ✅, 2 are ⚠️, and 6 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
@@ -44,7 +44,7 @@ The Docker Compose v2 file reference is a rolling Compose Specification surface:
 
 | Compose File Surface | Parity | Details |
 | --- | --- | --- |
-| Project file discovery and sources | ✅ Yes | Default local discovery, explicit and repeated `--file`, `COMPOSE_FILE`, `.env`, `--env-file`, project directory/name, profiles, interpolation controls, path-resolution controls, stdin, Git repository resources, and `oci://` Compose project artifacts are implemented. Git URLs accept Docker's `URL#ref:subdir` syntax, locate canonical Compose filenames in repository directories, resolve relative env/build paths from the checkout, and work in top-level `-f`, `include`, and `extends.file`. OCI project artifacts load Docker Compose project manifests, compose-file layers, env-file layers, OCI 1.0 fallback manifests, OCI 1.1 artifact manifests, image digest override layers, and image-index wrappers. `compose publish` pushes service images and writes OCI project artifacts, image digest override layers, and application image indexes for image-backed projects after rejecting build-only services and unresolved local includes before registry mutation. |
+| Project file discovery and sources | ✅ Yes | Default local discovery, explicit and repeated `--file`, `COMPOSE_FILE`, `.env`, `--env-file`, project directory/name, profiles, interpolation controls, path-resolution controls, stdin, Git repository resources, and `oci://` Compose project artifacts are implemented. Git URLs accept Docker's `URL#ref:subdir` syntax, locate canonical Compose filenames in repository directories, resolve relative env/build paths from the checkout, and work in top-level `-f`, `include`, and `extends.file`. OCI project artifacts load Docker Compose project manifests, compose-file layers, env-file layers, OCI 1.0 fallback manifests, OCI 1.1 artifact manifests, image digest override layers, and image-index wrappers. `compose publish` pushes service images and writes OCI project artifacts, image digest override layers, and application image indexes for image-backed projects after Docker-compatible bind-mount, sensitive-data, env-declaration, literal-config, build-only-service, and unresolved-local-include preflights. |
 | Top-level `name` and legacy `version` | ✅ Yes | `name` participates in project naming precedence, and legacy `version` is accepted by the Compose Specification loader without driving behavior. |
 | Top-level `services` | ⚠️ Partial | Service definitions are parsed and normalized across the current Docker Compose service attribute surface. Runtime-backed gaps are listed in [Service Attribute Surface](#service-attribute-surface), the current-state matrix, and the CLI tables. |
 | Top-level `networks` | ⚠️ Partial | `name`, `external`, `internal`, `labels`, top-level `driver_opts`, the default bridge `driver`, and `ipam` with one IPv4 plus one IPv6 `config.subnet` are implemented. Custom drivers, `attachable` set true, `enable_ipv4` set false, `enable_ipv6` without a mapped subnet, IPAM `driver`/`options`/`gateway`/`ip_range`/`aux_addresses`, and multiple subnets of the same address family remain runtime gaps and fail before resource creation. |
@@ -148,7 +148,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `pause` | ✅ Yes | Service pause is implemented. |
 | `port` | ✅ Yes | Published-port lookup by service, index, and protocol is implemented. |
 | `ps` | ✅ Yes | Container listing, filters, statuses, service selection, formats, and quiet/services output are implemented. |
-| `publish` | ⚠️ Partial | Service image push, OCI project artifact publishing, image digest override layers, and `--app` application image indexes are implemented for image-backed Compose projects. Docker's interactive sensitive-data/env/config-content prompts remain unavailable. Supported publish behavior includes all-profile image selection, `--dry-run`, `--app`, `--oci-version`, `--resolve-image-digests`, `--with-env`, and noninteractive `--yes` bind-mount confirmation. |
+| `publish` | ✅ Yes | Service image push, OCI project artifact publishing, image digest override layers, and `--app` application image indexes are implemented for image-backed Compose projects. Supported publish behavior includes all-profile image selection, `--dry-run`, `--app`, `--oci-version`, `--resolve-image-digests`, `--with-env`, Docker-compatible interactive preflight prompts, and noninteractive `--yes` prompt acceptance. |
 | `pull` | ✅ Yes | Pull policy, dependency inclusion, quiet mode, and ignore-failure behavior are implemented. |
 | `push` | ✅ Yes | Dependency inclusion, quiet mode, and ignore-failure behavior are implemented. |
 | `restart` | ✅ Yes | Service restart, dependency control, and timeout are implemented. |
@@ -226,7 +226,6 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 ## Remaining Gap Focus
 
 - The remaining red command surface is `commit`.
-- The remaining orange command surfaces are `attach`, `cp`, `publish`, and `top`; their table rows above describe the exact missing runtime primitive or metadata surface.
+- The remaining orange command surfaces are `attach`, `cp`, and `top`; their table rows above describe the exact missing runtime primitive or metadata surface.
 - Runtime-primitive blockers include GPU and arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, Deploy device/generic reservations, full Docker process metadata, and stdin/stdout tar streaming for `cp`.
-- The remaining Compose-owned publish gap is Docker's interactive prompts for sensitive data, env declarations, and literal config content.
 - When touching slow runtime paths, keep first-frame progress rendering covered so local `container compose` runs do not appear to hang before visible output.

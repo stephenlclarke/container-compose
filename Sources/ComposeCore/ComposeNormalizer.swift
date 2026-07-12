@@ -40,6 +40,8 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
+            environment: nil,
+            io: .captured(input: nil)
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -66,6 +68,8 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
+            environment: nil,
+            io: .captured(input: nil)
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -92,6 +96,8 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
+            environment: nil,
+            io: .captured(input: nil)
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
@@ -118,6 +124,8 @@ public struct ComposeNormalizer: Sendable {
             invocation.executable,
             arguments,
             workingDirectory: invocation.workingDirectory,
+            environment: nil,
+            io: publish.assumeYes ? .captured(input: nil) : .capturedOutputInheritingInputAndError
         )
         guard result.succeeded else {
             throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
