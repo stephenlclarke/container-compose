@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -163,7 +164,10 @@ services:
   worker:
     image: registry.example.com/team/worker:2
 `)
-	var requests []string
+	var (
+		requestsMu sync.Mutex
+		requests   []string
+	)
 	digests := map[string]digest.Digest{
 		"registry.example.com/team/api:latest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"registry.example.com/team/worker:2":   "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -181,6 +185,8 @@ services:
 			resolveImageDigests: true,
 			dryRun:              true,
 			imageDigestResolver: func(named reference.Named) (digest.Digest, error) {
+				requestsMu.Lock()
+				defer requestsMu.Unlock()
 				requests = append(requests, named.String())
 				return digests[named.String()], nil
 			},
@@ -190,9 +196,12 @@ services:
 	if err != nil {
 		t.Fatalf("publishComposeProject returned error: %v", err)
 	}
-	slices.Sort(requests)
-	if len(requests) != 2 || requests[0] != "registry.example.com/team/api:latest" || requests[1] != "registry.example.com/team/worker:2" {
-		t.Fatalf("digest resolver requests = %#v", requests)
+	requestsMu.Lock()
+	requestsSnapshot := slices.Clone(requests)
+	requestsMu.Unlock()
+	slices.Sort(requestsSnapshot)
+	if len(requestsSnapshot) != 2 || requestsSnapshot[0] != "registry.example.com/team/api:latest" || requestsSnapshot[1] != "registry.example.com/team/worker:2" {
+		t.Fatalf("digest resolver requests = %#v", requestsSnapshot)
 	}
 	layer := result.Layers[len(result.Layers)-1]
 	if layer.Kind != "compose" || layer.Path != "image-digests.yaml" {
