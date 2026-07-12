@@ -1,10 +1,6 @@
 # Status
 
-This file is the current-state handoff for `container-compose`. Keep branch policy in [BRANCHES.md](BRANCHES.md), validation evidence in GitHub Actions and SonarQube, and Apple-facing handoff drafts under `docs/upstream/`.
-
-## Current State
-
-`main` is the current releasable integration branch and source of stable semantic tags. Land validated slices on `main`, then use `make release VERSION_SELECTOR=--+` to produce the next stable release and Homebrew tap update. Keep branch policy, `scripts/CONTAINER_STACK_RELEASE.sh`, and Homebrew details in [BRANCHES.md](BRANCHES.md); this file should only record the current handoff state.
+This file is the current Docker Compose v2 parity ledger for `container-compose`. Keep branch and release policy in [BRANCHES.md](BRANCHES.md), build and validation commands in [BUILD.md](BUILD.md), installation guidance in [INSTALL.md](INSTALL.md), and Apple-facing handoff drafts under `docs/upstream/`.
 
 ## Current Integration Assumption
 
@@ -12,18 +8,15 @@ This file is the current-state handoff for `container-compose`. Keep branch poli
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
-Current refs should come from the checked-in source-of-truth files rather than duplicated prose: [Tools/release/stack-refs.json](Tools/release/stack-refs.json) records the release stack component refs, [Package.resolved](Package.resolved) records the SwiftPM dependency resolution used by local package builds, and `container system version` / `container compose version` report the installed runtime and plugin provenance after installation.
+Current refs should come from checked-in source-of-truth files rather than duplicated prose: [Tools/release/stack-refs.json](Tools/release/stack-refs.json) records stack component refs, [Package.resolved](Package.resolved) records SwiftPM dependency resolution, and `container system version` / `container compose version` report installed runtime and plugin provenance after installation.
 
 ## Current Validation
 
-Use this validation floor for release-facing slices:
+Use this validation floor when parity or runtime behavior changes:
 
 - `container-compose`: `make ci`; targeted tests while iterating; and full `make docker-compose-parity` whenever Compose, Dockerfile/build, CLI, or runtime behavior changes.
 - Apple-backed repositories: each affected repository's full source checks and unit tests, plus integration tests for changed runtime behavior.
-- Documentation-only changes: the repository Markdown gate over every tracked `.md` file and internal-link validation.
-- Releases: package asset, checksum, release metadata, and live Homebrew formula verification performed by `make release VERSION_SELECTOR=--+`.
-
-Stable package workflows publish `container-compose-plugin-release-arm64.tar.gz`, verify the release asset checksum, and update the Homebrew tap after artifacts are ready. The source formula records the current stable release URL, version, and checksum.
+- Documentation-only changes: the repository Markdown gate over every tracked `.md` file.
 
 ## Parity Legend
 
