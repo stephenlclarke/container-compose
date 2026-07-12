@@ -21,14 +21,23 @@ package oci
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
+	remoteserrors "github.com/containerd/containerd/v2/core/remotes/errors"
+	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
 	"github.com/docker/cli/cli/config/configfile"
+	"github.com/opencontainers/go-digest"
+	"github.com/opencontainers/image-spec/specs-go"
 	spec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -45,6 +54,22 @@ const (
 	// ComposeEnvFileMediaType is the media type for each env-file layer.
 	ComposeEnvFileMediaType = "application/vnd.docker.compose.envfile"
 )
+
+const composeVersionAnnotation = "container-compose"
+
+// OCIVersion controls the manifest shape used for Compose project artifacts.
+type OCIVersion string
+
+const (
+	OCIVersion1_0 OCIVersion = "1.0"
+	OCIVersion1_1 OCIVersion = "1.1"
+)
+
+var clientAuthStatusCodes = []int{
+	http.StatusUnauthorized,
+	http.StatusForbidden,
+	http.StatusProxyAuthRequired,
+}
 
 // NewResolver sets up an OCI resolver with Docker-compatible registry
 // credentials. A nil transport falls back to containerd's default transport.
@@ -106,4 +131,165 @@ func authConfigKey(host string) string {
 		return "https://index.docker.io/v1/"
 	}
 	return host
+}
+
+// DescriptorForComposeFile returns an OCI layer descriptor for one Compose YAML
+// file.
+func DescriptorForComposeFile(path string, content []byte) spec.Descriptor {
+	return spec.Descriptor{
+		MediaType: ComposeYAMLMediaType,
+		Digest:    digest.FromBytes(content),
+		Size:      int64(len(content)),
+		Annotations: map[string]string{
+			"com.docker.compose.version": composeVersionAnnotation,
+			"com.docker.compose.file":    filepath.Base(path),
+		},
+		Data: content,
+	}
+}
+
+// DescriptorForEnvFile returns an OCI layer descriptor for one env file.
+func DescriptorForEnvFile(path string, content []byte) spec.Descriptor {
+	return spec.Descriptor{
+		MediaType: ComposeEnvFileMediaType,
+		Digest:    digest.FromBytes(content),
+		Size:      int64(len(content)),
+		Annotations: map[string]string{
+			"com.docker.compose.version": composeVersionAnnotation,
+			"com.docker.compose.envfile": filepath.Base(path),
+		},
+		Data: content,
+	}
+}
+
+// PushManifest pushes a Compose project artifact manifest and its layers.
+func PushManifest(ctx context.Context, resolver remotes.Resolver, named reference.Named, layers []spec.Descriptor, ociVersion OCIVersion) (spec.Descriptor, error) {
+	if ociVersion == OCIVersion1_1 || ociVersion == "" {
+		if err := push(ctx, resolver, named, spec.DescriptorEmptyJSON); err != nil {
+			return spec.Descriptor{}, err
+		}
+	}
+
+	layerDescriptors := make([]spec.Descriptor, len(layers))
+	for index := range layers {
+		layerDescriptors[index] = layers[index]
+		if err := push(ctx, resolver, named, layers[index]); err != nil {
+			return spec.Descriptor{}, err
+		}
+	}
+
+	if ociVersion != "" {
+		return createAndPushManifest(ctx, resolver, named, layerDescriptors, ociVersion)
+	}
+
+	descriptor, err := createAndPushManifest(ctx, resolver, named, layerDescriptors, OCIVersion1_1)
+	var pushErr remoteserrors.ErrUnexpectedStatus
+	if errors.As(err, &pushErr) && isNonAuthClientError(pushErr.StatusCode) {
+		return createAndPushManifest(ctx, resolver, named, layerDescriptors, OCIVersion1_0)
+	}
+	return descriptor, err
+}
+
+// Push writes one descriptor to the registry.
+func Push(ctx context.Context, resolver remotes.Resolver, ref reference.Named, descriptor spec.Descriptor) error {
+	pusher, err := resolver.Pusher(ctx, ref.String())
+	if err != nil {
+		return err
+	}
+	ctx = remotes.WithMediaTypeKeyPrefix(ctx, ComposeYAMLMediaType, "artifact-")
+	ctx = remotes.WithMediaTypeKeyPrefix(ctx, ComposeEnvFileMediaType, "artifact-")
+	ctx = remotes.WithMediaTypeKeyPrefix(ctx, ComposeEmptyConfigMediaType, "config-")
+	ctx = remotes.WithMediaTypeKeyPrefix(ctx, spec.MediaTypeEmptyJSON, "config-")
+
+	push, err := pusher.Push(ctx, descriptor)
+	if errdefs.IsAlreadyExists(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if _, err = push.Write(descriptor.Data); err != nil {
+		_ = push.Close()
+		return err
+	}
+	return push.Commit(ctx, int64(len(descriptor.Data)), descriptor.Digest)
+}
+
+func push(ctx context.Context, resolver remotes.Resolver, ref reference.Named, descriptor spec.Descriptor) error {
+	fullRef, err := reference.WithDigest(reference.TagNameOnly(ref), descriptor.Digest)
+	if err != nil {
+		return err
+	}
+	return Push(ctx, resolver, fullRef, descriptor)
+}
+
+func createAndPushManifest(ctx context.Context, resolver remotes.Resolver, named reference.Named, layers []spec.Descriptor, ociVersion OCIVersion) (spec.Descriptor, error) {
+	descriptor, toPush, err := generateManifest(layers, ociVersion)
+	if err != nil {
+		return spec.Descriptor{}, err
+	}
+	for _, descriptorToPush := range toPush {
+		if err := push(ctx, resolver, named, descriptorToPush); err != nil {
+			return spec.Descriptor{}, err
+		}
+	}
+	return descriptor, nil
+}
+
+func generateManifest(layers []spec.Descriptor, ociVersion OCIVersion) (spec.Descriptor, []spec.Descriptor, error) {
+	var toPush []spec.Descriptor
+	var config spec.Descriptor
+	var artifactType string
+	switch ociVersion {
+	case OCIVersion1_0:
+		configData := []byte("{}")
+		config = spec.Descriptor{
+			MediaType: ComposeEmptyConfigMediaType,
+			Digest:    digest.FromBytes(configData),
+			Size:      int64(len(configData)),
+			Data:      configData,
+		}
+		toPush = append(toPush, config)
+	case OCIVersion1_1:
+		config = spec.DescriptorEmptyJSON
+		artifactType = ComposeProjectArtifactType
+		toPush = append(toPush, config)
+	default:
+		return spec.Descriptor{}, nil, fmt.Errorf("unsupported OCI version: %s", ociVersion)
+	}
+
+	manifest, err := json.Marshal(spec.Manifest{
+		Versioned:    specs.Versioned{SchemaVersion: 2},
+		MediaType:    spec.MediaTypeImageManifest,
+		ArtifactType: artifactType,
+		Config:       config,
+		Layers:       layers,
+		Annotations: map[string]string{
+			"org.opencontainers.image.created": time.Now().Format(time.RFC3339),
+		},
+	})
+	if err != nil {
+		return spec.Descriptor{}, nil, err
+	}
+
+	manifestDescriptor := spec.Descriptor{
+		MediaType: spec.MediaTypeImageManifest,
+		Digest:    digest.FromBytes(manifest),
+		Size:      int64(len(manifest)),
+		Annotations: map[string]string{
+			"com.docker.compose.version": composeVersionAnnotation,
+		},
+		ArtifactType: artifactType,
+		Data:         manifest,
+	}
+	toPush = append(toPush, manifestDescriptor)
+	return manifestDescriptor, toPush, nil
+}
+
+func isNonAuthClientError(statusCode int) bool {
+	if statusCode < 400 || statusCode >= 500 {
+		return false
+	}
+	return !slices.Contains(clientAuthStatusCodes, statusCode)
 }

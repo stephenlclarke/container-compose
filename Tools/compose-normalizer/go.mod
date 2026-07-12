@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/compose-spec/compose-go/v2 v2.12.1
 	github.com/containerd/containerd/v2 v2.2.5
+	github.com/containerd/errdefs v1.0.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.6.1+incompatible
 	github.com/moby/buildkit v0.26.3
@@ -16,7 +17,6 @@ require (
 )
 
 require (
-	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v1.0.0-rc.2 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
