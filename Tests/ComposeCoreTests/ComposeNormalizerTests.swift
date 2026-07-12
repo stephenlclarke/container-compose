@@ -732,6 +732,22 @@ struct ComposeNormalizerTests {
         ))
 
         let api = try #require(project.services["api"])
+        guard case .object(let deploy) = api.deploy else {
+            Issue.record("Expected preserved deploy metadata")
+            return
+        }
+        guard case .object(let rollbackConfig) = deploy["rollback_config"] else {
+            Issue.record("Expected preserved deploy.rollback_config")
+            return
+        }
+        guard case .object(let placement) = deploy["placement"] else {
+            Issue.record("Expected preserved deploy.placement")
+            return
+        }
+        #expect(rollbackConfig["parallelism"] == .number(2))
+        #expect(rollbackConfig["order"] == .string("stop-first"))
+        #expect(placement["max_replicas_per_node"] == .number(1))
+        #expect(placement["constraints"] == .array([.string("node.role == worker")]))
         #expect(api.scale == 2)
         #expect(api.deployLabels == ["com.example.service": "api"])
         #expect(api.deployUpdateDelayNanoseconds == 2_000_000_000)

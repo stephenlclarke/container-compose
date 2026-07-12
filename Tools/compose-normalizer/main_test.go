@@ -1596,6 +1596,7 @@ services:
         parallelism: 2
       rollback_config:
         failure_action: pause
+        order: stop-first
       resources:
         limits:
           memory: 256m
@@ -1620,6 +1621,21 @@ services:
 	}
 
 	api := project.Services["api"]
+	if api.Deploy == nil {
+		t.Fatal("api.Deploy = nil, want preserved deploy metadata")
+	}
+	if api.Deploy.RollbackConfig == nil {
+		t.Fatal("api.Deploy.RollbackConfig = nil, want preserved rollback config")
+	}
+	if api.Deploy.RollbackConfig.Order != "stop-first" {
+		t.Fatalf("api.Deploy.RollbackConfig.Order = %q, want stop-first", api.Deploy.RollbackConfig.Order)
+	}
+	if got, want := api.Deploy.Placement.Constraints, []string{"node.role == worker"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.Deploy.Placement.Constraints = %#v, want %#v", got, want)
+	}
+	if api.Deploy.Placement.MaxReplicas != 1 {
+		t.Fatalf("api.Deploy.Placement.MaxReplicas = %d, want 1", api.Deploy.Placement.MaxReplicas)
+	}
 	if api.Scale == nil || *api.Scale != 1 {
 		t.Fatalf("api.Scale = %#v, want 1", api.Scale)
 	}

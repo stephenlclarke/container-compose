@@ -147,6 +147,7 @@ type normalizedService struct {
 	CPUSet                  string                              `json:"cpuset,omitempty"`
 	CPUShares               int64                               `json:"cpuShares,omitempty"`
 	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
+	Deploy                  *types.DeployConfig                 `json:"deploy,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
 	DeployMode              string                              `json:"deployMode,omitempty"`
 	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
@@ -812,6 +813,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CPUSet:                  service.CPUSet,
 		CPUShares:               service.CPUShares,
 		Develop:                 developValues(service.Develop),
+		Deploy:                  service.Deploy,
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
 		DeployMode:              deployMode(service.Deploy),
 		DeployLabels:            deployLabels(service.Deploy),

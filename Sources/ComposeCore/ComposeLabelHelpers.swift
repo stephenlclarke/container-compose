@@ -176,6 +176,7 @@ func configHash(
     var effectiveService = service
     effectiveService.labels = try effectiveServiceLabels(project: project, service: service)
     effectiveService.labelFiles = nil
+    effectiveService.deploy = nil
     effectiveService.deployLabels = nil
     effectiveService.volumes = try effectiveServiceVolumes(
         project: project,
