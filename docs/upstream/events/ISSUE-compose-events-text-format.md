@@ -62,7 +62,7 @@ With this slice on the local fork-backed integration stack:
 make docker-compose-events-parity
 ```
 
-The extension has not yet been rerun against Docker after this slice. Run it before raising the text-events PR if a local Docker daemon is available.
+Run the Docker-backed text replay parity extension before raising the text-events PR when a local Docker daemon is available.
 
 ## Code Of Conduct And Documentation
 

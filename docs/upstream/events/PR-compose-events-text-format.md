@@ -110,4 +110,4 @@ This optional parity target is not run by CI and should stay out of Apple-facing
 
 - Released upstream support still waits for accepted Apple runtime event-stream and event-filter APIs.
 - The runtime replay cache is bounded and in-memory only; Docker daemon-style persistent event history is not part of this slice.
-- The optional Docker-backed parity script extension has not yet been rerun after adding text replay validation.
+- Run the optional Docker-backed parity script extension before raising this PR when a local Docker daemon is available.

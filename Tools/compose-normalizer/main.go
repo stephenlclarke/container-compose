@@ -539,6 +539,7 @@ func loadComposeProject(files, profiles, envFiles []string, projectName, project
 	}
 	options = append(options, cli.WithDotEnv)
 	options = append(options, cli.WithResourceLoader(composeRemote.NewGitRemoteLoader(false)))
+	options = append(options, cli.WithResourceLoader(composeRemote.NewOCIRemoteLoader(false)))
 	if usesDefaultFiles {
 		options = append(options, cli.WithConfigFileEnv)
 		options = append(options, cli.WithDefaultConfigPath)
@@ -589,6 +590,7 @@ func loadVariables(files, profiles, envFiles []string, projectName, projectDirec
 	}
 	options = append(options, cli.WithDotEnv)
 	options = append(options, cli.WithResourceLoader(composeRemote.NewGitRemoteLoader(false)))
+	options = append(options, cli.WithResourceLoader(composeRemote.NewOCIRemoteLoader(false)))
 	if usesDefaultFiles {
 		options = append(options, cli.WithConfigFileEnv, cli.WithDefaultConfigPath)
 	}

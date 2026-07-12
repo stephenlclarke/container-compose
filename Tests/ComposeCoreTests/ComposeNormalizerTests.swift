@@ -1329,6 +1329,27 @@ struct ComposeNormalizerTests {
         ]))
     }
 
+    @Test("normalizer preserves OCI Compose artifact references")
+    func normalizerPreservesOCIComposeArtifactReferences() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"name":"demo","workingDirectory":"/tmp/cache/project","composeFiles":["/tmp/cache/project/compose.yaml"],"services":{"web":{"name":"web","image":"nginx"}},"networks":{},"volumes":{}}"#,
+                stderr: ""
+            ),
+        ])
+        let reference = "oci://registry.example.com/team/project:latest"
+
+        _ = try await ComposeNormalizer(runner: runner).normalize(options: ComposeOptions(files: [reference]))
+
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.containsSequence(["--file", reference]))
+        #expect(command.arguments.containsSequence([
+            "--project-directory",
+            FileManager.default.currentDirectoryPath,
+        ]))
+    }
+
     @Test("normalizer forwards config load switches")
     func normalizerForwardsConfigLoadSwitches() async throws {
         let runner = RecordingRunner(responses: [

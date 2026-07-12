@@ -22,7 +22,7 @@ container compose \
   config
 ```
 
-The selected directory may contain any canonical Compose filename. Relative project resources resolve from the fetched directory. `COMPOSE_EXPERIMENTAL_GIT_REMOTE=false` disables Git resources explicitly. OCI Compose artifacts continue to report unsupported project-source behavior.
+The selected directory may contain any canonical Compose filename. Relative project resources resolve from the fetched directory. `COMPOSE_EXPERIMENTAL_GIT_REMOTE=false` disables Git resources explicitly. OCI Compose artifacts use the separate Docker Compose-compatible `oci://` project-source loader.
 
 ## Validation
 

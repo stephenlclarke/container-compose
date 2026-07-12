@@ -17,8 +17,9 @@
 
 `container-compose` is a standalone plugin that provides Docker Compose v2
 workflows for Apple's [`container`](https://github.com/apple/container) CLI.
-Compose files are normalized with `compose-go`; Swift owns orchestration and
-maps supported Compose behavior to the matched runtime stack.
+Local files, Git resources, and `oci://` Compose project artifacts are
+normalized with `compose-go`; Swift owns orchestration and maps supported
+Compose behavior to the matched runtime stack.
 
 Help color-codes command, subcommand, and option support: green for supported,
 orange for partially supported, and red for unsupported. Partially supported

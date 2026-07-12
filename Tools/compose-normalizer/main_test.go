@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	composeRemote "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/remote"
 )
 
 func boolPtr(value bool) *bool {
@@ -255,6 +256,20 @@ func TestRunReportsFlagAndLoadErrors(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "mutually exclusive") {
 		t.Fatalf("conflicting mode stderr = %q", stderr.String())
+	}
+}
+
+func TestRunRoutesOCIResourcesThroughLoader(t *testing.T) {
+	t.Setenv(composeRemote.OCIRemoteEnabled, "false")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	status := run([]string{"--file", "oci://registry.example.com/team/app:latest"}, &stdout, &stderr)
+	if status != 1 {
+		t.Fatalf("OCI disabled status = %d, want 1", status)
+	}
+	if !strings.Contains(stderr.String(), `OCI remote resource is disabled by "COMPOSE_EXPERIMENTAL_OCI_REMOTE"`) {
+		t.Fatalf("OCI disabled stderr = %q", stderr.String())
 	}
 }
 

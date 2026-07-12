@@ -152,6 +152,11 @@ The CLI surface target writes the exact compared versions and differences to
 in [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md) and
 `Tools/parity/compose-cli-surface.allowlist`.
 
+`oci://` Compose project artifact loading is covered by the Go OCI loader tests
+and Swift normalizer integration tests. Add a live registry parity target only
+when the local environment can publish and fetch Docker Compose OCI artifacts
+deterministically.
+
 Refresh the sparse Docker Compose fixture checkout with:
 
 ```sh
