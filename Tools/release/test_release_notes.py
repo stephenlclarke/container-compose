@@ -227,6 +227,43 @@ class ReleaseNotesTests(unittest.TestCase):
                 notes,
             )
 
+    def test_plain_body_upstream_refs_are_attached_to_highlights(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "feat(gpu): support Compose GPU requests",
+                body="""
+                Support Docker Compose service gpus and generic Deploy GPU reservations.
+
+                Release-Highlight: Supports Compose `gpus` and deploy GPU reservations through the matched virtio GPU runtime.
+
+                Refs apple/container#1511, apple/containerization#480, apple/containerization#569.
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(
+                "- Supports Compose `gpus` and deploy GPU reservations through "
+                "the matched virtio GPU runtime. Upstream references: "
+                "apple/container#1511, apple/containerization#480, "
+                "apple/containerization#569.",
+                notes,
+            )
+
     def test_semver_tag_lists_validated_main_changes(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:

@@ -344,9 +344,8 @@ def upstream_references_from_body(body: str) -> list[str]:
     seen: set[str] = set()
     for line in body.splitlines():
         trailer = REFERENCE_TRAILER_PATTERN.match(line.strip())
-        if trailer is None:
-            continue
-        for match in GITHUB_REFERENCE_PATTERN.finditer(trailer.group("value")):
+        value = trailer.group("value") if trailer is not None else line
+        for match in GITHUB_REFERENCE_PATTERN.finditer(value):
             reference = match.group("reference")
             key = reference.lower()
             if key in seen:
