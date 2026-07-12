@@ -1,12 +1,12 @@
-# Pull request: support `container compose top`
+# Pull request: support Docker-shaped `container compose top`
 
 <!-- markdownlint-disable MD013 -->
 
 ## Summary
 
-- Replace the `compose top` unsupported placeholder with a direct API-backed implementation.
-- Add a `ContainerTopAdapter` around `ContainerClient.processes(id:)`.
-- Render a service-aware PID-only process table for selected service containers.
+- Render Docker Compose-style process tables for selected service containers.
+- Use the direct `ContainerClient.processes(id:)` API instead of shelling out through the CLI.
+- Mark `container compose top` as supported now that the matched runtime stack exposes process metadata.
 
 ## Type of Change
 
@@ -17,7 +17,7 @@
 
 ## Motivation and Context
 
-Docker Compose supports `docker compose top [SERVICES...]`. The `stephenlclarke` stack exposes a PID-only runtime primitive, so `container-compose` can implement the Compose selection and output layer without adding Compose-specific code to `apple/container`.
+Docker Compose supports `docker compose top [SERVICES...]`. The current `stephenlclarke` stack exposes generic process metadata through `containerization` and `apple/container`; `container-compose` owns the Compose service selection and Docker-shaped presentation layer.
 
 References:
 
@@ -25,37 +25,48 @@ References:
 - Docker `container top`: <https://docs.docker.com/reference/cli/docker/container/top/>
 - Container handoffs: [ISSUE-process-identifiers.md](../apple-container/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-container/PR-process-identifiers.md)
 - Lower-runtime handoffs: [ISSUE-process-identifiers.md](../apple-containerization/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-containerization/PR-process-identifiers.md)
+- Matched init-image handoff: [PR-containerization-branch-init.md](../apple-container/PR-containerization-branch-init.md)
 
 ## Commit Tracking
 
-- Compose code commit:
-  `b44ba55496f747b37a915c1cf252dfd4a0c564c0` (`feat(top): support
-  fork-backed process listing`).
+- Compose code:
+  `feat(top): render Docker process tables` in the current `container-compose`
+  release lane.
 - Container code commit:
-  `02a04fb372a6629ba02a14d34c8f9ac5b5a755df` on
-  `stephenlclarke/container:handoff/process-identifiers`
-  (`feat(runtime): expose container process identifiers`).
-- Lower runtime code commits:
-  `d69f7e51c5ae9ecec6ad7fc4a6358b824cc515e7` and
-  `aaa143b15f426912342cb4f29dc6a55065ba0651` in
-  `stephenlclarke/containerization`.
+  `b8c45d53720a11a5247577e3975e0d3fc52e614d` in
+  `stephenlclarke/container` (`feat(runtime): surface container process
+  metadata`).
+- Matched init-image automation commit:
+  `b478439e81c3ceddd58ef4be65d4c948bc1fa4f1` in
+  `stephenlclarke/container` (`fix(build): build source-checkout init images
+  safely`) and `d82fc5c24d48fffe2f48c8144642ab6fcf5299e0` in
+  `stephenlclarke/container` (`fix(build): clean copied init sources`), plus
+  `d03f81b4968d9f33914db1d77e00ce9f43178d00` in
+  `stephenlclarke/container` (`build(init): install matched vminit image
+  refs`).
+- Lower-runtime code commit:
+  `58c7eb72e1a6c1b17d8754c3593ebd0ad141193a` in
+  `stephenlclarke/containerization` (`feat(runtime): expose container process
+  metadata`) and `8cbc60df9047f308ba774ba5e18c1fb2746c06ef` in
+  `stephenlclarke/containerization` (`fix(runtime): qualify process error
+  existential`), plus `d8b9585a9855b1c0958d423a2d08b564eb6f8626` in
+  `stephenlclarke/containerization` (`build(init): parameterize vminit image
+  reference`).
 
 ## Implementation Details
 
-- Added `ComposeTopOptions`.
-- Added `ComposeTopTarget` and `ComposeTopRecord`.
-- Added `ContainerTopAPIClienting`, `ContainerTopManaging`, `ContainerTopAPIClient`, and `ContainerClientTopManager`.
-- Shared table rendering between stats and top adapters.
-- Added `ComposeOrchestrator.top(project:options:)`.
-- Updated the `Top` CLI command to load the project and call the orchestrator.
-- Added tests for service-container selection, dry-run output, direct API forwarding, and table rendering.
+- `ContainerClientTopManager` preserves Compose service/container order while collecting process data from the direct API.
+- When metadata is available, output is rendered as one Docker Compose-style section per selected container with UID, PID, PPID, CPU, STIME, TTY, TIME, and CMD columns.
+- The live parity harness writes an isolated runtime config with a matched init image reference, builds and installs that same image from the selected `containerization` checkout, and exports `CONTAINER_COMPOSE_INIT_IMAGE` so service containers use the matching guest `vminitd`.
+- The legacy PID list remains a compatibility fallback for older matched runtime lanes, but the current release lane reports `top` as fully supported.
+- `STATUS.md`, command support metadata, help tests, and upstream handoff docs now list `top` as supported.
 
 ## Docker Compose Compatibility Notes
 
 - The CLI shape matches Docker Compose `top [SERVICES...]`.
-- The `stephenlclarke` runtime output is intentionally PID-only because the current runtime exposes process identifiers, not full process metadata.
-- Full Docker `top` columns remain blocked by an `apple/container` / `containerization` follow-up for richer process metadata.
-- Stock `apple/container` builds must continue treating `top` as runtime-gated until equivalent process-listing APIs are accepted upstream.
+- Compose-specific service selection, replica filtering, and Docker-shaped output stay in `container-compose`.
+- Apple-facing repositories expose generic process metadata only; they do not own Docker Compose output policy.
+- The current upstream scan did not find an accepted Apple process-metadata API to reuse. [apple/container#1769](https://github.com/apple/container/pull/1769) remains relevant maintainer/status context but does not expose per-container process metadata.
 
 ## Testing
 
@@ -66,16 +77,19 @@ References:
 Focused validation:
 
 ```sh
-swift test --filter ComposeOrchestratorTests/top
-swift test --filter ComposeOrchestratorTests/dependencyGroupsPreserveIndividuallyConfiguredCollaborators
-swift test --filter ComposeOrchestratorTests/statsManagerRendersStaticTableFromDirectAPIStats
+swift test --filter ComposeOrchestratorTests/topManagerRendersDockerProcessTableFromDirectAPI
+swift test --filter ComposeOrchestratorTests/topManagerRendersProcessIdentifiersFromDirectAPI
+swift test --filter ComposeOrchestratorTests/upPassesConfiguredInitImageToContainerCreate
+swift test --filter ComposeCLIHelpTests
+make check
+make swift-runtime-test SWIFT_RUNTIME_TEST_FILTER=ComposeRuntimeSmokeTests/runtimePsAndTopInspectBuiltComposeService
 ```
 
-Additional local checks:
+Additional release validation:
 
 ```sh
-swift build --product compose
-make format
+make ci-fast
+make docker-compose-cli-surface-parity
 git diff --check
 ```
 

@@ -1815,7 +1815,7 @@ struct Top: AsyncParsableCommand, ComposeProjectCommand {
     @OptionGroup var global: GlobalOptions
     @Argument(help: "Optional service names.")
     var services: [String] = []
-    /// Displays process identifiers for selected service containers.
+    /// Displays process information for selected service containers.
     func run() async throws {
         let loadedProject = try await project()
         try await orchestrator().top(project: loadedProject, options: ComposeTopOptions(services: services))

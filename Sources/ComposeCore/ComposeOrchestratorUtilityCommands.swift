@@ -156,7 +156,7 @@ public extension ComposeOrchestrator {
         )
     }
 
-    /// Displays running process identifiers for selected service containers.
+    /// Displays running process information for selected service containers.
     func top(project: ComposeProject, options top: ComposeTopOptions = ComposeTopOptions()) async throws {
         try validate(project: project)
         let services = try selectedServices(project: project, selected: top.services)

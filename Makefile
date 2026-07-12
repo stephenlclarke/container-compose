@@ -79,10 +79,13 @@ SWIFT_TEST_RUN_FLAGS ?= --no-parallel
 SWIFT_RUNTIME_TEST_FILTER ?= ComposeRuntimeTests
 COMPOSE_TEST_BINARY ?= $(abspath .build/debug/compose)
 CONTAINER_STACK_REPO ?= $(abspath ../container)
+CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
 LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
 CONTAINER_COMPOSE_CONTAINER ?= $(if $(wildcard $(LOCAL_CONTAINER_BINARY)),$(LOCAL_CONTAINER_BINARY),container)
 CONTAINER_RUNTIME_STOP_HELPER ?= $(abspath $(CONTAINER_STACK_REPO)/scripts/ensure-container-stopped.sh)
 CONTAINER_RUNTIME_APP_ROOT ?= $(abspath .build/container-runtime)
+CONTAINER_RUNTIME_INIT_BLOCK_REPO ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Makefile),$(CONTAINER_STACK_REPO),)
+CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
 PARITY_ENV = CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)"
 MARKDOWN_FILES := $(shell git ls-files '*.md')
 DOCKER_COMPOSE_PARITY_TARGETS := \
@@ -188,6 +191,8 @@ swift-runtime-test-build:
 swift-runtime-test: container-stack-build build swift-runtime-test-build
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
+		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$(CONTAINER_COMPOSE_CONTAINER)" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
 		CONTAINER_BIN="$(CONTAINER_COMPOSE_CONTAINER)" CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
@@ -476,8 +481,7 @@ cli-smoke-built:
 	stop_help_output="$$(".build/debug/compose" stop --help)"; \
 	[[ "$$stop_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	top_help_output="$$(".build/debug/compose" top --help)"; \
-	[[ "$$top_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
-	[[ "$$top_help_output" == *"full process metadata table"* ]]; \
+	[[ "$$top_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$top_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	kill_help_output="$$(".build/debug/compose" kill --help)"; \
 	[[ "$$kill_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
@@ -1125,6 +1129,8 @@ docker-compose-e2e-fixtures:
 docker-compose-parity: container-stack-build
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
+		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
+		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
 		./scripts/run-with-container-runtime.sh "$(CONTAINER_COMPOSE_CONTAINER)" \
 		$(MAKE) --no-print-directory -j1 $(DOCKER_COMPOSE_PARITY_TARGETS)
 

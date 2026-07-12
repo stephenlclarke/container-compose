@@ -248,6 +248,9 @@ extension ComposeOrchestrator {
         if service.initEnabled == true {
             args.append("--init")
         }
+        if let initImage = options.initImage, !initImage.isEmpty {
+            args.append(contentsOf: ["--init-image", initImage])
+        }
 
         guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")

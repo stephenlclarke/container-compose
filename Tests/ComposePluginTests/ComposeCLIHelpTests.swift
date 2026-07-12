@@ -114,7 +114,6 @@ struct ComposeCLIHelpTests {
         let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
         let copyHelp = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
         let publishHelp = try #require(ComposeCLIHelp.commandHelpText(command: "publish"))
-        let topHelp = try #require(ComposeCLIHelp.commandHelpText(command: "top"))
 
         #expect(commitHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(commitHelp.contains("running-container commit, including --pause=false"))
@@ -123,8 +122,6 @@ struct ComposeCLIHelpTests {
         #expect(copyHelp.contains("stdin/stdout tar streaming"))
         #expect(publishHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(!publishHelp.contains("Limitations:"))
-        #expect(topHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(topHelp.contains("full process metadata table"))
     }
 
     @Test("every documented command option is covered by a parse representative")

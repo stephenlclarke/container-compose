@@ -331,7 +331,7 @@ enum ComposeCLIHelp {
         "start": .supported,
         "stats": .supported,
         "stop": .supported,
-        "top": .partiallySupported,
+        "top": .supported,
         "unpause": .supported,
         "up": .supported,
         "version": .supported,
@@ -344,7 +344,6 @@ enum ComposeCLIHelp {
         "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
         "commit": "Stopped service containers can be committed to images; running-container commit, including --pause=false, waits for Apple live export/snapshot support.",
         "cp": "Path copies are supported; stdin/stdout tar streaming with '-' requires an additional runtime copy-stream API.",
-        "top": "Service selection and PID output are supported; the runtime does not yet expose Docker's full process metadata table.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [

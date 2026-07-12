@@ -25,6 +25,10 @@ fi
 container_binary=$1
 shift
 runtime_app_root=${CONTAINER_RUNTIME_APP_ROOT:-}
+runtime_init_block_repo=${CONTAINER_RUNTIME_INIT_BLOCK_REPO:-}
+containerization_init_source_path=${CONTAINERIZATION_INIT_SOURCE_PATH:-}
+matched_init_image=${CONTAINER_COMPOSE_INIT_IMAGE:-}
+runtime_config_home=
 runtime_root_marker=.container-compose-runtime-root
 runtime_root_marker_value='container-compose isolated runtime state v1'
 
@@ -61,6 +65,24 @@ prepare_runtime_root() {
         ! -name "$runtime_root_marker" ! -name kernels -exec rm -rf {} +
 }
 
+configure_matched_init_image() {
+    [[ -n "$runtime_init_block_repo" ]] || return
+    [[ -n "$runtime_app_root" ]] || return
+
+    if [[ -z "$matched_init_image" ]]; then
+        matched_init_image="vminit:container-compose"
+    fi
+    runtime_config_home="$runtime_app_root/xdg-config"
+    local container_config_dir="$runtime_config_home/container"
+    mkdir -p "$container_config_dir"
+    cat >"$container_config_dir/config.toml" <<EOF
+[vminit]
+image = "$matched_init_image"
+EOF
+    export XDG_CONFIG_HOME="$runtime_config_home"
+    export CONTAINER_COMPOSE_INIT_IMAGE="$matched_init_image"
+}
+
 cleanup() {
     local status=$?
     trap - EXIT
@@ -69,12 +91,37 @@ cleanup() {
     exit "$status"
 }
 
+# Install a guest init image built from the same source lane as the host runtime.
+install_matched_init_image() {
+    [[ -n "$runtime_init_block_repo" ]] || return
+
+    if [[ ! -f "$runtime_init_block_repo/Makefile" ]]; then
+        printf 'container runtime init-block repo does not contain a Makefile: %s\n' "$runtime_init_block_repo" >&2
+        exit 2
+    fi
+
+    local init_env=()
+    if [[ -n "$runtime_app_root" ]]; then
+        init_env+=(APP_ROOT="$runtime_app_root")
+    fi
+    if [[ -n "$containerization_init_source_path" ]]; then
+        init_env+=(CONTAINERIZATION_INIT_SOURCE_PATH="$containerization_init_source_path")
+    fi
+    if [[ -n "$matched_init_image" ]]; then
+        init_env+=(CONTAINER_INIT_IMAGE_NAME="$matched_init_image")
+    fi
+
+    printf 'Installing matched container runtime init image...\n'
+    env "${init_env[@]}" make -C "$runtime_init_block_repo" init-block
+}
+
 trap cleanup EXIT
 
 printf 'Stopping stale container services...\n'
 stop_runtime
 sleep 3
 prepare_runtime_root
+configure_matched_init_image
 
 printf 'Starting matched container runtime...\n'
 start_arguments=(--debug system start --timeout 60 --enable-kernel-install)
@@ -82,5 +129,6 @@ if [[ -n "$runtime_app_root" ]]; then
     start_arguments+=(--app-root "$runtime_app_root")
 fi
 "$container_binary" "${start_arguments[@]}"
+install_matched_init_image
 
 "$@"

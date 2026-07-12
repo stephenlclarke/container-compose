@@ -2958,6 +2958,21 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages.contains("+ compose-runtime wait-ready --timeout 3 demo-api-1"))
     }
 
+    @Test("up passes configured init image to container create")
+    func upPassesConfiguredInitImageToContainerCreate() async throws {
+        let runner = RecordingRunner()
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(initImage: "vminit:container-compose")
+        ).up(project: project, options: ComposeUpOptions())
+
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(runArguments.containsSequence(["--init-image", "vminit:container-compose"]))
+        #expect(runArguments.last == "example/api")
+    }
+
     @Test("up wait timeout reports up command")
     func upWaitTimeoutReportsUpCommand() async throws {
         let runner = RecordingRunner(responses: [.success])
@@ -16326,6 +16341,104 @@ struct ComposeOrchestratorTests {
 
         #expect(emitted.messages == [
             "Service  Container ID  PID\napi      demo-api-1    42\napi      demo-api-1    99\ndb       demo-db-1     7",
+        ])
+        #expect(await client.requests == ["demo-api-1", "demo-db-1"])
+    }
+
+    @Test("top manager renders Docker process table from direct API")
+    func topManagerRendersDockerProcessTableFromDirectAPI() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerTopAPIClient(responses: [
+            "demo-api-1": ContainerProcesses(
+                id: "demo-api-1",
+                processIdentifiers: [42],
+                processes: [
+                    ContainerProcessInfo(
+                        uid: "root",
+                        pid: 42,
+                        ppid: 7,
+                        cpu: 0,
+                        startTime: "15:33",
+                        tty: "?",
+                        time: "00:00:00",
+                        command: "sleep 60"
+                    ),
+                ]
+            ),
+            "demo-db-1": ContainerProcesses(
+                id: "demo-db-1",
+                processIdentifiers: [7],
+                processes: [
+                    ContainerProcessInfo(
+                        uid: "postgres",
+                        pid: 7,
+                        ppid: 1,
+                        cpu: 1,
+                        startTime: "15:34",
+                        tty: "?",
+                        time: "00:00:01",
+                        command: "postgres"
+                    ),
+                ]
+            ),
+        ])
+        let manager = ContainerClientTopManager(client: client)
+
+        try await manager.top(
+            targets: [
+                ComposeTopTarget(service: "api", containerID: "demo-api-1"),
+                ComposeTopTarget(service: "db", containerID: "demo-db-1"),
+            ],
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == [
+            """
+            demo-api-1
+            UID   PID  PPID  C  STIME  TTY  TIME      CMD
+            root  42   7     0  15:33  ?    00:00:00  sleep 60
+            demo-db-1
+            UID       PID  PPID  C  STIME  TTY  TIME      CMD
+            postgres  7    1     1  15:34  ?    00:00:01  postgres
+            """,
+        ])
+        #expect(await client.requests == ["demo-api-1", "demo-db-1"])
+    }
+
+    @Test("top manager falls back to PID table for mixed metadata responses")
+    func topManagerFallsBackToPIDTableForMixedMetadataResponses() async throws {
+        let emitted = MessageRecorder()
+        let client = RecordingContainerTopAPIClient(responses: [
+            "demo-api-1": ContainerProcesses(
+                id: "demo-api-1",
+                processIdentifiers: [42],
+                processes: [
+                    ContainerProcessInfo(
+                        uid: "root",
+                        pid: 42,
+                        ppid: 7,
+                        cpu: 0,
+                        startTime: "15:33",
+                        tty: "?",
+                        time: "00:00:00",
+                        command: "sleep 60"
+                    ),
+                ]
+            ),
+            "demo-db-1": ContainerProcesses(id: "demo-db-1", processIdentifiers: [7]),
+        ])
+        let manager = ContainerClientTopManager(client: client)
+
+        try await manager.top(
+            targets: [
+                ComposeTopTarget(service: "api", containerID: "demo-api-1"),
+                ComposeTopTarget(service: "db", containerID: "demo-db-1"),
+            ],
+            emit: { emitted.append($0) }
+        )
+
+        #expect(emitted.messages == [
+            "Service  Container ID  PID\napi      demo-api-1    42\ndb       demo-db-1     7",
         ])
         #expect(await client.requests == ["demo-api-1", "demo-db-1"])
     }

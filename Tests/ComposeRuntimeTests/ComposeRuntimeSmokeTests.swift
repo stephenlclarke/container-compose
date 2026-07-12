@@ -177,8 +177,8 @@ struct ComposeRuntimeSmokeTests {
         Issue.record("Expected entrypoint-command output in runtime logs. Last logs: \(lastLogs)")
     }
 
-    @Test("runtime ps lists built compose service")
-    func runtimePsListsBuiltComposeService() throws {
+    @Test("runtime ps and top inspect built compose service")
+    func runtimePsAndTopInspectBuiltComposeService() throws {
         guard runtimeTestsEnabled else {
             return
         }
@@ -250,6 +250,26 @@ struct ComposeRuntimeSmokeTests {
             timeout: 30
         )
         #expect(servicesResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "ps-app")
+
+        let topResult = try runProcess(
+            composeBinary,
+            [
+                "--ansi", "never",
+                "--project-name", project,
+                "--file", composeFile.path,
+                "top", "ps-app",
+            ],
+            timeout: 30
+        )
+        #expect(topResult.stdout.contains("\(project)-ps-app-1"))
+        #expect(topResult.stdout.contains("UID"))
+        #expect(topResult.stdout.contains("PID"))
+        #expect(topResult.stdout.contains("PPID"))
+        #expect(topResult.stdout.contains("STIME"))
+        #expect(topResult.stdout.contains("TTY"))
+        #expect(topResult.stdout.contains("TIME"))
+        #expect(topResult.stdout.contains("CMD"))
+        #expect(topResult.stdout.contains("sleep"))
     }
 
     @Test("runtime dry run up timestamps follows timestamped logs")

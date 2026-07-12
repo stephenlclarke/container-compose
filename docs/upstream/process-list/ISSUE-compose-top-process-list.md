@@ -2,11 +2,9 @@
 
 <!-- markdownlint-disable MD013 -->
 
-## Feature or enhancement request details
+## Feature or Enhancement Request Details
 
-Docker Compose exposes `docker compose top [SERVICES...]` to display the running processes for project service containers. `container-compose` previously rejected `top` because released upstream `apple/container` did not expose a process-listing API.
-
-The local integration stack now exposes PID-only process identifiers through `containerization` and `apple/container`, so the plugin can implement service selection and service-aware output through the direct API.
+Docker Compose exposes `docker compose top [SERVICES...]` to display the running processes for project service containers. The current `stephenlclarke` runtime stack exposes process metadata through `containerization` and `apple/container`, so `container-compose` can implement service selection and Docker-shaped output through the direct API.
 
 References:
 
@@ -15,15 +13,15 @@ References:
 - Container handoffs: [ISSUE-process-identifiers.md](../apple-container/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-container/PR-process-identifiers.md)
 - Lower-runtime handoffs: [ISSUE-process-identifiers.md](../apple-containerization/ISSUE-process-identifiers.md) and [PR-process-identifiers.md](../apple-containerization/PR-process-identifiers.md)
 
-## Proposed behavior
+## Proposed Behavior
 
 - Accept `container compose top [SERVICES...]`.
 - Resolve selected services to Compose-managed service containers, including discovered replicas and custom `container_name` values.
 - Call `ContainerClient.processes(id:)` through a direct API adapter.
-- Emit a service-aware PID-only table.
-- Keep full Docker `top` process columns as a runtime metadata follow-up.
+- Emit Docker Compose-style per-container process sections.
+- Include UID, PID, PPID, CPU, STIME, TTY, TIME, and CMD columns when the current runtime returns process metadata.
 
-## Minimal example
+## Minimal Example
 
 ```sh
 container compose top api worker
@@ -31,9 +29,10 @@ container compose top api worker
 
 Expected behavior:
 
-- The plugin lists process identifiers for each selected service container with the current fork-backed runtime.
-- Stock `apple/container` builds continue to treat `top` as runtime-gated until an equivalent API lands upstream.
+- The plugin lists running process metadata for each selected service container.
+- Output follows Docker Compose's per-container process-table layout.
+- Stock Apple builds remain runtime-gated until equivalent process metadata APIs and matching guest init-image delivery land upstream.
 
 ## Code of Conduct
 
-- [x] I agree to follow this project's Code of Conduct
+- [x] I agree to follow this project's Code of Conduct.

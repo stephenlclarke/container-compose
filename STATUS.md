@@ -6,7 +6,7 @@ This file is the current Docker Compose v2 parity ledger for `container-compose`
 
 `container-compose` is supported as part of the matched `stephenlclarke` runtime bundle. Keep each package lane pinned to the matching `stephenlclarke/container`, `stephenlclarke/containerization`, and `stephenlclarke/container-builder-shim` surfaces until equivalent Apple upstream APIs are accepted and the plugin has been updated to those upstream surfaces.
 
-The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, process listing, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
+The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
 Current refs should come from checked-in source-of-truth files rather than duplicated prose: [Tools/release/stack-refs.json](Tools/release/stack-refs.json) records stack component refs, [Package.resolved](Package.resolved) records SwiftPM dependency resolution, and `container system version` / `container compose version` report installed runtime and plugin provenance after installation.
 
@@ -35,7 +35,7 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Project discovery and source loading | ✅ Yes | Default local discovery, stdin, environment files, Git resources, and `oci://` project artifacts are implemented. Runtime-backed Compose file attributes are tracked separately below. |
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
-| CLI commands | ⚠️ Partial | 42 commands are ✅, 4 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
+| CLI commands | ⚠️ Partial | 43 commands are ✅, 3 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
 | CLI long options | ⚠️ Partial | 261 documented long options are ✅, 2 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
@@ -158,7 +158,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `start` | ✅ Yes | Start, health-aware wait, and wait-timeout behavior are implemented. |
 | `stats` | ✅ Yes | Table/JSON formatting, stopped-container inclusion, no-stream, and no-trunc modes are implemented. |
 | `stop` | ✅ Yes | Stop and timeout are implemented. |
-| `top` | ⚠️ Partial | Service selection and process listing are implemented, but the runtime exposes only process identifiers; Docker Compose's UID, PPID, CPU, start-time, TTY, elapsed-time, and command columns remain unavailable. |
+| `top` | ✅ Yes | Service selection and Docker-shaped per-container process tables are implemented through the matched runtime process-metadata API, including UID, PID, PPID, CPU, STIME, TTY, TIME, and CMD columns. |
 | `unpause` | ✅ Yes | Service unpause is implemented. |
 | `up` | ✅ Yes | Create/start/attach/watch/menu/build/pull/recreate/exit-control/log-output/scaling behavior and health-aware `--wait`/`--wait-timeout` are implemented. |
 | `version` | ✅ Yes | Pretty, short, and JSON version output are implemented. |
@@ -228,6 +228,6 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 ## Remaining Gap Focus
 
 - There are no remaining red CLI command or long-option surfaces.
-- The remaining orange command surfaces are `attach`, `commit`, `cp`, and `top`; their table rows above describe the exact missing runtime primitive or metadata surface.
-- Runtime-primitive blockers include GPU and arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, Deploy device/generic reservations, full Docker process metadata, and stdin/stdout tar streaming for `cp`.
+- The remaining orange command surfaces are `attach`, `commit`, and `cp`; their table rows above describe the exact missing runtime primitive or metadata surface.
+- Runtime-primitive blockers include GPU and arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, Deploy device/generic reservations, and stdin/stdout tar streaming for `cp`.
 - When touching slow runtime paths, keep first-frame progress rendering covered so local `container compose` runs do not appear to hang before visible output.

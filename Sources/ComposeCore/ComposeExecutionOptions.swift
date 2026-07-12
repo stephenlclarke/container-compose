@@ -61,6 +61,7 @@ public struct ComposeExecutionOptions {
     public var maxParallelism: Int?
     public var serviceContainerNameSeparator: String
     public var containerBinary: String
+    public var initImage: String?
     public var environmentLauncher: String
     public var oneOffIdentifier: @Sendable () -> String
     public var currentDate: @Sendable () -> Date
@@ -80,6 +81,7 @@ public struct ComposeExecutionOptions {
         maxParallelism: Int? = nil,
         serviceContainerNameSeparator: String = "-",
         containerBinary: String = ComposeExecutionOptions.defaultContainerBinary(),
+        initImage: String? = ComposeExecutionOptions.defaultInitImage(),
         watchPollInterval: Duration = .seconds(1),
         progress: ComposeProgressReporter = .disabled,
         runtimeHooks: RuntimeHooks = RuntimeHooks(),
@@ -88,6 +90,7 @@ public struct ComposeExecutionOptions {
         self.maxParallelism = maxParallelism
         self.serviceContainerNameSeparator = serviceContainerNameSeparator
         self.containerBinary = containerBinary
+        self.initImage = initImage
         environmentLauncher = ComposeExecutionOptions.defaultEnvironmentLauncher
         oneOffIdentifier = runtimeHooks.oneOffIdentifier
         currentDate = runtimeHooks.currentDate
@@ -117,6 +120,11 @@ public struct ComposeExecutionOptions {
     public init(environmentLauncher: String) {
         self.init()
         self.environmentLauncher = environmentLauncher
+    }
+
+    public init(initImage: String?) {
+        self.init()
+        self.initImage = initImage
     }
 
     public init(
@@ -194,6 +202,15 @@ public struct ComposeExecutionOptions {
         ProcessInfo.processInfo.environment["CONTAINER_BIN"]
             ?? ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_CONTAINER"]
             ?? "container"
+    }
+
+    public static func defaultInitImage() -> String? {
+        let value = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_INIT_IMAGE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 
     public static func defaultConfirmation(_ prompt: String) async throws -> Bool {
