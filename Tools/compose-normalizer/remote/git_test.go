@@ -136,6 +136,57 @@ func TestLoadUsesRememberedCheckoutAndSubdirectory(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsRawFragmentTraversalBeforeBuildKitNormalization(t *testing.T) {
+	t.Setenv(GitRemoteEnabled, "true")
+	loader := NewGitRemoteLoader(true).(*gitRemoteLoader)
+	remote := "git://example.test/project.git#HEAD:../../escape"
+	root := t.TempDir()
+	composeFile := filepath.Join(root, "escape", "compose.yaml")
+	if err := os.MkdirAll(filepath.Dir(composeFile), 0o755); err != nil {
+		t.Fatalf("create escaped Compose directory: %v", err)
+	}
+	if err := os.WriteFile(composeFile, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatalf("write escaped Compose file: %v", err)
+	}
+	loader.rememberCheckout(remote, root)
+
+	_, err := loader.Load(context.Background(), remote)
+	if err == nil || !strings.Contains(err.Error(), "path traversal") {
+		t.Fatalf("Load error = %v, want path traversal rejection", err)
+	}
+}
+
+func TestRawGitFragmentSubDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		remote  string
+		want    string
+		wantOK  bool
+		wantErr bool
+	}{
+		{name: "no fragment", remote: "git://example.test/project.git"},
+		{name: "ref only", remote: "git://example.test/project.git#main"},
+		{name: "plain subdirectory", remote: "git://example.test/project.git#main:stacks/demo", want: "stacks/demo", wantOK: true},
+		{name: "escaped subdirectory", remote: "git://example.test/project.git#main:stacks%2Fdemo", want: "stacks/demo", wantOK: true},
+		{name: "invalid escape", remote: "git://example.test/project.git#main:%zz", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok, err := rawGitFragmentSubDir(test.remote)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("rawGitFragmentSubDir() error = %v, wantErr %v", err, test.wantErr)
+			}
+			if ok != test.wantOK {
+				t.Fatalf("rawGitFragmentSubDir() ok = %v, want %v", ok, test.wantOK)
+			}
+			if got != test.want {
+				t.Fatalf("rawGitFragmentSubDir() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestFailedCheckoutDoesNotPublishCache(t *testing.T) {
 	loader := NewGitRemoteLoader(false).(*gitRemoteLoader)
 	loader.command = unavailableGitCommand(filepath.Join(t.TempDir(), "missing-git"))

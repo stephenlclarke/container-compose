@@ -92,9 +92,19 @@ func (g *gitRemoteLoader) Load(ctx context.Context, path string) (string, error)
 		return "", err
 	}
 
+	rawSubDir, hasRawSubDir, err := rawGitFragmentSubDir(path)
+	if err != nil {
+		return "", err
+	}
+
 	repositoryRoot, err := g.checkoutPath(ctx, path, ref)
 	if err != nil {
 		return "", err
+	}
+	if hasRawSubDir {
+		if err := validateGitSubDir(repositoryRoot, rawSubDir); err != nil {
+			return "", err
+		}
 	}
 	local, err := resolveGitResource(repositoryRoot, ref.SubDir)
 	if err != nil {
@@ -200,6 +210,22 @@ func validateGitSubDir(base, subDir string) error {
 	}
 
 	return nil
+}
+
+func rawGitFragmentSubDir(path string) (string, bool, error) {
+	_, fragment, ok := strings.Cut(path, "#")
+	if !ok {
+		return "", false, nil
+	}
+	_, subDir, ok := strings.Cut(fragment, ":")
+	if !ok || subDir == "" {
+		return "", false, nil
+	}
+	decoded, err := url.PathUnescape(subDir)
+	if err != nil {
+		return "", false, fmt.Errorf("decode Git subdirectory fragment: %w", err)
+	}
+	return decoded, true, nil
 }
 
 func resolveGitSubDir(base, subDir string) (string, error) {
