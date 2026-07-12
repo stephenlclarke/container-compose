@@ -24,8 +24,11 @@ override layers or application image indexes as OCI project artifacts. Swift own
 orchestration and maps supported Compose behavior to the matched runtime stack.
 
 Help color-codes command, subcommand, and option support: green for supported,
-orange for partially supported, and red for unsupported. Partially supported
-commands include a `Limitations` line for gaps that are not tied to an option.
+orange for partially supported, and red for unsupported. Command support and
+option support are separate signals: a command can still be partially supported
+when every listed option is green if the remaining Docker Compose gap is tied
+to operands, output shape, or a runtime primitive instead of a flag. Partially
+supported commands include a `Limitations` line that names the remaining gap.
 Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
 
