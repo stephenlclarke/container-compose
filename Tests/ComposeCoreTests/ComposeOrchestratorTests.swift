@@ -81,6 +81,78 @@ private func bridgeTransformerArchiveData() throws -> Data {
     return try Data(contentsOf: archive)
 }
 
+private func rootfsArchiveData(contents: String = "committed") throws -> Data {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let archive = directory.appendingPathComponent("rootfs.tar")
+    let writer = try ArchiveWriter(format: .paxRestricted, filter: .none, file: archive)
+    let data = Data(contents.utf8)
+    let entry = WriteEntry()
+    entry.path = "committed.txt"
+    entry.fileType = .regular
+    entry.permissions = 0o644
+    entry.size = Int64(data.count)
+    try writer.writeEntry(entry: entry, data: data)
+    try writer.finishEncoding()
+    return try Data(contentsOf: archive)
+}
+
+private struct CommitArchiveIndex: Decodable {
+    var manifests: [Descriptor]
+}
+
+private struct CommitArchiveManifest: Decodable {
+    var config: Descriptor
+}
+
+private struct CommitArchiveImageConfig: Decodable {
+    struct Config: Decodable {
+        var user: String?
+        var env: [String]?
+        var entrypoint: [String]?
+        var cmd: [String]?
+        var workingDir: String?
+        var labels: [String: String]?
+        var exposedPorts: [String: [String: String]]?
+        var stopSignal: String?
+        var volumes: [String: [String: String]]?
+        var onBuild: [String]?
+
+        enum CodingKeys: String, CodingKey {
+            case user = "User"
+            case env = "Env"
+            case entrypoint = "Entrypoint"
+            case cmd = "Cmd"
+            case workingDir = "WorkingDir"
+            case labels = "Labels"
+            case exposedPorts = "ExposedPorts"
+            case stopSignal = "StopSignal"
+            case volumes = "Volumes"
+            case onBuild = "OnBuild"
+        }
+    }
+
+    var author: String?
+    var config: Config
+}
+
+private func commitArchiveConfig(from archive: URL) throws -> CommitArchiveImageConfig {
+    let indexData = try ArchiveReader(file: archive).extractFile(path: "index.json").1
+    let index = try JSONDecoder().decode(CommitArchiveIndex.self, from: indexData)
+    let manifestDigest = try #require(index.manifests.first?.digest)
+    let manifestData = try ArchiveReader(file: archive).extractFile(path: blobPath(for: manifestDigest)).1
+    let manifest = try JSONDecoder().decode(CommitArchiveManifest.self, from: manifestData)
+    let configData = try ArchiveReader(file: archive).extractFile(path: blobPath(for: manifest.config.digest)).1
+    return try JSONDecoder().decode(CommitArchiveImageConfig.self, from: configData)
+}
+
+private func blobPath(for digest: String) throws -> String {
+    guard digest.hasPrefix("sha256:") else {
+        throw ComposeError.invalidProject("unexpected digest \(digest)")
+    }
+    return "blobs/sha256/\(digest.dropFirst("sha256:".count))"
+}
+
 private func composeTextEventTimestamp(_ value: String) -> String {
     let eventDate = date(value)
     var calendar = Calendar(identifier: .gregorian)
@@ -2300,7 +2372,14 @@ struct ComposeOrchestratorTests {
             .success,
         ])
         let discoveryManager = RecordingContainerDiscoveryManager()
-        let imageManager = RecordingContainerImageManager()
+        let imageManager = RecordingContainerImageManager(imageMetadata: [
+            "example/api": ComposeImageMetadata(
+                reference: "example/api",
+                environment: ["PATH=/usr/bin", "LOG_LEVEL=info"],
+                command: ["base"],
+                exposedPorts: ["9090/tcp"]
+            ),
+        ])
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -16578,6 +16657,7 @@ struct ComposeOrchestratorTests {
                 pull: { try await recorder.pullImage(reference: $0) },
                 push: { try await recorder.pushImage(reference: $0) },
                 delete: { try await recorder.deleteImage(reference: $0, force: $1) },
+                load: { try await recorder.loadImageArchive(path: $0) },
             ),
         )
 
@@ -16586,17 +16666,20 @@ struct ComposeOrchestratorTests {
         try await client.pullImage(reference: "example/api:latest")
         let pushed = try await client.pushImage(reference: "example/api:latest")
         let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
+        let loaded = try await client.loadImageArchive(path: "image.tar")
 
         #expect(exists == true)
         #expect(healthCheck == nil)
         #expect(pushed == "registry.example.com/example/api:latest")
         #expect(deleted == "example/api:latest")
+        #expect(loaded == ["loaded:latest"])
         #expect(await recorder.requests == [
             .exists("example/api:latest"),
             .healthCheck(reference: "example/api:latest", platform: nil),
             .pull("example/api:latest"),
             .push("example/api:latest"),
             .delete(reference: "example/api:latest", force: true),
+            .load("image.tar"),
         ])
     }
 
@@ -16614,17 +16697,20 @@ struct ComposeOrchestratorTests {
         try await client.pullImage(reference: "example/api:latest")
         let pushed = try await client.pushImage(reference: "example/api:latest")
         let deleted = try await client.deleteImage(reference: "example/api:latest", force: true)
+        let loaded = try await client.loadImageArchive(path: "image.tar")
 
         #expect(exists == true)
         #expect(healthCheck == nil)
         #expect(pushed == "registry.example.com/example/api:latest")
         #expect(deleted == "example/api:latest")
+        #expect(loaded == ["loaded:latest"])
         #expect(await recorder.requests == [
             .exists("example/api:latest"),
             .healthCheck(reference: "example/api:latest", platform: nil),
             .pull("example/api:latest"),
             .push("example/api:latest"),
             .delete(reference: "example/api:latest", force: true),
+            .load("image.tar"),
         ])
     }
 
@@ -19900,6 +19986,261 @@ struct ComposeOrchestratorTests {
         #expect(await exporter.requests == [
             ContainerExportRequest(id: "demo-api-2", output: "api.tar"),
         ])
+    }
+
+    @Test("commit dry run emits export archive and image load plan")
+    func commitDryRunEmitsExportArchiveAndImageLoadPlan() async throws {
+        let emitted = MessageRecorder()
+        let exporter = RecordingContainerExporter()
+        let imageManager = RecordingContainerImageManager()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), options: ComposeExecutionOptions(
+            dryRun: true,
+            emit: { emitted.append($0) }
+        ), dependencies: orchestratorDependencies {
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(
+            project: project,
+            serviceName: "api",
+            options: ComposeCommitOptions {
+                $0.reference = "example/api:snapshot"
+                $0.author = "Me"
+                $0.changes = ["CMD true"]
+                $0.index = 2
+                $0.message = "snapshot"
+                $0.pause = false
+            }
+        )
+
+        let messages = emitted.messages
+        #expect(messages.count == 3)
+        let exportMessage = try #require(messages.first)
+        let archiveMessage = try #require(messages.dropFirst().first)
+        let loadMessage = try #require(messages.last)
+        #expect(exportMessage == "+ compose-runtime export --output /tmp/demo-api-2-commit-rootfs.tar demo-api-2")
+        #expect(archiveMessage.contains("compose-runtime commit-archive"))
+        #expect(archiveMessage.contains("--rootfs /tmp/demo-api-2-commit-rootfs.tar"))
+        #expect(archiveMessage.contains("--output /tmp/demo-api-2-commit-image.tar"))
+        #expect(archiveMessage.contains("--reference example/api:snapshot"))
+        #expect(archiveMessage.contains("--author Me"))
+        #expect(archiveMessage.contains("--message snapshot"))
+        #expect(archiveMessage.contains("--change 'CMD true'"))
+        #expect(archiveMessage.contains("--no-pause"))
+        #expect(loadMessage == "+ compose-runtime image load --input /tmp/demo-api-2-commit-image.tar")
+        #expect(await exporter.requests.isEmpty)
+        #expect(await imageManager.requests.isEmpty)
+    }
+
+    @Test("commit exports stopped service container and loads image archive")
+    func commitExportsStoppedServiceContainerAndLoadsImageArchive() async throws {
+        let emitted = MessageRecorder()
+        let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.environment = ["LOG_LEVEL": "debug"]
+                },
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), options: ComposeExecutionOptions(
+            emit: { emitted.append($0) }
+        ), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        try await orchestrator.commit(
+            project: project,
+            serviceName: "api",
+            options: ComposeCommitOptions {
+                $0.reference = "example/api:snapshot"
+                $0.changes = ["ENV FEATURE=on"]
+            }
+        )
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        let exports = await exporter.requests
+        #expect(exports.count == 1)
+        #expect(exports.first?.id == "demo-api-1")
+        #expect(exports.first?.output?.hasSuffix("/rootfs.tar") == true)
+        let imageRequests = await imageManager.requests
+        #expect(imageRequests.count == 2)
+        #expect(imageRequests.first == .metadata("example/api"))
+        if case .load(let path) = imageRequests[1] {
+            #expect(path.hasSuffix("/image.tar"))
+        } else {
+            Issue.record("Expected image load request")
+        }
+        #expect(emitted.messages == ["loaded:latest"])
+    }
+
+    @Test("commit rejects running service containers before export")
+    func commitRejectsRunningServiceContainersBeforeExport() async throws {
+        let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        do {
+            try await orchestrator.commit(project: project, serviceName: "api")
+            Issue.record("Expected running commit to fail")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("commit: service 'api' container 'demo-api-1' is running; default paused running-container commit requires Apple live export/snapshot support (apple/container#1400, apple/containerization#660). Stop the service container before committing with the current runtime."))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await exporter.requests.isEmpty)
+        #expect(await imageManager.requests.isEmpty)
+    }
+
+    @Test("commit rejects running service containers when pause is disabled")
+    func commitRejectsRunningServiceContainersWhenPauseIsDisabled() async throws {
+        let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        do {
+            try await orchestrator.commit(project: project, serviceName: "api", options: ComposeCommitOptions {
+                $0.pause = false
+            })
+            Issue.record("Expected running commit with --pause=false to fail")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("commit: service 'api' container 'demo-api-1' is running; running-container commit with --pause=false requires Apple live export/snapshot support (apple/container#1400, apple/containerization#660). Stop the service container before committing with the current runtime."))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await discoveryManager.getRequests == ["demo-api-1"])
+        #expect(await exporter.requests.isEmpty)
+        #expect(await imageManager.requests.isEmpty)
+    }
+
+    @Test("commit image archive applies Docker change instructions")
+    func commitImageArchiveAppliesDockerChangeInstructions() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let rootfs = directory.appendingPathComponent("rootfs.tar")
+        try rootfsArchiveData().write(to: rootfs)
+        let imageArchive = directory.appendingPathComponent("image.tar")
+        let service = composeService(name: "api", image: "example/api") {
+            $0.command = ["serve"]
+            $0.entrypoint = ["/usr/bin/api"]
+            $0.environment = [
+                "EMPTY": nil,
+                "LOG_LEVEL": "debug",
+            ]
+            $0.expose = ["8080"]
+            $0.labels = ["com.example.base": "true"]
+            $0.ports = ["127.0.0.1:8081:81"]
+            $0.stopSignal = "SIGTERM"
+            $0.user = "1000:1000"
+            $0.workingDir = "/srv"
+        }
+
+        try ComposeCommitImageArchive.write(
+            rootfsArchive: rootfs,
+            output: imageArchive,
+            service: service,
+            options: ComposeCommitOptions {
+                $0.reference = "example/api:snapshot"
+                $0.author = "Me"
+                $0.changes = [
+                    "CMD [\"serve\",\"--port\",\"8443\"]",
+                    "ENTRYPOINT [\"/usr/bin/env\"]",
+                    "ENV LOG_LEVEL=trace FEATURE=on",
+                    "ENV MESSAGE hello from commit",
+                    "EXPOSE 8443 5353/udp",
+                    "LABEL org.example.commit=yes",
+                    "ONBUILD RUN echo next",
+                    "USER app",
+                    "VOLUME [\"/data\",\"/cache\"]",
+                    "WORKDIR /srv/app",
+                ]
+                $0.message = "snapshot"
+            },
+            baseImageMetadata: ComposeImageMetadata(
+                reference: "example/base:latest",
+                user: "base-user",
+                environment: ["BASE_ONLY=1", "EMPTY=base", "LOG_LEVEL=info"],
+                entrypoint: ["/base-entrypoint"],
+                command: ["base-command"],
+                workingDir: "/base",
+                labels: [
+                    "com.example.base": "image",
+                    "com.example.image": "true",
+                ],
+                exposedPorts: ["9090/tcp"],
+                stopSignal: "SIGINT"
+            ),
+            createdAt: date("2026-07-12T09:00:00Z")
+        )
+
+        let config = try commitArchiveConfig(from: imageArchive)
+        #expect(config.author == "Me")
+        #expect(config.config.cmd == ["serve", "--port", "8443"])
+        #expect(config.config.entrypoint == ["/usr/bin/env"])
+        #expect(config.config.env == ["BASE_ONLY=1", "EMPTY", "FEATURE=on", "LOG_LEVEL=trace", "MESSAGE=hello from commit"])
+        #expect(config.config.exposedPorts == [
+            "81/tcp": [:],
+            "8080/tcp": [:],
+            "8443/tcp": [:],
+            "5353/udp": [:],
+            "9090/tcp": [:],
+        ])
+        #expect(config.config.labels == [
+            "com.example.base": "true",
+            "com.example.image": "true",
+            "org.example.commit": "yes",
+        ])
+        #expect(config.config.onBuild == ["RUN echo next"])
+        #expect(config.config.stopSignal == "SIGTERM")
+        #expect(config.config.user == "app")
+        #expect(config.config.volumes == [
+            "/cache": [:],
+            "/data": [:],
+        ])
+        #expect(config.config.workingDir == "/srv/app")
     }
 
     @Test("port prints runtime published bindings")
@@ -24773,6 +25114,7 @@ private enum ContainerImageRequest: Equatable {
     case pullMissing(String)
     case push(String)
     case delete(reference: String, force: Bool)
+    case load(String)
 }
 
 private struct ImageHealthCheckRequestKey: Hashable {
@@ -25818,6 +26160,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
     private var pushOutputs: [String: String]
     private let pushFailures: Set<String>
     private var deleteOutputs: [String: String?]
+    private var loadOutputs: [String: [String]]
     private let failure: ComposeError?
 
     init(
@@ -25834,6 +26177,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         pushOutputs: [String: String] = [:],
         pushFailures: Set<String> = [],
         deleteOutputs: [String: String?] = [:],
+        loadOutputs: [String: [String]] = [:],
         failure: ComposeError? = nil
     ) {
         self.existingReferences = existingReferences
@@ -25852,6 +26196,7 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
         self.pushOutputs = pushOutputs
         self.pushFailures = pushFailures
         self.deleteOutputs = deleteOutputs
+        self.loadOutputs = loadOutputs
         self.failure = failure
     }
 
@@ -25952,6 +26297,16 @@ private actor RecordingContainerImageManager: ContainerImageManaging {
             emit(output)
         }
     }
+
+    func loadImageArchive(_ path: String, emit: @escaping @Sendable (String) -> Void) async throws {
+        if let failure {
+            throw failure
+        }
+        storage.append(.load(path))
+        for reference in loadOutputs[path] ?? ["loaded:latest"] {
+            emit(reference)
+        }
+    }
 }
 
 private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
@@ -25962,6 +26317,7 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
     private var transformers: [ComposeBridgeTransformer]
     private var pushOutputs: [String: String]
     private var deleteOutputs: [String: String?]
+    private var loadOutputs: [String: [String]]
     private var storage: [ContainerImageRequest] = []
 
     init(
@@ -25972,7 +26328,8 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         imageMetadata: [String: ComposeImageMetadata] = [:],
         transformers: [ComposeBridgeTransformer] = [],
         pushOutputs: [String: String] = [:],
-        deleteOutputs: [String: String?] = [:]
+        deleteOutputs: [String: String?] = [:],
+        loadOutputs: [String: [String]] = [:]
     ) {
         self.existingReferences = existingReferences
         self.digests = digests
@@ -25985,6 +26342,7 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
         self.transformers = transformers
         self.pushOutputs = pushOutputs
         self.deleteOutputs = deleteOutputs
+        self.loadOutputs = loadOutputs
     }
 
     var requests: [ContainerImageRequest] {
@@ -26042,6 +26400,11 @@ private actor RecordingContainerImageAPIClient: ContainerImageAPIClienting {
             return output
         }
         return nil
+    }
+
+    func loadImageArchive(path: String) async throws -> [String] {
+        storage.append(.load(path))
+        return loadOutputs[path] ?? ["loaded:latest"]
     }
 }
 

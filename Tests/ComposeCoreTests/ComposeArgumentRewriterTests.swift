@@ -1188,6 +1188,53 @@ struct ComposeArgumentRewriterTests {
         ])
     }
 
+    @Test("normalizes commit shorthand and optional pause boolean")
+    func normalizesCommitShorthandAndOptionalPauseBoolean() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "--file",
+            "compose.yml",
+            "commit",
+            "-a=Me",
+            "-c=ENV FEATURE=on",
+            "-m=snapshot",
+            "-p=false",
+            "api",
+            "example/api:snapshot",
+        ])
+
+        #expect(rewritten == [
+            "commit",
+            "--file",
+            "compose.yml",
+            "--author",
+            "Me",
+            "--change",
+            "ENV FEATURE=on",
+            "--message",
+            "snapshot",
+            "--no-pause",
+            "api",
+            "example/api:snapshot",
+        ])
+    }
+
+    @Test("preserves commit arguments after terminator")
+    func preservesCommitArgumentsAfterTerminator() {
+        let rewritten = ComposeArgumentRewriter.rewrite([
+            "commit",
+            "--",
+            "-p=false",
+            "-a=Me",
+        ])
+
+        #expect(rewritten == [
+            "commit",
+            "--",
+            "-p=false",
+            "-a=Me",
+        ])
+    }
+
     @Test("returns arguments unchanged when no subcommand is present")
     func returnsArgumentsUnchangedWhenNoSubcommandIsPresent() {
         let arguments = ["--help", "--verbose"]

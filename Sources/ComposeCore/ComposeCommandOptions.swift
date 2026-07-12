@@ -599,6 +599,37 @@ public struct ComposeExportOptions {
     }
 }
 
+/// Options for `compose commit` commands.
+public struct ComposeCommitOptions {
+    public var reference: String?
+    public var author: String?
+    public var changes: [String]
+    public var index: Int
+    public var message: String?
+    public var pause: Bool
+
+    public init(
+        reference: String? = nil,
+        author: String? = nil,
+        changes: [String] = [],
+        index: Int = 1,
+        message: String? = nil,
+        pause: Bool = true
+    ) {
+        self.reference = reference
+        self.author = author
+        self.changes = changes
+        self.index = index
+        self.message = message
+        self.pause = pause
+    }
+
+    public init(_ configure: (inout ComposeCommitOptions) -> Void) {
+        self.init()
+        configure(&self)
+    }
+}
+
 /// Options for `compose ls`.
 public struct ComposeLsOptions {
     public var all: Bool

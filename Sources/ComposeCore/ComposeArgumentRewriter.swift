@@ -111,6 +111,12 @@ public enum ComposeArgumentRewriter {
         ("-s", "--signal"),
     ]
 
+    private static let compactCommitValueOptions: [(shortOption: String, normalizedOption: String)] = [
+        ("-a", "--author"),
+        ("-c", "--change"),
+        ("-m", "--message"),
+    ]
+
     private static let compactVersionValueOptions: [(shortOption: String, normalizedOption: String)] = [
         ("-f", "--format"),
     ]
@@ -368,6 +374,8 @@ public enum ComposeArgumentRewriter {
     /// Normalizes command-specific aliases that conflict with global options.
     private static func rewriteCommandLocalOptions(command: String, arguments: [String]) -> [String] {
         switch command {
+        case "commit":
+            return rewriteCommitOptions(arguments)
         case "exec":
             return rewriteExecOptions(arguments)
         case "kill":
@@ -387,6 +395,32 @@ public enum ComposeArgumentRewriter {
         default:
             return arguments
         }
+    }
+
+    /// Normalizes Docker Compose `commit` optional boolean and shorthand options.
+    private static func rewriteCommitOptions(_ arguments: [String]) -> [String] {
+        var rewritten: [String] = []
+        var shouldRewriteOptions = true
+        for argument in arguments {
+            if shouldRewriteOptions, argument == "--" {
+                shouldRewriteOptions = false
+                rewritten.append(argument)
+            } else if shouldRewriteOptions, argument == "-p" {
+                rewritten.append("--pause")
+            } else if shouldRewriteOptions, argument == "-p=false" {
+                rewritten.append("--no-pause")
+            } else if shouldRewriteOptions, argument == "-p=true" {
+                rewritten.append("--pause")
+            } else if shouldRewriteOptions, let pause = rewriteOptionalBooleanFlag(argument, flag: "--pause", falseFlag: "--no-pause") {
+                rewritten.append(contentsOf: pause)
+            } else if shouldRewriteOptions, let split = splitCompactValueOption(argument, options: compactCommitValueOptions) {
+                rewritten.append(split.option)
+                rewritten.append(split.value)
+            } else {
+                rewritten.append(argument)
+            }
+        }
+        return rewritten
     }
 
     /// Normalizes Docker Compose `up` optional boolean and shorthand options.

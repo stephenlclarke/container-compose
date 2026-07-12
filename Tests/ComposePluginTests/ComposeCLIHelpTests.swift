@@ -111,10 +111,14 @@ struct ComposeCLIHelpTests {
 
     @Test("partial commands expose command-level parity limitations")
     func partialCommandsExposeCommandLevelParityLimitations() throws {
+        let commitHelp = try #require(ComposeCLIHelp.commandHelpText(command: "commit"))
         let copyHelp = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
         let publishHelp = try #require(ComposeCLIHelp.commandHelpText(command: "publish"))
         let topHelp = try #require(ComposeCLIHelp.commandHelpText(command: "top"))
 
+        #expect(commitHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(commitHelp.contains("running-container commit, including --pause=false"))
+        #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
         #expect(copyHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(copyHelp.contains("stdin/stdout tar streaming"))
         #expect(publishHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
@@ -1189,7 +1193,13 @@ struct ComposeCLIHelpTests {
                 ])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["--author", "Me", "--change", "CMD true", "--index", "2", "--message", "snapshot", "--pause", "api", "example/api:snapshot"])
+                #expect(command.author == "Me")
+                #expect(command.changes == ["CMD true"])
+                #expect(command.index == 2)
+                #expect(command.message == "snapshot")
+                #expect(command.pause)
+                #expect(command.service == "api")
+                #expect(command.reference == "example/api:snapshot")
             }),
             (["config"], [
                 "--dry-run", "--environment", "--format", "--hash", "--images", "--lock-image-digests", "--models", "--networks",

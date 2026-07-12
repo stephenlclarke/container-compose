@@ -304,7 +304,7 @@ enum ComposeCLIHelp {
         "bridge transformations list": .supported,
         "bridge transformations ls": .supported,
         "build": .supported,
-        "commit": .notSupported,
+        "commit": .partiallySupported,
         "config": .supported,
         "convert": .supported,
         "cp": .partiallySupported,
@@ -342,6 +342,7 @@ enum ComposeCLIHelp {
 
     private static let supportDetailByCommand: [String: String] = [
         "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
+        "commit": "Stopped service containers can be committed to images; running-container commit, including --pause=false, waits for Apple live export/snapshot support.",
         "cp": "Path copies are supported; stdin/stdout tar streaming with '-' requires an additional runtime copy-stream API.",
         "top": "Service selection and PID output are supported; the runtime does not yet expose Docker's full process metadata table.",
     ]
@@ -426,12 +427,12 @@ enum ComposeCLIHelp {
             "--with-dependencies": .supported,
         ],
         "commit": [
-            "--author": .notSupported,
-            "--change": .notSupported,
-            "--dry-run": .notSupported,
-            "--index": .notSupported,
-            "--message": .notSupported,
-            "--pause": .notSupported,
+            "--author": .supported,
+            "--change": .supported,
+            "--dry-run": .supported,
+            "--index": .supported,
+            "--message": .supported,
+            "--pause": .supported,
         ],
         "config": [
             "--dry-run": .supported,
@@ -1313,7 +1314,7 @@ enum ComposeCLIHelp {
               --dry-run          Execute command in dry run mode
               --index int        index of the container if service has multiple replicas.
           -m, --message string   Commit message
-          -p, --pause            Pause container during commit (default true)
+          -p, --pause            Pause container during commit (default true). Accepted for Docker Compose CLI compatibility; running commits still require Apple live export/snapshot support.
         """,
         "config": """
         Usage:  container compose config [OPTIONS] [SERVICE...]

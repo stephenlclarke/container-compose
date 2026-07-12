@@ -1955,14 +1955,43 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Reports `compose commit` as unsupported until apple/container can commit containers to images.
+/// Implements `compose commit` for stopped service containers.
 struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "commit", abstract: "Create an image from a service container.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for committing service containers.
-    func run() throws {
-        throw ComposeError.unsupported("commit: apple/container does not expose committing service containers to images")
+    @Option(name: [.customShort("a"), .customLong("author")], help: "Author.")
+    var author: String?
+    @Option(name: [.customShort("c"), .customLong("change")], help: "Apply Dockerfile instruction to the created image.")
+    var changes: [String] = []
+    @Option(name: .customLong("index"), help: "Target service container index.")
+    var index = 1
+    @Option(name: [.customShort("m"), .customLong("message")], help: "Commit message.")
+    var message: String?
+    @Flag(
+        name: .customLong("pause"),
+        inversion: .prefixedNo,
+        help: "Pause container during commit. Running-container commit is blocked until Apple live snapshot support exists."
+    )
+    var pause = true
+    @Argument(help: "Service name.")
+    var service: String
+    @Argument(help: "Optional image reference.")
+    var reference: String?
+    /// Commits the selected stopped service container as a new image.
+    func run() async throws {
+        let loadedProject = try await project()
+        try await orchestrator().commit(
+            project: loadedProject,
+            serviceName: service,
+            options: ComposeCommitOptions(
+                reference: reference,
+                author: author,
+                changes: changes,
+                index: index,
+                message: message,
+                pause: pause
+            )
+        )
     }
 }
 

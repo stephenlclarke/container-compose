@@ -52,13 +52,45 @@ public struct ComposeImageMetadata: Sendable, Equatable {
     public var reference: String
     /// Human-facing display reference.
     public var displayReference: String
+    /// Docker image config user.
+    public var user: String?
+    /// Docker image config environment entries.
+    public var environment: [String]
+    /// Docker image config entrypoint.
+    public var entrypoint: [String]?
+    /// Docker image config command.
+    public var command: [String]?
+    /// Docker image config working directory.
+    public var workingDir: String?
+    /// Docker image config labels.
+    public var labels: [String: String]
     /// Docker image config exposed ports, keyed as "port/protocol".
     public var exposedPorts: [String]
+    /// Docker image config stop signal.
+    public var stopSignal: String?
 
-    public init(reference: String, displayReference: String? = nil, exposedPorts: [String] = []) {
+    public init(
+        reference: String,
+        displayReference: String? = nil,
+        user: String? = nil,
+        environment: [String] = [],
+        entrypoint: [String]? = nil,
+        command: [String]? = nil,
+        workingDir: String? = nil,
+        labels: [String: String] = [:],
+        exposedPorts: [String] = [],
+        stopSignal: String? = nil
+    ) {
         self.reference = reference
         self.displayReference = displayReference ?? reference
+        self.user = user
+        self.environment = environment
+        self.entrypoint = entrypoint
+        self.command = command
+        self.workingDir = workingDir
+        self.labels = labels
         self.exposedPorts = exposedPorts
+        self.stopSignal = stopSignal
     }
 }
 
@@ -87,6 +119,9 @@ public protocol ContainerImageAPIClienting: Sendable {
 
     /// Deletes `reference`, returning the runtime image reference that was deleted.
     func deleteImage(reference: String, force: Bool) async throws -> String?
+
+    /// Loads an OCI or Docker image archive and returns loaded image references.
+    func loadImageArchive(path: String) async throws -> [String]
 }
 
 /// Direct apple/container image APIs used for Compose image workflows.
@@ -117,6 +152,9 @@ public protocol ContainerImageManaging: Sendable {
 
     /// Deletes `reference` and emits the deleted runtime reference when available.
     func deleteImage(_ reference: String, force: Bool, emit: @escaping @Sendable (String) -> Void) async throws
+
+    /// Loads an OCI or Docker image archive and emits loaded image references.
+    func loadImageArchive(_ path: String, emit: @escaping @Sendable (String) -> Void) async throws
 }
 
 /// Thin apple/container client wrapper around image API calls.
@@ -129,6 +167,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     public typealias Pull = @Sendable (String) async throws -> Void
     public typealias Push = @Sendable (String) async throws -> String
     public typealias Delete = @Sendable (String, Bool) async throws -> String?
+    public typealias Load = @Sendable (String) async throws -> [String]
 
     private let existsOperation: Exists
     private let digestOperation: Digest
@@ -138,6 +177,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     private let pullOperation: Pull
     private let pushOperation: Push
     private let deleteOperation: Delete
+    private let loadOperation: Load
 
     /// Read-only image operations.
     public struct QueryOperations: Sendable {
@@ -169,15 +209,18 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         public var pull: Pull
         public var push: Push
         public var delete: Delete
+        public var load: Load
 
         public init(
             pull: @escaping Pull,
             push: @escaping Push,
             delete: @escaping Delete,
+            load: @escaping Load,
         ) {
             self.pull = pull
             self.push = push
             self.delete = delete
+            self.load = load
         }
     }
 
@@ -195,6 +238,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
                 pull: { try await client.pullImage(reference: $0) },
                 push: { try await client.pushImage(reference: $0) },
                 delete: { try await client.deleteImage(reference: $0, force: $1) },
+                load: { try await client.loadImageArchive(path: $0) },
             ),
         )
     }
@@ -209,6 +253,7 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
         pullOperation = mutations.pull
         pushOperation = mutations.push
         deleteOperation = mutations.delete
+        loadOperation = mutations.load
     }
 
     /// Creates a facade around the live apple/container image API bridge.
@@ -254,6 +299,11 @@ public struct ContainerImageAPIClient: ContainerImageAPIClienting {
     /// Deletes an image through `ClientImage`.
     public func deleteImage(reference: String, force: Bool) async throws -> String? {
         try await deleteOperation(reference, force)
+    }
+
+    /// Loads an OCI or Docker image archive through `ClientImage`.
+    public func loadImageArchive(path: String) async throws -> [String] {
+        try await loadOperation(path)
     }
 }
 
@@ -318,5 +368,13 @@ public struct ContainerClientImageManager: ContainerImageManaging {
             return
         }
         emit(deleted)
+    }
+
+    /// Loads an image archive and emits loaded image references.
+    public func loadImageArchive(_ path: String, emit: @escaping @Sendable (String) -> Void) async throws {
+        let references = try await client.loadImageArchive(path: path)
+        for reference in references where !reference.isEmpty {
+            emit(reference)
+        }
     }
 }

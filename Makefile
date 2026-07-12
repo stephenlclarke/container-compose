@@ -92,6 +92,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-config-all-resources-parity \
 	docker-compose-env-file-parity \
 	docker-compose-git-remote-parity \
+	docker-compose-commit-parity \
 	docker-compose-build-builder-parity \
 	docker-compose-build-check-parity \
 	docker-compose-build-isolation-parity \
@@ -127,7 +128,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -338,7 +339,7 @@ cli-smoke-built:
 	[[ "$$root_help_output" == *"$${ansi_escape}[32malpha$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mversion$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mup$${ansi_escape}[0m"* ]]; \
-	[[ "$$root_help_output" == *"$${ansi_escape}[31mcommit$${ansi_escape}[0m"* ]]; \
+	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208mcommit$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32mpause$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32m--file$${ansi_escape}[0m"* ]]; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[38;5;208m--parallel$${ansi_escape}[0m"* ]]; \
@@ -362,8 +363,9 @@ cli-smoke-built:
 	[[ "$$version_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	[[ "$$version_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
 	commit_help_output="$$(".build/debug/compose" commit --help)"; \
-	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[31mnot supported$${ansi_escape}[0m"* ]]; \
-	[[ "$$commit_help_output" == *"$${ansi_escape}[31m--author$${ansi_escape}[0m"* ]]; \
+	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--author$${ansi_escape}[0m"* ]]; \
+	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--pause$${ansi_escape}[0m"* ]]; \
 	config_help_output="$$(".build/debug/compose" config --help)"; \
 	[[ "$$config_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$config_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
@@ -506,8 +508,9 @@ cli-smoke-built:
 	[[ "$$bridge_transformations_list_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	[[ "$$bridge_transformations_list_help_output" == *"Usage:  container compose bridge transformations list"* ]]; \
 	[[ "$$bridge_transformations_list_help_output" == *"$${ansi_escape}[32m--format$${ansi_escape}[0m"* ]]; \
-	commit_output="$$(".build/debug/compose" commit api example/api:latest 2>&1 || true)"; \
-	[[ "$$commit_output" == *"unsupported compose feature: commit: apple/container does not expose committing service containers to images"* ]]; \
+	commit_help_output="$$(".build/debug/compose" commit --help)"; \
+	[[ "$$commit_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$commit_help_output" == *"$${ansi_escape}[32m--pause$${ansi_escape}[0m"* ]]; \
 	tmpdir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	printf 'enabled=true\n' > "$$tmpdir/api.conf"; \
@@ -1092,8 +1095,11 @@ cli-smoke-built:
 	alpha_dry_run_output="$$(".build/debug/compose" -f "$$tmpdir/compose.yml" alpha dry-run -- up api)"; \
 	[[ "$$alpha_dry_run_output" == *"container create"* ]]; \
 	[[ "$$alpha_dry_run_output" == *"container run --name demo-api-1"* ]]; \
-	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot 2>&1 || true)"; \
-	[[ "$$commit_output" == *"unsupported compose feature: commit: apple/container does not expose committing service containers to images"* ]]; \
+	commit_output="$$(".build/debug/compose" --dry-run --project-name demo -f "$$tmpdir/compose.yml" commit --change 'ENV SNAPSHOT=true' api example/api:snapshot)"; \
+	[[ "$$commit_output" == *"compose-runtime export --output /tmp/demo-api-1-commit-rootfs.tar demo-api-1"* ]]; \
+	[[ "$$commit_output" == *"compose-runtime commit-archive"* ]]; \
+	[[ "$$commit_output" == *"--change 'ENV SNAPSHOT=true'"* ]]; \
+	[[ "$$commit_output" == *"compose-runtime image load --input /tmp/demo-api-1-commit-image.tar"* ]]; \
 	publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" publish example/app:latest)"; \
 	[[ "$$publish_output" == *"container image push alpine"* ]]; \
 	[[ "$$publish_output" == *"DRY-RUN MODE - would publish example/app:latest as OCI auto"* ]]; \
@@ -1139,6 +1145,9 @@ docker-compose-env-file-parity: build
 
 docker-compose-git-remote-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-git-remote.sh --strict
+
+docker-compose-commit-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-commit.sh --strict
 
 docker-compose-build-builder-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-build-builder.sh --strict

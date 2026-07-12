@@ -67,10 +67,18 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
         let resource = try await image.toImageResource(containerSystemConfig: config)
         let variant = try Self.variant(in: resource, matching: Self.requestedPlatform(nil), allowFallback: true)
+        let imageConfig = variant?.config.config
         return ComposeImageMetadata(
             reference: image.reference,
             displayReference: resource.displayReference,
+            user: imageConfig?.user,
+            environment: imageConfig?.env ?? [],
+            entrypoint: imageConfig?.entrypoint,
+            command: imageConfig?.cmd,
+            workingDir: imageConfig?.workingDir,
+            labels: imageConfig?.labels ?? [:],
             exposedPorts: variant?.exposedPorts ?? [],
+            stopSignal: imageConfig?.stopSignal,
         )
     }
 
@@ -147,6 +155,21 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         try await ClientImage.delete(reference: image.reference, garbageCollect: false)
         _ = try await ClientImage.cleanUpOrphanedBlobs()
         return image.reference
+    }
+
+    /// Loads an OCI or Docker archive through `ClientImage.load`, then unpacks each loaded image.
+    public func loadImageArchive(path: String) async throws -> [String] {
+        let platform = try Self.defaultPlatform()
+        let result = try await ClientImage.load(from: path, force: false)
+        if !result.rejectedMembers.isEmpty {
+            throw ComposeError.invalidProject("image archive contains invalid members: \(result.rejectedMembers.joined(separator: ", "))")
+        }
+        var references: [String] = []
+        for image in result.images {
+            try await image.unpack(platform: platform)
+            references.append(image.reference)
+        }
+        return references
     }
 
     /// Resolves `CONTAINER_DEFAULT_PLATFORM` for image operations.
