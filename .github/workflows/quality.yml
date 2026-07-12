@@ -133,6 +133,26 @@ jobs:
           path: container-compose
           fetch-depth: 0
 
+      - name: Resolve stack refs
+        id: stack-refs
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          manifest = Path("Tools/release/stack-refs.json")
+          if not manifest.exists():
+              print("containerization_ref=")
+              raise SystemExit(0)
+
+          data = json.loads(manifest.read_text(encoding="utf-8"))
+          components = data.get("components", {})
+          print(f"containerization_ref={components.get('containerization', {}).get('ref', '')}")
+          PY
+
       - name: Resolve container ref
         id: apple-container-ref
         shell: bash
@@ -152,6 +172,14 @@ jobs:
           path: container
           ref: ${{ steps.apple-container-ref.outputs.ref }}
 
+      - name: Checkout containerization dependency
+        if: steps.stack-refs.outputs.containerization_ref != ''
+        uses: actions/checkout@v7
+        with:
+          repository: stephenlclarke/containerization
+          path: containerization
+          ref: ${{ steps.stack-refs.outputs.containerization_ref }}
+
       - name: Verify container dependency ref
         shell: bash
         run: |
@@ -160,6 +188,18 @@ jobs:
           expected="${{ steps.apple-container-ref.outputs.ref }}"
           if [[ "$actual" != "$expected" ]]; then
             printf 'container checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
+            exit 1
+          fi
+
+      - name: Verify containerization dependency ref
+        if: steps.stack-refs.outputs.containerization_ref != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C containerization rev-parse HEAD)"
+          expected="${{ steps.stack-refs.outputs.containerization_ref }}"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'containerization checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
             exit 1
           fi
 
@@ -172,7 +212,11 @@ jobs:
             swift --version 2>&1
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
             printf 'container_ref=%s\n' "${{ steps.apple-container-ref.outputs.ref }}"
+            printf 'containerization_ref=%s\n' "${{ steps.stack-refs.outputs.containerization_ref }}"
             shasum -a 256 container/Package.swift container/Package.resolved
+            if [[ -f containerization/Package.swift ]]; then
+              shasum -a 256 containerization/Package.swift containerization/Package.resolved
+            fi
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM ASan artifacts
@@ -185,6 +229,11 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-asan-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-asan-v1-
+
+      - name: Use checked-out containerization dependency
+        if: steps.stack-refs.outputs.containerization_ref != ''
+        run: Tools/ci/use-stack-containerization.sh ../containerization
+        working-directory: container-compose
 
       - name: Print toolchain versions
         run: |
@@ -217,6 +266,26 @@ jobs:
           path: container-compose
           fetch-depth: 0
 
+      - name: Resolve stack refs
+        id: stack-refs
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          manifest = Path("Tools/release/stack-refs.json")
+          if not manifest.exists():
+              print("containerization_ref=")
+              raise SystemExit(0)
+
+          data = json.loads(manifest.read_text(encoding="utf-8"))
+          components = data.get("components", {})
+          print(f"containerization_ref={components.get('containerization', {}).get('ref', '')}")
+          PY
+
       - name: Resolve container ref
         id: apple-container-ref
         shell: bash
@@ -236,6 +305,14 @@ jobs:
           path: container
           ref: ${{ steps.apple-container-ref.outputs.ref }}
 
+      - name: Checkout containerization dependency
+        if: steps.stack-refs.outputs.containerization_ref != ''
+        uses: actions/checkout@v7
+        with:
+          repository: stephenlclarke/containerization
+          path: containerization
+          ref: ${{ steps.stack-refs.outputs.containerization_ref }}
+
       - name: Verify container dependency ref
         shell: bash
         run: |
@@ -244,6 +321,18 @@ jobs:
           expected="${{ steps.apple-container-ref.outputs.ref }}"
           if [[ "$actual" != "$expected" ]]; then
             printf 'container checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
+            exit 1
+          fi
+
+      - name: Verify containerization dependency ref
+        if: steps.stack-refs.outputs.containerization_ref != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C containerization rev-parse HEAD)"
+          expected="${{ steps.stack-refs.outputs.containerization_ref }}"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'containerization checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
             exit 1
           fi
 
@@ -256,7 +345,11 @@ jobs:
             swift --version 2>&1
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
             printf 'container_ref=%s\n' "${{ steps.apple-container-ref.outputs.ref }}"
+            printf 'containerization_ref=%s\n' "${{ steps.stack-refs.outputs.containerization_ref }}"
             shasum -a 256 container/Package.swift container/Package.resolved
+            if [[ -f containerization/Package.swift ]]; then
+              shasum -a 256 containerization/Package.swift containerization/Package.resolved
+            fi
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM TSan artifacts
@@ -269,6 +362,11 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-tsan-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-tsan-v1-
+
+      - name: Use checked-out containerization dependency
+        if: steps.stack-refs.outputs.containerization_ref != ''
+        run: Tools/ci/use-stack-containerization.sh ../containerization
+        working-directory: container-compose
 
       - name: Print toolchain versions
         run: |
