@@ -612,7 +612,7 @@ public struct ComposeCommitOptions {
         reference: String? = nil,
         author: String? = nil,
         changes: [String] = [],
-        index: Int = 1,
+        index: Int = 0,
         message: String? = nil,
         pause: Bool = true
     ) {

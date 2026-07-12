@@ -1964,13 +1964,13 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     @Option(name: [.customShort("c"), .customLong("change")], help: "Apply Dockerfile instruction to the created image.")
     var changes: [String] = []
     @Option(name: .customLong("index"), help: "Target service container index.")
-    var index = 1
+    var index = 0
     @Option(name: [.customShort("m"), .customLong("message")], help: "Commit message.")
     var message: String?
     @Flag(
         name: .customLong("pause"),
         inversion: .prefixedNo,
-        help: "Pause container during commit. Running-container commit is blocked until Apple live snapshot support exists."
+        help: "Pause container during commit. Running-container commit is blocked until Apple live export/commit support exists."
     )
     var pause = true
     @Argument(help: "Service name.")

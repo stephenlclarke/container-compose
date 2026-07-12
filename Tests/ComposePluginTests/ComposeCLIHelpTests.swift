@@ -1178,6 +1178,11 @@ struct ComposeCLIHelpTests {
                 #expect(command.services == ["api"])
             }),
             (["commit"], ["--author", "--change", "--dry-run", "--index", "--message", "--pause"], {
+                let defaultIndex = try Commit.parse([
+                    "api",
+                ])
+                #expect(defaultIndex.index == 0)
+
                 let command = try Commit.parse([
                     "--dry-run",
                     "--author", "Me",

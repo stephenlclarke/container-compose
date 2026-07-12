@@ -342,7 +342,7 @@ enum ComposeCLIHelp {
 
     private static let supportDetailByCommand: [String: String] = [
         "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
-        "commit": "Stopped service containers can be committed to images; running-container commit, including --pause=false, waits for Apple live export/snapshot support.",
+        "commit": "Stopped service containers can be committed to images; running-container commit, including --pause=false, waits for Apple live export/commit support.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [
@@ -1312,7 +1312,7 @@ enum ComposeCLIHelp {
               --dry-run          Execute command in dry run mode
               --index int        index of the container if service has multiple replicas.
           -m, --message string   Commit message
-          -p, --pause            Pause container during commit (default true). Accepted for Docker Compose CLI compatibility; running commits still require Apple live export/snapshot support.
+          -p, --pause            Pause container during commit (default true). Accepted for Docker Compose CLI compatibility; running commits still require Apple live export/commit support.
         """,
         "config": """
         Usage:  container compose config [OPTIONS] [SERVICE...]

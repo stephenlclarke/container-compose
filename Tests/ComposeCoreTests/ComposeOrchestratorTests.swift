@@ -20281,7 +20281,14 @@ struct ComposeOrchestratorTests {
         let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
         let imageManager = RecordingContainerImageManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(id: "demo-api-1", status: "stopped"),
+            discoveredServiceContainer(id: "demo-api-2", serviceName: "api", status: "stopped"),
+            discoveredServiceContainer(id: "demo-worker-1", serviceName: "worker", status: "stopped"),
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+            ComposeContainerSummary(id: "demo-api-run-abc", status: "stopped", labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "true",
+            ]),
         ])
         let project = ComposeProject(
             name: "demo",
@@ -20308,6 +20315,7 @@ struct ComposeOrchestratorTests {
             }
         )
 
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         let exports = await exporter.requests
         #expect(exports.count == 1)
@@ -20324,12 +20332,48 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["loaded:latest"])
     }
 
+    @Test("commit rejects negative replica indexes")
+    func commitRejectsNegativeReplicaIndexes() async throws {
+        let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
+        let imageManager = RecordingContainerImageManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "stopped"),
+        ])
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let orchestrator = ComposeOrchestrator(runner: RecordingRunner(), dependencies: orchestratorDependencies {
+            $0.discoveryManager = discoveryManager
+            $0.exporter = exporter
+            $0.imageManager = imageManager
+        })
+
+        do {
+            try await orchestrator.commit(project: project, serviceName: "api", options: ComposeCommitOptions {
+                $0.index = -1
+            })
+            Issue.record("Expected negative commit index to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("container index must not be negative"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await discoveryManager.listRequests.isEmpty)
+        #expect(await discoveryManager.getRequests.isEmpty)
+        #expect(await exporter.requests.isEmpty)
+        #expect(await imageManager.requests.isEmpty)
+    }
+
     @Test("commit rejects running service containers before export")
     func commitRejectsRunningServiceContainersBeforeExport() async throws {
         let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
         let imageManager = RecordingContainerImageManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(id: "demo-api-1", status: "running"),
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
         ])
         let project = ComposeProject(
             name: "demo",
@@ -20347,11 +20391,12 @@ struct ComposeOrchestratorTests {
             try await orchestrator.commit(project: project, serviceName: "api")
             Issue.record("Expected running commit to fail")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("commit: service 'api' container 'demo-api-1' is running; default paused running-container commit requires Apple live export/snapshot support (apple/container#1400, apple/containerization#660). Stop the service container before committing with the current runtime."))
+            #expect(error == .unsupported("commit: service 'api' container 'demo-api-1' is running; default paused running-container commit requires Apple live export/commit support (apple/container#1400, apple/container#1630, apple/container#1762). Stop the service container before committing with the current runtime."))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await exporter.requests.isEmpty)
         #expect(await imageManager.requests.isEmpty)
@@ -20362,7 +20407,7 @@ struct ComposeOrchestratorTests {
         let exporter = RecordingContainerExporter(archiveData: try rootfsArchiveData())
         let imageManager = RecordingContainerImageManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(id: "demo-api-1", status: "running"),
+            discoveredServiceContainer(id: "demo-api-1", serviceName: "api", status: "running"),
         ])
         let project = ComposeProject(
             name: "demo",
@@ -20382,11 +20427,12 @@ struct ComposeOrchestratorTests {
             })
             Issue.record("Expected running commit with --pause=false to fail")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("commit: service 'api' container 'demo-api-1' is running; running-container commit with --pause=false requires Apple live export/snapshot support (apple/container#1400, apple/containerization#660). Stop the service container before committing with the current runtime."))
+            #expect(error == .unsupported("commit: service 'api' container 'demo-api-1' is running; running-container commit with --pause=false requires Apple live export/commit support (apple/container#1400, apple/container#1630, apple/container#1762). Stop the service container before committing with the current runtime."))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
+        #expect(await discoveryManager.listRequests == [true])
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
         #expect(await exporter.requests.isEmpty)
         #expect(await imageManager.requests.isEmpty)

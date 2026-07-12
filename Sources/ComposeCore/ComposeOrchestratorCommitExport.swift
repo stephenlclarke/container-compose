@@ -50,7 +50,7 @@ public extension ComposeOrchestrator {
             throw ComposeError.invalidProject("unknown service '\(serviceName)'")
         }
 
-        let containerID = try await serviceContainerID(project: project, service: service, index: commit.index)
+        let containerID = try await commitContainerID(project: project, service: service, index: commit.index)
         let rootfsArchive = "/tmp/\(containerID)-commit-rootfs.tar"
         let imageArchive = "/tmp/\(containerID)-commit-image.tar"
         if options.dryRun {
@@ -93,6 +93,29 @@ public extension ComposeOrchestrator {
             baseImageMetadata: baseImageMetadata,
         )
         try await imageManager.loadImageArchive(archive.path, emit: options.emit)
+    }
+
+    /// Resolves the commit target using Docker Compose's `--index=0` default
+    /// semantics, where zero means no explicit replica index was selected.
+    func commitContainerID(project: ComposeProject, service: ComposeService, index: Int) async throws -> String {
+        guard index >= 0 else {
+            throw ComposeError.invalidProject("container index must not be negative")
+        }
+        guard index == 0 else {
+            return try await serviceContainerID(project: project, service: service, index: index)
+        }
+        guard !options.dryRun else {
+            return try serviceContainerName(project: project, service: service, index: 1)
+        }
+
+        let containers = try await projectContainers(projectName: project.name, all: true)
+        let matches = containers
+            .filter { $0.serviceName == service.name && !$0.isOneOff }
+            .sorted(by: serviceContainerSummaryOrder(project: project, service: service))
+        guard let selected = matches.first else {
+            throw ComposeError.invalidProject("service '\(service.name)' has no container to commit")
+        }
+        return selected.id
     }
 
     /// Returns image config metadata used to seed Docker-compatible commit config when available.
@@ -149,7 +172,7 @@ public extension ComposeOrchestrator {
         case "running":
             let mode = pause ? "default paused running-container commit" : "running-container commit with --pause=false"
             throw ComposeError.unsupported(
-                "commit: service '\(service.name)' container '\(container.id)' is running; \(mode) requires Apple live export/snapshot support (apple/container#1400, apple/containerization#660). Stop the service container before committing with the current runtime.",
+                "commit: service '\(service.name)' container '\(container.id)' is running; \(mode) requires Apple live export/commit support (apple/container#1400, apple/container#1630, apple/container#1762). Stop the service container before committing with the current runtime.",
             )
         default:
             throw ComposeError.unsupported(
