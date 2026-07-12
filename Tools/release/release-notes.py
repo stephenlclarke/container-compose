@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -76,6 +77,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--asset-sha", required=True)
     parser.add_argument("--head", default="HEAD")
     parser.add_argument(
+        "--release-repo",
+        default=os.environ.get("GITHUB_REPOSITORY"),
+        help=(
+            "GitHub owner/repository used to find the previous published stable "
+            "release. Defaults to GITHUB_REPOSITORY when set."
+        ),
+    )
+    parser.add_argument(
         "--component-repo",
         action="append",
         default=[],
@@ -98,8 +107,42 @@ def git_output(repo: Path, *arguments: str) -> str | None:
     return output or None
 
 
+def gh_output(*arguments: str) -> str | None:
+    result = subprocess.run(
+        ["gh", *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    output = result.stdout.strip()
+    return output or None
+
+
+def git_success(repo: Path, *arguments: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(repo), *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def commit_for_ref(repo: Path, ref: str) -> str | None:
     return git_output(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")
+
+
+def stable_release_version(release_tag: str) -> tuple[int, int, int] | None:
+    if STABLE_RELEASE_PATTERN.fullmatch(release_tag) is None:
+        return None
+    major, minor, patch = release_tag.split(".")
+    return (int(major), int(minor), int(patch))
+
+
+def ref_is_ancestor(repo: Path, ancestor_ref: str, descendant_ref: str) -> bool:
+    return git_success(repo, "merge-base", "--is-ancestor", ancestor_ref, descendant_ref)
 
 
 def previous_stable_tag(repo: Path, release_tag: str, head_ref: str) -> str | None:
@@ -123,11 +166,77 @@ def previous_stable_tag(repo: Path, release_tag: str, head_ref: str) -> str | No
     return None
 
 
+def previous_published_stable_tag(
+    repo: Path,
+    *,
+    release_tag: str,
+    head_ref: str,
+    release_repo: str | None,
+) -> str | None:
+    if not release_repo:
+        return None
+
+    releases = gh_output(
+        "release",
+        "list",
+        "--repo",
+        release_repo,
+        "--exclude-drafts",
+        "--exclude-pre-releases",
+        "--json",
+        "tagName,publishedAt",
+        "--limit",
+        "100",
+    )
+    if releases is None:
+        return None
+
+    try:
+        parsed = json.loads(releases)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+
+    release_version = stable_release_version(release_tag)
+    candidates: dict[str, tuple[int, int, int]] = {}
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        tag = item.get("tagName")
+        if not isinstance(tag, str) or tag == release_tag:
+            continue
+        version = stable_release_version(tag)
+        if release_version is not None and version is not None:
+            if version >= release_version:
+                continue
+        if version is not None:
+            candidates[tag] = version
+
+    for tag, _version in sorted(
+        candidates.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    ):
+        ref = f"refs/tags/{tag}"
+        if commit_for_ref(repo, ref) is None:
+            continue
+        if ref_is_ancestor(repo, ref, head_ref):
+            return tag
+
+    return None
+
+
 def is_stable_release_tag(release_tag: str) -> bool:
     return STABLE_RELEASE_PATTERN.fullmatch(release_tag) is not None
 
 
-def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
+def release_range(
+    repo: Path,
+    release_tag: str,
+    head_ref: str,
+    release_repo: str | None = None,
+) -> ReleaseRange:
     head_commit = commit_for_ref(repo, head_ref)
     if head_commit is None:
         raise ValueError(f"could not resolve release head: {head_ref}")
@@ -142,7 +251,15 @@ def release_range(repo: Path, release_tag: str, head_ref: str) -> ReleaseRange:
                 head_commit=head_commit,
             )
 
-    previous_tag = previous_stable_tag(repo, release_tag, head_ref)
+    previous_tag = previous_published_stable_tag(
+        repo,
+        release_tag=release_tag,
+        head_ref=head_ref,
+        release_repo=release_repo,
+    )
+    if previous_tag is None:
+        previous_tag = previous_stable_tag(repo, release_tag, head_ref)
+
     if previous_tag is not None:
         return ReleaseRange(
             base_ref=f"refs/tags/{previous_tag}",
@@ -436,9 +553,10 @@ def render_release_notes(
     asset: str,
     asset_sha: str,
     head_ref: str,
+    release_repo: str | None = None,
     component_repos: dict[str, Path] | None = None,
 ) -> str:
-    selected_range = release_range(repo, release_tag, head_ref)
+    selected_range = release_range(repo, release_tag, head_ref, release_repo)
     commits = commits_for_range(repo, selected_range)
     component_deltas = component_changes(
         repo=repo,
@@ -577,6 +695,7 @@ def main() -> None:
                 asset=args.asset,
                 asset_sha=args.asset_sha,
                 head_ref=args.head,
+                release_repo=args.release_repo,
                 component_repos=parse_component_repos(args.component_repo),
             ),
             end="",

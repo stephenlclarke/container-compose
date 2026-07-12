@@ -402,6 +402,7 @@ jobs:
             --asset "${ASSET}" \
             --asset-sha "${sha256}" \
             --head "${PUBLISH_SHA}" \
+            --release-repo "${GITHUB_REPOSITORY}" \
             --component-repo container-builder-shim=../container-builder-shim \
             --component-repo containerization=../containerization \
             --component-repo container=../container > "${notes}"

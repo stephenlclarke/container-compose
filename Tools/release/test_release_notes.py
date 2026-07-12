@@ -252,6 +252,79 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("ci(release): prune older assets", notes)
             self.assertNotIn("chore: initial import", notes)
 
+    def test_published_release_baseline_skips_unpublished_semver_tag(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "feat(commit): support stopped service image commits",
+                body="""
+                Release-Highlight: Supports `container compose commit` for stopped services by resolving each service's latest container before creating the image snapshot.
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+            self.commit(
+                repo,
+                "fix(normalizer): reject raw git subdirectory traversal",
+                body="""
+                Upstream-Ref: docker/compose#13331
+
+                Release-Highlight: Rejects raw Git Compose subdirectories before the normalizer clones the project, matching Docker Compose's security fix.
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.2")
+            self.git(repo, "tag", "--no-sign", "0.7.0")
+
+            original_gh_output = module.gh_output
+            try:
+                module.gh_output = lambda *arguments: json.dumps(
+                    [
+                        {
+                            "tagName": "0.7.0",
+                            "publishedAt": "2026-07-12T08:00:00Z",
+                        },
+                        {
+                            "tagName": "0.6.0",
+                            "publishedAt": "2026-07-12T07:00:00Z",
+                        },
+                    ]
+                )
+                notes = module.render_release_notes(
+                    repo=repo,
+                    release_tag="0.6.2",
+                    release_label="stable release",
+                    compose_version="0.6.2",
+                    asset="container-compose-plugin-release-arm64.tar.gz",
+                    asset_sha="abc123",
+                    head_ref="HEAD",
+                    release_repo="stephenlclarke/container-compose",
+                )
+            finally:
+                module.gh_output = original_gh_output
+
+            self.assertIn("Commits since `0.6.0`", notes)
+            self.assertNotIn("Commits since `0.6.1`", notes)
+            self.assertIn(
+                "Supports `container compose commit` for stopped services by "
+                "resolving each service's latest container before creating the "
+                "image snapshot.",
+                notes,
+            )
+            self.assertIn(
+                "Rejects raw Git Compose subdirectories before the normalizer "
+                "clones the project, matching Docker Compose's security fix. "
+                "Upstream reference: docker/compose#13331.",
+                notes,
+            )
+            self.assertIn("feat(commit): support stopped service image commits", notes)
+            self.assertIn(
+                "fix(normalizer): reject raw git subdirectory traversal",
+                notes,
+            )
+
     def test_stack_component_changes_render_highlights(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
