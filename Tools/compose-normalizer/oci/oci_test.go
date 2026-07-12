@@ -30,6 +30,7 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/remotes"
 	remoteserrors "github.com/containerd/containerd/v2/core/remotes/errors"
+	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
 	"github.com/docker/cli/cli/config/configfile"
@@ -136,6 +137,49 @@ func TestGetReturnsResolveError(t *testing.T) {
 	_, _, err = Get(t.Context(), fakeResolver{resolveErr: wantErr}, ref)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Get error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestCopyAnnotatesDistributionSourceAndCopiesChain(t *testing.T) {
+	payload := []byte("layer")
+	descriptor := spec.Descriptor{
+		MediaType: spec.MediaTypeImageLayer,
+		Digest:    digest.FromBytes(payload),
+		Size:      int64(len(payload)),
+	}
+	pusher := &recordingPusher{}
+	var refs []string
+	resolver := fakeResolver{
+		descriptor: descriptor,
+		content:    payload,
+		pusher:     pusher,
+		pusherRefs: &refs,
+	}
+	image, err := reference.ParseDockerRef("docker.io/library/alpine:latest")
+	if err != nil {
+		t.Fatalf("parse image ref: %v", err)
+	}
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("parse target ref: %v", err)
+	}
+
+	got, err := Copy(t.Context(), resolver, image, target)
+	if err != nil {
+		t.Fatalf("Copy returned error: %v", err)
+	}
+	if got.Digest != descriptor.Digest {
+		t.Fatalf("copied descriptor digest = %s, want %s", got.Digest, descriptor.Digest)
+	}
+	sourceKey := labels.LabelDistributionSource + ".docker.io"
+	if got.Annotations[sourceKey] != "library/alpine" {
+		t.Fatalf("distribution source annotation = %q, want library/alpine", got.Annotations[sourceKey])
+	}
+	if len(refs) != 1 || refs[0] != "registry.example.com/team/app" {
+		t.Fatalf("pusher refs = %#v, want target repository name", refs)
+	}
+	if len(pusher.writers) != 1 || string(pusher.writers[0].data) != string(payload) {
+		t.Fatalf("copied writer payload = %#v, want %q", pusher.writers, string(payload))
 	}
 }
 

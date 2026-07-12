@@ -26,16 +26,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	remoteserrors "github.com/containerd/containerd/v2/core/remotes/errors"
+	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
 	"github.com/docker/cli/cli/config/configfile"
+	"github.com/moby/buildkit/util/contentutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	spec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -124,6 +128,40 @@ func Get(ctx context.Context, resolver remotes.Resolver, ref reference.Named) (s
 		return spec.Descriptor{}, nil, err
 	}
 	return descriptor, content, nil
+}
+
+// Copy mounts/copies an image descriptor chain into the target repository.
+func Copy(ctx context.Context, resolver remotes.Resolver, image reference.Named, named reference.Named) (spec.Descriptor, error) {
+	src, desc, err := resolver.Resolve(ctx, image.String())
+	if err != nil {
+		return spec.Descriptor{}, err
+	}
+	if desc.Annotations == nil {
+		desc.Annotations = make(map[string]string)
+	}
+	refspec := reference.TrimNamed(image).String()
+	u, err := url.Parse("dummy://" + refspec)
+	if err != nil {
+		return spec.Descriptor{}, err
+	}
+	source, repo := u.Hostname(), strings.TrimPrefix(u.Path, "/")
+	desc.Annotations[labels.LabelDistributionSource+"."+source] = repo
+
+	p, err := resolver.Pusher(ctx, named.Name())
+	if err != nil {
+		return spec.Descriptor{}, err
+	}
+	f, err := resolver.Fetcher(ctx, src)
+	if err != nil {
+		return spec.Descriptor{}, err
+	}
+
+	err = contentutil.CopyChain(ctx,
+		contentutil.FromPusher(p),
+		contentutil.FromFetcher(f),
+		desc,
+	)
+	return desc, err
 }
 
 func authConfigKey(host string) string {
