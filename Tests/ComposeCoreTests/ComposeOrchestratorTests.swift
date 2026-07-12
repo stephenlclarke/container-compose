@@ -315,6 +315,18 @@ private func temporaryDirectory() throws -> URL {
     return url
 }
 
+private func archiveWithFile(named name: String, contents: String, in directory: URL) throws -> URL {
+    let source = directory.appendingPathComponent("archive-source", isDirectory: true)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    try contents.write(to: source.appendingPathComponent(name), atomically: true, encoding: .utf8)
+
+    let archive = directory.appendingPathComponent("payload.tar")
+    let writer = try ArchiveWriter(format: .pax, filter: .none, file: archive)
+    try writer.archiveDirectory(source)
+    try writer.finishEncoding()
+    return archive
+}
+
 private func temporaryExecutable(name: String = "provider") throws -> URL {
     let directory = try temporaryDirectory()
     let executable = directory.appendingPathComponent(name)
@@ -19380,8 +19392,8 @@ struct ComposeOrchestratorTests {
         #expect(await copier.requests.isEmpty)
     }
 
-    @Test("cp rejects stdio tar streaming operands")
-    func cpRejectsStdioTarStreamingOperands() async throws {
+    @Test("cp streams stdin tar archives into service containers")
+    func cpStreamsStdinTarArchivesIntoServiceContainers() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
         let project = ComposeProject(
@@ -19390,15 +19402,94 @@ struct ComposeOrchestratorTests {
                 "api": ComposeService(name: "api", image: "example/api"),
             ]
         )
-        let orchestrator = ComposeOrchestrator(runner: runner, copier: copier)
+        let tempDirectory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+        let archive = try archiveWithFile(named: "payload.txt", contents: "from stdin\n", in: tempDirectory)
+        let input = try FileHandle(forReadingFrom: archive)
+        defer {
+            try? input.close()
+        }
 
-        for arguments in [["-", "api:/tmp"], ["api:/tmp/report.txt", "-"]] {
-            do {
-                try await orchestrator.copy(project: project, arguments: arguments)
-                Issue.record("Expected stdio tar stream cp to fail")
-            } catch let error as ComposeError {
-                #expect(error == .unsupported("cp '-': tar archive streaming requires an apple/container copy stream API"))
+        let options = ComposeExecutionOptions(runtimeHooks: .init(copyInputArchive: { input }))
+
+        try await ComposeOrchestrator(runner: runner, options: options, copier: copier).copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["-", "api:/tmp"]
             }
+        )
+
+        #expect(runner.commands.isEmpty)
+        let requests = await copier.requests
+        #expect(requests.count == 1)
+        guard case let .into(id, source, destination) = requests.first else {
+            Issue.record("Expected stdin archive to copy into a container")
+            return
+        }
+        #expect(id == "demo-api-1")
+        #expect((source as NSString).lastPathComponent == "payload.txt")
+        #expect(destination == "/tmp")
+    }
+
+    @Test("cp streams service container paths as stdout tar archives")
+    func cpStreamsServiceContainerPathsAsStdoutTarArchives() async throws {
+        let runner = RecordingRunner()
+        let copier = ArchiveProducingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+        let tempDirectory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+        let archive = tempDirectory.appendingPathComponent("stdout.tar")
+        FileManager.default.createFile(atPath: archive.path, contents: nil)
+        let output = try FileHandle(forWritingTo: archive)
+
+        let options = ComposeExecutionOptions(runtimeHooks: .init(copyOutputArchive: { output }))
+
+        try await ComposeOrchestrator(runner: runner, options: options, copier: copier).copy(
+            project: project,
+            options: ComposeCopyOptions {
+                $0.arguments = ["api:/tmp/report.txt", "-"]
+            }
+        )
+        try output.close()
+
+        let extracted = tempDirectory.appendingPathComponent("extracted", isDirectory: true)
+        let reader = try ArchiveReader(file: archive)
+        _ = try reader.extractContents(to: extracted)
+
+        #expect(runner.commands.isEmpty)
+        let stagedRoot = await copier.stagedRootPath
+        #expect(await copier.requests == [
+            .from(id: "demo-api-1", source: "/tmp/report.txt", destination: stagedRoot),
+        ])
+        let content = try String(contentsOf: extracted.appendingPathComponent("report.txt"), encoding: .utf8)
+        #expect(content == "from container\n")
+    }
+
+    @Test("cp rejects using stdin and stdout archive streams together")
+    func cpRejectsUsingStdinAndStdoutArchiveStreamsTogether() async throws {
+        let runner = RecordingRunner()
+        let copier = RecordingContainerCopier()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "api": ComposeService(name: "api", image: "example/api"),
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(runner: runner, copier: copier).copy(project: project, arguments: ["-", "-"])
+            Issue.record("Expected stdin-to-stdout archive cp to fail")
+        } catch let error as ComposeError {
+            #expect(error == .invalidProject("cp cannot use '-' for both source and destination"))
         }
 
         #expect(runner.commands.isEmpty)
@@ -25372,6 +25463,36 @@ private actor RecordingContainerCopier: ContainerCopying {
     func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String, options: ContainerCopyTransferOptions) async throws {
         storage.append(.between(sourceID: sourceID, source: source, destinationID: destinationID, destination: destination))
         optionStorage.append(options)
+    }
+}
+
+private actor ArchiveProducingContainerCopier: ContainerCopying {
+    private var storage: [ContainerCopyRequest] = []
+    private var stagedRoot: String = ""
+
+    var requests: [ContainerCopyRequest] {
+        storage
+    }
+
+    var stagedRootPath: String {
+        stagedRoot
+    }
+
+    func copyIntoContainer(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws {
+        storage.append(.into(id: id, source: source, destination: destination))
+    }
+
+    func copyFromContainer(id: String, source: String, destination: String, options: ContainerCopyTransferOptions) async throws {
+        storage.append(.from(id: id, source: source, destination: destination))
+        stagedRoot = destination
+        let root = URL(fileURLWithPath: destination, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let name = (source as NSString).lastPathComponent
+        try Data("from container\n".utf8).write(to: root.appendingPathComponent(name))
+    }
+
+    func copyBetweenContainers(sourceID: String, source: String, destinationID: String, destination: String, options: ContainerCopyTransferOptions) async throws {
+        storage.append(.between(sourceID: sourceID, source: source, destinationID: destinationID, destination: destination))
     }
 }
 

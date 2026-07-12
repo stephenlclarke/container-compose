@@ -307,7 +307,7 @@ enum ComposeCLIHelp {
         "commit": .partiallySupported,
         "config": .supported,
         "convert": .supported,
-        "cp": .partiallySupported,
+        "cp": .supported,
         "create": .supported,
         "down": .supported,
         "events": .supported,
@@ -343,7 +343,6 @@ enum ComposeCLIHelp {
     private static let supportDetailByCommand: [String: String] = [
         "attach": "Output-only attach is supported; interactive stream reattachment and detach-key handling require additional runtime support.",
         "commit": "Stopped service containers can be committed to images; running-container commit, including --pause=false, waits for Apple live export/snapshot support.",
-        "cp": "Path copies are supported; stdin/stdout tar streaming with '-' requires an additional runtime copy-stream API.",
     ]
 
     private static let supportByOption: [String: [String: SupportLevel]] = [

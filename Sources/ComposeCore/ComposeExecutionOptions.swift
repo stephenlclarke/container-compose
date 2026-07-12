@@ -36,6 +36,8 @@ public struct ComposeExecutionOptions {
         public var confirm: @Sendable (_ prompt: String) async throws -> Bool
         public var emit: @Sendable (String) -> Void
         public var emitData: (@Sendable (Data) -> Void)?
+        public var copyInputArchive: @Sendable () -> FileHandle
+        public var copyOutputArchive: @Sendable () -> FileHandle
 
         public init(
             oneOffIdentifier: @escaping @Sendable () -> String = ComposeExecutionOptions.defaultOneOffIdentifier,
@@ -45,15 +47,19 @@ public struct ComposeExecutionOptions {
             confirm: @escaping @Sendable (_ prompt: String) async throws -> Bool = ComposeExecutionOptions.defaultConfirmation,
             emit: @escaping @Sendable (String) -> Void = { print($0) },
             emitData: (@Sendable (Data) -> Void)? = nil,
+            copyInputArchive: @escaping @Sendable () -> FileHandle = { .standardInput },
+            copyOutputArchive: @escaping @Sendable () -> FileHandle = { .standardOutput },
         ) {
             self.oneOffIdentifier = oneOffIdentifier
             self.currentDate = currentDate
             self.hostPortAllocator = hostPortAllocator
             self.sleep = sleep ?? { try await Task.sleep(for: $0) }
-            self.usesDefaultSleep = sleep == nil
+            usesDefaultSleep = sleep == nil
             self.confirm = confirm
             self.emit = emit
             self.emitData = emitData
+            self.copyInputArchive = copyInputArchive
+            self.copyOutputArchive = copyOutputArchive
         }
     }
 
@@ -74,6 +80,8 @@ public struct ComposeExecutionOptions {
     public var confirm: @Sendable (_ prompt: String) async throws -> Bool
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
+    public var copyInputArchive: @Sendable () -> FileHandle
+    public var copyOutputArchive: @Sendable () -> FileHandle
     public var progress: ComposeProgressReporter
 
     public init(
@@ -102,6 +110,8 @@ public struct ComposeExecutionOptions {
         confirm = runtimeHooks.confirm
         emit = runtimeHooks.emit
         emitData = runtimeHooks.emitData ?? ComposeExecutionOptions.defaultLogDataEmitter
+        copyInputArchive = runtimeHooks.copyInputArchive
+        copyOutputArchive = runtimeHooks.copyOutputArchive
         self.progress = progress
     }
 

@@ -35,7 +35,7 @@ Surface names follow the current Docker Docs [Compose file reference](https://do
 | Project discovery and source loading | ✅ Yes | Default local discovery, stdin, environment files, Git resources, and `oci://` project artifacts are implemented. Runtime-backed Compose file attributes are tracked separately below. |
 | Service attributes and runtime behavior | ⚠️ Partial | The complete grouped service surface is in [Service Attribute Surface](#service-attribute-surface), including details for every runtime-limited group. |
 | Dockerfile and build behavior | ⚠️ Partial | The complete instruction and Build Specification surface is in [Dockerfile And Build Surface](#dockerfile-and-build-surface); build-secret source and metadata shapes remain limited. |
-| CLI commands | ⚠️ Partial | 43 commands are ✅, 3 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
+| CLI commands | ⚠️ Partial | 44 commands are ✅, 2 are ⚠️, and 0 are ❌. Every command is listed in [CLI Command Surface](#cli-command-surface). |
 | CLI long options | ⚠️ Partial | 261 documented long options are ✅, 2 are ⚠️, and 0 are ❌. Every option is listed in [CLI Option Surface](#cli-option-surface). |
 
 ## Compose File Surface
@@ -134,7 +134,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 | `commit` | ⚠️ Partial | Stopped service containers can be committed to OCI images through export, archive creation, and image load, including Docker Compose `--author`, `--change`, `--index`, `--message`, and `--pause` parsing. Running-container commit, including `--pause=false`, remains blocked on Apple live export/snapshot support tracked by [apple/container#1400](https://github.com/apple/container/issues/1400) and [apple/containerization#660](https://github.com/apple/containerization/issues/660). |
 | `config` | ✅ Yes | Compose project rendering and config query options are implemented. |
 | `convert` | ✅ Yes | Docker Compose's config-compatible model conversion projections are implemented for the documented local output modes. |
-| `cp` | ⚠️ Partial | Local-to-service, service-to-local, and service-to-service path copies are implemented, including archive, follow-link, replica-index, and one-off-container modes. Docker Compose `-` stdin/stdout tar streaming remains blocked on a runtime copy-stream API. |
+| `cp` | ✅ Yes | Local-to-service, service-to-local, service-to-service, stdin tar archive, and stdout tar archive copies are implemented, including archive, follow-link, replica-index, and one-off-container modes. |
 | `create` | ✅ Yes | Service creation, build/pull/recreate controls, scaling, and orphan handling are implemented. |
 | `down` | ✅ Yes | Container, network, image, volume, timeout, orphan, and service-scoped cleanup are implemented. |
 | `events` | ✅ Yes | Event output, JSON mode, and time filters are implemented. |
@@ -170,7 +170,7 @@ Docker Compose service attributes are grouped here by runtime behavior so every 
 
 `container compose --help` and `container compose COMMAND --help` are the authoritative usage views. Every documented long option surface is listed here with per-option parity markers.
 
-A ✅ option means the flag itself is parsed and mapped for the current command behavior. Command parity is still a separate axis: `cp` lists only green options, for example, while the command remains ⚠️ partial because Docker Compose `-` tar streaming is an operand/runtime-stream behavior rather than a long option.
+A ✅ option means the flag itself is parsed and mapped for the current command behavior. Command parity is still a separate axis; command rows above describe any remaining operand or runtime limitations that are not represented as long options.
 
 | Option Surface | Parity | Details |
 | --- | --- | --- |
@@ -228,6 +228,6 @@ Released Apple `container` compatibility is not a supported-lane functionality g
 ## Remaining Gap Focus
 
 - There are no remaining red CLI command or long-option surfaces.
-- The remaining orange command surfaces are `attach`, `commit`, and `cp`; their table rows above describe the exact missing runtime primitive or metadata surface.
-- Runtime-primitive blockers include GPU and arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, Deploy device/generic reservations, and stdin/stdout tar streaming for `cp`.
+- The remaining orange command surfaces are `attach` and `commit`; their table rows above describe the exact missing runtime primitive or metadata surface.
+- Runtime-primitive blockers include GPU and arbitrary macOS hardware passthrough, external config/secret lookup, generic service endpoint `driver_opts`, and Deploy device/generic reservations.
 - When touching slow runtime paths, keep first-frame progress rendering covered so local `container compose` runs do not appear to hang before visible output.

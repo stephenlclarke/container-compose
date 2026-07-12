@@ -96,6 +96,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-env-file-parity \
 	docker-compose-git-remote-parity \
 	docker-compose-commit-parity \
+	docker-compose-cp-stdio-archive-streams-parity \
 	docker-compose-build-builder-parity \
 	docker-compose-build-check-parity \
 	docker-compose-build-isolation-parity \
@@ -132,7 +133,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -967,10 +968,10 @@ cli-smoke-built:
 	[[ "$$cp_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_relative_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:tmp/file .)"; \
 	[[ "$$cp_relative_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
-	cp_stdin_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp - api:/tmp 2>&1 || true)"; \
-	[[ "$$cp_stdin_output" == *"unsupported compose feature: cp '-': tar archive streaming requires an apple/container copy stream API"* ]]; \
-	cp_stdout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file - 2>&1 || true)"; \
-	[[ "$$cp_stdout_output" == *"unsupported compose feature: cp '-': tar archive streaming requires an apple/container copy stream API"* ]]; \
+	cp_stdin_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp - api:/tmp)"; \
+	[[ "$$cp_stdin_output" == *"compose-runtime cp - demo-api-1:/tmp"* ]]; \
+	cp_stdout_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp api:/tmp/file -)"; \
+	[[ "$$cp_stdout_output" == *"compose-runtime cp demo-api-1:/tmp/file -"* ]]; \
 	cp_index_one_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp --index 1 api:/tmp/file .)"; \
 	[[ "$$cp_index_one_output" == *"container cp demo-api-1:/tmp/file ."* ]]; \
 	cp_archive_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" -p demo cp -a api:/tmp/file .)"; \
@@ -1155,6 +1156,9 @@ docker-compose-git-remote-parity: build
 
 docker-compose-commit-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-commit.sh --strict
+
+docker-compose-cp-stdio-archive-streams-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-cp-stdio-archive-streams.sh --strict
 
 docker-compose-build-builder-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-build-builder.sh --strict

@@ -6,7 +6,9 @@
 
 Docker exposes tar archive streaming through `docker cp` and `docker compose cp` when either copy operand is `-`. Copying from stdin into a container extracts the provided tar stream at the destination. Copying from a container to stdout writes a tar archive for the requested source path.
 
-`apple/container` currently exposes path-based `copyIn` and `copyOut` APIs. The lower `containerization` runtime streams archive data internally over vsock, but the public CLI/API boundary accepts host filesystem paths rather than a caller-provided input stream or caller-owned output stream. That means `container-compose` cannot implement Docker-compatible `compose cp - SERVICE:PATH` or `compose cp SERVICE:PATH -` without either staging and re-archiving data with lossy edge cases or adding a first-class Apple runtime copy stream primitive.
+`apple/container` currently exposes path-based `copyIn` and `copyOut` APIs. The lower `containerization` runtime streams archive data internally over vsock, but the public CLI/API boundary accepts host filesystem paths rather than a caller-provided input stream or caller-owned output stream.
+
+`container-compose` implements Docker-compatible `compose cp - SERVICE:PATH` and `compose cp SERVICE:PATH -` in the Compose layer through temporary host staging and libarchive. A first-class Apple runtime copy stream primitive would still be useful because it would remove the staging path and reduce large-archive overhead, but visible Compose parity no longer depends on this Apple API.
 
 References:
 
@@ -18,7 +20,7 @@ References:
 
 Existing upstream context:
 
-- `container-compose` now rejects `compose cp` operands equal to `-` with a precise unsupported-feature message instead of treating `-` as a literal local filename.
+- `container-compose` now accepts `compose cp` operands equal to `-` and stages archive streams through the existing path-based Apple copy APIs.
 
 ## Proposed behavior
 

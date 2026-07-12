@@ -118,8 +118,8 @@ struct ComposeCLIHelpTests {
         #expect(commitHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(commitHelp.contains("running-container commit, including --pause=false"))
         #expect(commitHelp.contains("\u{001B}[32m--pause\u{001B}[0m"))
-        #expect(copyHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
-        #expect(copyHelp.contains("stdin/stdout tar streaming"))
+        #expect(copyHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
+        #expect(!copyHelp.contains("Limitations:"))
         #expect(publishHelp.contains("Support: \u{001B}[32msupported\u{001B}[0m"))
         #expect(!publishHelp.contains("Limitations:"))
     }
