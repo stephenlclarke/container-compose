@@ -195,13 +195,19 @@ swift-runtime-test-build:
 	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --build-tests $(SWIFT_TEST_FLAGS)
 
 swift-runtime-test: container-stack-build build swift-runtime-test-build
+	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
+	if [[ "$$container_binary" == "container" ]]; then \
+		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \
+			if [[ -x "$$candidate" ]]; then container_binary="$$candidate"; break; fi; \
+		done; \
+	fi; \
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
-		./scripts/run-with-container-runtime.sh "$(CONTAINER_COMPOSE_CONTAINER)" \
+		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
-		CONTAINER_BIN="$(CONTAINER_COMPOSE_CONTAINER)" CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
+		CONTAINER_BIN="$$container_binary" CONTAINER_COMPOSE_CONTAINER="$$container_binary" \
 		$(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build --filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 
 swift-coverage: swift-test-build
@@ -1149,12 +1155,18 @@ docker-compose-e2e-fixtures:
 	./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
 docker-compose-parity: container-stack-build
+	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
+	if [[ "$$container_binary" == "container" ]]; then \
+		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \
+			if [[ -x "$$candidate" ]]; then container_binary="$$candidate"; break; fi; \
+		done; \
+	fi; \
 	CONTAINER_RUNTIME_STOP_HELPER="$(CONTAINER_RUNTIME_STOP_HELPER)" \
 		CONTAINER_RUNTIME_APP_ROOT="$(CONTAINER_RUNTIME_APP_ROOT)" \
 		CONTAINER_RUNTIME_INIT_BLOCK_REPO="$(CONTAINER_RUNTIME_INIT_BLOCK_REPO)" \
 		CONTAINERIZATION_INIT_SOURCE_PATH="$(CONTAINERIZATION_INIT_SOURCE_PATH)" \
-		./scripts/run-with-container-runtime.sh "$(CONTAINER_COMPOSE_CONTAINER)" \
-		$(MAKE) --no-print-directory -j1 $(DOCKER_COMPOSE_PARITY_TARGETS)
+		./scripts/run-with-container-runtime.sh "$$container_binary" \
+		$(MAKE) --no-print-directory -j1 CONTAINER_COMPOSE_CONTAINER="$$container_binary" $(DOCKER_COMPOSE_PARITY_TARGETS)
 
 docker-compose-cli-surface-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-cli-surface.sh --strict
