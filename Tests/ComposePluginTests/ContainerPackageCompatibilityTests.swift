@@ -19,6 +19,34 @@ import Testing
 
 @testable import ComposePlugin
 
+private let appleSystemVersionJSON = """
+  [
+    {
+      "appName": "container",
+      "buildType": "release",
+      "commit": "abc123",
+      "containerization": "apple/containerization@main",
+      "distribution": "apple",
+      "source": "apple/container",
+      "version": "0.5.0"
+    }
+  ]
+  """
+
+private let matchingSystemVersionJSON = """
+  [
+    {
+      "appName": "container",
+      "buildType": "release",
+      "commit": "matched-container",
+      "containerization": "stephenlclarke/containerization@matched-containerization",
+      "distribution": "custom",
+      "source": "stephenlclarke/container",
+      "version": "homebrew-main"
+    }
+  ]
+  """
+
 @Suite("Container package compatibility")
 struct ContainerPackageCompatibilityTests {
   @Test("runtime commands require installed stack check")
@@ -86,7 +114,7 @@ struct ContainerPackageCompatibilityTests {
       ))
     #expect(
       message.contains(
-        "brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose || brew install --formula stephenlclarke/tap/container-compose"
+        "brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose"
       ))
     #expect(message.contains("brew postinstall stephenlclarke/tap/container"))
     #expect(message.contains("brew services restart stephenlclarke/tap/container"))
@@ -129,7 +157,7 @@ struct ContainerPackageCompatibilityTests {
       ))
     #expect(
       message.contains(
-        "brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose || brew install --formula stephenlclarke/tap/container-compose"
+        "brew upgrade stephenlclarke/tap/container stephenlclarke/tap/container-compose"
       ))
   }
 
@@ -199,7 +227,7 @@ struct ContainerPackageCompatibilityTests {
 
     #expect(
       message.contains(
-        "brew upgrade stephenlclarke/tap/container-release stephenlclarke/tap/container-compose-release || brew install --formula stephenlclarke/tap/container-compose-release"
+        "brew upgrade stephenlclarke/tap/container-release stephenlclarke/tap/container-compose-release"
       ))
     #expect(message.contains("matching release lane formula from stephenlclarke/tap"))
   }
@@ -220,5 +248,83 @@ struct ContainerPackageCompatibilityTests {
       message.contains("container-compose requires the matching stephenlclarke container stack."))
     #expect(message.contains("container: unavailable (container: command not found)"))
     #expect(message.contains(ContainerPackageCompatibility.installGuideURL))
+  }
+}
+
+@Suite("Container system service readiness")
+struct ContainerSystemServiceReadinessTests {
+  @Test("package mismatch skips service readiness check")
+  func packageMismatchSkipsServiceReadinessCheck() throws {
+    var calls: [[String]] = []
+
+    let message = try #require(
+      ContainerPackageCompatibility.compatibilityFailure(
+        arguments: ["up"],
+        lane: "main",
+        run: { arguments in
+          calls.append(arguments)
+          return Data(appleSystemVersionJSON.utf8)
+        }
+      )
+    )
+
+    #expect(calls == [["system", "version", "--format", "json"]])
+    #expect(message.contains("The installed container components do not match"))
+  }
+
+  @Test("stopped system service reports service readiness guidance")
+  func stoppedSystemServiceReportsServiceReadinessGuidance() throws {
+    var calls: [[String]] = []
+
+    let message = try #require(
+      ContainerPackageCompatibility.compatibilityFailure(
+        arguments: ["up"],
+        lane: "main",
+        expectedContainerRef: "matched-container",
+        expectedContainerizationRef: "matched-containerization",
+        run: { arguments in
+          calls.append(arguments)
+          if arguments == ["system", "status"] {
+            throw ContainerPackageCompatibilityError.commandFailed(
+              "apiserver is not running and not registered with launchd")
+          }
+          return Data(matchingSystemVersionJSON.utf8)
+        }
+      )
+    )
+
+    #expect(calls == [["system", "version", "--format", "json"], ["system", "status"]])
+    #expect(
+      message.contains(
+        "container-compose requires the matching stephenlclarke container system service to be running."
+      ))
+    #expect(message.contains("The installed container components match this plugin"))
+    #expect(message.contains("container system start"))
+    #expect(message.contains("brew postinstall stephenlclarke/tap/container"))
+    #expect(message.contains("brew services restart stephenlclarke/tap/container"))
+    #expect(message.contains("container system status: apiserver is not running"))
+    #expect(message.contains(ContainerPackageCompatibility.installGuideURL))
+  }
+
+  @Test("running system service passes runtime preflight")
+  func runningSystemServicePassesRuntimePreflight() {
+    var calls: [[String]] = []
+
+    let message = ContainerPackageCompatibility.compatibilityFailure(
+      arguments: ["up"],
+      lane: "main",
+      expectedContainerRef: "matched-container",
+      expectedContainerizationRef: "matched-containerization",
+      run: { arguments in
+        calls.append(arguments)
+        if arguments == ["system", "status"] {
+          return Data("apiserver is running\n".utf8)
+        }
+        return Data(matchingSystemVersionJSON.utf8)
+      }
+    )
+
+    #expect(message == nil)
+    #expect(calls == [["system", "version", "--format", "json"], ["system", "status"]])
   }
 }

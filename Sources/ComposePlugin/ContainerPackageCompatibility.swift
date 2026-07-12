@@ -104,7 +104,9 @@ enum ContainerPackageCompatibility {
     let nestedIndex = arguments.index(after: alphaIndex)
     return arguments.indices.contains(nestedIndex) && arguments[nestedIndex] == "dry-run"
   }
+}
 
+extension ContainerPackageCompatibility {
   /// Checks the installed container stack and returns a user-facing failure when it is incompatible.
   static func compatibilityFailure(
     arguments: [String],
@@ -120,12 +122,24 @@ enum ContainerPackageCompatibility {
     do {
       let data = try run(["system", "version", "--format", "json"])
       let components = try decodeComponents(from: data)
-      return compatibilityFailure(
+      if let failure = compatibilityFailure(
         components: components,
         lane: lane,
         expectedContainerRef: expectedContainerRef,
         expectedContainerizationRef: expectedContainerizationRef
-      )
+      ) {
+        return failure
+      }
+      do {
+        _ = try run(["system", "status"])
+      } catch {
+        return serviceGuidance(
+          lane: lane,
+          detected: [
+            "container system status: \(error.localizedDescription)"
+          ])
+      }
+      return nil
     } catch {
       return installGuidance(
         lane: lane,
@@ -262,13 +276,41 @@ enum ContainerPackageCompatibility {
     process.waitUntilExit()
 
     let data = output.fileHandleForReading.readDataToEndOfFile()
+    let errorData = error.fileHandleForReading.readDataToEndOfFile()
     guard process.terminationStatus == 0 else {
-      let stderr = String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      let stderr = (String(bytes: errorData, encoding: .utf8) ?? "")
         .trimmingCharacters(in: .whitespacesAndNewlines)
+      let stdout = (String(bytes: data, encoding: .utf8) ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let command = (["container"] + arguments).joined(separator: " ")
+      let message = stderr.isEmpty ? stdout : stderr
       throw ContainerPackageCompatibilityError.commandFailed(
-        stderr.isEmpty ? "container system version failed" : stderr)
+        message.isEmpty ? "\(command) failed" : message)
     }
     return data
+  }
+
+  private static func serviceGuidance(lane: String, detected: [String]) -> String {
+    let formulae = homebrewFormulae(lane: lane)
+    return """
+      container-compose requires the matching stephenlclarke container system service to be running.
+
+      The installed container components match this plugin, but the container system service is not ready.
+      Start or restart the service, then run this command again.
+
+        container system start
+
+      For Homebrew-managed installs:
+
+        brew postinstall \(formulae.container)
+        brew services restart \(formulae.container)
+
+      Detailed install instructions:
+      \(installGuideURL)
+
+      Detected service status:
+      \(detected.map { "- \($0)" }.joined(separator: "\n"))
+      """
   }
 
   private static func installGuidance(lane: String, detected: [String]) -> String {

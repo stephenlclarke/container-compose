@@ -12571,6 +12571,38 @@ struct ComposeOrchestratorTests {
         ])
     }
 
+    @Test("TTY build progress leaves a clean row for container build output")
+    func ttyBuildProgressLeavesCleanRowForContainerBuildOutput() async throws {
+        let emitted = LockedStringRecorder()
+        let runner = ProgressAssertingRunner { arguments in
+            #expect(arguments.containsSequence(["container", "build"]))
+            #expect(emitted.snapshot == ["⠓ Building api\n"])
+        }
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api:latest") {
+                    $0.build = ComposeBuild(context: "api")
+                },
+            ]
+        )
+        let progress = ComposeProgressReporter(
+            style: .tty,
+            emitData: { emitted.append(String(bytes: $0, encoding: .utf8) ?? "") }
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(progress: progress)
+        ).build(project: project, services: ["api"], noCache: false)
+
+        #expect(runner.commands.count == 1)
+        #expect(emitted.snapshot == [
+            "⠓ Building api\n",
+            "✓ Building api\n",
+        ])
+    }
+
     @Test("quiet build suppresses progress rows")
     func quietBuildSuppressesProgressRows() async throws {
         let runner = RecordingRunner()

@@ -341,6 +341,22 @@ cli-smoke-built:
 	[[ "$$compat_output" == *"brew postinstall stephenlclarke/tap/container"* ]]; \
 	[[ "$$compat_output" == *"brew services restart stephenlclarke/tap/container"* ]]; \
 	[[ "$$compat_output" == *"https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md"* ]]; \
+	service_tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$service_tmp"' EXIT; \
+	printf '%s\n' '{"version":"0.6.51","source":"stephenlclarke/container-compose","branch":"service-smoke","lane":"stable","commit":"service-smoke","buildType":"release","containerSource":"stephenlclarke/container","containerRef":"matched-container","containerizationSource":"stephenlclarke/containerization","containerizationRef":"matched-containerization","composeGoVersion":"$(COMPOSE_GO_VERSION)"}' > "$$service_tmp/build-info.json"; \
+	printf '%s\n' '#!/usr/bin/env bash' 'if [[ "$$*" == "system version --format json" ]]; then' '  printf '\''[{"appName":"container","buildType":"release","commit":"matched-container","containerization":"stephenlclarke/containerization@matched-containerization","distribution":"custom","source":"stephenlclarke/container","version":"homebrew-main"}]\n'\''' '  exit 0' 'fi' 'if [[ "$$*" == "system status" ]]; then' '  printf '\''apiserver is not running and not registered with launchd\n'\'' >&2' '  exit 1' 'fi' 'exit 2' > "$$service_tmp/container"; \
+	chmod +x "$$service_tmp/container"; \
+	set +e; \
+	service_output="$$(CONTAINER_COMPOSE_BUILD_INFO="$$service_tmp/build-info.json" CONTAINER_COMPOSE_CONTAINER="$$service_tmp/container" ".build/debug/compose" ps 2>&1)"; \
+	service_status="$$?"; \
+	set -e; \
+	[[ "$$service_status" -ne 0 ]]; \
+	[[ "$$service_output" == *"container-compose requires the matching stephenlclarke container system service to be running."* ]]; \
+	[[ "$$service_output" == *"The installed container components match this plugin"* ]]; \
+	[[ "$$service_output" == *"container system start"* ]]; \
+	[[ "$$service_output" == *"brew postinstall stephenlclarke/tap/container"* ]]; \
+	[[ "$$service_output" == *"brew services restart stephenlclarke/tap/container"* ]]; \
+	[[ "$$service_output" == *"container system status: apiserver is not running and not registered with launchd"* ]]; \
 	ansi_escape="$$(printf '\033')"; \
 	root_help_output="$$(".build/debug/compose" --help)"; \
 	[[ "$$root_help_output" == *"$${ansi_escape}[32malpha$${ansi_escape}[0m"* ]]; \

@@ -244,7 +244,7 @@ public extension ComposeOrchestrator {
             if build.quiet || options.dryRun {
                 try await buildService(project: project, service: service, options: build)
             } else {
-                try await options.progress.activity("Building \(service.name)") {
+                try await options.progress.activityWithExternalOutput("Building \(service.name)") {
                     try await buildService(project: project, service: service, options: build)
                 }
             }

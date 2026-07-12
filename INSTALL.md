@@ -101,6 +101,8 @@ container compose version --format json
 
 Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, if the Homebrew install is mixed, or if the installed `container` / `containerization` refs do not match the plugin package metadata, `container compose` stops with upgrade guidance instead of failing later with a stale unsupported-feature or low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae.
 
+Runtime-backed Compose commands also check `container system status` before they load a project or create runtime side effects. If the matched stack is installed but the service is stopped or missing from launchd, start it with `container system start` or refresh the Homebrew service with `brew postinstall stephenlclarke/tap/container` followed by `brew services restart stephenlclarke/tap/container`.
+
 Run a read-only Compose command from a directory containing a Compose file:
 
 ```sh

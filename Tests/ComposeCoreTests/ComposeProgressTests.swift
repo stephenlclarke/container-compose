@@ -210,7 +210,9 @@ struct ComposeProgressTests {
             #expect(emitted.string == "\r\u{001B}[38;5;63m⠓\u{001B}[0m Loading Compose model")
         }
 
-        #expect(emitted.string == "\r\u{001B}[38;5;63m⠓\u{001B}[0m Loading Compose model\r\u{001B}[K\u{001B}[32m✓\u{001B}[0m Loading Compose model\n")
+        let pending = "\r\u{001B}[38;5;63m⠓\u{001B}[0m Loading Compose model"
+        let done = "\r\u{001B}[K\u{001B}[32m✓\u{001B}[0m Loading Compose model\n"
+        #expect(emitted.string == pending + done)
     }
 
     @Test
@@ -221,10 +223,15 @@ struct ComposeProgressTests {
             emitData: { emitted.append($0) },
             sleep: { _ in try await Task.sleep(for: .milliseconds(1)) },
         )
-        let expectedFrames = "\r⠓ Loading Compose model\r⠋ Loading Compose model\r⠙ Loading Compose model\r⠚ Loading Compose model"
+        let expectedFrames = [
+            "\r⠓ Loading Compose model",
+            "\r⠋ Loading Compose model",
+            "\r⠙ Loading Compose model",
+            "\r⠚ Loading Compose model",
+        ].joined()
 
         try await reporter.activity("Loading Compose model") {
-            for _ in 0..<200 {
+            for _ in 0 ..< 200 {
                 if emitted.string.contains(expectedFrames) {
                     return
                 }
@@ -234,6 +241,23 @@ struct ComposeProgressTests {
         }
 
         #expect(emitted.string.contains(expectedFrames))
+    }
+
+    @Test
+    func `TTY external-output activity terminates the pending row`() async throws {
+        let emitted = LockedDataRecorder()
+        let reporter = ComposeProgressReporter(
+            style: .tty,
+            emitData: { emitted.append($0) },
+            sleep: { _ in try await Task.sleep(for: .seconds(60)) },
+        )
+
+        try await reporter.activityWithExternalOutput("Building api") {
+            #expect(emitted.string == "⠓ Building api\n")
+            emitted.append(Data("container-build-output\n".utf8))
+        }
+
+        #expect(emitted.string == "⠓ Building api\ncontainer-build-output\n✓ Building api\n")
     }
 
     @Test
