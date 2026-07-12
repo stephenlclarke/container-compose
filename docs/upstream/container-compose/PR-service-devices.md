@@ -18,7 +18,7 @@
 
 Docker Compose exposes service-level device mappings through `devices`. On Docker Engine, those mappings create device nodes in the container and add matching cgroup permissions. The stephenlclarke fork runtime stack can now represent the known Linux VM device subset by passing Docker-compatible `--device` values to the fork-backed `container` CLI, which resolves supported source devices to Linux major/minor metadata.
 
-This is intentionally narrower than arbitrary macOS hardware passthrough. USB, SD-card, PCI, GPU, and other host hardware passthrough requests still depend on lower-runtime and Virtualization.framework capabilities.
+This is intentionally narrower than arbitrary macOS hardware passthrough. USB, SD-card, PCI, vendor/native GPU passthrough, and other host hardware passthrough requests still depend on lower-runtime and Virtualization.framework capabilities.
 
 References:
 
@@ -34,7 +34,7 @@ References:
 
 ## Implementation Details
 
-- Removed `devices` from the unsupported device-access field group while keeping `credential_spec` and `gpus` blocked.
+- Keeps `devices` out of the unsupported device-access field group while keeping `credential_spec` blocked. Service `gpus` is handled by [PR-service-gpus.md](PR-service-gpus.md).
 - Added `runtimeDeviceArguments(service:)` to normalize string and object device mapping forms.
 - Parse Compose device syntax first, then validate the final unambiguous runtime argument with `ContainerAPIClient.Parser.devices`.
 - Added repeatable `--device` rendering in the service create/run command path.
@@ -54,9 +54,9 @@ Supported on the fork-backed integration stack:
 
 Known remaining device gaps:
 
-- `services.<name>.gpus` remains blocked until GPU passthrough exists.
-- USB, SD-card, PCI, arbitrary guest-side device discovery, and arbitrary macOS hardware passthrough remain blocked until the lower runtime exposes matching primitives.
-- Deploy resource device reservations remain blocked because they imply scheduler/device-resource semantics beyond this local runtime mapping.
+- Service `gpus` supports the generic single Apple virtio GPU path in [PR-service-gpus.md](PR-service-gpus.md).
+- USB, SD-card, PCI, vendor/native GPU passthrough, arbitrary guest-side device discovery, and arbitrary macOS hardware passthrough remain blocked until the lower runtime exposes matching primitives.
+- Non-GPU Deploy resource device reservations remain blocked because they imply scheduler/device-resource semantics beyond this local runtime mapping.
 
 ## Testing
 

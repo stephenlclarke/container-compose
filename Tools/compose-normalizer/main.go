@@ -148,6 +148,7 @@ type normalizedService struct {
 	CPUShares               int64                               `json:"cpuShares,omitempty"`
 	Develop                 *normalizedDevelop                  `json:"develop,omitempty"`
 	Deploy                  *types.DeployConfig                 `json:"deploy,omitempty"`
+	DeployGPURequests       []types.DeviceRequest               `json:"deployGPURequests,omitempty"`
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
 	DeployMode              string                              `json:"deployMode,omitempty"`
 	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
@@ -814,6 +815,7 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		CPUShares:               service.CPUShares,
 		Develop:                 developValues(service.Develop),
 		Deploy:                  service.Deploy,
+		DeployGPURequests:       deployGPURequests(service.Deploy),
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
 		DeployMode:              deployMode(service.Deploy),
 		DeployLabels:            deployLabels(service.Deploy),
@@ -1177,9 +1179,47 @@ func unsupportedDeployReservationFields(resource *types.Resource) []string {
 	}
 	fields := []string{}
 	appendUnsupportedDeployField(&fields, "resources.reservations.pids", resource.Pids != 0)
-	appendUnsupportedDeployField(&fields, "resources.reservations.devices", len(resource.Devices) > 0)
+	appendUnsupportedDeployField(&fields, "resources.reservations.devices", len(nonGPUDeployRequests(resource.Devices)) > 0)
 	appendUnsupportedDeployField(&fields, "resources.reservations.generic_resources", len(resource.GenericResources) > 0)
 	return fields
+}
+
+// deployGPURequests returns generic GPU deploy reservations that Docker Compose
+// local mode accepts and the Swift runtime can validate against Apple virtio-gpu.
+func deployGPURequests(deploy *types.DeployConfig) []types.DeviceRequest {
+	if deploy == nil || deploy.Resources.Reservations == nil {
+		return nil
+	}
+	return gpuDeployRequests(deploy.Resources.Reservations.Devices)
+}
+
+func gpuDeployRequests(requests []types.DeviceRequest) []types.DeviceRequest {
+	var result []types.DeviceRequest
+	for _, request := range requests {
+		if deviceRequestHasGPUCapability(request) {
+			result = append(result, request)
+		}
+	}
+	return result
+}
+
+func nonGPUDeployRequests(requests []types.DeviceRequest) []types.DeviceRequest {
+	var result []types.DeviceRequest
+	for _, request := range requests {
+		if !deviceRequestHasGPUCapability(request) {
+			result = append(result, request)
+		}
+	}
+	return result
+}
+
+func deviceRequestHasGPUCapability(request types.DeviceRequest) bool {
+	for _, capability := range request.Capabilities {
+		if strings.EqualFold(capability, "gpu") {
+			return true
+		}
+	}
+	return false
 }
 
 // jsonMap widens typed compose-go maps so they can be encoded without losing

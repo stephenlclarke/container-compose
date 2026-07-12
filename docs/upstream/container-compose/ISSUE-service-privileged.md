@@ -12,7 +12,7 @@ Docker Compose documents `privileged` as a service field, and Compose files can 
 - `compose create` emits `container create --privileged` for affected services.
 - `compose up` and service start planning set `ProcessConfiguration.privileged` for the init process.
 - `compose run` inherits service-level `privileged: true` and emits `container run --privileged`.
-- GPU access fields such as `gpus` remain rejected before resource creation. Service `devices` is handled by the separate supported Linux VM device mapping slice.
+- Service `devices` and generic single Apple virtio GPU requests are handled by their dedicated runtime slices. Vendor/native GPU passthrough and arbitrary host hardware remain separate runtime gaps.
 - Runtime dry-run smoke covers a compose.yml with service-level `privileged: true`.
 
 ## Parity Notes
@@ -23,4 +23,4 @@ The Docker Compose e2e fixture checkout was checked for an existing reusable exa
 
 ## Notes
 
-The current runtime mapping grants the service init process the runtime's extended Linux capability set. It does not implement Docker's full privileged behavior for devices, seccomp, AppArmor, or other isolation boundaries. Device-oriented fields remain separate runtime gaps.
+The current runtime mapping grants the service init process the runtime's extended Linux capability set. It does not implement Docker's full privileged behavior for arbitrary host devices, seccomp, AppArmor, vendor/native GPU passthrough, or other isolation boundaries.

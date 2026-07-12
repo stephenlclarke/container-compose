@@ -108,14 +108,11 @@ extension ComposeOrchestrator {
         return fields
     }
 
-    /// Returns unsupported GPU and credential access fields.
+    /// Returns unsupported credential access fields.
     func unsupportedDeviceAccessFields(service: ComposeService) -> [(composeName: String, reason: String)] {
         var fields: [(composeName: String, reason: String)] = []
         if service.credentialSpec != nil {
             fields.append(("credential_spec", "credential spec support needs an apple/container runtime gap PR"))
-        }
-        if let gpus = service.gpus, !gpus.isEmpty {
-            fields.append(("gpus", "GPU device access support needs an apple/container runtime gap PR"))
         }
         return fields
     }
@@ -436,6 +433,184 @@ extension ComposeOrchestrator {
         } catch {
             throw ComposeError.invalidProject("service '\(service.name)' has invalid devices; entries must use HOST[:CONTAINER[:PERMISSIONS]] with absolute paths and r/w/m permissions")
         }
+    }
+
+    /// Returns Docker-compatible GPU requests for service create/run.
+    func runtimeGPUArguments(service: ComposeService) throws -> [String] {
+        let values = (service.gpus ?? []) + (service.deployGPURequests ?? [])
+        guard !values.isEmpty else {
+            return []
+        }
+
+        let arguments: [String]
+        do {
+            arguments = try values.map(runtimeGPUArgument)
+        } catch let error as ComposeError {
+            throw error
+        } catch {
+            throw ComposeError.invalidProject("service '\(service.name)' has an invalid GPU device request")
+        }
+
+        let requests: [ParsedGPURequest]
+        do {
+            requests = try Parser.gpus(arguments)
+        } catch {
+            throw ComposeError.invalidProject("service '\(service.name)' has an invalid GPU device request")
+        }
+        try validateGPUBackendSupport(requests, serviceName: service.name)
+        return arguments
+    }
+
+    private func runtimeGPUArgument(_ value: ComposeValue) throws -> String {
+        switch value {
+        case .string(let spec):
+            return spec
+        case .object(let object):
+            return try runtimeGPUArgument(object)
+        default:
+            throw ComposeError.invalidProject("GPU request must be a string or object")
+        }
+    }
+
+    private func runtimeGPUArgument(_ object: [String: ComposeValue]) throws -> String {
+        let driver = try optionalGPUStringField("driver", in: object)
+        let count = try optionalGPUCountField("count", in: object)
+        let deviceIDs = try optionalGPUStringArrayField("device_ids", in: object)
+        let capabilities = try optionalGPUStringArrayField("capabilities", in: object)
+        let options = try optionalGPUStringMapField("options", in: object)
+
+        if count != nil && !(deviceIDs ?? []).isEmpty {
+            throw ComposeError.invalidProject("GPU request count and device_ids are mutually exclusive")
+        }
+        let onlyGenericGPU = driver == nil
+            && options == nil
+            && (capabilities ?? []).allSatisfy { $0 == "gpu" }
+        if onlyGenericGPU {
+            if count == "-1" {
+                return "all"
+            }
+            if count == nil, deviceIDs == ["0"] {
+                return "device=0"
+            }
+        }
+
+        var fields: [String] = []
+        if let driver {
+            fields.append("driver=\(driver)")
+        }
+        if let count {
+            fields.append("count=\(count == "-1" ? "all" : count)")
+        }
+        if let deviceIDs, !deviceIDs.isEmpty {
+            fields.append("device=\(csvQuoteIfNeeded(deviceIDs.joined(separator: ",")))")
+        }
+        if let capabilities, !capabilities.isEmpty, capabilities != ["gpu"] {
+            fields.append("capabilities=\(csvQuoteIfNeeded(capabilities.joined(separator: ",")))")
+        }
+        if let options, !options.isEmpty {
+            let value = options.sorted(by: { $0.key < $1.key })
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: ",")
+            fields.append("options=\(csvQuoteIfNeeded(value))")
+        }
+        if fields.isEmpty {
+            return "count=1"
+        }
+        return fields.joined(separator: ",")
+    }
+
+    private func validateGPUBackendSupport(_ requests: [ParsedGPURequest], serviceName: String) throws {
+        guard requests.count == 1 else {
+            throw ComposeError.unsupported("service '\(serviceName)' requests multiple GPUs; the Apple virtio-gpu backend exposes one GPU")
+        }
+
+        let request = requests[0]
+        guard request.driver.isEmpty || request.driver == "virtio" else {
+            throw ComposeError.unsupported("service '\(serviceName)' requests GPU driver '\(request.driver)'; the Apple backend supports only virtio-gpu")
+        }
+        guard request.options.isEmpty else {
+            throw ComposeError.unsupported("service '\(serviceName)' uses GPU driver options; the Apple virtio-gpu backend does not expose driver options")
+        }
+        guard request.capabilities.allSatisfy({ $0 == "gpu" }) else {
+            throw ComposeError.unsupported("service '\(serviceName)' requests GPU capabilities beyond 'gpu'; the Apple virtio-gpu backend exposes only the generic GPU capability")
+        }
+        if request.deviceIDs.isEmpty {
+            guard request.count == -1 || request.count == 1 else {
+                throw ComposeError.unsupported("service '\(serviceName)' requests \(request.count) GPUs; the Apple virtio-gpu backend exposes one GPU")
+            }
+        } else {
+            guard request.count == 0, request.deviceIDs == ["0"] else {
+                throw ComposeError.unsupported("service '\(serviceName)' requests GPU device IDs \(request.deviceIDs.joined(separator: ",")); the Apple virtio-gpu backend exposes only device 0")
+            }
+        }
+    }
+
+    private func optionalGPUStringField(_ name: String, in object: [String: ComposeValue]) throws -> String? {
+        guard let value = object[name] else {
+            return nil
+        }
+        guard case .string(let string) = value else {
+            throw ComposeError.invalidProject("GPU request \(name) must be a string")
+        }
+        return string
+    }
+
+    private func optionalGPUCountField(_ name: String, in object: [String: ComposeValue]) throws -> String? {
+        guard let value = object[name] else {
+            return nil
+        }
+        switch value {
+        case .number(let number):
+            let decimal = NSDecimalNumber(decimal: number)
+            guard decimal.doubleValue.rounded() == decimal.doubleValue else {
+                throw ComposeError.invalidProject("GPU request \(name) must be 'all' or an integer")
+            }
+            return decimal.stringValue
+        case .string(let string):
+            guard string == "all" || Int(string) != nil else {
+                throw ComposeError.invalidProject("GPU request \(name) must be 'all' or an integer")
+            }
+            return string == "all" ? "-1" : string
+        default:
+            throw ComposeError.invalidProject("GPU request \(name) must be 'all' or an integer")
+        }
+    }
+
+    private func optionalGPUStringArrayField(_ name: String, in object: [String: ComposeValue]) throws -> [String]? {
+        guard let value = object[name] else {
+            return nil
+        }
+        guard case .array(let values) = value else {
+            throw ComposeError.invalidProject("GPU request \(name) must be a list")
+        }
+        return try values.map {
+            guard case .string(let string) = $0 else {
+                throw ComposeError.invalidProject("GPU request \(name) entries must be strings")
+            }
+            return string
+        }
+    }
+
+    private func optionalGPUStringMapField(_ name: String, in object: [String: ComposeValue]) throws -> [String: String]? {
+        guard let value = object[name] else {
+            return nil
+        }
+        guard case .object(let values) = value else {
+            throw ComposeError.invalidProject("GPU request \(name) must be a mapping")
+        }
+        return try values.mapValues {
+            guard case .string(let string) = $0 else {
+                throw ComposeError.invalidProject("GPU request \(name) values must be strings")
+            }
+            return string
+        }
+    }
+
+    private func csvQuoteIfNeeded(_ value: String) -> String {
+        guard value.contains(",") || value.contains("\"") else {
+            return value
+        }
+        return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
 
     private func runtimeDeviceArgument(_ value: ComposeValue) throws -> String {

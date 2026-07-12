@@ -21,7 +21,7 @@ References:
 
 - Compose service `device_cgroup_rules`: <https://docs.docker.com/reference/compose-file/services/#device_cgroup_rules>
 - Docker run `--device-cgroup-rule`: <https://docs.docker.com/reference/cli/docker/container/run/#device-cgroup-rule>
-- Host-device and GPU passthrough remain separate upstream gaps: [apple/container#1683](https://github.com/apple/container/issues/1683), [apple/container#1680](https://github.com/apple/container/issues/1680), [apple/container#1511](https://github.com/apple/container/issues/1511), [apple/container#640](https://github.com/apple/container/issues/640), [apple/containerization#74](https://github.com/apple/containerization/issues/74), and [apple/containerization#480](https://github.com/apple/containerization/issues/480).
+- Host-device passthrough and vendor/native GPU passthrough remain separate upstream gaps: [apple/container#1683](https://github.com/apple/container/issues/1683), [apple/container#1680](https://github.com/apple/container/issues/1680), [apple/container#1511](https://github.com/apple/container/issues/1511), [apple/container#640](https://github.com/apple/container/issues/640), [apple/containerization#74](https://github.com/apple/containerization/issues/74), and [apple/containerization#480](https://github.com/apple/containerization/issues/480).
 
 ## Current container-compose behavior
 
@@ -38,7 +38,7 @@ With this change, `container-compose` supports the cgroup-rule subset:
 
 `container-compose` owns Compose model validation, Docker-compatible rule-string acceptance, dry-run rendering, and Docker Compose parity tests.
 
-`apple/container` owns the native CLI/API entry point and typed runtime-data bridge for Linux device cgroup rules. `apple/containerization` owns projecting those rules into the generated OCI runtime spec. Service `devices` is handled by the later supported Linux VM device slice; `gpus` still needs a separate device-passthrough primitive.
+`apple/container` owns the native CLI/API entry point and typed runtime-data bridge for Linux device cgroup rules. `apple/containerization` owns projecting those rules into the generated OCI runtime spec. Service `devices` and generic single Apple virtio GPU requests are handled by separate runtime slices.
 
 ## Minimal example
 

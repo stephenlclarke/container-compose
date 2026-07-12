@@ -42,8 +42,8 @@ CONTAINER_COMPOSE_LANE ?= $(shell $(PYTHON) -c 'branch = "$(CONTAINER_COMPOSE_BR
 CONTAINER_COMPOSE_COMMIT ?= $(shell git rev-parse HEAD)
 CONTAINER_SOURCE ?= stephenlclarke/container
 CONTAINER_REF ?= $(shell $(PYTHON) Tools/release/resolve-container-ref.py 2>/dev/null || printf 'unspecified')
-CONTAINERIZATION_SOURCE ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); print((pin or {}).get("location", "unspecified").replace("https://github.com/", "").removesuffix(".git"))' 2>/dev/null || printf 'unspecified')
-CONTAINERIZATION_REF ?= $(shell $(PYTHON) -c 'import json; data=json.load(open("Package.resolved")); pin=next((p for p in data["pins"] if p["identity"]=="containerization"), None); state=(pin or {}).get("state", {}); print(state.get("revision") or state.get("branch") or state.get("version") or "unspecified")' 2>/dev/null || printf 'unspecified')
+CONTAINERIZATION_SOURCE ?= $(shell $(PYTHON) Tools/release/resolve-containerization-pin.py --field source 2>/dev/null || printf 'unspecified')
+CONTAINERIZATION_REF ?= $(shell $(PYTHON) Tools/release/resolve-containerization-pin.py --field ref 2>/dev/null || printf 'unspecified')
 COMPOSE_GO_VERSION ?= $(shell $(PYTHON) Tools/release/go-module-version.py --go-mod Tools/compose-normalizer/go.mod github.com/compose-spec/compose-go/v2 2>/dev/null || printf 'unspecified')
 SONAR_QUALITYGATE_WAIT ?= false
 SONAR_SCAN_ATTEMPTS ?= 3
@@ -110,6 +110,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-pids-limit-parity \
 	docker-compose-device-cgroup-rules-parity \
 	docker-compose-devices-parity \
+	docker-compose-gpus-parity \
 	docker-compose-network-driver-opts-parity \
 	docker-compose-network-ipam-options-parity \
 	docker-compose-up-menu-parity \
@@ -133,7 +134,7 @@ else
 SWIFT_TEST_FLAGS ?=
 endif
 
-.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build docker-log-fixtures docker-log-fixtures-update docker-compose-e2e-fixtures docker-compose-parity docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-isolation-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-volume-labels-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-ipam-options-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-rm-parity docker-compose-restart-policy-parity coverage coverage-check sonar sonar-scan release release-plan repackage-release package package-release package-debug package-built coverage-tools-test lint format fmt check check-licenses update-licenses pre-commit
 
 all: workflow
 
@@ -1214,6 +1215,9 @@ docker-compose-device-cgroup-rules-parity: build
 
 docker-compose-devices-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-devices.sh --strict
+
+docker-compose-gpus-parity: build
+	$(PARITY_ENV) ./Tools/parity/check-compose-gpus.sh --strict
 
 docker-compose-network-driver-opts-parity: build
 	$(PARITY_ENV) ./Tools/parity/check-compose-network-driver-opts.sh --strict

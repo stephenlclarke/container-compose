@@ -222,6 +222,9 @@ extension ComposeOrchestrator {
         for device in try runtimeDeviceArguments(service: service) {
             args.append(contentsOf: ["--device", device])
         }
+        for gpu in try runtimeGPUArguments(service: service) {
+            args.append(contentsOf: ["--gpus", gpu])
+        }
         if let pidsLimit = runtimePidsLimitArgument(service: service) {
             args.append(contentsOf: ["--pids-limit", pidsLimit])
         }

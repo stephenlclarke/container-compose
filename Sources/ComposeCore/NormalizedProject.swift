@@ -276,6 +276,7 @@ public struct ComposeService: Codable, Equatable {
     public var cpuShares: Int? = nil
     public var develop: ComposeDevelop? = nil
     public var deploy: ComposeValue? = nil
+    public var deployGPURequests: [ComposeValue]? = nil
     public var unsupportedDeployFields: [String]? = nil
     public var deployMode: String? = nil
     public var deployLabels: [String: String]? = nil
@@ -385,6 +386,7 @@ public struct ComposeService: Codable, Equatable {
         case cpuShares
         case develop
         case deploy
+        case deployGPURequests
         case unsupportedDeployFields
         case deployMode
         case deployLabels

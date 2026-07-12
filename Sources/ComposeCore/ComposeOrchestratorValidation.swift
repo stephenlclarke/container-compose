@@ -85,6 +85,7 @@ extension ComposeOrchestrator {
         _ = try runtimeBlkioArguments(service: service)
         _ = try runtimeDeviceCgroupRuleArguments(service: service)
         _ = try runtimeDeviceArguments(service: service)
+        _ = try runtimeGPUArguments(service: service)
         if let gap = unsupportedUserAndSecurityOptionFields(service: service).first {
             throw ComposeError.unsupported("service '\(service.name)' uses \(gap.composeName) '\(gap.value)'; \(gap.reason)")
         }
@@ -245,6 +246,9 @@ extension ComposeOrchestrator {
         }
         if let field = unsupportedDeployResourceLimitField(in: fields) {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); apple/container exposes local deploy CPU and memory limits but not this deploy resource limit yet")
+        }
+        if fields.contains("resources.reservations.devices") {
+            throw ComposeError.unsupported("service '\(service.name)' uses a non-GPU deploy device reservation; the Apple backend supports only the generic GPU capability")
         }
         if let field = unsupportedDeployResourceReservationField(in: fields) {
             throw ComposeError.unsupported("service '\(service.name)' uses deploy.\(field); resource reservations need an apple/container scheduler/resource reservation gap PR")

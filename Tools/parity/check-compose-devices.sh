@@ -34,8 +34,9 @@
 # Docker Compose V2 handling for service `devices`, checks Docker Engine
 # HostConfig projection, then checks the same Compose file through
 # container-compose config and dry-run output. The container-compose runtime
-# bridge supports the runtime-supported Linux VM device table; USB, GPU, and
-# other host hardware passthrough remain separate runtime gaps.
+# bridge supports the runtime-supported Linux VM device table; USB and other
+# arbitrary host hardware passthrough remain separate runtime gaps. GPU requests
+# are covered by check-compose-gpus.sh.
 
 set -euo pipefail
 

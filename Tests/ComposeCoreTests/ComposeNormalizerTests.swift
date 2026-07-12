@@ -835,6 +835,9 @@ struct ComposeNormalizerTests {
                 reservations:
                   cpus: "0.5"
                   memory: 128m
+                  devices:
+                    - capabilities: [gpu]
+                      count: all
         """.write(to: composeFile, atomically: true, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
@@ -849,6 +852,13 @@ struct ComposeNormalizerTests {
         #expect(api.unsupportedDeployFields == [
             "resources.limits.pids",
         ])
+        #expect(api.deployGPURequests?.count == 1)
+        guard case .object(let gpu)? = api.deployGPURequests?.first else {
+            Issue.record("Expected normalized deploy GPU request")
+            return
+        }
+        #expect(gpu["count"] == .number(-1))
+        #expect(gpu["capabilities"] == .array([.string("gpu")]))
     }
 
     @Test("normalizes deploy restart policy through compose-go")

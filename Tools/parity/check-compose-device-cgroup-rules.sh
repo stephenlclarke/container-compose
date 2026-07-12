@@ -33,8 +33,8 @@
 # This script is intentionally local-only and is not part of CI. It validates
 # Docker Compose V2 handling for service `device_cgroup_rules`, checks Docker
 # Engine HostConfig projection when a daemon is available, then checks the same
-# Compose file through container-compose dry-run output. Host `devices` and
-# `gpus` remain separate runtime gaps and are not covered by this parity slice.
+# Compose file through container-compose dry-run output. Host `devices` and GPU
+# requests are covered by their own parity slices.
 
 set -euo pipefail
 

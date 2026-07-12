@@ -40,7 +40,7 @@ Compatibility note: Docker Compose can pass relative target strings through Dock
 
 `container-compose` owns Compose model validation, Docker-compatible service-device mapping, dry-run rendering, and Docker Compose parity tests.
 
-`apple/container` owns the Docker-compatible `--device` CLI/API bridge and resolves supported Linux VM device paths to known Linux device metadata. `apple/containerization` owns projecting typed OCI `linux.devices` values into generated runtime specs. USB, SD-card, PCI, GPU, arbitrary guest-side device discovery, and arbitrary macOS hardware passthrough remain separate lower-runtime/virtualization gaps.
+`apple/container` owns the Docker-compatible `--device` CLI/API bridge and resolves supported Linux VM device paths to known Linux device metadata. `apple/containerization` owns projecting typed OCI `linux.devices` values into generated runtime specs. USB, SD-card, PCI, vendor/native GPU passthrough, arbitrary guest-side device discovery, and arbitrary macOS hardware passthrough remain separate lower-runtime/virtualization gaps.
 
 ## Minimal example
 

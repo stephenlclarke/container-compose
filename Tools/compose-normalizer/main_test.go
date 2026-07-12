@@ -1644,10 +1644,15 @@ services:
 	}
 	want := []string{
 		"resources.limits.pids",
-		"resources.reservations.devices",
 	}
 	if !reflect.DeepEqual(api.UnsupportedDeployFields, want) {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want %#v", api.UnsupportedDeployFields, want)
+	}
+	if len(api.DeployGPURequests) != 1 {
+		t.Fatalf("api.DeployGPURequests = %#v, want one GPU reservation", api.DeployGPURequests)
+	}
+	if got, want := api.DeployGPURequests[0].Capabilities, []string{"gpu"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("api.DeployGPURequests[0].Capabilities = %#v, want %#v", got, want)
 	}
 	if api.DeployRestartPolicy == nil {
 		t.Fatal("api.DeployRestartPolicy = nil, want deploy restart policy")
@@ -2188,6 +2193,24 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 		Pids:        32,
 	}}}); !reflect.DeepEqual(fields, []string{"resources.reservations.pids"}) {
 		t.Fatalf("unsupportedDeployFields(resource reservations) = %#v, want granular reservation fields", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Resources: types.Resources{Reservations: &types.Resource{
+		Devices: []types.DeviceRequest{{Capabilities: []string{"gpu"}}},
+	}}}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(gpu reservation) = %#v, want empty", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{Resources: types.Resources{Reservations: &types.Resource{
+		Devices: []types.DeviceRequest{{Capabilities: []string{"tpu"}}},
+	}}}); !reflect.DeepEqual(fields, []string{"resources.reservations.devices"}) {
+		t.Fatalf("unsupportedDeployFields(non-gpu reservation) = %#v, want devices field", fields)
+	}
+	if requests := deployGPURequests(&types.DeployConfig{Resources: types.Resources{Reservations: &types.Resource{
+		Devices: []types.DeviceRequest{
+			{Capabilities: []string{"tpu"}},
+			{Capabilities: []string{"gpu"}, Count: 1},
+		},
+	}}}); len(requests) != 1 || requests[0].Count != 1 {
+		t.Fatalf("deployGPURequests() = %#v, want one GPU request", requests)
 	}
 	if got := unitBytesValue(0); got != "" {
 		t.Fatalf("unitBytesValue(0) = %q, want empty", got)

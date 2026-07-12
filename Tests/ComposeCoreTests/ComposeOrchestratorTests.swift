@@ -6787,6 +6787,124 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--device", "/dev/zero"]))
     }
 
+    @Test("up maps service gpus all to the runtime")
+    func upMapsServiceGPUsAllToRuntime() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.gpus = [
+                        .object([
+                            "count": .number(-1),
+                            "capabilities": .array([.string("gpu")]),
+                        ]),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--gpus", "all"]))
+    }
+
+    @Test("up maps deploy GPU reservations to the runtime")
+    func upMapsDeployGPUReservationsToRuntime() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deployGPURequests = [
+                        .object([
+                            "device_ids": .array([.string("0")]),
+                            "capabilities": .array([.string("gpu")]),
+                        ]),
+                    ]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: RecordingContainerDiscoveryManager()
+        ).up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--gpus", "device=0"]))
+    }
+
+    @Test("up rejects unsupported GPU drivers before creating resources")
+    func upRejectsUnsupportedGPUDriversBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.gpus = [
+                        .object([
+                            "driver": .string("nvidia"),
+                            "count": .number(1),
+                            "capabilities": .array([.string("gpu")]),
+                        ]),
+                    ]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported GPU driver error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' requests GPU driver 'nvidia'; the Apple backend supports only virtio-gpu"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test("up rejects non-GPU deploy device reservations before creating resources")
+    func upRejectsNonGPUDeployDeviceReservationsBeforeCreatingResources() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.unsupportedDeployFields = ["resources.reservations.devices"]
+                    $0.deployGPURequests = [
+                        .object([
+                            "count": .number(1),
+                            "capabilities": .array([.string("tpu")]),
+                        ]),
+                    ]
+                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                },
+            ]
+        ) {
+            $0.volumes = ["cache": ComposeVolume(name: "cache")]
+        }
+
+        do {
+            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
+            Issue.record("Expected unsupported deploy device reservation error")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("service 'api' uses a non-GPU deploy device reservation; the Apple backend supports only the generic GPU capability"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("up rejects invalid devices before creating resources")
     func upRejectsInvalidDevicesBeforeCreatingResources() async throws {
         let runner = RecordingRunner()
@@ -22265,6 +22383,24 @@ struct ComposeOrchestratorTests {
         #expect(command.containsSequence(["--device", "/dev/zero"]))
     }
 
+    @Test("run maps service GPU requests to runtime arguments")
+    func runMapsServiceGPURequestsToRuntimeArguments() async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.gpus = [.string("all")]
+                },
+            ]
+        )
+
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence(["--gpus", "all"]))
+    }
+
     @Test("run rejects invalid devices before runtime commands")
     func runRejectsInvalidDevicesBeforeRuntimeCommands() async throws {
         let runner = RecordingRunner()
@@ -24833,18 +24969,6 @@ private func unsupportedDeviceAccessFieldCases() -> [UnsupportedDeviceAccessFiel
             composeName: "credential_spec",
             reason: "credential spec support needs an apple/container runtime gap PR",
             configure: { $0.credentialSpec = .object(["file": .string("credential-spec.json")]) }
-        ),
-        UnsupportedDeviceAccessFieldCase(
-            composeName: "gpus",
-            reason: "GPU device access support needs an apple/container runtime gap PR",
-            configure: {
-                $0.gpus = [
-                    .object([
-                        "driver": .string("nvidia"),
-                        "capabilities": .array([.string("gpu")]),
-                    ]),
-                ]
-            }
         ),
     ]
 }

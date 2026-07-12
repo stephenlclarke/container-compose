@@ -16,7 +16,7 @@
 
 ## Motivation and Context
 
-Docker Compose exposes service-level Linux device cgroup rule controls through `device_cgroup_rules`. The field is materially different from host device passthrough: it configures cgroup permissions, while `devices` and `gpus` require runtime device injection. The plugin previously rejected all three together, which blocked a feature that can be implemented through the fork-backed runtime-data path.
+Docker Compose exposes service-level Linux device cgroup rule controls through `device_cgroup_rules`. The field is materially different from host device passthrough: it configures cgroup permissions, while `devices` and `gpus` require runtime device injection. The plugin supports the cgroup-rule path through fork-backed runtime data and keeps the device and GPU mappings in their dedicated runtime slices.
 
 References:
 
@@ -32,7 +32,7 @@ References:
 
 ## Implementation Details
 
-- Removed `device_cgroup_rules` from the unsupported device-access field group while keeping `credential_spec`, `devices`, and `gpus` blocked at the time of that slice. Service `devices` is now tracked separately in [PR-service-devices.md](PR-service-devices.md).
+- Keeps `device_cgroup_rules` out of the unsupported device-access field group. Service `devices` is tracked in [PR-service-devices.md](PR-service-devices.md), and service `gpus` is tracked in [PR-service-gpus.md](PR-service-gpus.md).
 - Added `runtimeDeviceCgroupRuleArguments(service:)` to validate Compose rule strings through `ContainerAPIClient.Parser.deviceCgroupRules`.
 - Added repeatable `--device-cgroup-rule` rendering in the service create/run command path.
 - Added pre-side-effect validation so invalid rule strings fail before runtime resources are prepared.
@@ -50,8 +50,8 @@ Supported on the fork-backed integration stack:
 Known remaining device gaps:
 
 - `services.<name>.devices` is supported for the runtime-supported Linux VM device table by the later service-device slice.
-- `services.<name>.gpus` remains blocked until GPU passthrough exists.
-- Deploy resource device reservations remain blocked because they imply scheduler/device semantics beyond this local runtime mapping.
+- Generic single Apple virtio GPU requests are covered by [PR-service-gpus.md](PR-service-gpus.md).
+- Non-GPU Deploy resource device reservations remain blocked because they imply scheduler/device semantics beyond this local runtime mapping.
 
 ## Testing
 
