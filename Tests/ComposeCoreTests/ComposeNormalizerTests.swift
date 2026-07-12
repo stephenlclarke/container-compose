@@ -1288,7 +1288,7 @@ struct ComposeNormalizerTests {
         let runner = RecordingRunner(responses: [
             CommandResult(
                 status: 0,
-                stdout: #"{"repository":"registry.example.com/team/app:latest","ociVersion":"1.1","dryRun":true,"layers":[{"kind":"compose","path":"compose.yaml","mediaType":"application/vnd.docker.compose.file+yaml","digest":"sha256:abc","size":42}]}"#,
+                stdout: #"{"repository":"registry.example.com/team/app:latest","ociVersion":"1.1","dryRun":true,"descriptor":{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:compose","size":42,"artifactType":"application/vnd.docker.compose.project"},"application":{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"sha256:application","size":99,"artifactType":"application/vnd.docker.compose.project"},"layers":[{"kind":"compose","path":"compose.yaml","mediaType":"application/vnd.docker.compose.file+yaml","digest":"sha256:abc","size":42}]}"#,
                 stderr: ""
             ),
         ])
@@ -1310,6 +1310,8 @@ struct ComposeNormalizerTests {
         #expect(result.repository == "registry.example.com/team/app:latest")
         #expect(result.ociVersion == "1.1")
         #expect(result.dryRun)
+        #expect(result.descriptor?.digest == "sha256:compose")
+        #expect(result.application?.digest == "sha256:application")
         #expect(result.layers == [
             ComposePublishLayer(
                 kind: "compose",

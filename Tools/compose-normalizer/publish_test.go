@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
 	spec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -217,6 +219,45 @@ services:
 	}
 }
 
+func TestPublishAppDryRunIncludesImageDigestOverrideLayer(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: registry.example.com/team/api
+`)
+	var requests []string
+
+	result, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-app",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			app:        true,
+			dryRun:     true,
+			imageDigestResolver: func(named reference.Named) (digest.Digest, error) {
+				requests = append(requests, named.String())
+				return "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil
+			},
+		},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("publishComposeProject returned error: %v", err)
+	}
+	if len(requests) != 1 || requests[0] != "registry.example.com/team/api:latest" {
+		t.Fatalf("digest resolver requests = %#v", requests)
+	}
+	layer := result.Layers[len(result.Layers)-1]
+	if layer.Kind != "compose" || layer.Path != "image-digests.yaml" {
+		t.Fatalf("digest layer = %#v, want compose image-digests.yaml", layer)
+	}
+}
+
 func TestPublishImageDigestResolverTagsAndWrapsResolveFailures(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -251,6 +292,76 @@ func TestGeneratePublishImageDigestsOverrideReturnsResolverError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "resolver unavailable") {
 		t.Fatalf("digest override error = %v", err)
+	}
+}
+
+func TestCreatePublishApplicationIndexCopiesImagesInServiceOrder(t *testing.T) {
+	project := &types.Project{
+		Services: types.Services{
+			"worker": {
+				Name:  "worker",
+				Image: "registry.example.com/team/worker:2",
+			},
+			"api": {
+				Name:  "api",
+				Image: "registry.example.com/team/api:1",
+			},
+		},
+	}
+	target, err := reference.ParseDockerRef("registry.example.com/team/app:latest")
+	if err != nil {
+		t.Fatalf("ParseDockerRef returned error: %v", err)
+	}
+	composeDescriptor := spec.Descriptor{
+		MediaType:    spec.MediaTypeImageManifest,
+		ArtifactType: composeOCI.ComposeProjectArtifactType,
+		Digest:       "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		Size:         42,
+		Data:         []byte("compose-manifest"),
+	}
+	var copied []string
+
+	application, err := createPublishApplicationIndex(
+		t.Context(),
+		nil,
+		project,
+		target,
+		composeDescriptor,
+		func(_ context.Context, _ remotes.Resolver, image reference.Named, named reference.Named) (spec.Descriptor, error) {
+			copied = append(copied, image.String()+" -> "+named.Name())
+			imageBytes := []byte(image.String())
+			return spec.Descriptor{
+				MediaType: spec.MediaTypeImageManifest,
+				Digest:    digest.FromBytes(imageBytes),
+				Size:      int64(len(imageBytes)),
+			}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("createPublishApplicationIndex returned error: %v", err)
+	}
+	if want := []string{
+		"registry.example.com/team/api:1 -> registry.example.com/team/app",
+		"registry.example.com/team/worker:2 -> registry.example.com/team/app",
+	}; !slices.Equal(copied, want) {
+		t.Fatalf("copied images = %#v, want %#v", copied, want)
+	}
+	if application.MediaType != spec.MediaTypeImageIndex || application.ArtifactType != composeOCI.ComposeProjectArtifactType {
+		t.Fatalf("application descriptor = %#v", application)
+	}
+
+	var index spec.Index
+	if err := json.Unmarshal(application.Data, &index); err != nil {
+		t.Fatalf("application index did not decode: %v", err)
+	}
+	if index.Subject == nil || index.Subject.Digest != composeDescriptor.Digest {
+		t.Fatalf("index subject = %#v, want compose descriptor", index.Subject)
+	}
+	if len(index.Subject.Data) != 0 {
+		t.Fatalf("index subject carries data, want descriptor-only subject")
+	}
+	if len(index.Manifests) != 2 {
+		t.Fatalf("index manifests = %#v, want two service image manifests", index.Manifests)
 	}
 }
 
@@ -399,48 +510,6 @@ func TestPublishLayerSnapshotsUnknownDescriptor(t *testing.T) {
 	}
 	if snapshots[0].Kind != "unknown" || snapshots[0].Path != "custom.bin" {
 		t.Fatalf("snapshot = %#v, want unknown custom.bin layer", snapshots[0])
-	}
-}
-
-func TestPublishRejectsUnsupportedOptions(t *testing.T) {
-	dir := t.TempDir()
-	composeFile := writePublishFixture(t, dir, "compose.yaml", `
-services:
-  api:
-    image: alpine
-`)
-
-	tests := []struct {
-		name    string
-		options publishOptions
-		want    string
-	}{
-		{
-			name: "app",
-			options: publishOptions{
-				repository: "registry.example.com/team/app:latest",
-				app:        true,
-				dryRun:     true,
-			},
-			want: "--app",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := publishComposeProject(
-				[]string{composeFile},
-				nil,
-				nil,
-				"publish-options",
-				dir,
-				projectLoadOptions{},
-				test.options,
-				io.Discard,
-			)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %v, want %q", err, test.want)
-			}
-		})
 	}
 }
 

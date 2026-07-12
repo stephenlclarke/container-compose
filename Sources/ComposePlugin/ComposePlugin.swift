@@ -2042,21 +2042,22 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
         normalizerPublish: (ComposePublishOptions) async throws -> ComposePublishResult,
         pushImages: () async throws -> Void
     ) async throws -> ComposePublishResult {
-        let preflight = try await normalizerPublish(publishOptions(dryRun: true, resolveImageDigests: false))
+        let shouldResolveImageDigests = resolveImageDigests || app
+        let preflight = try await normalizerPublish(publishOptions(dryRun: true, app: false, resolveImageDigests: false))
         try await pushImages()
         if global.dryRun {
-            if resolveImageDigests {
+            if shouldResolveImageDigests {
                 return try await normalizerPublish(publishOptions(dryRun: true, resolveImageDigests: true))
             }
             return preflight
         }
-        return try await normalizerPublish(publishOptions(dryRun: false, resolveImageDigests: resolveImageDigests))
+        return try await normalizerPublish(publishOptions(dryRun: false, resolveImageDigests: shouldResolveImageDigests))
     }
 
-    private func publishOptions(dryRun: Bool, resolveImageDigests: Bool) -> ComposePublishOptions {
+    private func publishOptions(dryRun: Bool, app: Bool? = nil, resolveImageDigests: Bool) -> ComposePublishOptions {
         ComposePublishOptions(
             repository: repository,
-            app: app,
+            app: app ?? self.app,
             ociVersion: ociVersion,
             resolveImageDigests: resolveImageDigests,
             withEnv: withEnv,
@@ -2077,6 +2078,9 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
             print("\(result.repository)@\(descriptor.digest)")
         } else {
             print("published \(result.repository)")
+        }
+        if let application = result.application {
+            print("application \(result.repository)@\(application.digest)")
         }
     }
 }

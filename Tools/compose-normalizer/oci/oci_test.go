@@ -237,6 +237,58 @@ func TestDescriptorForEnvFile(t *testing.T) {
 	}
 }
 
+func TestDescriptorForApplicationIndex(t *testing.T) {
+	subject := spec.Descriptor{
+		MediaType:    spec.MediaTypeImageManifest,
+		ArtifactType: ComposeProjectArtifactType,
+		Digest:       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:         42,
+		Data:         []byte("compose-manifest"),
+	}
+	manifest := spec.Descriptor{
+		MediaType: spec.MediaTypeImageManifest,
+		Digest:    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Size:      99,
+	}
+
+	descriptor, err := DescriptorForApplicationIndex(subject, []spec.Descriptor{manifest})
+	if err != nil {
+		t.Fatalf("DescriptorForApplicationIndex returned error: %v", err)
+	}
+	if descriptor.MediaType != spec.MediaTypeImageIndex {
+		t.Fatalf("media type = %q, want image index", descriptor.MediaType)
+	}
+	if descriptor.ArtifactType != ComposeProjectArtifactType {
+		t.Fatalf("artifact type = %q, want %q", descriptor.ArtifactType, ComposeProjectArtifactType)
+	}
+	if descriptor.Digest != digest.FromBytes(descriptor.Data) {
+		t.Fatalf("digest = %s, want digest of index data", descriptor.Digest)
+	}
+	if descriptor.Size != int64(len(descriptor.Data)) {
+		t.Fatalf("size = %d, want %d", descriptor.Size, len(descriptor.Data))
+	}
+	if descriptor.Annotations["com.docker.compose.version"] != composeVersionAnnotation {
+		t.Fatalf("compose version annotation = %q", descriptor.Annotations["com.docker.compose.version"])
+	}
+
+	var index spec.Index
+	if err := json.Unmarshal(descriptor.Data, &index); err != nil {
+		t.Fatalf("index JSON did not decode: %v", err)
+	}
+	if index.SchemaVersion != 2 || index.MediaType != spec.MediaTypeImageIndex {
+		t.Fatalf("index header = %#v", index)
+	}
+	if index.Subject == nil || index.Subject.Digest != subject.Digest {
+		t.Fatalf("index subject = %#v, want compose artifact descriptor", index.Subject)
+	}
+	if len(index.Subject.Data) != 0 {
+		t.Fatalf("index subject carries data, want descriptor-only subject")
+	}
+	if len(index.Manifests) != 1 || index.Manifests[0].Digest != manifest.Digest {
+		t.Fatalf("index manifests = %#v, want service image manifest", index.Manifests)
+	}
+}
+
 func TestGenerateManifestOCI11(t *testing.T) {
 	layer := DescriptorForComposeFile("compose.yml", []byte("services: {}\n"))
 	descriptor, toPush, err := generateManifest([]spec.Descriptor{layer}, OCIVersion1_1)

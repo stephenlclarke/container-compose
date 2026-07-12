@@ -20,7 +20,7 @@ workflows for Apple's [`container`](https://github.com/apple/container) CLI.
 Local files, Git resources, and `oci://` Compose project artifacts are
 normalized with `compose-go`; image-backed projects can also push service
 images and publish Compose YAML, env-file layers, and optional image digest
-override layers as OCI project artifacts. Swift owns
+override layers or application image indexes as OCI project artifacts. Swift owns
 orchestration and maps supported Compose behavior to the matched runtime stack.
 
 Help color-codes command, subcommand, and option support: green for supported,

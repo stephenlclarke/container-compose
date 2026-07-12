@@ -49,6 +49,7 @@ public struct ComposePublishResult: Codable, Equatable, Sendable {
     public var ociVersion: String
     public var dryRun: Bool
     public var descriptor: ComposePublishDescriptor?
+    public var application: ComposePublishDescriptor?
     public var layers: [ComposePublishLayer]
 
     public init(
@@ -56,12 +57,14 @@ public struct ComposePublishResult: Codable, Equatable, Sendable {
         ociVersion: String,
         dryRun: Bool = false,
         descriptor: ComposePublishDescriptor? = nil,
+        application: ComposePublishDescriptor? = nil,
         layers: [ComposePublishLayer] = [],
     ) {
         self.repository = repository
         self.ociVersion = ociVersion
         self.dryRun = dryRun
         self.descriptor = descriptor
+        self.application = application
         self.layers = layers
     }
 }

@@ -200,6 +200,34 @@ func DescriptorForEnvFile(path string, content []byte) spec.Descriptor {
 	}
 }
 
+// DescriptorForApplicationIndex returns an OCI image index that references
+// service image manifests and links back to the Compose project artifact.
+func DescriptorForApplicationIndex(subject spec.Descriptor, manifests []spec.Descriptor) (spec.Descriptor, error) {
+	subject.Data = nil
+	index, err := json.Marshal(spec.Index{
+		Versioned: specs.Versioned{SchemaVersion: 2},
+		MediaType: spec.MediaTypeImageIndex,
+		Manifests: manifests,
+		Subject:   &subject,
+		Annotations: map[string]string{
+			"com.docker.compose.version": composeVersionAnnotation,
+		},
+	})
+	if err != nil {
+		return spec.Descriptor{}, err
+	}
+	return spec.Descriptor{
+		MediaType:    spec.MediaTypeImageIndex,
+		ArtifactType: ComposeProjectArtifactType,
+		Digest:       digest.FromBytes(index),
+		Size:         int64(len(index)),
+		Annotations: map[string]string{
+			"com.docker.compose.version": composeVersionAnnotation,
+		},
+		Data: index,
+	}, nil
+}
+
 // PushManifest pushes a Compose project artifact manifest and its layers.
 func PushManifest(ctx context.Context, resolver remotes.Resolver, named reference.Named, layers []spec.Descriptor, ociVersion OCIVersion) (spec.Descriptor, error) {
 	if ociVersion == OCIVersion1_1 || ociVersion == "" {

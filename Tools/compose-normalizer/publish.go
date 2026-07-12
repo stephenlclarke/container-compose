@@ -32,6 +32,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/distribution/reference"
 	"github.com/docker/cli/cli/config"
 	digest "github.com/opencontainers/go-digest"
@@ -40,6 +41,8 @@ import (
 	composeTransform "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/transform"
 	"go.yaml.in/yaml/v4"
 )
+
+type publishImageCopier func(context.Context, remotes.Resolver, reference.Named, reference.Named) (spec.Descriptor, error)
 
 type publishOptions struct {
 	repository          string
@@ -50,14 +53,16 @@ type publishOptions struct {
 	assumeYes           bool
 	dryRun              bool
 	imageDigestResolver func(reference.Named) (digest.Digest, error)
+	imageCopier         publishImageCopier
 }
 
 type publishResult struct {
-	Repository string                 `json:"repository"`
-	OCIVersion string                 `json:"ociVersion"`
-	DryRun     bool                   `json:"dryRun,omitempty"`
-	Descriptor *publishDescriptor     `json:"descriptor,omitempty"`
-	Layers     []publishLayerSnapshot `json:"layers"`
+	Repository  string                 `json:"repository"`
+	OCIVersion  string                 `json:"ociVersion"`
+	DryRun      bool                   `json:"dryRun,omitempty"`
+	Descriptor  *publishDescriptor     `json:"descriptor,omitempty"`
+	Application *publishDescriptor     `json:"application,omitempty"`
+	Layers      []publishLayerSnapshot `json:"layers"`
 }
 
 type publishDescriptor struct {
@@ -94,9 +99,6 @@ func publishComposeProject(
 	if err != nil {
 		return nil, err
 	}
-	if options.app {
-		return nil, errors.New("unsupported publish option --app: application image indexes are not implemented")
-	}
 
 	project, _, err := loadComposeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	if err != nil {
@@ -116,6 +118,9 @@ func publishComposeProject(
 		return nil, err
 	}
 
+	if options.app {
+		options.resolveImageDigests = true
+	}
 	if options.resolveImageDigests && options.imageDigestResolver == nil {
 		options.imageDigestResolver = publishImageDigestResolver(ctx, stderr)
 	}
@@ -140,6 +145,13 @@ func publishComposeProject(
 		return nil, err
 	}
 	result.Descriptor = publishDescriptorFromOCI(descriptor)
+	if options.app {
+		application, err := publishApplicationIndex(ctx, resolver, project, named, descriptor, options.imageCopier)
+		if err != nil {
+			return nil, err
+		}
+		result.Application = publishDescriptorFromOCI(application)
+	}
 	return result, nil
 }
 
@@ -254,6 +266,54 @@ func generatePublishImageDigestsOverride(project *types.Project, resolver func(r
 		}
 	}
 	return override.MarshalYAML()
+}
+
+func publishApplicationIndex(
+	ctx context.Context,
+	resolver remotes.Resolver,
+	project *types.Project,
+	named reference.Named,
+	composeDescriptor spec.Descriptor,
+	copier publishImageCopier,
+) (spec.Descriptor, error) {
+	application, err := createPublishApplicationIndex(ctx, resolver, project, named, composeDescriptor, copier)
+	if err != nil {
+		return spec.Descriptor{}, err
+	}
+	if err := composeOCI.Push(ctx, resolver, reference.TrimNamed(named), application); err != nil {
+		return spec.Descriptor{}, err
+	}
+	return application, nil
+}
+
+func createPublishApplicationIndex(
+	ctx context.Context,
+	resolver remotes.Resolver,
+	project *types.Project,
+	named reference.Named,
+	composeDescriptor spec.Descriptor,
+	copier publishImageCopier,
+) (spec.Descriptor, error) {
+	if copier == nil {
+		copier = composeOCI.Copy
+	}
+	manifests := make([]spec.Descriptor, 0, len(project.Services))
+	for _, serviceName := range sortedMapKeys(project.Services) {
+		service := project.Services[serviceName]
+		if strings.TrimSpace(service.Image) == "" {
+			return spec.Descriptor{}, fmt.Errorf("publish --app requires service %q to define an image", serviceName)
+		}
+		image, err := reference.ParseDockerRef(service.Image)
+		if err != nil {
+			return spec.Descriptor{}, fmt.Errorf("invalid image for service %q: %w", serviceName, err)
+		}
+		manifest, err := copier(ctx, resolver, image, named)
+		if err != nil {
+			return spec.Descriptor{}, fmt.Errorf("failed to copy image for service %q: %w", serviceName, err)
+		}
+		manifests = append(manifests, manifest)
+	}
+	return composeOCI.DescriptorForApplicationIndex(composeDescriptor, manifests)
 }
 
 func processPublishExtends(ctx context.Context, project *types.Project, files map[string]string) ([]spec.Descriptor, error) {
