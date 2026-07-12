@@ -33,5 +33,7 @@ swift test --disable-automatic-resolution --filter ComposeNormalizerTests
 
 ## Commit Tracking
 
-- Primary implementation commit in `stephenlclarke/container-compose`:
-  local slice is uncommitted; record the upstream-import and integration commit IDs before release packaging.
+- Upstream-derived OCI loader import:
+  `673e096b17348c40b60c9b8d6d8f80144432eeca`
+- Local integration, tests, and documentation:
+  `cc7469d47f7f6a37b48dd4ba14b456bc8907d795`
