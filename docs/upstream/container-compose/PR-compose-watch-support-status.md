@@ -6,7 +6,7 @@ This change updates the CLI support matrix so `container compose watch` reflects
 
 - Marks `watch` as supported in `container compose help`.
 - Adds focused help coverage for the `watch` command and its exposed options.
-- Updates `STATUS.md` with the current `stephenlclarke/container` pin and the supported watch handoff.
+- Updates `STATUS.md` with the current watch support state without duplicating release-stack refs.
 - Adds this upstream handoff pair for review context.
 
 ## Rationale

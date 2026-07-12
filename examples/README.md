@@ -11,7 +11,7 @@ The default example builds a tiny Alpine image from [Dockerfile](Dockerfile) and
 Use a non-interactive command for a quick smoke test:
 
 ```sh
-../container/bin/container compose -f examples/compose.yml run --rm --no-TTY shell uname -a
+../container/bin/container compose -f examples/compose.yml run --rm --no-tty shell uname -a
 ```
 
 Use an interactive shell when testing terminal behavior:
@@ -25,7 +25,7 @@ The first run may pull and build the Alpine image. A local debug build of `conta
 Example first-run output:
 
 ```text
-> ../container/bin/container compose -f examples/compose.yml run --rm --no-TTY shell uname -a
+> ../container/bin/container compose -f examples/compose.yml run --rm --no-tty shell uname -a
 Warning! Running debug build. Performance may be degraded.
 container-compose-alpine-shell:local
 Warning! Running debug build. Performance may be degraded.

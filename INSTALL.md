@@ -1,6 +1,6 @@
 # Installing container-compose
 
-This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the matched `stephenlclarke/container` runtime. Source build and package steps are covered in [BUILD.md](BUILD.md); branch, tag, and release policy is covered in [BRANCHES.md](BRANCHES.md).
+This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the matched `stephenlclarke/container` runtime. Source build and package steps live in [BUILD.md](BUILD.md); branch, tag, and release policy live in [BRANCHES.md](BRANCHES.md).
 
 ## Homebrew Formulae
 
@@ -95,11 +95,11 @@ container compose version
 container compose version --format json
 ```
 
-`container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, exact `containerization` source/ref, and pinned `container-builder-shim` image compiled into the runtime. Apple package builds do not carry the stephenlclarke fork provenance fields.
+`container system version` is the authoritative check for the running `container` CLI and API service. Fork-backed builds include the source owner, branch lane, branch name, commit, exact `containerization` source/ref, and builder image metadata compiled into the runtime. Apple package builds do not carry the stephenlclarke fork provenance fields.
 
-`container compose version` shows the installed plugin build, embedded `compose-go` version, and the `container` and `containerization` pins that the plugin package was built against. Homebrew packages report their package lane and source revision.
+`container compose version` shows the installed plugin build, embedded `compose-go` version, and the package/runtime compatibility metadata used by the preflight. Homebrew packages report their package lane and source revision.
 
-Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, if the Homebrew install is mixed, or if the installed `container` / `containerization` refs do not match the plugin package pins, `container compose` stops with upgrade guidance instead of failing later with a stale unsupported-feature or low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae.
+Runtime-backed Compose commands check the installed stack before they start. If the shell is still finding Apple's stock `container`, if the Homebrew install is mixed, or if the installed `container` / `containerization` refs do not match the plugin package metadata, `container compose` stops with upgrade guidance instead of failing later with a stale unsupported-feature or low-level runtime error. The message points back to this file and shows the matching `stephenlclarke/tap` formulae.
 
 Run a read-only Compose command from a directory containing a Compose file:
 
@@ -186,4 +186,4 @@ container system version
 container compose version
 ```
 
-The active `container` binary should come from Homebrew, not `/usr/local/bin/container`. `container system version` should show `stephenlclarke/container` and `stephenlclarke/containerization` provenance. `container compose version` should print the plugin lane, `compose-go` version, and runtime pins.
+The active `container` binary should come from Homebrew, not `/usr/local/bin/container`. `container system version` should show `stephenlclarke/container` and `stephenlclarke/containerization` provenance. `container compose version` should print the plugin lane, `compose-go` version, and package/runtime compatibility metadata.

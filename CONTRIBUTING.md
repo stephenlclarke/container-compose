@@ -94,6 +94,11 @@ out of release highlights. The raw commit list is still included for audit
 detail, so keep the Conventional Commit subject accurate even when a trailer is
 present.
 
+For upstream-driven work, add the original reference with `Upstream-Ref:`,
+`Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The release-note renderer appends
+missing references to the highlight so users can see which Docker Compose,
+Apple, or builder-shim issue or pull request shaped the change.
+
 ## Quality Bar
 
 Every code change should be covered by tests at the right level. Prefer small
@@ -130,7 +135,7 @@ Keep every contribution easy for apple/container maintainers to assess:
 - Keep orchestration logic in Swift and Compose normalization in the Go helper.
 - Prefer the existing project structure over new abstractions.
 - Keep unsupported Compose features explicit and actionable.
-- Keep [STATUS.md](STATUS.md) aligned with current dependency pins, runtime
+- Keep [STATUS.md](STATUS.md) aligned with current parity surfaces, runtime
   blockers, and validation state.
 - Run `make check` for fast lint and license-header validation before larger
   test runs.

@@ -12,7 +12,7 @@ This directory is the durable handoff area for Apple-facing issue and pull reque
 - Before selecting a slab or slice, inspect current open issues and pull requests for `apple/container` and `apple/containerization`. Reference matching upstream work in the issue and PR drafts rather than opening duplicates.
 - When Docker behavior is the target, check Docker's own documentation and the Docker Compose implementation before settling the slice boundary. Record the relevant docs/source links in the issue and PR drafts when they affect shape, output, filtering, or test fixtures.
 - Keep the draft files in this repository even when the code lives in sibling forks. That makes `container-compose` the single project handoff for runtime gaps, upstream links, and commit IDs.
-- Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE*.md` or `PR*.md` draft files in the sibling `container` or `containerization` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
+- Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE-*.md` or `PR-*.md` draft files in the sibling `container`, `containerization`, or `container-builder-shim` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
 - Keep drafts current. Remove obsolete branch names, completed migration notes, dated snapshots, and superseded implementation procedures instead of preserving project history here. Current branch and release rules live in [BRANCHES.md](../../BRANCHES.md).
 
 ## Final Upstream Review Gate
@@ -46,11 +46,12 @@ The review must cover every potential PR independently:
 Use these to confirm handoff docs have not drifted back into sibling forks:
 
 ```sh
-find /Users/sclarke/github/container \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE*.md' -o -name 'ISSUES*.md' -o -name 'PR*.md' \) -print
-find /Users/sclarke/github/containerization \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE*.md' -o -name 'ISSUES*.md' -o -name 'PR*.md' \) -print
+find /Users/sclarke/github/container \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE-*.md' -o -name 'ISSUES-*.md' -o -name 'PR-*.md' \) -print
+find /Users/sclarke/github/containerization \( -name .build -o -name .git \) -prune -o \( -name 'ISSUE-*.md' -o -name 'ISSUES-*.md' -o -name 'PR-*.md' \) -print
+find /Users/sclarke/github/container-builder-shim \( -name .build -o -name .git -o -path '*/vendor/*' \) -prune -o \( -name 'ISSUE-*.md' -o -name 'ISSUES-*.md' -o -name 'PR-*.md' \) -print
 ```
 
-Both commands should print nothing. After moving or editing handoff docs here, run:
+These commands should print nothing. After moving or editing handoff docs here, run:
 
 ```sh
 markdownlint docs/upstream

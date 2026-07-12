@@ -3,7 +3,7 @@
 ## Summary
 
 - Adds a runtime dependency preflight for Compose commands that require the installed `container` stack.
-- Checks `container system version --format json` for stephenlclarke's fork-backed `container` and `containerization` provenance plus exact package-pin alignment when concrete refs are available.
+- Checks `container system version --format json` for stephenlclarke's fork-backed `container` and `containerization` provenance plus exact package metadata alignment when concrete refs are available.
 - Leaves help, `version`, `config`, dry-run commands, and `build --print` available without a runtime preflight.
 - Reports a clear upgrade/install message when Apple stock, missing, or mismatched components are detected.
 - Points users to <https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md>.

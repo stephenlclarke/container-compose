@@ -1987,14 +1987,94 @@ struct Export: AsyncParsableCommand, ComposeProjectCommand {
     }
 }
 
-/// Reports `compose publish` as unsupported until Compose application artifacts are available.
+/// Implements the Compose project OCI artifact subset of `compose publish`.
 struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(commandName: "publish", abstract: "Publish the Compose application.")
     @OptionGroup var global: GlobalOptions
-    @Argument(parsing: .allUnrecognized) var arguments: [String] = []
-    /// Reports the runtime gap for Compose application publishing.
-    func run() throws {
-        throw ComposeError.unsupported("publish: Compose application OCI artifacts are not available through apple/container")
+    @Flag(name: .customLong("app"), help: "Published Compose application.")
+    var app = false
+    @Option(name: .customLong("oci-version"), help: "OCI image/artifact specification version.")
+    var ociVersion: String?
+    @Flag(name: .customLong("resolve-image-digests"), help: "Pin image tags to digests.")
+    var resolveImageDigests = false
+    @Flag(name: .customLong("with-env"), help: "Include environment variables in the published OCI artifact.")
+    var withEnv = false
+    @Flag(name: [.customShort("y"), .customLong("yes")], help: "Assume yes as answer to all prompts.")
+    var yes = false
+    @Argument(help: "Repository reference.")
+    var repository: String
+    /// Publishes or dry-runs the Compose project OCI artifact.
+    func run() async throws {
+        let composeOptions = composeOptionsForPublishing()
+        let normalizer = ComposeNormalizer()
+        let result = try await global.progressReporter().activity(global.dryRun ? "Planning Compose publish" : "Publishing Compose application") {
+            try await executePublish(
+                normalizerPublish: { publishOptions in
+                    try await normalizer.publish(options: composeOptions, publish: publishOptions)
+                },
+                pushImages: {
+                    let loadedProject = try await global.loadProject(options: composeOptions)
+                    try await orchestrator().push(
+                        project: loadedProject,
+                        options: ComposePushOptions {
+                            $0.ignorePushFailures = true
+                        }
+                    )
+                }
+            )
+        }
+        renderPublishResult(result)
+    }
+
+    /// Publish activates every Compose profile before pushing service images,
+    /// matching Docker Compose's project.WithProfiles(["*"]) publish path.
+    func composeOptionsForPublishing() -> ComposeOptions {
+        var options = global.composeOptions()
+        if !options.profiles.contains("*") {
+            options.profiles.append("*")
+        }
+        return options
+    }
+
+    /// Runs Docker Compose's publish order: preflight, service image push, then
+    /// artifact publish. The closures keep the sequence easy to unit test.
+    func executePublish(
+        normalizerPublish: (ComposePublishOptions) async throws -> ComposePublishResult,
+        pushImages: () async throws -> Void
+    ) async throws -> ComposePublishResult {
+        let preflight = try await normalizerPublish(publishOptions(dryRun: true))
+        try await pushImages()
+        if global.dryRun {
+            return preflight
+        }
+        return try await normalizerPublish(publishOptions(dryRun: false))
+    }
+
+    private func publishOptions(dryRun: Bool) -> ComposePublishOptions {
+        ComposePublishOptions(
+            repository: repository,
+            app: app,
+            ociVersion: ociVersion,
+            resolveImageDigests: resolveImageDigests,
+            withEnv: withEnv,
+            assumeYes: yes,
+            dryRun: dryRun,
+        )
+    }
+
+    private func renderPublishResult(_ result: ComposePublishResult) {
+        if result.dryRun {
+            print("DRY-RUN MODE - would publish \(result.repository) as OCI \(result.ociVersion)")
+            for layer in result.layers {
+                print("+ publish layer \(layer.kind) \(layer.path) \(layer.digest)")
+            }
+            return
+        }
+        if let descriptor = result.descriptor {
+            print("\(result.repository)@\(descriptor.digest)")
+        } else {
+            print("published \(result.repository)")
+        }
     }
 }
 

@@ -109,13 +109,16 @@ struct ComposeCLIHelpTests {
         }
     }
 
-    @Test("copy and top expose command-level parity limitations")
-    func copyAndTopExposeCommandLevelParityLimitations() throws {
+    @Test("copy, publish, and top expose command-level parity limitations")
+    func copyPublishAndTopExposeCommandLevelParityLimitations() throws {
         let copyHelp = try #require(ComposeCLIHelp.commandHelpText(command: "cp"))
+        let publishHelp = try #require(ComposeCLIHelp.commandHelpText(command: "publish"))
         let topHelp = try #require(ComposeCLIHelp.commandHelpText(command: "top"))
 
         #expect(copyHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(copyHelp.contains("stdin/stdout tar streaming"))
+        #expect(publishHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
+        #expect(publishHelp.contains("--app image indexes"))
         #expect(topHelp.contains("Support: \u{001B}[38;5;208mpartially supported\u{001B}[0m"))
         #expect(topHelp.contains("full process metadata table"))
     }
@@ -138,6 +141,99 @@ struct ComposeCLIHelpTests {
         for representative in representativeParses() {
             try representative.parse()
         }
+    }
+
+    @Test("publish preflights before image push and live artifact publish")
+    func publishPreflightsBeforeImagePushAndLiveArtifactPublish() async throws {
+        let command = try Publish.parse([
+            "--app",
+            "--oci-version", "1.1",
+            "--resolve-image-digests",
+            "--with-env",
+            "--yes",
+            "registry.example.com/team/app:latest",
+        ])
+        let recorder = PublishWorkflowRecorder()
+
+        let result = try await command.executePublish(
+            normalizerPublish: { options in
+                recorder.record("normalizer:\(options.dryRun ? "preflight" : "publish")", options: options)
+                return ComposePublishResult(
+                    repository: options.repository,
+                    ociVersion: options.ociVersion ?? "auto",
+                    dryRun: options.dryRun,
+                    descriptor: ComposePublishDescriptor(
+                        mediaType: "application/vnd.oci.image.manifest.v1+json",
+                        digest: "sha256:abc",
+                        size: 42
+                    )
+                )
+            },
+            pushImages: {
+                recorder.record("push-images")
+            }
+        )
+
+        let snapshot = recorder.snapshot()
+        #expect(snapshot.calls == ["normalizer:preflight", "push-images", "normalizer:publish"])
+        #expect(snapshot.options.map(\.dryRun) == [true, false])
+        #expect(snapshot.options.allSatisfy { $0.repository == "registry.example.com/team/app:latest" })
+        #expect(snapshot.options.allSatisfy { $0.app })
+        #expect(snapshot.options.allSatisfy { $0.resolveImageDigests })
+        #expect(snapshot.options.allSatisfy { $0.withEnv })
+        #expect(snapshot.options.allSatisfy { $0.assumeYes })
+        #expect(result.descriptor?.digest == "sha256:abc")
+        #expect(!result.dryRun)
+    }
+
+    @Test("publish dry run stops after preflight and dry-run image push")
+    func publishDryRunStopsAfterPreflightAndDryRunImagePush() async throws {
+        let command = try Publish.parse([
+            "--dry-run",
+            "--with-env",
+            "registry.example.com/team/app:latest",
+        ])
+        let recorder = PublishWorkflowRecorder()
+
+        let result = try await command.executePublish(
+            normalizerPublish: { options in
+                recorder.record("normalizer:\(options.dryRun ? "preflight" : "publish")", options: options)
+                return ComposePublishResult(
+                    repository: options.repository,
+                    ociVersion: "auto",
+                    dryRun: options.dryRun,
+                    layers: [
+                        ComposePublishLayer(
+                            kind: "compose",
+                            path: "compose.yaml",
+                            mediaType: "application/vnd.docker.compose.file+yaml",
+                            digest: "sha256:def",
+                            size: 7
+                        ),
+                    ]
+                )
+            },
+            pushImages: {
+                recorder.record("push-images")
+            }
+        )
+
+        let snapshot = recorder.snapshot()
+        #expect(snapshot.calls == ["normalizer:preflight", "push-images"])
+        #expect(snapshot.options.map(\.dryRun) == [true])
+        #expect(result.dryRun)
+        #expect(result.layers.first?.digest == "sha256:def")
+    }
+
+    @Test("publish activates every profile before pushing service images")
+    func publishActivatesEveryProfileBeforePushingServiceImages() throws {
+        let command = try Publish.parse([
+            "--profile", "dev",
+            "--profile", "*",
+            "registry.example.com/team/app:latest",
+        ])
+
+        #expect(command.composeOptionsForPublishing().profiles == ["dev", "*"])
     }
 
     @Test("version format rejects uppercase json")
@@ -492,9 +588,10 @@ struct ComposeCLIHelpTests {
         let supported = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "supported" }.count
         let partial = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "partially supported" }.count
         let unsupported = ComposeCLIHelp.commandSupportSnapshots.filter { $0.support == "not supported" }.count
+        let unsupportedVerb = unsupported == 1 ? "is" : "are"
 
         #expect(
-            status.contains("\(supported) commands are ✅, \(partial) are ⚠️, and \(unsupported) are ❌"),
+            status.contains("\(supported) commands are ✅, \(partial) are ⚠️, and \(unsupported) \(unsupportedVerb) ❌"),
             "STATUS.md CLI command totals do not match ComposeCLIHelp metadata"
         )
     }
@@ -1247,10 +1344,15 @@ struct ComposeCLIHelpTests {
                 #expect(command.serviceNames == ["api"])
             }),
             (["publish"], ["--app", "--dry-run", "--oci-version", "--resolve-image-digests", "--with-env", "--yes"], {
-                let command = try Publish.parse(["--dry-run", "--app", "demo", "--oci-version", "1.1", "--resolve-image-digests", "--with-env", "--yes", "repo/app:latest"])
+                let command = try Publish.parse(["--dry-run", "--app", "--oci-version", "1.1", "--resolve-image-digests", "--with-env", "--yes", "repo/app:latest"])
 
                 #expect(command.global.dryRun)
-                #expect(command.arguments == ["--app", "demo", "--oci-version", "1.1", "--resolve-image-digests", "--with-env", "--yes", "repo/app:latest"])
+                #expect(command.app)
+                #expect(command.ociVersion == "1.1")
+                #expect(command.resolveImageDigests)
+                #expect(command.withEnv)
+                #expect(command.yes)
+                #expect(command.repository == "repo/app:latest")
             }),
             (["pull"], ["--dry-run", "--ignore-buildable", "--ignore-pull-failures", "--include-deps", "--policy", "--quiet"], {
                 let command = try Pull.parse(["--dry-run", "--ignore-buildable", "--ignore-pull-failures", "--include-deps", "--policy", "always", "--quiet", "api"])
@@ -1565,5 +1667,27 @@ struct ComposeCLIHelpTests {
 
     private func format(commandPath: [String]) -> String {
         Self.format(commandPath: commandPath)
+    }
+}
+
+private final class PublishWorkflowRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String] = []
+    private var options: [ComposePublishOptions] = []
+
+    func record(_ call: String, options option: ComposePublishOptions? = nil) {
+        lock.lock()
+        calls.append(call)
+        if let option {
+            options.append(option)
+        }
+        lock.unlock()
+    }
+
+    func snapshot() -> (calls: [String], options: [ComposePublishOptions]) {
+        lock.lock()
+        let snapshot = (calls, options)
+        lock.unlock()
+        return snapshot
     }
 }

@@ -423,6 +423,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	var noPathResolution bool
 	var variables bool
 	var bridgeModel bool
+	var publish bool
+	var publishRepository string
+	var publishApp bool
+	var publishOCIVersion string
+	var publishResolveImageDigests bool
+	var publishWithEnv bool
+	var publishYes bool
+	var publishDryRun bool
 
 	flags := flag.NewFlagSet("compose-normalizer", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -438,6 +446,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags.BoolVar(&noPathResolution, "no-path-resolution", false, "Do not resolve relative file paths.")
 	flags.BoolVar(&variables, "variables", false, "Print model variables as JSON.")
 	flags.BoolVar(&bridgeModel, "bridge-model", false, "Print the runtime project and Compose Bridge model as JSON.")
+	flags.BoolVar(&publish, "publish", false, "Publish the Compose project as an OCI artifact.")
+	flags.StringVar(&publishRepository, "publish-repository", "", "OCI repository reference for publish.")
+	flags.BoolVar(&publishApp, "publish-app", false, "Publish application image index.")
+	flags.StringVar(&publishOCIVersion, "publish-oci-version", "", "OCI image/artifact specification version.")
+	flags.BoolVar(&publishResolveImageDigests, "publish-resolve-image-digests", false, "Pin image tags to digests before publishing.")
+	flags.BoolVar(&publishWithEnv, "publish-with-env", false, "Include env files in the published OCI artifact.")
+	flags.BoolVar(&publishYes, "publish-yes", false, "Assume yes for publish preflight confirmations.")
+	flags.BoolVar(&publishDryRun, "publish-dry-run", false, "Plan publish without pushing to a registry.")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -451,14 +467,30 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	var result any
 	var err error
-	if variables && bridgeModel {
-		fmt.Fprintln(stderr, "compose-normalizer: --variables and --bridge-model are mutually exclusive")
+	modeCount := 0
+	for _, enabled := range []bool{variables, bridgeModel, publish} {
+		if enabled {
+			modeCount++
+		}
+	}
+	if modeCount > 1 {
+		fmt.Fprintln(stderr, "compose-normalizer: --variables, --bridge-model, and --publish are mutually exclusive")
 		return 2
 	}
 	if variables {
 		result, err = loadVariables(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	} else if bridgeModel {
 		result, err = loadBridgeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
+	} else if publish {
+		result, err = publishComposeProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions, publishOptions{
+			repository:          publishRepository,
+			app:                 publishApp,
+			ociVersion:          publishOCIVersion,
+			resolveImageDigests: publishResolveImageDigests,
+			withEnv:             publishWithEnv,
+			assumeYes:           publishYes,
+			dryRun:              publishDryRun,
+		}, stderr)
 	} else {
 		result, err = loadProject(files, profiles, envFiles, projectName, projectDirectory, loadOptions)
 	}

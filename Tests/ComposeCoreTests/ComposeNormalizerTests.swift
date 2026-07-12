@@ -1283,6 +1283,55 @@ struct ComposeNormalizerTests {
         #expect(command.arguments.contains("--bridge-model"))
     }
 
+    @Test("normalizer forwards publish options and decodes the result")
+    func normalizerForwardsPublishOptionsAndDecodesResult() async throws {
+        let runner = RecordingRunner(responses: [
+            CommandResult(
+                status: 0,
+                stdout: #"{"repository":"registry.example.com/team/app:latest","ociVersion":"1.1","dryRun":true,"layers":[{"kind":"compose","path":"compose.yaml","mediaType":"application/vnd.docker.compose.file+yaml","digest":"sha256:abc","size":42}]}"#,
+                stderr: ""
+            ),
+        ])
+
+        let currentDirectory = FileManager.default.currentDirectoryPath
+        let result = try await ComposeNormalizer(runner: runner).publish(
+            options: ComposeOptions(files: ["compose.yml"], projectDirectory: "/tmp/demo"),
+            publish: ComposePublishOptions(
+                repository: "registry.example.com/team/app:latest",
+                app: true,
+                ociVersion: "1.1",
+                resolveImageDigests: true,
+                withEnv: true,
+                assumeYes: true,
+                dryRun: true
+            )
+        )
+
+        #expect(result.repository == "registry.example.com/team/app:latest")
+        #expect(result.ociVersion == "1.1")
+        #expect(result.dryRun)
+        #expect(result.layers == [
+            ComposePublishLayer(
+                kind: "compose",
+                path: "compose.yaml",
+                mediaType: "application/vnd.docker.compose.file+yaml",
+                digest: "sha256:abc",
+                size: 42
+            ),
+        ])
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--publish"))
+        #expect(command.arguments.containsSequence(["--publish-repository", "registry.example.com/team/app:latest"]))
+        #expect(command.arguments.contains("--publish-app"))
+        #expect(command.arguments.containsSequence(["--publish-oci-version", "1.1"]))
+        #expect(command.arguments.contains("--publish-resolve-image-digests"))
+        #expect(command.arguments.contains("--publish-with-env"))
+        #expect(command.arguments.contains("--publish-yes"))
+        #expect(command.arguments.contains("--publish-dry-run"))
+        #expect(command.arguments.containsSequence(["--file", "\(currentDirectory)/compose.yml"]))
+        #expect(command.arguments.containsSequence(["--project-directory", "/tmp/demo"]))
+    }
+
     @Test("normalizer forwards inferred project directory")
     func normalizerForwardsInferredProjectDirectory() async throws {
         let runner = RecordingRunner(responses: [

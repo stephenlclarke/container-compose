@@ -17,7 +17,7 @@
 # Run from the repository root:
 #   ../container/bin/container compose -f examples/compose.yml run --rm shell
 # Non-interactive smoke test:
-#   ../container/bin/container compose -f examples/compose.yml run --rm --no-TTY shell echo ok
+#   ../container/bin/container compose -f examples/compose.yml run --rm --no-tty shell echo ok
 
 services:
   shell:

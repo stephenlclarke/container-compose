@@ -11,8 +11,8 @@ The implementation already starts selected dependency services, creates scoped p
 - `container compose help run` reports `Support: supported`.
 - `run` options exposed by the help text are shown as supported.
 - Existing one-off container tests continue to cover dependency selection, resource creation, build and pull behavior, terminal modes, published ports, network aliases, environment, labels, volumes, capabilities, and validation failures before runtime mutation.
-- Runtime smoke continues to prove a build-backed `run --rm --no-TTY` completes against the local packaged runtime.
-- Top-level status documentation describes `run` as supported and keeps the current runtime fork pins accurate.
+- Runtime smoke continues to prove a build-backed `run --rm --no-tty` completes against the local packaged runtime.
+- Top-level status documentation describes `run` as supported without duplicating release-stack refs.
 
 ## Notes
 

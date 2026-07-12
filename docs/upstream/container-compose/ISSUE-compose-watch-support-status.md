@@ -12,7 +12,7 @@ The implementation already validates `develop.watch` metadata, applies optional 
 - `watch` options `--no-up`, `--prune`, and `--quiet` are shown as supported.
 - Existing watch tests continue to cover dry-run planning, initial sync, sync+exec, delete propagation, rebuild/prune, initial up option propagation, missing trigger validation, and malformed trigger validation.
 - `compose up --watch` continues to reject incompatible `--detach` and `--wait` combinations.
-- Top-level status documentation describes `watch` as supported and keeps the current runtime fork pins accurate.
+- Top-level status documentation describes `watch` as supported without duplicating release-stack refs.
 
 ## Notes
 

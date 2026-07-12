@@ -18,8 +18,9 @@
 `container-compose` is a standalone plugin that provides Docker Compose v2
 workflows for Apple's [`container`](https://github.com/apple/container) CLI.
 Local files, Git resources, and `oci://` Compose project artifacts are
-normalized with `compose-go`; Swift owns orchestration and maps supported
-Compose behavior to the matched runtime stack.
+normalized with `compose-go`; image-backed projects can also push service
+images and publish Compose YAML as OCI project artifacts. Swift owns
+orchestration and maps supported Compose behavior to the matched runtime stack.
 
 Help color-codes command, subcommand, and option support: green for supported,
 orange for partially supported, and red for unsupported. Partially supported
@@ -34,7 +35,7 @@ The authoritative parity ledger is [STATUS.md](STATUS.md). It lists every
 tracked Compose file, service, Dockerfile/build, command, and long-option
 surface with ✅ yes, ⚠️ partial, or ❌ no, and explains every partial surface.
 
-Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and pinned `container-builder-shim` image. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and the `container` / `containerization` pins that package was built against.
+Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and builder image metadata. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and package/runtime compatibility metadata.
 
 ## Project Repositories
 
@@ -42,11 +43,11 @@ The supported install is the matched five-repository stephenlclarke stack:
 
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
 - [`container`](https://github.com/stephenlclarke/container): the matched `stephenlclarke` runtime and CLI installed beside the plugin.
-- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift runtime package pinned by the stack.
-- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the BuildKit bridge image pinned by `container`.
+- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift runtime package consumed by the stack.
+- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the BuildKit bridge image used by `container`.
 - [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap): the stable prebuilt `container` and `container-compose` formulae.
 
-Install and upgrade commands live in [INSTALL.md](INSTALL.md). Branch, tag, release-helper, and Homebrew formula policy lives in [BRANCHES.md](BRANCHES.md).
+Install and upgrade commands live in [INSTALL.md](INSTALL.md). Branch, tag, release helper, and Homebrew formula policy live in [BRANCHES.md](BRANCHES.md).
 
 ## Plugin Recognition
 
@@ -60,7 +61,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [BRANCHES.md](BRANCHES.md): understand `main`, semantic tags, `scripts/CONTAINER_STACK_RELEASE.sh`, release assets, and Homebrew formula policy.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
-- [STATUS.md](STATUS.md): get the current dependency pins, blockers, active gaps, and validation handoff.
+- [STATUS.md](STATUS.md): get the current parity surfaces, blockers, active gaps, and validation handoff.
 - [CONTRIBUTING.md](CONTRIBUTING.md): prepare reviewable changes.
 - [docs/parity/compose-cli-surface.md](docs/parity/compose-cli-surface.md): review local Docker Compose CLI surface parity and documented differences.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.

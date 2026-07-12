@@ -16,7 +16,7 @@ That failure did not clearly explain that the installed components do not match 
 
 - Help, `version`, `config`, dry-run commands, and `build --print` remain available without a runtime preflight so users can inspect and diagnose installs.
 - Runtime-backed commands check `container system version --format json` before doing work.
-- A compatible install reports `container` source `stephenlclarke/container`, distribution `custom`, `containerization` source `stephenlclarke/containerization`, and refs matching the plugin package pins when those pins are concrete.
+- A compatible install reports `container` source `stephenlclarke/container`, distribution `custom`, `containerization` source `stephenlclarke/containerization`, and refs matching the plugin package metadata when those refs are concrete.
 - Incompatible, unavailable, or mismatched installs fail with a clear message that the installed components do not match the plugin's Compose functionality.
 - The message includes the matching Homebrew formulae and the GitHub install guide URL: <https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md>.
 

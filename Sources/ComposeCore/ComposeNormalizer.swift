@@ -104,6 +104,32 @@ public struct ComposeNormalizer: Sendable {
             throw ComposeError.invalidProject("failed to decode compose variables JSON: \(error)")
         }
     }
+
+    /// Publishes the Compose model as a Docker Compose OCI project artifact.
+    public func publish(options: ComposeOptions, publish: ComposePublishOptions) async throws -> ComposePublishResult {
+        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
+        let arguments = Self.normalizerArguments(
+            invocation: invocation,
+            options: options,
+            modeArguments: Self.publishModeArguments(publish),
+        )
+
+        let result = try await runner.run(
+            invocation.executable,
+            arguments,
+            workingDirectory: invocation.workingDirectory,
+        )
+        guard result.succeeded else {
+            throw Self.normalizerFailure(invocation: invocation, arguments: arguments, result: result)
+        }
+
+        let data = Data(result.stdout.utf8)
+        do {
+            return try JSONDecoder().decode(ComposePublishResult.self, from: data)
+        } catch {
+            throw ComposeError.invalidProject("failed to decode compose publish JSON: \(error)")
+        }
+    }
 }
 
 /// Concrete command used to run the compose-go normalizer helper.
@@ -169,6 +195,29 @@ private extension ComposeNormalizer {
             arguments.append("--no-path-resolution")
         }
         arguments.append(contentsOf: ["--project-directory", projectDirectory])
+        return arguments
+    }
+
+    static func publishModeArguments(_ publish: ComposePublishOptions) -> [String] {
+        var arguments = ["--publish", "--publish-repository", publish.repository]
+        if publish.app {
+            arguments.append("--publish-app")
+        }
+        if let ociVersion = publish.ociVersion, !ociVersion.isEmpty {
+            arguments.append(contentsOf: ["--publish-oci-version", ociVersion])
+        }
+        if publish.resolveImageDigests {
+            arguments.append("--publish-resolve-image-digests")
+        }
+        if publish.withEnv {
+            arguments.append("--publish-with-env")
+        }
+        if publish.assumeYes {
+            arguments.append("--publish-yes")
+        }
+        if publish.dryRun {
+            arguments.append("--publish-dry-run")
+        }
         return arguments
     }
 

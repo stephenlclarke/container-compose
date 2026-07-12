@@ -52,7 +52,7 @@ make release VERSION_SELECTOR=--+
 make repackage-release VERSION=MAJOR.MINOR.PATCH
 ```
 
-`make release-plan` is a dry run over the four local source repositories. `make release` validates their clean worktrees and `stephenlclarke` push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the four source `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for that workflow to update the fifth repository (`homebrew-tap`), verifies the release assets and live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
+`make release-plan` is a dry run over the four local source checkouts and the Homebrew tap workflow boundary. `make release` validates the source worktrees and `stephenlclarke` push targets, bumps `container-compose` version files on `main` when needed, commits that bump, pushes the four source `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for that workflow to update the fifth repository (`homebrew-tap`), verifies the release assets and live tap URL/version/SHA, then syncs the checked-in source formula template to the verified release asset.
 
 `make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
 
@@ -69,11 +69,11 @@ The container package wait and Compose package wait both default to one hour wit
 
 The helper refuses Apple push targets. stephenlclarke-owned remotes are the only release push targets.
 
-## Dependency Pins
+## Runtime Ref Policy
 
 `container-compose` must stay on the `stephenlclarke` runtime surfaces while those APIs differ from released Apple packages. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
 
-The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout for local development, then from the latest published `stephenlclarke/container` `homebrew-main-RUN-SHA` tag, and finally from `stephenlclarke/container:main` only when no published package tag exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce a hand-maintained pin file.
+The exact `container` commit used by CI and package metadata is resolved automatically from the sibling `../container` checkout for local development, then from the latest published `stephenlclarke/container` `homebrew-main-RUN-SHA` tag, and finally from `stephenlclarke/container:main` only when no published package tag exists. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce duplicated hand-maintained pin prose in the docs.
 
 `container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. Publish and verify an immutable GHCR builder image before updating `container` to a new shim tag.
 

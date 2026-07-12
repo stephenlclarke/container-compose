@@ -1,0 +1,462 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+package main
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	spec "github.com/opencontainers/image-spec/specs-go/v1"
+	composeOCI "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/oci"
+)
+
+func TestPublishDryRunAcceptsShortFormPortMappings(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  whoami:
+    image: docker.io/traefik/whoami:v1.11
+    ports:
+      - ${DASHBOARD_PORT:-3000}:3000
+`)
+
+	result, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-short-ports",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("publishComposeProject returned error: %v", err)
+	}
+	if result.Repository != "registry.example.com/team/app:latest" {
+		t.Fatalf("repository = %q", result.Repository)
+	}
+	if len(result.Layers) != 1 {
+		t.Fatalf("layers = %#v, want one compose layer", result.Layers)
+	}
+	layer := result.Layers[0]
+	if layer.Kind != "compose" || layer.MediaType != composeOCI.ComposeYAMLMediaType {
+		t.Fatalf("layer = %#v, want compose OCI layer", layer)
+	}
+}
+
+func TestPublishDryRunIncludesEnvLayersWithWithEnv(t *testing.T) {
+	dir := t.TempDir()
+	envFile := writePublishFixture(t, dir, ".env", "TOKEN=from-file\n")
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+    env_file:
+      - .env
+`)
+
+	result, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		[]string{envFile},
+		"publish-env",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			withEnv:    true,
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("publishComposeProject returned error: %v", err)
+	}
+	if len(result.Layers) != 2 {
+		t.Fatalf("layers = %#v, want compose and env layers", result.Layers)
+	}
+	if result.Layers[1].Kind != "env" || !strings.HasSuffix(result.Layers[1].Path, ".env") {
+		t.Fatalf("env layer = %#v", result.Layers[1])
+	}
+}
+
+func TestPublishDryRunIncludesExtendsLayers(t *testing.T) {
+	dir := t.TempDir()
+	_ = writePublishFixture(t, dir, "base.yaml", `
+services:
+  base:
+    image: alpine
+`)
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    extends:
+      file: base.yaml
+      service: base
+`)
+
+	result, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-extends",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("publishComposeProject returned error: %v", err)
+	}
+	var hasExtends bool
+	for _, layer := range result.Layers {
+		if layer.Kind == "extends" && layer.MediaType == composeOCI.ComposeYAMLMediaType {
+			hasExtends = true
+		}
+	}
+	if !hasExtends {
+		t.Fatalf("layers = %#v, want an extends layer", result.Layers)
+	}
+}
+
+func TestPublishRejectsBuildOnlyServices(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    build: .
+`)
+
+	_, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-build-only",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "only define build sections") {
+		t.Fatalf("error = %v, want build-only rejection", err)
+	}
+}
+
+func TestPublishRejectsBindMountsWithoutYes(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+    volumes:
+      - .:/workspace:ro
+`)
+
+	_, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-bind",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "pass --yes") {
+		t.Fatalf("error = %v, want bind mount confirmation rejection", err)
+	}
+}
+
+func TestPublishAllowsBindMountsWithYes(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+    volumes:
+      - .:/workspace:ro
+`)
+
+	_, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-bind",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			assumeYes:  true,
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("publishComposeProject returned error: %v", err)
+	}
+}
+
+func TestPublishRejectsLocalIncludes(t *testing.T) {
+	dir := t.TempDir()
+	_ = writePublishFixture(t, dir, "included.yaml", "services: {}\n")
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+include:
+  - included.yaml
+services:
+  api:
+    image: alpine
+`)
+
+	_, err := publishComposeProject(
+		[]string{composeFile},
+		nil,
+		nil,
+		"publish-include",
+		dir,
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "local include files") {
+		t.Fatalf("error = %v, want local include rejection", err)
+	}
+}
+
+func TestLocalIncludesInComposeSkipsRemoteResources(t *testing.T) {
+	includes, err := localIncludesInCompose([]byte(`
+include:
+  - path: ./local.yml
+  - path: https://example.com/compose.yml
+  - git@github.com:example/project.git#main:compose.yml
+  - oci://registry.example.com/team/app:latest
+services:
+  api:
+    image: alpine
+`))
+	if err != nil {
+		t.Fatalf("localIncludesInCompose returned error: %v", err)
+	}
+	if len(includes) != 1 || includes[0] != "./local.yml" {
+		t.Fatalf("includes = %#v, want only local include", includes)
+	}
+}
+
+func TestPublishLayerSnapshotsUnknownDescriptor(t *testing.T) {
+	snapshots := publishLayerSnapshots([]spec.Descriptor{{
+		MediaType: "application/vnd.example.layer",
+		Digest:    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Size:      7,
+		Annotations: map[string]string{
+			"org.opencontainers.image.title": "nested/custom.bin",
+		},
+	}})
+	if len(snapshots) != 1 {
+		t.Fatalf("snapshots = %#v, want one snapshot", snapshots)
+	}
+	if snapshots[0].Kind != "unknown" || snapshots[0].Path != "custom.bin" {
+		t.Fatalf("snapshot = %#v, want unknown custom.bin layer", snapshots[0])
+	}
+}
+
+func TestPublishRejectsUnsupportedOptions(t *testing.T) {
+	dir := t.TempDir()
+	composeFile := writePublishFixture(t, dir, "compose.yaml", `
+services:
+  api:
+    image: alpine
+`)
+
+	tests := []struct {
+		name    string
+		options publishOptions
+		want    string
+	}{
+		{
+			name: "app",
+			options: publishOptions{
+				repository: "registry.example.com/team/app:latest",
+				app:        true,
+				dryRun:     true,
+			},
+			want: "--app",
+		},
+		{
+			name: "resolve image digests",
+			options: publishOptions{
+				repository:          "registry.example.com/team/app:latest",
+				resolveImageDigests: true,
+				dryRun:              true,
+			},
+			want: "--resolve-image-digests",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := publishComposeProject(
+				[]string{composeFile},
+				nil,
+				nil,
+				"publish-options",
+				dir,
+				projectLoadOptions{},
+				test.options,
+				io.Discard,
+			)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestPublishRejectsMissingRepository(t *testing.T) {
+	_, err := publishComposeProject(
+		nil,
+		nil,
+		nil,
+		"publish-missing-repo",
+		"",
+		projectLoadOptions{},
+		publishOptions{dryRun: true},
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "publish repository is required") {
+		t.Fatalf("error = %v, want missing repository rejection", err)
+	}
+}
+
+func TestPublishRejectsInvalidRepository(t *testing.T) {
+	_, err := publishComposeProject(
+		nil,
+		nil,
+		nil,
+		"publish-invalid-repo",
+		"",
+		projectLoadOptions{},
+		publishOptions{
+			repository: "bad reference with spaces",
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "invalid publish repository") {
+		t.Fatalf("error = %v, want invalid repository rejection", err)
+	}
+}
+
+func TestPublishRejectsUnsupportedOCIVersion(t *testing.T) {
+	_, err := parsePublishOCIVersion("9.9")
+	if err == nil || !strings.Contains(err.Error(), "unsupported OCI version: 9.9") {
+		t.Fatalf("error = %v, want unsupported version", err)
+	}
+}
+
+func TestPublishOCIVersionParsingAndDisplay(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    composeOCI.OCIVersion
+		display string
+	}{
+		{in: "", want: "", display: "auto"},
+		{in: "1.0", want: composeOCI.OCIVersion1_0, display: "1.0"},
+		{in: "1.1", want: composeOCI.OCIVersion1_1, display: "1.1"},
+	}
+	for _, test := range tests {
+		got, err := parsePublishOCIVersion(test.in)
+		if err != nil {
+			t.Fatalf("parsePublishOCIVersion(%q) returned error: %v", test.in, err)
+		}
+		if got != test.want {
+			t.Fatalf("parsePublishOCIVersion(%q) = %q, want %q", test.in, got, test.want)
+		}
+		if display := displayPublishOCIVersion(got); display != test.display {
+			t.Fatalf("displayPublishOCIVersion(%q) = %q, want %q", got, display, test.display)
+		}
+	}
+}
+
+func TestPublishDescriptorFromOCI(t *testing.T) {
+	descriptor := publishDescriptorFromOCI(spec.Descriptor{
+		MediaType:    spec.MediaTypeImageManifest,
+		Digest:       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Size:         42,
+		ArtifactType: composeOCI.ComposeProjectArtifactType,
+	})
+	if descriptor.MediaType != spec.MediaTypeImageManifest {
+		t.Fatalf("media type = %q, want %q", descriptor.MediaType, spec.MediaTypeImageManifest)
+	}
+	if descriptor.Digest != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("digest = %q", descriptor.Digest)
+	}
+	if descriptor.Size != 42 {
+		t.Fatalf("size = %d, want 42", descriptor.Size)
+	}
+	if descriptor.ArtifactType != composeOCI.ComposeProjectArtifactType {
+		t.Fatalf("artifact type = %q, want %q", descriptor.ArtifactType, composeOCI.ComposeProjectArtifactType)
+	}
+}
+
+func TestPublishRejectsUnsupportedOCIVersionBeforeLoadingProject(t *testing.T) {
+	_, err := publishComposeProject(
+		nil,
+		nil,
+		nil,
+		"publish-unsupported-oci",
+		"",
+		projectLoadOptions{},
+		publishOptions{
+			repository: "registry.example.com/team/app:latest",
+			ociVersion: "9.9",
+			dryRun:     true,
+		},
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "unsupported OCI version: 9.9") {
+		t.Fatalf("error = %v, want unsupported OCI version", err)
+	}
+}
+
+func writePublishFixture(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir fixture: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(strings.TrimPrefix(content, "\n")), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	return path
+}

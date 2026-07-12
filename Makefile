@@ -474,7 +474,8 @@ cli-smoke-built:
 	stop_help_output="$$(".build/debug/compose" stop --help)"; \
 	[[ "$$stop_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
 	top_help_output="$$(".build/debug/compose" top --help)"; \
-	[[ "$$top_help_output" == *"Support: $${ansi_escape}[32msupported$${ansi_escape}[0m"* ]]; \
+	[[ "$$top_help_output" == *"Support: $${ansi_escape}[38;5;208mpartially supported$${ansi_escape}[0m"* ]]; \
+	[[ "$$top_help_output" == *"full process metadata table"* ]]; \
 	[[ "$$top_help_output" == *"$${ansi_escape}[32m--dry-run$${ansi_escape}[0m"* ]]; \
 	kill_help_output="$$(".build/debug/compose" kill --help)"; \
 	[[ "$$kill_help_output" == *"$${ansi_escape}[32m--remove-orphans$${ansi_escape}[0m"* ]]; \
@@ -1093,8 +1094,10 @@ cli-smoke-built:
 	[[ "$$alpha_dry_run_output" == *"container run --name demo-api-1"* ]]; \
 	commit_output="$$(".build/debug/compose" --dry-run commit api example/api:snapshot 2>&1 || true)"; \
 	[[ "$$commit_output" == *"unsupported compose feature: commit: apple/container does not expose committing service containers to images"* ]]; \
-	publish_output="$$(".build/debug/compose" --dry-run publish example/app:latest 2>&1 || true)"; \
-	[[ "$$publish_output" == *"unsupported compose feature: publish: Compose application OCI artifacts are not available through apple/container"* ]]
+	publish_output="$$(".build/debug/compose" --dry-run -f "$$tmpdir/compose.yml" publish example/app:latest)"; \
+	[[ "$$publish_output" == *"container image push alpine"* ]]; \
+	[[ "$$publish_output" == *"DRY-RUN MODE - would publish example/app:latest as OCI auto"* ]]; \
+	[[ "$$publish_output" == *"+ publish layer compose compose.yml sha256:"* ]]
 
 docker-log-fixtures:
 	./scripts/capture-docker-compose-log-fixtures.sh
