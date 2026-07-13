@@ -484,6 +484,14 @@ jobs:
             printf 'runtime checksum is invalid for %s\n' "${runtime_tag}" >&2
             exit 1
           fi
+          if ! tar -tzf "${runtime_local_asset}" >/dev/null; then
+            printf 'runtime package archive is corrupt: %s\n' "${runtime_asset}" >&2
+            exit 1
+          fi
+          if ! tar -tzf "${runtime_local_asset}" | grep -Fx './bin/container' >/dev/null; then
+            printf 'runtime package is missing bin/container: %s\n' "${runtime_asset}" >&2
+            exit 1
+          fi
 
           {
             printf 'tag=%s\n' "${runtime_tag}"
@@ -711,6 +719,14 @@ jobs:
           if [[ "${actual_runtime_sha}" != "${RUNTIME_SHA256}" ]]; then
             printf 'runtime package checksum mismatch: expected %s, got %s\n' \
               "${RUNTIME_SHA256}" "${actual_runtime_sha}" >&2
+            exit 1
+          fi
+          if ! tar -tzf "${tmp}/${RUNTIME_ASSET}" >/dev/null; then
+            printf 'published runtime package archive is corrupt: %s\n' "${RUNTIME_ASSET}" >&2
+            exit 1
+          fi
+          if ! tar -tzf "${tmp}/${RUNTIME_ASSET}" | grep -Fx './bin/container' >/dev/null; then
+            printf 'published runtime package is missing bin/container: %s\n' "${RUNTIME_ASSET}" >&2
             exit 1
           fi
           python3 container/scripts/update-homebrew-formula.py \

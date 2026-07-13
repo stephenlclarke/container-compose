@@ -83,6 +83,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("RELEASE_EXTRA_ASSETS_FILE=\"${extra_assets}\"", workflow)
         self.assertIn("RUNTIME_RELEASE_REPOSITORY", workflow)
 
+    def test_runtime_archive_is_verified_before_formula_promotion(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('tar -tzf "${runtime_local_asset}" >/dev/null', workflow)
+        self.assertIn("grep -Fx './bin/container'", workflow)
+        self.assertIn('tar -tzf "${tmp}/${RUNTIME_ASSET}" >/dev/null', workflow)
+        self.assertIn("published runtime package archive is corrupt", workflow)
+
     def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('runtime_asset="container-current-arm64.tar.gz"', workflow)
