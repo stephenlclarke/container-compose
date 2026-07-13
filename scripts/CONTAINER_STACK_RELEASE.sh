@@ -44,12 +44,14 @@ Modes:
       to the next stable release. The version selector is resolved from the
       latest local semantic container-compose tag, not from mutable
       working-tree state. The helper bumps container-compose on main when
-      needed, commits that bump, runs the full local release gate, pushes all
+      needed, commits that bump, runs the full local release gate, promotes the
       stephenlclarke source main branches, creates and pushes the stable
       container-compose source tag, dispatches the stable package workflow, and
       waits for that workflow to publish the release assets and Homebrew tap
-      update. After the tap is verified, the helper syncs the checked-in source
-      formula template to the verified release URL, version, and SHA.
+      update. container-compose main promotions use an automated short-lived PR
+      by default so pull-request checks and review state remain visible before
+      tagging. After the tap is verified, the helper syncs the checked-in source formula
+      template to the verified release URL, version, and SHA.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 stable release version
@@ -85,7 +87,23 @@ Rules enforced:
   - Stable package assets and the Homebrew tap SHA are verified before success.
   - The source Homebrew formula template is synced only after package verification.
   - Existing tags are never moved.
+  - container-compose main updates use pull-request promotion by default.
   - Long-lived release branches are not used.
+
+Environment:
+  CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=pr|direct
+      Use "pr" by default. Use "direct" only for emergency maintenance on
+      stephenlclarke/container-compose when branch protection intentionally
+      permits direct pushes.
+
+  CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE=checked-admin|strict
+      Use "checked-admin" by default. The helper waits for PR checks, tries a
+      normal merge, then uses an admin merge only when GitHub blocks the merge
+      on the solo-maintainer review requirement. Use "strict" to fail instead.
+
+  CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS
+  CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS
+      Override the default one-hour PR promotion wait and 30-second poll.
 USAGE
 }
 
@@ -141,6 +159,10 @@ RELEASE_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_WAIT_SECONDS:-3600}"
 RELEASE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_POLL_SECONDS:-30}"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
 COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
+PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
+PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
+COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
+COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
 COMPOSE_STABLE_PACKAGE_SHA=""
 REPOS=(
   "container-builder-shim"
@@ -165,6 +187,31 @@ push_remote() {
     container|container-builder-shim) printf 'fork' ;;
     *) printf 'origin' ;;
   esac
+}
+
+ensure_compose_promotion_mode() {
+  case "${COMPOSE_MAIN_PROMOTION_MODE}" in
+    pr|direct)
+      ;;
+    *)
+      printf 'invalid CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE: %s\n' "${COMPOSE_MAIN_PROMOTION_MODE}" >&2
+      printf 'expected pr or direct\n' >&2
+      exit 2
+      ;;
+  esac
+  case "${COMPOSE_MAIN_MERGE_MODE}" in
+    checked-admin|strict)
+      ;;
+    *)
+      printf 'invalid CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE: %s\n' "${COMPOSE_MAIN_MERGE_MODE}" >&2
+      printf 'expected checked-admin or strict\n' >&2
+      exit 2
+      ;;
+  esac
+
+  if [[ "${EXECUTE}" == "1" && "${COMPOSE_MAIN_PROMOTION_MODE}" == "pr" ]]; then
+    need_command gh
+  fi
 }
 
 # Print and optionally execute a command.
@@ -627,13 +674,315 @@ manifest.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding=
 PY
 }
 
+remote_main_commit() {
+  local repo="$1" path remote
+  path="$(repo_path "${repo}")"
+  remote="$(push_remote "${repo}")"
+  git -C "${path}" ls-remote --heads "${remote}" refs/heads/main | awk '{print $1}'
+}
+
+compose_promotion_branch_name() {
+  local purpose="$1" version="$2" path short_ref
+  path="$(repo_path "${COMPOSE_REPO}")"
+  short_ref="$(git -C "${path}" rev-parse --short=12 main)"
+  printf 'release/%s-%s-%s\n' "${purpose}" "${version}" "${short_ref}"
+}
+
+compose_source_promotion_body() {
+  local version="$1" path head
+  path="$(repo_path "${COMPOSE_REPO}")"
+  head="$(git -C "${path}" rev-parse main)"
+  cat <<EOF
+Promotes the validated container-compose source state for ${version}.
+
+Validation:
+- make release-gate completed locally before this PR.
+- The promoted main tree must match the locally gated candidate before tagging.
+- Apple upstream remotes remain read-only; only stephenlclarke-owned remotes are push targets.
+
+Candidate:
+- container-compose: ${head}
+EOF
+}
+
+compose_formula_promotion_body() {
+  local version="$1" asset_sha="$2" url="$3"
+  cat <<EOF
+Syncs the checked-in source formula template after the ${version} stable package was verified.
+
+Validation:
+- The stable package workflow published the ${version} release assets.
+- The release archive SHA-256 is ${asset_sha}.
+- The live stephenlclarke/tap formula matched the verified URL, version, and SHA before this source sync.
+
+Release asset:
+- ${url}
+EOF
+}
+
+open_compose_promotion_pr() {
+  local branch="$1" title="$2" body="$3" repo existing url
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  existing="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh pr list \
+      --repo "${repo}" \
+      --head "${branch}" \
+      --state open \
+      --json number,url \
+      --jq '.[0] | select(.number != null) | [.number, .url] | @tsv'
+  )"
+
+  if [[ -n "${existing}" ]]; then
+    IFS=$'\t' read -r COMPOSE_PROMOTION_PR_NUMBER COMPOSE_PROMOTION_PR_URL <<<"${existing}"
+    printf 'container-compose promotion PR already open: %s\n' "${COMPOSE_PROMOTION_PR_URL}"
+    return 0
+  fi
+
+  url="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh pr create \
+      --repo "${repo}" \
+      --base main \
+      --head "${branch}" \
+      --title "${title}" \
+      --body "${body}"
+  )"
+  COMPOSE_PROMOTION_PR_URL="${url}"
+  COMPOSE_PROMOTION_PR_NUMBER="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${url}" \
+      --repo "${repo}" \
+      --json number \
+      --jq '.number'
+  )"
+  printf 'container-compose promotion PR opened: %s\n' "${COMPOSE_PROMOTION_PR_URL}"
+}
+
+wait_for_compose_pr_checks() {
+  local number="$1" repo deadline now status check_mode
+  local check_args=()
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  deadline=$((SECONDS + PROMOTION_WAIT_SECONDS))
+  check_mode="$(compose_pr_check_mode "${number}" "${repo}")"
+  if [[ "${check_mode}" == "required" ]]; then
+    check_args=(--required)
+  else
+    printf 'no required checks configured for container-compose PR #%s; waiting for all PR checks\n' "${number}"
+  fi
+
+  while true; do
+    if env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
+      --repo "${repo}" \
+      "${check_args[@]}" >/dev/null 2>&1; then
+      status=0
+    else
+      status="$?"
+    fi
+    case "${status}" in
+      0)
+        printf 'container-compose promotion PR checks passed: #%s\n' "${number}"
+        return 0
+        ;;
+      8)
+        ;;
+      *)
+        env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
+          --repo "${repo}" \
+          "${check_args[@]}" || true
+        printf 'container-compose promotion PR checks failed: #%s\n' "${number}" >&2
+        exit 1
+        ;;
+    esac
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for container-compose promotion PR checks: #%s\n' "${number}" >&2
+      exit 1
+    fi
+
+    printf 'waiting for container-compose promotion PR checks #%s; next check in %ss\n' \
+      "${number}" "${PROMOTION_POLL_SECONDS}"
+    sleep "${PROMOTION_POLL_SECONDS}"
+  done
+}
+
+compose_pr_check_mode() {
+  local number="$1" repo="$2" output status
+  if output="$(env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
+    --repo "${repo}" \
+    --required 2>&1)"; then
+    printf 'required'
+    return 0
+  else
+    status="$?"
+  fi
+
+  if [[ "${status}" == "8" ]]; then
+    printf 'required'
+    return 0
+  fi
+  if grep -qi 'no required checks reported' <<<"${output}"; then
+    printf 'all'
+    return 0
+  fi
+
+  printf '%s\n' "${output}" >&2
+  printf 'unable to inspect container-compose promotion PR checks: #%s\n' "${number}" >&2
+  exit 1
+}
+
+wait_for_compose_pr_merged() {
+  local number="$1" repo deadline now details state merged_at url
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  deadline=$((SECONDS + PROMOTION_WAIT_SECONDS))
+
+  while true; do
+    details="$(
+      env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${number}" \
+        --repo "${repo}" \
+        --json state,mergedAt,url \
+        --jq '[.state, (.mergedAt // ""), .url] | @tsv'
+    )"
+    IFS=$'\t' read -r state merged_at url <<<"${details}"
+
+    if [[ -n "${merged_at}" ]]; then
+      printf 'container-compose promotion PR merged: %s\n' "${url}"
+      return 0
+    fi
+    if [[ "${state}" == "CLOSED" ]]; then
+      printf 'container-compose promotion PR closed without merge: %s\n' "${url}" >&2
+      exit 1
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for container-compose promotion PR merge: %s\n' "${url}" >&2
+      exit 1
+    fi
+
+    printf 'waiting for container-compose promotion PR merge #%s; next check in %ss\n' \
+      "${number}" "${PROMOTION_POLL_SECONDS}"
+    sleep "${PROMOTION_POLL_SECONDS}"
+  done
+}
+
+merge_compose_promotion_pr() {
+  local number="$1" repo review_decision
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  if env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
+    --repo "${repo}" \
+    --merge \
+    --delete-branch \
+    --auto; then
+    wait_for_compose_pr_merged "${number}"
+    return 0
+  fi
+
+  printf 'auto-merge was not available for container-compose PR #%s; waiting for checks before merge\n' "${number}"
+  wait_for_compose_pr_checks "${number}"
+  if env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
+    --repo "${repo}" \
+    --merge \
+    --delete-branch; then
+    wait_for_compose_pr_merged "${number}"
+    return 0
+  fi
+
+  review_decision="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${number}" \
+      --repo "${repo}" \
+      --json reviewDecision \
+      --jq '.reviewDecision // ""'
+  )"
+  if [[ "${COMPOSE_MAIN_MERGE_MODE}" == "checked-admin" && "${review_decision}" == "REVIEW_REQUIRED" ]]; then
+    printf 'normal merge is blocked by the solo-maintainer review requirement; using checked admin merge after PR checks passed\n'
+    run env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
+      --repo "${repo}" \
+      --merge \
+      --delete-branch \
+      --admin
+    wait_for_compose_pr_merged "${number}"
+    return 0
+  fi
+
+  printf 'container-compose promotion PR merge failed: #%s\n' "${number}" >&2
+  printf 'review decision: %s\n' "${review_decision}" >&2
+  printf 'set CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE=checked-admin only after confirming PR checks are sufficient for this release\n' >&2
+  exit 1
+}
+
+promote_compose_main() {
+  local version="$1" purpose="$2" title="$3" body="$4" path remote local_head remote_head branch candidate_tree promoted_tree pushed_head
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+  ensure_compose_promotion_mode
+  fetch_release_remote "${COMPOSE_REPO}"
+  local_head="$(git -C "${path}" rev-parse main)"
+  candidate_tree="$(git -C "${path}" rev-parse 'main^{tree}')"
+  remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
+
+  if [[ "${local_head}" == "${remote_head}" ]]; then
+    printf 'container-compose main already promoted at %s\n' "${local_head}"
+    return 0
+  fi
+  if [[ -z "${remote_head}" ]]; then
+    printf 'cannot resolve remote main for container-compose on %s\n' "${remote}" >&2
+    exit 1
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
+    printf 'container-compose main is not based on %s/main; pull and revalidate before release\n' "${remote}" >&2
+    exit 1
+  fi
+
+  if [[ "${COMPOSE_MAIN_PROMOTION_MODE}" == "direct" ]]; then
+    printf 'using emergency direct container-compose main promotion mode\n' >&2
+    run git -C "${path}" push "${remote}" "refs/heads/main"
+    return 0
+  fi
+
+  branch="$(compose_promotion_branch_name "${purpose}" "${version}")"
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would push container-compose promotion branch %s at %s\n' "${branch}" "${local_head}"
+    printf 'would open and merge a PR titled: %s\n' "${title}"
+    printf 'would fast-forward local container-compose main after merge\n'
+    return 0
+  fi
+
+  pushed_head="$(git -C "${path}" ls-remote --heads "${remote}" "refs/heads/${branch}" | awk '{print $1}')"
+  if [[ -n "${pushed_head}" && "${pushed_head}" != "${local_head}" ]]; then
+    printf 'promotion branch already exists with a different head: %s -> %s\n' "${branch}" "${pushed_head}" >&2
+    exit 1
+  fi
+  if [[ -z "${pushed_head}" ]]; then
+    run git -C "${path}" push "${remote}" "refs/heads/main:refs/heads/${branch}"
+  else
+    printf 'container-compose promotion branch already points at %s\n' "${local_head}"
+  fi
+
+  open_compose_promotion_pr "${branch}" "${title}" "${body}"
+  merge_compose_promotion_pr "${COMPOSE_PROMOTION_PR_NUMBER}"
+  run git -C "${path}" pull --ff-only "${remote}" main
+  promoted_tree="$(git -C "${path}" rev-parse 'main^{tree}')"
+  if [[ "${promoted_tree}" != "${candidate_tree}" ]]; then
+    printf 'promoted container-compose main tree differs from the locally gated candidate\n' >&2
+    exit 1
+  fi
+}
+
 push_all_main() {
-  local repo path remote
-  print_header "push stephenlclarke-owned source main branches"
+  local version="$1" repo path remote body
+  print_header "promote stephenlclarke-owned source main branches"
   for repo in "${REPOS[@]}"; do
     path="$(repo_path "${repo}")"
     remote="$(push_remote "${repo}")"
-    run git -C "${path}" push "${remote}" "refs/heads/main"
+    if [[ "${repo}" == "${COMPOSE_REPO}" ]]; then
+      body="$(compose_source_promotion_body "${version}")"
+      promote_compose_main \
+        "${version}" \
+        "source" \
+        "chore(release): promote ${version} source" \
+        "${body}"
+    else
+      run git -C "${path}" push "${remote}" "refs/heads/main"
+    fi
   done
 }
 
@@ -845,11 +1194,10 @@ verify_compose_stable_package() {
 }
 
 sync_source_homebrew_formula() {
-  local version="$1" asset_sha="$2" path asset url status remote
+  local version="$1" asset_sha="$2" path asset url status body
   path="$(repo_path "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
   url="https://github.com/$(github_repo "${COMPOSE_REPO}")/releases/download/${version}/${asset}"
-  remote="$(push_remote "${COMPOSE_REPO}")"
 
   print_header "sync source Homebrew formula template"
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -881,7 +1229,12 @@ sync_source_homebrew_formula() {
 
   run git -C "${path}" add Formula/container-compose.rb
   run git -C "${path}" commit -m "chore(release): sync source formula ${version}"
-  run git -C "${path}" push "${remote}" "refs/heads/main"
+  body="$(compose_formula_promotion_body "${version}" "${asset_sha}" "${url}")"
+  promote_compose_main \
+    "${version}" \
+    "formula" \
+    "chore(release): sync source formula ${version}" \
+    "${body}"
 }
 
 # Dispatch and wait for the stable compose package workflow for a semantic tag.
@@ -1001,7 +1354,7 @@ release_current_stack() {
 
   ensure_clean "${COMPOSE_REPO}"
   run_local_release_gate
-  push_all_main
+  push_all_main "${version}"
   wait_for_container_homebrew_package
   tag_stable_version "${version}"
   sync_source_homebrew_formula "${version}" "${COMPOSE_STABLE_PACKAGE_SHA}"
@@ -1070,10 +1423,11 @@ Process:
   1. Keep main as the releasable integration branch.
   2. For a stable release, run release VERSION_SELECTOR after validation.
   3. The release mode resolves VERSION_SELECTOR from the latest semantic tag,
-     bumps container-compose on main when needed, pushes stephenlclarke-owned
-     source main branches, tags container-compose, dispatches the stable package
-     workflow, verifies the release assets plus Homebrew tap update, and syncs
-     the source Homebrew formula template to the verified package.
+     bumps container-compose on main when needed, promotes stephenlclarke-owned
+     source main branches, promotes container-compose through an automated PR by
+     default, tags container-compose, dispatches the stable package workflow,
+     verifies the release assets plus Homebrew tap update, and syncs the source
+     Homebrew formula template to the verified package.
   4. Use package VERSION to rebuild and verify an existing stable tag without
      moving tags, then sync the source Homebrew formula template.
 EOF

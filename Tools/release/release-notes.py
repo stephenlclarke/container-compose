@@ -645,7 +645,7 @@ def render_release_notes(
     if stable_release:
         lines.extend(
             [
-                "- Promotion means validating `main`, creating the bare semver source tag, and dispatching the stable package workflow for that tag.",
+                "- Promotion means validating the candidate tree, promoting `container-compose` through the pull-request path, creating the bare semver source tag, and dispatching the stable package workflow for that tag.",
                 "- The stable package workflow marks the semver release as GitHub `Latest` and updates the stable Homebrew formula.",
             ]
         )
@@ -667,7 +667,7 @@ def render_release_notes(
             "",
             "## Validation",
             "",
-            "- Stable release promotion runs `make release-gate` before dispatching the package workflow.",
+            "- Stable release promotion runs `make release-gate`, promotes `container-compose` through the pull-request path, and verifies the promoted main tree before dispatching the package workflow.",
             "- `make release-gate` runs `make ci` plus the full Docker Compose parity suite.",
             "- The package workflow repeats `make ci` before publishing package assets or updating the tap.",
             f"- `make package-release PLUGIN_ARCHIVE={asset}` passed.",

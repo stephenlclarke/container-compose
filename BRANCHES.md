@@ -26,6 +26,8 @@ Keep this guide in `container-compose` only. Do not copy it into Apple upstream 
 
 Use short-lived topic or review branches for runtime, release, security, upstream-import, and cross-repository stack changes. Keep each branch focused on one coherent slice, attach CI and review notes through a pull request or equivalent review record, then land the validated result on `main` before release. Delete the branch locally and remotely unless it is still needed for an open review.
 
+The stable release helper promotes `container-compose` `main` through an automated short-lived pull request by default, so pull-request checks and review state remain visible before the semantic release tag is created. The Apple-backed sibling forks are still pushed directly to their stephenlclarke-owned remotes during stack promotion, after the helper verifies that Apple remotes are read-only.
+
 Do not create additional long-lived integration or packaging lanes. Non-main branches are topic or review references only.
 
 ## Version And Release Rhythm
@@ -52,7 +54,7 @@ make release VERSION_SELECTOR=--+
 make repackage-release VERSION=MAJOR.MINOR.PATCH
 ```
 
-`make release-plan` is a dry run over the four local source checkouts and the Homebrew tap workflow boundary. `make release` validates the source worktrees and `stephenlclarke` push targets, syncs exact `containerization` SwiftPM revision pins when the local runtime stack moved, bumps `container-compose` version files on `main` when needed, commits those release-boundary changes, runs the full local release gate against the exact release commit, pushes the four source `main` branches, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for that workflow to update the fifth repository (`homebrew-tap`), verify the release assets and live tap URL/version/SHA, then sync the checked-in source formula template to the verified release asset.
+`make release-plan` is a dry run over the four local source checkouts and the Homebrew tap workflow boundary. `make release` validates the source worktrees and `stephenlclarke` push targets, syncs exact `containerization` SwiftPM revision pins when the local runtime stack moved, bumps `container-compose` version files on `main` when needed, commits those release-boundary changes, runs the full local release gate against the candidate tree, promotes the Apple-backed sibling source `main` branches to their stephenlclarke-owned remotes, promotes `container-compose` through an automated pull request, verifies that the promoted `container-compose` tree still matches the locally gated candidate, ensures the `container` Prebuilt Binaries workflow runs when the exact head lacks an immutable `homebrew-main-RUN-SHA` package tag, waits for that tag, creates and pushes the stable `container-compose` source tag, dispatches the stable package workflow for that tag, waits for that workflow to update the fifth repository (`homebrew-tap`), verifies the release assets and live tap URL/version/SHA, then syncs the checked-in source formula template through the same pull-request promotion path to the verified release asset.
 
 `make repackage-release VERSION=MAJOR.MINOR.PATCH` repairs an existing stable tag without moving it. It dispatches the stable package workflow again, verifies the release archive, checksum asset, Homebrew formula URL, version, and SHA, then syncs the checked-in source formula template to the verified release asset.
 
@@ -65,9 +67,13 @@ Release notes are rendered by [Tools/release/release-notes.py](Tools/release/rel
 - `+--`: major bump from the latest semantic tag and reset minor and patch to `0`.
 - `MAJOR.MINOR.PATCH`: explicit stable release version.
 
-The container package wait and Compose package wait both default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_RELEASE_WAIT_SECONDS`, `CONTAINER_STACK_RELEASE_POLL_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, or `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`.
+The container package wait, Compose package wait, and pull-request promotion wait all default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_RELEASE_WAIT_SECONDS`, `CONTAINER_STACK_RELEASE_POLL_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`, `CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS`, or `CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS`.
 
 The helper refuses Apple push targets. stephenlclarke-owned remotes are the only release push targets.
+
+`CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE=direct` is reserved for emergency maintenance when stephenlclarke/container-compose branch protection intentionally permits a direct push. The default `pr` mode is the normal release path.
+
+`CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE=checked-admin` is the default for the solo-maintainer release repository. It waits for pull-request checks, tries a normal merge, and uses an admin merge only when GitHub blocks the merge on the required-review rule that the PR author cannot satisfy. Set it to `strict` when another reviewer is available and the helper should fail instead of using that checked admin merge.
 
 ## Runtime Ref Policy
 
