@@ -711,7 +711,7 @@ open_compose_promotion_pr() {
   local branch="$1" title="$2" body="$3" repo existing url
   repo="$(github_repo "${COMPOSE_REPO}")"
   existing="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh pr list \
+    github_cli pr list \
       --repo "${repo}" \
       --head "${branch}" \
       --state open \
@@ -726,7 +726,7 @@ open_compose_promotion_pr() {
   fi
 
   url="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh pr create \
+    github_cli pr create \
       --repo "${repo}" \
       --base main \
       --head "${branch}" \
@@ -735,7 +735,7 @@ open_compose_promotion_pr() {
   )"
   COMPOSE_PROMOTION_PR_URL="${url}"
   COMPOSE_PROMOTION_PR_NUMBER="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${url}" \
+    github_cli pr view "${url}" \
       --repo "${repo}" \
       --json number \
       --jq '.number'
@@ -756,7 +756,7 @@ wait_for_compose_pr_checks() {
   fi
 
   while true; do
-    if output="$(env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
+    if output="$(github_cli pr checks "${number}" \
       --repo "${repo}" \
       "${check_args[@]}" 2>&1)"; then
       status=0
@@ -795,7 +795,7 @@ wait_for_compose_pr_checks() {
 
 compose_pr_check_mode() {
   local number="$1" repo="$2" output status
-  if output="$(env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
+  if output="$(github_cli pr checks "${number}" \
     --repo "${repo}" \
     --required 2>&1)"; then
     printf 'required'
@@ -826,7 +826,7 @@ wait_for_compose_pr_merged() {
 
   while true; do
     details="$(
-      env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${number}" \
+      github_cli pr view "${number}" \
         --repo "${repo}" \
         --json state,mergedAt,url \
         --jq '[.state, (.mergedAt // ""), .url] | @tsv'
@@ -859,7 +859,7 @@ compose_pr_is_merged() {
   local number="$1" repo merged_at
   repo="$(github_repo "${COMPOSE_REPO}")"
   if ! merged_at="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${number}" \
+    github_cli pr view "${number}" \
       --repo "${repo}" \
       --json mergedAt \
       --jq '.mergedAt // ""'
@@ -878,7 +878,7 @@ merge_compose_promotion_pr() {
     return 0
   fi
 
-  if env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
+  if github_cli pr merge "${number}" \
     --repo "${repo}" \
     --merge \
     --delete-branch \
@@ -893,7 +893,7 @@ merge_compose_promotion_pr() {
     return 0
   fi
   wait_for_compose_pr_checks "${number}"
-  if env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
+  if github_cli pr merge "${number}" \
     --repo "${repo}" \
     --merge \
     --delete-branch; then
@@ -907,14 +907,14 @@ merge_compose_promotion_pr() {
   fi
 
   review_decision="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${number}" \
+    github_cli pr view "${number}" \
       --repo "${repo}" \
       --json reviewDecision \
       --jq '.reviewDecision // ""'
   )"
   if [[ "${COMPOSE_MAIN_MERGE_MODE}" == "checked-admin" && "${review_decision}" == "REVIEW_REQUIRED" ]]; then
     printf 'normal merge is blocked by the solo-maintainer review requirement; using checked admin merge after PR checks passed\n'
-    run env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
+    run github_cli pr merge "${number}" \
       --repo "${repo}" \
       --merge \
       --delete-branch \
@@ -1073,9 +1073,15 @@ need_command() {
   fi
 }
 
+# Run GitHub CLI commands with the caller's authenticated credential. This
+# supports the documented GITHUB_TOKEN path as well as gh's stored login.
+github_cli() {
+  gh "$@"
+}
+
 # Return the newest workflow_dispatch run id for the compose package workflow.
 latest_compose_package_dispatch_run() {
-  env -u GITHUB_TOKEN -u GH_TOKEN gh run list \
+  github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow "Prebuilt Binaries" \
     --event workflow_dispatch \
@@ -1085,7 +1091,7 @@ latest_compose_package_dispatch_run() {
 }
 
 latest_stable_release_gate_dispatch_run() {
-  env -u GITHUB_TOKEN -u GH_TOKEN gh run list \
+  github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow stable-release-gate.yml \
     --event workflow_dispatch \
@@ -1100,7 +1106,7 @@ wait_for_github_run_success() {
   deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
   while true; do
     details="$(
-      env -u GITHUB_TOKEN -u GH_TOKEN gh run view "${run_id}" \
+      github_cli run view "${run_id}" \
         --repo "$(github_repo "${COMPOSE_REPO}")" \
         --json status,conclusion,url \
         --jq '[.status, (.conclusion // ""), .url] | @tsv'
@@ -1143,7 +1149,7 @@ verify_compose_stable_package() {
 
   tmp="$(mktemp -d)"
   asset_names="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh release view "${version}" \
+    github_cli release view "${version}" \
       --repo "${repo}" \
       --json assets \
       --jq '.assets[].name'
@@ -1167,7 +1173,7 @@ verify_compose_stable_package() {
     exit 1
   fi
 
-  env -u GITHUB_TOKEN -u GH_TOKEN gh release download "${version}" \
+  github_cli release download "${version}" \
     --repo "${repo}" \
     --pattern "${asset}" \
     --pattern "${asset}.sha256" \
@@ -1191,7 +1197,7 @@ verify_compose_stable_package() {
   fi
 
   formula_text="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh api \
+    github_cli api \
       repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose.rb \
       --jq '.content' | base64 --decode
   )"
@@ -1219,7 +1225,7 @@ verify_compose_stable_package() {
 
   runtime_url="https://github.com/${repo}/releases/download/${version}/${runtime_asset}"
   runtime_formula_text="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh api \
+    github_cli api \
       repos/stephenlclarke/homebrew-tap/contents/Formula/container.rb \
       --jq '.content' | base64 --decode
   )"
@@ -1257,7 +1263,7 @@ dispatch_compose_stable_package() {
 
   need_command gh
   previous_run="$(latest_compose_package_dispatch_run || true)"
-  run env -u GITHUB_TOKEN -u GH_TOKEN gh workflow run prebuilt-binaries.yml \
+  run github_cli workflow run prebuilt-binaries.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --ref main \
     -f "ref=${version}"
@@ -1297,7 +1303,7 @@ dispatch_stable_release_gate() {
 
   need_command gh
   previous_run="$(latest_stable_release_gate_dispatch_run || true)"
-  run env -u GITHUB_TOKEN -u GH_TOKEN gh workflow run stable-release-gate.yml \
+  run github_cli workflow run stable-release-gate.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --ref main \
     -f "ref=${version}"
