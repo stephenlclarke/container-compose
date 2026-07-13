@@ -37,6 +37,13 @@ REFERENCE_TRAILER_PATTERN = re.compile(
     r"^(?:Upstream-Ref|Bug-Ref|Refs|Follow-up-To):[ \t]*(?P<value>.*)$",
     re.IGNORECASE,
 )
+GENERIC_COMMIT_TRAILER_NAMES = {
+    "change-id",
+    "container-test",
+    "related",
+    "upstream-issue",
+}
+SUPPRESSED_RELEASE_NOTE_VALUES = {"none", "n/a", "na", "skip"}
 GITHUB_REFERENCE_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_.-])(?P<reference>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)\b"
 )
@@ -46,6 +53,8 @@ GITHUB_REFERENCE_PATTERN = re.compile(
 class CommitSummary:
     short_hash: str
     subject: str
+    body_summary: str | None
+    suppress_automatic_highlights: bool
     highlights: tuple[str, ...]
     upstream_references: tuple[str, ...]
 
@@ -301,6 +310,8 @@ def commits_for_revision(repo: Path, revision: str) -> list[CommitSummary]:
             CommitSummary(
                 short_hash=short_hash,
                 subject=subject,
+                body_summary=release_summary_from_body(body),
+                suppress_automatic_highlights=release_note_suppresses_highlights(body),
                 highlights=tuple(explicit_release_highlights_from_body(body)),
                 upstream_references=tuple(upstream_references_from_body(body)),
             )
@@ -324,7 +335,7 @@ def explicit_release_highlights(*values: str) -> list[str]:
             normalized = item.strip()
             if not normalized:
                 continue
-            if normalized.lower() in {"none", "n/a", "na", "skip"}:
+            if normalized.lower() in SUPPRESSED_RELEASE_NOTE_VALUES:
                 continue
             highlights.append(ensure_sentence(normalized))
     return highlights
@@ -337,6 +348,65 @@ def explicit_release_highlights_from_body(body: str) -> list[str]:
         if match is not None:
             values.append(match.group("value"))
     return explicit_release_highlights(*values)
+
+
+def release_note_suppresses_highlights(body: str) -> bool:
+    for line in body.splitlines():
+        match = EXPLICIT_RELEASE_LINE_PATTERN.match(line.strip())
+        if match is None:
+            continue
+        if any(
+            item.strip().lower() in SUPPRESSED_RELEASE_NOTE_VALUES
+            for item in match.group("value").split("\x1f")
+        ):
+            return True
+    return False
+
+
+USER_FACING_LEADING_VERBS = {
+    "accept": "Accepts",
+    "add": "Adds",
+    "enable": "Enables",
+    "fix": "Fixes",
+    "improve": "Improves",
+    "map": "Maps",
+    "preserve": "Preserves",
+    "support": "Supports",
+    "update": "Updates",
+}
+
+
+def release_summary_from_body(body: str) -> str | None:
+    """Return the first prose paragraph suitable for a user-facing highlight."""
+
+    for paragraph in re.split(r"\n[ \t]*\n", body.strip()):
+        lines = [
+            line.strip()
+            for line in paragraph.splitlines()
+            if line.strip() and not is_commit_trailer(line.strip())
+        ]
+        if not lines:
+            continue
+
+        summary = " ".join(lines)
+        match = re.match(r"^(?P<verb>[A-Za-z]+)(?P<remainder>\b.*)$", summary)
+        if match is not None:
+            verb = USER_FACING_LEADING_VERBS.get(match.group("verb").lower())
+            if verb is not None:
+                summary = f"{verb}{match.group('remainder')}"
+        return ensure_sentence(summary)
+    return None
+
+
+def is_commit_trailer(line: str) -> bool:
+    if EXPLICIT_RELEASE_LINE_PATTERN.match(line) or REFERENCE_TRAILER_PATTERN.match(line):
+        return True
+    name, separator, _value = line.partition(":")
+    normalized_name = name.lower()
+    return bool(separator) and (
+        normalized_name.endswith("-by")
+        or normalized_name in GENERIC_COMMIT_TRAILER_NAMES
+    )
 
 
 def upstream_references_from_body(body: str) -> list[str]:
@@ -376,10 +446,7 @@ def conventional_highlight(subject: str) -> str | None:
     match = CONVENTIONAL_SUBJECT_PATTERN.fullmatch(subject)
     if match is None:
         return None
-    if match.group("type") not in HIGHLIGHT_TYPES:
-        return None
-    scope = (match.group("scope") or "").lower()
-    if scope in INTERNAL_HIGHLIGHT_SCOPES:
+    if not highlight_eligible(match):
         return None
 
     summary = match.group("summary").strip()
@@ -388,14 +455,28 @@ def conventional_highlight(subject: str) -> str | None:
     return ensure_sentence(summary[:1].upper() + summary[1:])
 
 
+def highlight_eligible(match: re.Match[str]) -> bool:
+    if match.group("type") not in HIGHLIGHT_TYPES:
+        return False
+    scope = (match.group("scope") or "").lower()
+    return scope not in INTERNAL_HIGHLIGHT_SCOPES
+
+
 def release_highlights(commits: list[CommitSummary]) -> list[str]:
     highlights: list[str] = []
     seen: set[str] = set()
 
     for commit in reversed(commits):
+        match = CONVENTIONAL_SUBJECT_PATTERN.fullmatch(commit.subject)
+        if match is None:
+            if not commit.highlights:
+                continue
+        elif not highlight_eligible(match):
+            continue
+
         commit_highlights = list(commit.highlights)
-        if not commit_highlights:
-            fallback = conventional_highlight(commit.subject)
+        if not commit_highlights and not commit.suppress_automatic_highlights:
+            fallback = commit.body_summary or conventional_highlight(commit.subject)
             if fallback is not None:
                 commit_highlights = [fallback]
 

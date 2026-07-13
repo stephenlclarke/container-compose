@@ -79,6 +79,7 @@ Rules enforced:
   - Stable package assets and the Homebrew tap SHA are verified before success.
   - Stable releases are created once; existing stable tags and releases fail.
   - container-compose main updates use pull-request promotion by default.
+  - An equivalent tree already squash-merged on main is reconciled before tagging.
   - Long-lived release branches are not used.
 
 Environment:
@@ -98,46 +99,52 @@ Environment:
 USAGE
 }
 
-MODE="${1:-}"
-if [[ -z "${MODE}" || "${MODE}" == "-h" || "${MODE}" == "--help" ]]; then
-  usage
-  exit 0
-fi
-shift || true
-
+MODE=""
 VERSION_SELECTOR=""
 EXECUTE=0
-case "${MODE}" in
-  plan)
-    ;;
-  release)
-    VERSION_SELECTOR="${1:-}"
-    if [[ -z "${VERSION_SELECTOR}" ]]; then
-      printf '%s requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' "${MODE}" >&2
-      exit 2
-    fi
-    shift || true
-    ;;
-  *)
-    printf 'unknown mode: %s\n' "${MODE}" >&2
-    usage >&2
-    exit 2
-    ;;
-esac
 
-while (($#)); do
-  case "$1" in
-    --execute)
-      EXECUTE=1
-      shift
+parse_arguments() {
+  MODE="${1:-}"
+  if [[ -z "${MODE}" || "${MODE}" == "-h" || "${MODE}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+  shift || true
+
+  VERSION_SELECTOR=""
+  EXECUTE=0
+  case "${MODE}" in
+    plan)
+      ;;
+    release)
+      VERSION_SELECTOR="${1:-}"
+      if [[ -z "${VERSION_SELECTOR}" ]]; then
+        printf '%s requires VERSION_SELECTOR, for example --+, -+-, +--, or 9.0.2\n' "${MODE}" >&2
+        exit 2
+      fi
+      shift || true
       ;;
     *)
-      printf 'unknown option: %s\n' "$1" >&2
+      printf 'unknown mode: %s\n' "${MODE}" >&2
       usage >&2
       exit 2
       ;;
   esac
-done
+
+  while (($#)); do
+    case "$1" in
+      --execute)
+        EXECUTE=1
+        shift
+        ;;
+      *)
+        printf 'unknown option: %s\n' "$1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+  done
+}
 
 ROOT="${HOME}/github"
 COMPOSE_REPO="container-compose"
@@ -579,7 +586,7 @@ commit_containerization_package_pin() {
 
   run git -C "${path}" commit \
     -m "chore(deps): pin containerization ${short_ref}" \
-    -m "Release-Highlight: Release automation pins stephenlclarke/containerization by exact SwiftPM revision ${short_ref}."
+    -m "Release-Note: none"
 }
 
 # Keep the container and compose manifests aligned with the stack containerization checkout.
@@ -789,6 +796,7 @@ compose_pr_check_mode() {
   exit 1
 }
 
+# Wait for a promotion pull request to reach GitHub's merged state.
 wait_for_compose_pr_merged() {
   local number="$1" repo deadline now details state merged_at url
   repo="$(github_repo "${COMPOSE_REPO}")"
@@ -824,9 +832,30 @@ wait_for_compose_pr_merged() {
   done
 }
 
+# Return success when GitHub already records the promotion pull request as merged.
+compose_pr_is_merged() {
+  local number="$1" repo merged_at
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  if ! merged_at="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh pr view "${number}" \
+      --repo "${repo}" \
+      --json mergedAt \
+      --jq '.mergedAt // ""'
+  )"; then
+    return 1
+  fi
+  [[ -n "${merged_at}" ]]
+}
+
+# Merge the validated promotion pull request or accept an equivalent external merge.
 merge_compose_promotion_pr() {
   local number="$1" repo review_decision
   repo="$(github_repo "${COMPOSE_REPO}")"
+  if compose_pr_is_merged "${number}"; then
+    printf 'container-compose promotion PR already merged: #%s\n' "${number}"
+    return 0
+  fi
+
   if env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
     --repo "${repo}" \
     --merge \
@@ -837,12 +866,21 @@ merge_compose_promotion_pr() {
   fi
 
   printf 'auto-merge was not available for container-compose PR #%s; waiting for checks before merge\n' "${number}"
+  if compose_pr_is_merged "${number}"; then
+    printf 'container-compose promotion PR already merged: #%s\n' "${number}"
+    return 0
+  fi
   wait_for_compose_pr_checks "${number}"
   if env -u GITHUB_TOKEN -u GH_TOKEN gh pr merge "${number}" \
     --repo "${repo}" \
     --merge \
     --delete-branch; then
     wait_for_compose_pr_merged "${number}"
+    return 0
+  fi
+
+  if compose_pr_is_merged "${number}"; then
+    printf 'container-compose promotion PR already merged: #%s\n' "${number}"
     return 0
   fi
 
@@ -869,8 +907,64 @@ merge_compose_promotion_pr() {
   exit 1
 }
 
+# Align local main after GitHub has rewritten an identical candidate tree.
+align_equivalent_compose_main() {
+  local path="$1" remote="$2" remote_head="$3" candidate_tree="$4" aligned_head aligned_tree
+  printf 'container-compose candidate tree is already promoted on %s/main with rewritten history; aligning local main before tagging\n' "${remote}"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would align local container-compose main with %s\n' "${remote_head}"
+    return 0
+  fi
+
+  # The trees match exactly, so moving the local branch does not change files.
+  run git -C "${path}" switch --detach "${remote_head}"
+  run git -C "${path}" branch -f main "${remote_head}"
+  run git -C "${path}" switch main
+
+  aligned_head="$(git -C "${path}" rev-parse main)"
+  aligned_tree="$(git -C "${path}" rev-parse 'main^{tree}')"
+  if [[ "${aligned_head}" != "${remote_head}" || "${aligned_tree}" != "${candidate_tree}" ]]; then
+    printf 'could not align local container-compose main with the already promoted candidate tree\n' >&2
+    exit 1
+  fi
+}
+
+# Synchronize local main after promotion while preserving the gated tree invariant.
+synchronize_promoted_compose_main() {
+  local path="$1" remote="$2" candidate_tree="$3" remote_head remote_tree local_head promoted_tree
+  fetch_release_remote "${COMPOSE_REPO}"
+  remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
+  if [[ -z "${remote_head}" ]]; then
+    printf 'cannot resolve remote main for container-compose on %s\n' "${remote}" >&2
+    exit 1
+  fi
+
+  remote_tree="$(git -C "${path}" rev-parse "${remote_head}^{tree}")"
+  if [[ "${remote_tree}" != "${candidate_tree}" ]]; then
+    printf 'promoted container-compose main tree differs from the locally gated candidate\n' >&2
+    exit 1
+  fi
+
+  local_head="$(git -C "${path}" rev-parse main)"
+  if [[ "${local_head}" != "${remote_head}" ]]; then
+    if git -C "${path}" merge-base --is-ancestor "${local_head}" "${remote_head}"; then
+      run git -C "${path}" pull --ff-only "${remote}" main
+    else
+      align_equivalent_compose_main "${path}" "${remote}" "${remote_head}" "${candidate_tree}"
+    fi
+  fi
+
+  promoted_tree="$(git -C "${path}" rev-parse 'main^{tree}')"
+  if [[ "${promoted_tree}" != "${candidate_tree}" ]]; then
+    printf 'promoted container-compose main tree differs from the locally gated candidate\n' >&2
+    exit 1
+  fi
+}
+
+# Promote the gated Compose candidate through the configured main-branch policy.
 promote_compose_main() {
-  local version="$1" purpose="$2" title="$3" body="$4" path remote local_head remote_head branch candidate_tree promoted_tree pushed_head
+  local version="$1" purpose="$2" title="$3" body="$4" path remote local_head remote_head branch candidate_tree remote_tree pushed_head
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
   ensure_compose_promotion_mode
@@ -886,6 +980,13 @@ promote_compose_main() {
   if [[ -z "${remote_head}" ]]; then
     printf 'cannot resolve remote main for container-compose on %s\n' "${remote}" >&2
     exit 1
+  fi
+  if [[ "${EXECUTE}" == "1" ]]; then
+    remote_tree="$(git -C "${path}" rev-parse "${remote_head}^{tree}")"
+    if [[ "${candidate_tree}" == "${remote_tree}" ]]; then
+      align_equivalent_compose_main "${path}" "${remote}" "${remote_head}" "${candidate_tree}"
+      return 0
+    fi
   fi
   if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
     printf 'container-compose main is not based on %s/main; pull and revalidate before release\n' "${remote}" >&2
@@ -919,12 +1020,7 @@ promote_compose_main() {
 
   open_compose_promotion_pr "${branch}" "${title}" "${body}"
   merge_compose_promotion_pr "${COMPOSE_PROMOTION_PR_NUMBER}"
-  run git -C "${path}" pull --ff-only "${remote}" main
-  promoted_tree="$(git -C "${path}" rev-parse 'main^{tree}')"
-  if [[ "${promoted_tree}" != "${candidate_tree}" ]]; then
-    printf 'promoted container-compose main tree differs from the locally gated candidate\n' >&2
-    exit 1
-  fi
+  synchronize_promoted_compose_main "${path}" "${remote}" "${candidate_tree}"
 }
 
 push_all_main() {
@@ -1329,12 +1425,19 @@ Process:
 EOF
 }
 
-case "${MODE}" in
-  plan)
-    plan
-    ;;
-  release)
-    prepare_all_main
-    release_current_stack
-    ;;
-esac
+main() {
+  parse_arguments "$@"
+  case "${MODE}" in
+    plan)
+      plan
+      ;;
+    release)
+      prepare_all_main
+      release_current_stack
+      ;;
+  esac
+}
+
+if [[ "${CONTAINER_STACK_RELEASE_LIBRARY:-0}" != "1" ]]; then
+  main "$@"
+fi

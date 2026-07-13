@@ -193,6 +193,194 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertNotIn("Keep package workflow deterministic.", notes)
             self.assertIn("fix(release): keep package workflow deterministic", notes)
 
+    def test_commit_body_summary_is_preferred_over_terse_subject(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "fix(deploy): accept local start-first updates",
+                body="""
+                Support Docker Compose local deploy.update_config.order start-first
+                and recreate services when deploy metadata changes, without
+                claiming unsupported Swarm rollout scheduling.
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(
+                "- Supports Docker Compose local deploy.update_config.order "
+                "start-first and recreate services when deploy metadata changes, "
+                "without claiming unsupported Swarm rollout scheduling.",
+                notes,
+            )
+            self.assertNotIn("- Accept local start-first updates.", notes)
+
+    def test_internal_release_trailers_do_not_become_user_highlights(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "chore(deps): pin containerization",
+                body="""
+                Release-Highlight: Release automation pins containerization to an exact revision.
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertNotIn("## Highlights", notes)
+            self.assertIn("chore(deps): pin containerization", notes)
+
+    def test_release_note_none_suppresses_automatic_highlight(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "fix(cli): retain compatibility diagnostics",
+                body="""
+                Release-Note: none
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertNotIn("## Highlights", notes)
+            self.assertIn("fix(cli): retain compatibility diagnostics", notes)
+
+    def test_body_summary_ignores_generic_git_trailers(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "fix(config): preserve project labels",
+                body="""
+                Preserve Compose project labels while applying configuration changes.
+
+                Co-authored-by: Codex <codex@example.com>
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(
+                "- Preserves Compose project labels while applying configuration changes.",
+                notes,
+            )
+            self.assertNotIn("Co-authored-by", notes.split("## Changes", maxsplit=1)[0])
+
+    def test_body_summary_preserves_user_facing_colons(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "feat(config): preserve labels",
+                body="""
+                Support Docker Compose project labels: preserve them while applying configuration changes.
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(
+                "- Supports Docker Compose project labels: preserve them while "
+                "applying configuration changes.",
+                notes,
+            )
+
+    def test_explicit_nonconventional_highlight_is_preserved(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(
+                repo,
+                "Docker Compose import from upstream",
+                body="""
+                Release-Highlight: Supports Docker Compose profile-aware imports from the upstream compatibility fix.
+
+                Upstream-Ref: docker/compose#12345
+                """,
+            )
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(
+                "- Supports Docker Compose profile-aware imports from the upstream "
+                "compatibility fix. Upstream reference: docker/compose#12345.",
+                notes,
+            )
+
     def test_spaced_release_highlights_all_render(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
