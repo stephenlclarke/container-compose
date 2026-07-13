@@ -1,20 +1,20 @@
-# Cgroup2Manager Has A Nonstandard Catch Clause Spacing
+# Cgroup2Manager Catch Clause Must Match Swift Formatter Spacing
 
 ## I Have Done The Following
 
 - [x] Searched existing `apple/containerization` issues and pull requests for `Cgroup2Manager catch where spacing` and `catch  where`.
-- [x] Confirmed the local fork had the doubled-space `catch  where` form in `vminitd/Sources/Cgroup/Cgroup2Manager.swift`.
+- [x] Confirmed `swift format lint` requires the doubled-space predicate form in `vminitd/Sources/Cgroup/Cgroup2Manager.swift`.
 
 ## Current Behavior
 
-`Cgroup2Manager.processes` contains a missing-process recovery clause written as `catch  where isMissingProcessFileError(error)`. The code behaves correctly, but the doubled spacing is nonstandard Swift style and was called out during review.
+`Cgroup2Manager.processes` must use the exact predicate catch spelling that the repository's strict Swift formatter emits. The one-space form, `catch where isMissingProcessFileError(error)`, fails `swift format lint` even though it has identical runtime behavior.
 
 ## Expected Behavior
 
-The catch clause uses normal Swift spacing:
+The catch clause uses the formatter-required spacing:
 
 ```swift
-catch where isMissingProcessFileError(error)
+catch  where isMissingProcessFileError(error)
 ```
 
 ## Upstream Reference

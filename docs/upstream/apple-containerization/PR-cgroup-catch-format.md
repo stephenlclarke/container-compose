@@ -1,16 +1,16 @@
-# Pull Request: Normalize Cgroup2Manager Catch Clause Spacing
+# Pull Request: Restore Cgroup2Manager Swift Formatter Catch Spacing
 
 ## Summary
 
-Normalize the missing-process catch clause in `Cgroup2Manager.processes` from `catch  where` to `catch where`.
+Restore the missing-process catch clause in `Cgroup2Manager.processes` to the `catch  where` spelling emitted by the repository's strict Swift formatter.
 
 ## Motivation
 
-The current spacing is visually inconsistent with Swift style and was identified during the stack critical review. The cleanup is intentionally tiny: it does not change process enumeration behavior, Linux-only test coverage, package products, or public API.
+The one-space predicate form fails the repository's strict Swift formatter. Restoring the formatter-required form is intentionally tiny: it does not change process enumeration behavior, Linux-only test coverage, package products, or public API.
 
 ## Changes
 
-- Update `vminitd/Sources/Cgroup/Cgroup2Manager.swift` so the missing-process catch clause uses standard Swift spacing.
+- Update `vminitd/Sources/Cgroup/Cgroup2Manager.swift` so the missing-process catch clause uses the formatter-required spacing.
 - Leave all Cgroup process parsing and error handling behavior unchanged.
 
 ## Upstream Reference
@@ -22,18 +22,19 @@ The current spacing is visually inconsistent with Swift style and was identified
 
 - Fork: `stephenlclarke/containerization`
 - Branch: `main`
-- Commit: `03f8a105813ae680757f4f456a53130c11c0bf66`
+- Commit: `6dc0c7be42687a9cf0d07eee1ba9cf2a1abf510c`
 
 ## Validation
 
 ```sh
+swift format lint --configuration .swift-format-nolint vminitd/Sources/Cgroup/Cgroup2Manager.swift
 swift build --disable-automatic-resolution --target Cgroup
 git diff --check
 ```
 
 Results:
 
-- The `Cgroup` target builds successfully.
+- Strict Swift formatting and the `Cgroup` target build successfully.
 - The committed diff has no whitespace errors.
 - `Cgroup2ManagerProcessTests` are Linux-only and are not available on this macOS validation host.
 
