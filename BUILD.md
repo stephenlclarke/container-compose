@@ -171,6 +171,11 @@ make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
 make release VERSION_SELECTOR=0.7.0 # exact next semantic version
 ```
 
+Before source promotion, the helper bootstraps the matched stack tools, fetches
+the required `containerization` integration kernel when it is absent, and runs
+the full local `make release-gate`. The hosted gate repeats that validation from
+the immutable source, runtime, and tap checkouts before package publication.
+
 The helper is the only supported version mutator. It updates the Compose version
 when necessary, preserves the exact runtime stack pin, opens and merges the
 source-promotion PR, creates a signed semantic tag, waits for the hosted Stable
