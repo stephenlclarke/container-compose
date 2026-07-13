@@ -61,6 +61,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('verify_github_stable_tag_signature "${version}"', self.script)
         self.assertIn("GitHub did not verify stable tag", self.script)
 
+    def test_release_helper_supports_an_isolated_stack_root(self) -> None:
+        self.assertIn('ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"', self.script)
+        self.assertIn("CONTAINER_STACK_RELEASE_ROOT", self.script)
+
     def test_internal_dependency_pins_do_not_become_release_highlights(self) -> None:
         pin_commit = self.script[
             self.script.index("commit_containerization_package_pin() {") : self.script.index(
