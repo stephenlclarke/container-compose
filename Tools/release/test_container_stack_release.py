@@ -147,8 +147,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )
         self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
         self.assertIn("HOMEBREW_TAP_REPO: ../homebrew-tap", workflow)
+        self.assertIn("Provision pinned stack tools", workflow)
+        self.assertIn(
+            "for repository in container-builder-shim containerization container; do",
+            workflow,
+        )
+        self.assertIn("./scripts/install-hawkeye.sh", workflow)
         self.assertLess(
             workflow.index("Checkout immutable Homebrew tap snapshot"),
+            workflow.index("Run release gate"),
+        )
+        self.assertLess(
+            workflow.index("Provision pinned stack tools"),
             workflow.index("Run release gate"),
         )
 

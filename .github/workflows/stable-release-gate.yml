@@ -251,6 +251,20 @@ jobs:
           path: container-compose/.local/bin
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
 
+      # Each pinned repository checks its own .local/bin rather than PATH.
+      # Bootstrap those verified per-repository tools before invoking the
+      # aggregate gate from container-compose.
+      - name: Provision pinned stack tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for repository in container-builder-shim containerization container; do
+            (
+              cd "${repository}"
+              ./scripts/install-hawkeye.sh
+            )
+          done
+
       - name: Run release gate
         run: make release-gate
         working-directory: container-compose
