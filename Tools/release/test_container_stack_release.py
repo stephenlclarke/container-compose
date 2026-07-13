@@ -117,6 +117,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
 
+    def test_release_helper_uses_the_active_github_cli_credential(self) -> None:
+        self.assertIn("github_cli() {", self.script)
+        self.assertIn("github_cli pr create", self.script)
+        self.assertIn('--add-assignee "@me"', self.script)
+        self.assertIn("run github_cli workflow run", self.script)
+        self.assertNotIn("env -u GITHUB_TOKEN -u GH_TOKEN gh", self.script)
+
     def test_release_helper_preserves_formatted_swiftpm_dependency_pins(self) -> None:
         self.assertIn(r'r"(\s*,?\s*\))"', self.script)
 
