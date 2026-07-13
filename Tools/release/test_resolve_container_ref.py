@@ -17,6 +17,7 @@
 
 """Unit tests for container dependency ref resolution."""
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -74,6 +75,46 @@ class ContainerRefResolutionTests(unittest.TestCase):
             )
 
             self.assertEqual(result.stdout.strip(), expected)
+
+    def test_uses_explicit_stack_manifest_before_remote_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote = root / "container"
+            self.init_repo(remote)
+            remote_ref = self.git(remote, "rev-parse", "HEAD")
+            manifest_ref = "a" * 40
+            manifest = root / "stack-refs.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            "container": {
+                                "ref": manifest_ref,
+                            },
+                        },
+                    },
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("resolve-container-ref.py")),
+                    "--repo",
+                    str(root / "missing-checkout"),
+                    "--remote",
+                    str(remote),
+                    "--stack-refs",
+                    str(manifest),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(remote_ref, manifest_ref)
+            self.assertEqual(result.stdout.strip(), manifest_ref)
 
     def test_prefers_latest_remote_homebrew_tag_prefix_before_remote_branch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

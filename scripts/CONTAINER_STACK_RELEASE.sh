@@ -549,7 +549,7 @@ text = package.read_text(encoding="utf-8")
 pattern = re.compile(
     r'(\.package\(\s*url:\s*"https://github.com/stephenlclarke/containerization\.git"\s*,\s*)'
     r'(?:branch|revision):\s*"[^"]*"'
-    r"(\s*\))",
+    r"(\s*,?\s*\))",
     re.MULTILINE,
 )
 updated, count = pattern.subn(rf'\1revision: "{ref}"\2', text, count=1)

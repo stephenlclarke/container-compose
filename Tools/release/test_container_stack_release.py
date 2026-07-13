@@ -69,6 +69,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
 
+    def test_release_helper_preserves_formatted_swiftpm_dependency_pins(self) -> None:
+        self.assertIn(r'r"(\s*,?\s*\))"', self.script)
+
     def test_release_helper_only_force_refreshes_the_legacy_package_pointer(self) -> None:
         self.assertIn(
             "+refs/tags/homebrew-main:refs/tags/homebrew-main", self.script

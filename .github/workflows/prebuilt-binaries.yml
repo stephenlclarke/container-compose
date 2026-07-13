@@ -291,7 +291,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ref="$(python3 container-compose/Tools/release/resolve-container-ref.py)"
+          ref="$(python3 container-compose/Tools/release/resolve-container-ref.py --stack-refs container-compose/Tools/release/stack-refs.json)"
           if [[ -z "$ref" ]]; then
             printf 'container ref is empty\n' >&2
             exit 1
