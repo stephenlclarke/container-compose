@@ -99,6 +99,11 @@ Environment:
   CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS
   CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS
       Override the default one-hour PR promotion wait and 30-second poll.
+
+  CONTAINER_STACK_RELEASE_ROOT
+      Override the parent directory containing the four source checkouts and
+      the Homebrew tap. Defaults to ~/github. Use an isolated stack root for
+      release validation without touching another local workspace.
 USAGE
 }
 
@@ -149,7 +154,7 @@ parse_arguments() {
   done
 }
 
-ROOT="${HOME}/github"
+ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"
 COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
