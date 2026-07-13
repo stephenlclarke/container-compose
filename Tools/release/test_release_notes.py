@@ -122,6 +122,14 @@ class ReleaseNotesTests(unittest.TestCase):
 
             self.assertIn("Commits since `0.5.0`", notes)
             self.assertIn("The stable release updates `stephenlclarke/tap/container-compose`", notes)
+            self.assertIn(
+                "Stable release promotion runs `make release-gate` before dispatching the package workflow.",
+                notes,
+            )
+            self.assertIn(
+                "The package workflow repeats `make ci` before publishing package assets or updating the tap.",
+                notes,
+            )
             self.assertIn("fix(cli): report help topic", notes)
             self.assertIn("feat(examples): add monitoring stack", notes)
             self.assertIn("Report help topic.", notes)

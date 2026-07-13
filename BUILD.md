@@ -127,7 +127,9 @@ into focused workflows. `CI / Validate` is the aggregate required result;
 documentation/formula-only changes use the lightweight validation path. The
 stable release helper runs `make release-gate` locally against the exact release
 commit before it pushes or tags; the package workflow then repeats `make ci`
-before publishing package assets or updating the tap.
+before publishing package assets or updating the tap. The package workflow does
+not replace the local `make release-gate`; use `make release VERSION_SELECTOR=--+`
+for stable promotion so the full Docker Compose parity suite remains mandatory.
 
 ## Docker Compose Parity
 
