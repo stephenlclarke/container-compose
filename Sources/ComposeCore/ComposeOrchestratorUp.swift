@@ -256,7 +256,6 @@ extension ComposeOrchestrator {
             var serviceChanged = false
             var jobTargets: [ServiceContainerTarget] = []
             if replicaCount > 0 {
-                var priorReplicaRecreated = false
                 for replicaIndex in 1 ... replicaCount {
                     let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
                     if isDeployJobService(service) {
@@ -279,13 +278,9 @@ extension ComposeOrchestrator {
                             renewAnonymousVolumes: up.renewAnonymousVolumes,
                             dependencyRecreateServices: dependencyRecreateServices,
                             recreateTimeout: up.timeout,
-                            delayBeforeRecreate: priorReplicaRecreated,
                         ),
                     )
                     serviceChanged = serviceChanged || reconcileOutcome.changed
-                    if reconcileOutcome.recreated {
-                        priorReplicaRecreated = true
-                    }
                     if up.wait, !isDeployJobService(service) {
                         waitTargets.append(ServiceContainerTarget(service: service, index: replicaIndex, name: name))
                     }
@@ -882,7 +877,6 @@ extension ComposeOrchestrator {
                 options.emit("compose: reusing existing container \(name)")
                 return .unchanged
             }
-            try await sleepBeforeDeployUpdateIfNeeded(service: service, enabled: request.delayBeforeRecreate)
             try await stopContainer(service: service, containerName: name, timeout: request.recreateTimeout)
             try await deleteContainer(name)
             didRecreate = true
@@ -924,18 +918,6 @@ extension ComposeOrchestrator {
             try await runPostStartHooks(service: service, containerID: name)
         }
         return didRecreate ? .recreated : .created
-    }
-
-    /// Applies a supported stop-first deploy update delay before the next local replica replacement.
-    func sleepBeforeDeployUpdateIfNeeded(service: ComposeService, enabled: Bool) async throws {
-        guard enabled,
-              !options.dryRun,
-              let nanoseconds = service.deployUpdateDelayNanoseconds,
-              nanoseconds > 0
-        else {
-            return
-        }
-        try await options.sleep(.nanoseconds(nanoseconds))
     }
 
     /// Creates project resources and selected service containers without starting them.

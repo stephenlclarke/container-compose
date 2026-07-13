@@ -30,10 +30,11 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
-# Docker Compose V2 preserves deploy.rollback_config and deploy.placement in
-# config output while local dry-run orchestration accepts the service, then
-# verifies container-compose mirrors that local-mode metadata behavior without
-# treating those scheduler fields as unsupported deploy fields.
+# Docker Compose V2 preserves deploy.update_config, deploy.rollback_config,
+# and deploy.placement in config output while local dry-run orchestration
+# accepts the service, then verifies container-compose mirrors that local-mode
+# metadata behavior without treating supported update orders as unsupported
+# deploy fields.
 
 set -euo pipefail
 
@@ -127,7 +128,7 @@ check_tools() {
     fi
 }
 
-# Create a minimal Compose fixture with scheduler-only deploy metadata.
+# Create a minimal Compose fixture with Deploy update and scheduler metadata.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-deploy-scheduler.XXXXXX")"
     cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
@@ -135,6 +136,10 @@ services:
   api:
     image: alpine:3.20
     deploy:
+      update_config:
+        parallelism: 1
+        delay: 2s
+        order: start-first
       rollback_config:
         parallelism: 2
         order: stop-first
@@ -156,7 +161,7 @@ cleanup() {
     fi
 }
 
-# Assert Docker Compose preserves scheduler metadata in config output.
+# Assert Docker Compose preserves Deploy update and scheduler metadata in config output.
 assert_docker_config_preserves_scheduler_metadata() {
     local path="$1"
 
@@ -167,8 +172,11 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 deploy = doc.get("services", {}).get("api", {}).get("deploy", {})
+update = deploy.get("update_config", {})
 rollback = deploy.get("rollback_config", {})
 placement = deploy.get("placement", {})
+if update.get("order") != "start-first":
+    raise SystemExit(f"Docker Compose update_config.order = {update.get('order')!r}, want 'start-first'")
 if rollback.get("parallelism") != 2:
     raise SystemExit(f"Docker Compose rollback_config.parallelism = {rollback.get('parallelism')!r}, want 2")
 if rollback.get("order") != "stop-first":
@@ -180,7 +188,7 @@ if placement.get("max_replicas_per_node") != 1:
 PY
 }
 
-# Assert container-compose preserves scheduler metadata and does not reject it.
+# Assert container-compose preserves Deploy update and scheduler metadata.
 assert_container_config_preserves_scheduler_metadata() {
     local path="$1"
 
@@ -192,12 +200,15 @@ import sys
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 service = doc.get("services", {}).get("api", {})
 fields = service.get("unsupportedDeployFields") or []
-unexpected = [field for field in fields if field == "placement" or field == "rollback_config" or field.startswith("placement.") or field.startswith("rollback_config.")]
+unexpected = [field for field in fields if field == "update_config.order" or field == "update_config.order.start-first" or field == "placement" or field == "rollback_config" or field.startswith("placement.") or field.startswith("rollback_config.")]
 if unexpected:
-    raise SystemExit(f"container-compose still reports scheduler metadata as unsupported: {fields!r}")
+    raise SystemExit(f"container-compose still reports Deploy update or scheduler metadata as unsupported: {fields!r}")
 deploy = service.get("deploy", {})
+update = deploy.get("update_config", {})
 rollback = deploy.get("rollback_config", {})
 placement = deploy.get("placement", {})
+if update.get("order") != "start-first":
+    raise SystemExit(f"container-compose update_config.order = {update.get('order')!r}, want 'start-first'")
 if rollback.get("parallelism") != 2:
     raise SystemExit(f"container-compose rollback_config.parallelism = {rollback.get('parallelism')!r}, want 2")
 if rollback.get("order") != "stop-first":
@@ -227,12 +238,12 @@ expect_docker_behavior() {
         -p "$PROJECT_NAME" \
         -f "$FIXTURE_DIR/compose.yml" \
         up --no-start api >"$dry_run_output" 2>&1; then
-        error 'Docker Compose deploy scheduler metadata dry-run failed'
+        error 'Docker Compose Deploy update and scheduler metadata dry-run failed'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
     if ! grep -F "Container $PROJECT_NAME-api-1 Created" "$dry_run_output" >/dev/null; then
-        error 'Docker Compose did not accept deploy scheduler metadata in local dry-run up'
+        error 'Docker Compose did not accept Deploy update and scheduler metadata in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
@@ -258,12 +269,12 @@ expect_container_behavior() {
         -p "$PROJECT_NAME" \
         -f "$FIXTURE_DIR/compose.yml" \
         up --no-start api >"$dry_run_output" 2>&1; then
-        error 'container-compose deploy scheduler metadata dry-run failed'
+        error 'container-compose Deploy update and scheduler metadata dry-run failed'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
     if ! grep -F "container create --name $PROJECT_NAME-api-1" "$dry_run_output" >/dev/null; then
-        error 'container-compose did not accept deploy scheduler metadata in local dry-run up'
+        error 'container-compose did not accept Deploy update and scheduler metadata in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
@@ -280,7 +291,7 @@ main() {
     expect_docker_behavior
     expect_container_behavior
 
-    info 'Docker Compose deploy scheduler metadata parity passed.'
+    info 'Docker Compose Deploy update and scheduler metadata parity passed.'
 }
 
 main "$@"

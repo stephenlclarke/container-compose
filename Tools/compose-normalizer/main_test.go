@@ -1572,9 +1572,6 @@ services:
 	if api.MemLimit == "" {
 		t.Fatal("api.MemLimit is empty")
 	}
-	if api.DeployUpdateDelayNanos != 2_000_000_000 {
-		t.Fatalf("api.DeployUpdateDelayNanos = %d, want 2000000000", api.DeployUpdateDelayNanos)
-	}
 	if len(api.UnsupportedDeployFields) != 0 {
 		t.Fatalf("api.UnsupportedDeployFields = %#v, want empty", api.UnsupportedDeployFields)
 	}
@@ -2154,8 +2151,11 @@ func TestHelperFunctionsHandleEmptyAndFallbackValues(t *testing.T) {
 	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &oneAtATime, Order: "stop-first", Delay: 2_000_000_000}}); len(fields) != 0 {
 		t.Fatalf("unsupportedDeployFields(stop-first update) = %#v, want empty", fields)
 	}
-	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Order: "start-first"}}); !reflect.DeepEqual(fields, []string{"update_config.order.start-first"}) {
-		t.Fatalf("unsupportedDeployFields(start-first update) = %#v, want [update_config.order.start-first]", fields)
+	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Order: "start-first"}}); len(fields) != 0 {
+		t.Fatalf("unsupportedDeployFields(start-first update) = %#v, want empty", fields)
+	}
+	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Order: "START-FIRST"}}); !reflect.DeepEqual(fields, []string{"update_config.order"}) {
+		t.Fatalf("unsupportedDeployFields(uppercase update order) = %#v, want [update_config.order]", fields)
 	}
 	allAtOnce := uint64(0)
 	if fields := unsupportedDeployFields(&types.DeployConfig{UpdateConfig: &types.UpdateConfig{Parallelism: &allAtOnce}}); len(fields) != 0 {

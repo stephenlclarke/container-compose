@@ -750,7 +750,6 @@ struct ComposeNormalizerTests {
         #expect(placement["constraints"] == .array([.string("node.role == worker")]))
         #expect(api.scale == 2)
         #expect(api.deployLabels == ["com.example.service": "api"])
-        #expect(api.deployUpdateDelayNanoseconds == 2_000_000_000)
         #expect(api.cpus == "1.5")
         #expect(api.memLimit?.isEmpty == false)
         #expect(api.unsupportedDeployFields == nil)
@@ -958,7 +957,14 @@ struct ComposeNormalizerTests {
         ))
 
         let api = try #require(project.services["api"])
-        #expect(api.unsupportedDeployFields == ["update_config.order.start-first"])
+        #expect(api.unsupportedDeployFields == nil)
+        guard case .object(let deploy) = api.deploy,
+              case .object(let updateConfig) = deploy["update_config"]
+        else {
+            Issue.record("Expected preserved deploy.update_config metadata")
+            return
+        }
+        #expect(updateConfig["order"] == .string("start-first"))
     }
 
     @Test("normalizer infers project directory from the first compose file")

@@ -950,7 +950,6 @@ struct ServiceContainerReconcileRequest {
     var renewAnonymousVolumes: Bool
     var dependencyRecreateServices: Set<String>
     var recreateTimeout: Int?
-    var delayBeforeRecreate: Bool = false
 }
 
 enum ServiceContainerReconcileOutcome {

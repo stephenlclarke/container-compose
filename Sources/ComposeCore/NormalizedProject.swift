@@ -280,7 +280,6 @@ public struct ComposeService: Codable, Equatable {
     public var unsupportedDeployFields: [String]? = nil
     public var deployMode: String? = nil
     public var deployLabels: [String: String]? = nil
-    public var deployUpdateDelayNanoseconds: Int64? = nil
     public var deployRestartPolicy: ComposeDeployRestartPolicy? = nil
     public var build: ComposeBuild? = nil
     public var command: [String]? = nil
@@ -390,7 +389,6 @@ public struct ComposeService: Codable, Equatable {
         case unsupportedDeployFields
         case deployMode
         case deployLabels
-        case deployUpdateDelayNanoseconds
         case deployRestartPolicy
         case build
         case command

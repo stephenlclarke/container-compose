@@ -80,10 +80,9 @@ public extension ComposeOrchestrator {
 
             let replicaCount = try serviceReplicaCount(service, scaleOverrides: scaleOverrides)
             if replicaCount > 0 {
-                var priorReplicaRecreated = false
                 for replicaIndex in 1 ... replicaCount {
                     let name = try serviceContainerName(project: workingProject, service: service, index: replicaIndex)
-                    let reconcileOutcome = try await reconcileServiceContainer(
+                    _ = try await reconcileServiceContainer(
                         project: workingProject,
                         service: service,
                         request: ServiceContainerReconcileRequest(
@@ -100,12 +99,8 @@ public extension ComposeOrchestrator {
                             renewAnonymousVolumes: create.renewAnonymousVolumes,
                             dependencyRecreateServices: dependencyRecreateServices,
                             recreateTimeout: recreateTimeout,
-                            delayBeforeRecreate: priorReplicaRecreated,
                         ),
                     )
-                    if reconcileOutcome.recreated {
-                        priorReplicaRecreated = true
-                    }
                 }
             }
             if shouldPruneServiceReplicas(service, scaleOverrides: scaleOverrides) {

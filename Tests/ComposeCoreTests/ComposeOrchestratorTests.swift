@@ -7200,31 +7200,58 @@ struct ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("up rejects start-first deploy updates as an apple/container runtime gap")
-    func upRejectsStartFirstDeployUpdatesAsAppleContainerRuntimeGaps() async throws {
-        let runner = RecordingRunner()
+    @Test("up accepts start-first deploy updates and recreates when the order changes")
+    func upAcceptsStartFirstDeployUpdatesAndRecreatesWhenOrderChanges() async throws {
+        let initialProject = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deploy = .object([
+                        "update_config": .object([
+                            "order": .string("stop-first"),
+                        ]),
+                    ])
+                },
+            ]
+        )
+        let createRunner = RecordingRunner(responses: [.success])
+
+        try await ComposeOrchestrator(runner: createRunner, discoveryManager: RecordingContainerDiscoveryManager())
+            .up(project: initialProject, options: ComposeUpOptions())
+
+        let oldRun = try #require(createRunner.commands.last?.arguments)
+        let oldHash = try #require(composeConfigHash(in: oldRun))
+        let runner = RecordingRunner(responses: [.success])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: oldHash]),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
         let project = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.unsupportedDeployFields = ["update_config.order.start-first"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.deploy = .object([
+                        "update_config": .object([
+                            "order": .string("start-first"),
+                        ]),
+                    ])
                 },
             ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).up(project: project, options: ComposeUpOptions())
-            Issue.record("Expected start-first deploy update error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'api' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(
+            runner: runner,
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
+        ).up(project: project, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let newRun = try #require(runner.commands.first?.arguments)
+        #expect(newRun.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(composeConfigHash(in: newRun) != oldHash)
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
     }
 
     @Test("up rejects unsupported deploy resource reservations as apple/container runtime gaps")
@@ -22556,31 +22583,26 @@ struct ComposeOrchestratorTests {
         #expect(!runArguments.contains("--restart"))
     }
 
-    @Test("run rejects start-first deploy updates as an apple/container runtime gap")
-    func runRejectsStartFirstDeployUpdatesAsAppleContainerRuntimeGaps() async throws {
-        let runner = RecordingRunner()
+    @Test("run accepts start-first deploy update metadata")
+    func runAcceptsStartFirstDeployUpdateMetadata() async throws {
+        let runner = RecordingRunner(responses: [.success])
         let project = composeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.unsupportedDeployFields = ["update_config.order.start-first"]
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
+                    $0.deploy = .object([
+                        "update_config": .object([
+                            "order": .string("start-first"),
+                        ]),
+                    ])
                 },
             ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
+        )
 
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected start-first deploy update error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses deploy.update_config.order: start-first; start-first updates need an apple/container container rename or service alias handoff primitive"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
 
-        #expect(runner.commands.isEmpty)
+        let runArguments = try #require(runner.commands.map(\.arguments).first { $0.starts(with: ["container", "run"]) })
+        #expect(runArguments.contains("true"))
     }
 
     @Test("run rejects unsupported model fields before creating resources")
@@ -24267,9 +24289,20 @@ struct ComposeOrchestratorTests {
         #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
     }
 
-    @Test("up ignores deploy labels when comparing runtime config hashes")
-    func upIgnoresDeployLabelsWhenComparingRuntimeConfigHashes() async throws {
-        let initialProject = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+    @Test("up recreates existing containers when deploy metadata changes")
+    func upRecreatesExistingContainersWhenDeployMetadataChanges() async throws {
+        let initialProject = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.deploy = .object([
+                        "labels": .object([
+                            "com.example.deploy-marker": .string("one"),
+                        ]),
+                    ])
+                },
+            ]
+        )
         let createDiscovery = RecordingContainerDiscoveryManager()
         let createRunner = RecordingRunner(responses: [.success])
 
@@ -24280,29 +24313,38 @@ struct ComposeOrchestratorTests {
 
         let run = try #require(createRunner.commands.last?.arguments)
         let hash = try #require(composeConfigHash(in: run))
-        let emitted = MessageRecorder()
-        let runner = RecordingRunner()
+        let runner = RecordingRunner(responses: [.success])
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(id: "demo-api-1", status: "running", labels: [composeConfigHashLabel: hash]),
         ])
+        let lifecycleManager = RecordingContainerLifecycleManager()
         let projectWithDeployLabels = composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
-                    $0.deployLabels = ["com.example.service": "api"]
+                    $0.deploy = .object([
+                        "labels": .object([
+                            "com.example.deploy-marker": .string("two"),
+                        ]),
+                    ])
                 },
             ]
         )
 
         try await ComposeOrchestrator(
             runner: runner,
-            options: ComposeExecutionOptions(emit: { emitted.append($0) }),
-            discoveryManager: discoveryManager
+            discoveryManager: discoveryManager,
+            lifecycleManager: lifecycleManager
         ).up(project: projectWithDeployLabels, options: ComposeUpOptions())
 
-        #expect(runner.commands.isEmpty)
+        let newRun = try #require(runner.commands.first?.arguments)
+        #expect(newRun.starts(with: ["container", "run", "--name", "demo-api-1"]))
+        #expect(composeConfigHash(in: newRun) != hash)
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
-        #expect(emitted.messages == ["compose: reusing existing container demo-api-1"])
+        #expect(await lifecycleManager.requests == [
+            .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
+            .delete(id: "demo-api-1", force: false),
+        ])
     }
 
     @Test("up recreates existing containers when resource runtime names change")
@@ -24376,8 +24418,8 @@ struct ComposeOrchestratorTests {
         ])
     }
 
-    @Test("up applies deploy update delay between recreated replicas")
-    func upAppliesDeployUpdateDelayBetweenRecreatedReplicas() async throws {
+    @Test("up ignores deploy update delay in local mode")
+    func upIgnoresDeployUpdateDelayInLocalMode() async throws {
         let sleeper = DurationRecorder()
         let runner = RecordingRunner(responses: [
             .success,
@@ -24393,7 +24435,13 @@ struct ComposeOrchestratorTests {
             services: [
                 "api": composeService(name: "api", image: "example/api") {
                     $0.scale = 2
-                    $0.deployUpdateDelayNanoseconds = 2_000_000_000
+                    $0.deploy = .object([
+                        "update_config": .object([
+                            "delay": .string("2s"),
+                            "order": .string("start-first"),
+                            "parallelism": .number(1),
+                        ]),
+                    ])
                 },
             ]
         )
@@ -24408,7 +24456,7 @@ struct ComposeOrchestratorTests {
         ).up(project: project, options: ComposeUpOptions())
 
         #expect(runner.commands.map(\.arguments).count == 2)
-        #expect(await sleeper.durations == [.nanoseconds(2_000_000_000)])
+        #expect(await sleeper.durations.isEmpty)
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
@@ -24416,37 +24464,6 @@ struct ComposeOrchestratorTests {
             .stop(id: "demo-api-2", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-api-2", force: false),
         ])
-    }
-
-    @Test("up does not apply deploy update delay to new replicas")
-    func upDoesNotApplyDeployUpdateDelayToNewReplicas() async throws {
-        let sleeper = DurationRecorder()
-        let runner = RecordingRunner(responses: [
-            .success,
-            .success,
-        ])
-        let discoveryManager = RecordingContainerDiscoveryManager()
-        let project = ComposeProject(
-            name: "demo",
-            services: [
-                "api": composeService(name: "api", image: "example/api") {
-                    $0.scale = 2
-                    $0.deployUpdateDelayNanoseconds = 2_000_000_000
-                },
-            ]
-        )
-
-        try await ComposeOrchestrator(
-            runner: runner,
-            options: ComposeExecutionOptions(sleep: { try await sleeper.sleep($0) }),
-            dependencies: orchestratorDependencies {
-                $0.discoveryManager = discoveryManager
-            }
-        ).up(project: project, options: ComposeUpOptions())
-
-        #expect(runner.commands.map(\.arguments).count == 2)
-        #expect(await sleeper.durations.isEmpty)
-        #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-2"])
     }
 
     @Test("up timeout overrides service stop grace period when recreating")

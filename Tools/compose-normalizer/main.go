@@ -152,7 +152,6 @@ type normalizedService struct {
 	UnsupportedDeployFields []string                            `json:"unsupportedDeployFields,omitempty"`
 	DeployMode              string                              `json:"deployMode,omitempty"`
 	DeployLabels            map[string]string                   `json:"deployLabels,omitempty"`
-	DeployUpdateDelayNanos  int64                               `json:"deployUpdateDelayNanoseconds,omitempty"`
 	DeployRestartPolicy     *normalizedDeployRestartPolicy      `json:"deployRestartPolicy,omitempty"`
 	Build                   *normalizedBuild                    `json:"build,omitempty"`
 	Command                 []string                            `json:"command,omitempty"`
@@ -819,7 +818,6 @@ func normalizeService(service types.ServiceConfig, secrets map[string]types.Secr
 		UnsupportedDeployFields: unsupportedDeployFields(service.Deploy),
 		DeployMode:              deployMode(service.Deploy),
 		DeployLabels:            deployLabels(service.Deploy),
-		DeployUpdateDelayNanos:  deployUpdateDelayNanoseconds(service.Deploy),
 		DeployRestartPolicy:     deployRestartPolicyValue(service.Deploy),
 		Command:                 shellCommandValues(service.Command),
 		Entrypoint:              shellCommandValues(service.Entrypoint),
@@ -1080,15 +1078,6 @@ func deployLabels(deploy *types.DeployConfig) map[string]string {
 	return mapLabels(deploy.Labels)
 }
 
-// deployUpdateDelayNanoseconds returns the Compose stop-first update delay in
-// nanoseconds so Swift can apply it between recreated local replicas.
-func deployUpdateDelayNanoseconds(deploy *types.DeployConfig) int64 {
-	if deploy == nil || deploy.UpdateConfig == nil {
-		return 0
-	}
-	return int64(deploy.UpdateConfig.Delay)
-}
-
 // deployRestartPolicyValue returns the Compose Deploy restart policy exactly
 // enough for Swift orchestration to map Docker-compatible local semantics.
 func deployRestartPolicyValue(deploy *types.DeployConfig) *normalizedDeployRestartPolicy {
@@ -1134,8 +1123,8 @@ func appendUnsupportedDeployField(fields *[]string, name string, present bool) {
 	}
 }
 
-// unsupportedUpdateConfigFields reports update behavior outside Docker Compose's
-// local mode and the stop-first recreation the local orchestrator performs.
+// unsupportedUpdateConfigFields reports update orders Docker Compose local mode
+// does not accept.
 func unsupportedUpdateConfigFields(config *types.UpdateConfig) []string {
 	if config == nil {
 		return nil
@@ -1143,17 +1132,15 @@ func unsupportedUpdateConfigFields(config *types.UpdateConfig) []string {
 	return unsupportedUpdateOrderFields(config.Order)
 }
 
-// unsupportedUpdateOrderFields reports update orders that need a different
-// recreate boundary from the existing local stop-before-start path.
+// unsupportedUpdateOrderFields accepts Docker Compose's documented local
+// update orders. Local Compose preserves either value as Deploy metadata and
+// follows its ordinary container recreation path.
 func unsupportedUpdateOrderFields(order string) []string {
 	if order == "" {
 		return nil
 	}
-	if strings.EqualFold(order, "stop-first") {
+	if order == "stop-first" || order == "start-first" {
 		return nil
-	}
-	if strings.EqualFold(order, "start-first") {
-		return []string{"update_config.order.start-first"}
 	}
 	return []string{"update_config.order"}
 }
