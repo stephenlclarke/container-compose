@@ -127,7 +127,11 @@ jobs:
       - name: Analyze
         uses: github/codeql-action/analyze@1ad29ea4a422cce9a242a9fae469541dcd08addc # v4
         with:
-          category: "/language:go"
+          # Keep the historical configuration identity stable. CodeQL uses this
+          # category to find the main-branch baseline for pull-request alert
+          # comparisons; changing it to /language:go orphaned the prior
+          # /language:swift-go baseline and produced neutral PR results.
+          category: "/language:swift-go"
 
   analyze-skipped:
     name: Analyze Go (No Go changes)
