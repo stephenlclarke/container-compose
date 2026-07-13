@@ -357,6 +357,11 @@ jobs:
           path: container-compose/.local/bin
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
 
+      - name: Start Docker Compose parity reference
+        if: github.event_name == 'workflow_dispatch'
+        run: scripts/ensure-docker-compose-reference.sh
+        working-directory: container-compose
+
       - name: Run release validation
         if: github.event_name == 'workflow_dispatch'
         timeout-minutes: 90
