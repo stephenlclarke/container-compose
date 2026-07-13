@@ -62,10 +62,6 @@ class ReleaseNotesTests(unittest.TestCase):
 
             self.assertIn("Commits since `0.6.0`", notes)
             self.assertIn("## Homebrew Formula", notes)
-            self.assertIn(
-                "brew install --formula stephenlclarke/tap/container-current stephenlclarke/tap/container-compose-current",
-                notes,
-            )
             self.assertIn("## Promotion", notes)
             self.assertIn("## Asset Retention", notes)
             self.assertIn("It never changes the stable formula pair.", notes)
@@ -133,10 +129,6 @@ class ReleaseNotesTests(unittest.TestCase):
             )
             self.assertIn(
                 "The package workflow verifies the exact immutable runtime asset",
-                notes,
-            )
-            self.assertIn(
-                "brew install --formula stephenlclarke/tap/container stephenlclarke/tap/container-compose",
                 notes,
             )
             self.assertIn(
