@@ -29,6 +29,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 STACK_REFS = ROOT / "Tools" / "release" / "stack-refs.json"
 CONTAINER_PACKAGE = ROOT.parent / "container" / "Package.swift"
+PACKAGE_SWIFT_FILES = [
+    ROOT / "Package.swift",
+    CONTAINER_PACKAGE,
+]
 PACKAGE_RESOLVED_FILES = [
     ROOT / "Package.resolved",
     ROOT.parent / "container" / "Package.resolved",
@@ -60,6 +64,25 @@ def containerization_pins() -> list[tuple[Path, dict[str, Any]]]:
             if pin.get("identity") == "containerization":
                 pins.append((path, pin))
     return pins
+
+
+def containerization_dependencies() -> list[tuple[Path, str, str, str]]:
+    dependencies: list[tuple[Path, str, str, str]] = []
+    pattern = re.compile(
+        r'\.package\(\s*url:\s*"([^"]*containerization\.git)"\s*,\s*'
+        r'(branch|revision|exact|from):\s*"([^"]*)"',
+        re.MULTILINE,
+    )
+    for path in PACKAGE_SWIFT_FILES:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError as error:
+            raise SystemExit(f"missing required file: {path}") from error
+        match = pattern.search(text)
+        if not match:
+            raise SystemExit(f"{path} is missing a containerization package dependency")
+        dependencies.append((path, match.group(1), match.group(2), match.group(3)))
+    return dependencies
 
 
 def require_match(label: str, actual: str, expected: str) -> None:
@@ -123,6 +146,15 @@ def main() -> int:
     if not expected_source or not expected_ref:
         raise SystemExit("stack-refs.json containerization entry needs repository and ref")
 
+    for path, location, requirement, value in containerization_dependencies():
+        source = normalize_repository(location)
+        require_match(f"{path} containerization source", source, expected_source)
+        if requirement != "revision":
+            raise SystemExit(
+                f"{path} containerization dependency must use revision, not {requirement}"
+            )
+        require_match(f"{path} containerization revision", value, expected_ref)
+
     pins = containerization_pins()
     if not pins:
         raise SystemExit("no checked-in Package.resolved contains a containerization pin")
@@ -131,6 +163,8 @@ def main() -> int:
         source = normalize_repository(str(pin.get("location", "")))
         state = pin.get("state", {})
         revision = str(state.get("revision", ""))
+        if "branch" in state:
+            raise SystemExit(f"{path} containerization pin must not include a branch")
         require_match(f"{path} containerization source", source, expected_source)
         require_match(f"{path} containerization revision", revision, expected_ref)
 

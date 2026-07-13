@@ -1347,6 +1347,7 @@ coverage-tools-test:
 	$(PYTHON) -m py_compile Tools/coverage/*.py Tools/release/*.py Tools/ci/*.py
 	$(PYTHON) -m unittest discover Tools/coverage
 	$(PYTHON) -m unittest discover Tools/release
+	$(PYTHON) -m unittest discover Tools/ci
 
 stack-consistency:
 	$(PYTHON) Tools/ci/check-stack-consistency.py

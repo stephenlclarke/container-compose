@@ -48,6 +48,7 @@ This is the current disposition of Apple work that affects the five-repository c
 | [apple/container#1767](https://github.com/apple/container/issues/1767) | Approved [apple/container#1818](https://github.com/apple/container/pull/1818) is ported as `6e525cc`. |
 | [apple/container#1757](https://github.com/apple/container/issues/1757) | Launch failures and application-root mismatches are handled in `stephenlclarke/container` `6ac1253`. |
 | [apple/containerization#790](https://github.com/apple/containerization/issues/790) and [apple/container#1895](https://github.com/apple/container/issues/1895) | Fresh-session registry retry behavior from [apple/containerization#792](https://github.com/apple/containerization/pull/792) is represented by `d388a15` and `c8043bb`. |
+| [apple/container#1937](https://github.com/apple/container/issues/1937) | Directory bind mounts containing hardlinks can intermittently fail with `EACCES` inside the guest. The single-file hardlink fix from [apple/containerization#665](https://github.com/apple/containerization/pull/665) is already present, but this report covers directory bind-mount semantics, so `container-compose` must not paper over it with a copy/snapshot workaround that would break live bind behavior. |
 
 ## Open Follow-up
 

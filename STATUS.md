@@ -8,7 +8,7 @@ This file is the current Docker Compose v2 parity ledger for `container-compose`
 
 The main drift risks are logs, events, restart policy, health, exit/completion metadata, networking identity, IPAM/DNS, dynamic ports, copy/archive behavior, build inputs, mounts, secrets/configs, blkio, sysctls, and runtime API shape changes.
 
-Current refs should come from checked-in source-of-truth files rather than duplicated prose: [Tools/release/stack-refs.json](Tools/release/stack-refs.json) records stack component refs, [Package.resolved](Package.resolved) records SwiftPM dependency resolution, and `container system version` / `container compose version` report installed runtime and plugin provenance after installation.
+Current refs should come from checked-in source-of-truth files rather than duplicated prose: [Tools/release/stack-refs.json](Tools/release/stack-refs.json) records stack component refs, `Package.swift` and [Package.resolved](Package.resolved) record exact SwiftPM dependency resolution, and `container system version` / `container compose version` report installed runtime and plugin provenance after installation.
 
 ## Current Validation
 

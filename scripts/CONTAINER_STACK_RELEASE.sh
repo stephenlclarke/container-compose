@@ -268,92 +268,13 @@ ensure_repo_exists() {
 
 # Refuse to operate on dirty working trees.
 ensure_clean() {
-  local repo="$1" path status generated_package_resolved
+  local repo="$1" path status
   path="$(repo_path "${repo}")"
-  generated_package_resolved=0
-  if normalize_generated_package_resolved "${repo}"; then
-    generated_package_resolved=1
-  fi
   status="$(git -C "${path}" status --short)"
-  if [[ "${generated_package_resolved}" == "1" && "${EXECUTE}" != "1" ]]; then
-    status="$(printf '%s\n' "${status}" | sed '/^ M Package\.resolved$/d')"
-  fi
   if [[ -n "${status}" ]]; then
     printf 'dirty worktree blocks release for %s:\n%s\n' "${repo}" "${status}" >&2
     exit 1
   fi
-}
-
-# Clear SwiftPM's generated containerization branch pin when it is the only
-# Package.resolved difference. The release stack records the real component SHA
-# in Tools/release/stack-refs.json, so committing this floating branch pin would
-# make release metadata less deterministic.
-normalize_generated_package_resolved() {
-  local repo="$1" path status
-  if [[ "${repo}" != "${COMPOSE_REPO}" ]]; then
-    return 1
-  fi
-
-  path="$(repo_path "${repo}")"
-  status="$(git -C "${path}" status --short -- Package.resolved)"
-  if [[ -z "${status}" ]]; then
-    return 1
-  fi
-
-  if ! python3 - "${path}" <<'PY'
-import json
-import subprocess
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-try:
-    head = subprocess.check_output(
-        ["git", "-C", str(root), "show", "HEAD:Package.resolved"],
-        text=True,
-    )
-    worktree = (root / "Package.resolved").read_text(encoding="utf-8")
-    head_data = json.loads(head)
-    worktree_data = json.loads(worktree)
-except Exception:
-    raise SystemExit(1)
-
-
-def without_generated_containerization_pin(data):
-    copy = json.loads(json.dumps(data))
-    pins = copy.get("pins")
-    if not isinstance(pins, list):
-        return copy
-
-    filtered = []
-    for pin in pins:
-        state = pin.get("state", {})
-        generated = (
-            pin.get("identity") == "containerization"
-            and pin.get("kind") == "remoteSourceControl"
-            and pin.get("location") == "https://github.com/stephenlclarke/containerization.git"
-            and state.get("branch") == "main"
-            and "version" not in state
-        )
-        if not generated:
-            filtered.append(pin)
-    copy["pins"] = filtered
-    return copy
-
-
-raise SystemExit(0 if without_generated_containerization_pin(worktree_data) == head_data else 1)
-PY
-  then
-    return 1
-  fi
-
-  if [[ "${EXECUTE}" == "1" ]]; then
-    printf 'restoring generated SwiftPM containerization branch pin in Package.resolved\n'
-    git -C "${path}" restore -- Package.resolved
-  else
-    printf 'would restore generated SwiftPM containerization branch pin in Package.resolved\n'
-  fi
-  return 0
 }
 
 # Verify that Apple remotes cannot be pushed and stephenlclarke remotes are the target.
@@ -585,6 +506,71 @@ print_component_refs() {
     path="$(repo_path "${repo}")"
     printf '  %-26s %s\n' "${repo}" "$(git -C "${path}" rev-parse main)"
   done
+}
+
+# Update one SwiftPM manifest to the current containerization stack revision.
+update_containerization_package_pin() {
+  local repo="$1" ref="$2" path
+  path="$(repo_path "${repo}")"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would pin %s Package.swift containerization dependency to %s\n' "${repo}" "${ref}"
+    return 0
+  fi
+
+  python3 - "${path}/Package.swift" "${ref}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+package = Path(sys.argv[1])
+ref = sys.argv[2]
+text = package.read_text(encoding="utf-8")
+pattern = re.compile(
+    r'(\.package\(\s*url:\s*"https://github.com/stephenlclarke/containerization\.git"\s*,\s*)'
+    r'(?:branch|revision):\s*"[^"]*"'
+    r"(\s*\))",
+    re.MULTILINE,
+)
+updated, count = pattern.subn(rf'\1revision: "{ref}"\2', text, count=1)
+if count != 1:
+    raise SystemExit(f"{package} is missing the stephenlclarke containerization dependency")
+package.write_text(updated, encoding="utf-8")
+PY
+  run swift package --package-path "${path}" resolve
+}
+
+# Commit a SwiftPM containerization pin update when the manifest or lockfile changed.
+commit_containerization_package_pin() {
+  local repo="$1" ref="$2" path short_ref
+  path="$(repo_path "${repo}")"
+  short_ref="${ref:0:12}"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would commit %s containerization pin update if needed\n' "${repo}"
+    return 0
+  fi
+
+  run git -C "${path}" add Package.swift Package.resolved
+  if git -C "${path}" diff --cached --quiet -- Package.swift Package.resolved; then
+    printf '%s containerization package pin already points at %s\n' "${repo}" "${ref}"
+    return 0
+  fi
+
+  run git -C "${path}" commit \
+    -m "chore(deps): pin containerization ${short_ref}" \
+    -m "Release-Highlight: Release automation pins stephenlclarke/containerization by exact SwiftPM revision ${short_ref}."
+}
+
+# Keep the container and compose manifests aligned with the stack containerization checkout.
+sync_containerization_package_pins() {
+  local ref
+  ref="$(git -C "$(repo_path "containerization")" rev-parse main)"
+  print_header "sync exact containerization SwiftPM pins"
+  update_containerization_package_pin "${CONTAINER_REPO}" "${ref}"
+  commit_containerization_package_pin "${CONTAINER_REPO}" "${ref}"
+  update_containerization_package_pin "${COMPOSE_REPO}" "${ref}"
+  commit_containerization_package_pin "${COMPOSE_REPO}" "${ref}"
 }
 
 write_release_stack_manifest() {
@@ -998,6 +984,7 @@ release_current_stack() {
   else
     printf 'container-compose version files already declare %s\n' "${version}"
   fi
+  sync_containerization_package_pins
   write_release_stack_manifest
 
   if [[ "${EXECUTE}" == "1" ]]; then

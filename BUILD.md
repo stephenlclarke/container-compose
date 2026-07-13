@@ -88,7 +88,8 @@ make ci
 It runs all tracked Markdown through markdownlint, Python tooling tests, Go
 format and license checks, Swift and Go tests with coverage, coverage floors,
 the packaged Go build, and the built CLI smoke test. Dependency resolution uses
-the checked-in lockfiles unless an update is intentional.
+the checked-in exact-revision `Package.swift` entries and lockfiles unless an
+update is intentional.
 
 Useful focused targets are:
 
@@ -145,7 +146,7 @@ Run a focused target directly while iterating:
 | CLI and project loading | `docker-compose-cli-surface-parity`, `docker-compose-compatibility-names-parity`, `docker-compose-config-all-resources-parity`, `docker-compose-env-file-parity`, `docker-compose-git-remote-parity` |
 | Compose Bridge | `docker-compose-bridge-parity` |
 | Build | `docker-compose-build-builder-parity`, `docker-compose-build-check-parity`, `docker-compose-build-isolation-parity`, `docker-compose-build-secret-metadata-parity` |
-| Mounts and resources | `docker-compose-bind-create-host-path-parity`, `docker-compose-bind-propagation-parity`, `docker-compose-volume-labels-parity`, `docker-compose-deploy-endpoint-mode-parity`, `docker-compose-deploy-resource-reservations-parity`, `docker-compose-pids-limit-parity`, `docker-compose-device-cgroup-rules-parity`, `docker-compose-devices-parity` |
+| Mounts and resources | `docker-compose-bind-create-host-path-parity`, `docker-compose-bind-propagation-parity`, `docker-compose-volume-labels-parity`, `docker-compose-deploy-endpoint-mode-parity`, `docker-compose-deploy-resource-reservations-parity`, `docker-compose-pids-limit-parity`, `docker-compose-device-cgroup-rules-parity`, `docker-compose-devices-parity`, `docker-compose-gpus-parity` |
 | Networking | `docker-compose-network-driver-opts-parity`, `docker-compose-network-ipam-options-parity`, `docker-compose-host-namespaces-parity` |
 | Lifecycle and observability | `docker-compose-up-menu-parity`, `docker-compose-health-wait-parity`, `docker-compose-create-options-parity`, `docker-compose-events-parity`, `docker-compose-rm-parity`, `docker-compose-restart-policy-parity` |
 
@@ -207,7 +208,7 @@ dist/compose/resources/compose-normalizer
 ```
 
 `build-info.json` records the package lane, branch, commit, build type, resolved
-`container` commit, `containerization` pin, and embedded `compose-go` version.
+`container` commit, exact `containerization` revision, and embedded `compose-go` version.
 `container compose version` exposes that metadata after installation.
 
 ## SonarQube
