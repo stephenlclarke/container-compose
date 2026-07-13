@@ -1,4 +1,4 @@
-# fix(ci): select a supported Swift toolchain for fork validation
+# fix(ci): validate release candidates with debug test bundles
 
 <!-- markdownlint-disable MD013 -->
 
@@ -11,28 +11,23 @@
 
 ## Motivation and Context
 
-`container` now runs its reusable build job in contributor forks, but the
-GitHub-hosted macOS 15 runner defaults to Xcode 16.4 and Swift 6.1. The
-repository requires Swift tools 6.2, so `make protos` fails before it can build
-or test the project. This repair keeps the Apple-owned guest integration
-contract intact while selecting the hosted Swift 6.3 toolchain for the
-non-virtualized checks that are valid in forks.
+`container` runs its reusable build job in contributor forks, where the
+GitHub-hosted macOS 15 image needs an explicit compatible Swift selection. The
+hosted `Xcode_26.3` installation supplies the Swift 6.2 toolchain required by
+this repository's Swift tools 6.2 declaration.
+
+Release callers also package with `BUILD_CONFIGURATION=release`. That setting
+previously leaked into `make test`, which fails to compile the
+`@testable import SocketForwarder` test bundle in release mode. This repair
+keeps release artifacts unchanged and explicitly uses debug test bundles for
+unit, integration, and coverage validation.
 
 Related issue draft:
 [ISSUE-fork-ci-validation.md](ISSUE-fork-ci-validation.md).
 
-## Commit Tracking
-
-- `c3b63f5204a9ad125ee1eae916df2e65c0449c2f` in
-  `stephenlclarke/container` (`ci(validation): run fork macOS checks`) enabled
-  fork validation and exposed the missing hosted-toolchain selection.
-- `21a3b2f` in `stephenlclarke/container`
-  (`fix(ci): select Swift 6.3 for fork checks`) restores the hosted
-  toolchain selection.
-
 This is a generic CI repair. It follows
-[apple/container#1746](https://github.com/apple/container/pull/1746)'s Swift
-6.3 policy without adding Docker or Compose compatibility policy.
+[apple/container#1746](https://github.com/apple/container/pull/1746)'s toolchain
+compatibility policy without adding Docker or Compose compatibility policy.
 
 ## Implementation Details
 
@@ -42,7 +37,8 @@ This is a generic CI repair. It follows
   `Xcode_26.3` on GitHub-hosted fork runners.
 - Fail before generated-source work if the selected toolchain path is absent,
   and print the selected Xcode and Swift versions as build evidence.
-- Run unit tests in every repository.
+- Use `BUILD_CONFIGURATION=debug` for unit, integration, and coverage tests,
+  even when the workflow packages release artifacts.
 - Keep kernel installation and guest integration exclusive to the Apple
   self-hosted runner.
 - Keep coverage enabled for Apple pull requests and disable its
@@ -57,7 +53,8 @@ This is a generic CI repair. It follows
 ```sh
 make fmt
 make protos
-make container dsym docs test
+make container dsym docs
+make BUILD_CONFIGURATION=debug test
 actionlint .github/workflows/common.yml .github/workflows/pr-build.yml .github/workflows/merge-build.yml
 npx --yes markdownlint-cli2 docs/upstream/apple-container/ISSUE-fork-ci-validation.md docs/upstream/apple-container/PR-fork-ci-validation.md
 git diff --check
@@ -72,8 +69,8 @@ runner.
 - Apple pull requests keep the existing runner, Xcode selection, coverage, and
   guest integration suite.
 - Fork pull requests exercise the build and unit-test contract with the hosted
-  Swift 6.3 toolchain instead of the incompatible default Swift 6.1 toolchain.
-- Release behavior is unchanged.
+  Swift 6.2 toolchain required by this repository.
+- Release artifacts remain release-mode; test bundles are debug-mode.
 
 ## Remaining Risks
 
