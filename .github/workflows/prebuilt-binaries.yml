@@ -145,11 +145,29 @@ jobs:
                   } >> "$GITHUB_OUTPUT"
                   exit 0
                 fi
-                ref_type="branch"
-                ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
-                checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
-                sha="${WORKFLOW_RUN_HEAD_SHA}"
-                publish=true
+                stable_tag="$(
+                  git ls-remote --tags "${remote}" \
+                    | awk -v sha="${WORKFLOW_RUN_HEAD_SHA}" '
+                      $1 == sha && $2 ~ /^refs\/tags\/[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ {
+                        tag = $2
+                        sub(/^refs\/tags\//, "", tag)
+                        sub(/\^\{\}$/, "", tag)
+                        print tag
+                      }
+                    ' \
+                    | sort -V \
+                    | tail -n 1
+                )"
+                if [[ -n "${stable_tag}" ]]; then
+                  printf 'Skipping current package for stable release %s at %s.\n' \
+                    "${stable_tag}" "${WORKFLOW_RUN_HEAD_SHA}"
+                else
+                  ref_type="branch"
+                  ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
+                  checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
+                  sha="${WORKFLOW_RUN_HEAD_SHA}"
+                  publish=true
+                fi
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
                 printf 'Skipping CI tag package event: %s. Stable packages are created only by workflow_dispatch.\n' "${WORKFLOW_RUN_HEAD_BRANCH}"
               else
@@ -408,46 +426,69 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve immutable current runtime package
+      - name: Resolve matched runtime package
         id: runtime-package
         env:
           GH_TOKEN: ${{ github.token }}
           CONTAINER_REF: ${{ steps.container-ref.outputs.ref }}
+          PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
-          remote="https://github.com/stephenlclarke/container.git"
-          deadline=$((SECONDS + 1800))
-          while true; do
-            runtime_tag="$(
-              git ls-remote --tags --refs "${remote}" 'refs/tags/current-*' \
-                | awk -v sha="${CONTAINER_REF}" "\$1 == sha { sub(\"refs/tags/\", \"\", \$2); print \$2 }" \
-                | sort -V \
-                | tail -n 1
-            )"
-            if [[ -n "${runtime_tag}" ]]; then
-              break
-            fi
-            if (( SECONDS >= deadline )); then
-              printf 'no immutable current runtime package exists for %s\n' "${CONTAINER_REF}" >&2
-              exit 1
-            fi
-            printf 'waiting for current runtime package at %s\n' "${CONTAINER_REF}"
-            sleep 30
-          done
+          case "${PUBLISH_REF_TYPE}" in
+            branch)
+              remote="https://github.com/stephenlclarke/container.git"
+              deadline=$((SECONDS + 1800))
+              while true; do
+                runtime_tag="$(
+                  git ls-remote --tags --refs "${remote}" 'refs/tags/current-*' \
+                    | awk -v sha="${CONTAINER_REF}" "\$1 == sha { sub(\"refs/tags/\", \"\", \$2); print \$2 }" \
+                    | sort -V \
+                    | tail -n 1
+                )"
+                if [[ -n "${runtime_tag}" ]]; then
+                  break
+                fi
+                if (( SECONDS >= deadline )); then
+                  printf 'no immutable current runtime package exists for %s\n' "${CONTAINER_REF}" >&2
+                  exit 1
+                fi
+                printf 'waiting for current runtime package at %s\n' "${CONTAINER_REF}"
+                sleep 30
+              done
 
-          if [[ ! "${runtime_tag}" =~ ^current-([0-9]+)-([0-9a-f]{12})$ ]]; then
-            printf 'runtime package tag has an invalid identity: %s\n' "${runtime_tag}" >&2
-            exit 1
-          fi
-          runtime_run="${BASH_REMATCH[1]}"
-          runtime_short_sha="${BASH_REMATCH[2]}"
-          runtime_asset="container-current-arm64.tar.gz"
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "${tmp}"' EXIT
-          gh release download "${runtime_tag}" --repo stephenlclarke/container \
-            --pattern "${runtime_asset}.sha256" --dir "${tmp}"
-          runtime_sha="$(awk '{print $1}' "${tmp}/${runtime_asset}.sha256")"
+              if [[ ! "${runtime_tag}" =~ ^current-([0-9]+)-([0-9a-f]{12})$ ]]; then
+                printf 'runtime package tag has an invalid identity: %s\n' "${runtime_tag}" >&2
+                exit 1
+              fi
+              runtime_run="${BASH_REMATCH[1]}"
+              runtime_short_sha="${BASH_REMATCH[2]}"
+              runtime_asset="container-current-arm64.tar.gz"
+              tmp="$(mktemp -d)"
+              trap 'rm -rf "${tmp}"' EXIT
+              gh release download "${runtime_tag}" --repo stephenlclarke/container \
+                --pattern "${runtime_asset}.sha256" --dir "${tmp}"
+              runtime_sha="$(awk '{print $1}' "${tmp}/${runtime_asset}.sha256")"
+              runtime_version="current-release.${runtime_run}.${runtime_short_sha}"
+              runtime_repository="stephenlclarke/container"
+              runtime_local_asset=""
+              ;;
+            tag)
+              runtime_tag="${PUBLISH_REF_NAME}"
+              runtime_asset="container-release-arm64.tar.gz"
+              runtime_local_asset="${RUNNER_TEMP}/${runtime_asset}"
+              make -C container package BUILD_CONFIGURATION=release HOMEBREW_ARCHIVE="${runtime_local_asset}"
+              runtime_sha="$(awk '{print $1}' "${runtime_local_asset}.sha256")"
+              runtime_version="${PUBLISH_REF_NAME}"
+              runtime_repository="${GITHUB_REPOSITORY}"
+              ;;
+            *)
+              printf 'unsupported runtime package lane: %s\n' "${PUBLISH_REF_TYPE}" >&2
+              exit 1
+              ;;
+          esac
+
           if [[ ! "${runtime_sha}" =~ ^[0-9a-f]{64}$ ]]; then
             printf 'runtime checksum is invalid for %s\n' "${runtime_tag}" >&2
             exit 1
@@ -457,7 +498,9 @@ jobs:
             printf 'tag=%s\n' "${runtime_tag}"
             printf 'asset=%s\n' "${runtime_asset}"
             printf 'sha256=%s\n' "${runtime_sha}"
-            printf 'version=current-release.%s.%s\n' "${runtime_run}" "${runtime_short_sha}"
+            printf 'version=%s\n' "${runtime_version}"
+            printf 'repository=%s\n' "${runtime_repository}"
+            printf 'local_asset=%s\n' "${runtime_local_asset}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Use checked-out containerization dependency
@@ -484,6 +527,12 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
 
+      - name: Attest stable runtime package
+        if: needs.resolve-publish-context.outputs.ref_type == 'tag'
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: ${{ steps.runtime-package.outputs.local_asset }}
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -491,6 +540,15 @@ jobs:
           path: |
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}.sha256
+
+      - name: Upload stable runtime workflow artifact
+        if: needs.resolve-publish-context.outputs.ref_type == 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.runtime-package.outputs.asset }}
+          path: |
+            ${{ steps.runtime-package.outputs.local_asset }}
+            ${{ steps.runtime-package.outputs.local_asset }}.sha256
 
       - name: Publish GitHub release
         env:
@@ -509,6 +567,13 @@ jobs:
         run: |
           set -euo pipefail
           sha256="$(awk '{print $1}' "${RUNNER_TEMP}/${ASSET}.sha256")"
+          extra_assets=""
+          if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+            extra_assets="${RUNNER_TEMP}/release-extra-assets"
+            printf '%s\n%s\n' \
+              "${{ steps.runtime-package.outputs.local_asset }}" \
+              "${{ steps.runtime-package.outputs.local_asset }}.sha256" > "${extra_assets}"
+          fi
 
           notes="$(mktemp)"
           highlights="${RUNNER_TEMP}/release-highlights.json"
@@ -553,6 +618,7 @@ jobs:
             RELEASE_TITLE="${RELEASE_TITLE}" \
             RELEASE_NOTES_FILE="${notes}" \
             RELEASE_HIGHLIGHTS_PATH="${highlights}" \
+            RELEASE_EXTRA_ASSETS_FILE="${extra_assets}" \
             RELEASE_LATEST="${RELEASE_LATEST}" \
             RELEASE_PRERELEASE="${RELEASE_PRERELEASE}" \
             PUBLISH_REF_TYPE="${PUBLISH_REF_TYPE}" \
@@ -581,6 +647,7 @@ jobs:
           CONTAINER_FORMULA_CLASS: ${{ steps.lane.outputs.container_formula_class }}
           CONTAINER_COMPOSE_FORMULA: ${{ steps.lane.outputs.container_compose_formula }}
           RUNTIME_RELEASE_TAG: ${{ steps.runtime-package.outputs.tag }}
+          RUNTIME_RELEASE_REPOSITORY: ${{ steps.runtime-package.outputs.repository }}
           RUNTIME_ASSET: ${{ steps.runtime-package.outputs.asset }}
           RUNTIME_SHA256: ${{ steps.runtime-package.outputs.sha256 }}
           RUNTIME_VERSION: ${{ steps.runtime-package.outputs.version }}
@@ -629,8 +696,8 @@ jobs:
             --label "${{ steps.lane.outputs.release_label }}" \
             --sha256 "$sha256"
 
-          runtime_url="https://github.com/stephenlclarke/container/releases/download/${RUNTIME_RELEASE_TAG}/${RUNTIME_ASSET}"
-          gh release download "${RUNTIME_RELEASE_TAG}" --repo stephenlclarke/container \
+          runtime_url="https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/${RUNTIME_RELEASE_TAG}/${RUNTIME_ASSET}"
+          gh release download "${RUNTIME_RELEASE_TAG}" --repo "${RUNTIME_RELEASE_REPOSITORY}" \
             --pattern "${RUNTIME_ASSET}" --dir "${tmp}"
           actual_runtime_sha="$(shasum -a 256 "${tmp}/${RUNTIME_ASSET}" | awk '{print $1}')"
           if [[ "${actual_runtime_sha}" != "${RUNTIME_SHA256}" ]]; then

@@ -29,6 +29,7 @@ SCRIPT = Path(__file__).parents[2] / "scripts" / "CONTAINER_STACK_RELEASE.sh"
 ROOT = SCRIPT.parent.parent
 TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
 HOMEBREW_WORKFLOW = ROOT / ".github" / "workflows" / "homebrew.yml"
+PACKAGE_WORKFLOW = ROOT / ".github" / "workflows" / "prebuilt-binaries.yml"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -74,6 +75,24 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         workflow = HOMEBREW_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Tools/release/container-compose.rb.in", workflow)
         self.assertNotIn("Formula/container-compose.rb", workflow)
+
+    def test_stable_formulae_use_runtime_packaged_with_the_stable_release(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('runtime_asset="container-release-arm64.tar.gz"', workflow)
+        self.assertIn('runtime_repository="${GITHUB_REPOSITORY}"', workflow)
+        self.assertIn("RELEASE_EXTRA_ASSETS_FILE=\"${extra_assets}\"", workflow)
+        self.assertIn("RUNTIME_RELEASE_REPOSITORY", workflow)
+
+    def test_current_formulae_continue_to_use_the_immutable_current_runtime_release(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('runtime_asset="container-current-arm64.tar.gz"', workflow)
+        self.assertIn('runtime_repository="stephenlclarke/container"', workflow)
+
+    def test_stable_promotions_do_not_start_a_duplicate_current_package(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Skipping current package for stable release", workflow)
+        self.assertIn('git ls-remote --tags "${remote}"', workflow)
+        self.assertIn('stable_tag="$(', workflow)
 
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

@@ -50,6 +50,10 @@ if [[ -n "${RELEASE_HIGHLIGHTS_PATH:-}" && ! -f "${RELEASE_HIGHLIGHTS_PATH}" ]];
   printf 'release highlights manifest is missing: %s\n' "${RELEASE_HIGHLIGHTS_PATH}" >&2
   exit 2
 fi
+if [[ -n "${RELEASE_EXTRA_ASSETS_FILE:-}" && ! -f "${RELEASE_EXTRA_ASSETS_FILE}" ]]; then
+  printf 'release extra-assets manifest is missing: %s\n' "${RELEASE_EXTRA_ASSETS_FILE}" >&2
+  exit 2
+fi
 
 release_flags=()
 if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
@@ -105,6 +109,16 @@ create_args=(
 )
 if [[ -n "${RELEASE_HIGHLIGHTS_PATH:-}" ]]; then
   create_args+=("${RELEASE_HIGHLIGHTS_PATH}")
+fi
+if [[ -n "${RELEASE_EXTRA_ASSETS_FILE:-}" ]]; then
+  while IFS= read -r asset_path; do
+    [[ -n "${asset_path}" ]] || continue
+    if [[ ! -f "${asset_path}" ]]; then
+      printf 'release extra asset is missing: %s\n' "${asset_path}" >&2
+      exit 2
+    fi
+    create_args+=("${asset_path}")
+  done < "${RELEASE_EXTRA_ASSETS_FILE}"
 fi
 if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
   create_args+=(--verify-tag)

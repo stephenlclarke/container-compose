@@ -67,6 +67,7 @@ run_publisher() {
     PUBLISH_SHA="0123456789012345678901234567890123456789" \
     RELEASE_ASSET_PATH="${asset}" \
     RELEASE_CHECKSUM_PATH="${checksum}" \
+    RELEASE_EXTRA_ASSETS_FILE="${4:-}" \
     MOCK_RELEASE_STATE="$2" \
     MOCK_GH_CALLS="$3" \
     "${publisher}"
@@ -113,3 +114,12 @@ fi
 main_create_calls="${temporary_directory}/main-create.calls"
 run_publisher branch missing "${main_create_calls}"
 grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --target 0123456789012345678901234567890123456789 --latest" "${main_create_calls}"
+
+runtime_asset="${temporary_directory}/container-release-arm64.tar.gz"
+runtime_checksum="${runtime_asset}.sha256"
+extra_assets="${temporary_directory}/extra-assets"
+touch "${runtime_asset}" "${runtime_checksum}"
+printf '%s\n%s\n' "${runtime_asset}" "${runtime_checksum}" > "${extra_assets}"
+stable_extra_calls="${temporary_directory}/stable-extra.calls"
+run_publisher tag missing "${stable_extra_calls}" "${extra_assets}"
+grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} ${runtime_asset} ${runtime_checksum} --verify-tag --latest" "${stable_extra_calls}"
