@@ -10,7 +10,7 @@
         "repository": "ghcr.io/stephenlclarke/container-builder-shim/builder",
         "tag": "0.13.8"
       },
-      "ref": "84c9c39844eb390d64178175ef406845a53a33c0",
+      "ref": "e521a27fa7ff8fe57d11c793ba607bbac921d5b2",
       "repository": "stephenlclarke/container-builder-shim"
     },
     "containerization": {
