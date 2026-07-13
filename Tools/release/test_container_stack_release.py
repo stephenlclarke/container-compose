@@ -119,11 +119,29 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("docker-compose-devices-parity", makefile)
         self.assertNotIn("repackage-release", makefile)
 
-    def test_stable_gate_checks_out_the_tap_and_accepts_verified_retry_tags(self) -> None:
+    def test_hosted_release_gate_uses_a_verified_immutable_tap_snapshot(self) -> None:
         workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("accepting its GitHub-verified source for a release retry", workflow)
+        self.assertIn(
+            "homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}",
+            workflow,
+        )
+        self.assertIn(
+            "git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git refs/heads/main",
+            workflow,
+        )
         self.assertIn("repository: stephenlclarke/homebrew-tap", workflow)
         self.assertIn("path: homebrew-tap", workflow)
-        self.assertIn("accepting its GitHub-verified source for a release retry", workflow)
+        self.assertIn(
+            "ref: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}",
+            workflow,
+        )
+        self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
+        self.assertIn("HOMEBREW_TAP_REPO: ../homebrew-tap", workflow)
+        self.assertLess(
+            workflow.index("Checkout immutable Homebrew tap snapshot"),
+            workflow.index("Run release gate"),
+        )
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)

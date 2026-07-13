@@ -73,9 +73,10 @@ release-preparation commit. This is the helper's only version mutation. It then
 promotes the source branches, creates one new semantic `container-compose` tag,
 dispatches the hosted Stable Release Gate, and then dispatches the stable package workflow.
 The hosted gate first requires green `main` CI—the only place SonarQube analyses
-the project—then runs full stack parity against the exact tagged commit. The
-package workflow verifies that hosted evidence and the runtime asset before it
-creates the release and atomically updates the tap.
+the project—then runs full stack parity against the exact tagged commit and an
+immutable Homebrew tap snapshot. The package workflow verifies that hosted
+evidence and the runtime asset before it creates the release and atomically
+updates the tap.
 
 Semantic source tags and stable GitHub releases are immutable. The `current`
 tag and its single **Current build** prerelease are deliberately mutable: after
