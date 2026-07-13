@@ -18,6 +18,8 @@
 set -Eeuo pipefail
 
 GH="${GH:-gh}"
+GIT="${GIT:-git}"
+RELEASE_MUTABLE="${RELEASE_MUTABLE:-false}"
 
 required_variables=(
   RELEASE_REPOSITORY
@@ -45,6 +47,15 @@ for variable in RELEASE_NOTES_FILE RELEASE_ASSET_PATH RELEASE_CHECKSUM_PATH; do
     exit 2
   fi
 done
+
+if [[ -n "${RELEASE_HIGHLIGHTS_PATH:-}" && ! -f "${RELEASE_HIGHLIGHTS_PATH}" ]]; then
+  printf 'release highlights manifest is missing: %s\n' "${RELEASE_HIGHLIGHTS_PATH}" >&2
+  exit 2
+fi
+if [[ -n "${RELEASE_EXTRA_ASSETS_FILE:-}" && ! -f "${RELEASE_EXTRA_ASSETS_FILE}" ]]; then
+  printf 'release extra-assets manifest is missing: %s\n' "${RELEASE_EXTRA_ASSETS_FILE}" >&2
+  exit 2
+fi
 
 release_flags=()
 if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
@@ -80,45 +91,82 @@ release_state() {
 
 published_release_state="$(release_state)"
 
-if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
-  if [[ "${published_release_state}" == "exists" ]]; then
-    printf 'stable release %s already exists; published releases are immutable\n' \
-      "${RELEASE_TAG}" >&2
-    exit 1
-  fi
-
-  exec "${GH}" release create "${RELEASE_TAG}" \
-    "${RELEASE_ASSET_PATH}" \
-    "${RELEASE_CHECKSUM_PATH}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --verify-tag \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    "${release_flags[@]}"
-fi
-
-if [[ "${PUBLISH_REF_TYPE}" != "branch" ]]; then
+if [[ "${PUBLISH_REF_TYPE}" != "tag" && "${PUBLISH_REF_TYPE}" != "branch" ]]; then
   printf 'unsupported release publish ref type: %s\n' "${PUBLISH_REF_TYPE}" >&2
   exit 2
 fi
 
-if [[ "${published_release_state}" == "missing" ]]; then
-  "${GH}" release create "${RELEASE_TAG}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --target "${PUBLISH_SHA}" \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    "${release_flags[@]}"
-else
-  "${GH}" release edit "${RELEASE_TAG}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    "${release_flags[@]}"
+case "${PUBLISH_REF_TYPE}:${RELEASE_MUTABLE}" in
+  tag:false)
+    ;;
+  branch:true)
+    if [[ "${RELEASE_TAG}" != "current" ]]; then
+      printf 'mutable branch releases must use the current tag, got: %s\n' "${RELEASE_TAG}" >&2
+      exit 2
+    fi
+    ;;
+  tag:true)
+    printf 'stable release tags must be immutable: %s\n' "${RELEASE_TAG}" >&2
+    exit 2
+    ;;
+  branch:false)
+    printf 'branch releases must explicitly opt into the mutable current tag\n' >&2
+    exit 2
+    ;;
+  *)
+    printf 'invalid release mutability value: %s\n' "${RELEASE_MUTABLE}" >&2
+    exit 2
+    ;;
+esac
+
+release_assets=(
+  "${RELEASE_ASSET_PATH}"
+  "${RELEASE_CHECKSUM_PATH}"
+)
+if [[ -n "${RELEASE_HIGHLIGHTS_PATH:-}" ]]; then
+  release_assets+=("${RELEASE_HIGHLIGHTS_PATH}")
+fi
+if [[ -n "${RELEASE_EXTRA_ASSETS_FILE:-}" ]]; then
+  while IFS= read -r asset_path; do
+    [[ -n "${asset_path}" ]] || continue
+    if [[ ! -f "${asset_path}" ]]; then
+      printf 'release extra asset is missing: %s\n' "${asset_path}" >&2
+      exit 2
+    fi
+    release_assets+=("${asset_path}")
+  done < "${RELEASE_EXTRA_ASSETS_FILE}"
 fi
 
-"${GH}" release upload "${RELEASE_TAG}" \
-  "${RELEASE_ASSET_PATH}" \
-  "${RELEASE_CHECKSUM_PATH}" \
-  --repo "${RELEASE_REPOSITORY}" \
-  --clobber
+if [[ "${published_release_state}" == "exists" ]]; then
+  if [[ "${RELEASE_MUTABLE}" != "true" ]]; then
+    printf 'release %s already exists; published releases are immutable\n' \
+      "${RELEASE_TAG}" >&2
+    exit 1
+  fi
+
+  # Move only the intentionally mutable `current` pointer before replacing its assets.
+  "${GIT}" tag --force "${RELEASE_TAG}" "${PUBLISH_SHA}"
+  "${GIT}" push --force origin "refs/tags/${RELEASE_TAG}"
+  "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
+    --repo "${RELEASE_REPOSITORY}" --clobber
+  exec "${GH}" release edit "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" \
+    --title "${RELEASE_TITLE}" \
+    --notes-file "${RELEASE_NOTES_FILE}" \
+    --prerelease
+fi
+
+create_args=(
+  "${release_assets[@]}" \
+  --repo "${RELEASE_REPOSITORY}"
+  --title "${RELEASE_TITLE}"
+  --notes-file "${RELEASE_NOTES_FILE}"
+)
+if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+  create_args+=(--verify-tag)
+else
+  create_args+=(--target "${PUBLISH_SHA}")
+fi
+create_args+=("${release_flags[@]}")
+
+exec "${GH}" release create "${RELEASE_TAG}" "${create_args[@]}"

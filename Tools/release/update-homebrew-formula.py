@@ -29,6 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--formula", required=True, type=Path)
     parser.add_argument("--template", type=Path)
     parser.add_argument("--formula-class")
+    parser.add_argument(
+        "--runtime-formula",
+        default="container",
+        help="Fully qualified tap formula name without the stephenlclarke/tap prefix.",
+    )
     parser.add_argument("--url", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--plugin-version")
@@ -47,6 +52,10 @@ def replace_once(pattern: str, replacement: str, text: str) -> str:
 
 def main() -> None:
     args = parse_args()
+    if re.fullmatch(r"container(?:-current)?", args.runtime_formula) is None:
+        raise SystemExit(
+            "runtime formula must be one of: container, container-current"
+        )
     if args.formula.exists():
         text = args.formula.read_text(encoding="utf-8")
     elif args.template is not None:
@@ -56,6 +65,17 @@ def main() -> None:
 
     if args.formula_class is not None:
         text = replace_once(r"^class \w+ < Formula$", f"class {args.formula_class} < Formula", text)
+
+    text = replace_once(
+        r'  depends_on "stephenlclarke/tap/container(?:-current)?"$',
+        f'  depends_on "stephenlclarke/tap/{args.runtime_formula}"',
+        text,
+    )
+    text = re.sub(
+        r"stephenlclarke/tap/container(?:-current)?",
+        f"stephenlclarke/tap/{args.runtime_formula}",
+        text,
+    )
 
     text = replace_once(r'^  url ".+"$', f'  url "{args.url}"', text)
     text = replace_once(r"^  sha256 .+$", f'  sha256 "{args.sha256}"', text)

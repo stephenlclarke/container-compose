@@ -43,13 +43,15 @@ Modes:
       to the next stable release. The version selector is resolved from the
       latest local semantic container-compose tag, not from mutable
       working-tree state. The helper bumps container-compose on main when
-      needed, commits that bump, runs the full local release gate, promotes the
-      stephenlclarke source main branches, creates and pushes the stable
-      container-compose source tag, dispatches the stable package workflow, and
-      waits for that workflow to publish the release assets and Homebrew tap
-      update. container-compose main promotions use an automated short-lived PR
-      by default so pull-request checks and review state remain visible before
-      tagging. The Homebrew tap is the only owner of the live formula.
+      needed, commits that bump, promotes the stephenlclarke source main
+      branches, creates and pushes the stable container-compose source tag,
+      dispatches the hosted Stable Release Gate, then dispatches the stable
+      package workflow only after the gate succeeds. That workflow publishes
+      immutable release assets and atomically updates the matching Homebrew
+      formula pair. container-compose main promotions use an automated
+      short-lived PR by default so pull-request checks and review state remain
+      visible before tagging. The Homebrew tap is the only owner of live
+      formulae.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 stable release version
@@ -73,7 +75,8 @@ Rules enforced:
   - Apple remotes are read-only and must not be push targets.
   - stephenlclarke-owned remotes are the only push targets.
   - Worktrees must be clean before release changes.
-  - Stable container-compose release tags point at the validated main commit.
+  - Stable container-compose release tags are SSH-signed and point at the validated main commit.
+  - GitHub must verify each stable tag signature before the release gate starts.
   - The full Docker Compose parity release gate runs locally before push/tag.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
@@ -149,8 +152,6 @@ parse_arguments() {
 ROOT="${HOME}/github"
 COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
-RELEASE_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_WAIT_SECONDS:-3600}"
-RELEASE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_POLL_SECONDS:-30}"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
 COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
@@ -236,10 +237,6 @@ fetch_release_remote() {
   url="$(git -C "${path}" remote get-url "${remote}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
-    if [[ "${repo}" == "${CONTAINER_REPO}" ]]; then
-      printf 'would run: git -C %s fetch --prune %s +refs/tags/homebrew-main:refs/tags/homebrew-main\n' \
-        "${path}" "${remote}"
-    fi
     printf 'would run: git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
     return 0
   fi
@@ -248,15 +245,6 @@ fetch_release_remote() {
     printf 'normalizing %s release remote for %s from %s to %s\n' "${remote}" "${repo}" "${url}" "${fallback_url}" >&2
     git -C "${path}" remote set-url "${remote}" "${fallback_url}"
     url="${fallback_url}"
-  fi
-
-  # homebrew-main is a legacy mutable pointer. Versioned homebrew-main-RUN-SHA
-  # tags identify immutable packages; refresh only the legacy pointer explicitly.
-  if [[ "${repo}" == "${CONTAINER_REPO}" ]]; then
-    printf '+ git -C %s fetch --prune %s +refs/tags/homebrew-main:refs/tags/homebrew-main\n' \
-      "${path}" "${remote}"
-    git -C "${path}" fetch --prune "${remote}" \
-      '+refs/tags/homebrew-main:refs/tags/homebrew-main'
   fi
 
   printf '+ git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
@@ -516,14 +504,48 @@ ensure_new_stable_release() {
   fi
 }
 
-# Create a new stable tag at the validated current container-compose main commit.
+# Require GitHub to recognise the signature on a newly-pushed stable tag. A
+# local signature alone is not enough: it must be associated with the GitHub
+# account that publishes this release.
+verify_github_stable_tag_signature() {
+  local version="$1" tag_object verification reason
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would verify GitHub recognises the SSH signature for stable tag %s\n' "${version}"
+    return 0
+  fi
+
+  need_command gh
+  tag_object="$(
+    gh api "repos/$(github_repo "${COMPOSE_REPO}")/git/ref/tags/${version}" \
+      --jq '.object.sha'
+  )"
+  verification="$(
+    gh api "repos/$(github_repo "${COMPOSE_REPO}")/git/tags/${tag_object}" \
+      --jq '.verification.verified'
+  )"
+  reason="$(
+    gh api "repos/$(github_repo "${COMPOSE_REPO}")/git/tags/${tag_object}" \
+      --jq '.verification.reason'
+  )"
+  if [[ "${verification}" != "true" ]]; then
+    printf 'GitHub did not verify stable tag %s (reason: %s)\n' \
+      "${version}" "${reason:-missing}" >&2
+    exit 1
+  fi
+}
+
+# Create a new signed stable tag at the validated current container-compose
+# main commit. Current-package tags are disposable release pointers; this is
+# the permanent source identity that users and Homebrew trust.
 tag_new_stable_version() {
   local version="$1" path remote
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
   ensure_new_stable_release "${version}"
-  run git -C "${path}" tag -a "${version}" main -m "$(github_repo "${COMPOSE_REPO}") ${version}"
+  run git -C "${path}" tag -s "${version}" main -m "$(github_repo "${COMPOSE_REPO}") ${version}"
   run git -C "${path}" push "${remote}" "refs/tags/${version}"
+  verify_github_stable_tag_signature "${version}"
 }
 
 print_component_refs() {
@@ -1042,90 +1064,6 @@ push_all_main() {
   done
 }
 
-run_local_release_gate() {
-  local path
-  path="$(repo_path "${COMPOSE_REPO}")"
-  print_header "run local container-compose release gate"
-  if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would run: make -C %s release-gate\n' "${path}"
-    return 0
-  fi
-
-  run env HAWKEYE_AUTO_INSTALL="${HAWKEYE_AUTO_INSTALL:-1}" \
-    make -C "${path}" release-gate
-  ensure_clean "${COMPOSE_REPO}"
-}
-
-container_homebrew_tag_for_sha() {
-  local sha="$1" path remote
-  path="$(repo_path "${CONTAINER_REPO}")"
-  remote="$(push_remote "${CONTAINER_REPO}")"
-  git -C "${path}" ls-remote --tags --refs "${remote}" "refs/tags/homebrew-main-*" \
-    | awk -v sha="${sha}" '$1 == sha { sub("^refs/tags/", "", $2); print $2; exit }'
-}
-
-ensure_container_homebrew_package_workflow() {
-  local sha="$1" repo active_run
-  repo="$(github_repo "${CONTAINER_REPO}")"
-  need_command gh
-
-  active_run="$(
-    env -u GITHUB_TOKEN -u GH_TOKEN gh run list \
-      --repo "${repo}" \
-      --workflow "Prebuilt Binaries" \
-      --branch main \
-      --limit 20 \
-      --json databaseId,headSha,status \
-      --jq ".[] | select(.headSha == \"${sha}\" and .status != \"completed\") | .databaseId" \
-      | head -n 1
-  )"
-  if [[ -n "${active_run}" ]]; then
-    printf 'container package workflow already active: %s at %s\n' "${active_run}" "${sha}"
-    return 0
-  fi
-
-  run env -u GITHUB_TOKEN -u GH_TOKEN gh workflow run prebuilt-binaries.yml \
-    --repo "${repo}" \
-    --ref main
-  printf 'container package workflow dispatched for %s\n' "${sha}"
-}
-
-wait_for_container_homebrew_package() {
-  local sha tag deadline now workflow_ensured
-  sha="$(git -C "$(repo_path "${CONTAINER_REPO}")" rev-parse main)"
-  print_header "wait for container main package"
-  if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would ensure the stephenlclarke/container Prebuilt Binaries workflow runs for %s\n' "${sha}"
-    printf 'would wait for stephenlclarke/container homebrew-main-* tag at %s\n' "${sha}"
-    return 0
-  fi
-
-  deadline=$((SECONDS + RELEASE_WAIT_SECONDS))
-  workflow_ensured=0
-  while true; do
-    tag="$(container_homebrew_tag_for_sha "${sha}")"
-    if [[ -n "${tag}" ]]; then
-      printf 'container package tag ready: %s -> %s\n' "${tag}" "${sha}"
-      return 0
-    fi
-
-    if [[ "${workflow_ensured}" == "0" ]]; then
-      ensure_container_homebrew_package_workflow "${sha}"
-      workflow_ensured=1
-    fi
-
-    now="${SECONDS}"
-    if (( now >= deadline )); then
-      printf 'timed out waiting for stephenlclarke/container homebrew-main-* tag at %s\n' "${sha}" >&2
-      printf 'check the container Prebuilt Binaries workflow before tagging container-compose\n' >&2
-      exit 1
-    fi
-
-    printf 'waiting for container package tag at %s; next check in %ss\n' "${sha}" "${RELEASE_POLL_SECONDS}"
-    sleep "${RELEASE_POLL_SECONDS}"
-  done
-}
-
 # Require an executable command when an executed workflow depends on it.
 need_command() {
   local command_name="$1"
@@ -1146,9 +1084,19 @@ latest_compose_package_dispatch_run() {
     --jq '.[0].databaseId // ""'
 }
 
+latest_stable_release_gate_dispatch_run() {
+  env -u GITHUB_TOKEN -u GH_TOKEN gh run list \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --workflow stable-release-gate.yml \
+    --event workflow_dispatch \
+    --limit 1 \
+    --json databaseId \
+    --jq '.[0].databaseId // ""'
+}
+
 # Wait for a GitHub Actions run to complete successfully.
 wait_for_github_run_success() {
-  local run_id="$1" status conclusion url deadline now details
+  local run_id="$1" label="$2" status conclusion url deadline now details
   deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
   while true; do
     details="$(
@@ -1161,28 +1109,28 @@ wait_for_github_run_success() {
 
     if [[ "${status}" == "completed" ]]; then
       if [[ "${conclusion}" == "success" ]]; then
-        printf 'container-compose package workflow passed: %s\n' "${url}"
+        printf '%s passed: %s\n' "${label}" "${url}"
         return 0
       fi
-      printf 'container-compose package workflow ended with %s: %s\n' "${conclusion}" "${url}" >&2
+      printf '%s ended with %s: %s\n' "${label}" "${conclusion}" "${url}" >&2
       exit 1
     fi
 
     now="${SECONDS}"
     if (( now >= deadline )); then
-      printf 'timed out waiting for container-compose package workflow %s: %s\n' "${run_id}" "${url}" >&2
+      printf 'timed out waiting for %s (%s): %s\n' "${label}" "${run_id}" "${url}" >&2
       exit 1
     fi
 
-    printf 'waiting for container-compose package workflow %s (%s); next check in %ss\n' \
-      "${run_id}" "${status}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
+    printf 'waiting for %s %s (%s); next check in %ss\n' \
+      "${label}" "${run_id}" "${status}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
     sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
   done
 }
 
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha
+  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
   expected_url="https://github.com/${repo}/releases/download/${version}/${asset}"
@@ -1209,17 +1157,36 @@ verify_compose_stable_package() {
     exit 1
   fi
 
+  runtime_asset="container-release-arm64.tar.gz"
+  if ! grep -Fxq "${runtime_asset}" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s\n' "${version}" "${runtime_asset}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "${runtime_asset}.sha256" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s.sha256\n' "${version}" "${runtime_asset}" >&2
+    exit 1
+  fi
+
   env -u GITHUB_TOKEN -u GH_TOKEN gh release download "${version}" \
     --repo "${repo}" \
     --pattern "${asset}" \
     --pattern "${asset}.sha256" \
+    --pattern "${runtime_asset}" \
+    --pattern "${runtime_asset}.sha256" \
     --dir "${tmp}"
   asset_sha="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
   checksum_sha="$(awk '{print $1}' "${tmp}/${asset}.sha256")"
-  rm -rf "${tmp}"
   if [[ "${asset_sha}" != "${checksum_sha}" ]]; then
     printf 'release %s checksum mismatch: asset %s, checksum file %s\n' \
       "${version}" "${asset_sha}" "${checksum_sha}" >&2
+    exit 1
+  fi
+  runtime_asset_sha="$(shasum -a 256 "${tmp}/${runtime_asset}" | awk '{print $1}')"
+  runtime_checksum_sha="$(awk '{print $1}' "${tmp}/${runtime_asset}.sha256")"
+  rm -rf "${tmp}"
+  if [[ "${runtime_asset_sha}" != "${runtime_checksum_sha}" ]]; then
+    printf 'release %s runtime checksum mismatch: asset %s, checksum file %s\n' \
+      "${version}" "${runtime_asset_sha}" "${runtime_checksum_sha}" >&2
     exit 1
   fi
 
@@ -1245,7 +1212,35 @@ verify_compose_stable_package() {
     exit 1
   fi
 
-  printf 'container-compose %s package verified: %s\n' "${version}" "${asset_sha}"
+  if ! grep -Fq 'depends_on "stephenlclarke/tap/container"' <<<"${formula_text}"; then
+    printf 'stable compose formula does not depend on stephenlclarke/tap/container\n' >&2
+    exit 1
+  fi
+
+  runtime_url="https://github.com/${repo}/releases/download/${version}/${runtime_asset}"
+  runtime_formula_text="$(
+    env -u GITHUB_TOKEN -u GH_TOKEN gh api \
+      repos/stephenlclarke/homebrew-tap/contents/Formula/container.rb \
+      --jq '.content' | base64 --decode
+  )"
+  container_formula_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${runtime_formula_text}" | head -n 1)"
+  container_formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${runtime_formula_text}" | head -n 1)"
+  if [[ "${container_formula_url}" != "${runtime_url}" ]]; then
+    printf 'stable container formula URL mismatch: expected %s, got %s\n' \
+      "${runtime_url}" "${container_formula_url}" >&2
+    exit 1
+  fi
+  if [[ "${container_formula_sha}" != "${runtime_asset_sha}" ]]; then
+    printf 'stable container formula SHA mismatch: expected %s, got %s\n' \
+      "${runtime_asset_sha}" "${container_formula_sha}" >&2
+    exit 1
+  fi
+  if ! grep -Fq 'opt/container-compose/libexec/container-plugins/compose' <<<"${runtime_formula_text}"; then
+    printf 'stable container formula does not register the stable compose plugin\n' >&2
+    exit 1
+  fi
+
+  printf 'stable stack %s package pair verified: %s + %s\n' "${version}" "${asset_sha}" "${runtime_asset_sha}"
 }
 
 # Dispatch and wait for the stable compose package workflow for a semantic tag.
@@ -1272,7 +1267,7 @@ dispatch_compose_stable_package() {
     run_id="$(latest_compose_package_dispatch_run || true)"
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf 'container-compose package workflow started: %s\n' "${run_id}"
-      wait_for_github_run_success "${run_id}"
+      wait_for_github_run_success "${run_id}" "container-compose stable package workflow"
       verify_compose_stable_package "${version}"
       return 0
     fi
@@ -1289,11 +1284,51 @@ dispatch_compose_stable_package() {
   done
 }
 
+dispatch_stable_release_gate() {
+  local version="$1" previous_run run_id deadline now
+  print_header "dispatch hosted stable release gate for ${version}"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s\n' \
+      "$(github_repo "${COMPOSE_REPO}")" "${version}"
+    printf 'would wait for the hosted gate to confirm green main CI, SonarQube, and full parity.\n'
+    return 0
+  fi
+
+  need_command gh
+  previous_run="$(latest_stable_release_gate_dispatch_run || true)"
+  run env -u GITHUB_TOKEN -u GH_TOKEN gh workflow run stable-release-gate.yml \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --ref main \
+    -f "ref=${version}"
+
+  deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
+  while true; do
+    run_id="$(latest_stable_release_gate_dispatch_run || true)"
+    if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
+      printf 'stable release gate started: %s\n' "${run_id}"
+      wait_for_github_run_success "${run_id}" "hosted stable release gate"
+      return 0
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for stable release gate dispatch for %s\n' "${version}" >&2
+      exit 1
+    fi
+
+    printf 'waiting for stable release gate dispatch for %s; next check in %ss\n' \
+      "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
+    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
+  done
+}
+
 # Tag a compose state as the stable/latest release point.
 tag_stable_version() {
   local version="$1"
   print_header "tag container-compose main as ${version} latest"
   tag_new_stable_version "${version}"
+  dispatch_stable_release_gate "${version}"
   dispatch_compose_stable_package "${version}"
   print_component_refs
   cat <<EOF
@@ -1349,9 +1384,7 @@ release_current_stack() {
   fi
 
   ensure_clean "${COMPOSE_REPO}"
-  run_local_release_gate
   push_all_main "${version}"
-  wait_for_container_homebrew_package
   tag_stable_version "${version}"
 }
 

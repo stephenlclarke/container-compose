@@ -1,0 +1,53 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Verify Upstream PR Archives
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/upstream/PR-ARCHIVE.json
+      - Tools/upstream/verify-pr-archive.py
+      - Tools/upstream/test_verify_pr_archive.py
+      - .github/workflows/upstream-pr-archive.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - docs/upstream/PR-ARCHIVE.json
+      - Tools/upstream/verify-pr-archive.py
+      - Tools/upstream/test_verify_pr_archive.py
+      - .github/workflows/upstream-pr-archive.yml
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Immutable Snapshots
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Validate archive ledger
+        run: python3 Tools/upstream/verify-pr-archive.py --validate-only
+
+      - name: Verify remote archive snapshots
+        run: python3 Tools/upstream/verify-pr-archive.py

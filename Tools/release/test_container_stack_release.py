@@ -29,6 +29,7 @@ SCRIPT = Path(__file__).parents[2] / "scripts" / "CONTAINER_STACK_RELEASE.sh"
 ROOT = SCRIPT.parent.parent
 TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
 HOMEBREW_WORKFLOW = ROOT / ".github" / "workflows" / "homebrew.yml"
+PACKAGE_WORKFLOW = ROOT / ".github" / "workflows" / "prebuilt-binaries.yml"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -49,6 +50,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("stable tag already exists locally", self.script)
         self.assertIn("stable tag already exists remotely", self.script)
 
+    def test_stable_tags_are_signed_and_verified_by_github(self) -> None:
+        self.assertIn('tag -s "${version}" main', self.script)
+        self.assertIn('verify_github_stable_tag_signature "${version}"', self.script)
+        self.assertIn("GitHub did not verify stable tag", self.script)
+
+    def test_internal_dependency_pins_do_not_become_release_highlights(self) -> None:
+        pin_commit = self.script[
+            self.script.index("commit_containerization_package_pin() {") : self.script.index(
+                "sync_containerization_package_pins() {"
+            )
+        ]
+        self.assertIn("Release-Note: none", pin_commit)
+        self.assertNotIn("Release-Highlight:", pin_commit)
+
     def test_release_helper_has_no_existing_stable_package_mode(self) -> None:
         self.assertNotIn("package VERSION", self.script)
         self.assertNotIn("package_existing_stable", self.script)
@@ -60,6 +75,35 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         workflow = HOMEBREW_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Tools/release/container-compose.rb.in", workflow)
         self.assertNotIn("Formula/container-compose.rb", workflow)
+
+    def test_stable_formulae_use_runtime_packaged_with_the_stable_release(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('runtime_asset="container-release-arm64.tar.gz"', workflow)
+        self.assertIn('runtime_repository="${GITHUB_REPOSITORY}"', workflow)
+        self.assertIn("RELEASE_EXTRA_ASSETS_FILE=\"${extra_assets}\"", workflow)
+        self.assertIn("RUNTIME_RELEASE_REPOSITORY", workflow)
+
+    def test_runtime_archive_is_verified_before_formula_promotion(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('tar -tzf "${runtime_local_asset}" >/dev/null', workflow)
+        self.assertIn("grep -Fx './bin/container'", workflow)
+        self.assertIn('tar -tzf "${tmp}/${RUNTIME_ASSET}" >/dev/null', workflow)
+        self.assertIn("published runtime package archive is corrupt", workflow)
+
+    def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('runtime_asset="container-current-arm64.tar.gz"', workflow)
+        self.assertIn('runtime_repository="${GITHUB_REPOSITORY}"', workflow)
+        self.assertIn('release_tag="current"', workflow)
+        self.assertIn('release_title="Current build"', workflow)
+        self.assertIn('RELEASE_MUTABLE="${release_mutable}"', workflow)
+        self.assertIn("--delete-superseded-current-releases", workflow)
+
+    def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Skipping current package because current already points at", workflow)
+        self.assertIn("refs/tags/current^{}", workflow)
+        self.assertIn('current_tag_sha="$(', workflow)
 
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -76,11 +120,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_preserves_formatted_swiftpm_dependency_pins(self) -> None:
         self.assertIn(r'r"(\s*,?\s*\))"', self.script)
 
-    def test_release_helper_only_force_refreshes_the_legacy_package_pointer(self) -> None:
-        self.assertIn(
-            "+refs/tags/homebrew-main:refs/tags/homebrew-main", self.script
-        )
-        self.assertIn("legacy mutable pointer", self.script)
+    def test_release_helper_does_not_refresh_legacy_mutable_package_pointers(self) -> None:
+        self.assertNotIn("+refs/tags/homebrew-main:refs/tags/homebrew-main", self.script)
+        self.assertNotIn("legacy mutable pointer", self.script)
         self.assertNotIn("fetch --prune --tags --force", self.script)
 
     def test_equivalent_squash_promotion_aligns_local_main(self) -> None:

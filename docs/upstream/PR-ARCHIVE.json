@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "description": "Immutable Stephen-owned snapshots of code proposed upstream.",
+  "pullRequests": [
+    {
+      "archiveRef": "refs/heads/upstream-pr-1933-3f8d6f3787ab",
+      "commit": "3f8d6f3787ab4ee24a13451234545dcab388ac86",
+      "repository": "stephenlclarke/container",
+      "upstream": "apple/container#1933"
+    },
+    {
+      "archiveRef": "refs/heads/upstream-pr-1934-25311b21bb46",
+      "commit": "25311b21bb469ac546a8a1f3c494d104d81a4dfe",
+      "repository": "stephenlclarke/container",
+      "upstream": "apple/container#1934"
+    },
+    {
+      "archiveRef": "refs/heads/upstream-pr-1935-fc55c18a9888",
+      "commit": "fc55c18a98883c578e57c6acc9b3042d743e004d",
+      "repository": "stephenlclarke/container",
+      "upstream": "apple/container#1935"
+    },
+    {
+      "archiveRef": "refs/heads/upstream-pr-798-199f152bb0b5",
+      "commit": "199f152bb0b506d6c3245ccb6700bfab24a5daa7",
+      "repository": "stephenlclarke/containerization",
+      "upstream": "apple/containerization#798"
+    },
+    {
+      "archiveRef": "refs/heads/upstream-pr-799-9c5b9ee19796",
+      "commit": "9c5b9ee19796dc13f0d7d1b0687d780f0db04e29",
+      "repository": "stephenlclarke/containerization",
+      "upstream": "apple/containerization#799"
+    },
+    {
+      "archiveRef": "refs/heads/upstream-pr-87-2f0328782746",
+      "commit": "2f03287827469df80d7afb9ffb35775dc636118b",
+      "repository": "stephenlclarke/container-builder-shim",
+      "upstream": "apple/container-builder-shim#87"
+    }
+  ]
+}

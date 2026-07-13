@@ -1,0 +1,196 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Stable Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Bare semantic tag to validate and promote"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: stable-release-gate-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-candidate:
+    name: Resolve Stable Candidate
+    if: github.repository == 'stephenlclarke/container-compose'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.candidate.outputs.sha }}
+    steps:
+      - name: Require an immutable main tag and green main CI
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            printf 'stable release ref must be a bare semantic tag: %s\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          tag_sha="$(
+            git ls-remote --tags "${remote}" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" \
+              | awk '$2 ~ /\^\{\}$/ { print $1 }' \
+              | tail -n 1
+          )"
+          if [[ -z "${tag_sha}" ]]; then
+            tag_sha="$(
+              git ls-remote --tags --refs "${remote}" "refs/tags/${RELEASE_TAG}" \
+                | awk '{ print $1 }' \
+                | tail -n 1
+            )"
+          fi
+          main_sha="$(git ls-remote --heads "${remote}" refs/heads/main | awk '{ print $1 }' | tail -n 1)"
+          if [[ ! "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || [[ -z "${main_sha}" ]]; then
+            printf 'could not resolve stable tag %s or main\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          if [[ "${tag_sha}" != "${main_sha}" ]]; then
+            printf 'stable tag %s points at %s but main is %s; tags must be created at the validated main head\n' \
+              "${RELEASE_TAG}" "${tag_sha}" "${main_sha}" >&2
+            exit 1
+          fi
+
+          deadline=$((SECONDS + 3600))
+          while true; do
+            run="$(
+              gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml --commit "${tag_sha}" \
+                --event push --limit 20 --json databaseId,status,conclusion \
+                --jq 'map(select(.status == "completed" or .status == "in_progress" or .status == "queued")) | .[0] // empty'
+            )"
+            status="$(jq -r '.status // empty' <<<"${run}")"
+            conclusion="$(jq -r '.conclusion // empty' <<<"${run}")"
+            if [[ "${status}" == "completed" && "${conclusion}" == "success" ]]; then
+              break
+            fi
+            if [[ "${status}" == "completed" ]]; then
+              printf 'main CI for %s concluded %s\n' "${tag_sha}" "${conclusion:-missing}" >&2
+              exit 1
+            fi
+            if (( SECONDS >= deadline )); then
+              printf 'timed out waiting for green main CI (including SonarQube) at %s\n' "${tag_sha}" >&2
+              exit 1
+            fi
+            printf 'waiting for main CI (including SonarQube) at %s\n' "${tag_sha}"
+            sleep 30
+          done
+
+          printf 'sha=%s\n' "${tag_sha}" >> "$GITHUB_OUTPUT"
+
+  release-gate:
+    name: Run Full Release Gate
+    needs: resolve-candidate
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Checkout the stable candidate
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          path: container-compose
+          fetch-depth: 0
+          ref: ${{ needs.resolve-candidate.outputs.sha }}
+
+      - name: Read exact stack refs
+        id: stack-refs
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          components = json.loads(Path("Tools/release/stack-refs.json").read_text(encoding="utf-8"))["components"]
+          for name in ("container-builder-shim", "containerization", "container"):
+              ref = components[name]["ref"]
+              if len(ref) != 40:
+                  raise SystemExit(f"{name} ref is not immutable: {ref}")
+              print(f"{name.replace('-', '_')}_ref={ref}")
+          PY
+
+      - name: Checkout pinned stack dependencies
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container-builder-shim
+          path: container-builder-shim
+          fetch-depth: 0
+          ref: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+
+      - name: Checkout pinned containerization dependency
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/containerization
+          path: containerization
+          fetch-depth: 0
+          ref: ${{ steps.stack-refs.outputs.containerization_ref }}
+
+      - name: Checkout pinned runtime dependency
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/container
+          path: container
+          fetch-depth: 0
+          ref: ${{ steps.stack-refs.outputs.container_ref }}
+
+      - name: Verify immutable dependency checkouts
+        env:
+          BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C container-builder-shim rev-parse HEAD)" == "${BUILDER_REF}" ]]
+          [[ "$(git -C containerization rev-parse HEAD)" == "${CONTAINERIZATION_REF}" ]]
+          [[ "$(git -C container rev-parse HEAD)" == "${CONTAINER_REF}" ]]
+
+      - name: Use pinned containerization dependency
+        run: Tools/ci/use-stack-containerization.sh ../containerization
+        working-directory: container-compose
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
+      - name: Install Markdown lint
+        run: npm install --global markdownlint-cli@0.48.0
+
+      - name: Cache local repo tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: container-compose/.local/bin
+          key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
+
+      - name: Run release gate
+        run: make release-gate
+        working-directory: container-compose
+        env:
+          HAWKEYE_AUTO_INSTALL: "1"

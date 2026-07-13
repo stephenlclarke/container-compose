@@ -49,6 +49,14 @@ printf '%s\n' "$*" >> "${MOCK_GH_CALLS}"
 EOF
 chmod +x "${temporary_directory}/bin/gh"
 
+cat > "${temporary_directory}/bin/git" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf '%s\n' "$*" >> "${MOCK_GIT_CALLS}"
+EOF
+chmod +x "${temporary_directory}/bin/git"
+
 asset="${temporary_directory}/container-compose-plugin-release-arm64.tar.gz"
 checksum="${asset}.sha256"
 notes="${temporary_directory}/notes.md"
@@ -56,19 +64,38 @@ touch "${asset}" "${checksum}" "${notes}"
 
 # Run the publisher with a temporary, recorded GitHub CLI implementation.
 run_publisher() {
+  local ref_type="$1" release_tag release_title release_latest release_prerelease release_mutable
+  if [[ "${ref_type}" == "branch" ]]; then
+    release_tag="current"
+    release_title="Current build"
+    release_latest="false"
+    release_prerelease="true"
+    release_mutable="true"
+  else
+    release_tag="1.2.3"
+    release_title="1.2.3"
+    release_latest="true"
+    release_prerelease="false"
+    release_mutable="false"
+  fi
+
   GH="${temporary_directory}/bin/gh" \
+    GIT="${temporary_directory}/bin/git" \
     RELEASE_REPOSITORY="stephenlclarke/container-compose" \
-    RELEASE_TAG="1.2.3" \
-    RELEASE_TITLE="1.2.3" \
+    RELEASE_TAG="${release_tag}" \
+    RELEASE_TITLE="${release_title}" \
     RELEASE_NOTES_FILE="${notes}" \
-    RELEASE_LATEST="true" \
-    RELEASE_PRERELEASE="false" \
-    PUBLISH_REF_TYPE="$1" \
+    RELEASE_LATEST="${release_latest}" \
+    RELEASE_PRERELEASE="${release_prerelease}" \
+    RELEASE_MUTABLE="${release_mutable}" \
+    PUBLISH_REF_TYPE="${ref_type}" \
     PUBLISH_SHA="0123456789012345678901234567890123456789" \
     RELEASE_ASSET_PATH="${asset}" \
     RELEASE_CHECKSUM_PATH="${checksum}" \
+    RELEASE_EXTRA_ASSETS_FILE="${4:-}" \
     MOCK_RELEASE_STATE="$2" \
     MOCK_GH_CALLS="$3" \
+    MOCK_GIT_CALLS="${3}.git" \
     "${publisher}"
 }
 
@@ -84,7 +111,7 @@ fi
 
 stable_create_calls="${temporary_directory}/stable-create.calls"
 run_publisher tag missing "${stable_create_calls}"
-grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --verify-tag --title 1.2.3 --notes-file ${notes} --latest" "${stable_create_calls}"
+grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest" "${stable_create_calls}"
 if grep -Eq 'release (edit|upload)|clobber' "${stable_create_calls}"; then
   printf 'stable publication attempted a mutable release operation\n' >&2
   exit 1
@@ -100,12 +127,30 @@ if [[ -e "${stable_unavailable_calls}" ]]; then
   exit 1
 fi
 
-main_calls="${temporary_directory}/main.calls"
-run_publisher branch exists "${main_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --latest" "${main_calls}"
-grep -Fqx "release upload 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_calls}"
+main_existing_calls="${temporary_directory}/main-existing.calls"
+run_publisher branch exists "${main_existing_calls}"
+grep -Fqx "tag --force current 0123456789012345678901234567890123456789" "${main_existing_calls}.git"
+grep -Fqx "push --force origin refs/tags/current" "${main_existing_calls}.git"
+grep -Fqx "release upload current ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_existing_calls}"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --prerelease" "${main_existing_calls}"
 
 main_create_calls="${temporary_directory}/main-create.calls"
 run_publisher branch missing "${main_create_calls}"
-grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title 1.2.3 --notes-file ${notes} --latest" "${main_create_calls}"
-grep -Fqx "release upload 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_create_calls}"
+grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --prerelease --latest=false" "${main_create_calls}"
+if [[ -e "${main_create_calls}.git" ]]; then
+  printf 'initial current publication unexpectedly moved an existing tag\n' >&2
+  exit 1
+fi
+
+runtime_asset="${temporary_directory}/container-release-arm64.tar.gz"
+runtime_checksum="${runtime_asset}.sha256"
+extra_assets="${temporary_directory}/extra-assets"
+touch "${runtime_asset}" "${runtime_checksum}"
+printf '%s\n%s\n' "${runtime_asset}" "${runtime_checksum}" > "${extra_assets}"
+stable_extra_calls="${temporary_directory}/stable-extra.calls"
+run_publisher tag missing "${stable_extra_calls}" "${extra_assets}"
+grep -Fqx "release create 1.2.3 ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest" "${stable_extra_calls}"
+
+current_extra_calls="${temporary_directory}/current-extra.calls"
+run_publisher branch exists "${current_extra_calls}" "${extra_assets}"
+grep -Fqx "release upload current ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --clobber" "${current_extra_calls}"

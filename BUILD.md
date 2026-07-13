@@ -137,6 +137,59 @@ workflow does not replace the local `make release-gate`; use
 `make release VERSION_SELECTOR=--+` for stable promotion so the full Docker
 Compose parity suite remains mandatory.
 
+## Promote `main` To A Stable Release
+
+There are two package lanes, with no manual asset copying:
+
+- Every green `main` commit refreshes the one mutable GitHub prerelease named **Current build** (tag `current`) and the opt-in `container-current` / `container-compose-current` Homebrew pair.
+- A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
+
+From a clean `~/github/container-compose` checkout, inspect the deterministic plan first:
+
+```sh
+make release-plan
+```
+
+### Promote The Current Build
+
+Do not copy, rename, or edit the mutable GitHub **Current build** prerelease.
+It is an installable view of green `main`, not a stable release candidate asset.
+Promotion always rebuilds the exact tagged source into immutable stable assets,
+which is what keeps the semantic version, runtime pin, checksums, Homebrew
+formulae, and release notes deterministic.
+
+After `make release-plan` confirms the intended next version, promote the
+validated `main` source with one selector. The selector is resolved from the
+latest semantic tag—not from the working-tree version:
+
+```sh
+make release VERSION_SELECTOR=--+   # patch: X.Y.Z -> X.Y.(Z+1)
+make release VERSION_SELECTOR=-+-   # minor: X.Y.Z -> X.(Y+1).0
+make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
+make release VERSION_SELECTOR=0.7.0 # exact next semantic version
+```
+
+The helper is the only supported version mutator. It updates the Compose version
+when necessary, preserves the exact runtime stack pin, opens and merges the
+source-promotion PR, creates a signed semantic tag, waits for the hosted Stable
+Release Gate, then dispatches the stable package workflow. That workflow
+rebuilds and publishes the immutable stable assets and atomically updates both
+stable Homebrew formulae. Do not create a semantic tag, copy a prerelease
+asset, or edit either stable formula by hand.
+
+After the tag is published, the one mutable `current` prerelease continues to
+follow later green `main` commits. Homebrew users without `-current` always use
+the newly promoted stable formula pair; opted-in users continue to use the
+current pair.
+
+Each stable release note also stores an immutable quality snapshot for the promoted
+commit: the eleven SonarQube quality badges shown in the README plus CodeQL
+analysis, result, and rule counts. They are static, non-clickable shields.io
+images—not live dashboard links—and intentionally exclude the release-version
+and visitor badges. Publication waits for the exact SonarQube and CodeQL
+analyses; if either result cannot be tied to the promoted commit, it fails
+rather than publishing incomplete historical evidence.
+
 ## Docker Compose Parity
 
 Run every maintained Docker Compose v2 comparison in deterministic sequence:

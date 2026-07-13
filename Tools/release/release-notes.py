@@ -84,6 +84,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compose-version", required=True)
     parser.add_argument("--asset", required=True)
     parser.add_argument("--asset-sha", required=True)
+    parser.add_argument("--runtime-asset")
+    parser.add_argument("--runtime-asset-sha")
+    parser.add_argument(
+        "--quality-snapshot",
+        type=Path,
+        help="Static SonarQube and CodeQL badge block captured for a stable release.",
+    )
+    parser.add_argument(
+        "--highlights-json",
+        type=Path,
+        help="Write the immutable machine-readable highlight manifest to this path.",
+    )
     parser.add_argument("--head", default="HEAD")
     parser.add_argument(
         "--release-repo",
@@ -624,6 +636,64 @@ def component_changes(
     return changes
 
 
+def release_summary(
+    *,
+    repo: Path,
+    release_tag: str,
+    head_ref: str,
+    release_repo: str | None,
+    component_repos: dict[str, Path],
+) -> tuple[ReleaseRange, list[CommitSummary], list[ComponentChange], list[str]]:
+    """Collect the one canonical release range used by notes and the manifest."""
+    selected_range = release_range(repo, release_tag, head_ref, release_repo)
+    commits = commits_for_range(repo, selected_range)
+    component_deltas = component_changes(
+        repo=repo,
+        selected_range=selected_range,
+        component_repos=component_repos,
+    )
+    return (
+        selected_range,
+        commits,
+        component_deltas,
+        combined_release_highlights(commits, component_deltas),
+    )
+
+
+def highlights_manifest(
+    *,
+    release_tag: str,
+    release_label: str,
+    compose_version: str,
+    selected_range: ReleaseRange,
+    component_deltas: list[ComponentChange],
+    highlights: list[str],
+) -> str:
+    """Serialize stable user-facing release facts alongside the prose notes."""
+    return json.dumps(
+        {
+            "schemaVersion": 1,
+            "releaseTag": release_tag,
+            "releaseLabel": release_label,
+            "composeVersion": compose_version,
+            "head": selected_range.head_commit,
+            "base": selected_range.base_label,
+            "highlights": highlights,
+            "components": [
+                {
+                    "name": change.name,
+                    "repository": change.repository,
+                    "from": change.previous_ref,
+                    "to": change.current_ref,
+                }
+                for change in component_deltas
+            ],
+        },
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+
+
 def render_release_notes(
     *,
     repo: Path,
@@ -633,19 +703,23 @@ def render_release_notes(
     asset: str,
     asset_sha: str,
     head_ref: str,
+    runtime_asset: str | None = None,
+    runtime_asset_sha: str | None = None,
+    quality_snapshot: str | None = None,
     release_repo: str | None = None,
     component_repos: dict[str, Path] | None = None,
 ) -> str:
-    selected_range = release_range(repo, release_tag, head_ref, release_repo)
-    commits = commits_for_range(repo, selected_range)
-    component_deltas = component_changes(
+    selected_range, commits, component_deltas, highlights = release_summary(
         repo=repo,
-        selected_range=selected_range,
+        release_tag=release_tag,
+        head_ref=head_ref,
+        release_repo=release_repo,
         component_repos=component_repos or {},
     )
-    highlights = combined_release_highlights(commits, component_deltas)
     head_short = selected_range.head_commit[:12]
     stable_release = is_stable_release_tag(release_tag)
+    if (runtime_asset is None) != (runtime_asset_sha is None):
+        raise ValueError("runtime asset name and checksum must be provided together")
 
     lines = [
         "## Summary",
@@ -653,18 +727,19 @@ def render_release_notes(
         f"- {release_label} package for the `{compose_version}` container-compose slice.",
         "- Keeps the fork-backed container, containerization, and builder-shim compatibility metadata intact.",
         "- Publishes the release-quality Swift plugin and non-debug Go normalizer package.",
-        "",
     ]
-
-    if highlights:
-        lines.extend(
-            [
-                "## Highlights",
-                "",
-                *[f"- {highlight}" for highlight in highlights],
-                "",
-            ]
+    if not stable_release:
+        lines.append(
+            f"- Mutable `current` pointer targets main commit `{selected_range.head_commit}`."
         )
+    lines.append("")
+
+    lines.extend(["## Highlights", ""])
+    if highlights:
+        lines.extend(f"- {highlight}" for highlight in highlights)
+    else:
+        lines.append("- No user-facing highlights were declared for this build.")
+    lines.append("")
 
     lines.extend(["## Changes", ""])
 
@@ -704,15 +779,16 @@ def render_release_notes(
     if stable_release:
         lines.extend(
             [
-                "- The stable release updates `stephenlclarke/tap/container-compose` to the stable asset and semver formula version.",
-                "- The formula depends on the matched `stephenlclarke/tap/container` runtime package.",
+                "- The stable release atomically updates `stephenlclarke/tap/container-compose` and `stephenlclarke/tap/container`.",
+                "- The formula pair uses the exact immutable runtime package pinned by this release's stack manifest.",
             ]
         )
     else:
         lines.extend(
             [
-                "- Main validation packages do not update the stable Homebrew formula.",
-                "- Installable packages come from stable semantic release tags.",
+                "- The current build atomically updates `stephenlclarke/tap/container-compose-current` and `stephenlclarke/tap/container-current`.",
+                "- Both formulae download the exact matched assets from this one mutable prerelease.",
+                "- It never changes the stable formula pair.",
             ]
         )
 
@@ -726,15 +802,15 @@ def render_release_notes(
     if stable_release:
         lines.extend(
             [
-                "- Promotion means validating the candidate tree, promoting `container-compose` through the pull-request path, creating the bare semver source tag, and dispatching the stable package workflow for that tag.",
-                "- The stable package workflow marks the semver release as GitHub `Latest` and updates the stable Homebrew formula.",
+                "- Promotion creates a bare semver tag at the green `main` head, waits for the hosted Stable Release Gate, then publishes the immutable release.",
+                "- The stable package workflow marks the semver release as GitHub `Latest` and atomically updates the stable formula pair.",
             ]
         )
     else:
         lines.extend(
             [
-                "- Main validation packages are CI artifacts for the current `main` branch.",
-                "- They do not move semantic source tags or Homebrew formulae.",
+                "- The single `Current build` prerelease and its `current` tag move together only after green `main` CI.",
+                "- They do not move semantic source tags or the stable formula pair.",
             ]
         )
 
@@ -743,14 +819,16 @@ def render_release_notes(
             "",
             "## Asset Retention",
             "",
-            "- Release automation keeps binary assets on the latest main validation release and the latest stable release.",
-            "- Older release objects and source tags are retained, but their binary assets may be deleted after their notes include a source-build Homebrew install block.",
+            "- Stable release objects, notes, and source tags are retained as history.",
+            "- Only the newest published stable release and the one `current` prerelease retain downloadable assets and tap-backed installation.",
+            "- Superseded generated current-release objects are deleted, while their source tags remain available for reference.",
+            "- Superseded stable releases lose binary assets and gain exact source-build instructions on this page.",
             "",
             "## Validation",
             "",
-            "- Stable release promotion runs `make release-gate`, promotes `container-compose` through the pull-request path, and verifies the promoted main tree before dispatching the package workflow.",
-            "- `make release-gate` runs builder, containerization, and container coverage and runtime integration checks, Compose CI, and the full Docker Compose parity suite.",
-            "- The package workflow repeats `make ci` before publishing package assets or updating the tap.",
+            "- Current packages require green `main` CI; that is where SonarQube analyses the source.",
+            "- Stable releases additionally require the hosted Stable Release Gate, which runs builder, containerization, and container coverage and runtime integration checks, Compose CI, and full Docker Compose parity.",
+            "- The package workflow verifies the exact immutable runtime asset before it writes either Homebrew formula.",
             f"- `make package-release PLUGIN_ARCHIVE={asset}` passed.",
             "- `make go-release-check` passed as part of package validation.",
             "- `git diff --check` passed as part of `make check`.",
@@ -761,6 +839,17 @@ def render_release_notes(
             f"  `{asset_sha}`.",
         ]
     )
+    if runtime_asset is not None and runtime_asset_sha is not None:
+        lines.extend(
+            [
+                f"- `{runtime_asset}` SHA-256:",
+                f"  `{runtime_asset_sha}`.",
+            ]
+        )
+    if quality_snapshot is not None:
+        if not stable_release:
+            raise ValueError("quality snapshots are supported only for stable releases")
+        lines.extend(["", quality_snapshot.rstrip()])
     return "\n".join(lines) + "\n"
 
 
@@ -775,12 +864,38 @@ def main() -> None:
                 compose_version=args.compose_version,
                 asset=args.asset,
                 asset_sha=args.asset_sha,
+                runtime_asset=args.runtime_asset,
+                runtime_asset_sha=args.runtime_asset_sha,
+                quality_snapshot=(
+                    args.quality_snapshot.read_text(encoding="utf-8")
+                    if args.quality_snapshot is not None
+                    else None
+                ),
                 head_ref=args.head,
                 release_repo=args.release_repo,
                 component_repos=parse_component_repos(args.component_repo),
             ),
             end="",
         )
+        if args.highlights_json is not None:
+            selected_range, _commits, component_deltas, highlights = release_summary(
+                repo=Path(args.repo),
+                release_tag=args.release_tag,
+                head_ref=args.head,
+                release_repo=args.release_repo,
+                component_repos=parse_component_repos(args.component_repo),
+            )
+            args.highlights_json.write_text(
+                highlights_manifest(
+                    release_tag=args.release_tag,
+                    release_label=args.release_label,
+                    compose_version=args.compose_version,
+                    selected_range=selected_range,
+                    component_deltas=component_deltas,
+                    highlights=highlights,
+                ),
+                encoding="utf-8",
+            )
     except ValueError as error:
         raise SystemExit(str(error)) from error
 

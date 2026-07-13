@@ -66,6 +66,11 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [SUPPORT.md](SUPPORT.md): ask for help or report non-security issues.
 - [SECURITY.md](SECURITY.md): report security issues.
 
+The documents above are the maintained operational source of truth. The
+Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are current
+handoff records for unresolved or proposed upstream work; they are not install,
+release, or support runbooks.
+
 ## License
 
 This project uses the Apache License, Version 2.0, matching the license used by

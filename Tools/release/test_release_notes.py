@@ -52,10 +52,10 @@ class ReleaseNotesTests(unittest.TestCase):
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="homebrew-main-123-abcdef123456",
-                release_label="Main validation",
+                release_tag="current",
+                release_label="current build",
                 compose_version="0.6.1",
-                asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz",
+                asset="container-compose-plugin-current-arm64.tar.gz",
                 asset_sha="abc123",
                 head_ref="HEAD",
             )
@@ -64,13 +64,38 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("## Homebrew Formula", notes)
             self.assertIn("## Promotion", notes)
             self.assertIn("## Asset Retention", notes)
-            self.assertIn("Main validation packages do not update the stable Homebrew formula.", notes)
-            self.assertIn("They do not move semantic source tags or Homebrew formulae.", notes)
+            self.assertIn("It never changes the stable formula pair.", notes)
+            self.assertIn("They do not move semantic source tags or the stable formula pair.", notes)
+            self.assertIn("Mutable `current` pointer targets main commit", notes)
+            self.assertIn("single `Current build` prerelease", notes)
             self.assertIn("## Highlights", notes)
             self.assertIn("Support bind propagation.", notes)
             self.assertIn("feat(mounts): support bind propagation", notes)
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
+
+    def test_current_notes_record_the_matched_runtime_checksum(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            head = self.git(repo, "rev-parse", "HEAD")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="current",
+                release_label="current build",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-current-arm64.tar.gz",
+                asset_sha="compose-sha",
+                runtime_asset="container-current-arm64.tar.gz",
+                runtime_asset_sha="runtime-sha",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(f"Mutable `current` pointer targets main commit `{head}`", notes)
+            self.assertIn("`container-current-arm64.tar.gz` SHA-256:", notes)
+            self.assertIn("`runtime-sha`.", notes)
 
     def test_main_validation_tag_rerun_keeps_full_stable_range(self) -> None:
         module = load_module()
@@ -81,14 +106,14 @@ class ReleaseNotesTests(unittest.TestCase):
             self.commit(repo, "ci(release): simplify package publishing")
             self.commit(repo, "fix(release): commit new tap formula files")
             self.commit(repo, "fix(integration): preserve serial rootfs")
-            self.git(repo, "tag", "--no-sign", "homebrew-main-123-abcdef123456")
+            self.git(repo, "tag", "--no-sign", "current-123-abcdef123456")
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="homebrew-main-123-abcdef123456",
-                release_label="Main validation",
+                release_tag="current-123-abcdef123456",
+                release_label="current build",
                 compose_version="0.6.1",
-                asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz",
+                asset="container-compose-plugin-current-arm64.tar.gz",
                 asset_sha="abc123",
                 head_ref="HEAD",
             )
@@ -97,7 +122,8 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("ci(release): simplify package publishing", notes)
             self.assertIn("fix(release): commit new tap formula files", notes)
             self.assertIn("fix(integration): preserve serial rootfs", notes)
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
             self.assertNotIn("chore: initial import", notes)
 
     def test_semver_tag_lists_commits_since_previous_semver_release(self) -> None:
@@ -121,17 +147,17 @@ class ReleaseNotesTests(unittest.TestCase):
             )
 
             self.assertIn("Commits since `0.5.0`", notes)
-            self.assertIn("The stable release updates `stephenlclarke/tap/container-compose`", notes)
+            self.assertIn("The stable release atomically updates `stephenlclarke/tap/container-compose`", notes)
             self.assertIn(
-                "Stable release promotion runs `make release-gate`, promotes `container-compose` through the pull-request path, and verifies the promoted main tree before dispatching the package workflow.",
+                "Stable releases additionally require the hosted Stable Release Gate",
                 notes,
             )
             self.assertIn(
-                "The package workflow repeats `make ci` before publishing package assets or updating the tap.",
+                "The package workflow verifies the exact immutable runtime asset",
                 notes,
             )
             self.assertIn(
-                "`make release-gate` runs builder, containerization, and container coverage and runtime integration checks, Compose CI, and the full Docker Compose parity suite.",
+                "builder, containerization, and container coverage and runtime integration checks, Compose CI, and full Docker Compose parity",
                 notes,
             )
             self.assertIn("fix(cli): report help topic", notes)
@@ -139,6 +165,56 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("Report help topic.", notes)
             self.assertIn("Add monitoring stack.", notes)
             self.assertNotIn("chore: initial import", notes)
+
+    def test_stable_release_renders_the_static_quality_snapshot(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(repo, "fix(release): preserve quality evidence")
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+            snapshot = """## Quality Snapshot
+
+![Quality Gate Status](https://img.shields.io/static/v1?label=Quality+Gate+Status&message=Passed&color=brightgreen)
+![CodeQL Results](https://img.shields.io/static/v1?label=CodeQL+Results&message=0&color=brightgreen)
+"""
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                quality_snapshot=snapshot,
+                head_ref="HEAD",
+            )
+
+            self.assertIn("## Quality Snapshot", notes)
+            self.assertIn("![Quality Gate Status]", notes)
+            self.assertIn("![CodeQL Results]", notes)
+            self.assertNotIn("[![", notes)
+
+    def test_current_release_rejects_a_quality_snapshot(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+
+            with self.assertRaisesRegex(
+                ValueError, "quality snapshots are supported only for stable releases"
+            ):
+                module.render_release_notes(
+                    repo=repo,
+                    release_tag="current",
+                    release_label="current build",
+                    compose_version="0.6.1",
+                    asset="container-compose-plugin-current-arm64.tar.gz",
+                    asset_sha="abc123",
+                    quality_snapshot="## Quality Snapshot\n",
+                    head_ref="HEAD",
+                )
 
     def test_release_note_trailers_render_user_facing_highlights(self) -> None:
         module = load_module()
@@ -253,7 +329,9 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
+            self.assertNotIn("Release automation pins containerization", notes)
             self.assertIn("chore(deps): pin containerization", notes)
 
     def test_release_note_none_suppresses_automatic_highlight(self) -> None:
@@ -281,7 +359,9 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
+            self.assertNotIn("retain compatibility diagnostics.", notes)
             self.assertIn("fix(cli): retain compatibility diagnostics", notes)
 
     def test_body_summary_ignores_generic_git_trailers(self) -> None:
@@ -664,7 +744,8 @@ class ReleaseNotesTests(unittest.TestCase):
 
             self.assertIn("Commits included through", notes)
             self.assertIn("chore: initial import", notes)
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
 
     def init_repo(self, repo: Path) -> None:
         repo.mkdir(parents=True, exist_ok=True)
