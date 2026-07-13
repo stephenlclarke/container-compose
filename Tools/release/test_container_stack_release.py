@@ -31,6 +31,7 @@ TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
 HOMEBREW_WORKFLOW = ROOT / ".github" / "workflows" / "homebrew.yml"
 PACKAGE_WORKFLOW = ROOT / ".github" / "workflows" / "prebuilt-binaries.yml"
 STABLE_GATE_WORKFLOW = ROOT / ".github" / "workflows" / "stable-release-gate.yml"
+STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -120,12 +121,105 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        self.assertIn("check-licenses vet lint coverage build", makefile)
-        self.assertIn("check containerization examples docs coverage integration", makefile)
-        self.assertIn("check container dsym docs coverage", makefile)
+        validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
+        self.assertIn("check-licenses vet lint coverage build", validation)
+        self.assertIn("run-stack-release-validation.sh full", makefile)
+        self.assertIn("run-stack-release-validation.sh hosted", makefile)
+        self.assertIn(
+            "containerization_targets=(check containerization examples docs coverage integration)",
+            validation,
+        )
+        self.assertIn(
+            "container_targets=(check container dsym docs coverage)",
+            validation,
+        )
+        self.assertIn(
+            "release-gate-hosted: container-stack-hosted-release-validation ci",
+            makefile,
+        )
+        self.assertIn(
+            "containerization_targets=(check containerization examples docs coverage)",
+            validation,
+        )
+        self.assertIn(
+            "container_targets=(check container dsym docs coverage-unit)",
+            validation,
+        )
         self.assertIn("CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1", makefile)
         self.assertIn("docker-compose-devices-parity", makefile)
         self.assertNotIn("repackage-release", makefile)
+
+    def test_hosted_stack_validation_excludes_virtualization_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            builder = root / "container-builder-shim"
+            containerization = root / "containerization"
+            container = root / "container"
+            tap = root / "homebrew-tap"
+            for checkout in (compose, builder, containerization, container):
+                checkout.mkdir()
+                (checkout / "Makefile").touch()
+            (tap / "Formula").mkdir(parents=True)
+            (tap / "Formula" / "container-compose.rb").touch()
+
+            tools = root / "tools"
+            tools.mkdir()
+            log = root / "commands.log"
+            for name in ("make", "ruby"):
+                tool = tools / name
+                tool.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "printf '%s:%s\\n' \"$(basename \"$0\")\" \"$*\" >> \"${STACK_VALIDATION_LOG:?}\"\n",
+                    encoding="utf-8",
+                )
+                tool.chmod(0o755)
+
+            environment = os.environ.copy()
+            environment["PATH"] = f"{tools}{os.pathsep}{environment['PATH']}"
+            environment["STACK_VALIDATION_LOG"] = str(log)
+            validation_paths = [
+                str(compose),
+                str(builder),
+                str(containerization),
+                str(container),
+                str(tap),
+            ]
+
+            full = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(full.returncode, 0, full.stderr)
+            full_commands = log.read_text(encoding="utf-8")
+            self.assertIn(
+                f"make:-C {containerization} check containerization examples docs coverage integration",
+                full_commands,
+            )
+            self.assertIn(f"make:-C {container} check container dsym docs coverage", full_commands)
+
+            log.unlink()
+            hosted = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "hosted", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(hosted.returncode, 0, hosted.stderr)
+            hosted_commands = log.read_text(encoding="utf-8")
+            self.assertIn(
+                f"make:-C {containerization} check containerization examples docs coverage",
+                hosted_commands,
+            )
+            self.assertIn(
+                f"make:-C {container} check container dsym docs coverage-unit",
+                hosted_commands,
+            )
+            self.assertNotIn(" integration", hosted_commands)
 
     def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
         self,
@@ -153,7 +247,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
-        self.assertIn("HOMEBREW_TAP_REPO: ../homebrew-tap", workflow)
         self.assertIn("Provision pinned stack tools", workflow)
         self.assertIn("cd container-compose", workflow)
         self.assertIn("HAWKEYE_AUTO_INSTALL=1 ./scripts/install-hawkeye.sh", workflow)
@@ -162,19 +255,24 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("./scripts/install-hawkeye.sh", workflow)
-        self.assertIn("Provision containerization integration kernel", workflow)
-        self.assertIn("run: make fetch-default-kernel", workflow)
+        self.assertIn("name: Run Hosted Release Gate", workflow)
+        self.assertIn("Checkout immutable stable-gate tools", workflow)
+        self.assertIn("path: release-tools", workflow)
+        self.assertIn("ref: ${{ github.sha }}", workflow)
+        self.assertIn("git -C release-tools rev-parse HEAD", workflow)
+        self.assertIn("run-stack-release-validation.sh hosted", workflow)
+        self.assertIn("make -C container-compose ci", workflow)
+        self.assertNotIn("Provision containerization integration kernel", workflow)
+        self.assertNotIn("run: make fetch-default-kernel", workflow)
+        self.assertNotIn("run: make release-gate-hosted", workflow)
+        self.assertNotIn("run: make release-gate\n", workflow)
         self.assertLess(
             workflow.index("Checkout immutable Homebrew tap snapshot"),
-            workflow.index("Run release gate"),
+            workflow.index("Run hosted release gate"),
         )
         self.assertLess(
             workflow.index("Provision pinned stack tools"),
-            workflow.index("Run release gate"),
-        )
-        self.assertLess(
-            workflow.index("Provision containerization integration kernel"),
-            workflow.index("Run release gate"),
+            workflow.index("Run hosted release gate"),
         )
 
     def test_release_helper_waits_longer_than_the_hosted_stable_gate_timeout(self) -> None:
@@ -202,6 +300,55 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"', self.script)
         self.assertIn('"$(repo_path "container-builder-shim")"', self.script)
         self.assertIn('make -C "$(repo_path "containerization")" fetch-default-kernel', self.script)
+
+    def test_local_release_gate_requires_hardware_virtualization(self) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        self.assertIn("require_local_virtualization() {", self.script)
+        self.assertIn("require_local_virtualization", local_gate)
+        self.assertIn("sysctl -n kern.hv_support", self.script)
+        self.assertIn("kern.hv_support=1", self.script)
+
+    def test_local_virtualization_preflight_requires_hardware_support(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            for name, output in (("uname", "Darwin"), ("sysctl", "0")):
+                command = bin_directory / name
+                command.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    f"printf '%s\\n' {shlex.quote(output)}\n",
+                    encoding="utf-8",
+                )
+                command.chmod(0o755)
+
+            shell_setup = f"export PATH={shlex.quote(str(bin_directory))}:$PATH"
+            unsupported = self.run_release_function(
+                root,
+                "require_local_virtualization",
+                shell_setup=shell_setup,
+            )
+            self.assertNotEqual(unsupported.returncode, 0)
+            self.assertIn("kern.hv_support=1", unsupported.stderr)
+
+            (bin_directory / "sysctl").write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' 1\n",
+                encoding="utf-8",
+            )
+            (bin_directory / "sysctl").chmod(0o755)
+            supported = self.run_release_function(
+                root,
+                "require_local_virtualization",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(supported.returncode, 0, supported.stderr)
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
