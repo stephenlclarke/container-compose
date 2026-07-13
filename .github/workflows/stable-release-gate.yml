@@ -292,3 +292,37 @@ jobs:
           make -C container-compose ci
         env:
           HAWKEYE_AUTO_INSTALL: "1"
+
+  record-release-authority:
+    name: Record Stable Release Authority
+    needs: [resolve-candidate, release-gate]
+    if: >-
+      github.repository == 'stephenlclarke/container-compose' &&
+      needs.release-gate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Record candidate-bound stable release authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.ref }}
+          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          authority_name="Stable Release Authority (${RELEASE_TAG})"
+          details_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          summary="Hosted Stable Release Gate passed for immutable source"
+          summary+=" ${CANDIDATE_SHA}."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+            -f "name=${authority_name}" \
+            -f "head_sha=${CANDIDATE_SHA}" \
+            -f 'status=completed' \
+            -f 'conclusion=success' \
+            -f "external_id=${GITHUB_RUN_ID}" \
+            -f "details_url=${details_url}" \
+            -f "output[title]=${authority_name}" \
+            -f "output[summary]=${summary}" \
+            --silent

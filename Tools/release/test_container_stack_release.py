@@ -21,6 +21,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -118,6 +119,43 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("Skipping current package because current already points at", workflow)
         self.assertIn("refs/tags/current^{}", workflow)
         self.assertIn('current_tag_sha="$(', workflow)
+
+    def test_stable_package_requires_candidate_bound_release_authority(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        authority = workflow[
+            workflow.index("- name: Require the hosted release authority") : workflow.index(
+                "- name: Build matched runtime package"
+            )
+        ]
+        tag_authority = authority[authority.index("tag)") : authority.index("*)")]
+        self.assertIn("checks: read", workflow)
+        self.assertIn("PUBLISH_REF_NAME", authority)
+        self.assertIn('authority_name="Stable Release Authority (${PUBLISH_REF_NAME})"', tag_authority)
+        self.assertIn("commits/${PUBLISH_SHA}/check-runs?per_page=100", tag_authority)
+        self.assertIn(".app.slug", tag_authority)
+        self.assertIn("github-actions", tag_authority)
+        self.assertIn(".external_id", tag_authority)
+        self.assertIn('gh run view "${authority_run_id}"', tag_authority)
+        self.assertIn("workflowName", tag_authority)
+        self.assertIn("Stable Release Gate", tag_authority)
+        self.assertIn("workflow_dispatch", tag_authority)
+        self.assertNotIn('workflow="stable-release-gate.yml"', tag_authority)
+        self.assertNotIn('--commit "${PUBLISH_SHA}"', tag_authority)
+
+    def test_package_authority_requires_a_successful_candidate_bound_gate(self) -> None:
+        accepted = self.run_package_authority_step("tag", "0.6.70", "29288195238", "success")
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+        missing_authority = self.run_package_authority_step("tag", "0.6.70", "", "success")
+        self.assertNotEqual(missing_authority.returncode, 0)
+        self.assertIn("candidate-bound Stable Release Authority", missing_authority.stderr)
+
+        failed_gate = self.run_package_authority_step("tag", "0.6.70", "29288195238", "")
+        self.assertNotEqual(failed_gate.returncode, 0)
+        self.assertIn("successful Stable Release Gate authority", failed_gate.stderr)
+
+        branch = self.run_package_authority_step("branch", "main", "", "success")
+        self.assertEqual(branch.returncode, 0, branch.stderr)
 
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -262,6 +300,13 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("git -C release-tools rev-parse HEAD", workflow)
         self.assertIn("run-stack-release-validation.sh hosted", workflow)
         self.assertIn("make -C container-compose ci", workflow)
+        self.assertIn("checks: write", workflow)
+        self.assertIn("name: Record Stable Release Authority", workflow)
+        self.assertIn("needs: [resolve-candidate, release-gate]", workflow)
+        self.assertIn("needs.release-gate.result == 'success'", workflow)
+        self.assertIn('authority_name="Stable Release Authority (${RELEASE_TAG})"', workflow)
+        self.assertIn('head_sha=${CANDIDATE_SHA}', workflow)
+        self.assertIn('external_id=${GITHUB_RUN_ID}', workflow)
         self.assertNotIn("Provision containerization integration kernel", workflow)
         self.assertNotIn("run: make fetch-default-kernel", workflow)
         self.assertNotIn("run: make release-gate-hosted", workflow)
@@ -654,6 +699,51 @@ exit 1
                     shlex.quote(candidate_tree),
                 ]
             ),
+        )
+
+    def run_package_authority_step(
+        self,
+        ref_type: str,
+        ref_name: str,
+        authority_run_id: str,
+        gate_conclusion: str,
+    ) -> subprocess.CompletedProcess[str]:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        authority = workflow[
+            workflow.index("- name: Require the hosted release authority") : workflow.index(
+                "- name: Build matched runtime package"
+            )
+        ]
+        run_marker = "        run: |\n"
+        run_start = authority.index(run_marker) + len(run_marker)
+        command = textwrap.dedent(authority[run_start:]).rstrip()
+        fake_gh = """\
+gh() {
+  case "$1:$2" in
+    api:*) printf '%s\\n' "${TEST_AUTHORITY_RUN_ID}" ;;
+    run:*) printf '%s\\n' "${TEST_GATE_CONCLUSION}" ;;
+    *) exit 64 ;;
+  esac
+}
+"""
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PUBLISH_REF_TYPE": ref_type,
+                "PUBLISH_REF_NAME": ref_name,
+                "PUBLISH_SHA": "0123456789012345678901234567890123456789",
+                "GITHUB_REPOSITORY": "stephenlclarke/container-compose",
+                "GH_TOKEN": "test",
+                "TEST_AUTHORITY_RUN_ID": authority_run_id,
+                "TEST_GATE_CONCLUSION": gate_conclusion,
+            }
+        )
+        return subprocess.run(
+            ["bash", "-c", f"{fake_gh}\n{command}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=environment,
         )
 
     def run_release_function(
