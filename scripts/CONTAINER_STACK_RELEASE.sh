@@ -246,6 +246,28 @@ stephen_https_url() {
   esac
 }
 
+# Refresh the one intentionally mutable release pointer without forcing semantic tags.
+refresh_mutable_current_tag() {
+  local repo="$1" path="$2" remote="$3" local_current remote_current
+  if [[ "${repo}" != "${COMPOSE_REPO}" ]]; then
+    return 0
+  fi
+
+  remote_current="$(git -C "${path}" ls-remote --tags --refs "${remote}" refs/tags/current 2>/dev/null || true)"
+  remote_current="$(awk '{ print $1 }' <<<"${remote_current}" | tail -n 1)"
+  if [[ -z "${remote_current}" ]]; then
+    return 0
+  fi
+
+  local_current="$(git -C "${path}" rev-parse --verify -q refs/tags/current 2>/dev/null || true)"
+  if [[ "${local_current}" == "${remote_current}" ]]; then
+    return 0
+  fi
+
+  printf 'refreshing mutable current tag for %s\n' "${repo}"
+  git -C "${path}" fetch "${remote}" '+refs/tags/current:refs/tags/current'
+}
+
 fetch_release_remote() {
   local repo="$1" path remote url fallback_url
   path="$(repo_path "${repo}")"
@@ -263,6 +285,7 @@ fetch_release_remote() {
     url="${fallback_url}"
   fi
 
+  refresh_mutable_current_tag "${repo}" "${path}" "${remote}"
   printf '+ git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
   if git -C "${path}" fetch --prune --tags "${remote}"; then
     return 0

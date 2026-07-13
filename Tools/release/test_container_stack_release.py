@@ -352,6 +352,33 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
+        self.assertIn("+refs/tags/current:refs/tags/current", self.script)
+        self.assertNotIn("fetch --prune --tags --force", self.script)
+
+    def test_release_fetch_refreshes_only_mutable_current_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            self.run_command("git", "-C", str(local), "tag", "current")
+            self.run_command("git", "-C", str(local), "push", "origin", "refs/tags/current")
+
+            updater = root / "updater"
+            self.run_command("git", "clone", "--branch", "main", str(remote), str(updater))
+            self.configure_repo(updater)
+            self.commit_file(updater, "CURRENT.md", "current\n", "chore: advance current")
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            self.run_command("git", "-C", str(updater), "tag", "-f", "current")
+            self.run_command("git", "-C", str(updater), "push", "origin", "+refs/tags/current")
+
+            result = self.run_release_function(root / "github", "fetch_release_remote container-compose")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("refreshing mutable current tag", result.stdout)
+            local_current = self.git(local, "rev-parse", "refs/tags/current")
+            remote_current = self.run_command(
+                "git", "ls-remote", "--tags", "--refs", str(remote), "refs/tags/current"
+            ).stdout.split()[0]
+            self.assertEqual(local_current, remote_current)
 
     def test_release_helper_uses_the_active_github_cli_credential(self) -> None:
         self.assertIn("github_cli() {", self.script)
