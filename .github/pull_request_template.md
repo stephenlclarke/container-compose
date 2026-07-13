@@ -25,6 +25,7 @@
 
 - [ ] I updated `STATUS.md`, `BRANCHES.md`, or `docs/upstream/` for support, release, or runtime primitive changes, or no update is needed.
 - [ ] This pull request is focused on one issue or one coherent change.
+- [ ] Runtime, release, security, upstream-import, or cross-repository stack changes have review notes and CI attached to this pull request.
 - [ ] I used Conventional Commits in commit messages and the pull request title.
 - [ ] I added a user-facing `Release-Note:` / `Release-Highlight:` trailer for visible Compose functionality, or `Release-Note: none` for internal-only work.
 - [ ] I included original upstream issue or pull request references for upstream-driven changes.

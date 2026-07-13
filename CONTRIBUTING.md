@@ -42,7 +42,13 @@ discussion.
 
 ## Maintainer Development Cycle
 
-For stephenlclarke-owned stack work, keep `main` as the current integration branch in `container-builder-shim`, `containerization`, `container`, `container-compose`, and `homebrew-tap`. Start a short-lived branch only when it makes review or recovery clearer. Land validated work on `main` before release, then delete the branch locally and remotely unless it is still needed for an open review.
+For stephenlclarke-owned stack work, keep `main` as the current integration
+branch in `container-builder-shim`, `containerization`, `container`,
+`container-compose`, and `homebrew-tap` after each reviewed slice lands. Use a
+short-lived topic or review branch for runtime, release, security,
+upstream-import, and cross-repository stack changes so CI, review notes, and
+upstream provenance stay attached to a stable diff before the result lands on
+`main`.
 
 Most contributions do not run release automation. Maintainers use the single
 current procedure in [BRANCHES.md](BRANCHES.md) after a validated slice lands on

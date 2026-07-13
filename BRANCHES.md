@@ -24,7 +24,7 @@ Keep this guide in `container-compose` only. Do not copy it into Apple upstream 
 
 `main` is the current, most up-to-date, releasable branch for all five repositories. Keep it green and ready for a stable release at the end of every completed slice.
 
-Use short-lived topic branches only when they make review or recovery clearer. Land validated work back on `main` before release, then delete the branch locally and remotely unless it is still needed for an open review.
+Use short-lived topic or review branches for runtime, release, security, upstream-import, and cross-repository stack changes. Keep each branch focused on one coherent slice, attach CI and review notes through a pull request or equivalent review record, then land the validated result on `main` before release. Delete the branch locally and remotely unless it is still needed for an open review.
 
 Do not create additional long-lived integration or packaging lanes. Non-main branches are topic or review references only.
 
@@ -100,7 +100,8 @@ Install, upgrade, verification, and uninstall commands live in [INSTALL.md](INST
 
 ## Local Checkout Rules
 
-For normal integration work, keep all five repositories on `main`:
+For normal integration work and release promotion, keep all five repositories on
+`main` after each reviewed slice lands:
 
 ```sh
 git -C ~/github/container-builder-shim switch main

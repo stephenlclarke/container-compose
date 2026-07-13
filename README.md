@@ -41,17 +41,12 @@ surface with ✅ yes, ⚠️ partial, or ❌ no, and explains every partial surf
 
 Use `container system version` to see the running `container` runtime source, branch lane, commit, compiled `containerization` ref, and builder image metadata. Use `container compose version` to see the installed plugin lane, embedded `compose-go` version, and package/runtime compatibility metadata.
 
-## Project Repositories
+## Install And Project Map
 
-The supported install is the matched five-repository stephenlclarke stack:
-
-- [`container-compose`](https://github.com/stephenlclarke/container-compose): this plugin and its Swift/Go packaging workflow.
-- [`container`](https://github.com/stephenlclarke/container): the matched `stephenlclarke` runtime and CLI installed beside the plugin.
-- [`containerization`](https://github.com/stephenlclarke/containerization): the Swift runtime package consumed by the stack.
-- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): the BuildKit bridge image used by `container`.
-- [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap): the stable prebuilt `container` and `container-compose` formulae.
-
-Install and upgrade commands live in [INSTALL.md](INSTALL.md). Branch, tag, release helper, and Homebrew formula policy live in [BRANCHES.md](BRANCHES.md).
+Use [INSTALL.md](INSTALL.md) for install, upgrade, verification, and uninstall
+commands. The supported Homebrew install uses the matched `stephenlclarke`
+runtime stack; [BRANCHES.md](BRANCHES.md) is the canonical source for repository
+roles, branch policy, release promotion, and Homebrew formula ownership.
 
 ## Plugin Recognition
 
@@ -62,7 +57,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 ## Documentation
 
 - [INSTALL.md](INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BRANCHES.md](BRANCHES.md): understand `main`, semantic tags, `scripts/CONTAINER_STACK_RELEASE.sh`, release assets, and Homebrew formula policy.
+- [BRANCHES.md](BRANCHES.md): understand repository roles, review branches, semantic tags, `scripts/CONTAINER_STACK_RELEASE.sh`, release assets, and Homebrew formula policy.
 - [BUILD.md](BUILD.md): build, test, package, and run contributor validation from source.
 - [DESIGN.md](DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](STATUS.md): get the current parity surfaces, blockers, active gaps, and validation handoff.
