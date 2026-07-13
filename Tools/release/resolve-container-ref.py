@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -33,6 +34,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag")
     parser.add_argument("--tag-prefix", default="homebrew-main-")
     parser.add_argument("--branch", default="main")
+    parser.add_argument(
+        "--stack-refs",
+        type=Path,
+        help="release stack manifest whose container ref should be preferred after a local checkout",
+    )
     return parser.parse_args()
 
 
@@ -91,14 +97,39 @@ def remote_tag_prefix_ref(remote: str, prefix: str) -> str | None:
     return ref
 
 
+def stack_manifest_container_ref(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise ValueError(f"stack refs manifest does not exist: {path}") from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid stack refs manifest {path}: {error}") from error
+
+    components = data.get("components")
+    container = components.get("container") if isinstance(components, dict) else None
+    ref = container.get("ref") if isinstance(container, dict) else None
+    if not isinstance(ref, str) or not ref:
+        raise ValueError(f"stack refs manifest {path} is missing components.container.ref")
+    return ref
+
+
 def main() -> int:
     args = parse_args()
-    ref = (
-        local_repo_ref(Path(args.repo))
-        or (remote_tag_ref(args.remote, args.tag) if args.tag else None)
-        or remote_tag_prefix_ref(args.remote, args.tag_prefix)
-        or remote_branch_ref(args.remote, args.branch)
-    )
+    try:
+        manifest_ref = stack_manifest_container_ref(args.stack_refs)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 1
+
+    ref = local_repo_ref(Path(args.repo)) or manifest_ref
+    if ref is None:
+        ref = (
+            (remote_tag_ref(args.remote, args.tag) if args.tag else None)
+            or remote_tag_prefix_ref(args.remote, args.tag_prefix)
+            or remote_branch_ref(args.remote, args.branch)
+        )
     if ref is None:
         print(
             f"could not resolve container ref from {args.repo} or {args.remote} {args.branch}",
