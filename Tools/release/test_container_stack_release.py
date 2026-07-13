@@ -49,6 +49,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("stable tag already exists locally", self.script)
         self.assertIn("stable tag already exists remotely", self.script)
 
+    def test_stable_tags_are_signed_and_verified_by_github(self) -> None:
+        self.assertIn('tag -s "${version}" main', self.script)
+        self.assertIn('verify_github_stable_tag_signature "${version}"', self.script)
+        self.assertIn("GitHub did not verify stable tag", self.script)
+
+    def test_internal_dependency_pins_do_not_become_release_highlights(self) -> None:
+        pin_commit = self.script[
+            self.script.index("commit_containerization_package_pin() {") : self.script.index(
+                "sync_containerization_package_pins() {"
+            )
+        ]
+        self.assertIn("Release-Note: none", pin_commit)
+        self.assertNotIn("Release-Highlight:", pin_commit)
+
     def test_release_helper_has_no_existing_stable_package_mode(self) -> None:
         self.assertNotIn("package VERSION", self.script)
         self.assertNotIn("package_existing_stable", self.script)

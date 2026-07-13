@@ -75,7 +75,8 @@ Rules enforced:
   - Apple remotes are read-only and must not be push targets.
   - stephenlclarke-owned remotes are the only push targets.
   - Worktrees must be clean before release changes.
-  - Stable container-compose release tags point at the validated main commit.
+  - Stable container-compose release tags are SSH-signed and point at the validated main commit.
+  - GitHub must verify each stable tag signature before the release gate starts.
   - The full Docker Compose parity release gate runs locally before push/tag.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
@@ -505,14 +506,48 @@ ensure_new_stable_release() {
   fi
 }
 
-# Create a new stable tag at the validated current container-compose main commit.
+# Require GitHub to recognise the signature on a newly-pushed stable tag. A
+# local signature alone is not enough: it must be associated with the GitHub
+# account that publishes this release.
+verify_github_stable_tag_signature() {
+  local version="$1" tag_object verification reason
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would verify GitHub recognises the SSH signature for stable tag %s\n' "${version}"
+    return 0
+  fi
+
+  need_command gh
+  tag_object="$(
+    gh api "repos/$(github_repo "${COMPOSE_REPO}")/git/ref/tags/${version}" \
+      --jq '.object.sha'
+  )"
+  verification="$(
+    gh api "repos/$(github_repo "${COMPOSE_REPO}")/git/tags/${tag_object}" \
+      --jq '.verification.verified'
+  )"
+  reason="$(
+    gh api "repos/$(github_repo "${COMPOSE_REPO}")/git/tags/${tag_object}" \
+      --jq '.verification.reason'
+  )"
+  if [[ "${verification}" != "true" ]]; then
+    printf 'GitHub did not verify stable tag %s (reason: %s)\n' \
+      "${version}" "${reason:-missing}" >&2
+    exit 1
+  fi
+}
+
+# Create a new signed stable tag at the validated current container-compose
+# main commit. Current-package tags are disposable release pointers; this is
+# the permanent source identity that users and Homebrew trust.
 tag_new_stable_version() {
   local version="$1" path remote
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
   ensure_new_stable_release "${version}"
-  run git -C "${path}" tag -a "${version}" main -m "$(github_repo "${COMPOSE_REPO}") ${version}"
+  run git -C "${path}" tag -s "${version}" main -m "$(github_repo "${COMPOSE_REPO}") ${version}"
   run git -C "${path}" push "${remote}" "refs/tags/${version}"
+  verify_github_stable_tag_signature "${version}"
 }
 
 print_component_refs() {
