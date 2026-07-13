@@ -765,6 +765,11 @@ def render_release_notes(
             [
                 "- The stable release atomically updates `stephenlclarke/tap/container-compose` and `stephenlclarke/tap/container`.",
                 "- The formula pair uses the exact immutable runtime package pinned by this release's stack manifest.",
+                "- Install the stable stack with:",
+                "",
+                "  ```sh",
+                "  brew install --formula stephenlclarke/tap/container stephenlclarke/tap/container-compose",
+                "  ```",
             ]
         )
     else:
@@ -772,6 +777,11 @@ def render_release_notes(
             [
                 "- The current build atomically updates `stephenlclarke/tap/container-compose-current` and `stephenlclarke/tap/container-current`.",
                 "- It never changes the stable formula pair.",
+                "- Install this opt-in prerelease stack with:",
+                "",
+                "  ```sh",
+                "  brew install --formula stephenlclarke/tap/container-current stephenlclarke/tap/container-compose-current",
+                "  ```",
             ]
         )
 
@@ -802,8 +812,9 @@ def render_release_notes(
             "",
             "## Asset Retention",
             "",
-            "- GitHub release objects, notes, highlight manifests, source tags, and binary assets are immutable and retained.",
-            "- Current releases are prereleases; stable semantic releases are retained as GitHub Latest history.",
+            "- Release objects, notes, highlight manifests, and source tags are retained as history.",
+            "- Only the newest published stable release and newest published current prerelease retain downloadable assets and tap-backed installation.",
+            "- When a newer release supersedes this one, automation removes its binary assets and adds exact source-build instructions to this page.",
             "",
             "## Validation",
             "",
