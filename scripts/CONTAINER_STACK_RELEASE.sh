@@ -740,6 +740,9 @@ open_compose_promotion_pr() {
       --json number \
       --jq '.number'
   )"
+  github_cli pr edit "${COMPOSE_PROMOTION_PR_NUMBER}" \
+    --repo "${repo}" \
+    --add-assignee "@me"
   printf 'container-compose promotion PR opened: %s\n' "${COMPOSE_PROMOTION_PR_URL}"
 }
 

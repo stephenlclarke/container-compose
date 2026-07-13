@@ -120,6 +120,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_uses_the_active_github_cli_credential(self) -> None:
         self.assertIn("github_cli() {", self.script)
         self.assertIn("github_cli pr create", self.script)
+        self.assertIn('--add-assignee "@me"', self.script)
         self.assertIn("run github_cli workflow run", self.script)
         self.assertNotIn("env -u GITHUB_TOKEN -u GH_TOKEN gh", self.script)
 
