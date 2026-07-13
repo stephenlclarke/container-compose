@@ -45,6 +45,11 @@ def parse_args() -> argparse.Namespace:
         help="command that builds the checked-out source tag",
     )
     parser.add_argument(
+        "--source-guidance",
+        required=True,
+        help="versioned documentation file or files to use after the source build",
+    )
+    parser.add_argument(
         "--install-command",
         help="optional command that installs the locally-built artifact",
     )
@@ -90,6 +95,7 @@ def historical_source_note(
     tag: str,
     bootstrap_command: str,
     build_command: str,
+    source_guidance: str,
     install_command: str | None,
 ) -> str:
     directory = repo.rsplit("/", maxsplit=1)[-1]
@@ -115,7 +121,7 @@ def historical_source_note(
             *commands,
             "```",
             "",
-            "For the matched stack layout and verification steps, use the `BUILD.md` and `INSTALL.md` files from this checkout.",
+            f"For the matched stack layout and verification steps, use `{source_guidance}` from this checkout.",
             RETENTION_END,
         ]
     )
@@ -186,6 +192,7 @@ def main() -> None:
             tag=release["tag_name"],
             bootstrap_command=args.bootstrap_command,
             build_command=args.build_command,
+            source_guidance=args.source_guidance,
             install_command=args.install_command,
         )
         body = replace_retention_note(release.get("body") or "", note)

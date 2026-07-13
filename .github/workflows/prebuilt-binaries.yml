@@ -683,5 +683,6 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --bootstrap-command "brew install go node python" \
             --build-command "make package" \
+            --source-guidance "BUILD.md and INSTALL.md" \
             --install-command "sudo rm -rf /usr/local/libexec/container-plugins/compose && sudo install -d /usr/local/libexec/container-plugins && sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins" \
             --apply

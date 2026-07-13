@@ -55,6 +55,7 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
             tag="0.6.67",
             bootstrap_command="brew install go node python",
             build_command="make package",
+            source_guidance="BUILD.md and INSTALL.md",
             install_command="sudo install -d /usr/local/libexec/container-plugins && sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins",
         )
         self.assertIn("git clone --depth 1 --branch 0.6.67", note)
@@ -72,6 +73,7 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
             tag="0.6.67",
             bootstrap_command="brew install go",
             build_command="make package",
+            source_guidance="BUILD.md",
             install_command=None,
         )
         replaced = module.replace_retention_note(first, marker_note)
