@@ -98,6 +98,7 @@ Useful focused targets are:
 | `make test` | Swift and Go unit/integration-style tests that do not require a live runtime. |
 | `make ci-fast` | Source checks, tests, helper build, and CLI smoke without coverage export. |
 | `make release-gate` | Full builder, containerization, container, and Compose validation, including runtime integration coverage and the complete Docker Compose parity suite, required before stable package dispatch. |
+| `make release-gate-hosted` | GitHub-hosted static stack validation: source checks, builds, unit coverage, Compose CI, and Homebrew formula syntax without Virtualization.framework or Docker-engine runtime tests. |
 | `make ci-release` | Full release gate plus the release package build. |
 | `make check` | Lint, documentation, formatting, and license checks. |
 | `make coverage-check` | Enforce at least 90% Swift line and 85% Go statement coverage. |
@@ -129,13 +130,16 @@ stable release helper runs `make release-gate` locally against the candidate
 tree before source promotion. That gate runs builder-shim coverage, containerization
 coverage plus integration, container coverage plus integration, Compose CI, tap
 formula syntax, and the complete Compose parity suite, including live `build --check`
-against the matched container backend. The helper promotes `container-compose` through an automated
-pull request by default, and verifies the promoted main tree still matches the
-locally gated candidate before it tags. The package workflow then repeats
-`make ci` before publishing package assets or updating the tap. The package
-workflow does not replace the local `make release-gate`; use
-`make release VERSION_SELECTOR=--+` for stable promotion so the full Docker
-Compose parity suite remains mandatory.
+against the matched container backend. GitHub-hosted macOS runners cannot launch
+nested Virtualization.framework guests, so the post-tag Stable Release Gate runs
+the `make release-gate-hosted` equivalent from its immutable release-control
+checkout against immutable source, runtime, and tap checkouts instead. It
+validates the non-virtualized stack and Compose CI; the local full gate remains
+mandatory for runtime integration and Docker Compose parity. The helper promotes
+`container-compose` through an automated pull request by default, verifies the
+promoted main tree still matches the locally gated candidate before it tags, and
+the package workflow repeats `make ci` before it publishes assets or updates the
+tap.
 
 ## Promote `main` To A Stable Release
 
@@ -171,13 +175,15 @@ make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
 make release VERSION_SELECTOR=0.7.0 # exact next semantic version
 ```
 
-Before source promotion, the helper bootstraps the matched stack tools, fetches
-the required `containerization` integration kernel when it is absent, and runs
-the full local `make release-gate`. The hosted gate repeats that validation from
-the immutable source, runtime, and tap checkouts before package publication.
-The helper waits up to three hours for that hosted gate, which exceeds its
-120-minute workflow timeout; set `CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS` only
-when an operator needs a different bound.
+Before source promotion, the helper requires `kern.hv_support=1`, bootstraps the
+matched stack tools, fetches the required `containerization` integration kernel
+when it is absent, and runs the full local `make release-gate`. The hosted gate
+then runs the `make release-gate-hosted` equivalent from its immutable
+release-control checkout against the immutable source, runtime, and tap
+checkouts before package publication. The helper waits up to three hours for
+that hosted gate, which exceeds its 120-minute workflow timeout; set
+`CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS` only when an operator needs a
+different bound.
 
 The helper is the only supported version mutator. It updates the Compose version
 when necessary, preserves the exact runtime stack pin, opens and merges the

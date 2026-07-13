@@ -156,7 +156,7 @@ jobs:
           printf 'homebrew_tap_ref=%s\n' "${homebrew_tap_ref}" >> "$GITHUB_OUTPUT"
 
   release-gate:
-    name: Run Full Release Gate
+    name: Run Hosted Release Gate
     needs: resolve-candidate
     runs-on: macos-26
     timeout-minutes: 120
@@ -167,6 +167,15 @@ jobs:
           path: container-compose
           fetch-depth: 0
           ref: ${{ needs.resolve-candidate.outputs.sha }}
+
+      # Stable tags are immutable, so use the immutable workflow revision for
+      # release-control tooling while validating the tag checkout separately.
+      - name: Checkout immutable stable-gate tools
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          path: release-tools
+          fetch-depth: 0
+          ref: ${{ github.sha }}
 
       - name: Read exact stack refs
         id: stack-refs
@@ -224,6 +233,7 @@ jobs:
           CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
           CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
           HOMEBREW_TAP_REF: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}
+          CONTROL_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -231,6 +241,7 @@ jobs:
           [[ "$(git -C containerization rev-parse HEAD)" == "${CONTAINERIZATION_REF}" ]]
           [[ "$(git -C container rev-parse HEAD)" == "${CONTAINER_REF}" ]]
           [[ "$(git -C homebrew-tap rev-parse HEAD)" == "${HOMEBREW_TAP_REF}" ]]
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${CONTROL_SHA}" ]]
 
       - name: Use pinned containerization dependency
         run: Tools/ci/use-stack-containerization.sh ../containerization
@@ -253,7 +264,7 @@ jobs:
 
       # Each pinned repository checks its own .local/bin rather than PATH.
       # Bootstrap those verified per-repository tools before invoking the
-      # aggregate gate from container-compose.
+      # immutable control-plane release gate.
       - name: Provision pinned stack tools
         shell: bash
         run: |
@@ -269,13 +280,15 @@ jobs:
             )
           done
 
-      - name: Provision containerization integration kernel
-        run: make fetch-default-kernel
-        working-directory: containerization
-
-      - name: Run release gate
-        run: make release-gate
-        working-directory: container-compose
+      # GitHub-hosted macOS runners are VMs and cannot launch nested
+      # Virtualization.framework guests. The release helper runs the full live
+      # gate on a supported local Mac before it creates the signed source tag.
+      - name: Run hosted release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          release-tools/Tools/ci/run-stack-release-validation.sh hosted \
+            container-compose container-builder-shim containerization container homebrew-tap
+          make -C container-compose ci
         env:
           HAWKEYE_AUTO_INSTALL: "1"
-          HOMEBREW_TAP_REPO: ../homebrew-tap

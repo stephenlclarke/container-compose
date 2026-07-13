@@ -334,6 +334,23 @@ ensure_clean() {
   fi
 }
 
+# Require a host that can execute the live runtime validation before promotion.
+require_local_virtualization() {
+  local support
+  if [[ "${EXECUTE}" != "1" ]]; then
+    return 0
+  fi
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    printf 'stable promotion requires macOS hardware virtualization; run make release on a supported Apple silicon Mac\n' >&2
+    exit 1
+  fi
+  support="$(sysctl -n kern.hv_support 2>/dev/null || true)"
+  if [[ "${support}" != "1" ]]; then
+    printf 'stable promotion requires kern.hv_support=1 for the full local runtime and parity gate\n' >&2
+    exit 1
+  fi
+}
+
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   local path repository
@@ -344,6 +361,7 @@ run_local_release_gate() {
   fi
 
   print_header "run local release gate"
+  require_local_virtualization
   for repository in "${path}" \
     "$(repo_path "container-builder-shim")" \
     "$(repo_path "containerization")" \
@@ -1399,7 +1417,8 @@ dispatch_stable_release_gate() {
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would run: gh workflow run stable-release-gate.yml --repo %s --ref main -f ref=%s\n' \
       "$(github_repo "${COMPOSE_REPO}")" "${version}"
-    printf 'would wait for the hosted gate to confirm green main CI, SonarQube, and full parity.\n'
+    printf 'would wait for the hosted gate to confirm green main CI, SonarQube, and immutable static stack validation.\n'
+    printf 'full runtime integration and Docker Compose parity run locally before the tag is created.\n'
     return 0
   fi
 
