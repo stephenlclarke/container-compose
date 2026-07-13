@@ -123,7 +123,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("Commits since `0.5.0`", notes)
             self.assertIn("The stable release updates `stephenlclarke/tap/container-compose`", notes)
             self.assertIn(
-                "Stable release promotion runs `make release-gate` before dispatching the package workflow.",
+                "Stable release promotion runs `make release-gate`, promotes `container-compose` through the pull-request path, and verifies the promoted main tree before dispatching the package workflow.",
                 notes,
             )
             self.assertIn(
