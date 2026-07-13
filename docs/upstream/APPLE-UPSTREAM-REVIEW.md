@@ -18,6 +18,12 @@ This is the current disposition of Apple work that affects the five-repository c
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Ready-for-review manifest fix that excludes the `CloudHypervisor` README from SwiftPM target inputs and removes the warning introduced with [apple/containerization#782](https://github.com/apple/containerization/pull/782). |
 | [apple/containerization#799](https://github.com/apple/containerization/pull/799) | Ready-for-review fix for [apple/container#1927](https://github.com/apple/container/issues/1927): missing copy sources fail promptly, preserve the guest error, and no longer block later container lifecycle operations. |
 
+The exact current heads of these proposals, plus
+[apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87),
+are retained as immutable Stephen-owned branches in
+[PR-ARCHIVE.json](PR-ARCHIVE.json). The daily archive verification workflow
+fails if any snapshot is deleted or retargeted.
+
 ## Ready Apple Handoffs
 
 | Repository | Current purpose |

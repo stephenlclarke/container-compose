@@ -14,6 +14,10 @@ This directory is the durable handoff area for Apple-facing issue and pull reque
 - Keep the draft files in this repository even when the code lives in sibling forks. That makes `container-compose` the single project handoff for runtime gaps, upstream links, and commit IDs.
 - Treat this `container-compose` tree as the only home for handoff documentation. Do not keep `ISSUE-*.md` or `PR-*.md` draft files in the sibling `container`, `containerization`, or `container-builder-shim` fork worktrees; if one is created there while shaping code, move it into the matching `docs/upstream/` folder here and remove the fork copy.
 - Keep drafts current. Remove obsolete branch names, completed migration notes, dated snapshots, and superseded implementation procedures instead of preserving project history here. Current branch and release rules live in [BRANCHES.md](../../BRANCHES.md).
+- Every open Apple pull request with code we may need to recover must also have
+  an immutable, Stephen-owned `upstream-pr-NUMBER-SHORTSHA` branch recorded in
+  [PR-ARCHIVE.json](PR-ARCHIVE.json). Never force-push, delete, or retarget an
+  archive branch. Add a new snapshot when an upstream PR head changes.
 
 ## Final Upstream Review Gate
 
@@ -33,6 +37,7 @@ The review must cover every potential PR independently:
 | Area | Paths | Notes |
 | --- | --- | --- |
 | Current Apple review | `docs/upstream/APPLE-UPSTREAM-REVIEW.md` | Live disposition of affected bugs, approved open pull requests, local ports, and unresolved follow-up work. |
+| Immutable PR code archive | `docs/upstream/PR-ARCHIVE.json` | Full-SHA, Stephen-owned snapshots of every open upstream proposal that the stack depends on. [Verify Upstream PR Archives](../../.github/workflows/upstream-pr-archive.yml) checks them daily. |
 | Compose-owned compatibility slices | `docs/upstream/container-compose/` | Plugin-owned issue/PR drafts with commit tracking. These drafts may describe Docker/Compose compatibility and the temporary command-vector bridge while the typed service-create adapter is still being wired. |
 | Copy slices | `docs/upstream/copy/` | Compose-facing copy follow-link and archive drafts with commit tracking. Runtime copy primitives live under the Apple folders. |
 | Process listing / `top` slice | `docs/upstream/process-list/`, `docs/upstream/apple-container/`, and `docs/upstream/apple-containerization/` | Compose-facing Docker-shaped `top` drafts plus generic Apple runtime/API/init-image handoffs and commit tracking. |
