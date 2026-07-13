@@ -40,18 +40,19 @@ make release VERSION_SELECTOR=--+
 
 The release helper resolves symbolic selectors from the latest local semantic `container-compose` tag, not from mutable working-tree state. Bare `MAJOR.MINOR.PATCH` source tags match Apple repository conventions; do not add a `v` prefix. Existing tags are never moved.
 
-Every green `main` commit publishes an installable **current** stack. A bare
-semantic tag publishes a **stable** stack. These are formula pairs, never
-independently moving formulae:
+Every green `main` commit refreshes one installable **Current build** prerelease
+and moves only its `current` tag. A bare semantic tag publishes an immutable
+**stable** stack. These are formula pairs, never independently moving formulae:
 
 | Channel | Runtime formula | Compose formula | Source of truth |
 | --- | --- | --- | --- |
 | Stable | `container` | `container-compose` | A semantic Compose tag at the green `main` head. |
-| Current | `container-current` | `container-compose-current` | The latest green Compose `main` commit and the exact runtime ref in its stack manifest. |
+| Current | `container-current` | `container-compose-current` | The one mutable `current` prerelease at the latest green Compose `main` commit, containing the exact runtime ref in its stack manifest. |
 
-`container-compose` owns both promotions. It verifies the runtime asset pinned
-by `Tools/release/stack-refs.json`, then commits the two formula changes in one
-tap commit. A runtime build never writes either stable formula by itself.
+`container-compose` owns both promotions. It packages the exact runtime pinned
+by `Tools/release/stack-refs.json` beside the Compose plugin, then commits the
+two formula changes in one tap commit. A runtime build never writes either
+stable formula by itself.
 
 ## Release Helper
 
@@ -69,20 +70,22 @@ Homebrew tap workflow boundary. `make release` validates the source worktrees
 and `stephenlclarke` push targets, synchronizes exact `containerization` SwiftPM
 revision pins when the local runtime stack moved, and creates a reviewable
 release-preparation commit. This is the helper's only version mutation. It then
-promotes the source branches, waits for the matching immutable `container`
-current package, creates one new semantic `container-compose` tag, dispatches
-the hosted Stable Release Gate, and then dispatches the stable package workflow.
+promotes the source branches, creates one new semantic `container-compose` tag,
+dispatches the hosted Stable Release Gate, and then dispatches the stable package workflow.
 The hosted gate first requires green `main` CI—the only place SonarQube analyses
 the project—then runs full stack parity against the exact tagged commit. The
 package workflow verifies that hosted evidence and the runtime asset before it
 creates the release and atomically updates the tap.
 
-Source tags and every published GitHub release are immutable. The package
-workflow rejects an existing stable or current release instead of editing notes
-or overwriting assets. Correct a failed release through an explicitly reviewed
+Semantic source tags and stable GitHub releases are immutable. The `current`
+tag and its single **Current build** prerelease are deliberately mutable: after
+green `main` CI, automation replaces their assets and notes with the exact
+latest stack. Automation removes superseded generated current-release objects
+without deleting their tags, so upstream PR snapshots and source references
+remain available. Correct a failed stable release through an explicitly reviewed
 incident change; do not replay an identity.
 
-Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes compare against the newest published stable GitHub release when release metadata is available, with local semantic tags as the offline fallback, so unpublished source tags cannot hide user-facing changes. They include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Write one complete sentence that names the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`, which suppresses an automatic highlight. When a user-facing conventional commit has no trailer, the renderer uses the first prose paragraph from its body before falling back to the subject. For upstream-driven work, also record the original `owner/repository#number` under `Upstream-Ref:`, `Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The renderer preserves references already written into the highlight and appends any missing references, including highlights collected from stack component commits.
+Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes compare against the newest published stable GitHub release when release metadata is available, with local semantic tags as the offline fallback, so unpublished source tags cannot hide user-facing changes. They include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Write one complete sentence that names the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`, which suppresses an automatic highlight. When a user-facing conventional commit has no trailer, the renderer uses the first prose paragraph from its body before falling back to the subject. The active package also contains a machine-readable `release-highlights.json` copy; stable notes preserve those highlights after retired assets are removed. For upstream-driven work, also record the original `owner/repository#number` under `Upstream-Ref:`, `Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The renderer preserves references already written into the highlight and appends any missing references, including highlights collected from stack component commits.
 
 `VERSION_SELECTOR` accepts:
 
@@ -91,7 +94,7 @@ Release notes are rendered by [Tools/release/release-notes.py](Tools/release/rel
 - `+--`: major bump from the latest semantic tag and reset minor and patch to `0`.
 - `MAJOR.MINOR.PATCH`: explicit stable release version.
 
-The container package wait, Compose package wait, and pull-request promotion wait all default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_RELEASE_WAIT_SECONDS`, `CONTAINER_STACK_RELEASE_POLL_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`, `CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS`, or `CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS`.
+The Compose package and pull-request promotion waits default to one hour with 30-second polls. Override them only for emergency maintenance with `CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS`, `CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS`, `CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS`, or `CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS`.
 
 The helper refuses Apple push targets. stephenlclarke-owned remotes are the only release push targets.
 
@@ -106,8 +109,8 @@ The helper refuses Apple push targets. stephenlclarke-owned remotes are the only
  `Tools/release/stack-refs.json` is the canonical runtime pin for CI, packaging,
  and formula promotion. [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py)
  rejects a checked-out runtime that differs from that manifest; it only falls
- back to the latest immutable `current-RUN-SHA` runtime tag or `main` when no
- manifest is present. Do not reintroduce duplicated hand-maintained pin prose.
+ back to `main` when no manifest is present. Do not reintroduce duplicated
+ hand-maintained pin prose.
 
 `container` and `container-compose` pin `stephenlclarke/containerization` by exact SwiftPM `revision` in `Package.swift`. `Tools/release/stack-refs.json`, both `Package.swift` manifests, and both `Package.resolved` lockfiles must name the same revision; `make check` enforces this through [Tools/ci/check-stack-consistency.py](Tools/ci/check-stack-consistency.py).
 

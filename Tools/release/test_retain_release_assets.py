@@ -6,7 +6,7 @@
 ## you may not use this file except in compliance with the License.
 ## You may obtain a copy of the License at
 ##
-##     http://www.apache.org/licenses/LICENSE-2.0
+##   https://www.apache.org/licenses/LICENSE-2.0
 ##
 ## Unless required by applicable law or agreed to in writing, software
 ## distributed under the License is distributed on an "AS IS" BASIS,
@@ -47,6 +47,44 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
             {"id": 5, "published_at": None, "prerelease": True, "draft": True},
         ]
         self.assertEqual(module.retained_release_ids(releases), {2, 4})
+
+    def test_current_pointer_beats_newer_noncurrent_prerelease(self) -> None:
+        module = load_module()
+        releases = [
+            {
+                "id": 1,
+                "tag_name": "0.6.69",
+                "published_at": "2026-07-01T00:00:00Z",
+                "prerelease": False,
+                "draft": False,
+            },
+            {
+                "id": 2,
+                "tag_name": "current",
+                "published_at": "2026-07-02T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+            },
+            {
+                "id": 3,
+                "tag_name": "0.6.70-rc.1",
+                "published_at": "2026-07-03T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+            },
+        ]
+        self.assertEqual(module.retained_release_ids(releases), {1, 2})
+
+    def test_only_generated_current_releases_are_removed(self) -> None:
+        module = load_module()
+        self.assertTrue(module.obsolete_current_release({"prerelease": True, "tag_name": "current-12-abc"}))
+        self.assertTrue(
+            module.obsolete_current_release(
+                {"prerelease": True, "tag_name": "homebrew-main-12-abc"}
+            )
+        )
+        self.assertFalse(module.obsolete_current_release({"prerelease": True, "tag_name": "0.6.70-rc.1"}))
+        self.assertFalse(module.obsolete_current_release({"prerelease": False, "tag_name": "0.6.69"}))
 
     def test_historical_note_uses_exact_tag_and_homebrew_bootstrap(self) -> None:
         module = load_module()
@@ -96,6 +134,17 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
         self.assertIn("newest published current prerelease", current)
         self.assertIn("container-compose-current", current)
         self.assertIn("brew tap stephenlclarke/tap", current)
+
+    def test_legacy_dependency_pin_highlights_are_removed(self) -> None:
+        module = load_module()
+        body = (
+            "## Highlights\n\n"
+            "- Useful user-facing change.\n"
+            "- Release automation pins stephenlclarke/containerization by exact SwiftPM revision 101a0868022e.\n"
+        )
+        cleaned = module.remove_legacy_pin_highlights(body)
+        self.assertIn("Useful user-facing change", cleaned)
+        self.assertNotIn("Release automation pins", cleaned)
 
 
 if __name__ == "__main__":

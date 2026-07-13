@@ -83,16 +83,20 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("RELEASE_EXTRA_ASSETS_FILE=\"${extra_assets}\"", workflow)
         self.assertIn("RUNTIME_RELEASE_REPOSITORY", workflow)
 
-    def test_current_formulae_continue_to_use_the_immutable_current_runtime_release(self) -> None:
+    def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('runtime_asset="container-current-arm64.tar.gz"', workflow)
-        self.assertIn('runtime_repository="stephenlclarke/container"', workflow)
+        self.assertIn('runtime_repository="${GITHUB_REPOSITORY}"', workflow)
+        self.assertIn('release_tag="current"', workflow)
+        self.assertIn('release_title="Current build"', workflow)
+        self.assertIn('RELEASE_MUTABLE="${release_mutable}"', workflow)
+        self.assertIn("--delete-superseded-current-releases", workflow)
 
-    def test_stable_promotions_do_not_start_a_duplicate_current_package(self) -> None:
+    def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Skipping current package for stable release", workflow)
-        self.assertIn('git ls-remote --tags "${remote}"', workflow)
-        self.assertIn('stable_tag="$(', workflow)
+        self.assertIn("Skipping current package because current already points at", workflow)
+        self.assertIn("refs/tags/current^{}", workflow)
+        self.assertIn('current_tag_sha="$(', workflow)
 
     def test_release_gate_includes_sibling_coverage_and_runtime_integration(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

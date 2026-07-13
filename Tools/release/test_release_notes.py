@@ -52,7 +52,7 @@ class ReleaseNotesTests(unittest.TestCase):
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="current-123-abcdef123456",
+                release_tag="current",
                 release_label="current build",
                 compose_version="0.6.1",
                 asset="container-compose-plugin-current-arm64.tar.gz",
@@ -66,11 +66,36 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("## Asset Retention", notes)
             self.assertIn("It never changes the stable formula pair.", notes)
             self.assertIn("They do not move semantic source tags or the stable formula pair.", notes)
+            self.assertIn("Mutable `current` pointer targets main commit", notes)
+            self.assertIn("single `Current build` prerelease", notes)
             self.assertIn("## Highlights", notes)
             self.assertIn("Support bind propagation.", notes)
             self.assertIn("feat(mounts): support bind propagation", notes)
             self.assertIn("docs: refresh compose guidance", notes)
             self.assertNotIn("chore: initial import", notes)
+
+    def test_current_notes_record_the_matched_runtime_checksum(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            head = self.git(repo, "rev-parse", "HEAD")
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="current",
+                release_label="current build",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-current-arm64.tar.gz",
+                asset_sha="compose-sha",
+                runtime_asset="container-current-arm64.tar.gz",
+                runtime_asset_sha="runtime-sha",
+                head_ref="HEAD",
+            )
+
+            self.assertIn(f"Mutable `current` pointer targets main commit `{head}`", notes)
+            self.assertIn("`container-current-arm64.tar.gz` SHA-256:", notes)
+            self.assertIn("`runtime-sha`.", notes)
 
     def test_main_validation_tag_rerun_keeps_full_stable_range(self) -> None:
         module = load_module()

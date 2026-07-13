@@ -6,7 +6,7 @@
 ## you may not use this file except in compliance with the License.
 ## You may obtain a copy of the License at
 ##
-##     http://www.apache.org/licenses/LICENSE-2.0
+##   https://www.apache.org/licenses/LICENSE-2.0
 ##
 ## Unless required by applicable law or agreed to in writing, software
 ## distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import tempfile
 from collections.abc import Iterable
@@ -29,6 +30,9 @@ from pathlib import Path
 
 RETENTION_START = "<!-- container-release-retention:start -->"
 RETENTION_END = "<!-- container-release-retention:end -->"
+LEGACY_PIN_HIGHLIGHT = re.compile(
+    r"(?m)^- Release automation pins .+ by exact SwiftPM revision [0-9a-f]{12}\.\n?"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,6 +72,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="delete stale assets and edit stale release notes; otherwise report only",
     )
+    parser.add_argument(
+        "--delete-superseded-current-releases",
+        action="store_true",
+        help="delete obsolete mutable current release objects while preserving their tags",
+    )
     return parser.parse_args()
 
 
@@ -84,18 +93,45 @@ def published_releases(releases: Iterable[dict]) -> list[dict]:
     return [release for release in releases if not release.get("draft") and release.get("published_at")]
 
 
+def current_release_candidates(releases: Iterable[dict]) -> list[dict]:
+    """Return published prereleases that implement the mutable current lane."""
+    return [
+        release
+        for release in published_releases(releases)
+        if release.get("prerelease")
+        and release.get("tag_name") in {"current"}
+    ]
+
+
+def obsolete_current_release(release: dict) -> bool:
+    """Return whether a prerelease is an old generated current-build release."""
+    tag = str(release.get("tag_name") or "")
+    return bool(release.get("prerelease")) and (
+        tag.startswith("current-") or tag.startswith("homebrew-main-")
+    )
+
+
 def retained_release_ids(releases: Iterable[dict]) -> set[int]:
-    """Return newest published stable and newest published prerelease ids."""
+    """Return newest stable and the sole mutable current prerelease ids."""
 
     keep: set[int] = set()
-    for prerelease in (False, True):
-        candidates = [
+    stable_candidates = [
+        release
+        for release in published_releases(releases)
+        if not release.get("prerelease")
+    ]
+    if stable_candidates:
+        keep.add(max(stable_candidates, key=lambda release: release["published_at"])["id"])
+
+    current_candidates = current_release_candidates(releases)
+    if not current_candidates:
+        current_candidates = [
             release
             for release in published_releases(releases)
-            if bool(release.get("prerelease")) is prerelease
+            if release.get("prerelease")
         ]
-        if candidates:
-            keep.add(max(candidates, key=lambda release: release["published_at"])["id"])
+    if current_candidates:
+        keep.add(max(current_candidates, key=lambda release: release["published_at"])["id"])
     return keep
 
 
@@ -168,6 +204,11 @@ def replace_retention_note(body: str, note: str) -> str:
     return body[:start].rstrip() + "\n\n" + note + body[end:].rstrip() + "\n"
 
 
+def remove_legacy_pin_highlights(body: str) -> str:
+    """Drop internal dependency-pin statements from user-facing release notes."""
+    return LEGACY_PIN_HIGHLIGHT.sub("", body)
+
+
 def list_releases(repo: str) -> list[dict]:
     pages = json.loads(
         run_gh(
@@ -203,6 +244,11 @@ def update_release_notes(repo: str, release: dict, body: str) -> None:
         notes_path.unlink(missing_ok=True)
 
 
+def delete_release(repo: str, release: dict) -> None:
+    """Delete only a release object; source tags remain available for reference."""
+    run_gh("release", "delete", release["tag_name"], "--repo", repo, "--yes")
+
+
 def main() -> None:
     args = parse_args()
     releases = list_releases(args.repo)
@@ -221,7 +267,7 @@ def main() -> None:
             continue
         current_body = release.get("body") or ""
         body = replace_retention_note(
-            current_body,
+            remove_legacy_pin_highlights(current_body),
             active_homebrew_note(
                 prerelease=bool(release.get("prerelease")),
                 install_command=(
@@ -238,6 +284,13 @@ def main() -> None:
             update_release_notes(args.repo, release, body)
 
     for release in stale:
+        if args.delete_superseded_current_releases and obsolete_current_release(release):
+            print(f"removing superseded current release object: {release['tag_name']}")
+            if args.apply:
+                delete_release(args.repo, release)
+            continue
+
+        current_body = release.get("body") or ""
         note = historical_source_note(
             repo=args.repo,
             tag=release["tag_name"],
@@ -246,8 +299,7 @@ def main() -> None:
             source_guidance=args.source_guidance,
             install_command=args.install_command,
         )
-        body = replace_retention_note(release.get("body") or "", note)
-        current_body = release.get("body") or ""
+        body = replace_retention_note(remove_legacy_pin_highlights(current_body), note)
         asset_count = len(release.get("assets", []))
         if not asset_count and body == current_body:
             continue

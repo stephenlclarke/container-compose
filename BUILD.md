@@ -137,6 +137,30 @@ workflow does not replace the local `make release-gate`; use
 `make release VERSION_SELECTOR=--+` for stable promotion so the full Docker
 Compose parity suite remains mandatory.
 
+## Promote `main` To A Stable Release
+
+There are two package lanes, with no manual asset copying:
+
+- Every green `main` commit refreshes the one mutable GitHub prerelease named **Current build** (tag `current`) and the opt-in `container-current` / `container-compose-current` Homebrew pair.
+- A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
+
+From a clean `~/github/container-compose` checkout, inspect the deterministic plan first:
+
+```sh
+make release-plan
+```
+
+Then promote the validated `main` head. The selector is resolved from the latest semantic tag—not from the working-tree version:
+
+```sh
+make release VERSION_SELECTOR=--+   # patch: 0.6.69 -> 0.6.70
+make release VERSION_SELECTOR=-+-   # minor: 0.6.69 -> 0.7.0
+make release VERSION_SELECTOR=+--   # major: 0.6.69 -> 1.0.0
+make release VERSION_SELECTOR=0.7.0 # exact next semantic version
+```
+
+The helper is the only supported version mutator. It updates the Compose version when necessary, preserves the exact runtime stack pin, opens and merges the source-promotion PR, creates a signed semantic tag, waits for the hosted Stable Release Gate, then dispatches the stable package workflow. That workflow publishes the immutable stable assets and atomically updates both stable Homebrew formulae. Do not create a semantic tag or edit either stable formula by hand.
+
 ## Docker Compose Parity
 
 Run every maintained Docker Compose v2 comparison in deterministic sequence:

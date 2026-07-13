@@ -84,6 +84,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compose-version", required=True)
     parser.add_argument("--asset", required=True)
     parser.add_argument("--asset-sha", required=True)
+    parser.add_argument("--runtime-asset")
+    parser.add_argument("--runtime-asset-sha")
     parser.add_argument(
         "--highlights-json",
         type=Path,
@@ -696,6 +698,8 @@ def render_release_notes(
     asset: str,
     asset_sha: str,
     head_ref: str,
+    runtime_asset: str | None = None,
+    runtime_asset_sha: str | None = None,
     release_repo: str | None = None,
     component_repos: dict[str, Path] | None = None,
 ) -> str:
@@ -708,6 +712,8 @@ def render_release_notes(
     )
     head_short = selected_range.head_commit[:12]
     stable_release = is_stable_release_tag(release_tag)
+    if (runtime_asset is None) != (runtime_asset_sha is None):
+        raise ValueError("runtime asset name and checksum must be provided together")
 
     lines = [
         "## Summary",
@@ -715,8 +721,12 @@ def render_release_notes(
         f"- {release_label} package for the `{compose_version}` container-compose slice.",
         "- Keeps the fork-backed container, containerization, and builder-shim compatibility metadata intact.",
         "- Publishes the release-quality Swift plugin and non-debug Go normalizer package.",
-        "",
     ]
+    if not stable_release:
+        lines.append(
+            f"- Mutable `current` pointer targets main commit `{selected_range.head_commit}`."
+        )
+    lines.append("")
 
     lines.extend(["## Highlights", ""])
     if highlights:
@@ -771,6 +781,7 @@ def render_release_notes(
         lines.extend(
             [
                 "- The current build atomically updates `stephenlclarke/tap/container-compose-current` and `stephenlclarke/tap/container-current`.",
+                "- Both formulae download the exact matched assets from this one mutable prerelease.",
                 "- It never changes the stable formula pair.",
             ]
         )
@@ -792,7 +803,7 @@ def render_release_notes(
     else:
         lines.extend(
             [
-                "- Current builds are published only for the latest green `main` commit.",
+                "- The single `Current build` prerelease and its `current` tag move together only after green `main` CI.",
                 "- They do not move semantic source tags or the stable formula pair.",
             ]
         )
@@ -802,9 +813,10 @@ def render_release_notes(
             "",
             "## Asset Retention",
             "",
-            "- Release objects, notes, highlight manifests, and source tags are retained as history.",
-            "- Only the newest published stable release and newest published current prerelease retain downloadable assets and tap-backed installation.",
-            "- When a newer release supersedes this one, automation removes its binary assets and adds exact source-build instructions to this page.",
+            "- Stable release objects, notes, and source tags are retained as history.",
+            "- Only the newest published stable release and the one `current` prerelease retain downloadable assets and tap-backed installation.",
+            "- Superseded generated current-release objects are deleted, while their source tags remain available for reference.",
+            "- Superseded stable releases lose binary assets and gain exact source-build instructions on this page.",
             "",
             "## Validation",
             "",
@@ -821,6 +833,13 @@ def render_release_notes(
             f"  `{asset_sha}`.",
         ]
     )
+    if runtime_asset is not None and runtime_asset_sha is not None:
+        lines.extend(
+            [
+                f"- `{runtime_asset}` SHA-256:",
+                f"  `{runtime_asset_sha}`.",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -835,6 +854,8 @@ def main() -> None:
                 compose_version=args.compose_version,
                 asset=args.asset,
                 asset_sha=args.asset_sha,
+                runtime_asset=args.runtime_asset,
+                runtime_asset_sha=args.runtime_asset_sha,
                 head_ref=args.head,
                 release_repo=args.release_repo,
                 component_repos=parse_component_repos(args.component_repo),

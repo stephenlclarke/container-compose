@@ -152,8 +152,6 @@ parse_arguments() {
 ROOT="${HOME}/github"
 COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
-RELEASE_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_WAIT_SECONDS:-3600}"
-RELEASE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_POLL_SECONDS:-30}"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
 COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
@@ -1066,45 +1064,6 @@ push_all_main() {
   done
 }
 
-# The helper only prepares and promotes source candidates. Hosted workflows are
-# the release authority and validate the exact immutable source commit.
-container_current_tag_for_sha() {
-  local sha="$1" path remote
-  path="$(repo_path "${CONTAINER_REPO}")"
-  remote="$(push_remote "${CONTAINER_REPO}")"
-  git -C "${path}" ls-remote --tags --refs "${remote}" "refs/tags/current-*" \
-    | awk -v sha="${sha}" '$1 == sha { sub("^refs/tags/", "", $2); print $2; exit }'
-}
-
-wait_for_container_current_package() {
-  local sha tag deadline now
-  sha="$(git -C "$(repo_path "${CONTAINER_REPO}")" rev-parse main)"
-  print_header "wait for immutable container current package"
-  if [[ "${EXECUTE}" != "1" ]]; then
-    printf 'would wait for stephenlclarke/container current-* tag at %s\n' "${sha}"
-    return 0
-  fi
-
-  deadline=$((SECONDS + RELEASE_WAIT_SECONDS))
-  while true; do
-    tag="$(container_current_tag_for_sha "${sha}")"
-    if [[ -n "${tag}" ]]; then
-      printf 'container package tag ready: %s -> %s\n' "${tag}" "${sha}"
-      return 0
-    fi
-
-    now="${SECONDS}"
-    if (( now >= deadline )); then
-      printf 'timed out waiting for stephenlclarke/container current-* tag at %s\n' "${sha}" >&2
-      printf 'check the Publish Current Runtime workflow before tagging container-compose\n' >&2
-      exit 1
-    fi
-
-    printf 'waiting for container current package at %s; next check in %ss\n' "${sha}" "${RELEASE_POLL_SECONDS}"
-    sleep "${RELEASE_POLL_SECONDS}"
-  done
-}
-
 # Require an executable command when an executed workflow depends on it.
 need_command() {
   local command_name="$1"
@@ -1171,7 +1130,7 @@ wait_for_github_run_success() {
 
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
-  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha container_ref runtime_tag runtime_asset runtime_url runtime_formula_text container_formula_url
+  local version="$1" repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
   expected_url="https://github.com/${repo}/releases/download/${version}/${asset}"
@@ -1198,17 +1157,36 @@ verify_compose_stable_package() {
     exit 1
   fi
 
+  runtime_asset="container-release-arm64.tar.gz"
+  if ! grep -Fxq "${runtime_asset}" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s\n' "${version}" "${runtime_asset}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "${runtime_asset}.sha256" <<<"${asset_names}"; then
+    printf 'release %s is missing asset %s.sha256\n' "${version}" "${runtime_asset}" >&2
+    exit 1
+  fi
+
   env -u GITHUB_TOKEN -u GH_TOKEN gh release download "${version}" \
     --repo "${repo}" \
     --pattern "${asset}" \
     --pattern "${asset}.sha256" \
+    --pattern "${runtime_asset}" \
+    --pattern "${runtime_asset}.sha256" \
     --dir "${tmp}"
   asset_sha="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
   checksum_sha="$(awk '{print $1}' "${tmp}/${asset}.sha256")"
-  rm -rf "${tmp}"
   if [[ "${asset_sha}" != "${checksum_sha}" ]]; then
     printf 'release %s checksum mismatch: asset %s, checksum file %s\n' \
       "${version}" "${asset_sha}" "${checksum_sha}" >&2
+    exit 1
+  fi
+  runtime_asset_sha="$(shasum -a 256 "${tmp}/${runtime_asset}" | awk '{print $1}')"
+  runtime_checksum_sha="$(awk '{print $1}' "${tmp}/${runtime_asset}.sha256")"
+  rm -rf "${tmp}"
+  if [[ "${runtime_asset_sha}" != "${runtime_checksum_sha}" ]]; then
+    printf 'release %s runtime checksum mismatch: asset %s, checksum file %s\n' \
+      "${version}" "${runtime_asset_sha}" "${runtime_checksum_sha}" >&2
     exit 1
   fi
 
@@ -1239,26 +1217,22 @@ verify_compose_stable_package() {
     exit 1
   fi
 
-  container_ref="$(
-    git -C "$(repo_path "${COMPOSE_REPO}")" show "${version}:Tools/release/stack-refs.json" \
-      | python3 -c 'import json, sys; print(json.load(sys.stdin)["components"]["container"]["ref"])'
-  )"
-  runtime_tag="$(container_current_tag_for_sha "${container_ref}")"
-  if [[ -z "${runtime_tag}" ]]; then
-    printf 'stable stack has no immutable container current package for %s\n' "${container_ref}" >&2
-    exit 1
-  fi
-  runtime_asset="container-current-arm64.tar.gz"
-  runtime_url="https://github.com/stephenlclarke/container/releases/download/${runtime_tag}/${runtime_asset}"
+  runtime_url="https://github.com/${repo}/releases/download/${version}/${runtime_asset}"
   runtime_formula_text="$(
     env -u GITHUB_TOKEN -u GH_TOKEN gh api \
       repos/stephenlclarke/homebrew-tap/contents/Formula/container.rb \
       --jq '.content' | base64 --decode
   )"
   container_formula_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${runtime_formula_text}" | head -n 1)"
+  container_formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${runtime_formula_text}" | head -n 1)"
   if [[ "${container_formula_url}" != "${runtime_url}" ]]; then
     printf 'stable container formula URL mismatch: expected %s, got %s\n' \
       "${runtime_url}" "${container_formula_url}" >&2
+    exit 1
+  fi
+  if [[ "${container_formula_sha}" != "${runtime_asset_sha}" ]]; then
+    printf 'stable container formula SHA mismatch: expected %s, got %s\n' \
+      "${runtime_asset_sha}" "${container_formula_sha}" >&2
     exit 1
   fi
   if ! grep -Fq 'opt/container-compose/libexec/container-plugins/compose' <<<"${runtime_formula_text}"; then
@@ -1266,7 +1240,7 @@ verify_compose_stable_package() {
     exit 1
   fi
 
-  printf 'stable stack %s package pair verified: %s + %s\n' "${version}" "${asset_sha}" "${runtime_tag}"
+  printf 'stable stack %s package pair verified: %s + %s\n' "${version}" "${asset_sha}" "${runtime_asset_sha}"
 }
 
 # Dispatch and wait for the stable compose package workflow for a semantic tag.
@@ -1411,7 +1385,6 @@ release_current_stack() {
 
   ensure_clean "${COMPOSE_REPO}"
   push_all_main "${version}"
-  wait_for_container_current_package
   tag_stable_version "${version}"
 }
 
