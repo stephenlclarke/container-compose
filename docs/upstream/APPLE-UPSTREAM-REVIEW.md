@@ -18,6 +18,13 @@ This is the current disposition of Apple work that affects the five-repository c
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Ready-for-review manifest fix that excludes the `CloudHypervisor` README from SwiftPM target inputs and removes the warning introduced with [apple/containerization#782](https://github.com/apple/containerization/pull/782). |
 | [apple/containerization#799](https://github.com/apple/containerization/pull/799) | Ready-for-review fix for [apple/container#1927](https://github.com/apple/container/issues/1927): missing copy sources fail promptly, preserve the guest error, and no longer block later container lifecycle operations. |
 
+## Ready Apple Handoffs
+
+| Repository | Current purpose |
+| --- | --- |
+| `apple/container-builder-shim` | [Build-context source-read errors](apple-container-builder-shim/PR-build-context-source-read-errors.md) fail explicitly instead of sending empty file content. |
+| `apple/container-builder-shim` | [Build-context cache integrity](apple-container-builder-shim/PR-build-context-cache-integrity.md) verifies archives, atomically publishes cache trees, and keeps synthetic Dockerfiles request-local. |
+
 ## Overlapping Upstream Work
 
 | Pull request | Local disposition |
@@ -57,6 +64,7 @@ This is the current disposition of Apple work that affects the five-repository c
 - Rebase `apple/container#1935` after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
 - Generic log-retrieval runtime primitives still need minimal Apple proposals; Docker timestamp parsing remains owned by `container-compose`.
 - The container storage-boundary follow-up must wait for `apple/container#1735` and retain only its residual `FilePath` and volume-disk-usage protections. The independent `containerization` handoff is ready in [PR-container-storage-path-validation.md](apple-containerization/PR-container-storage-path-validation.md).
+- The two builder-shim handoffs are independently constructible and have no matching open upstream issue or pull request. Keep them separate from [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87), which changes `.dockerignore` filtering only.
 
 ## Submission Boundary
 
