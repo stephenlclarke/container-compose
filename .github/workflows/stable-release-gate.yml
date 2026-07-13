@@ -265,6 +265,10 @@ jobs:
             )
           done
 
+      - name: Provision containerization integration kernel
+        run: make fetch-default-kernel
+        working-directory: containerization
+
       - name: Run release gate
         run: make release-gate
         working-directory: container-compose

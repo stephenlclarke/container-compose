@@ -144,7 +144,9 @@ There are two package lanes, with no manual asset copying:
 - Every green `main` commit refreshes the one mutable GitHub prerelease named **Current build** (tag `current`) and the opt-in `container-current` / `container-compose-current` Homebrew pair.
 - A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
 
-From a clean `~/github/container-compose` checkout, inspect the deterministic plan first:
+From clean `~/github/container-compose`, `~/github/container-builder-shim`,
+`~/github/containerization`, `~/github/container`, and
+`~/github/homebrew-tap` checkouts, inspect the deterministic plan first:
 
 ```sh
 make release-plan

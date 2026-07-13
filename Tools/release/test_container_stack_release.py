@@ -161,6 +161,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow.index("Provision pinned stack tools"),
             workflow.index("Run release gate"),
         )
+        self.assertIn("Provision containerization integration kernel", workflow)
+        self.assertIn("run: make fetch-default-kernel", workflow)
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
