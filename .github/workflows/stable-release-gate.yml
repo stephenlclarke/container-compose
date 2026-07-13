@@ -72,18 +72,49 @@ jobs:
             printf 'could not resolve stable tag %s or main\n' "${RELEASE_TAG}" >&2
             exit 1
           fi
+          tag_object="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha'
+          )"
+          tag_verified="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.verification.verified'
+          )"
+          if [[ "${tag_verified}" != "true" ]]; then
+            printf 'stable tag %s is not GitHub-verified\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          latest_stable_tag="$(
+            git ls-remote --tags --refs "${remote}" \
+              | awk '{ sub("^refs/tags/", "", $2); print $2 }' \
+              | awk '/^[0-9]+[.][0-9]+[.][0-9]+$/' \
+              | sort -V \
+              | tail -n 1
+          )"
+          if [[ "${latest_stable_tag}" != "${RELEASE_TAG}" ]]; then
+            printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
+              "${RELEASE_TAG}" "${latest_stable_tag:-missing}" >&2
+            exit 1
+          fi
+
+          release_output=""
+          set +e
+          release_output="$(
+            gh api --silent "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>&1
+          )"
+          release_status=$?
+          set -e
+          if (( release_status == 0 )); then
+            printf 'stable release %s already exists and is immutable\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          if [[ "${release_output}" != *"HTTP 404"* ]]; then
+            printf 'could not determine whether stable release %s exists:\n%s\n' \
+              "${RELEASE_TAG}" "${release_output}" >&2
+            exit 1
+          fi
+
           if [[ "${tag_sha}" != "${main_sha}" ]]; then
-            tag_object="$(
-              gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha'
-            )"
-            tag_verified="$(
-              gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.verification.verified'
-            )"
-            if [[ "${tag_verified}" != "true" ]]; then
-              printf 'stable tag %s no longer matches main and is not GitHub-verified\n' "${RELEASE_TAG}" >&2
-              exit 1
-            fi
-            printf 'stable tag %s no longer matches main; accepting its GitHub-verified source for a release retry\n' \
+            printf 'stable tag %s no longer matches main; accepting its GitHub-verified unpublished source for a release retry\n' \
               "${RELEASE_TAG}"
           fi
 
