@@ -504,6 +504,39 @@ ensure_new_stable_release() {
   fi
 }
 
+# Return success when the semantic source tag already exists locally or remotely.
+stable_tag_exists() {
+  local version="$1" path remote
+  path="$(repo_path "${COMPOSE_REPO}")"
+  remote="$(push_remote "${COMPOSE_REPO}")"
+
+  if git -C "${path}" rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
+    return 0
+  fi
+  git -C "${path}" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1
+}
+
+# Refuse to retry a semantic tag once GitHub has made it a published release.
+ensure_stable_release_is_unpublished() {
+  local version="$1" output status
+  if output="$(github_cli release view "${version}" \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --json id 2>&1)"; then
+    printf 'stable release %s already exists and is immutable\n' "${version}" >&2
+    exit 1
+  else
+    status="$?"
+  fi
+
+  if grep -Eqi 'release not found|HTTP 404' <<<"${output}"; then
+    return 0
+  fi
+
+  printf 'could not determine whether stable release %s exists (gh exit %s):\n%s\n' \
+    "${version}" "${status}" "${output}" >&2
+  exit 1
+}
+
 # Require GitHub to recognise the signature on a newly-pushed stable tag. A
 # local signature alone is not enough: it must be associated with the GitHub
 # account that publishes this release.
@@ -1332,11 +1365,9 @@ dispatch_stable_release_gate() {
   done
 }
 
-# Tag a compose state as the stable/latest release point.
-tag_stable_version() {
+# Publish the immutable assets and tap formulae for a signed stable source tag.
+publish_stable_release() {
   local version="$1"
-  print_header "tag container-compose main as ${version} latest"
-  tag_new_stable_version "${version}"
   dispatch_stable_release_gate "${version}"
   dispatch_compose_stable_package "${version}"
   print_component_refs
@@ -1350,6 +1381,23 @@ Stable release point:
 EOF
 }
 
+# Tag a compose state as the stable/latest release point.
+tag_stable_version() {
+  local version="$1"
+  print_header "tag container-compose main as ${version} latest"
+  tag_new_stable_version "${version}"
+  publish_stable_release "${version}"
+}
+
+# Resume an unreleased signed tag after a failed gate without mutating source identity.
+resume_stable_release() {
+  local version="$1"
+  print_header "resume stable release ${version}"
+  ensure_stable_release_is_unpublished "${version}"
+  verify_github_stable_tag_signature "${version}"
+  publish_stable_release "${version}"
+}
+
 release_current_stack() {
   local latest current version path
   latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
@@ -1358,6 +1406,11 @@ release_current_stack() {
   fi
   current="$(current_compose_version)"
   version="$(resolve_release_version "${VERSION_SELECTOR}")"
+  if stable_tag_exists "${version}"; then
+    printf 'resuming unpublished stable tag: %s\n' "${version}"
+    resume_stable_release "${version}"
+    return 0
+  fi
   ensure_release_version_is_valid "${latest}" "${current}" "${version}"
   ensure_new_stable_release "${version}"
   path="$(repo_path "${COMPOSE_REPO}")"

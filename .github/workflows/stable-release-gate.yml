@@ -72,9 +72,18 @@ jobs:
             exit 1
           fi
           if [[ "${tag_sha}" != "${main_sha}" ]]; then
-            printf 'stable tag %s points at %s but main is %s; tags must be created at the validated main head\n' \
-              "${RELEASE_TAG}" "${tag_sha}" "${main_sha}" >&2
-            exit 1
+            tag_object="$(
+              gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha'
+            )"
+            tag_verified="$(
+              gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.verification.verified'
+            )"
+            if [[ "${tag_verified}" != "true" ]]; then
+              printf 'stable tag %s no longer matches main and is not GitHub-verified\n' "${RELEASE_TAG}" >&2
+              exit 1
+            fi
+            printf 'stable tag %s no longer matches main; accepting its GitHub-verified source for a release retry\n' \
+              "${RELEASE_TAG}"
           fi
 
           deadline=$((SECONDS + 3600))
@@ -157,6 +166,14 @@ jobs:
           path: container
           fetch-depth: 0
           ref: ${{ steps.stack-refs.outputs.container_ref }}
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: stephenlclarke/homebrew-tap
+          path: homebrew-tap
+          fetch-depth: 0
+          ref: main
 
       - name: Verify immutable dependency checkouts
         env:
