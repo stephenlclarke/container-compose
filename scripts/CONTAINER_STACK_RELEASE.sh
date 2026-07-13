@@ -44,12 +44,12 @@ Modes:
       to the next stable release. The version selector is resolved from the
       latest local semantic container-compose tag, not from mutable
       working-tree state. The helper bumps container-compose on main when
-      needed, commits that bump, pushes all stephenlclarke source main branches,
-      creates and pushes the stable container-compose source tag, dispatches the
-      stable package workflow, and waits for that workflow to publish the
-      release assets and Homebrew tap update. After the tap is verified, the
-      helper syncs the checked-in source formula template to the verified
-      release URL, version, and SHA.
+      needed, commits that bump, runs the full local release gate, pushes all
+      stephenlclarke source main branches, creates and pushes the stable
+      container-compose source tag, dispatches the stable package workflow, and
+      waits for that workflow to publish the release assets and Homebrew tap
+      update. After the tap is verified, the helper syncs the checked-in source
+      formula template to the verified release URL, version, and SHA.
 
       Version selectors:
         9.0.2  use the explicit 9.0.2 stable release version
@@ -80,6 +80,7 @@ Rules enforced:
   - stephenlclarke-owned remotes are the only push targets.
   - Worktrees must be clean before release changes.
   - Stable container-compose release tags point at the validated main commit.
+  - The full Docker Compose parity release gate runs locally before push/tag.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
   - The source Homebrew formula template is synced only after package verification.
@@ -650,6 +651,20 @@ push_all_main() {
   done
 }
 
+run_local_release_gate() {
+  local path
+  path="$(repo_path "${COMPOSE_REPO}")"
+  print_header "run local container-compose release gate"
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would run: make -C %s release-gate\n' "${path}"
+    return 0
+  fi
+
+  run env HAWKEYE_AUTO_INSTALL="${HAWKEYE_AUTO_INSTALL:-1}" \
+    make -C "${path}" release-gate
+  ensure_clean "${COMPOSE_REPO}"
+}
+
 container_homebrew_tag_for_sha() {
   local sha="$1" path remote
   path="$(repo_path "${CONTAINER_REPO}")"
@@ -998,6 +1013,7 @@ release_current_stack() {
   fi
 
   ensure_clean "${COMPOSE_REPO}"
+  run_local_release_gate
   push_all_main
   wait_for_container_homebrew_package
   tag_stable_version "${version}"

@@ -119,9 +119,10 @@ cache between runs, and always stops the test runtime when it exits.
 GitHub Actions separates source checks, macOS runtime validation, sanitizers,
 formatting, CodeQL, SonarCloud, package publication, and Homebrew formula syntax
 into focused workflows. `CI / Validate` is the aggregate required result;
-documentation/formula-only changes use the lightweight validation path. Stable
-semantic package dispatch runs `make release-gate` before publishing package
-assets or updating the tap.
+documentation/formula-only changes use the lightweight validation path. The
+stable release helper runs `make release-gate` locally against the exact release
+commit before it pushes or tags; the package workflow then repeats `make ci`
+before publishing package assets or updating the tap.
 
 ## Docker Compose Parity
 
