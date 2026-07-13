@@ -4,12 +4,15 @@ This guide explains how to install, upgrade, verify, and uninstall the `containe
 
 ## Homebrew Formulae
 
-The aggregate Homebrew tap publishes the stable stack:
+The aggregate Homebrew tap publishes two matched stacks. Install one lane at a
+time: both runtime formulae provide the `container` executable.
 
 | Formula | Build type | Use when |
 | --- | --- | --- |
 | `container-compose` | stable release build | Install this. It depends on the matched `stephenlclarke/container` runtime. |
 | `container` | runtime build | Installed automatically as the runtime dependency for the plugin formula. |
+| `container-compose-current` | current green-main build | Opt in when you want the latest installable app. It depends on `container-current`. |
+| `container-current` | current runtime build | Installed automatically with the current plugin formula. |
 
 The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
 
@@ -60,6 +63,33 @@ The `container` formula owns the plugin registration link inside its Homebrew in
 Installing only `container-compose` against a stock Apple `container` install is not the supported release path while the plugin depends on `stephenlclarke` runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
 
 If the machine has a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
+
+## Install The Current Matched Stack
+
+Use this lane when you want the latest installable `main` build rather than the
+latest semantic stable release. It is generated only after green `main` CI and
+is always paired with the exact runtime package in its Compose stack manifest.
+It deliberately does not modify the stable formulae.
+
+Switch from stable (or reset a mixed installation) first:
+
+```sh
+brew services stop stephenlclarke/tap/container || true
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose stephenlclarke/tap/container || true
+brew tap stephenlclarke/tap
+brew trust --tap stephenlclarke/tap
+brew update
+brew install --formula stephenlclarke/tap/container-compose-current
+brew postinstall stephenlclarke/tap/container-current
+brew services restart stephenlclarke/tap/container-current
+container system version
+container compose version
+```
+
+To return to stable, stop and uninstall the current pair, then follow
+[Install The Matched Stack](#install-the-matched-stack). Do not mix
+`container` with `container-compose-current`, or `container-current` with
+`container-compose`: the formula pair is the compatibility boundary.
 
 ## Install A Local Plugin Archive
 
@@ -132,6 +162,15 @@ brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 container system version
 container compose version
+```
+
+For the opted-in current lane, use its pair explicitly:
+
+```sh
+brew update
+brew upgrade stephenlclarke/tap/container-current stephenlclarke/tap/container-compose-current
+brew postinstall stephenlclarke/tap/container-current
+brew services restart stephenlclarke/tap/container-current
 ```
 
 If Homebrew says a formula is already current but the install still looks mixed, use the [reset flow](#troubleshooting).

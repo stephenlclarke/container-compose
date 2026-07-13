@@ -32,7 +32,7 @@ TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
 class HomebrewFormulaUpdateTests(unittest.TestCase):
     """Formula updates written by release package workflows."""
 
-    def test_update_replaces_url_checksum_version_class_and_asset_label(self) -> None:
+    def test_update_replaces_url_checksum_version_class_asset_label_and_runtime(self) -> None:
         """Release updates must keep Homebrew fetchable with a real checksum."""
         with tempfile.TemporaryDirectory() as directory:
             template = Path(directory) / "container-compose.rb"
@@ -71,6 +71,8 @@ end
                     str(template),
                     "--formula-class",
                     "ContainerComposeReleaseV010",
+                    "--runtime-formula",
+                    "container-current",
                     "--url",
                     "https://example.invalid/new.tar.gz",
                     "--version",
@@ -95,7 +97,7 @@ class ContainerComposeReleaseV010 < Formula
   sha256 "abc123"
   version "release-v0.1.0-release-abcdef123456"
 
-  depends_on "stephenlclarke/tap/container"
+  depends_on "stephenlclarke/tap/container-current"
 
   def caveats
     <<~EOS
@@ -146,6 +148,37 @@ end
             self.assertIn('version "0.6.68"', rendered)
             self.assertIn('assert_match "0.6.68"', rendered)
             self.assertNotIn('version "0.0.0"', rendered)
+
+    def test_update_rejects_an_unknown_runtime_formula(self) -> None:
+        """A lane cannot silently depend on an unrelated runtime formula."""
+        with tempfile.TemporaryDirectory() as directory:
+            formula = Path(directory) / "container-compose.rb"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(UPDATER),
+                    "--formula",
+                    str(formula),
+                    "--template",
+                    str(TEMPLATE),
+                    "--runtime-formula",
+                    "container-nightly",
+                    "--url",
+                    "https://example.invalid/new.tar.gz",
+                    "--version",
+                    "0.6.68",
+                    "--asset",
+                    "new.tar.gz",
+                    "--label",
+                    "stable release",
+                    "--sha256",
+                    "a" * 64,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("runtime formula must be one of", completed.stderr)
 
 
 if __name__ == "__main__":

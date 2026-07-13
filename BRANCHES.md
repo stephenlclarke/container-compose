@@ -40,7 +40,18 @@ make release VERSION_SELECTOR=--+
 
 The release helper resolves symbolic selectors from the latest local semantic `container-compose` tag, not from mutable working-tree state. Bare `MAJOR.MINOR.PATCH` source tags match Apple repository conventions; do not add a `v` prefix. Existing tags are never moved.
 
-Main-lane package artifacts are validation artifacts only. They prove that the current `main` branch can produce an installable archive, but they do not update the stable Homebrew formula. Only bare semantic release tags update `stephenlclarke/tap/container-compose`.
+Every green `main` commit publishes an installable **current** stack. A bare
+semantic tag publishes a **stable** stack. These are formula pairs, never
+independently moving formulae:
+
+| Channel | Runtime formula | Compose formula | Source of truth |
+| --- | --- | --- | --- |
+| Stable | `container` | `container-compose` | A semantic Compose tag at the green `main` head. |
+| Current | `container-current` | `container-compose-current` | The latest green Compose `main` commit and the exact runtime ref in its stack manifest. |
+
+`container-compose` owns both promotions. It verifies the runtime asset pinned
+by `Tools/release/stack-refs.json`, then commits the two formula changes in one
+tap commit. A runtime build never writes either stable formula by itself.
 
 ## Release Helper
 
@@ -56,23 +67,20 @@ make release VERSION_SELECTOR=--+
 `make release-plan` is a dry run over the four local source checkouts and the
 Homebrew tap workflow boundary. `make release` validates the source worktrees
 and `stephenlclarke` push targets, synchronizes exact `containerization` SwiftPM
-revision pins when the local runtime stack moved, prepares the version and stack
-manifest, and runs the full local release gate. That gate validates builder-shim
-coverage, containerization coverage plus integration, container coverage plus
-integration, Compose source checks, the Compose parity suite including live
-`build --check`, and the live tap formula syntax. The helper then promotes the
-source branches,
-waits for the matching immutable `container` package, creates one new semantic
-`container-compose` tag, and dispatches the stable package workflow. The
-workflow requires the tap token before it publishes, creates the release with
-the archive and checksum assets in one operation, updates the tap, and the
-helper verifies the live release and tap URL, version, and SHA.
+revision pins when the local runtime stack moved, and creates a reviewable
+release-preparation commit. This is the helper's only version mutation. It then
+promotes the source branches, waits for the matching immutable `container`
+current package, creates one new semantic `container-compose` tag, dispatches
+the hosted Stable Release Gate, and then dispatches the stable package workflow.
+The hosted gate first requires green `main` CI—the only place SonarQube analyses
+the project—then runs full stack parity against the exact tagged commit. The
+package workflow verifies that hosted evidence and the runtime asset before it
+creates the release and atomically updates the tap.
 
-Stable tags and published stable releases are immutable. The helper rejects an
-existing local or remote semantic tag before it changes release files, and the
-package workflow rejects an existing stable release instead of editing notes or
-overwriting assets. Correct a failed release through an explicitly reviewed
-incident change; do not replay a semantic version.
+Source tags and every published GitHub release are immutable. The package
+workflow rejects an existing stable or current release instead of editing notes
+or overwriting assets. Correct a failed release through an explicitly reviewed
+incident change; do not replay an identity.
 
 Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes compare against the newest published stable GitHub release when release metadata is available, with local semantic tags as the offline fallback, so unpublished source tags cannot hide user-facing changes. They include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Write one complete sentence that names the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`, which suppresses an automatic highlight. When a user-facing conventional commit has no trailer, the renderer uses the first prose paragraph from its body before falling back to the subject. For upstream-driven work, also record the original `owner/repository#number` under `Upstream-Ref:`, `Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The renderer preserves references already written into the highlight and appends any missing references, including highlights collected from stack component commits.
 
@@ -95,7 +103,11 @@ The helper refuses Apple push targets. stephenlclarke-owned remotes are the only
 
 `container-compose` must stay on the `stephenlclarke` runtime surfaces while those APIs differ from released Apple packages. Do not silently drift back to incompatible `apple/container` or `apple/containerization` revisions.
 
-The exact `container` commit used by local package metadata resolves from the sibling `../container` checkout. Release CI passes the checked-in `Tools/release/stack-refs.json` manifest explicitly, so validation always uses the candidate stack commit rather than a stale package tag. Without either local checkout or explicit manifest, the resolver falls back to the latest published `stephenlclarke/container` `homebrew-main-RUN-SHA` tag, then `stephenlclarke/container:main`. The resolver is [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py); do not reintroduce duplicated hand-maintained pin prose in the docs.
+ `Tools/release/stack-refs.json` is the canonical runtime pin for CI, packaging,
+ and formula promotion. [Tools/release/resolve-container-ref.py](Tools/release/resolve-container-ref.py)
+ rejects a checked-out runtime that differs from that manifest; it only falls
+ back to the latest immutable `current-RUN-SHA` runtime tag or `main` when no
+ manifest is present. Do not reintroduce duplicated hand-maintained pin prose.
 
 `container` and `container-compose` pin `stephenlclarke/containerization` by exact SwiftPM `revision` in `Package.swift`. `Tools/release/stack-refs.json`, both `Package.swift` manifests, and both `Package.resolved` lockfiles must name the same revision; `make check` enforces this through [Tools/ci/check-stack-consistency.py](Tools/ci/check-stack-consistency.py).
 
@@ -115,16 +127,18 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 
 | Formula | Installs |
 | --- | --- |
-| `container` | Current `stephenlclarke` runtime from the latest immutable `homebrew-main-RUN-SHA` package lane. |
-| `container-compose` | Current stable plugin package from the latest semantic release; depends on the matching `container` formula. |
+| `container` + `container-compose` | Stable matched stack from the latest semantic Compose release. |
+| `container-current` + `container-compose-current` | Installable current matched stack from green `main` commits. |
 
-The install formulae consume validated GitHub release assets. `container-compose` follows the latest stable semantic release and is what users install. Both formulae record the published `stephenlclarke/container` runtime commit in package metadata, so runtime/plugin mismatches fail fast and `brew upgrade` can keep the installed stack aligned. The tap does not install from `sources/*` submodules.
+The formula pairs consume validated immutable GitHub release assets. Stable is
+the default install. Current is explicitly opt-in. The pair update is atomic,
+so Homebrew never combines a newly published runtime with an unrelated Compose
+plugin. The tap does not install from `sources/*` submodules.
 
-`stephenlclarke/homebrew-tap/Formula/container-compose.rb` is the only live
-formula. `Tools/release/container-compose.rb.in` is a non-release source
-template used by the package workflow to render that tap formula. It never
-claims a published release version or checksum, so a source tag cannot carry a
-stale Homebrew release reference.
+`Tools/release/container-compose.rb.in` and `container/Formula/container.rb`
+are non-release source templates. The package workflow renders both members of
+a lane from immutable release assets; source files never claim a published
+checksum or live formula version.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
 
@@ -147,4 +161,6 @@ After a non-main branch has been landed on `main`, delete that branch locally an
 
 ## Release Retention
 
-Keep stable source tags and GitHub release objects. Release automation keeps binary assets on the latest main validation release and the latest stable release. Older release assets are pruned only after their release notes include the original prebuilt asset SHA-256 and a copy/paste Homebrew source-install block that rebuilds from the retained source tag.
+Keep all source tags, GitHub release objects, release notes, highlight manifests,
+and binary assets. GitHub immutable releases enforce this policy; package
+retries create no mutations and a correction requires a new reviewed release.

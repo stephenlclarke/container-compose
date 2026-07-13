@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "main or MAJOR.MINOR.PATCH tag to package"
+        description: "main for the installable current stack, or a MAJOR.MINOR.PATCH tag for stable"
         required: true
         type: string
 
@@ -36,8 +36,10 @@ permissions:
   id-token: write
 
 concurrency:
-  group: prebuilt-binaries-${{ github.event.workflow_run.head_branch || inputs.ref || github.ref_name }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main' }}
+  # Both formulae in a lane are committed together. One global queue prevents a
+  # stable promotion and a current promotion from racing the shared tap branch.
+  group: container-stack-package-and-tap
+  cancel-in-progress: false
 
 jobs:
   resolve-publish-context:
@@ -80,7 +82,7 @@ jobs:
               local branch_sha
               branch_sha="$(
                 git ls-remote --heads "$remote" "refs/heads/${ref}" \
-                  | awk '{print $1}' \
+                  | awk "{print \$1}" \
                   | tail -n 1
               )"
               if [[ -z "$branch_sha" ]]; then
@@ -99,7 +101,7 @@ jobs:
               local tag_sha
               tag_sha="$(
                 git ls-remote --tags "$remote" "refs/tags/${ref}" "refs/tags/${ref}^{}" \
-                  | awk '{print $1}' \
+                  | awk "{print \$1}" \
                   | tail -n 1
               )"
               if [[ -z "$tag_sha" ]]; then
@@ -124,12 +126,25 @@ jobs:
             else
               validate_conclusion="$(
                 gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${WORKFLOW_RUN_ID}/jobs" \
-                  --jq '.jobs[] | select(.name == "Validate") | .conclusion' \
+                  --jq ".jobs[] | select(.name == \"Validate\") | .conclusion" \
                   | tail -n 1
               )"
               if [[ "${validate_conclusion}" != "success" ]]; then
                 printf 'Skipping package publish because CI Validate concluded %s.\n' "${validate_conclusion:-missing}"
               elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]; then
+                current_main="$(git ls-remote --heads "${remote}" refs/heads/main | awk "{ print \$1 }" | tail -n 1)"
+                if [[ "${current_main}" != "${WORKFLOW_RUN_HEAD_SHA}" ]]; then
+                  printf 'Skipping superseded main CI at %s; main is now %s.\n' \
+                    "${WORKFLOW_RUN_HEAD_SHA}" "${current_main:-missing}"
+                  {
+                    printf 'publish=false\n'
+                    printf 'ref_type=\n'
+                    printf 'ref_name=\n'
+                    printf 'checkout_ref=\n'
+                    printf 'sha=\n'
+                  } >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
                 ref_type="branch"
                 ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
                 checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
@@ -188,20 +203,21 @@ jobs:
           short_sha="${PUBLISH_SHA:0:12}"
           case "${PUBLISH_REF_TYPE}:${PUBLISH_REF_NAME}" in
             branch:main)
-              release_tag="homebrew-main-${GITHUB_RUN_NUMBER}-${short_sha}"
-              release_title="${compose_version} main ${short_sha}"
-              release_label="Main validation"
+              release_tag="current-${GITHUB_RUN_NUMBER}-${short_sha}"
+              release_title="Current build · ${short_sha}"
+              release_label="current build"
               release_latest="false"
               release_prerelease="true"
-              update_tap="false"
-              asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz"
-              formula="container-compose.rb"
-              formula_class="ContainerCompose"
-              formula_version="$(python3 Tools/release/homebrew-main-version.py \
-                --plugin-version "${compose_version}" \
-                --run-number "${GITHUB_RUN_NUMBER}" \
-                --sha "${PUBLISH_SHA}")"
-              package_lane="main"
+              update_tap="true"
+              asset="container-compose-plugin-current-arm64.tar.gz"
+              formula="container-compose-current.rb"
+              formula_class="ContainerComposeCurrent"
+              runtime_formula="container-current"
+              container_formula="container-current.rb"
+              container_formula_class="ContainerCurrent"
+              container_compose_formula="container-compose-current"
+              formula_version="current-release.${GITHUB_RUN_NUMBER}.${short_sha}"
+              package_lane="current"
               ;;
             tag:*)
               if [[ ! "${PUBLISH_REF_NAME}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
@@ -221,6 +237,10 @@ jobs:
               asset="container-compose-plugin-release-arm64.tar.gz"
               formula="container-compose.rb"
               formula_class="ContainerCompose"
+              runtime_formula="container"
+              container_formula="container.rb"
+              container_formula_class="Container"
+              container_compose_formula="container-compose"
               formula_version="${compose_version}"
               package_lane="stable"
               ;;
@@ -241,11 +261,15 @@ jobs:
             printf 'asset=%s\n' "${asset}"
             printf 'formula=%s\n' "${formula}"
             printf 'formula_class=%s\n' "${formula_class}"
+            printf 'runtime_formula=%s\n' "${runtime_formula}"
+            printf 'container_formula=%s\n' "${container_formula}"
+            printf 'container_formula_class=%s\n' "${container_formula_class}"
+            printf 'container_compose_formula=%s\n' "${container_compose_formula}"
             printf 'formula_version=%s\n' "${formula_version}"
             printf 'package_lane=%s\n' "${package_lane}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Require Homebrew tap token for stable releases
+      - name: Require Homebrew tap token for formula promotion
         if: steps.lane.outputs.update_tap == 'true'
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -253,7 +277,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${HOMEBREW_TAP_TOKEN}" ]]; then
-            printf 'HOMEBREW_TAP_TOKEN is required for a stable release.\n' >&2
+            printf 'HOMEBREW_TAP_TOKEN is required for a stack formula promotion.\n' >&2
             exit 1
           fi
 
@@ -291,9 +315,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ref="$(python3 container-compose/Tools/release/resolve-container-ref.py --stack-refs container-compose/Tools/release/stack-refs.json)"
-          if [[ -z "$ref" ]]; then
-            printf 'container ref is empty\n' >&2
+          ref="${{ steps.stack-refs.outputs.container_ref }}"
+          if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'container stack ref is not immutable: %s\n' "$ref" >&2
             exit 1
           fi
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
@@ -347,6 +371,95 @@ jobs:
             exit 1
           fi
 
+      - name: Require the hosted release authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${PUBLISH_REF_TYPE}" in
+            branch)
+              workflow="ci.yml"
+              event="push"
+              required_name="green main CI (including SonarQube)"
+              ;;
+            tag)
+              workflow="stable-release-gate.yml"
+              event="workflow_dispatch"
+              required_name="successful Stable Release Gate"
+              ;;
+            *)
+              printf 'unsupported publish ref type: %s\n' "${PUBLISH_REF_TYPE}" >&2
+              exit 1
+              ;;
+          esac
+
+          conclusion="$(
+            gh run list --repo "${GITHUB_REPOSITORY}" --workflow "${workflow}" \
+              --commit "${PUBLISH_SHA}" --event "${event}" --limit 50 \
+              --json status,conclusion \
+              --jq 'map(select(.status == "completed" and .conclusion == "success")) | .[0].conclusion // empty'
+          )"
+          if [[ "${conclusion}" != "success" ]]; then
+            printf 'refusing to package %s without %s at %s\n' \
+              "${PUBLISH_SHA}" "${required_name}" "${PUBLISH_SHA}" >&2
+            exit 1
+          fi
+
+      - name: Resolve immutable current runtime package
+        id: runtime-package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTAINER_REF: ${{ steps.container-ref.outputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="https://github.com/stephenlclarke/container.git"
+          deadline=$((SECONDS + 1800))
+          while true; do
+            runtime_tag="$(
+              git ls-remote --tags --refs "${remote}" 'refs/tags/current-*' \
+                | awk -v sha="${CONTAINER_REF}" "\$1 == sha { sub(\"refs/tags/\", \"\", \$2); print \$2 }" \
+                | sort -V \
+                | tail -n 1
+            )"
+            if [[ -n "${runtime_tag}" ]]; then
+              break
+            fi
+            if (( SECONDS >= deadline )); then
+              printf 'no immutable current runtime package exists for %s\n' "${CONTAINER_REF}" >&2
+              exit 1
+            fi
+            printf 'waiting for current runtime package at %s\n' "${CONTAINER_REF}"
+            sleep 30
+          done
+
+          if [[ ! "${runtime_tag}" =~ ^current-([0-9]+)-([0-9a-f]{12})$ ]]; then
+            printf 'runtime package tag has an invalid identity: %s\n' "${runtime_tag}" >&2
+            exit 1
+          fi
+          runtime_run="${BASH_REMATCH[1]}"
+          runtime_short_sha="${BASH_REMATCH[2]}"
+          runtime_asset="container-current-arm64.tar.gz"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+          gh release download "${runtime_tag}" --repo stephenlclarke/container \
+            --pattern "${runtime_asset}.sha256" --dir "${tmp}"
+          runtime_sha="$(awk '{print $1}' "${tmp}/${runtime_asset}.sha256")"
+          if [[ ! "${runtime_sha}" =~ ^[0-9a-f]{64}$ ]]; then
+            printf 'runtime checksum is invalid for %s\n' "${runtime_tag}" >&2
+            exit 1
+          fi
+
+          {
+            printf 'tag=%s\n' "${runtime_tag}"
+            printf 'asset=%s\n' "${runtime_asset}"
+            printf 'sha256=%s\n' "${runtime_sha}"
+            printf 'version=current-release.%s.%s\n' "${runtime_run}" "${runtime_short_sha}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Use checked-out containerization dependency
         if: steps.stack-refs.outputs.containerization_ref != ''
         run: Tools/ci/use-stack-containerization.sh ../containerization
@@ -357,25 +470,6 @@ jobs:
         with:
           go-version-file: container-compose/Tools/compose-normalizer/go.mod
           cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
-
-      - name: Install Markdown lint
-        if: github.event_name == 'workflow_dispatch'
-        run: npm install --global markdownlint-cli@0.48.0
-
-      - name: Cache local repo tools
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: container-compose/.local/bin
-          key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
-
-      - name: Run package source validation
-        if: github.event_name == 'workflow_dispatch'
-        timeout-minutes: 60
-        run: make ci
-        working-directory: container-compose
-        env:
-          HAWKEYE_AUTO_INSTALL: "1"
 
       - name: Build release package
         run: make package-release PLUGIN_ARCHIVE="${RUNNER_TEMP}/${{ steps.lane.outputs.asset }}"
@@ -417,6 +511,7 @@ jobs:
           sha256="$(awk '{print $1}' "${RUNNER_TEMP}/${ASSET}.sha256")"
 
           notes="$(mktemp)"
+          highlights="${RUNNER_TEMP}/release-highlights.json"
           git fetch --force --tags origin
           python3 Tools/release/release-notes.py \
             --release-tag "${RELEASE_TAG}" \
@@ -428,7 +523,8 @@ jobs:
             --release-repo "${GITHUB_REPOSITORY}" \
             --component-repo container-builder-shim=../container-builder-shim \
             --component-repo containerization=../containerization \
-            --component-repo container=../container > "${notes}"
+            --component-repo container=../container \
+            --highlights-json "${highlights}" > "${notes}"
 
           tag_target="$(
             git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" \
@@ -456,6 +552,7 @@ jobs:
             RELEASE_TAG="${RELEASE_TAG}" \
             RELEASE_TITLE="${RELEASE_TITLE}" \
             RELEASE_NOTES_FILE="${notes}" \
+            RELEASE_HIGHLIGHTS_PATH="${highlights}" \
             RELEASE_LATEST="${RELEASE_LATEST}" \
             RELEASE_PRERELEASE="${RELEASE_PRERELEASE}" \
             PUBLISH_REF_TYPE="${PUBLISH_REF_TYPE}" \
@@ -463,20 +560,6 @@ jobs:
             RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
             RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
             Tools/release/publish-github-release.sh
-
-      - name: Prune older release assets
-        if: steps.lane.outputs.package_lane != 'main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
-        shell: bash
-        working-directory: container-compose
-        run: |
-          set -euo pipefail
-          python3 Tools/release/prune-release-assets.py \
-            --repo "${GITHUB_REPOSITORY}" \
-            --current-tag "${RELEASE_TAG}" \
-            --execute
 
       - name: Checkout Homebrew tap
         if: steps.lane.outputs.update_tap == 'true'
@@ -486,13 +569,21 @@ jobs:
           path: homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      - name: Update Homebrew tap formula
+      - name: Render matched Homebrew stack formulae
         if: steps.lane.outputs.update_tap == 'true'
         env:
           ASSET: ${{ steps.lane.outputs.asset }}
           FORMULA: ${{ steps.lane.outputs.formula }}
           FORMULA_CLASS: ${{ steps.lane.outputs.formula_class }}
           FORMULA_VERSION: ${{ steps.lane.outputs.formula_version }}
+          RUNTIME_FORMULA: ${{ steps.lane.outputs.runtime_formula }}
+          CONTAINER_FORMULA: ${{ steps.lane.outputs.container_formula }}
+          CONTAINER_FORMULA_CLASS: ${{ steps.lane.outputs.container_formula_class }}
+          CONTAINER_COMPOSE_FORMULA: ${{ steps.lane.outputs.container_compose_formula }}
+          RUNTIME_RELEASE_TAG: ${{ steps.runtime-package.outputs.tag }}
+          RUNTIME_ASSET: ${{ steps.runtime-package.outputs.asset }}
+          RUNTIME_SHA256: ${{ steps.runtime-package.outputs.sha256 }}
+          RUNTIME_VERSION: ${{ steps.runtime-package.outputs.version }}
           RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
           VERSION: ${{ steps.lane.outputs.compose_version }}
         shell: bash
@@ -530,29 +621,53 @@ jobs:
             --formula "homebrew-tap/Formula/${FORMULA}" \
             --template "container-compose/Tools/release/container-compose.rb.in" \
             --formula-class "${FORMULA_CLASS}" \
+            --runtime-formula "${RUNTIME_FORMULA}" \
             --url "$url" \
             --version "$FORMULA_VERSION" \
             --plugin-version "$VERSION" \
             --asset "$ASSET" \
             --label "${{ steps.lane.outputs.release_label }}" \
             --sha256 "$sha256"
-          ruby -c "homebrew-tap/Formula/${FORMULA}"
-          git -C homebrew-tap diff -- "Formula/${FORMULA}"
 
-      - name: Commit Homebrew tap update
+          runtime_url="https://github.com/stephenlclarke/container/releases/download/${RUNTIME_RELEASE_TAG}/${RUNTIME_ASSET}"
+          gh release download "${RUNTIME_RELEASE_TAG}" --repo stephenlclarke/container \
+            --pattern "${RUNTIME_ASSET}" --dir "${tmp}"
+          actual_runtime_sha="$(shasum -a 256 "${tmp}/${RUNTIME_ASSET}" | awk '{print $1}')"
+          if [[ "${actual_runtime_sha}" != "${RUNTIME_SHA256}" ]]; then
+            printf 'runtime package checksum mismatch: expected %s, got %s\n' \
+              "${RUNTIME_SHA256}" "${actual_runtime_sha}" >&2
+            exit 1
+          fi
+          python3 container/scripts/update-homebrew-formula.py \
+            --formula "homebrew-tap/Formula/${CONTAINER_FORMULA}" \
+            --template "container/Formula/container.rb" \
+            --formula-class "${CONTAINER_FORMULA_CLASS}" \
+            --compose-formula "${CONTAINER_COMPOSE_FORMULA}" \
+            --url "${runtime_url}" \
+            --sha256 "${RUNTIME_SHA256}" \
+            --version "${RUNTIME_VERSION}" \
+            --label "${{ steps.lane.outputs.release_label }}" \
+            --asset "${RUNTIME_ASSET}"
+          ruby -c "homebrew-tap/Formula/${FORMULA}"
+          ruby -c "homebrew-tap/Formula/${CONTAINER_FORMULA}"
+          git -C homebrew-tap diff -- "Formula/${FORMULA}" "Formula/${CONTAINER_FORMULA}"
+
+      - name: Commit atomic Homebrew stack update
         if: steps.lane.outputs.update_tap == 'true'
         shell: bash
         working-directory: homebrew-tap
         run: |
           set -euo pipefail
-          formula="${{ steps.lane.outputs.formula }}"
-          if [[ -z "$(git status --porcelain -- "Formula/${formula}")" ]]; then
-            printf 'Homebrew tap formula already points at %s\n' "${{ steps.lane.outputs.asset }}"
+          compose_formula="${{ steps.lane.outputs.formula }}"
+          container_formula="${{ steps.lane.outputs.container_formula }}"
+          if [[ -z "$(git status --porcelain -- "Formula/${compose_formula}" "Formula/${container_formula}")" ]]; then
+            printf 'Homebrew tap formulae already point at the matched %s stack.\n' \
+              "${{ steps.lane.outputs.package_lane }}"
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "Formula/${formula}"
-          git commit -m "chore(homebrew): update container-compose ${{ steps.lane.outputs.compose_version }}"
+          git add "Formula/${compose_formula}" "Formula/${container_formula}"
+          git commit -m "chore(homebrew): update ${{ steps.lane.outputs.package_lane }} stack ${{ steps.lane.outputs.compose_version }}"
           git push

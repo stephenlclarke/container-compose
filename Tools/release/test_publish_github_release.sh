@@ -84,7 +84,7 @@ fi
 
 stable_create_calls="${temporary_directory}/stable-create.calls"
 run_publisher tag missing "${stable_create_calls}"
-grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --verify-tag --title 1.2.3 --notes-file ${notes} --latest" "${stable_create_calls}"
+grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest" "${stable_create_calls}"
 if grep -Eq 'release (edit|upload)|clobber' "${stable_create_calls}"; then
   printf 'stable publication attempted a mutable release operation\n' >&2
   exit 1
@@ -100,12 +100,16 @@ if [[ -e "${stable_unavailable_calls}" ]]; then
   exit 1
 fi
 
-main_calls="${temporary_directory}/main.calls"
-run_publisher branch exists "${main_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --latest" "${main_calls}"
-grep -Fqx "release upload 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_calls}"
+main_existing_calls="${temporary_directory}/main-existing.calls"
+if run_publisher branch exists "${main_existing_calls}"; then
+  printf 'current publication unexpectedly accepted an existing release\n' >&2
+  exit 1
+fi
+if [[ -e "${main_existing_calls}" ]]; then
+  printf 'current publication invoked a mutation for an existing release\n' >&2
+  exit 1
+fi
 
 main_create_calls="${temporary_directory}/main-create.calls"
 run_publisher branch missing "${main_create_calls}"
-grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title 1.2.3 --notes-file ${notes} --latest" "${main_create_calls}"
-grep -Fqx "release upload 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_create_calls}"
+grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --target 0123456789012345678901234567890123456789 --latest" "${main_create_calls}"

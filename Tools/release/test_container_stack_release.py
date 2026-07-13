@@ -76,11 +76,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_preserves_formatted_swiftpm_dependency_pins(self) -> None:
         self.assertIn(r'r"(\s*,?\s*\))"', self.script)
 
-    def test_release_helper_only_force_refreshes_the_legacy_package_pointer(self) -> None:
-        self.assertIn(
-            "+refs/tags/homebrew-main:refs/tags/homebrew-main", self.script
-        )
-        self.assertIn("legacy mutable pointer", self.script)
+    def test_release_helper_does_not_refresh_legacy_mutable_package_pointers(self) -> None:
+        self.assertNotIn("+refs/tags/homebrew-main:refs/tags/homebrew-main", self.script)
+        self.assertNotIn("legacy mutable pointer", self.script)
         self.assertNotIn("fetch --prune --tags --force", self.script)
 
     def test_equivalent_squash_promotion_aligns_local_main(self) -> None:

@@ -46,6 +46,11 @@ for variable in RELEASE_NOTES_FILE RELEASE_ASSET_PATH RELEASE_CHECKSUM_PATH; do
   fi
 done
 
+if [[ -n "${RELEASE_HIGHLIGHTS_PATH:-}" && ! -f "${RELEASE_HIGHLIGHTS_PATH}" ]]; then
+  printf 'release highlights manifest is missing: %s\n' "${RELEASE_HIGHLIGHTS_PATH}" >&2
+  exit 2
+fi
+
 release_flags=()
 if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
   release_flags+=(--prerelease)
@@ -80,45 +85,32 @@ release_state() {
 
 published_release_state="$(release_state)"
 
-if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
-  if [[ "${published_release_state}" == "exists" ]]; then
-    printf 'stable release %s already exists; published releases are immutable\n' \
-      "${RELEASE_TAG}" >&2
-    exit 1
-  fi
-
-  exec "${GH}" release create "${RELEASE_TAG}" \
-    "${RELEASE_ASSET_PATH}" \
-    "${RELEASE_CHECKSUM_PATH}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --verify-tag \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    "${release_flags[@]}"
-fi
-
-if [[ "${PUBLISH_REF_TYPE}" != "branch" ]]; then
+if [[ "${PUBLISH_REF_TYPE}" != "tag" && "${PUBLISH_REF_TYPE}" != "branch" ]]; then
   printf 'unsupported release publish ref type: %s\n' "${PUBLISH_REF_TYPE}" >&2
   exit 2
 fi
 
-if [[ "${published_release_state}" == "missing" ]]; then
-  "${GH}" release create "${RELEASE_TAG}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --target "${PUBLISH_SHA}" \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    "${release_flags[@]}"
-else
-  "${GH}" release edit "${RELEASE_TAG}" \
-    --repo "${RELEASE_REPOSITORY}" \
-    --title "${RELEASE_TITLE}" \
-    --notes-file "${RELEASE_NOTES_FILE}" \
-    "${release_flags[@]}"
+if [[ "${published_release_state}" == "exists" ]]; then
+  printf 'release %s already exists; published releases are immutable\n' \
+    "${RELEASE_TAG}" >&2
+  exit 1
 fi
 
-"${GH}" release upload "${RELEASE_TAG}" \
+create_args=(
   "${RELEASE_ASSET_PATH}" \
   "${RELEASE_CHECKSUM_PATH}" \
-  --repo "${RELEASE_REPOSITORY}" \
-  --clobber
+  --repo "${RELEASE_REPOSITORY}"
+  --title "${RELEASE_TITLE}"
+  --notes-file "${RELEASE_NOTES_FILE}"
+)
+if [[ -n "${RELEASE_HIGHLIGHTS_PATH:-}" ]]; then
+  create_args+=("${RELEASE_HIGHLIGHTS_PATH}")
+fi
+if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+  create_args+=(--verify-tag)
+else
+  create_args+=(--target "${PUBLISH_SHA}")
+fi
+create_args+=("${release_flags[@]}")
+
+exec "${GH}" release create "${RELEASE_TAG}" "${create_args[@]}"

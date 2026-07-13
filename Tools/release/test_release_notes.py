@@ -52,10 +52,10 @@ class ReleaseNotesTests(unittest.TestCase):
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="homebrew-main-123-abcdef123456",
-                release_label="Main validation",
+                release_tag="current-123-abcdef123456",
+                release_label="current build",
                 compose_version="0.6.1",
-                asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz",
+                asset="container-compose-plugin-current-arm64.tar.gz",
                 asset_sha="abc123",
                 head_ref="HEAD",
             )
@@ -64,8 +64,8 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("## Homebrew Formula", notes)
             self.assertIn("## Promotion", notes)
             self.assertIn("## Asset Retention", notes)
-            self.assertIn("Main validation packages do not update the stable Homebrew formula.", notes)
-            self.assertIn("They do not move semantic source tags or Homebrew formulae.", notes)
+            self.assertIn("It never changes the stable formula pair.", notes)
+            self.assertIn("They do not move semantic source tags or the stable formula pair.", notes)
             self.assertIn("## Highlights", notes)
             self.assertIn("Support bind propagation.", notes)
             self.assertIn("feat(mounts): support bind propagation", notes)
@@ -81,14 +81,14 @@ class ReleaseNotesTests(unittest.TestCase):
             self.commit(repo, "ci(release): simplify package publishing")
             self.commit(repo, "fix(release): commit new tap formula files")
             self.commit(repo, "fix(integration): preserve serial rootfs")
-            self.git(repo, "tag", "--no-sign", "homebrew-main-123-abcdef123456")
+            self.git(repo, "tag", "--no-sign", "current-123-abcdef123456")
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="homebrew-main-123-abcdef123456",
-                release_label="Main validation",
+                release_tag="current-123-abcdef123456",
+                release_label="current build",
                 compose_version="0.6.1",
-                asset="container-compose-plugin-homebrew-main-release-arm64.tar.gz",
+                asset="container-compose-plugin-current-arm64.tar.gz",
                 asset_sha="abc123",
                 head_ref="HEAD",
             )
@@ -97,7 +97,8 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("ci(release): simplify package publishing", notes)
             self.assertIn("fix(release): commit new tap formula files", notes)
             self.assertIn("fix(integration): preserve serial rootfs", notes)
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
             self.assertNotIn("chore: initial import", notes)
 
     def test_semver_tag_lists_commits_since_previous_semver_release(self) -> None:
@@ -121,17 +122,17 @@ class ReleaseNotesTests(unittest.TestCase):
             )
 
             self.assertIn("Commits since `0.5.0`", notes)
-            self.assertIn("The stable release updates `stephenlclarke/tap/container-compose`", notes)
+            self.assertIn("The stable release atomically updates `stephenlclarke/tap/container-compose`", notes)
             self.assertIn(
-                "Stable release promotion runs `make release-gate`, promotes `container-compose` through the pull-request path, and verifies the promoted main tree before dispatching the package workflow.",
+                "Stable releases additionally require the hosted Stable Release Gate",
                 notes,
             )
             self.assertIn(
-                "The package workflow repeats `make ci` before publishing package assets or updating the tap.",
+                "The package workflow verifies the exact immutable runtime asset",
                 notes,
             )
             self.assertIn(
-                "`make release-gate` runs builder, containerization, and container coverage and runtime integration checks, Compose CI, and the full Docker Compose parity suite.",
+                "builder, containerization, and container coverage and runtime integration checks, Compose CI, and full Docker Compose parity",
                 notes,
             )
             self.assertIn("fix(cli): report help topic", notes)
@@ -664,7 +665,8 @@ class ReleaseNotesTests(unittest.TestCase):
 
             self.assertIn("Commits included through", notes)
             self.assertIn("chore: initial import", notes)
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
 
     def init_repo(self, repo: Path) -> None:
         repo.mkdir(parents=True, exist_ok=True)

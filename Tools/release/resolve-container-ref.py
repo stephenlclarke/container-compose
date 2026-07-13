@@ -32,13 +32,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", default="../container")
     parser.add_argument("--remote", default="https://github.com/stephenlclarke/container.git")
     parser.add_argument("--tag")
-    parser.add_argument("--tag-prefix", default="homebrew-main-")
+    parser.add_argument("--tag-prefix", default="current-")
     parser.add_argument("--branch", default="main")
-    parser.add_argument(
-        "--stack-refs",
-        type=Path,
-        help="release stack manifest whose container ref should be preferred after a local checkout",
-    )
+    parser.add_argument("--stack-refs", type=Path, default=Path("Tools/release/stack-refs.json"))
     return parser.parse_args()
 
 
@@ -54,6 +50,21 @@ def local_repo_ref(repo: Path) -> str | None:
     if not (repo / ".git").exists():
         return None
     return git_output(["git", "-C", str(repo), "rev-parse", "HEAD"])
+
+
+def manifest_container_ref(path: Path) -> str | None:
+    """Return the canonical runtime pin from a release stack manifest."""
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid stack refs manifest: {path}: {error}") from error
+
+    ref = data.get("components", {}).get("container", {}).get("ref")
+    if not isinstance(ref, str) or re.fullmatch(r"[0-9a-fA-F]{40}", ref) is None:
+        raise ValueError(f"stack refs manifest has no full container revision: {path}")
+    return ref.lower()
 
 
 def remote_branch_ref(remote: str, branch: str) -> str | None:
@@ -118,18 +129,26 @@ def stack_manifest_container_ref(path: Path | None) -> str | None:
 def main() -> int:
     args = parse_args()
     try:
-        manifest_ref = stack_manifest_container_ref(args.stack_refs)
+        manifest_ref = manifest_container_ref(args.stack_refs)
     except ValueError as error:
         print(error, file=sys.stderr)
         return 1
 
-    ref = local_repo_ref(Path(args.repo)) or manifest_ref
-    if ref is None:
-        ref = (
-            (remote_tag_ref(args.remote, args.tag) if args.tag else None)
-            or remote_tag_prefix_ref(args.remote, args.tag_prefix)
-            or remote_branch_ref(args.remote, args.branch)
+    local_ref = local_repo_ref(Path(args.repo))
+    if manifest_ref is not None and local_ref is not None and local_ref != manifest_ref:
+        print(
+            f"local container checkout {local_ref} does not match stack manifest {manifest_ref}",
+            file=sys.stderr,
         )
+        return 1
+
+    ref = (
+        manifest_ref
+        or local_ref
+        or (remote_tag_ref(args.remote, args.tag) if args.tag else None)
+        or remote_tag_prefix_ref(args.remote, args.tag_prefix)
+        or remote_branch_ref(args.remote, args.branch)
+    )
     if ref is None:
         print(
             f"could not resolve container ref from {args.repo} or {args.remote} {args.branch}",

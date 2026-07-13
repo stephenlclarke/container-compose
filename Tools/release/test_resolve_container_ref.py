@@ -42,6 +42,8 @@ class ContainerRefResolutionTests(unittest.TestCase):
                     str(repo),
                     "--remote",
                     str(Path(directory) / "missing-remote"),
+                    "--stack-refs",
+                    str(Path(directory) / "missing-stack-refs.json"),
                 ],
                 check=True,
                 capture_output=True,
@@ -68,6 +70,8 @@ class ContainerRefResolutionTests(unittest.TestCase):
                     "main",
                     "--tag-prefix",
                     "missing-prefix-",
+                    "--stack-refs",
+                    str(Path(directory) / "missing-stack-refs.json"),
                 ],
                 check=True,
                 capture_output=True,
@@ -116,17 +120,17 @@ class ContainerRefResolutionTests(unittest.TestCase):
             self.assertNotEqual(remote_ref, manifest_ref)
             self.assertEqual(result.stdout.strip(), manifest_ref)
 
-    def test_prefers_latest_remote_homebrew_tag_prefix_before_remote_branch(self) -> None:
+    def test_prefers_latest_remote_current_tag_prefix_before_remote_branch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             remote = Path(directory) / "container"
             self.init_repo(remote)
             old_expected = self.git(remote, "rev-parse", "HEAD")
-            self.git(remote, "tag", "--no-sign", f"homebrew-main-41-{old_expected[:12]}")
+            self.git(remote, "tag", "--no-sign", f"current-41-{old_expected[:12]}")
             (remote / "README.md").write_text("# test\n\nupdated\n", encoding="utf-8")
             self.git(remote, "add", "README.md")
             self.git(remote, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "test update")
             expected = self.git(remote, "rev-parse", "HEAD")
-            self.git(remote, "tag", "--no-sign", f"homebrew-main-42-{expected[:12]}")
+            self.git(remote, "tag", "--no-sign", f"current-42-{expected[:12]}")
             (remote / "README.md").write_text("# test\n\nupdated again\n", encoding="utf-8")
             self.git(remote, "add", "README.md")
             self.git(remote, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "test branch ahead")
@@ -141,6 +145,8 @@ class ContainerRefResolutionTests(unittest.TestCase):
                     str(remote),
                     "--branch",
                     "main",
+                    "--stack-refs",
+                    str(Path(directory) / "missing-stack-refs.json"),
                 ],
                 check=True,
                 capture_output=True,
@@ -148,6 +154,55 @@ class ContainerRefResolutionTests(unittest.TestCase):
             )
 
             self.assertEqual(result.stdout.strip(), expected)
+
+    def test_stack_manifest_is_canonical_and_rejects_a_mismatched_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote = root / "container"
+            self.init_repo(remote)
+            expected = self.git(remote, "rev-parse", "HEAD")
+            manifest = root / "stack-refs.json"
+            manifest.write_text(
+                '{"components":{"container":{"ref":"' + expected + '"}}}',
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("resolve-container-ref.py")),
+                    "--repo",
+                    str(remote),
+                    "--remote",
+                    str(root / "missing-remote"),
+                    "--stack-refs",
+                    str(manifest),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.stdout.strip(), expected)
+
+            (remote / "README.md").write_text("# later\n", encoding="utf-8")
+            self.git(remote, "add", "README.md")
+            self.git(remote, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "later")
+            mismatch = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("resolve-container-ref.py")),
+                    "--repo",
+                    str(remote),
+                    "--remote",
+                    str(root / "missing-remote"),
+                    "--stack-refs",
+                    str(manifest),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(mismatch.returncode, 0)
+            self.assertIn("does not match stack manifest", mismatch.stderr)
 
     def test_ignores_legacy_homebrew_main_tag_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -170,6 +225,8 @@ class ContainerRefResolutionTests(unittest.TestCase):
                     str(remote),
                     "--branch",
                     "main",
+                    "--stack-refs",
+                    str(Path(directory) / "missing-stack-refs.json"),
                 ],
                 check=True,
                 capture_output=True,
