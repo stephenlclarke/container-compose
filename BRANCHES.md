@@ -79,6 +79,14 @@ The exact `container` commit used by CI and package metadata is resolved automat
 
 `container` pins the builder shim through `BUILDER_SHIM_REPOSITORY` and `BUILDER_SHIM_VERSION`. Publish and verify an immutable GHCR builder image before updating `container` to a new shim tag.
 
+Before upstream handoff, runtime-stack promotion, or release review work, run:
+
+```sh
+make upstream-divergence-report
+```
+
+The report fetches the stephenlclarke and Apple `main` refs for `container`, `containerization`, and `container-builder-shim`, writes Markdown and JSON under `.build/reports/`, lists fork-only and upstream-only commit subjects, and records whether Apple upstream can merge cleanly into each local checkout. Use `make upstream-divergence-check` when dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts should fail the review.
+
 ## Homebrew Formulae
 
 The aggregate tap is `stephenlclarke/homebrew-tap`.

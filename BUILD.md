@@ -103,6 +103,8 @@ Useful focused targets are:
 | `make coverage-check` | Enforce at least 90% Swift line and 85% Go statement coverage. |
 | `make cli-smoke-built` | Exercise representative commands using the existing build. |
 | `make swift-runtime-test` | Build and run the isolated matched runtime smoke suite. |
+| `make upstream-divergence-report` | Fetch Apple upstream and stephenlclarke refs for the Apple-backed sibling repos, then write `.build/reports/upstream-divergence.md` and `.build/reports/upstream-divergence.json`. |
+| `make upstream-divergence-check` | Run the same report as a strict check that fails on dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts. |
 
 Override local coverage floors only for deliberate stricter validation:
 
@@ -116,6 +118,8 @@ Coverage outputs are `coverage.lcov`, `coverage.xml`,
 `make swift-runtime-test` uses the sibling runtime, isolates state under the
 marker-protected `.build/container-runtime` directory, retains only the kernel
 cache between runs, and always stops the test runtime when it exits.
+
+Run `make upstream-divergence-report` before upstream handoff, runtime-stack promotion, or release review work. The report compares `container`, `containerization`, and `container-builder-shim` against their Apple upstream `main` refs, lists fork-only and upstream-only commit subjects, and checks whether Apple upstream can merge cleanly into the local checkout. Use `make upstream-divergence-check` when the review needs a hard failure instead of an informational report.
 
 GitHub Actions separates source checks, macOS runtime validation, sanitizers,
 formatting, CodeQL, SonarCloud, package publication, and Homebrew formula syntax

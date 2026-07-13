@@ -17,6 +17,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := all
+.PHONY: upstream-divergence-report upstream-divergence-check
 
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
@@ -1348,6 +1349,12 @@ coverage-tools-test:
 	$(PYTHON) -m unittest discover Tools/coverage
 	$(PYTHON) -m unittest discover Tools/release
 	$(PYTHON) -m unittest discover Tools/ci
+
+upstream-divergence-report:
+	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
+
+upstream-divergence-check:
+	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --strict --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
 stack-consistency:
 	$(PYTHON) Tools/ci/check-stack-consistency.py
