@@ -44,6 +44,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         release = self.script[self.script.index("release_current_stack() {") :]
         self.assertIn('if stable_tag_exists "${version}"', release)
         self.assertIn('resume_stable_release "${version}"', release)
+        self.assertIn('ensure_latest_stable_retry "${version}"', self.script)
         self.assertIn("ensure_new_stable_release \"${version}\"", release)
         self.assertLess(
             release.index('resume_stable_release "${version}"'),
@@ -119,11 +120,47 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("docker-compose-devices-parity", makefile)
         self.assertNotIn("repackage-release", makefile)
 
-    def test_stable_gate_checks_out_the_tap_and_accepts_verified_retry_tags(self) -> None:
+    def test_hosted_release_gate_uses_an_unpublished_verified_tag_and_immutable_tap_snapshot(
+        self,
+    ) -> None:
         workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("stable tag %s is not GitHub-verified", workflow)
+        self.assertIn("stable tag %s is not the latest semantic source tag", workflow)
+        self.assertIn("stable release %s already exists and is immutable", workflow)
+        self.assertIn(
+            "accepting its GitHub-verified unpublished source for a release retry",
+            workflow,
+        )
+        self.assertIn(
+            "homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}",
+            workflow,
+        )
+        self.assertIn(
+            "git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git refs/heads/main",
+            workflow,
+        )
         self.assertIn("repository: stephenlclarke/homebrew-tap", workflow)
         self.assertIn("path: homebrew-tap", workflow)
-        self.assertIn("accepting its GitHub-verified source for a release retry", workflow)
+        self.assertIn(
+            "ref: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}",
+            workflow,
+        )
+        self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
+        self.assertIn("HOMEBREW_TAP_REPO: ../homebrew-tap", workflow)
+        self.assertIn("Provision pinned stack tools", workflow)
+        self.assertIn(
+            "for repository in container-builder-shim containerization container; do",
+            workflow,
+        )
+        self.assertIn("./scripts/install-hawkeye.sh", workflow)
+        self.assertLess(
+            workflow.index("Checkout immutable Homebrew tap snapshot"),
+            workflow.index("Run release gate"),
+        )
+        self.assertLess(
+            workflow.index("Provision pinned stack tools"),
+            workflow.index("Run release gate"),
+        )
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
@@ -134,6 +171,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('--add-assignee "@me"', self.script)
         self.assertIn("run github_cli workflow run", self.script)
         self.assertNotIn("env -u GITHUB_TOKEN -u GH_TOKEN gh", self.script)
+
+    def test_release_helper_describes_the_hosted_stable_gate(self) -> None:
+        self.assertIn(
+            "The hosted Stable Release Gate runs after the signed tag and before stable package publication.",
+            self.script,
+        )
+        self.assertIn(
+            "- The hosted Stable Release Gate must pass before stable package publication.",
+            self.script,
+        )
+        self.assertNotIn("make release-gate completed locally before this PR.", self.script)
 
     def test_release_helper_preserves_formatted_swiftpm_dependency_pins(self) -> None:
         self.assertIn(r'r"(\s*,?\s*\))"', self.script)
@@ -266,6 +314,73 @@ esac
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("auto-merge was not available", result.stdout)
             self.assertIn("promotion PR already merged: #42", result.stdout)
+
+    def test_retry_requires_an_unpublished_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            fake_gh = bin_directory / "gh"
+            fake_gh.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$1" != "release" || "$2" != "view" ]]; then
+  exit 1
+fi
+
+if [[ "${GH_RELEASE_STATE}" == "published" ]]; then
+  printf '%s\\n' '{"id": 1}'
+  exit 0
+fi
+
+printf '%s\\n' 'release not found' >&2
+exit 1
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
+            shell_setup = "\n".join(
+                [
+                    f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
+                    "export GH_RELEASE_STATE=unpublished",
+                ]
+            )
+
+            unpublished = self.run_release_function(
+                root,
+                "ensure_stable_release_is_unpublished 0.6.70",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
+
+            published = self.run_release_function(
+                root,
+                "ensure_stable_release_is_unpublished 0.6.70",
+                shell_setup=shell_setup.replace("unpublished", "published"),
+            )
+            self.assertNotEqual(published.returncode, 0)
+            self.assertIn("stable release 0.6.70 already exists and is immutable", published.stderr)
+
+    def test_retry_rejects_a_stale_semantic_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shell_setup = "latest_local_semver_tag() { printf '%s\\n' 0.6.71; }"
+
+            latest = self.run_release_function(
+                root,
+                "ensure_latest_stable_retry 0.6.71",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(latest.returncode, 0, latest.stderr)
+
+            stale = self.run_release_function(
+                root,
+                "ensure_latest_stable_retry 0.6.70",
+                shell_setup=shell_setup,
+            )
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertIn("stable tag 0.6.70 is not the latest semantic source tag (0.6.71)", stale.stderr)
 
     def create_compose_checkout(self, root: Path) -> tuple[Path, Path]:
         remote = root / "remote.git"

@@ -77,10 +77,10 @@ Rules enforced:
   - Worktrees must be clean before release changes.
   - Stable container-compose release tags are SSH-signed and point at the validated main commit.
   - GitHub must verify each stable tag signature before the release gate starts.
-  - The full Docker Compose parity release gate runs locally before push/tag.
+  - The hosted Stable Release Gate runs after the signed tag and before stable package publication.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
-  - Stable releases are created once; existing stable tags and releases fail.
+  - Published stable releases are immutable; only the latest GitHub-verified signed tag may resume before publication.
   - container-compose main updates use pull-request promotion by default.
   - An equivalent tree already squash-merged on main is reconciled before tagging.
   - Long-lived release branches are not used.
@@ -516,9 +516,26 @@ stable_tag_exists() {
   git -C "${path}" ls-remote --exit-code --tags "${remote}" "refs/tags/${version}" >/dev/null 2>&1
 }
 
+# Reject a stale unpublished tag so a retry cannot replace a newer stable lane.
+ensure_latest_stable_retry() {
+  local version="$1" latest
+  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
+  if [[ "${version}" != "${latest}" ]]; then
+    printf 'stable tag %s is not the latest semantic source tag (%s)\n' \
+      "${version}" "${latest:-missing}" >&2
+    exit 1
+  fi
+}
+
 # Refuse to retry a semantic tag once GitHub has made it a published release.
 ensure_stable_release_is_unpublished() {
   local version="$1" output status
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would verify that stable release %s is unpublished\n' "${version}"
+    return 0
+  fi
+
+  need_command gh
   if output="$(github_cli release view "${version}" \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --json id 2>&1)"; then
@@ -728,11 +745,11 @@ compose_source_promotion_body() {
   path="$(repo_path "${COMPOSE_REPO}")"
   head="$(git -C "${path}" rev-parse main)"
   cat <<EOF
-Promotes the validated container-compose source state for ${version}.
+Promotes the container-compose source candidate for ${version}.
 
 Validation:
-- make release-gate completed locally before this PR.
-- The promoted main tree must match the locally gated candidate before tagging.
+- The hosted Stable Release Gate must pass before stable package publication.
+- The promoted main tree must match this candidate before tagging.
 - Apple upstream remotes remain read-only; only stephenlclarke-owned remotes are push targets.
 
 Candidate:
@@ -1393,6 +1410,7 @@ tag_stable_version() {
 resume_stable_release() {
   local version="$1"
   print_header "resume stable release ${version}"
+  ensure_latest_stable_retry "${version}"
   ensure_stable_release_is_unpublished "${version}"
   verify_github_stable_tag_signature "${version}"
   publish_stable_release "${version}"
