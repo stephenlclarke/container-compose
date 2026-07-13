@@ -43,7 +43,10 @@ References:
 
 - Supported with the current fork-backed runtime: service `domainname` for service containers and one-off `run` containers, currently through the command-vector bridge.
 - Remaining upstream gap: released `apple/container` needs accepted domain-name support before stock upstream builds can enable this.
-- Remaining networking gaps: `external_links`, implicit default-network links, multi-network link projection, and Docker-compatible shared aliases are still separate runtime/DNS surfaces.
+- Related support: `links` includes the normalized implicit `default` network
+  and `external_links` covers its documented single-network subset.
+- Remaining networking gaps: multi-network link projection, Docker-compatible
+  shared aliases, and source-scoped DNS remain runtime-limited.
 
 ## Testing
 

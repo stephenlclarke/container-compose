@@ -4,10 +4,10 @@
 
 - Map legacy Compose `links` to implicit service dependencies plus target
   service network aliases for the safe single-network local subset.
-- Validate link syntax, target services, alias names, explicit shared network
+- Validate link syntax, target services, alias names, shared network
   ownership, and projected link-alias conflicts before side effects.
-- Document remaining Docker Compose parity gaps around default-network service
-  discovery, source-scoped DNS, shared aliases, and `external_links`.
+- Document current Docker Compose parity gaps around multi-network links,
+  source-scoped DNS, and shared aliases.
 
 ## Type of Change
 
@@ -60,23 +60,25 @@ References:
 - Added a projected link-alias validation guard because the current fork-backed
   `apple/container` alias lookup is hostname-like and cannot model Docker's
   ambiguous shared-alias behavior yet.
-- Kept `external_links` unsupported because it needs external service lookup and
-  alias handoff primitives that are not available.
+- Keep `external_links` policy separate from service links; the current
+  single-network external-link subset uses direct runtime inspection and
+  generated host entries.
 - Updated `STATUS.md` and relevant project docs.
 
 ## Docker Compose Compatibility Notes
 
-- Supported with the current fork-backed runtime: `links` for services
-  that share exactly one explicit Compose network, currently through the
-  command-vector bridge.
+- Supported with the current fork-backed runtime: `links` for services that
+  share exactly one normalized Compose network, including the implicit
+  `default` network, currently through the command-vector bridge.
 - Supported: `SERVICE:ALIAS` link aliases.
 - Supported: `SERVICE` entries mapped to the target service name as an
   alias.
 - Supported: implicit dependency ordering from links.
-- Remaining gap: implicit default-network service discovery and aliases when no
-  explicit Compose network appears in the normalized model.
 - Remaining gap: Docker-compatible shared aliases and source-scoped DNS.
-- Remaining gap: `external_links` and multi-network link behavior.
+- Remaining gap: multi-network link behavior.
+- Separate supported subset: `external_links` uses direct runtime inspection
+  and generated host entries when the source and external container share one
+  runtime network.
 
 ## Testing
 

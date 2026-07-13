@@ -37,17 +37,14 @@ References:
 
 ## Current container-compose behavior
 
-Before this change, `container-compose` rejected all `links` entries as an
-`apple/container` runtime gap.
-
-With this change, `container-compose` supports the safe local subset that can be
-represented by the fork-backed single-network alias primitive:
+`container-compose` supports the safe local subset that can be represented by
+the fork-backed single-network alias primitive:
 
 - The linked service is started before the service declaring the link.
 - `SERVICE:ALIAS` maps `ALIAS` to the linked service's network attachment.
 - `SERVICE` maps the linked service name as the alias.
-- The source and target services must share exactly one explicit Compose
-  network.
+- The source and target services must share exactly one normalized Compose
+  network, including the implicit `default` network.
 - Shared aliases are rejected before side effects because the current
   `apple/container` DNS lookup cannot disambiguate Docker's ambiguous shared
   alias behavior yet.
@@ -91,8 +88,10 @@ Expected runtime behavior with the current fork-backed runtime:
 - `container-compose` creates or reuses `redis` before `api`.
 - The `redis` service container currently receives `--network links-demo_backend,alias=cache` through the command-vector bridge.
 - The `api` service container attaches to the same network.
-- `external_links`, implicit default-network link aliases, multi-network links,
-  and shared aliases remain documented runtime/DNS gaps.
+- `external_links` has its own supported single-network subset through direct
+  runtime inspection and generated host entries.
+- Multi-network links, shared aliases, and source-scoped DNS remain runtime
+  gaps.
 
 ## Code of Conduct and documentation
 

@@ -50,7 +50,10 @@ Expected runtime behavior with the current fork-backed runtime:
 
 - `container-compose` currently emits `--hostname api-01` through the command-vector bridge.
 - The runtime makes `api-01` visible inside the container.
-- `domainname` remains unsupported until `apple/container` and the lower runtime expose a domain-name primitive.
+- `domainname` is supported by the separate
+  `docs/upstream/container-compose/ISSUE-service-domainname.md` /
+  `docs/upstream/container-compose/PR-service-domainname.md` slice with the
+  current fork-backed runtime.
 
 ## Code of Conduct and documentation
 

@@ -5,7 +5,8 @@
 - Map Compose service `extra_hosts` to the plugin-owned host-entry projection.
 - Accept compose-go normalized `HOST=IP`, `HOST:IP`, and bracketed IPv6 source forms.
 - Validate static IP-literal entries before side effects.
-- Keep `domainname`, `links`, and `external_links` as explicit remaining runtime gaps.
+- Document the remaining source-scoped DNS, multi-network link, and shared
+  alias gaps.
 
 ## Type of Change
 
@@ -45,8 +46,16 @@ This change keeps Compose syntax handling in `container-compose`, validates stat
 - Supported with the current fork-backed runtime: static `extra_hosts` entries with IPv4, IPv6, and bracketed IPv6 source forms, currently through the command-vector bridge.
 - Supported: service `up`, `create`, and one-off `run` host entries.
 - Separate slice: Docker `host-gateway` is handled by `docs/upstream/apple-container/ISSUE-host-gateway.md` / `docs/upstream/apple-container/PR-host-gateway.md`.
-- Remaining gap: custom `domainname` and legacy `links` / `external_links` are still separate runtime or compatibility surfaces.
-- Separate slice: service `hostname` is handled by `docs/upstream/container-compose/ISSUE-service-hostname.md` / `docs/upstream/container-compose/PR-service-hostname.md`.
+- Separate support: service `domainname` is handled by
+  `docs/upstream/container-compose/ISSUE-service-domainname.md` /
+  `docs/upstream/container-compose/PR-service-domainname.md`.
+- Separate support: `links` and `external_links` cover their documented
+  single-network local subsets.
+- Remaining gap: multi-network links, shared aliases, and source-scoped DNS
+  need richer runtime discovery and DNS primitives.
+- Separate slice: service `hostname` is handled by
+  `docs/upstream/container-compose/ISSUE-service-hostname.md` /
+  `docs/upstream/container-compose/PR-service-hostname.md`.
 
 ## Testing
 

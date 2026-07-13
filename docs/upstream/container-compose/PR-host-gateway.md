@@ -4,7 +4,8 @@
 
 - Map Compose `extra_hosts` `host-gateway` entries to the plugin-owned host-entry projection.
 - Reuse the runtime `ContainerConfiguration.HostEntry.hostGatewayAddress` sentinel.
-- Document the fork-backed runtime dependency and remaining link/domain gaps.
+- Document the fork-backed runtime dependency and remaining DNS and
+  multi-network gaps.
 
 ## Type of Change
 
@@ -43,7 +44,10 @@ References:
 
 - Supported with the current fork-backed runtime: service `extra_hosts` entries using `host-gateway`.
 - Remaining gap: released upstream `apple/container` still needs accepted static host entries plus host-gateway resolution before stock upstream builds can use this.
-- Remaining gap: service `domainname` and legacy `links` / `external_links` are separate host identity surfaces.
+- Related support: service `domainname`, `links`, and `external_links` cover
+  their documented local subsets.
+- Remaining gap: multi-network links, shared aliases, and source-scoped DNS
+  need richer runtime discovery and DNS primitives.
 
 ## Testing
 

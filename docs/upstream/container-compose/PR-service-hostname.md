@@ -4,7 +4,8 @@
 
 - Map Compose service `hostname` to the plugin-owned runtime hostname projection.
 - Validate hostnames with RFC1123 label rules before side effects.
-- Keep Compose `domainname` as an explicit upstream/runtime gap.
+- Document current related host-identity support and remaining networking
+  discovery limits.
 
 ## Type of Change
 
@@ -37,14 +38,19 @@ References:
 - Added RFC1123 hostname validation in the shared service validation path.
 - Built a deterministic hostname projection for `up`, `create`, and one-off `run`.
 - Appended `--hostname` in the shared command-vector bridge while typed service creation is being wired.
-- Left `domainname` rejected with a precise upstream/runtime gap message.
+- Keep `domainname` mapping in its separate focused Compose slice.
 - Updated `STATUS.md` and relevant project docs.
 
 ## Docker Compose Compatibility Notes
 
 - Supported with the current fork-backed runtime: service `hostname` for service containers and one-off `run` containers, currently through the command-vector bridge.
-- Remaining gap: service `domainname` needs a lower runtime and `apple/container` API surface.
-- Remaining gap: Docker `host-gateway` and legacy `links` / `external_links` are separate networking identity surfaces.
+- Related support: service `domainname` is implemented in its separate
+  Compose slice with the current fork-backed runtime.
+- Related support: `extra_hosts` includes Docker `host-gateway` mapping.
+- Related support: `links` and `external_links` cover their documented
+  single-network local subsets.
+- Remaining gap: multi-network links, shared aliases, and source-scoped DNS
+  need richer runtime discovery and DNS primitives.
 
 ## Testing
 
@@ -55,7 +61,7 @@ References:
 Focused validation:
 
 ```sh
-swift test --filter 'ComposeOrchestratorTests/createCreatesResourcesAndServiceContainersWithoutStartingThem|ComposeOrchestratorTests/upMapsHostnamesToRuntimeArguments|ComposeOrchestratorTests/upRejectsInvalidHostnamesBeforeCreatingResources|ComposeOrchestratorTests/runSupportsOneOffContainersAndOptionFlags|ComposeOrchestratorTests/runMapsHostnamesToRuntimeArguments|ComposeOrchestratorTests/runRejectsUnsupportedDomainNamesBeforeCreatingResources'
+swift test --filter 'ComposeOrchestratorTests/createCreatesResourcesAndServiceContainersWithoutStartingThem|ComposeOrchestratorTests/upMapsHostnamesToRuntimeArguments|ComposeOrchestratorTests/upRejectsInvalidHostnamesBeforeCreatingResources|ComposeOrchestratorTests/upMapsDomainNamesToRuntimeArguments|ComposeOrchestratorTests/runSupportsOneOffContainersAndOptionFlags|ComposeOrchestratorTests/runMapsHostnamesToRuntimeArguments|ComposeOrchestratorTests/runMapsDomainNamesToRuntimeArguments'
 ```
 
 Additional local checks:

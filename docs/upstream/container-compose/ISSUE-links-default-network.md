@@ -31,8 +31,6 @@ References:
 
 The runtime mapping already supports links when source and target services share exactly one normalized Compose network. That includes the compose-go normalized implicit `default` network.
 
-Before this change, tests and documentation still described implicit default-network links as blocked because the manually constructed unit fixture omitted the normalized default network fields that real compose-go input supplies.
-
 ## Likely owner
 
 container-compose

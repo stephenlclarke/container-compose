@@ -45,8 +45,10 @@ Following JLogan's guidance in [apple/container#1769](https://github.com/apple/c
 ## Non-Goals
 
 - This does not add Compose-specific service aliasing to `apple/container`.
-- This does not implement legacy Compose `links` or `external_links`.
-- This does not implement Docker's `host-gateway` magic value. That should be a separate runtime follow-up because it needs gateway resolution at container creation time.
+- This does not add Compose-specific link policy; `container-compose` owns
+  the current safe local subsets for `links` and `external_links`.
+- Docker's `host-gateway` magic value is handled by the separate runtime
+  resolver handoff in `docs/upstream/apple-container/PR-host-gateway.md`.
 - This does not add multi-network alias or DNSRR behavior.
 
 ## Testing
@@ -82,9 +84,13 @@ Runtime behavior remains generic: the new entries are appended to `/etc/hosts` a
 
 Docker Compose documents `extra_hosts` short syntax with `HOSTNAME=IP`, also allowing `HOSTNAME:IP`, plus bracketed IPv6 values. This parser accepts those concrete host-to-IP forms and rejects invalid addresses before container creation.
 
-Docker's special `host-gateway` value remains a follow-up so the first host-entry PR can stay focused on static entries and existing upstream PR direction.
+Docker's special `host-gateway` value is handled by the separate
+runtime resolver slice, so this host-entry primitive remains focused on static
+entries and the existing upstream API direction.
 
 ## Remaining Risks
 
 - Maintainers may prefer the exact public property name from [apple/container#1340](https://github.com/apple/container/pull/1340) or [apple/container#1563](https://github.com/apple/container/pull/1563). The fork should rebase to whichever API shape is accepted upstream.
-- The Compose plugin will need to keep `host-gateway`, `links`, `external_links`, and custom hostname/domain behavior as separate runtime-gap checks until those primitives exist.
+- The Compose plugin must keep multi-network link behavior, shared aliases,
+  and source-scoped DNS as separate runtime gaps until richer runtime
+  primitives exist.

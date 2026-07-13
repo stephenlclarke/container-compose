@@ -17,7 +17,9 @@
 
 The existing `links` implementation projects aliases onto the linked target service when source and target share exactly one normalized Compose network. That means real Compose files that rely on the implicit `default` network are already representable after compose-go normalization.
 
-The repository still had a manually constructed test and documentation that described implicit default-network links as unsupported. That was misleading because those fixtures skipped the normalized `default` network fields compose-go produces for real input.
+The normalized `default` network is part of the same current single-network
+link subset as an explicitly declared network. The regression coverage keeps
+that Compose-generated representation covered directly.
 
 References:
 
@@ -41,7 +43,8 @@ References:
 ## Docker Compose Compatibility Notes
 
 - Supported with the current fork-backed runtime: `links` where linked services share exactly one normalized Compose network, including the implicit `default` network, currently through the command-vector bridge.
-- Remaining gap: multi-network links, shared aliases, and `external_links` still need richer apple/container DNS and external-service lookup primitives.
+- Remaining gap: multi-network links, shared aliases, and source-scoped DNS
+  still need richer `apple/container` runtime primitives.
 - Remaining gap: released upstream still needs accepted network alias support before stock upstream builds can enable the alias projection.
 
 ## Testing
