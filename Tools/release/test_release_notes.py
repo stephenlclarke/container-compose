@@ -166,6 +166,56 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("Add monitoring stack.", notes)
             self.assertNotIn("chore: initial import", notes)
 
+    def test_stable_release_renders_the_static_quality_snapshot(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.git(repo, "tag", "--no-sign", "0.6.0")
+            self.commit(repo, "fix(release): preserve quality evidence")
+            self.git(repo, "tag", "--no-sign", "0.6.1")
+            snapshot = """## Quality Snapshot
+
+![Quality Gate Status](https://img.shields.io/static/v1?label=Quality+Gate+Status&message=Passed&color=brightgreen)
+![CodeQL Results](https://img.shields.io/static/v1?label=CodeQL+Results&message=0&color=brightgreen)
+"""
+
+            notes = module.render_release_notes(
+                repo=repo,
+                release_tag="0.6.1",
+                release_label="stable release",
+                compose_version="0.6.1",
+                asset="container-compose-plugin-release-arm64.tar.gz",
+                asset_sha="abc123",
+                quality_snapshot=snapshot,
+                head_ref="HEAD",
+            )
+
+            self.assertIn("## Quality Snapshot", notes)
+            self.assertIn("![Quality Gate Status]", notes)
+            self.assertIn("![CodeQL Results]", notes)
+            self.assertNotIn("[![", notes)
+
+    def test_current_release_rejects_a_quality_snapshot(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+
+            with self.assertRaisesRegex(
+                ValueError, "quality snapshots are supported only for stable releases"
+            ):
+                module.render_release_notes(
+                    repo=repo,
+                    release_tag="current",
+                    release_label="current build",
+                    compose_version="0.6.1",
+                    asset="container-compose-plugin-current-arm64.tar.gz",
+                    asset_sha="abc123",
+                    quality_snapshot="## Quality Snapshot\n",
+                    head_ref="HEAD",
+                )
+
     def test_release_note_trailers_render_user_facing_highlights(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:

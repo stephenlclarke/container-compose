@@ -9,12 +9,19 @@ time: both runtime formulae provide the `container` executable.
 
 | Formula | Build type | Use when |
 | --- | --- | --- |
-| `container-compose` | stable release build | Install this. It depends on the matched `stephenlclarke/container` runtime. |
+| `container-compose` | stable release build | Default install. It depends on the matched `stephenlclarke/container` runtime. |
 | `container` | runtime build | Installed automatically as the runtime dependency for the plugin formula. |
-| `container-compose-current` | current green-main build | Opt in when you want the latest installable app. It depends on `container-current`. |
+| `container-compose-current` | one mutable `current` prerelease | Opt in when you want the latest green-`main` app. It depends on `container-current`. |
 | `container-current` | current runtime build | Installed automatically with the current plugin formula. |
 
 The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BRANCHES.md](BRANCHES.md).
+
+Homebrew without a `-current` formula always uses the latest immutable semantic
+release. The opt-in lane follows the single mutable GitHub prerelease named
+**Current build** (tag `current`), which advances only after green `main` CI.
+The release page retains downloadable assets only for the newest stable release
+and that one current prerelease; older release notes contain source-build
+instructions instead.
 
 ## Requirements
 
@@ -67,9 +74,10 @@ If the machine has a mixed Homebrew/Apple install, use the [reset flow](#trouble
 ## Install The Current Matched Stack
 
 Use this lane when you want the latest installable `main` build rather than the
-latest semantic stable release. It is generated only after green `main` CI and
-is always paired with the exact runtime package in its Compose stack manifest.
-It deliberately does not modify the stable formulae.
+latest semantic stable release. It follows the one mutable **Current build**
+prerelease (tag `current`), generated only after green `main` CI, and is always
+paired with the exact runtime package in its Compose stack manifest. It
+deliberately does not modify the stable formulae.
 
 Switch from stable (or reset a mixed installation) first:
 

@@ -87,6 +87,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime-asset")
     parser.add_argument("--runtime-asset-sha")
     parser.add_argument(
+        "--quality-snapshot",
+        type=Path,
+        help="Static SonarQube and CodeQL badge block captured for a stable release.",
+    )
+    parser.add_argument(
         "--highlights-json",
         type=Path,
         help="Write the immutable machine-readable highlight manifest to this path.",
@@ -700,6 +705,7 @@ def render_release_notes(
     head_ref: str,
     runtime_asset: str | None = None,
     runtime_asset_sha: str | None = None,
+    quality_snapshot: str | None = None,
     release_repo: str | None = None,
     component_repos: dict[str, Path] | None = None,
 ) -> str:
@@ -840,6 +846,10 @@ def render_release_notes(
                 f"  `{runtime_asset_sha}`.",
             ]
         )
+    if quality_snapshot is not None:
+        if not stable_release:
+            raise ValueError("quality snapshots are supported only for stable releases")
+        lines.extend(["", quality_snapshot.rstrip()])
     return "\n".join(lines) + "\n"
 
 
@@ -856,6 +866,11 @@ def main() -> None:
                 asset_sha=args.asset_sha,
                 runtime_asset=args.runtime_asset,
                 runtime_asset_sha=args.runtime_asset_sha,
+                quality_snapshot=(
+                    args.quality_snapshot.read_text(encoding="utf-8")
+                    if args.quality_snapshot is not None
+                    else None
+                ),
                 head_ref=args.head,
                 release_repo=args.release_repo,
                 component_repos=parse_component_repos(args.component_repo),

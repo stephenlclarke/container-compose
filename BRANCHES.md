@@ -85,7 +85,7 @@ without deleting their tags, so upstream PR snapshots and source references
 remain available. Correct a failed stable release through an explicitly reviewed
 incident change; do not replay an identity.
 
-Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes compare against the newest published stable GitHub release when release metadata is available, with local semantic tags as the offline fallback, so unpublished source tags cannot hide user-facing changes. They include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Write one complete sentence that names the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`, which suppresses an automatic highlight. When a user-facing conventional commit has no trailer, the renderer uses the first prose paragraph from its body before falling back to the subject. The active package also contains a machine-readable `release-highlights.json` copy; stable notes preserve those highlights after retired assets are removed. For upstream-driven work, also record the original `owner/repository#number` under `Upstream-Ref:`, `Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The renderer preserves references already written into the highlight and appends any missing references, including highlights collected from stack component commits.
+Release notes are rendered by [Tools/release/release-notes.py](Tools/release/release-notes.py). The notes compare against the newest published stable GitHub release when release metadata is available, with local semantic tags as the offline fallback, so unpublished source tags cannot hide user-facing changes. They include a raw commit audit list, and they promote user-facing `Release-Note:` or `Release-Highlight:` commit trailers into a `Highlights` section before that list. Write one complete sentence that names the Docker Compose feature, CLI option, or workflow users now get; internal release, CI, and documentation chores should normally omit the trailer or use `Release-Note: none`, which suppresses an automatic highlight. When a user-facing conventional commit has no trailer, the renderer uses the first prose paragraph from its body before falling back to the subject. The active package also contains a machine-readable `release-highlights.json` copy; stable notes preserve those highlights after retired assets are removed. Each stable release also records static, non-clickable SonarQube and CodeQL badges for the exact promoted commit; this block never contains release-version or visitor badges. For upstream-driven work, also record the original `owner/repository#number` under `Upstream-Ref:`, `Bug-Ref:`, `Refs:`, or `Follow-up-To:`. The renderer preserves references already written into the highlight and appends any missing references, including highlights collected from stack component commits.
 
 `VERSION_SELECTOR` accepts:
 
@@ -133,14 +133,15 @@ The aggregate tap is `stephenlclarke/homebrew-tap`.
 | `container` + `container-compose` | Stable matched stack from the latest semantic Compose release. |
 | `container-current` + `container-compose-current` | Installable current matched stack from green `main` commits. |
 
-The formula pairs consume validated immutable GitHub release assets. Stable is
-the default install. Current is explicitly opt-in. The pair update is atomic,
+The formula pairs consume validated GitHub release assets. Stable is the default
+install and uses immutable semantic-release assets; current is explicitly
+opt-in and uses the one mutable `current` prerelease. The pair update is atomic,
 so Homebrew never combines a newly published runtime with an unrelated Compose
 plugin. The tap does not install from `sources/*` submodules.
 
 `Tools/release/container-compose.rb.in` and `container/Formula/container.rb`
 are non-release source templates. The package workflow renders both members of
-a lane from immutable release assets; source files never claim a published
+a lane from its exact release assets; source files never claim a published
 checksum or live formula version.
 
 The tap `sources/container`, `sources/container-compose`, `sources/containerization`, and `sources/container-builder-shim` submodules are maintenance inputs that track project `main` branches.
@@ -164,6 +165,11 @@ After a non-main branch has been landed on `main`, delete that branch locally an
 
 ## Release Retention
 
-Keep all source tags, GitHub release objects, release notes, highlight manifests,
-and binary assets. GitHub immutable releases enforce this policy; package
-retries create no mutations and a correction requires a new reviewed release.
+Keep all semantic source tags, stable GitHub release objects, release notes,
+and highlight manifests. Retain binary assets only on the newest stable release
+and the one mutable `current` prerelease, which are the only Homebrew-backed
+downloads. Superseded stable releases keep their notes but replace assets with
+source-build instructions. Superseded generated current release objects are
+deleted while their source tags remain available for upstream-PR recovery.
+Stable tags and releases stay immutable; correct a stable release through a new
+reviewed release rather than retargeting it.

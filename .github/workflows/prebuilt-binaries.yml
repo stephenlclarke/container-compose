@@ -35,6 +35,7 @@ permissions:
   attestations: write
   contents: write
   id-token: write
+  security-events: read
 
 concurrency:
   # Both formulae in a lane are committed together. One global queue prevents a
@@ -563,6 +564,17 @@ jobs:
           notes="$(mktemp)"
           highlights="${RUNNER_TEMP}/release-highlights.json"
           git fetch --force --tags origin
+          quality_snapshot_args=()
+          if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+            quality_snapshot="${RUNNER_TEMP}/quality-snapshot.md"
+            # A stable release records the exact SonarQube and CodeQL analyses
+            # for the promoted commit. Current is intentionally mutable and
+            # therefore does not carry a historical snapshot.
+            python3 Tools/release/capture-quality-snapshot.py \
+              --repo "${GITHUB_REPOSITORY}" \
+              --commit "${PUBLISH_SHA}" > "${quality_snapshot}"
+            quality_snapshot_args=(--quality-snapshot "${quality_snapshot}")
+          fi
           python3 Tools/release/release-notes.py \
             --release-tag "${RELEASE_TAG}" \
             --release-label "${RELEASE_LABEL}" \
@@ -576,6 +588,7 @@ jobs:
             --component-repo container-builder-shim=../container-builder-shim \
             --component-repo containerization=../containerization \
             --component-repo container=../container \
+            "${quality_snapshot_args[@]}" \
             --highlights-json "${highlights}" > "${notes}"
 
           if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then

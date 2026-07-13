@@ -1,6 +1,9 @@
 # Upstream Drafts
 
-This directory is the durable handoff area for Apple-facing issue and pull request drafts that unblock `container-compose`.
+This directory is the durable handoff area for current Apple-facing issue and
+pull request drafts that unblock `container-compose`. It is not a project
+history or an operational runbook: current installation, release, support, and
+build instructions live at the repository root.
 
 ## Slice Rules
 
