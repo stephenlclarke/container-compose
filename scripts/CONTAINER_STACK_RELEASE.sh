@@ -229,6 +229,10 @@ fetch_release_remote() {
   url="$(git -C "${path}" remote get-url "${remote}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
+    if [[ "${repo}" == "${CONTAINER_REPO}" ]]; then
+      printf 'would run: git -C %s fetch --prune %s +refs/tags/homebrew-main:refs/tags/homebrew-main\n' \
+        "${path}" "${remote}"
+    fi
     printf 'would run: git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
     return 0
   fi
@@ -237,6 +241,15 @@ fetch_release_remote() {
     printf 'normalizing %s release remote for %s from %s to %s\n' "${remote}" "${repo}" "${url}" "${fallback_url}" >&2
     git -C "${path}" remote set-url "${remote}" "${fallback_url}"
     url="${fallback_url}"
+  fi
+
+  # homebrew-main is a legacy mutable pointer. Versioned homebrew-main-RUN-SHA
+  # tags identify immutable packages; refresh only the legacy pointer explicitly.
+  if [[ "${repo}" == "${CONTAINER_REPO}" ]]; then
+    printf '+ git -C %s fetch --prune %s +refs/tags/homebrew-main:refs/tags/homebrew-main\n' \
+      "${path}" "${remote}"
+    git -C "${path}" fetch --prune "${remote}" \
+      '+refs/tags/homebrew-main:refs/tags/homebrew-main'
   fi
 
   printf '+ git -C %s fetch --prune --tags %s\n' "${path}" "${remote}"
