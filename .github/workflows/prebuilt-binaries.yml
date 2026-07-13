@@ -684,5 +684,7 @@ jobs:
             --bootstrap-command "brew install go node python" \
             --build-command "make package" \
             --source-guidance "BUILD.md and INSTALL.md" \
+            --stable-install-command "brew install --formula stephenlclarke/tap/container stephenlclarke/tap/container-compose" \
+            --current-install-command "brew install --formula stephenlclarke/tap/container-current stephenlclarke/tap/container-compose-current" \
             --install-command "sudo rm -rf /usr/local/libexec/container-plugins/compose && sudo install -d /usr/local/libexec/container-plugins && sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins" \
             --apply

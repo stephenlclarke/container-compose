@@ -81,6 +81,22 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
         self.assertEqual(replaced, again)
         self.assertEqual(replaced.count(module.RETENTION_START), 1)
 
+    def test_active_releases_show_the_correct_homebrew_lane(self) -> None:
+        module = load_module()
+        stable = module.active_homebrew_note(
+            prerelease=False,
+            install_command="brew install --formula stephenlclarke/tap/container-compose",
+        )
+        current = module.active_homebrew_note(
+            prerelease=True,
+            install_command="brew install --formula stephenlclarke/tap/container-compose-current",
+        )
+        self.assertIn("newest published stable release", stable)
+        self.assertIn("container-compose\n", stable)
+        self.assertIn("newest published current prerelease", current)
+        self.assertIn("container-compose-current", current)
+        self.assertIn("brew tap stephenlclarke/tap", current)
+
 
 if __name__ == "__main__":
     unittest.main()

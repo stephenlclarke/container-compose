@@ -50,6 +50,16 @@ def parse_args() -> argparse.Namespace:
         help="versioned documentation file or files to use after the source build",
     )
     parser.add_argument(
+        "--stable-install-command",
+        required=True,
+        help="Homebrew command for the active stable release",
+    )
+    parser.add_argument(
+        "--current-install-command",
+        required=True,
+        help="Homebrew command for the active prerelease",
+    )
+    parser.add_argument(
         "--install-command",
         help="optional command that installs the locally-built artifact",
     )
@@ -127,6 +137,26 @@ def historical_source_note(
     )
 
 
+def active_homebrew_note(*, prerelease: bool, install_command: str) -> str:
+    lane = "current prerelease" if prerelease else "stable release"
+    return "\n".join(
+        [
+            RETENTION_START,
+            "## Homebrew installation",
+            "",
+            f"This is the newest published {lane}, so its prebuilt package remains available through Homebrew.",
+            "",
+            "```sh",
+            "brew tap stephenlclarke/tap",
+            "brew trust --tap stephenlclarke/tap",
+            "brew update",
+            install_command,
+            "```",
+            RETENTION_END,
+        ]
+    )
+
+
 def replace_retention_note(body: str, note: str) -> str:
     start = body.find(RETENTION_START)
     if start < 0:
@@ -185,6 +215,27 @@ def main() -> None:
         if release["id"] in retained
     ]
     print(f"retaining release assets for: {', '.join(retained_tags) or 'none'}")
+
+    for release in published_releases(releases):
+        if release["id"] not in retained:
+            continue
+        current_body = release.get("body") or ""
+        body = replace_retention_note(
+            current_body,
+            active_homebrew_note(
+                prerelease=bool(release.get("prerelease")),
+                install_command=(
+                    args.current_install_command
+                    if release.get("prerelease")
+                    else args.stable_install_command
+                ),
+            ),
+        )
+        if body == current_body:
+            continue
+        print(f"documenting Homebrew installation for {release['tag_name']}")
+        if args.apply:
+            update_release_notes(args.repo, release, body)
 
     for release in stale:
         note = historical_source_note(
