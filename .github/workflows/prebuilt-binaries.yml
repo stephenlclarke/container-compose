@@ -671,3 +671,17 @@ jobs:
           git add "Formula/${compose_formula}" "Formula/${container_formula}"
           git commit -m "chore(homebrew): update ${{ steps.lane.outputs.package_lane }} stack ${{ steps.lane.outputs.compose_version }}"
           git push
+
+      - name: Retain only current release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        working-directory: container-compose
+        run: |
+          set -euo pipefail
+          python3 Tools/release/retain-release-assets.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bootstrap-command "brew install go node python" \
+            --build-command "make package" \
+            --install-command "sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins" \
+            --apply
