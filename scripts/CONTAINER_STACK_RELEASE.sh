@@ -757,7 +757,7 @@ open_compose_promotion_pr() {
 }
 
 wait_for_compose_pr_checks() {
-  local number="$1" repo deadline now status check_mode
+  local number="$1" repo deadline now status check_mode output
   local check_args=()
   repo="$(github_repo "${COMPOSE_REPO}")"
   deadline=$((SECONDS + PROMOTION_WAIT_SECONDS))
@@ -769,9 +769,9 @@ wait_for_compose_pr_checks() {
   fi
 
   while true; do
-    if env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
+    if output="$(env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
       --repo "${repo}" \
-      "${check_args[@]}" >/dev/null 2>&1; then
+      "${check_args[@]}" 2>&1)"; then
       status=0
     else
       status="$?"
@@ -784,11 +784,13 @@ wait_for_compose_pr_checks() {
       8)
         ;;
       *)
-        env -u GITHUB_TOKEN -u GH_TOKEN gh pr checks "${number}" \
-          --repo "${repo}" \
-          "${check_args[@]}" || true
-        printf 'container-compose promotion PR checks failed: #%s\n' "${number}" >&2
-        exit 1
+        if grep -qi 'no checks reported' <<<"${output}"; then
+          :
+        else
+          printf '%s\n' "${output}" >&2
+          printf 'container-compose promotion PR checks failed: #%s\n' "${number}" >&2
+          exit 1
+        fi
         ;;
     esac
 
@@ -819,7 +821,7 @@ compose_pr_check_mode() {
     printf 'required'
     return 0
   fi
-  if grep -qi 'no required checks reported' <<<"${output}"; then
+  if grep -Eqi 'no (required )?checks reported' <<<"${output}"; then
     printf 'all'
     return 0
   fi
