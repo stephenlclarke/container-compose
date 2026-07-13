@@ -23,6 +23,8 @@ readonly COMPOSE_BIN="${INSTALL_DIR}/docker-compose"
 readonly COLIMA_CPUS="${DOCKER_COMPOSE_REFERENCE_CPUS:-2}"
 readonly COLIMA_MEMORY="${DOCKER_COMPOSE_REFERENCE_MEMORY:-4}"
 readonly COLIMA_DISK="${DOCKER_COMPOSE_REFERENCE_DISK:-20}"
+readonly COLIMA_VM_TYPE="${DOCKER_COMPOSE_REFERENCE_VM_TYPE:-qemu}"
+readonly COLIMA_MOUNT_TYPE="${DOCKER_COMPOSE_REFERENCE_MOUNT_TYPE:-sshfs}"
 
 need_command() {
     local command_name="$1"
@@ -90,12 +92,22 @@ start_colima() {
     fi
 
     if ! colima status >/dev/null 2>&1; then
-        colima start \
+        if ! colima start \
             --runtime docker \
+            --vm-type "$COLIMA_VM_TYPE" \
+            --mount-type "$COLIMA_MOUNT_TYPE" \
             --arch "$(host_arch)" \
             --cpus "$COLIMA_CPUS" \
             --memory "$COLIMA_MEMORY" \
-            --disk "$COLIMA_DISK"
+            --disk "$COLIMA_DISK"; then
+            for log in "$HOME"/.colima/_lima/colima/ha.stderr.log "$HOME"/.colima/_lima/colima/serial*.log; do
+                if [[ -f "$log" ]]; then
+                    printf '\n== %s ==\n' "$log" >&2
+                    tail -n 80 "$log" >&2 || true
+                fi
+            done
+            return 1
+        fi
     fi
 
     docker context use colima >/dev/null
@@ -124,6 +136,9 @@ main() {
 
     install_formula docker
     install_formula colima
+    if [[ "$COLIMA_VM_TYPE" == "qemu" ]]; then
+        install_formula qemu
+    fi
     install_compose
     start_colima
 
