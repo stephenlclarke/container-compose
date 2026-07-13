@@ -104,6 +104,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('release_title="Current build"', workflow)
         self.assertIn('RELEASE_MUTABLE="${release_mutable}"', workflow)
         self.assertIn("--delete-superseded-current-releases", workflow)
+        self.assertIn("release_notes_args=(", workflow)
+        self.assertIn('python3 Tools/release/release-notes.py "${release_notes_args[@]}"', workflow)
+        self.assertNotIn("quality_snapshot_args", workflow)
 
     def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")

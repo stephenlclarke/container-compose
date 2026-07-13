@@ -572,7 +572,21 @@ jobs:
           notes="$(mktemp)"
           highlights="${RUNNER_TEMP}/release-highlights.json"
           git fetch --force --tags origin
-          quality_snapshot_args=()
+          release_notes_args=(
+            --release-tag "${RELEASE_TAG}"
+            --release-label "${RELEASE_LABEL}"
+            --compose-version "${COMPOSE_VERSION}"
+            --asset "${ASSET}"
+            --asset-sha "${sha256}"
+            --runtime-asset "${{ steps.runtime-package.outputs.asset }}"
+            --runtime-asset-sha "${{ steps.runtime-package.outputs.sha256 }}"
+            --head "${PUBLISH_SHA}"
+            --release-repo "${GITHUB_REPOSITORY}"
+            --component-repo container-builder-shim=../container-builder-shim
+            --component-repo containerization=../containerization
+            --component-repo container=../container
+            --highlights-json "${highlights}"
+          )
           if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
             quality_snapshot="${RUNNER_TEMP}/quality-snapshot.md"
             # A stable release records the exact SonarQube and CodeQL analyses
@@ -581,23 +595,9 @@ jobs:
             python3 Tools/release/capture-quality-snapshot.py \
               --repo "${GITHUB_REPOSITORY}" \
               --commit "${PUBLISH_SHA}" > "${quality_snapshot}"
-            quality_snapshot_args=(--quality-snapshot "${quality_snapshot}")
+            release_notes_args+=(--quality-snapshot "${quality_snapshot}")
           fi
-          python3 Tools/release/release-notes.py \
-            --release-tag "${RELEASE_TAG}" \
-            --release-label "${RELEASE_LABEL}" \
-            --compose-version "${COMPOSE_VERSION}" \
-            --asset "${ASSET}" \
-            --asset-sha "${sha256}" \
-            --runtime-asset "${{ steps.runtime-package.outputs.asset }}" \
-            --runtime-asset-sha "${{ steps.runtime-package.outputs.sha256 }}" \
-            --head "${PUBLISH_SHA}" \
-            --release-repo "${GITHUB_REPOSITORY}" \
-            --component-repo container-builder-shim=../container-builder-shim \
-            --component-repo containerization=../containerization \
-            --component-repo container=../container \
-            "${quality_snapshot_args[@]}" \
-            --highlights-json "${highlights}" > "${notes}"
+          python3 Tools/release/release-notes.py "${release_notes_args[@]}" > "${notes}"
 
           if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
             tag_target="$(
