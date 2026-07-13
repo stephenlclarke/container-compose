@@ -329,7 +329,9 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
+            self.assertNotIn("Release automation pins containerization", notes)
             self.assertIn("chore(deps): pin containerization", notes)
 
     def test_release_note_none_suppresses_automatic_highlight(self) -> None:
@@ -357,7 +359,9 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertNotIn("## Highlights", notes)
+            self.assertIn("## Highlights", notes)
+            self.assertIn("No user-facing highlights were declared", notes)
+            self.assertNotIn("retain compatibility diagnostics.", notes)
             self.assertIn("fix(cli): retain compatibility diagnostics", notes)
 
     def test_body_summary_ignores_generic_git_trailers(self) -> None:
