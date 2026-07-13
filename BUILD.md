@@ -163,9 +163,9 @@ validated `main` source with one selector. The selector is resolved from the
 latest semantic tag—not from the working-tree version:
 
 ```sh
-make release VERSION_SELECTOR=--+   # patch: 0.6.69 -> 0.6.70
-make release VERSION_SELECTOR=-+-   # minor: 0.6.69 -> 0.7.0
-make release VERSION_SELECTOR=+--   # major: 0.6.69 -> 1.0.0
+make release VERSION_SELECTOR=--+   # patch: X.Y.Z -> X.Y.(Z+1)
+make release VERSION_SELECTOR=-+-   # minor: X.Y.Z -> X.(Y+1).0
+make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
 make release VERSION_SELECTOR=0.7.0 # exact next semantic version
 ```
 

@@ -201,6 +201,89 @@ sudo rm -rf /usr/local/libexec/container-plugins/compose
 
 ## Troubleshooting
 
+### Migrate Legacy Pre-0.6.68 Packages
+
+This is the only legacy release-process procedure in this guide. Packages made
+before 0.6.68 used the same Homebrew formula names while release and prerelease
+assets changed underneath them. They can leave a `homebrew-main-*` or old
+`main-*` build paired with a newer formula. Do not try to upgrade that install
+in place: remove the old package pair, then install exactly one current lane.
+
+The following removes only Homebrew formulae and the obsolete manually linked
+plugin. It does not use `--zap` and does not remove container data or settings:
+
+```sh
+container system stop || true
+
+for formula in \
+  stephenlclarke/tap/container-compose \
+  stephenlclarke/tap/container \
+  stephenlclarke/tap/container-compose-current \
+  stephenlclarke/tap/container-current; do
+  brew services stop "$formula" || true
+  brew uninstall --ignore-dependencies --force "$formula" || true
+done
+
+sudo rm -rf /usr/local/libexec/container-plugins/compose
+hash -r 2>/dev/null || true
+```
+
+Install the normal stable lane unless you explicitly need green `main`:
+
+```sh
+brew tap stephenlclarke/tap
+brew trust --tap stephenlclarke/tap
+brew update
+brew install --formula stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
+```
+
+To opt in to the one mutable **Current build** prerelease instead, replace the
+last three commands with:
+
+```sh
+brew install --formula stephenlclarke/tap/container-compose-current
+brew postinstall stephenlclarke/tap/container-current
+brew services restart stephenlclarke/tap/container-current
+```
+
+Finish either migration with `container system version` and `container compose
+version`. The two commands must report the same selected lane.
+
+### Switch Between Stable And Current
+
+The two runtime formulae both provide `container`, so they cannot be installed
+side by side. Stop and remove the active pair before installing the other pair.
+This preserves container data; it changes only the installed executables and
+plugin registration.
+
+To switch from stable to current:
+
+```sh
+brew services stop stephenlclarke/tap/container || true
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose stephenlclarke/tap/container || true
+brew update
+brew install --formula stephenlclarke/tap/container-compose-current
+brew postinstall stephenlclarke/tap/container-current
+brew services restart stephenlclarke/tap/container-current
+```
+
+To switch from current back to stable:
+
+```sh
+brew services stop stephenlclarke/tap/container-current || true
+brew uninstall --ignore-dependencies stephenlclarke/tap/container-compose-current stephenlclarke/tap/container-current || true
+brew update
+brew install --formula stephenlclarke/tap/container-compose
+brew postinstall stephenlclarke/tap/container
+brew services restart stephenlclarke/tap/container
+```
+
+After either switch, run `hash -r 2>/dev/null || true`, `container system
+version`, and `container compose version`. If the output names mixed formulae,
+repeat the legacy migration above instead of combining packages manually.
+
 If `container compose` is missing, hangs, or reports the wrong runtime, reset the Homebrew stack:
 
 ```sh
