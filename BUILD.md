@@ -175,6 +175,9 @@ Before source promotion, the helper bootstraps the matched stack tools, fetches
 the required `containerization` integration kernel when it is absent, and runs
 the full local `make release-gate`. The hosted gate repeats that validation from
 the immutable source, runtime, and tap checkouts before package publication.
+The helper waits up to three hours for that hosted gate, which exceeds its
+120-minute workflow timeout; set `CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS` only
+when an operator needs a different bound.
 
 The helper is the only supported version mutator. It updates the Compose version
 when necessary, preserves the exact runtime stack pin, opens and merges the

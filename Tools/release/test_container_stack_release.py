@@ -177,6 +177,24 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow.index("Run release gate"),
         )
 
+    def test_release_helper_waits_longer_than_the_hosted_stable_gate_timeout(self) -> None:
+        dispatch = self.script[
+            self.script.index("dispatch_stable_release_gate() {") : self.script.index(
+                "publish_stable_release() {"
+            )
+        ]
+        self.assertIn(
+            'STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-10800}"',
+            self.script,
+        )
+        self.assertIn("CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS", self.script)
+        self.assertIn("deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))", dispatch)
+        self.assertIn(
+            '"${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"',
+            dispatch,
+        )
+        self.assertIn("timeout-minutes: 120", STABLE_GATE_WORKFLOW.read_text(encoding="utf-8"))
+
     def test_new_stable_release_runs_the_local_gate_before_promotion(self) -> None:
         release = self.script[self.script.index("release_current_stack() {") :]
         self.assertIn("run_local_release_gate", release)

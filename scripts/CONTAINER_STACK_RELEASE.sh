@@ -100,6 +100,15 @@ Environment:
   CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS
       Override the default one-hour PR promotion wait and 30-second poll.
 
+  CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS
+      Override the default three-hour wait for the hosted Stable Release Gate.
+      The default exceeds the gate's 120-minute workflow timeout so a valid
+      queued or long-running gate does not prematurely end the local release.
+
+  CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS
+  CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS
+      Override the default one-hour package workflow wait and 30-second poll.
+
   CONTAINER_STACK_RELEASE_ROOT
       Override the parent directory containing the four source checkouts and
       the Homebrew tap. Defaults to ~/github. Use an isolated stack root for
@@ -159,6 +168,7 @@ COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
 COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
+STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-10800}"
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
@@ -1193,8 +1203,9 @@ latest_stable_release_gate_dispatch_run() {
 
 # Wait for a GitHub Actions run to complete successfully.
 wait_for_github_run_success() {
-  local run_id="$1" label="$2" status conclusion url deadline now details
-  deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
+  local run_id="$1" label="$2" wait_seconds="${3:-${COMPOSE_PACKAGE_WAIT_SECONDS}}"
+  local status conclusion url deadline now details
+  deadline=$((SECONDS + wait_seconds))
   while true; do
     details="$(
       github_cli run view "${run_id}" \
@@ -1399,12 +1410,13 @@ dispatch_stable_release_gate() {
     --ref main \
     -f "ref=${version}"
 
-  deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
+  deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))
   while true; do
     run_id="$(latest_stable_release_gate_dispatch_run || true)"
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf 'stable release gate started: %s\n' "${run_id}"
-      wait_for_github_run_success "${run_id}" "hosted stable release gate"
+      wait_for_github_run_success \
+        "${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
       return 0
     fi
 
