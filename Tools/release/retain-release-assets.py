@@ -189,11 +189,16 @@ def main() -> None:
             install_command=args.install_command,
         )
         body = replace_retention_note(release.get("body") or "", note)
+        current_body = release.get("body") or ""
         asset_count = len(release.get("assets", []))
+        if not asset_count and body == current_body:
+            continue
         print(f"retiring {release['tag_name']}: {asset_count} asset(s)")
         if args.apply:
-            delete_assets(args.repo, release)
-            update_release_notes(args.repo, release, body)
+            if asset_count:
+                delete_assets(args.repo, release)
+            if body != current_body:
+                update_release_notes(args.repo, release, body)
 
 
 if __name__ == "__main__":

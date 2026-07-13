@@ -55,7 +55,7 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
             tag="0.6.67",
             bootstrap_command="brew install go node python",
             build_command="make package",
-            install_command="sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins",
+            install_command="sudo install -d /usr/local/libexec/container-plugins && sudo tar -xzf container-compose-plugin-release-arm64.tar.gz -C /usr/local/libexec/container-plugins",
         )
         self.assertIn("git clone --depth 1 --branch 0.6.67", note)
         self.assertIn("brew install go node python", note)
