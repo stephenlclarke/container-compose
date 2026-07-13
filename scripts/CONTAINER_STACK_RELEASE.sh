@@ -77,7 +77,7 @@ Rules enforced:
   - Worktrees must be clean before release changes.
   - Stable container-compose release tags are SSH-signed and point at the validated main commit.
   - GitHub must verify each stable tag signature before the release gate starts.
-  - The full Docker Compose parity release gate runs locally before push/tag.
+  - The hosted Stable Release Gate runs after the signed tag and before stable package publication.
   - Stable package and Homebrew tap updates are explicitly dispatched and waited for.
   - Stable package assets and the Homebrew tap SHA are verified before success.
   - Stable releases are created once; existing stable tags and releases fail.
@@ -728,11 +728,11 @@ compose_source_promotion_body() {
   path="$(repo_path "${COMPOSE_REPO}")"
   head="$(git -C "${path}" rev-parse main)"
   cat <<EOF
-Promotes the validated container-compose source state for ${version}.
+Promotes the container-compose source candidate for ${version}.
 
 Validation:
-- make release-gate completed locally before this PR.
-- The promoted main tree must match the locally gated candidate before tagging.
+- The hosted Stable Release Gate must pass before stable package publication.
+- The promoted main tree must match this candidate before tagging.
 - Apple upstream remotes remain read-only; only stephenlclarke-owned remotes are push targets.
 
 Candidate:

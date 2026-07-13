@@ -135,6 +135,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("run github_cli workflow run", self.script)
         self.assertNotIn("env -u GITHUB_TOKEN -u GH_TOKEN gh", self.script)
 
+    def test_release_helper_describes_the_hosted_stable_gate(self) -> None:
+        self.assertIn(
+            "The hosted Stable Release Gate runs after the signed tag and before stable package publication.",
+            self.script,
+        )
+        self.assertIn(
+            "- The hosted Stable Release Gate must pass before stable package publication.",
+            self.script,
+        )
+        self.assertNotIn("make release-gate completed locally before this PR.", self.script)
+
     def test_release_helper_preserves_formatted_swiftpm_dependency_pins(self) -> None:
         self.assertIn(r'r"(\s*,?\s*\))"', self.script)
 
