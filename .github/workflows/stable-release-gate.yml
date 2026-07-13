@@ -258,6 +258,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          (
+            cd container-compose
+            HAWKEYE_AUTO_INSTALL=1 ./scripts/install-hawkeye.sh
+          )
           for repository in container-builder-shim containerization container; do
             (
               cd "${repository}"

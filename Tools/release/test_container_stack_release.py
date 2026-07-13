@@ -155,11 +155,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
         self.assertIn("HOMEBREW_TAP_REPO: ../homebrew-tap", workflow)
         self.assertIn("Provision pinned stack tools", workflow)
+        self.assertIn("cd container-compose", workflow)
+        self.assertIn("HAWKEYE_AUTO_INSTALL=1 ./scripts/install-hawkeye.sh", workflow)
         self.assertIn(
             "for repository in container-builder-shim containerization container; do",
             workflow,
         )
         self.assertIn("./scripts/install-hawkeye.sh", workflow)
+        self.assertIn("Provision containerization integration kernel", workflow)
+        self.assertIn("run: make fetch-default-kernel", workflow)
         self.assertLess(
             workflow.index("Checkout immutable Homebrew tap snapshot"),
             workflow.index("Run release gate"),
@@ -168,8 +172,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             workflow.index("Provision pinned stack tools"),
             workflow.index("Run release gate"),
         )
-        self.assertIn("Provision containerization integration kernel", workflow)
-        self.assertIn("run: make fetch-default-kernel", workflow)
+        self.assertLess(
+            workflow.index("Provision containerization integration kernel"),
+            workflow.index("Run release gate"),
+        )
+
+    def test_new_stable_release_runs_the_local_gate_before_promotion(self) -> None:
+        release = self.script[self.script.index("release_current_stack() {") :]
+        self.assertIn("run_local_release_gate", release)
+        self.assertLess(release.index("run_local_release_gate"), release.index("push_all_main"))
+        self.assertIn('HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"', self.script)
+        self.assertIn('"$(repo_path "container-builder-shim")"', self.script)
+        self.assertIn('make -C "$(repo_path "containerization")" fetch-default-kernel', self.script)
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)

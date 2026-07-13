@@ -163,6 +163,7 @@ PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
+HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
   "container-builder-shim"
   "containerization"
@@ -321,6 +322,38 @@ ensure_clean() {
     printf 'dirty worktree blocks release for %s:\n%s\n' "${repo}" "${status}" >&2
     exit 1
   fi
+}
+
+# Run the full release gate locally before any source branch is promoted.
+run_local_release_gate() {
+  local path repository
+  path="$(repo_path "${COMPOSE_REPO}")"
+  if [[ ! -f "${HOMEBREW_TAP_REPO}/Formula/container-compose.rb" ]]; then
+    printf 'Homebrew tap checkout is required at %s\n' "${HOMEBREW_TAP_REPO}" >&2
+    exit 1
+  fi
+
+  print_header "run local release gate"
+  for repository in "${path}" \
+    "$(repo_path "container-builder-shim")" \
+    "$(repo_path "containerization")" \
+    "$(repo_path "container")"; do
+    if [[ "${EXECUTE}" != "1" ]]; then
+      printf 'would install Hawkeye in %s\n' "${repository}"
+      continue
+    fi
+    (
+      cd "${repository}"
+      if [[ "${repository}" == "${path}" ]]; then
+        HAWKEYE_AUTO_INSTALL=1 ./scripts/install-hawkeye.sh --auto-install
+      else
+        ./scripts/install-hawkeye.sh
+      fi
+    )
+  done
+  run make -C "$(repo_path "containerization")" fetch-default-kernel
+  run env HAWKEYE_AUTO_INSTALL=1 \
+    make -C "${path}" release-gate "HOMEBREW_TAP_REPO=${HOMEBREW_TAP_REPO}"
 }
 
 # Verify that Apple remotes cannot be pushed and stephenlclarke remotes are the target.
@@ -1469,6 +1502,7 @@ release_current_stack() {
   fi
 
   ensure_clean "${COMPOSE_REPO}"
+  run_local_release_gate
   push_all_main "${version}"
   tag_stable_version "${version}"
 }
