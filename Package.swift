@@ -28,7 +28,7 @@ let package = Package(
         .package(name: "container", path: "../container"),
         .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "f990d57d0103f819f5c4f596b44aa7a7ff0dc47d",
+            revision: "101a0868022e7d080b288ccbe7d8a914a56f63bb",
         ),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
