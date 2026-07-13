@@ -30,6 +30,7 @@ ROOT = SCRIPT.parent.parent
 TEMPLATE = ROOT / "Tools" / "release" / "container-compose.rb.in"
 HOMEBREW_WORKFLOW = ROOT / ".github" / "workflows" / "homebrew.yml"
 PACKAGE_WORKFLOW = ROOT / ".github" / "workflows" / "prebuilt-binaries.yml"
+STABLE_GATE_WORKFLOW = ROOT / ".github" / "workflows" / "stable-release-gate.yml"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -39,13 +40,17 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.script = SCRIPT.read_text(encoding="utf-8")
 
-    def test_existing_stable_tags_are_rejected_before_release_mutation(self) -> None:
+    def test_existing_stable_tags_resume_only_before_release_publication(self) -> None:
         release = self.script[self.script.index("release_current_stack() {") :]
+        self.assertIn('if stable_tag_exists "${version}"', release)
+        self.assertIn('resume_stable_release "${version}"', release)
         self.assertIn("ensure_new_stable_release \"${version}\"", release)
         self.assertLess(
+            release.index('resume_stable_release "${version}"'),
             release.index("ensure_new_stable_release \"${version}\""),
-            release.index("bump_compose_version_files"),
         )
+        self.assertIn("ensure_stable_release_is_unpublished() {", self.script)
+        self.assertIn("stable release %s already exists and is immutable", self.script)
         self.assertIn("tag_new_stable_version() {", self.script)
         self.assertIn("stable tag already exists locally", self.script)
         self.assertIn("stable tag already exists remotely", self.script)
@@ -113,6 +118,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("CONTAINER_COMPOSE_BUILD_CHECK_LIVE=1", makefile)
         self.assertIn("docker-compose-devices-parity", makefile)
         self.assertNotIn("repackage-release", makefile)
+
+    def test_stable_gate_checks_out_the_tap_and_accepts_verified_retry_tags(self) -> None:
+        workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("repository: stephenlclarke/homebrew-tap", workflow)
+        self.assertIn("path: homebrew-tap", workflow)
+        self.assertIn("accepting its GitHub-verified source for a release retry", workflow)
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
