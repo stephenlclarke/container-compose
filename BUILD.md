@@ -137,9 +137,10 @@ checkout against immutable source, runtime, and tap checkouts instead. It
 validates the non-virtualized stack and Compose CI; the local full gate remains
 mandatory for runtime integration and Docker Compose parity. The helper promotes
 `container-compose` through an automated pull request by default, verifies the
-promoted main tree still matches the locally gated candidate before it tags, and
-the package workflow repeats `make ci` before it publishes assets or updates the
-tap.
+promoted main tree still matches the locally gated candidate before it tags. A
+successful hosted gate records a candidate-bound GitHub Actions release-authority
+check on that tag commit; the package workflow requires that check, then repeats
+`make ci` before it publishes assets or updates the tap.
 
 ## Promote `main` To A Stable Release
 

@@ -33,6 +33,7 @@ on:
 permissions:
   actions: read
   attestations: write
+  checks: read
   contents: write
   id-token: write
   security-events: read
@@ -412,38 +413,58 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
           case "${PUBLISH_REF_TYPE}" in
             branch)
-              workflow="ci.yml"
-              event="push"
-              required_name="green main CI (including SonarQube)"
+              conclusion="$(
+                gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
+                  --commit "${PUBLISH_SHA}" --event push --limit 50 \
+                  --json status,conclusion \
+                  --jq 'map(select(.status == "completed" and .conclusion == "success")) | .[0].conclusion // empty'
+              )"
+              if [[ "${conclusion}" != "success" ]]; then
+                printf 'refusing to package %s without green main CI (including SonarQube) at %s\n' \
+                  "${PUBLISH_SHA}" "${PUBLISH_SHA}" >&2
+                exit 1
+              fi
               ;;
             tag)
-              workflow="stable-release-gate.yml"
-              event="workflow_dispatch"
-              required_name="successful Stable Release Gate"
+              authority_name="Stable Release Authority (${PUBLISH_REF_NAME})"
+              authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
+              authority_filter+=' and .status == "completed"'
+              authority_filter+=' and .conclusion == "success"'
+              authority_filter+=' and .app.slug == "github-actions")'
+              authority_filter+=' | .external_id'
+              authority_run_id="$(
+                gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${PUBLISH_SHA}/check-runs?per_page=100" \
+                  --jq "${authority_filter}" \
+                  | tail -n 1
+              )"
+              if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
+                printf 'refusing to package %s without candidate-bound Stable Release Authority %s\n' \
+                  "${PUBLISH_SHA}" "${authority_name}" >&2
+                exit 1
+              fi
+              authority_conclusion="$(
+                gh run view "${authority_run_id}" --repo "${GITHUB_REPOSITORY}" \
+                  --json workflowName,event,status,conclusion \
+                  --jq 'select(.workflowName == "Stable Release Gate" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .conclusion'
+              )"
+              if [[ "${authority_conclusion}" != "success" ]]; then
+                printf 'refusing to package %s without a successful Stable Release Gate authority\n' \
+                  "${PUBLISH_SHA}" >&2
+                exit 1
+              fi
               ;;
             *)
               printf 'unsupported publish ref type: %s\n' "${PUBLISH_REF_TYPE}" >&2
               exit 1
               ;;
           esac
-
-          conclusion="$(
-            gh run list --repo "${GITHUB_REPOSITORY}" --workflow "${workflow}" \
-              --commit "${PUBLISH_SHA}" --event "${event}" --limit 50 \
-              --json status,conclusion \
-              --jq 'map(select(.status == "completed" and .conclusion == "success")) | .[0].conclusion // empty'
-          )"
-          if [[ "${conclusion}" != "success" ]]; then
-            printf 'refusing to package %s without %s at %s\n' \
-              "${PUBLISH_SHA}" "${required_name}" "${PUBLISH_SHA}" >&2
-            exit 1
-          fi
 
       - name: Build matched runtime package
         id: runtime-package
